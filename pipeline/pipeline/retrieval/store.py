@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import secrets
+import time
 from typing import Any
 
 from psycopg.rows import dict_row
@@ -19,6 +20,8 @@ from psycopg_pool import AsyncConnectionPool
 from ..config import cfg
 from ..jobs import RetryableError, TerminalError
 from ..store.db import SourceSupersededError
+from .chunking import QueryTerms
+from .lang import TS_CONFIG
 
 log = logging.getLogger("evo.retrieval.store")
 
@@ -391,11 +394,13 @@ async def copy_content_from_donor(
             f"""
             INSERT INTO rag_chunks (
                 id, workspace_id, content_id, chunk_idx, section_path, text,
-                indexed_text, token_count, page_start, page_end, regions, search
+                indexed_text, token_count, page_start, page_end, regions, lang,
+                search
             )
             SELECT {_NEW_CHUNK_ID_SQL},
                    %s, %s, c.chunk_idx, c.section_path, c.text, c.indexed_text,
-                   c.token_count, c.page_start, c.page_end, c.regions, c.search
+                   c.token_count, c.page_start, c.page_end, c.regions, c.lang,
+                   c.search
             FROM rag_chunks c
             WHERE c.content_id = %s
             """,
@@ -434,37 +439,6 @@ async def copy_content_from_donor(
 
         await conn.execute(
             """
-            INSERT INTO rag_concepts (id, workspace_id, name, norm)
-            SELECT 'rcp_' || substr(md5(random()::text || clock_timestamp()::text || k.id), 1, 12),
-                   %s, k.name, k.norm
-            FROM rag_concepts k
-            WHERE k.workspace_id = %s
-              AND EXISTS (
-                  SELECT 1
-                  FROM rag_concept_mentions m
-                  JOIN rag_chunks c ON c.id = m.chunk_id
-                  WHERE m.concept_id = k.id AND c.content_id = %s
-              )
-            ON CONFLICT (workspace_id, norm) DO NOTHING
-            """,
-            (dest_workspace_id, pin["workspace_id"], donor_id),
-        )
-        await conn.execute(
-            """
-            INSERT INTO rag_concept_mentions (concept_id, chunk_id)
-            SELECT nk.id, nc.id
-            FROM rag_concept_mentions m
-            JOIN rag_concepts ok ON ok.id = m.concept_id AND ok.workspace_id = %s
-            JOIN rag_chunks oc ON oc.id = m.chunk_id AND oc.content_id = %s
-            JOIN rag_chunks nc ON nc.content_id = %s AND nc.chunk_idx = oc.chunk_idx
-            JOIN rag_concepts nk ON nk.workspace_id = %s AND nk.norm = ok.norm
-            ON CONFLICT DO NOTHING
-            """,
-            (pin["workspace_id"], donor_id, dest_content_id, dest_workspace_id),
-        )
-
-        await conn.execute(
-            """
             UPDATE rag_contents SET
                 source_sha256 = %s,
                 pipeline_identity = %s,
@@ -498,7 +472,8 @@ async def load_content_chunks(content_id: str) -> list[dict[str, Any]]:
         cur = await conn.execute(
             """
             SELECT id, chunk_idx, section_path, text, indexed_text, token_count,
-                   page_start, page_end, regions
+                   page_start, page_end, regions, lang,
+                   search = ''::tsvector AS reference
             FROM rag_chunks WHERE content_id = %s
             ORDER BY chunk_idx
             """,
@@ -517,9 +492,7 @@ async def replace_content_chunks(
     """Swap in canonical content chunks atomically.
 
     Delete-then-insert rather than upsert-by-index: a re-ingest that produces
-    fewer chunks must not leave the tail of the previous run behind, and the
-    concept mentions that reference those chunks have to go with them (they
-    cascade).
+    fewer chunks must not leave the tail of the previous run behind.
 
     The vector table and the provenance written onto the content row both come
     from the workspace's own pin, read here rather than passed in, so a caller
@@ -553,16 +526,17 @@ async def replace_content_chunks(
                     INSERT INTO rag_chunks (
                         id, workspace_id, content_id, chunk_idx, section_path, text,
                         indexed_text, token_count, page_start, page_end, regions,
-                        search
+                        lang, search
                     ) VALUES (
                         %(id)s, %(workspace_id)s, %(content_id)s, %(chunk_idx)s,
                         %(section_path)s, %(text)s, %(indexed_text)s, %(token_count)s,
-                        %(page_start)s, %(page_end)s, %(regions)s,
-                        to_tsvector('simple', %(search_text)s)
+                        %(page_start)s, %(page_end)s, %(regions)s, %(lang)s,
+                        to_tsvector(%(ts_config)s::regconfig, %(search_text)s)
                     )
                     """,
                 {
                     **row,
+                    "ts_config": TS_CONFIG[row["lang"]],
                     "workspace_id": workspace_id,
                     "content_id": content_id,
                     "regions": Jsonb(row["regions"]),
@@ -649,63 +623,42 @@ async def content_fingerprint(content_id: str) -> str:
         return str(row["fingerprint"]) if row else ""
 
 
-async def replace_content_concepts(
-    *, workspace_id: str, content_id: str, concepts: list[dict[str, Any]]
-) -> None:
-    """Re-link one canonical content item's concept mentions.
-
-    Concepts themselves are workspace-scoped and shared: two files naming the
-    same idea must land on one row, because co-mention across files is exactly
-    the signal the index exists to provide.
-    """
-    db = await pool()
-    async with db.connection() as conn, conn.transaction():
-        await conn.execute(
-            """
-            DELETE FROM rag_concept_mentions m
-            USING rag_chunks c
-            WHERE m.chunk_id = c.id AND c.content_id = %s
-            """,
-            (content_id,),
-        )
-        for concept in concepts:
-            cur = await conn.execute(
-                """
-                INSERT INTO rag_concepts (id, workspace_id, name, norm)
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT (workspace_id, norm) DO UPDATE SET name = rag_concepts.name
-                RETURNING id
-                """,
-                (concept["id"], workspace_id, concept["name"], concept["norm"]),
-            )
-            row = await cur.fetchone()
-            concept_id = row["id"]
-            for chunk_id in concept["chunk_ids"]:
-                await conn.execute(
-                    """
-                    INSERT INTO rag_concept_mentions (concept_id, chunk_id)
-                    VALUES (%s, %s) ON CONFLICT DO NOTHING
-                    """,
-                    (concept_id, chunk_id),
-                )
-        # Concepts whose last mention just disappeared.
-        await conn.execute(
-            """
-            DELETE FROM rag_concepts c
-            WHERE c.workspace_id = %s
-              AND NOT EXISTS (
-                  SELECT 1 FROM rag_concept_mentions m WHERE m.concept_id = c.id
-              )
-            """,
-            (workspace_id,),
-        )
-
-
 # ---------------------------------------------------------------- search
 
 
 _RRF_K = 60
 
+# Lexical ranks count half as much as vector ranks in the fusion. Measured on
+# the lab corpus (IB biology PDFs, 19 questions): equal weights let a passage
+# that merely repeats common query words outrank the passage the embedding put
+# first by a wide margin, and hits@5 went 22 -> 26 of 28 at 0.5, matching
+# vector-only. The lexical half stays for exact identifiers the embedding
+# blurs (names, codes, rare terms), not as an equal vote.
+#
+# At half weight a lexical-only candidate can never reach the top: its best
+# score (0.5 / 61) is below every vector candidate's (1 / (60 + n) for n up to
+# the candidate count). That is intended for partial matches. A passage that
+# contains every term of a two- or three-term query is different evidence —
+# 'Figure 3.20' or 'River Namsen' names one place in the corpus — so those rows
+# count at full weight and can outrank a vector-only candidate. Longer queries
+# are questions, and a passage that repeats every word of a question echoes
+# its phrasing rather than answering it: on the lab corpus 'What is convergent
+# evolution? Give an example' at full weight pulled up a cladogram passage that
+# happened to say "give", "example", "convergent" and "evolution". Terms are
+# counted as typed (each CJK run once, however many bigrams the tokenizer made
+# of it), and the query must carry no function word of the chunk's language:
+# a lookup is content only ('Figure 3.20', 'Table 3 OSCAR', '图1 CIL'), a
+# question has function words. Counting after stopword removal instead let
+# 'What is CamemBERT trained on?' shrink to two terms under the english
+# configuration and promote English bibliography rows on a French corpus.
+_LEX_WEIGHT = 0.5
+_LOOKUP_TERMS = (2, 3)
+
+# Each chunk is indexed with its own language's configuration (rag_chunks.lang,
+# lang.TS_CONFIG), so the query is parsed once per language present in the
+# scope and matched against the chunks of that language. A French query
+# against English chunks is parsed by the english stemmer and misses, which is
+# what should happen: the vector leg carries cross-language questions.
 _SEARCH_SQL_TEMPLATE = """
 WITH scoped_files AS (
         SELECT DISTINCT ON (fc.content_id)
@@ -718,7 +671,8 @@ WITH scoped_files AS (
         ORDER BY fc.content_id, f.added_at, f.id
 ),
 vec AS (
-    SELECT c.id, row_number() OVER (ORDER BY v.embedding <=> %(vector)s::halfvec) AS rank
+    SELECT c.id, v.embedding <=> %(vector)s::halfvec AS dist,
+           row_number() OVER (ORDER BY v.embedding <=> %(vector)s::halfvec) AS rank
         FROM {vector_table} v
         JOIN rag_chunks c ON c.id = v.chunk_id
         JOIN scoped_files sf ON sf.content_id = c.content_id
@@ -726,29 +680,53 @@ vec AS (
     ORDER BY v.embedding <=> %(vector)s::halfvec
     LIMIT %(candidates)s
 ),
+q AS (
+    SELECT m.lang,
+           websearch_to_tsquery(m.cfg::regconfig, %(any_of)s) AS any_of,
+           websearch_to_tsquery(m.cfg::regconfig, %(all_of)s) AS all_of,
+           %(terms)s BETWEEN %(lookup_min)s AND %(lookup_max)s
+             AND coalesce(array_length(tsvector_to_array(
+                   to_tsvector(m.cfg::regconfig, %(latin)s)), 1), 0)
+               = coalesce(array_length(tsvector_to_array(
+                   to_tsvector('simple', %(latin)s)), 1), 0) AS lookup
+      FROM unnest(%(langs)s::text[], %(cfgs)s::text[]) AS m(lang, cfg)
+),
 lex AS (
     SELECT c.id,
-           row_number() OVER (ORDER BY ts_rank_cd(c.search, q.query) DESC) AS rank
+           row_number() OVER (
+               ORDER BY (c.search @@ q.all_of) DESC,
+                        ts_rank_cd(c.search, q.any_of) DESC
+           ) AS rank,
+           (c.search @@ q.all_of AND q.lookup) AS exact
         FROM rag_chunks c
-        JOIN scoped_files sf ON sf.content_id = c.content_id,
-            websearch_to_tsquery('simple', %(terms)s) AS q(query)
+        JOIN scoped_files sf ON sf.content_id = c.content_id
+        JOIN q ON q.lang = c.lang
     WHERE c.workspace_id = %(ws)s
-      AND c.search @@ q.query
-    ORDER BY ts_rank_cd(c.search, q.query) DESC
+      AND c.search @@ q.any_of
+    ORDER BY (c.search @@ q.all_of) DESC, ts_rank_cd(c.search, q.any_of) DESC
     LIMIT %(candidates)s
 ),
 fused AS (
-    SELECT id, sum(score) AS score FROM (
-        SELECT id, 1.0 / (%(rrf_k)s + rank) AS score FROM vec
+    SELECT id, sum(score) AS score, sum(flat) AS flat_score FROM (
+        SELECT id, 1.0 / (%(rrf_k)s + rank) AS score,
+               1.0 / (%(rrf_k)s + rank) AS flat
+          FROM vec
         UNION ALL
-        SELECT id, 1.0 / (%(rrf_k)s + rank) AS score FROM lex
+        SELECT id,
+               CASE WHEN exact THEN 1.0 ELSE %(lex_weight)s END / (%(rrf_k)s + rank)
+                   AS score,
+               %(lex_weight)s / (%(rrf_k)s + rank) AS flat
+          FROM lex
     ) parts GROUP BY id
 )
 SELECT c.id, sf.file_id, c.chunk_idx, c.section_path, c.text, c.page_start,
-       c.page_end, c.regions, sf.file_name, fused.score
+       c.page_end, c.regions, c.lang, sf.file_name, fused.score, fused.flat_score,
+       vec.rank AS vec_rank, vec.dist AS vec_dist, lex.rank AS lex_rank
 FROM fused
 JOIN rag_chunks c ON c.id = fused.id
 JOIN scoped_files sf ON sf.content_id = c.content_id
+LEFT JOIN vec ON vec.id = fused.id
+LEFT JOIN lex ON lex.id = fused.id
 ORDER BY fused.score DESC
 LIMIT %(candidates)s
 """
@@ -758,7 +736,7 @@ async def hybrid_search(
     *,
     workspace_id: str,
     vector: list[float],
-    terms: str,
+    terms: QueryTerms,
     file_ids: list[str] | None,
     candidates: int,
 ) -> list[dict[str, Any]]:
@@ -772,6 +750,16 @@ async def hybrid_search(
     The vector table comes from the workspace pin, not from a width: two
     models of the same dimension do not share a table. The lexical half is
     model-independent and always reads rag_chunks.
+
+    Lexical candidates match any term; those matching every term rank first.
+    On the lab corpus 'Figure 3.20' by OR alone ranked every passage that says
+    'figure' above the one that says '3.20', because a rare token adds little
+    to ts_rank_cd against a frequent one. The AND tier is what makes the
+    lexical leg earn its place for identifiers, names, and codes.
+
+    Rows carry the per-leg evidence (``vec_rank``, ``vec_dist``, ``lex_rank``)
+    and ``flat_score``, the fusion with every lexical row at half weight, so
+    the caller can tell which hits the exact tier put there.
     """
     pin = await workspace_embedding_pin(workspace_id)
     db = await pool()
@@ -782,99 +770,78 @@ async def hybrid_search(
             {
                 "ws": workspace_id,
                 "vector": vector_literal(vector),
-                "terms": terms,
+                "any_of": terms.any_of,
+                "all_of": terms.all_of,
+                "latin": terms.latin,
+                "terms": terms.terms,
+                "lookup_min": _LOOKUP_TERMS[0],
+                "lookup_max": _LOOKUP_TERMS[1],
+                "langs": list(TS_CONFIG),
+                "cfgs": list(TS_CONFIG.values()),
                 "file_ids": list(file_ids or []),
                 "no_filter": not file_ids,
                 "candidates": candidates,
                 "rrf_k": _RRF_K,
+                "lex_weight": _LEX_WEIGHT,
             },
         )
         return [dict(row) for row in await cur.fetchall()]
 
 
-async def neighbor_chunks(
-    *, file_id: str, chunk_idx: int, radius: int = 1
-) -> list[dict[str, Any]]:
-    """The chunks immediately around a hit.
+# ------------------------------------------------------------- search telemetry
 
-    A definition and the example that uses it routinely land in adjacent chunks,
-    and the boundary between them is an artifact of packing, not of meaning.
+_SEARCH_EVENT_COLUMNS = (
+    "trace_id",
+    "workspace_id",
+    "actor_user_id",
+    "message_id",
+    "search_index",
+    "hits_lang",
+    "query_terms",
+    "cjk_runs",
+    "scope_files",
+    "embed_ms",
+    "sql_ms",
+    "hits",
+    "prior_overlap",
+    "chunk_ids",
+    "file_ids",
+    "chunk_langs",
+    "vec_ranks",
+    "lex_ranks",
+    "vec_dists",
+    "tier_only",
+    "cited",
+)
+_SEARCH_EVENTS_RETENTION = "90 days"
+_search_events_pruned_at = 0.0
+
+
+async def record_search_events(events: list[dict[str, Any]]) -> None:
+    """Append one row per search of a finished turn (see rag_search_events).
+
+    Pruning rides on the write path, at most once an hour per process, so no
+    separate sweeper is needed for a table this small.
     """
+    global _search_events_pruned_at
+    if not events:
+        return
+    columns = ", ".join(_SEARCH_EVENT_COLUMNS)
+    placeholders = ", ".join(f"%({name})s" for name in _SEARCH_EVENT_COLUMNS)
     db = await pool()
     async with db.connection() as conn:
-        cur = await conn.execute(
-            """
-            SELECT c.id, fc.file_id, c.chunk_idx, c.section_path, c.text, c.page_start,
-                   c.page_end, c.regions, f.name AS file_name
-            FROM rag_file_contents fc
-            JOIN files f ON f.id = fc.file_id
-            JOIN rag_chunks c ON c.content_id = fc.content_id
-            WHERE fc.file_id = %s AND c.chunk_idx BETWEEN %s AND %s
-            ORDER BY c.chunk_idx
-            """,
-            (file_id, chunk_idx - radius, chunk_idx + radius),
-        )
-        return [dict(row) for row in await cur.fetchall()]
-
-
-async def related_concepts(
-    *,
-    workspace_id: str,
-    name: str,
-    file_ids: list[str] | None = None,
-    limit: int = 12,
-) -> list[dict[str, Any]]:
-    """Concepts co-mentioned with this one, and where they are discussed.
-
-    This is the relation-free substitute for a knowledge graph edge: no relation
-    was ever extracted, but 'appears in the same passage' is recoverable by a
-    self-join and, unlike an extracted relation, cannot be hallucinated.
-    """
-    db = await pool()
-    async with db.connection() as conn:
-        cur = await conn.execute(
-            """
-            WITH seed AS (
-                SELECT id FROM rag_concepts
-                WHERE workspace_id = %(ws)s AND norm = %(norm)s
-            ),
-            seed_chunks AS (
-                SELECT DISTINCT m.chunk_id
-                  FROM rag_concept_mentions m
-                  JOIN rag_chunks rc ON rc.id = m.chunk_id
-                  JOIN rag_file_contents fc ON fc.content_id = rc.content_id
-                 WHERE m.concept_id IN (SELECT id FROM seed)
-                   AND (%(no_filter)s OR fc.file_id = ANY(%(file_ids)s))
+        async with conn.cursor() as cur:
+            await cur.executemany(
+                f"INSERT INTO rag_search_events ({columns}) VALUES ({placeholders})",
+                events,
             )
-            SELECT c.name,
-                   count(DISTINCT m.chunk_id) AS mentions,
-                   array_agg(DISTINCT f.name) AS files
-            FROM rag_concept_mentions m
-            JOIN rag_concepts c ON c.id = m.concept_id
-            JOIN rag_chunks rc ON rc.id = m.chunk_id
-            JOIN rag_file_contents fc ON fc.content_id = rc.content_id
-            JOIN files f ON f.id = fc.file_id
-            WHERE m.chunk_id IN (SELECT chunk_id FROM seed_chunks)
-              AND c.norm <> %(norm)s
-              AND c.workspace_id = %(ws)s
-              AND (%(no_filter)s OR fc.file_id = ANY(%(file_ids)s))
-            GROUP BY c.name
-            ORDER BY mentions DESC
-            LIMIT %(limit)s
-            """,
-            {
-                "ws": workspace_id,
-                "norm": normalize_concept(name),
-                "file_ids": list(file_ids or []),
-                "no_filter": not file_ids,
-                "limit": limit,
-            },
-        )
-        return [dict(row) for row in await cur.fetchall()]
-
-
-def normalize_concept(name: str) -> str:
-    return " ".join(name.strip().casefold().split())
+        now = time.monotonic()
+        if now - _search_events_pruned_at >= 3600:
+            _search_events_pruned_at = now
+            await conn.execute(
+                "DELETE FROM rag_search_events WHERE created_at < now() - %s::interval",
+                (_SEARCH_EVENTS_RETENTION,),
+            )
 
 
 # ------------------------------------------------------- structure & summaries

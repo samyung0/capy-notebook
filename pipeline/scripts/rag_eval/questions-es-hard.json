@@ -1,0 +1,29 @@
+[
+  {
+    "q": "El único modelo capaz de reconocer la variabilidad del español",
+    "expect": [["variedades-espanol.pdf", 12], ["variedades-espanol.pdf", 0]]
+  },
+  {
+    "q": "El plan español para impulsar catalán euskera gallego y valenciano en la IA",
+    "expect": [
+      ["sesgo-linguistico-digital.pdf", 18],
+      ["sesgo-linguistico-digital.pdf", 19]
+    ]
+  },
+  {
+    "q": "La variedad peninsular es la que todos aciertan más",
+    "expect": [["variedades-espanol.pdf", 18]]
+  },
+  {
+    "q": "El sesgo que aparece cuando la inteligencia artificial trata peor unas lenguas que otras",
+    "expect": [
+      ["sesgo-linguistico-digital.pdf", 1],
+      ["sesgo-linguistico-digital.pdf", 10],
+      ["sesgo-linguistico-digital.pdf", 11]
+    ]
+  },
+  {
+    "q": "El modelo de siete mil millones entrenado en catalán español e inglés",
+    "expect": [["sesgo-linguistico-digital.pdf", 30]]
+  }
+]

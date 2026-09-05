@@ -1,0 +1,28 @@
+[
+  {
+    "q": "GPT-4",
+    "expect": [["mixed_zh_en.pdf", 10], ["mixed_zh_en.pdf", 22]]
+  },
+  {
+    "q": "AiScholar",
+    "expect": [["mixed_zh_en.pdf", 4], ["mixed_zh_en.pdf", 14]]
+  },
+  {
+    "q": "AiScholar platform",
+    "expect": [["mixed_zh_en.pdf", 4], ["mixed_zh_en.pdf", 14]]
+  },
+  {
+    "q": "商學院",
+    "expect": [["mixed_zh_en.pdf", 0], ["mixed_zh_en.pdf", 25]]
+  },
+  {
+    "q": "Doctor of Business Administration",
+    "expect": [["mixed_zh_en.pdf", 0], ["mixed_zh_en.pdf", 23]]
+  },
+  { "q": "工商管理博士學位", "expect": [["mixed_zh_en.pdf", 0]] },
+  {
+    "q": "Liu Guoxing",
+    "expect": [["mixed_zh_en.pdf", 0], ["mixed_zh_en.pdf", 23]]
+  },
+  { "q": "刘国兴", "expect": [["mixed_zh_en.pdf", 0]] }
+]

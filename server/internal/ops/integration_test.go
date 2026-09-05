@@ -12,7 +12,6 @@ func TestMain(m *testing.M) {
 		"ANTHROPIC_API_KEY",
 		"DEEPSEEK_API_KEY",
 		"OPENAI_API_KEY",
-		"GEMINI_API_KEY",
 		"DEEPINFRA_API_KEY",
 	} {
 		if os.Getenv(key) == "" {

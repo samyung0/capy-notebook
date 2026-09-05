@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/redis/go-redis/v9"
+	"github.com/stripe/stripe-go/v82"
 
 	"github.com/evonotes/server/internal/auth"
 	"github.com/evonotes/server/internal/billing"
@@ -41,7 +42,7 @@ func corsOrigins(configured []string) []string {
 }
 
 // Config holds gateway settings for auth and billing. Provider OAuth
-// (Google/Microsoft/Notion) is managed entirely by Clerk.
+// (Google/Microsoft) is managed entirely by Clerk.
 type Config struct {
 	ReleaseSHA         string
 	ClerkSecretKey     string
@@ -49,17 +50,16 @@ type Config struct {
 	AuthDisabled       bool
 	DevUserID          string
 	// E2EAuth enables X-E2E-User-Id identity headers (disposable E2E only).
-	E2EAuth                 bool
-	E2ESecret               string
-	E2EUserIDs              []string
-	StripeSecretKey         string
-	StripeWebhookSecret     string
-	ElevenLabsWebhookSecret string
-	StripePricePro          string
-	AppURL                  string
-	EmailUnsubscribeSecret  string
-	CollaborationSecret     string
-	CollaborationURL        string
+	E2EAuth                bool
+	E2ESecret              string
+	E2EUserIDs             []string
+	StripeSecretKey        string
+	StripeWebhookSecret    string
+	StripePricePro         string
+	AppURL                 string
+	EmailUnsubscribeSecret string
+	CollaborationSecret    string
+	CollaborationURL       string
 	// AllowedOrigins is the CORS allowlist. Empty means "*", which is what dev
 	// and e2e run with; production sets it once the SPA and API live on
 	// different hostnames.
@@ -70,33 +70,32 @@ type Config struct {
 	// ModelRegistry is the process-wide model config cache. Nil disables
 	// per-model pricing and pinning (tests).
 	ModelRegistry *models.Registry
-	// PipelineSecret authenticates the retrieval service's callbacks into
-	// /api/internal/*. Empty disables those routes entirely.
+	// PipelineSecret authenticates the retrieval service's and the ingest
+	// host's callbacks into /api/internal/*. Empty disables those routes and
+	// therefore Drive/OneDrive imports, which need the import worker.
 	PipelineSecret string
-	// ImportRelaySecret authenticates the Cloudflare Queue relay in both
-	// directions. EnqueueURL is also the feature gate for public import POSTs.
-	ImportRelaySecret     string
-	ImportRelayEnqueueURL string
 	// MailRecorder exposes delivered mail to Playwright. Non-nil only under
 	// APP_ENV=e2e.
 	MailRecorder mail.Recorder
 }
 
 type api struct {
-	s            *store.Store
-	wh           webhookStore
-	blob         blob.Store
-	pipe         *pipeline.Client
-	rdb          *redis.Client
-	parser       string
-	engine       string
-	cfg          Config
-	mailRecorder mail.Recorder
-	limiter      *ratelimit.Limiter
-	modelReg     *models.Registry
-	notifMu      sync.Mutex
-	notifByUser  map[string]int
-	notifTotal   int
+	s                  *store.Store
+	wh                 webhookStore
+	blob               blob.Store
+	pipe               *pipeline.Client
+	rdb                *redis.Client
+	parser             string
+	engine             string
+	cfg                Config
+	mailRecorder       mail.Recorder
+	limiter            *ratelimit.Limiter
+	modelReg           *models.Registry
+	stripeSubscription func(string) (*stripe.Subscription, error)
+	stripeEntitlements func(string) ([]*stripe.Subscription, error)
+	notifMu            sync.Mutex
+	notifByUser        map[string]int
+	notifTotal         int
 }
 
 // New builds the full HTTP handler. huma owns every JSON operation (and the
@@ -108,18 +107,20 @@ type api struct {
 func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client, parser, engine string, cfg Config) http.Handler {
 	billing.Init(billing.Config{SecretKey: cfg.StripeSecretKey})
 	a := &api{
-		s:            s,
-		wh:           s,
-		blob:         b,
-		pipe:         pipe,
-		rdb:          rdb,
-		parser:       parser,
-		engine:       engine,
-		cfg:          cfg,
-		mailRecorder: cfg.MailRecorder,
-		limiter:      ratelimit.New(rdb, cfg.RateLimit),
-		modelReg:     cfg.ModelRegistry,
-		notifByUser:  make(map[string]int),
+		s:                  s,
+		wh:                 s,
+		blob:               b,
+		pipe:               pipe,
+		rdb:                rdb,
+		parser:             parser,
+		engine:             engine,
+		cfg:                cfg,
+		mailRecorder:       cfg.MailRecorder,
+		limiter:            ratelimit.New(rdb, cfg.RateLimit),
+		modelReg:           cfg.ModelRegistry,
+		stripeSubscription: billing.RetrieveSubscription,
+		stripeEntitlements: billing.ListEntitlingSubscriptions,
+		notifByUser:        make(map[string]int),
 	}
 	r := chi.NewRouter()
 	// Trace first so the recovery handler and every log line below it can name
@@ -159,7 +160,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 			"/api/editor-assets/",
 			"/api/materials/",
 			"/api/quizzes/",
-			"/api/decks/",
+			"/api/flashcards/",
 			"/api/explore/",
 		},
 	}))
@@ -176,7 +177,6 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	r.Get("/healthz", healthHandler(cfg.ReleaseSHA))
 	r.Post("/webhooks/clerk", a.clerkWebhook)
 	r.Post("/webhooks/stripe", a.stripeWebhook)
-	r.Post("/webhooks/elevenlabs", a.elevenLabsWebhook)
 	r.Get("/api/notifications/stream", a.notificationEvents)
 	r.Get("/api/email/unsubscribe", a.emailUnsubscribe)
 	r.Post("/api/email/unsubscribe", a.emailUnsubscribe)
@@ -195,13 +195,9 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		r.Post("/api/internal/materials", a.internalCreateMaterial)
 		r.Get("/api/internal/materials/{materialId}", a.internalGetMaterial)
 		r.Post("/api/internal/provider-calls", a.internalSettleProviderCall)
-	}
-	if cfg.ImportRelaySecret != "" {
-		r.Post("/api/internal/import-relay/acquire", a.internalAcquireSourceImport)
-		r.Post("/api/internal/import-relay/upload-grant", a.internalGrantSourceImportUpload)
-		r.Post("/api/internal/import-relay/complete", a.internalCompleteSourceImport)
-		r.Post("/api/internal/import-relay/fail", a.internalFailSourceImport)
-		r.Post("/api/internal/import-relay/dead-letter", a.internalDeadLetterSourceImport)
+		r.Post("/api/internal/import/acquire", a.internalAcquireSourceImport)
+		r.Post("/api/internal/import/complete", a.internalCompleteSourceImport)
+		r.Post("/api/internal/import/fail", a.internalFailSourceImport)
 	}
 	r.Get("/api/files/{id}/raw", a.getFileRaw)
 	r.Get("/api/files/{id}/preview", a.getFilePreview)
@@ -457,10 +453,9 @@ func (a *api) assertWSRead(w http.ResponseWriter, r *http.Request, wsID string) 
 // file 'pending', enqueues an ingest job) and the mock-compatible JSON
 // metadata path (no bytes, lands 'ready').
 //
-// Storage is charged to the workspace owner, so the lifecycle and quota gate is
-// the owner's and lives in gateStorageTx. An actor-level account check here
-// would block an over-quota editor from contributing to a workspace whose owner
-// has room, which no other upload path does.
+// Storage is charged to the workspace owner. The store also gates the actor's
+// terminal lifecycle state; an over-quota editor may still contribute to a
+// healthy owner's workspace, but a suspended/deletion-pending actor may not.
 func (a *api) addSource(w http.ResponseWriter, r *http.Request) {
 	if !a.assertWS(w, r, id(r)) {
 		return
@@ -481,7 +476,7 @@ func (a *api) addSource(w http.ResponseWriter, r *http.Request) {
 	if b.Kind == "" {
 		b.Kind = kindFromName(b.Name)
 	}
-	res, err := a.s.AddSource(r.Context(), id(r), b.Name, b.Kind, b.ChapterID, int64(randInt(200, 3200)))
+	res, err := a.s.AddSource(r.Context(), id(r), uid(r), b.Name, b.Kind, b.ChapterID, int64(randInt(200, 3200)))
 	if err != nil {
 		a.fail(w, err)
 		return

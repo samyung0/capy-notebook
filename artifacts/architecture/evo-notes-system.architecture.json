@@ -1,0 +1,657 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Evo Notes System Architecture",
+    "locale": "en",
+    "output": "evo-notes-system.html",
+    "quality_profile": "standard",
+    "views": [
+      {
+        "id": "product-request",
+        "label": "Product request path",
+        "focus": ["users", "web-app", "go-gateway", "postgres"],
+        "note": "The SPA uses the Go gateway for product data, policy checks, streaming, and durable state."
+      },
+      {
+        "id": "upload-ingest",
+        "label": "Upload and ingest",
+        "focus": [
+          "web-app",
+          "go-gateway",
+          "b2",
+          "postgres",
+          "parse-coordinator",
+          "mineru-parser",
+          "parse-spool",
+          "ingest-workers",
+          "model-providers",
+          "elevenlabs"
+        ],
+        "note": "Follow local or cloud bytes through reservation, parsing, derived media, indexing, and file readiness."
+      },
+      {
+        "id": "retrieval-ai",
+        "label": "Chat and generation",
+        "focus": [
+          "web-app",
+          "go-gateway",
+          "retrieval-service",
+          "postgres",
+          "model-providers"
+        ],
+        "note": "Chat is a capped tool loop over scoped hybrid search; generation is a fixed one-call workflow."
+      },
+      {
+        "id": "live-editing",
+        "label": "Live editing",
+        "focus": [
+          "web-app",
+          "go-gateway",
+          "collaboration",
+          "redis",
+          "postgres"
+        ],
+        "note": "Yjs is the live authority; checkpoint receipts prove storage and projections feed static readers."
+      },
+      {
+        "id": "external-boundaries",
+        "label": "Identity, operations, delivery",
+        "focus": [
+          "operators",
+          "ops-dashboard",
+          "clerk",
+          "cloud-drives",
+          "import-relay",
+          "go-gateway",
+          "b2",
+          "resend"
+        ],
+        "note": "External identity, operator access, drive transfer, and product email all terminate at server-owned policy boundaries."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "users",
+      "type": "external",
+      "label": "Students and teachers",
+      "sublabel": "signed-in members, shared visitors, anonymous viewers",
+      "pos": [40, 520],
+      "size": [230, 86]
+    },
+    {
+      "id": "operators",
+      "type": "external",
+      "label": "Operators",
+      "sublabel": "manually granted support and engineering staff",
+      "pos": [1610, 100],
+      "size": [230, 82]
+    },
+    {
+      "id": "clerk",
+      "type": "security",
+      "label": "Clerk",
+      "sublabel": "identity, sessions, profile sync",
+      "tag": "JWT",
+      "pos": [400, 100],
+      "size": [230, 82]
+    },
+    {
+      "id": "cloud-drives",
+      "type": "external",
+      "label": "Google Drive + OneDrive",
+      "sublabel": "picker metadata and provider downloads",
+      "pos": [40, 1040],
+      "size": [230, 82]
+    },
+    {
+      "id": "web-app",
+      "type": "frontend",
+      "label": "React / Vite web app",
+      "sublabel": "workspaces, files, notes, study tools, planner, canvas",
+      "tag": "TanStack + Plate",
+      "pos": [400, 520],
+      "size": [250, 92]
+    },
+    {
+      "id": "ops-dashboard",
+      "type": "backend",
+      "label": "Ops dashboard + Go service",
+      "sublabel": "React shell, bounded reads, registry actions, reconciliation",
+      "tag": "ops.evonotes.com :8082",
+      "pos": [1600, 300],
+      "size": [250, 92]
+    },
+    {
+      "id": "office-runtime",
+      "type": "frontend",
+      "label": "BetterOffice runtime",
+      "sublabel": "cross-origin XLSX / PPTX / DOCX viewer and editor",
+      "tag": "sandboxed WASM iframe",
+      "pos": [400, 760],
+      "size": [250, 88]
+    },
+    {
+      "id": "import-relay",
+      "type": "cloud",
+      "label": "Cloudflare import relay",
+      "sublabel": "queued bounded transfer with retry and DLQ",
+      "tag": "HMAC control plane",
+      "pos": [400, 1040],
+      "size": [250, 88]
+    },
+    {
+      "id": "resend",
+      "type": "external",
+      "label": "Resend email delivery",
+      "sublabel": "product mail API and provider message IDs",
+      "tag": "HTTPS + idempotency",
+      "pos": [2450, 100],
+      "size": [230, 86]
+    },
+    {
+      "id": "go-gateway",
+      "type": "backend",
+      "label": "Go API gateway",
+      "sublabel": "REST, SSE, authz, quota, billing, jobs, cleanup",
+      "tag": ":8080",
+      "pos": [800, 520],
+      "size": [250, 92]
+    },
+    {
+      "id": "collaboration",
+      "type": "backend",
+      "label": "Hocuspocus collaboration",
+      "sublabel": "Yjs rooms, token enforcement, checkpoints, projections",
+      "tag": "WebSocket :1234",
+      "pos": [795, 100],
+      "size": [260, 92]
+    },
+    {
+      "id": "postgres",
+      "type": "database",
+      "label": "PostgreSQL + pgvector",
+      "sublabel": "product rows, Y.Doc state, job queue, hybrid retrieval index",
+      "tag": "schema owner",
+      "pos": [1250, 760],
+      "size": [260, 92]
+    },
+    {
+      "id": "b2",
+      "type": "cloud",
+      "label": "Backblaze B2",
+      "sublabel": "sources, editor assets, previews, captions, derived text",
+      "tag": "presigned object I/O",
+      "pos": [800, 1040],
+      "size": [260, 92]
+    },
+    {
+      "id": "redis",
+      "type": "messagebus",
+      "label": "Redis",
+      "sublabel": "Yjs replica sync, pub/sub invalidation, eviction, parse gates",
+      "pos": [1250, 100],
+      "size": [250, 86]
+    },
+    {
+      "id": "retrieval-service",
+      "type": "backend",
+      "label": "Python retrieval service",
+      "sublabel": "chat agent, generate, quiz grade, editor AI, hybrid search",
+      "tag": "FastAPI :8001",
+      "pos": [1250, 520],
+      "size": [260, 92]
+    },
+    {
+      "id": "parse-coordinator",
+      "type": "backend",
+      "label": "Parse coordinators",
+      "sublabel": "claim parse jobs, trusted hash, donor reuse, artifact handoff",
+      "tag": "4 child processes",
+      "pos": [1200, 1040],
+      "size": [260, 92]
+    },
+    {
+      "id": "mineru-parser",
+      "type": "backend",
+      "label": "MinerU parser",
+      "sublabel": "PDF / Office slicing, OCR, geometry, LibreOffice preview",
+      "tag": "4 fair lanes",
+      "pos": [1600, 920],
+      "size": [260, 92]
+    },
+    {
+      "id": "parse-spool",
+      "type": "database",
+      "label": "Local parse spool",
+      "sublabel": "job sources, immutable bundles, quarantine markers",
+      "tag": "ephemeral volume",
+      "pos": [1600, 1200],
+      "size": [260, 86]
+    },
+    {
+      "id": "ingest-workers",
+      "type": "backend",
+      "label": "Ingest workers",
+      "sublabel": "normalize, caption, transcribe, chunk, embed, summarize",
+      "tag": "4 isolated replicas",
+      "pos": [2050, 1040],
+      "size": [270, 94]
+    },
+    {
+      "id": "model-providers",
+      "type": "external",
+      "label": "LLM + embedding providers",
+      "sublabel": "OpenAI, Anthropic, DeepSeek, DeepInfra routes",
+      "tag": "platform or BYOK",
+      "pos": [1750, 520],
+      "size": [270, 92]
+    },
+    {
+      "id": "elevenlabs",
+      "type": "external",
+      "label": "ElevenLabs",
+      "sublabel": "synchronous Scribe v2 audio transcription",
+      "pos": [2450, 1040],
+      "size": [240, 82]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "security-group",
+      "label": "Browser execution boundary",
+      "wraps": ["web-app", "office-runtime"],
+      "pad": 42
+    },
+    {
+      "kind": "region",
+      "label": "Core application deployment",
+      "wraps": [
+        "go-gateway",
+        "collaboration",
+        "postgres",
+        "redis",
+        "retrieval-service"
+      ],
+      "pad": 48
+    },
+    {
+      "kind": "region",
+      "label": "Dedicated Netcup ingest host",
+      "wraps": [
+        "parse-coordinator",
+        "mineru-parser",
+        "parse-spool",
+        "ingest-workers"
+      ],
+      "pad": 48
+    },
+    {
+      "kind": "security-group",
+      "label": "Cloudflare Worker import boundary",
+      "wraps": ["import-relay"],
+      "pad": 36
+    }
+  ],
+  "connections": [
+    {
+      "id": "user-product-session",
+      "from": "users",
+      "to": "web-app",
+      "label": "HTTPS",
+      "variant": "emphasis"
+    },
+    {
+      "id": "operator-session",
+      "from": "operators",
+      "to": "ops-dashboard",
+      "label": "Access + Clerk",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [1725, 196]
+    },
+    {
+      "id": "browser-auth",
+      "from": "web-app",
+      "to": "clerk",
+      "label": "session JWT",
+      "variant": "security",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "browser-api",
+      "from": "web-app",
+      "to": "go-gateway",
+      "label": "REST + SSE",
+      "variant": "emphasis",
+      "width": 2,
+      "labelAt": [760, 500]
+    },
+    {
+      "id": "browser-collaboration",
+      "from": "web-app",
+      "to": "collaboration",
+      "label": "Yjs WebSocket + room JWT",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left",
+      "via": [[700, 566], [700, 240], [760, 240], [760, 146]]
+    },
+    {
+      "id": "office-host-protocol",
+      "from": "web-app",
+      "to": "office-runtime",
+      "label": "postMessage: bytes / OOXML",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [525, 626]
+    },
+    {
+      "id": "gateway-store",
+      "from": "go-gateway",
+      "to": "postgres",
+      "label": "SQL: policy + product state",
+      "variant": "emphasis",
+      "width": 2
+    },
+    {
+      "id": "ops-store",
+      "from": "ops-dashboard",
+      "to": "postgres",
+      "label": "bounded reads + gated functions",
+      "variant": "security",
+      "fromSide": "left",
+      "toSide": "right",
+      "via": [[1580, 346], [1580, 806]],
+      "labelAt": [1660, 450]
+    },
+    {
+      "id": "gateway-collaboration",
+      "from": "go-gateway",
+      "to": "collaboration",
+      "label": "room JWT + commands; projection callback",
+      "variant": "security",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelAt": [1030, 350]
+    },
+    {
+      "id": "collaboration-state",
+      "from": "collaboration",
+      "to": "postgres",
+      "label": "Y.Doc state + stored versions",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "right",
+      "via": [[925, 210], [1550, 210], [1550, 806]]
+    },
+    {
+      "id": "collaboration-events",
+      "from": "collaboration",
+      "to": "redis",
+      "label": "room sync + invalidations"
+    },
+    {
+      "id": "gateway-objects",
+      "from": "go-gateway",
+      "to": "b2",
+      "label": "presign, finalize, preview, reap",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [1015, 900]
+    },
+    {
+      "id": "gateway-email",
+      "from": "go-gateway",
+      "to": "resend",
+      "label": "leased outbox dispatch",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "left",
+      "via": [[925, 480], [2380, 480], [2380, 143]],
+      "labelAt": [2200, 470]
+    },
+    {
+      "id": "drive-picker",
+      "from": "cloud-drives",
+      "to": "web-app",
+      "label": "picker metadata"
+    },
+    {
+      "id": "drive-transfer",
+      "from": "cloud-drives",
+      "to": "import-relay",
+      "label": "provider download",
+      "labelAt": [335, 1142]
+    },
+    {
+      "id": "gateway-import-control",
+      "from": "go-gateway",
+      "to": "import-relay",
+      "label": "HMAC import control",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "right"
+    },
+    {
+      "id": "relay-object-upload",
+      "from": "import-relay",
+      "to": "b2",
+      "label": "presigned PUT",
+      "labelAt": [674, 1142]
+    },
+    {
+      "id": "gateway-retrieval",
+      "from": "go-gateway",
+      "to": "retrieval-service",
+      "label": "private chat / generate / AI",
+      "variant": "emphasis",
+      "width": 2,
+      "labelAt": [1150, 500]
+    },
+    {
+      "id": "retrieval-search",
+      "from": "retrieval-service",
+      "to": "postgres",
+      "label": "scoped hybrid RRF search",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [1380, 626]
+    },
+    {
+      "id": "parse-job-claim",
+      "from": "postgres",
+      "to": "parse-coordinator",
+      "label": "leased parse jobs",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "source-to-parse",
+      "from": "b2",
+      "to": "parse-coordinator",
+      "label": "source + trusted SHA-256"
+    },
+    {
+      "id": "coordinator-parser",
+      "from": "parse-coordinator",
+      "to": "mineru-parser",
+      "label": "document parse: 26-page slices",
+      "labelAt": [1530, 1026]
+    },
+    {
+      "id": "coordinator-spool",
+      "from": "parse-coordinator",
+      "to": "parse-spool",
+      "label": "source + artifact handoff"
+    },
+    {
+      "id": "parser-spool",
+      "from": "mineru-parser",
+      "to": "parse-spool",
+      "label": "parse bundle + Office preview",
+      "labelAt": [1730, 1026]
+    },
+    {
+      "id": "ingest-job-claim",
+      "from": "postgres",
+      "to": "ingest-workers",
+      "label": "claim jobs; commit index + status",
+      "fromSide": "right",
+      "toSide": "top",
+      "via": [[1600, 806], [1600, 700], [2185, 700]],
+      "labelAt": [1900, 690]
+    },
+    {
+      "id": "artifact-to-ingest",
+      "from": "parse-spool",
+      "to": "ingest-workers",
+      "label": "verified parse bundle"
+    },
+    {
+      "id": "objects-to-ingest",
+      "from": "b2",
+      "to": "ingest-workers",
+      "label": "source + artifact I/O",
+      "fromSide": "bottom",
+      "toSide": "bottom",
+      "via": [[930, 1360], [2185, 1360]],
+      "labelAt": [1558, 1374]
+    },
+    {
+      "id": "ingest-models",
+      "from": "ingest-workers",
+      "to": "model-providers",
+      "label": "caption, embed, summarize"
+    },
+    {
+      "id": "ingest-transcription",
+      "from": "ingest-workers",
+      "to": "elevenlabs",
+      "label": "Scribe v2 + capacity leases",
+      "labelAt": [2385, 1148]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Product surfaces",
+      "items": [
+        "Workspace shell combines chapters, source files, notes, chat, generation, sharing, and collaboration.",
+        "Standalone and workspace-scoped quizzes and flashcards share the material model; attempts, mistakes, and FSRS state belong to the learner.",
+        "Personal routes cover schedule, tasks, labels, Excalidraw canvases, Explore, settings, billing, search, and notifications.",
+        "PDF.js renders PDFs; BetterOffice handles modern Office files in a separate cookie-less origin; legacy Office and unknown formats are store-only."
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Authorization and storage ownership",
+      "items": [
+        "Visibility is private, link, or public. Roles are owner, editor, commenter, and viewer; anonymous shared visitors are always viewers.",
+        "Share roles grant live material edit or comment access to signed-in visitors but never workspace structure, file, member, chat, or generation authority.",
+        "The workspace owner pays for every contained file, asset, and material. The actor pays inference credits. Both boundaries are rechecked during long work.",
+        "Create paths gate used plus reserved plus requested bytes; direct upload reservations stop concurrent quota double-spend."
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Source and object lifecycle",
+      "items": [
+        "Reserve bytes and a file slot, issue a presigned PUT or cloud import, finalize the logical row, then enqueue the processing plan.",
+        "Files progress through pending and processing to ready plus indexed, ready plus store-only, or failed plus still viewable.",
+        "Office Save keeps files.id, checks files.revision, replaces the OOXML blob, cancels stale jobs, and performs full re-ingestion.",
+        "Logical deletion updates refcounts and a durable pending_blob_deletions outbox; the reaper deletes B2 only after the last reference disappears.",
+        "Expired upload reservations release quota; bucket lifecycle removes incoming objects; a monthly stable-object sweep reports but does not delete orphans."
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "Parse and ingest lifecycle",
+      "items": [
+        "PDF and modern Office use the parse stage; text, CSV/TSV, images, and audio take direct ingest routes; unknown and legacy Office stay unindexed.",
+        "Parse and ingest each allow two total attempts with exponential backoff, a heartbeat lease, and the claimed attempt as a fencing token.",
+        "MinerU has four document slots and four fair slice lanes. A hard slice timeout or OOM quarantines the exact source fingerprint for that parser version.",
+        "Exact donor content reuses chunks, summaries, and matching vectors; a different workspace embedding pin re-embeds copied text.",
+        "The workspace pins one embedding model for life. Jobs snapshot actor and hot-reloadable ingest and vision pins."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Retrieval, chat, and generation",
+      "items": [
+        "Ingest writes heading-aware chunks, page regions, lexical tsvector data, per-pin halfvec vectors, and two-tier summaries.",
+        "Search fuses cosine and lexical ranks with RRF, enforces file scope in SQL, caps one file's share, and expands neighboring chunks.",
+        "Each chat turn primes retrieval, then runs at most 12 planning responses and 12 tools; final answers stream through Go with answer-local citations.",
+        "Read tools query the index directly. generate_material calls the Go internal material API so authz, quota, and persistence stay in Go.",
+        "Generate is not agentic: it gathers an even share of scoped chunks, makes one fixed-shape model call, normalizes the result, and persists through Go."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Material collaboration lifecycle",
+      "items": [
+        "View mode renders the SQL Plate projection without Yjs. Comment mode joins a read-only live room. Edit mode joins with write or quota-recovery shrink access.",
+        "The sidecar bootstraps one Y.Doc under a database lock. Clients initialize with value null so two empty peers cannot duplicate the document.",
+        "A checkpoint request becomes Saved only after binary Y.Doc persistence returns its receipt; provider sync alone means Synced, not durable.",
+        "The sidecar projects a monotonic stored_version into materials.content and daily revisions. Static views may lag; initialized rooms never accept SQL fallback writes.",
+        "ACL, quota, token expiry, document limits, and account state are checked on admission and persistence. Rejected rooms evict and reload the last durable state.",
+        "Comments remain relational with Yjs relative anchors, stable block IDs, quoted fallbacks, and Redis invalidation."
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Account, clone, and teardown lifecycle",
+      "items": [
+        "Account states are active, over_quota_grace, over_quota_frozen, deletion_pending, suspended, and deleted. Over-quota owners keep delete, transfer, and shrink recovery paths.",
+        "Deletion pending revokes sessions, evicts live rooms, hides owned workspaces, and cancels running work. Support may cancel before the 30-day deadline; purge is permanent.",
+        "Workspace clone copies only ready files plus materials, retained revisions, ready assets, and the retrieval index in one repeatable-read transaction.",
+        "A clone inherits the source embedding pin and fresh logical IDs while physical blobs remain shared by reference count. Workspace teardown is a PostgreSQL FK cascade."
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Connectivity and failure behavior",
+      "items": [
+        "TanStack Query keeps usable cached data during failed refreshes and pauses network work while offline; status banners report offline or reconnecting state.",
+        "Chat errors stay on the assistant turn. Ingest events update the file row in place. Failed or store-only files keep their viewer with an unindexed banner.",
+        "Office edit and Yjs collaboration do not promise offline durability. Saved means a server receipt, and source replacement succeeds only after the gateway commits it.",
+        "Public 401, 403, and 404 failures collapse into the same private-or-unavailable response so shared routes do not disclose resource existence."
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Product email delivery lifecycle",
+      "items": [
+        "Domain events write the in-app notification and optional email_outbox row in one SQL transaction; workspace, membership, and billing preferences gate optional mail while account lifecycle mail remains mandatory.",
+        "One Go gateway replica holds a PostgreSQL advisory lock, polls every five seconds, and claims up to five pending rows with SKIP LOCKED and a two-minute fencing lease.",
+        "The dispatcher rechecks that an invite or membership event is still valid, renders embedded English or Chinese HTML plus text, and sends Resend a 20-second request with the outbox idempotency key.",
+        "Optional categories get HMAC-signed one-click unsubscribe links. Success stores the provider message ID and clears the payload; retries honor Retry-After or use exponential delay up to one hour.",
+        "Six failed attempts are terminal and clear the payload. Production rejects the log-only sender, while development can use it without contacting Resend."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Operator dashboard and access lifecycle",
+      "items": [
+        "The standalone React and Vite shell plus Go service serves overview, health, ingest-host, reconciliation, user, cost, audit, and model-registry pages from ops.evonotes.com on port 8082.",
+        "Cloudflare Access verifies the edge assertion against issuer, audience, and JWKS before the static shell or API loads; each Ops API request also needs a Clerk bearer token whose subject exists in operators.",
+        "There is no product API for granting operator membership. Database rows are inserted by hand, and deleted, suspended, or deletion-pending product accounts remain blocked.",
+        "The evo_ops role performs bounded reads. The evo_ops_admin pool opens lazily only after write_registry or execute_reconciliation_job permission checks and exposes restricted database functions, never raw browser credentials.",
+        "Registry writes and manual reconciliation requests append an immutable operator audit event in the same transaction. Active pages poll their database-backed endpoints every 30 seconds; refresh never calls providers or starts a job."
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Scope of this map",
+      "items": [
+        "Grounded in the current working tree and OpenWiki contracts dated 2026-09-01.",
+        "Product email delivery and the Ops dashboard are included. Telemetry plumbing, Sentry, PostHog, alerting, and host-sampler internals remain omitted.",
+        "The worktree contains uncommitted changes, so the diagram does not claim revision-pinned source links."
+      ]
+    }
+  ]
+}

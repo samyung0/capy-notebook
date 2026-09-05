@@ -19,8 +19,9 @@ export interface CollaborationClaims {
 export interface CollaborationContext {
   access: CollaborationClaims['access'];
   avatarUrl?: string;
+  expiresAt: number;
   name?: string;
-  serviceCommand?: boolean;
+  serviceCommandId?: string;
   tokenId: string;
   userId: string;
 }
@@ -155,6 +156,7 @@ export function claimsContext(
   return {
     access: claims.access,
     avatarUrl: claims.avatarUrl,
+    expiresAt: claims.exp,
     name: claims.name,
     tokenId: claims.jti,
     userId: claims.sub,

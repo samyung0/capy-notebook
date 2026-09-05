@@ -37,7 +37,9 @@ async function main(): Promise<void> {
     const configuredCpuRate = Number(process.env.PERF_CPU ?? 4);
     const snapshot = await assembleSnapshot({
       chromium: process.env.PERF_CHROMIUM ?? 'unknown',
-      commit: process.env.GITHUB_SHA ?? 'unknown',
+      // PERF_COMMIT wins because GITHUB_SHA is the caller's SHA when this runs
+      // through workflow_call, not the measured revision.
+      commit: process.env.PERF_COMMIT ?? process.env.GITHUB_SHA ?? 'unknown',
       cpuModel: process.env.PERF_CPU_MODEL ?? 'unknown',
       cpuRate: Number.isFinite(configuredCpuRate) ? configuredCpuRate : 4,
       snapshotDir,
@@ -50,18 +52,22 @@ async function main(): Promise<void> {
     const currentPath = argument(
       args,
       0,
-      'compare-cli.ts compare <current> [baseline]'
+      'compare-cli.ts compare <current> [baseline...]'
     );
     const current = await readSnapshot(currentPath);
     if (!current)
       throw new Error(`Invalid performance snapshot: ${currentPath}`);
-    const baseline = args[1] ? await readSnapshot(args[1]) : null;
-    process.stdout.write(compareSnapshots(current, baseline).markdown);
+    // An unexpanded shell glob or a run whose artifact expired yields a
+    // missing or malformed file; skip it rather than lose the whole table.
+    const baselines = (
+      await Promise.all(args.slice(1).map((file) => readSnapshot(file)))
+    ).filter((snapshot): snapshot is PerfSnapshot => snapshot !== null);
+    process.stdout.write(compareSnapshots(current, baselines).markdown);
     return;
   }
 
   throw new Error(
-    'Usage: compare-cli.ts assemble <case-dir> <output> | compare <current> [baseline]'
+    'Usage: compare-cli.ts assemble <case-dir> <output> | compare <current> [baseline...]'
   );
 }
 

@@ -186,6 +186,52 @@ func TestEmailOutboxPreferencesIdempotencyAndFailureCleanup(t *testing.T) {
 	}
 }
 
+func TestEmailOutboxSuppressesBlankRecipient(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := uid("blank-email-user")
+	if _, err := s.pool.Exec(ctx, `INSERT INTO users (id, name, email)
+		VALUES ($1,$2,NULL)`, userID, "Blank Email User"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = s.pool.Exec(ctx, `DELETE FROM users WHERE id=$1`, userID)
+	})
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := EnqueueEmailTx(ctx, tx, EmailOutboxParams{
+		Category:       "membership",
+		IdempotencyKey: uid("blank-email-key"),
+		Template:       "workspace-role-changed",
+		ToEmail:        " \t\n ",
+		UserID:         userID,
+	})
+	if err != nil {
+		_ = tx.Rollback(ctx)
+		t.Fatal(err)
+	}
+	if created {
+		_ = tx.Rollback(ctx)
+		t.Fatal("blank recipient was enqueued")
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	var count int
+	if err := s.pool.QueryRow(ctx,
+		`SELECT count(*) FROM email_outbox WHERE user_id=$1`, userID,
+	).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("blank recipient created %d outbox row(s)", count)
+	}
+}
+
 func TestClaimEmailsLeavesTerminalRowsAloneAndShutdownRefundsAttempts(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()

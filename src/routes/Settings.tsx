@@ -85,7 +85,7 @@ function AccountDangerZoneInner({
     control,
     reset,
   } = useForm<RequestAccountDeletionReq>({
-    defaultValues: { confirmEmail: '' },
+    defaultValues: { confirmEmail: '', lifecycleGeneration: 0 },
     mode: 'onChange',
     resolver: zodResolver(deletionSchema),
   });
@@ -94,13 +94,17 @@ function AccountDangerZoneInner({
     preflightData?.canDelete === true && isValid && !isSubmitting;
 
   async function onRequestDeletion(v: RequestAccountDeletionReq) {
+    if (!preflightData) return;
     try {
-      await requestDeletion(v.confirmEmail.trim());
+      await requestDeletion({
+        confirmEmail: v.confirmEmail.trim(),
+        lifecycleGeneration: preflightData.lifecycleGeneration,
+      });
     } catch {
       // The global mutation handler shows the normalized failure.
       return;
     }
-    reset({ confirmEmail: '' });
+    reset({ confirmEmail: '', lifecycleGeneration: 0 });
     userToast({
       title: m.settings_deletion_requested_toast(),
       variant: 'success',
@@ -120,7 +124,6 @@ function AccountDangerZoneInner({
     }
   }
 
-  const needingTransfer = preflightData?.workspacesNeedingTransfer ?? [];
   const toDestroy = preflightData?.workspacesToDestroy ?? [];
   const subscription = preflightData?.subscription;
 
@@ -144,18 +147,6 @@ function AccountDangerZoneInner({
                 : m.settings_deletion_blocker_subscription()}
             </div>
           )}
-          {needingTransfer.length > 0 && (
-            <div>
-              <p className="font-medium text-fg">
-                {m.settings_deletion_needs_transfer()}
-              </p>
-              <ul className="mt-1 list-disc pl-5 text-fg-secondary">
-                {needingTransfer.map((ws) => (
-                  <li key={ws.id}>{ws.name}</li>
-                ))}
-              </ul>
-            </div>
-          )}
           {toDestroy.length > 0 && (
             <div>
               <p className="font-medium text-fg">
@@ -168,13 +159,11 @@ function AccountDangerZoneInner({
               </ul>
             </div>
           )}
-          {!subscription &&
-            needingTransfer.length === 0 &&
-            toDestroy.length === 0 && (
-              <p className="text-fg-muted">
-                {m.settings_deletion_no_side_effects()}
-              </p>
-            )}
+          {!subscription && toDestroy.length === 0 && (
+            <p className="text-fg-muted">
+              {m.settings_deletion_no_side_effects()}
+            </p>
+          )}
         </div>
       )}
 
@@ -372,11 +361,11 @@ function LlmTab() {
       <KeysSection />
       <div className="mt-4 rounded-card border border-line bg-surface px-5 py-4">
         <p className="t-subtitle">{m.settings_llm_chat()}</p>
-        <ModelPicker className="mt-3" surface="chat" />
+        <ModelPicker className="mt-3" slot="chat" />
       </div>
       <div className="mt-4 rounded-card border border-line bg-surface px-5 py-4">
         <p className="t-subtitle">{m.settings_llm_generate()}</p>
-        <ModelPicker className="mt-3" surface="generate" />
+        <ModelPicker className="mt-3" slot="generate" />
       </div>
       {features.editorAi && (
         <div className="mt-4 rounded-card border border-line bg-surface px-5 py-4">
@@ -384,7 +373,7 @@ function LlmTab() {
           <p className="mt-1 text-fg-secondary text-sm">
             {m.settings_llm_editor_hint()}
           </p>
-          <ModelPicker className="mt-3" surface="editor" />
+          <ModelPicker className="mt-3" slot="editor" />
         </div>
       )}
       <div className="mt-4 rounded-card border border-line bg-surface px-5 py-4">

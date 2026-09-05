@@ -1,0 +1,20 @@
+[
+  {
+    "fileNamePrefix": "incoming/",
+    "daysFromUploadingToHiding": 1,
+    "daysFromHidingToDeleting": 1,
+    "daysFromStartingToCancelingUnfinishedLargeFiles": 1
+  },
+  {
+    "fileNamePrefix": "editor-assets/incoming/",
+    "daysFromUploadingToHiding": 1,
+    "daysFromHidingToDeleting": 1,
+    "daysFromStartingToCancelingUnfinishedLargeFiles": 1
+  },
+  {
+    "fileNamePrefix": "",
+    "daysFromUploadingToHiding": null,
+    "daysFromHidingToDeleting": 1,
+    "daysFromStartingToCancelingUnfinishedLargeFiles": 1
+  }
+]

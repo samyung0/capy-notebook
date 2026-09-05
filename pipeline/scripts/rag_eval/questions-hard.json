@@ -1,0 +1,89 @@
+[
+  {
+    "q": "If I repeat an experiment a hundred times, how many of the differences I see could just be luck?",
+    "expect": [
+      ["biology-ib-chapter-1.pdf", 12],
+      ["biology-ib-sample-16-pages.pdf", 8]
+    ]
+  },
+  {
+    "q": "Out of 1000 bananas from one plantation, how many should weigh within two standard deviations of the mean?",
+    "expect": [["biology-ib-chapter-1.pdf", 25]]
+  },
+  {
+    "q": "Which hominid species was the first to use fire, and roughly when did it live?",
+    "expect": [["biology-ib-sample-16-pages.pdf", 39]]
+  },
+  {
+    "q": "Ice cream sales and drowning deaths rise together every summer. Does one cause the other?",
+    "expect": [
+      ["biology-ib-chapter-1.pdf", 21],
+      ["biology-ib-chapter-1.pdf", 22]
+    ]
+  },
+  {
+    "q": "standrad deviaton symbol and how its calcuated",
+    "expect": [["biology-ib-chapter-1.pdf", 7]]
+  },
+  {
+    "q": "什么是趋同进化？请举一个例子。",
+    "expect": [
+      ["biology-ib-convergent-targets.pdf", 0],
+      ["biology-ib-sample-16-pages.pdf", 34],
+      ["biology-ib-sample-16-pages.pdf", 35]
+    ]
+  },
+  {
+    "q": "Where do hydrogen bonds show up in both water and protein structure?",
+    "expect": [
+      ["biology-ib-sample-16-pages.pdf", 15],
+      ["biology-ib-sample-16-pages.pdf", 16],
+      ["biology-ib-sample-16-pages.pdf", 17],
+      ["biology-ib-sample-16-pages.pdf", 27],
+      ["biology-ib-sample-16-pages.pdf", 44]
+    ]
+  },
+  {
+    "q": "In the scatter graph, what happens to deaths as more vaccinations are given?",
+    "expect": [
+      ["biology-ib-chapter-1.pdf", 23],
+      ["biology-ib-chapter-1.pdf", 22]
+    ]
+  },
+  { "q": "fire", "expect": [["biology-ib-sample-16-pages.pdf", 39]] },
+  {
+    "q": "Which chapter covers gas exchange and on what page does it start?",
+    "expect": [["biology-ib-sample-16-pages.pdf", 1]]
+  },
+  {
+    "q": "Was the difference in ivy leaf area between sun and shade significant?",
+    "expect": [["biology-ib-chapter-1.pdf", 18]]
+  },
+  {
+    "q": "n1 plus n2 minus 2",
+    "expect": [
+      ["biology-ib-chapter-1.pdf", 15],
+      ["biology-ib-chapter-1.pdf", 14]
+    ]
+  },
+  {
+    "q": "who looked at cork under a home-made microscope",
+    "expect": [["biology-ib-sample-16-pages.pdf", 10]]
+  },
+  {
+    "q": "why is glucose written as C6 in pathway diagrams",
+    "expect": [["biology-ib-sample-16-pages.pdf", 20]]
+  },
+  {
+    "q": "why are there gaps in the fossil record between species",
+    "expect": [
+      ["biology-ib-convergent-targets.pdf", 4],
+      ["biology-ib-sample-16-pages.pdf", 40],
+      ["biology-ib-sample-16-pages.pdf", 37]
+    ]
+  },
+  {
+    "q": "the data in Table 1.3 — what was the heart rate standard deviation",
+    "expect": [["biology-ib-chapter-1.pdf", 11]]
+  }
+]

@@ -186,7 +186,7 @@ async def test_anthropic_stream_preserves_tool_call_thinking_and_usage(
         byok_enabled=True,
         thinking_levels=("low", "mid", "high", "max"),
         default_thinking="high",
-        surfaces=("chat",),
+        slots=("chat",),
     )
 
     out = await _stream_via_adapter(
@@ -502,7 +502,7 @@ async def test_pre_byte_failure_retries_then_succeeds(monkeypatch):
     )
     assert out.text == "ok"
     assert api.creates == 2
-    assert abandoned["n"] == 1
+    assert abandoned["n"] == 0
     assert settled["n"] == 1
 
 
@@ -532,7 +532,7 @@ async def test_after_byte_failure_does_not_retry_even_without_client_sse(
             [{"role": "user", "content": "q"}], model=_chat_spec()
         )
     assert api.creates == 1
-    assert abandoned["n"] == 1
+    assert abandoned["n"] == 0
     assert settled["n"] == 0
 
 
@@ -552,3 +552,20 @@ async def test_invalid_user_key_does_not_retry(monkeypatch):
         assert api.creates == 1
     finally:
         retrieval_models.registry.bind_request_llm()
+
+
+@pytest.mark.asyncio
+async def test_definitive_provider_response_is_abandoned(monkeypatch):
+    err = RuntimeError("rate limited")
+    err.status_code = 429
+    abandoned = {"n": 0}
+    api = _ChatAPI([], errors=[err, err, err])
+    _patch_stream_client(monkeypatch, api, abandoned=abandoned)
+
+    with pytest.raises(RuntimeError, match="rate limited"):
+        await retrieval_models.stream_agent_response(
+            [{"role": "user", "content": "q"}], model=_chat_spec()
+        )
+
+    assert api.creates == 3
+    assert abandoned["n"] == 3

@@ -21,7 +21,9 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import shutil
+import tempfile
 import time
 import zipfile
 from collections.abc import Mapping
@@ -32,6 +34,7 @@ import requests
 
 from .. import obs
 from ..config import cfg
+from ..store import blobstore
 
 log = logging.getLogger("evo.parse.client")
 
@@ -140,6 +143,10 @@ def artifact_identity(descriptor: Mapping[str, Any]) -> tuple[str, str]:
     return f"artifacts/{fingerprint}.zip", fingerprint
 
 
+def durable_artifact_key(fingerprint: str) -> str:
+    return f"parse-bundles/{fingerprint}.zip"
+
+
 def _shared_path(key: str) -> Path:
     relative = PurePosixPath(key)
     if relative.is_absolute() or not relative.parts or ".." in relative.parts:
@@ -213,6 +220,67 @@ def _local_artifact(
     )
 
 
+def _restore_durable_artifact(
+    key: str,
+    fingerprint: str,
+    version: str,
+    *,
+    require_office_preview: bool,
+) -> dict[str, Any] | None:
+    """Restore a verified B2 cache entry into the atomic local handoff path."""
+    if not cfg.b2_bucket:
+        return None
+    durable_key = durable_artifact_key(fingerprint)
+    path = _shared_path(key)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary_name = tempfile.mkstemp(prefix=f".{fingerprint}-", dir=path.parent)
+    os.close(fd)
+    try:
+        downloaded = blobstore.download_file(
+            durable_key, temporary_name, cfg.parse_artifact_max_bytes
+        )
+        if downloaded is None:
+            return None
+        size, digest = downloaded
+        temporary_path = Path(temporary_name)
+        artifact = {
+            "key": key,
+            "size": size,
+            "sha256": digest,
+            "fingerprint": fingerprint,
+            "cached": True,
+            "durableKey": durable_key,
+        }
+        _validate_artifact_path(
+            temporary_path,
+            artifact,
+            version,
+            require_office_preview=require_office_preview,
+        )
+        temporary_path.chmod(0o640)
+        temporary_path.replace(path)
+        log.info("restored durable parse bundle %s into %s", durable_key, key)
+        return artifact
+    except Exception:
+        log.warning(
+            "could not restore durable parse bundle %s; parsing locally",
+            durable_key,
+            exc_info=True,
+        )
+        return None
+    finally:
+        try:
+            Path(temporary_name).unlink()
+        except FileNotFoundError:
+            pass
+        except OSError:
+            log.debug(
+                "could not remove durable parse-bundle temp file %s",
+                temporary_name,
+                exc_info=True,
+            )
+
+
 def _local_quarantine(fingerprint: str) -> tuple[str, str] | None:
     path = _shared_path(f"quarantine/{fingerprint}.json")
     try:
@@ -262,6 +330,14 @@ def _request_artifact(
             "parse artifact cache hit key=%s bytes=%s", artifact_key, artifact["size"]
         )
         return artifact
+    durable = _restore_durable_artifact(
+        artifact_key,
+        fingerprint,
+        version,
+        require_office_preview=Path(upload_name).suffix.lower() in OFFICE_SUFFIXES,
+    )
+    if durable is not None:
+        return durable
     if quarantine := _local_quarantine(fingerprint):
         _raise_quarantine(quarantine)
     endpoint = _endpoint()
@@ -410,6 +486,61 @@ def _validated_entries(archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
     return infos
 
 
+def _validate_artifact_path(
+    archive_path: Path,
+    artifact: Mapping[str, Any],
+    version: str,
+    *,
+    require_office_preview: bool,
+) -> None:
+    """Verify bounds, checksum, identity, and required bundle contents."""
+    try:
+        declared_size = int(artifact.get("size") or 0)
+    except (TypeError, ValueError) as exc:
+        raise ParserClientError("parsed artifact has an invalid size") from exc
+    if declared_size <= 0 or declared_size > cfg.parse_artifact_max_bytes:
+        raise ParserClientError("parsed artifact exceeds configured byte limit")
+    try:
+        actual_size = archive_path.stat().st_size
+    except FileNotFoundError as exc:
+        raise ParserClientError("parsed artifact is missing from shared spool") from exc
+    if actual_size != declared_size:
+        raise ParserClientError("parsed artifact size mismatch")
+    digest = _sha256_file(archive_path)
+    expected = str(artifact.get("sha256") or "")
+    if not expected or digest != expected:
+        raise ParserClientError("parsed artifact checksum mismatch")
+
+    with zipfile.ZipFile(archive_path) as archive:
+        _validated_entries(archive)
+        manifest = json.loads(archive.read("manifest.json"))
+        if not isinstance(manifest, dict):
+            raise ParserClientError("parsed artifact manifest is not an object")
+        if manifest.get("schema") != ARTIFACT_SCHEMA:
+            raise ParserClientError("unsupported parsed artifact schema")
+        if manifest.get("parser_version") != version:
+            raise ParserClientError("parsed artifact version mismatch")
+        fingerprint = str(artifact.get("fingerprint") or "")
+        if fingerprint and manifest.get("source_fingerprint") != fingerprint:
+            raise ParserClientError("parsed artifact source mismatch")
+        content_list = json.loads(archive.read("content_list.json"))
+        if not isinstance(content_list, list):
+            raise ParserClientError("content_list.json is not a list of blocks")
+        if len(content_list) > cfg.parse_content_max_blocks:
+            raise ParserClientError("content_list.json contains too many blocks")
+        if require_office_preview:
+            try:
+                with archive.open("preview.pdf") as preview:
+                    if preview.read(4) != b"%PDF":
+                        raise ParserClientError(
+                            "Office parse artifact is missing preview.pdf"
+                        )
+            except KeyError as exc:
+                raise ParserClientError(
+                    "Office parse artifact is missing preview.pdf"
+                ) from exc
+
+
 def _read_entry(
     archive: zipfile.ZipFile, info: zipfile.ZipInfo, destination: Path
 ) -> None:
@@ -433,23 +564,13 @@ def _extract(
     *,
     require_office_preview: bool = False,
 ) -> None:
-    try:
-        declared_size = int(artifact.get("size") or 0)
-    except (TypeError, ValueError) as exc:
-        raise ParserClientError("parsed artifact has an invalid size") from exc
-    if declared_size <= 0 or declared_size > cfg.parse_artifact_max_bytes:
-        raise ParserClientError("parsed artifact exceeds configured byte limit")
     archive_path = _shared_path(str(artifact["key"]))
-    try:
-        actual_size = archive_path.stat().st_size
-    except FileNotFoundError as exc:
-        raise ParserClientError("parsed artifact is missing from shared spool") from exc
-    if actual_size != declared_size:
-        raise ParserClientError("parsed artifact size mismatch")
-    digest = _sha256_file(archive_path)
-    expected = str(artifact.get("sha256") or "")
-    if not expected or digest != expected:
-        raise ParserClientError("parsed artifact checksum mismatch")
+    _validate_artifact_path(
+        archive_path,
+        artifact,
+        version,
+        require_office_preview=require_office_preview,
+    )
     with zipfile.ZipFile(archive_path) as archive:
         infos = _validated_entries(archive)
         manifest_info = archive.getinfo("manifest.json")
@@ -470,13 +591,6 @@ def _extract(
             if destination == raw_dir / "manifest.json":
                 continue
             _read_entry(archive, info, destination)
-    if require_office_preview:
-        preview = raw_dir / "preview.pdf"
-        if not preview.is_file():
-            raise ParserClientError("Office parse artifact is missing preview.pdf")
-        with preview.open("rb") as handle:
-            if handle.read(4) != b"%PDF":
-                raise ParserClientError("Office parse artifact is missing preview.pdf")
 
 
 def ensure_artifact(
@@ -489,6 +603,51 @@ def ensure_artifact(
     artifact = dict(_request_artifact(descriptor, upload_name, request_id))
     artifact["version"] = parser_version(route)
     return artifact
+
+
+def publish_durable_artifact(
+    artifact: Mapping[str, Any],
+    *,
+    route: str,
+    require_office_preview: bool,
+) -> str | None:
+    """Verify a local handoff, then cache it in B2 without gating ingest."""
+    fingerprint = str(artifact.get("fingerprint") or "")
+    version = parser_version(route)
+    if str(artifact.get("version") or "") != version:
+        raise ParserClientError("parsed artifact handoff has an unexpected version")
+    local_path = _shared_path(str(artifact.get("key") or ""))
+    try:
+        _validate_artifact_path(
+            local_path,
+            artifact,
+            version,
+            require_office_preview=require_office_preview,
+        )
+    except (ParserClientError, OSError, ValueError, zipfile.BadZipFile):
+        # A fingerprint-addressed local cache entry that fails full validation
+        # must not poison the job's second parse attempt. Remove only this exact
+        # bundle so the next request asks MinerU to rebuild it.
+        try:
+            discard_artifact(artifact)
+        except ParserClientError:
+            pass
+        raise
+    if not cfg.b2_bucket:
+        return None
+    durable_key = durable_artifact_key(fingerprint)
+    if artifact.get("durableKey") == durable_key:
+        return durable_key
+    try:
+        blobstore.write_file(durable_key, str(local_path), "application/zip")
+    except Exception:
+        log.warning(
+            "could not cache verified parse bundle %s; current ingest will continue",
+            durable_key,
+            exc_info=True,
+        )
+        return None
+    return durable_key
 
 
 def extract_artifact(
@@ -603,7 +762,7 @@ def parse_to_bundle(
     return content_list, str(artifact["key"]), str(artifact.get("fingerprint") or "")
 
 
-def sweep_local_spool() -> dict[str, int]:
+def sweep_local_spool(protected_keys: set[str] | None = None) -> dict[str, int]:
     """Delete abandoned sources and expired local parse bundles."""
     now = time.time()
     removed = {"sources": 0, "artifacts": 0}
@@ -612,6 +771,7 @@ def sweep_local_spool() -> dict[str, int]:
         ("artifacts", cfg.parse_zip_ttl_hours * 60 * 60),
     )
     root = Path(cfg.parse_shared_dir).resolve()
+    protected = protected_keys or set()
     for directory_name, ttl_s in policies:
         directory = root / directory_name
         try:
@@ -620,6 +780,9 @@ def sweep_local_spool() -> dict[str, int]:
             continue
         for path in entries:
             try:
+                key = f"{directory_name}/{path.name}"
+                if key in protected:
+                    continue
                 if not path.is_file() or now - path.stat().st_mtime < ttl_s:
                     continue
                 path.unlink()

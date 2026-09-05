@@ -1,4 +1,4 @@
-import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Redis as RedisExtension } from '@hocuspocus/extension-redis';
 import { Server } from '@hocuspocus/server';
@@ -11,11 +11,27 @@ import {
   claimsContext,
   verifyCollaborationToken,
 } from './auth.js';
-import {
-  applyCollaborationCommand,
-  isCollaborationCommand,
-} from './commands.js';
+import { broadcastCheckpointPersisted } from './checkpointReceipt.js';
 import { loadConfig } from './config.js';
+import {
+  assertUpdatePreservesContributors,
+  attachDocumentContributorTracker,
+  clearDocumentContributors,
+} from './contributors.js';
+import {
+  drainIsDurable,
+  evictMaterialRoomEpoch,
+  parseRoomEvictionMode,
+  RoomEvictionCoordinator,
+  type RoomEvictionMode,
+  RoomEvictionState,
+  shouldCloseUserConnections,
+  shouldPreserveMaterialConnections,
+} from './eviction.js';
+import {
+  FailedStoreRetryRunner,
+  type FailedStoreSnapshot,
+} from './failedStoreRetry.js';
 import {
   MATERIAL_DOCUMENT_LIMITS,
   MaterialDocumentLimitError,
@@ -23,6 +39,17 @@ import {
 import { captureError, initErrorReporting, log } from './observability.js';
 import { materialIdFromRoom, YjsDocumentStore } from './persistence.js';
 import { ProjectionService } from './projection.js';
+import {
+  executeServiceCommand,
+  handleServiceCommandRequest,
+  observeServiceCommandStore,
+  ServiceCommandCompletions,
+} from './serviceCommand.js';
+import { handlePermanentStoreFailure } from './storeFailure.js';
+import {
+  inboundYjsUpdate,
+  yjsUpdateContainsChanges,
+} from './yjsUpdateMessage.js';
 
 // Before any connection is accepted, so a failure during startup is reported
 // rather than only appearing in container logs nobody is watching.
@@ -44,14 +71,15 @@ const subscriber = new IORedis(config.redisUrl, {
 });
 const store = new YjsDocumentStore(pool);
 const projections = new ProjectionService(store, config.apiUrl, config.secret);
-const failedStores = new Map<string, Uint8Array>();
+const serviceCommandCompletions = new ServiceCommandCompletions();
+const failedStores = new Map<string, FailedStoreSnapshot>();
 const activeStores = new Map<string, Set<Promise<void>>>();
-const evictingRooms = new Set<string>();
+const storeFailureGenerations = new Map<string, number>();
+const roomEvictions = new RoomEvictionState();
 // Clients ask for a durability receipt with a stateless message instead of
 // writing a marker into the Y.Doc, so acknowledging a save costs no Yjs update
 // and leaves nothing behind in the persisted document.
 const pendingCheckpoints = new Map<string, Set<string>>();
-const rejectedRooms = new Set<string>();
 const MAX_PENDING_CHECKPOINTS = 64;
 const MAX_CHECKPOINT_ID_LENGTH = 128;
 const evictionWaiters = new Map<
@@ -68,29 +96,13 @@ const INSTANCE_REGISTRY_KEY = 'evo:collaboration:instances';
 const EVICTION_KEY_PREFIX = 'evo:collaboration:evicting:';
 const EVICTION_REQUEST_CHANNEL = 'evo:collaboration:evict-request';
 const EVICTION_ACK_CHANNEL = 'evo:collaboration:evict-ack';
+const USER_EVICTION_CHANNEL = 'evo:collaboration:user-evict';
+const EVICTION_DELIVERED_CHANNEL = 'evo:collaboration:eviction-delivered';
 const INSTANCE_TTL_MS = 30_000;
 const EVICTION_TIMEOUT_MS = 15_000;
+const localEvictions = new RoomEvictionCoordinator(10 * 60_000);
 let authenticationFailures = 0;
 let storeFailures = 0;
-
-function secretMatches(value: string | undefined) {
-  if (!value) return false;
-  const actual = Buffer.from(value);
-  const expected = Buffer.from(config.secret);
-  return actual.length === expected.length && timingSafeEqual(actual, expected);
-}
-
-async function readJsonBody(request: IncomingMessage): Promise<unknown> {
-  const chunks: Buffer[] = [];
-  let size = 0;
-  for await (const chunk of request) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    size += buffer.length;
-    if (size > 1024 * 1024) throw new Error('command body is too large');
-    chunks.push(buffer);
-  }
-  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
-}
 
 function jsonResponse(
   response: ServerResponse,
@@ -99,42 +111,6 @@ function jsonResponse(
 ) {
   response.writeHead(status, { 'content-type': 'application/json' });
   response.end(JSON.stringify(value));
-}
-
-function readVarUint(
-  input: Uint8Array,
-  offset: { value: number }
-): number | null {
-  let result = 0;
-  let shift = 0;
-  while (offset.value < input.length && shift < 35) {
-    const byte = input[offset.value++];
-    result += (byte & 0x7f) * 2 ** shift;
-    if ((byte & 0x80) === 0) return result;
-    shift += 7;
-  }
-  return null;
-}
-
-function inboundYjsUpdate(message: Uint8Array): Uint8Array | null {
-  const offset = { value: 0 };
-  const documentNameLength = readVarUint(message, offset);
-  if (
-    documentNameLength === null ||
-    documentNameLength > message.length - offset.value
-  ) {
-    return null;
-  }
-  offset.value += documentNameLength;
-  const messageType = readVarUint(message, offset);
-  if (messageType !== 0 && messageType !== 4) return null;
-  // y-protocols/sync's messageYjsUpdate discriminator.
-  if (readVarUint(message, offset) !== 2) return null;
-  const updateLength = readVarUint(message, offset);
-  if (updateLength === null || updateLength > message.length - offset.value) {
-    return null;
-  }
-  return message.slice(offset.value, offset.value + updateLength);
 }
 
 function beginStore(documentName: string) {
@@ -209,38 +185,105 @@ function recordEvictionAck(requestID: string, instanceID: string, ok: boolean) {
   waiter.resolve(true);
 }
 
-async function evictLocalRoom(room: string, notifyClients = false) {
-  evictingRooms.add(room);
-  try {
-    failedStores.delete(room);
-    const document = server.hocuspocus.documents.get(room);
-    if (document) {
-      if (notifyClients) {
-        document.broadcastStateless(
-          JSON.stringify({ room, type: 'compaction-evict' })
+function evictLocalRoom(
+  room: string,
+  notification: boolean | string = false,
+  operationId?: string,
+  mode: RoomEvictionMode = 'discard'
+) {
+  return localEvictions.run(room, operationId, async () => {
+    let unloaded = false;
+    const initialFailureGeneration = storeFailureGenerations.get(room) ?? 0;
+    if (mode === 'discard') roomEvictions.reject(room);
+    roomEvictions.begin(room, mode);
+    try {
+      if (mode === 'discard') failedStores.delete(room);
+      const document = server.hocuspocus.documents.get(room);
+      if (document) {
+        if (notification) {
+          document.broadcastStateless(
+            typeof notification === 'string'
+              ? notification
+              : JSON.stringify({ room, type: 'compaction-evict' })
+          );
+        }
+        server.hocuspocus.closeConnections(room);
+      }
+      server.hocuspocus.flushPendingStores();
+      await waitForStores(room);
+      if (
+        mode === 'drain' &&
+        !drainIsDurable(
+          initialFailureGeneration,
+          storeFailureGenerations.get(room) ?? 0,
+          failedStores.has(room)
+        )
+      ) {
+        throw new Error(
+          'collaboration document could not be persisted before eviction'
         );
       }
-      server.hocuspocus.closeConnections(room);
+      if (document) {
+        await waitForConnections(room);
+        await server.hocuspocus.unloadDocument(document);
+        const remaining = server.hocuspocus.documents.get(room);
+        if (remaining) {
+          await server.hocuspocus.unloadDocument(remaining);
+        }
+        if (server.hocuspocus.documents.get(room)) {
+          throw new Error(
+            'collaboration document remained loaded after eviction'
+          );
+        }
+      }
+      failedStores.delete(room);
+      unloaded = true;
+    } finally {
+      roomEvictions.end(room, mode);
+      if (unloaded) {
+        roomEvictions.accept(room);
+        storeFailureGenerations.delete(room);
+      }
     }
+  });
+}
+
+function persistLocalRoom(room: string, operationId?: string) {
+  return localEvictions.run(room, operationId, async () => {
+    const initialFailureGeneration = storeFailureGenerations.get(room) ?? 0;
+    // Restoration widens access. Keep the live room and its connections in
+    // place, flush anything already pending, then let later edits continue on
+    // the normal debounce cycle.
     server.hocuspocus.flushPendingStores();
     await waitForStores(room);
-    if (document) {
-      await waitForConnections(room);
-      await server.hocuspocus.unloadDocument(document);
-      const remaining = server.hocuspocus.documents.get(room);
-      if (remaining) {
-        await server.hocuspocus.unloadDocument(remaining);
-      }
-      if (server.hocuspocus.documents.get(room)) {
-        throw new Error(
-          'collaboration document remained loaded after eviction'
-        );
-      }
+    if (
+      !drainIsDurable(
+        initialFailureGeneration,
+        storeFailureGenerations.get(room) ?? 0,
+        failedStores.has(room)
+      )
+    ) {
+      throw new Error(
+        'collaboration document could not be persisted during restoration'
+      );
     }
-    failedStores.delete(room);
-  } finally {
-    evictingRooms.delete(room);
-    rejectedRooms.delete(room);
+  });
+}
+
+async function publishRoomEviction(
+  room: string,
+  payload: string,
+  stage: string
+) {
+  try {
+    await redis.publish('evo:collaboration:evict', payload);
+  } catch (error) {
+    storeFailures += 1;
+    captureError(error, { room, stage });
+    console.warn(
+      'collaboration eviction publish failed:',
+      error instanceof Error ? error.message : String(error)
+    );
   }
 }
 
@@ -249,18 +292,23 @@ async function evictLocalRoom(room: string, notifyClients = false) {
  * it has been unloaded, otherwise a reconnecting client resyncs the very state
  * that is being thrown away.
  */
-function assertRoomAvailable(room: string) {
-  if (rejectedRooms.has(room) || evictingRooms.has(room)) {
+function assertRoomAvailable(room: string, allowStoreDrain = false) {
+  if (roomEvictions.blocks(room, allowStoreDrain)) {
     throw new Error('collaboration room is being reset');
   }
 }
 
-function rejectionPayload(room: string, error: MaterialDocumentLimitError) {
+function rejectionPayload(
+  room: string,
+  error: MaterialDocumentLimitError,
+  evictionId?: string
+) {
   return JSON.stringify({
     code: error.code,
     limits: MATERIAL_DOCUMENT_LIMITS,
     materialId: materialIdFromRoom(room),
     metrics: error.metrics,
+    ...(evictionId ? { evictionId } : {}),
     room,
     type: 'document-rejected',
   });
@@ -274,21 +322,32 @@ function rejectionPayload(room: string, error: MaterialDocumentLimitError) {
  */
 function rejectRoom(
   room: string,
-  document: { broadcastStateless: (payload: string) => void },
+  document:
+    | { broadcastStateless: (payload: string) => void }
+    | null
+    | undefined,
   error: MaterialDocumentLimitError
 ) {
-  if (rejectedRooms.has(room)) return;
-  rejectedRooms.add(room);
-  const payload = rejectionPayload(room, error);
-  document.broadcastStateless(payload);
+  if (roomEvictions.isRejected(room)) return;
+  roomEvictions.reject(room);
+  const evictionId = randomUUID();
+  const payload = rejectionPayload(room, error, evictionId);
+  document?.broadcastStateless(payload);
   // `evictLocalRoom` waits for in-flight stores, and the caller is one of them,
   // so the eviction has to run outside the failing store.
   setTimeout(() => {
     void (async () => {
-      await redis.publish('evo:collaboration:evict', payload);
-      await evictLocalRoom(room);
+      const publication = publishRoomEviction(
+        room,
+        payload,
+        'rejection_eviction_publish'
+      );
+      try {
+        await evictLocalRoom(room, false, evictionId);
+      } finally {
+        await publication;
+      }
     })().catch((evictionError) => {
-      rejectedRooms.delete(room);
       storeFailures += 1;
       captureError(evictionError, { room, stage: 'rejection_eviction' });
       console.warn(
@@ -297,6 +356,88 @@ function rejectRoom(
           ? evictionError.message
           : String(evictionError)
       );
+    });
+  }, 0);
+}
+
+function handleRejectedStore(
+  room: string,
+  error: unknown,
+  document?: { broadcastStateless: (payload: string) => void } | null,
+  clearFailedStore: () => void = () => {
+    failedStores.delete(room);
+  }
+) {
+  return handlePermanentStoreFailure(error, {
+    clearFailedStore,
+    rejectAuthorization: () => rejectAuthorizationRoom(room),
+    rejectInvalidDocument: () => rejectInvalidDocumentRoom(room),
+    rejectLimit: (limitError) => rejectRoom(room, document, limitError),
+  });
+}
+
+// An update can race membership/account changes after the connection was
+// admitted. The store rejects it transactionally; unloading the room then
+// removes that rejected update from memory before an authorized client reloads.
+function rejectAuthorizationRoom(room: string) {
+  if (roomEvictions.isRejected(room)) return;
+  roomEvictions.reject(room);
+  const evictionId = randomUUID();
+  const payload = JSON.stringify({
+    evictionId,
+    room,
+    type: 'authorization-revoked',
+  });
+  setTimeout(() => {
+    void (async () => {
+      const publication = publishRoomEviction(
+        room,
+        payload,
+        'authorization_eviction_publish'
+      );
+      try {
+        await evictLocalRoom(room, payload, evictionId);
+      } finally {
+        await publication;
+      }
+    })().catch((evictionError) => {
+      storeFailures += 1;
+      captureError(evictionError, { room, stage: 'authorization_eviction' });
+    });
+  }, 0);
+}
+
+// A structurally invalid in-memory snapshot cannot be retried into durability.
+// Discard it and reload the last valid SQL-backed Yjs state instead of leaving
+// the room live and permanently unsavable.
+function rejectInvalidDocumentRoom(room: string) {
+  if (roomEvictions.isRejected(room)) return;
+  roomEvictions.reject(room);
+  const evictionId = randomUUID();
+  const payload = JSON.stringify({
+    evictionId,
+    materialId: materialIdFromRoom(room),
+    room,
+    type: 'compaction-evict',
+  });
+  setTimeout(() => {
+    void (async () => {
+      const publication = publishRoomEviction(
+        room,
+        payload,
+        'invalid_document_eviction_publish'
+      );
+      try {
+        await evictLocalRoom(room, payload, evictionId);
+      } finally {
+        await publication;
+      }
+    })().catch((evictionError) => {
+      storeFailures += 1;
+      captureError(evictionError, {
+        room,
+        stage: 'invalid_document_eviction',
+      });
     });
   }, 0);
 }
@@ -353,12 +494,21 @@ const server = new Server<CollaborationContext>({
   // `evictingRooms`, so the local set is authoritative here.
   async beforeHandleMessage({ connection, document, update }) {
     assertRoomAvailable(document.name);
+    const context = connection.context as CollaborationContext | undefined;
+    if (!context || context.expiresAt <= Math.floor(Date.now() / 1000)) {
+      throw new Error('collaboration token expired');
+    }
     const yjsUpdate = inboundYjsUpdate(update);
     if (!yjsUpdate) return;
+    if (context.access === 'comment') {
+      if (yjsUpdateContainsChanges(document, yjsUpdate)) {
+        throw new Error('comment-only connection sent a document update');
+      }
+      return;
+    }
     try {
-      const shrinkOnly =
-        (connection.context as CollaborationContext | undefined)?.access ===
-        'shrink';
+      assertUpdatePreservesContributors(document, yjsUpdate);
+      const shrinkOnly = context.access === 'shrink';
       store.validateUpdate(document.name, document, yjsUpdate, { shrinkOnly });
     } catch (error) {
       // Throwing closes only this connection. Tell it why first so it can drop
@@ -368,6 +518,16 @@ const server = new Server<CollaborationContext>({
       }
       throw error;
     }
+  },
+  async connected({ connection, context }) {
+    const delay = Math.max(0, context.expiresAt * 1000 - Date.now());
+    const timer = setTimeout(() => {
+      connection.close({
+        code: 4401,
+        reason: 'collaboration token expired',
+      } as CloseEvent);
+    }, delay);
+    connection.onClose(() => clearTimeout(timer));
   },
   debounce: config.debounceMs,
   extensions: [
@@ -392,6 +552,11 @@ const server = new Server<CollaborationContext>({
         config.secret,
         documentName
       );
+      await store.assertConnectionAccess(
+        documentName,
+        claims.sub,
+        claims.access
+      );
       connectionConfig.readOnly = claims.access === 'comment';
       // shrink stays writable at the Hocuspocus layer; validateUpdate enforces
       // the shrinking-direction rule for over-quota accounts.
@@ -411,9 +576,14 @@ const server = new Server<CollaborationContext>({
     if (await isRoomEvicting(documentName)) {
       throw new Error('collaboration room is being compacted');
     }
+    attachDocumentContributorTracker(document, INSTANCE_ID);
     await store.load(documentName, document);
   },
   async onStateless({ connection, document, payload }) {
+    const context = connection.context as CollaborationContext | undefined;
+    if (!context || context.expiresAt <= Math.floor(Date.now() / 1000)) {
+      throw new Error('collaboration token expired');
+    }
     let event: { id?: unknown; type?: unknown };
     try {
       event = JSON.parse(payload);
@@ -438,73 +608,94 @@ const server = new Server<CollaborationContext>({
     pending.add(id);
   },
   async onStoreDocument({ document, documentName, lastContext }) {
-    const finish = beginStore(documentName);
-    // Claimed before the store reads the document, so the committed state is
-    // guaranteed to contain everything these receipts were asked about.
-    const claimed = [...(pendingCheckpoints.get(documentName) ?? [])];
-    try {
-      assertRoomAvailable(documentName);
-      const stored = await store.store(documentName, document);
-      failedStores.delete(documentName);
-      const pending = pendingCheckpoints.get(documentName);
-      if (pending) {
-        for (const id of claimed) pending.delete(id);
-        if (pending.size === 0) pendingCheckpoints.delete(documentName);
-      }
-      const materialId = materialIdFromRoom(documentName);
-      document.broadcastStateless(
-        JSON.stringify({
-          checkpointIds: claimed,
-          limitCode: stored.limitCode,
-          materialId,
-          metrics: stored.metrics,
-          type: 'checkpoint-persisted',
-          yjsVersion: stored.version,
-        })
-      );
-      const projection = projections.project(
-        materialId,
-        stored.version,
-        stored.content
-      );
-      void projection
-        .then(() => {
-          document.broadcastStateless(
-            JSON.stringify({
-              materialId,
-              type: 'projection-updated',
-              yjsVersion: stored.version,
-            })
-          );
-        })
-        .catch(() => undefined);
-      if (lastContext?.serviceCommand) {
-        await projection;
-      } else {
-        void projection.catch(async (error) => {
-          await store.recordProjectionError(
+    await observeServiceCommandStore(
+      serviceCommandCompletions,
+      lastContext?.serviceCommandId,
+      async () => {
+        const finish = beginStore(documentName);
+        const snapshot = new Y.Doc({ gc: true });
+        Y.applyUpdate(snapshot, Y.encodeStateAsUpdate(document));
+        // Claimed before the store reads the document, so the committed state is
+        // guaranteed to contain everything these receipts were asked about.
+        const claimed = [...(pendingCheckpoints.get(documentName) ?? [])];
+        try {
+          let stored: Awaited<ReturnType<YjsDocumentStore['store']>>;
+          try {
+            assertRoomAvailable(documentName, true);
+            stored = await store.store(documentName, snapshot);
+          } catch (error) {
+            storeFailures += 1;
+            storeFailureGenerations.set(
+              documentName,
+              (storeFailureGenerations.get(documentName) ?? 0) + 1
+            );
+            if (
+              !handleRejectedStore(documentName, error, document) &&
+              !roomEvictions.isDiscarding(documentName)
+            ) {
+              failedStores.set(documentName, {
+                checkpointIds: claimed,
+                state: Y.encodeStateAsUpdate(snapshot),
+              });
+            }
+            throw error;
+          }
+
+          failedStores.delete(documentName);
+          clearDocumentContributors(document, stored.contributors);
+          const pending = pendingCheckpoints.get(documentName);
+          const materialId = materialIdFromRoom(documentName);
+          broadcastCheckpointPersisted(
+            document,
+            pending,
+            claimed,
             materialId,
-            error instanceof Error ? error.message : String(error)
+            stored
           );
-        });
+          if (pending?.size === 0) pendingCheckpoints.delete(documentName);
+
+          // The binary state is durable before projection begins. A projection-only
+          // failure must not put the same snapshot into failedStores, otherwise the
+          // retry path stores it again and advances stored_version without a new
+          // document change.
+          const projection = projections.projectAndRecord(
+            materialId,
+            stored.version,
+            stored.content,
+            lastContext?.serviceCommandId
+              ? 'service_command_projection'
+              : 'document_projection'
+          );
+          void projection
+            .then(() => {
+              document.broadcastStateless(
+                JSON.stringify({
+                  materialId,
+                  type: 'projection-updated',
+                  yjsVersion: stored.version,
+                })
+              );
+            })
+            .catch(() => undefined);
+          if (lastContext?.serviceCommandId) {
+            await projection;
+          } else {
+            void projection.catch(() => undefined);
+          }
+        } finally {
+          snapshot.destroy();
+          finish();
+        }
       }
-    } catch (error) {
-      storeFailures += 1;
-      if (error instanceof MaterialDocumentLimitError) {
-        rejectRoom(documentName, document, error);
-      } else if (!evictingRooms.has(documentName)) {
-        failedStores.set(documentName, Y.encodeStateAsUpdate(document));
-      }
-      throw error;
-    } finally {
-      finish();
-    }
+    );
   },
   async onTokenSync({ connection, documentName, token }) {
+    assertRoomAvailable(documentName);
     if (await isRoomEvicting(documentName)) {
       throw new Error('collaboration room is being compacted');
     }
     const claims = verifyCollaborationToken(token, config.secret, documentName);
+    await store.assertConnectionAccess(documentName, claims.sub, claims.access);
     connection.context = claimsContext(claims);
     connection.readOnly = claims.access === 'comment';
   },
@@ -521,55 +712,20 @@ async function handleHttpRequest(
 ) {
   const instance = server.hocuspocus;
   if (request.url === '/internal/commands' && request.method === 'POST') {
-    if (
-      !secretMatches(
-        Array.isArray(request.headers['x-collaboration-secret'])
-          ? request.headers['x-collaboration-secret'][0]
-          : request.headers['x-collaboration-secret']
-      )
-    ) {
-      jsonResponse(response, 401, { message: 'invalid service secret' });
-      return;
-    }
-    let connection:
-      | Awaited<ReturnType<typeof instance.openDirectConnection>>
-      | undefined;
-    try {
-      const command = await readJsonBody(request);
-      if (!isCollaborationCommand(command)) {
-        jsonResponse(response, 400, {
-          message: 'invalid collaboration command',
-        });
-        return;
-      }
-      const room = command.room;
-      if (materialIdFromRoom(room) !== command.materialId) {
-        throw new Error('collaboration command room does not match material');
-      }
-      assertRoomAvailable(room);
-      if (await isRoomEvicting(room)) {
-        throw new Error('collaboration room is being compacted');
-      }
-      connection = await instance.openDirectConnection(room, {
-        access: 'write',
-        serviceCommand: true,
-        tokenId: 'service-command',
-        userId: 'collaboration-service',
-      });
-      await connection.transact((document) =>
-        applyCollaborationCommand(document, command)
-      );
-      await connection.disconnect({ unloadImmediately: true });
-      connection = undefined;
-      jsonResponse(response, 200, { status: 'applied' });
-    } catch (error) {
-      if (connection) await connection.disconnect().catch(() => undefined);
-      const message = error instanceof Error ? error.message : String(error);
-      const conflict =
-        message.includes('concurrently') ||
-        message.includes('no longer exists');
-      jsonResponse(response, conflict ? 409 : 503, { message });
-    }
+    await handleServiceCommandRequest(
+      request,
+      response,
+      config.secret,
+      (command) =>
+        executeServiceCommand(command, {
+          assertRoomAvailable,
+          commandConnectionAccess: (room, actorUserId) =>
+            store.commandConnectionAccess(room, actorUserId),
+          completions: serviceCommandCompletions,
+          hocuspocus: instance,
+          isRoomEvicting,
+        })
+    );
     return;
   }
   if (request.url === '/healthz' || request.url === '/readyz') {
@@ -618,28 +774,56 @@ server.httpServer.on('request', (request, response) => {
   });
 });
 
-async function retryFailedStores() {
-  for (const [room, state] of failedStores) {
+const failedStoreRetries = new FailedStoreRetryRunner(
+  failedStores,
+  async (room, failed, clearIfCurrent) => {
     const finish = beginStore(room);
     const document = new Y.Doc({ gc: true });
     try {
-      if (evictingRooms.has(room) || rejectedRooms.has(room)) continue;
-      Y.applyUpdate(document, state);
+      if (
+        roomEvictions.isDiscarding(room) ||
+        roomEvictions.isDraining(room) ||
+        roomEvictions.isRejected(room)
+      )
+        return;
+      Y.applyUpdate(document, failed.state);
       const stored = await store.store(room, document);
-      failedStores.delete(room);
-      void projections.project(
-        materialIdFromRoom(room),
-        stored.version,
-        stored.content
-      );
-    } catch {
+      clearIfCurrent();
+      const live = server.hocuspocus.documents.get(room);
+      if (live) {
+        clearDocumentContributors(live, stored.contributors);
+        const pending = pendingCheckpoints.get(room);
+        broadcastCheckpointPersisted(
+          live,
+          pending,
+          failed.checkpointIds,
+          materialIdFromRoom(room),
+          stored
+        );
+        if (pending?.size === 0) pendingCheckpoints.delete(room);
+      }
+      void projections
+        .projectAndRecord(
+          materialIdFromRoom(room),
+          stored.version,
+          stored.content,
+          'failed_store_projection'
+        )
+        .catch(() => undefined);
+    } catch (error) {
       storeFailures += 1;
+      handleRejectedStore(
+        room,
+        error,
+        server.hocuspocus.documents.get(room),
+        clearIfCurrent
+      );
     } finally {
       document.destroy();
       finish();
     }
   }
-}
+);
 
 async function handleEvictionRequest(raw: string) {
   let event: {
@@ -655,7 +839,7 @@ async function handleEvictionRequest(raw: string) {
   if (!event.requestID || !event.room) return;
   let ok = true;
   try {
-    await evictLocalRoom(event.room, true);
+    await evictLocalRoom(event.room, true, event.requestID, 'drain');
   } catch (error) {
     ok = false;
     captureError(error, { room: event.room, stage: 'eviction' });
@@ -671,7 +855,47 @@ async function handleEvictionRequest(raw: string) {
   );
 }
 
-const retryTimer = setInterval(() => void retryFailedStores(), 5000);
+async function handleUserEviction(raw: string) {
+  let event: { evictionId?: string; mode?: unknown; userId?: string };
+  try {
+    event = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  if (!event.userId) return;
+  let ok = true;
+  try {
+    if (shouldCloseUserConnections(event.mode)) {
+      for (const document of server.hocuspocus.documents.values()) {
+        for (const connection of document.getConnections()) {
+          const context = connection.context as
+            | CollaborationContext
+            | undefined;
+          if (context?.userId !== event.userId) continue;
+          connection.close({
+            code: 4403,
+            reason: 'account access changed',
+          } as CloseEvent);
+        }
+      }
+    }
+  } catch (error) {
+    ok = false;
+    captureError(error, { stage: 'user_eviction' });
+  }
+  if (event.evictionId) {
+    await redis.publish(
+      EVICTION_DELIVERED_CHANNEL,
+      JSON.stringify({
+        evictionId: event.evictionId,
+        instanceId: INSTANCE_ID,
+        ok,
+      })
+    );
+  }
+}
+
+const retryTimer = setInterval(() => void failedStoreRetries.run(), 5000);
 retryTimer.unref();
 
 async function compactIdleDocuments() {
@@ -685,29 +909,16 @@ async function compactIdleDocuments() {
   for (const candidate of candidates) {
     const active = server.hocuspocus.documents.get(candidate.room);
     if (active && active.getConnectionsCount() > 0) continue;
-    const compacted = await withDistributedEviction(
-      candidate.room,
-      async () => {
-        const value = await store.compact(candidate.room);
-        if (value) {
-          await redis.publish(
-            'evo:collaboration:evict',
-            JSON.stringify({
-              materialId: value.materialId,
-              newRoom: value.room,
-              room: candidate.room,
-              type: 'compaction-complete',
-            })
-          );
-        }
-        return value;
-      }
+    const compacted = await withDistributedEviction(candidate.room, async () =>
+      store.compact(candidate.room)
     );
     if (compacted === false) continue;
     if (compacted) {
+      const evictionId = randomUUID();
       await redis.publish(
         'evo:collaboration:evict',
         JSON.stringify({
+          evictionId,
           materialId: compacted.materialId,
           newRoom: compacted.room,
           room: candidate.room,
@@ -721,6 +932,48 @@ async function compactIdleDocuments() {
   }
 }
 
+async function waitForDistributedRoomTransition(room: string) {
+  const deadline = Date.now() + EVICTION_TIMEOUT_MS * 4;
+  while (await isRoomEvicting(room)) {
+    if (Date.now() >= deadline) {
+      throw new Error('collaboration room transition did not finish');
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
+async function deliverMaterialEviction(event: {
+  evictionId?: string;
+  materialId: string;
+  mode?: unknown;
+  raw: string;
+  room: string;
+  type?: unknown;
+}) {
+  const mode = parseRoomEvictionMode(event.mode);
+  const preserveConnections = shouldPreserveMaterialConnections(
+    event.type,
+    event.mode
+  );
+  await evictMaterialRoomEpoch({
+    currentRoom: () => store.currentRoom(event.materialId),
+    evict: (room) =>
+      preserveConnections
+        ? persistLocalRoom(
+            room,
+            event.evictionId ? `${event.evictionId}:${room}` : undefined
+          )
+        : evictLocalRoom(
+            room,
+            event.raw,
+            event.evictionId ? `${event.evictionId}:${room}` : undefined,
+            mode
+          ),
+    initialRoom: event.room,
+    waitForTransition: waitForDistributedRoomTransition,
+  });
+}
+
 const compactionTimer = setInterval(() => {
   void compactIdleDocuments().catch((error) => {
     storeFailures += 1;
@@ -732,12 +985,16 @@ compactionTimer.unref();
 await subscriber.subscribe(
   'evo:collaboration:comments',
   'evo:collaboration:evict',
+  USER_EVICTION_CHANNEL,
   EVICTION_REQUEST_CHANNEL,
   EVICTION_ACK_CHANNEL
 );
 subscriber.on('message', (channel: string, raw: string) => {
   if (channel === EVICTION_REQUEST_CHANNEL) {
-    void handleEvictionRequest(raw);
+    void handleEvictionRequest(raw).catch((error) => {
+      storeFailures += 1;
+      captureError(error, { stage: 'eviction_ack_publish' });
+    });
     return;
   }
   if (channel === EVICTION_ACK_CHANNEL) {
@@ -755,20 +1012,71 @@ subscriber.on('message', (channel: string, raw: string) => {
     }
     return;
   }
+  if (channel === USER_EVICTION_CHANNEL) {
+    void handleUserEviction(raw).catch((error) => {
+      storeFailures += 1;
+      captureError(error, { stage: 'user_eviction_ack_publish' });
+    });
+    return;
+  }
   try {
     const event = JSON.parse(raw) as {
+      evictionId?: string;
       materialId?: string;
+      mode?: unknown;
       room?: string;
       type?: string;
     };
     const room = event.room;
     if (!room) return;
     if (channel === 'evo:collaboration:evict') {
-      server.hocuspocus.documents.get(room)?.broadcastStateless(raw);
-      void evictLocalRoom(room).catch((error) => {
-        storeFailures += 1;
-        captureError(error, { room, stage: 'event_eviction' });
-      });
+      const roomMaterialId = materialIdFromRoom(room);
+      if (event.materialId && event.materialId !== roomMaterialId) return;
+      const delivery =
+        event.type === 'compaction-complete'
+          ? evictLocalRoom(room, raw, event.evictionId)
+          : deliverMaterialEviction({
+              evictionId: event.evictionId,
+              materialId: roomMaterialId,
+              mode: event.mode,
+              raw,
+              room,
+              type: event.type,
+            });
+      void delivery
+        .then(async () => {
+          if (event.evictionId) {
+            await redis.publish(
+              EVICTION_DELIVERED_CHANNEL,
+              JSON.stringify({
+                evictionId: event.evictionId,
+                instanceId: INSTANCE_ID,
+                ok: true,
+              })
+            );
+          }
+        })
+        .catch(async (error) => {
+          storeFailures += 1;
+          captureError(error, { room, stage: 'event_eviction' });
+          if (event.evictionId) {
+            try {
+              await redis.publish(
+                EVICTION_DELIVERED_CHANNEL,
+                JSON.stringify({
+                  evictionId: event.evictionId,
+                  instanceId: INSTANCE_ID,
+                  ok: false,
+                })
+              );
+            } catch (ackError) {
+              captureError(ackError, {
+                room,
+                stage: 'event_eviction_negative_ack',
+              });
+            }
+          }
+        });
       return;
     }
     server.hocuspocus.documents

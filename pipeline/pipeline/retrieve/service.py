@@ -361,7 +361,7 @@ async def quiz_grade(req: QuizGradeReq) -> dict[str, Any]:
         req.providerSlug,
         req.modelSlug,
         req.configVersion,
-        surface=registry.Surface.QUIZ,
+        slot=registry.Slot.QUIZ,
     )
     try:
         text = await models.complete_text(
@@ -430,7 +430,7 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
         req.providerSlug,
         req.modelSlug,
         req.configVersion,
-        surface=registry.Surface.GENERATE,
+        slot=registry.Slot.GENERATE,
     )
     chapters = req.chapters or []
     file_ids = req.fileIds or []
@@ -461,7 +461,6 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
         cards = [
             {
                 "id": _uid("c"),
-                "deckId": "generated",
                 "front": str(item.get("front", "")),
                 "back": str(item.get("back", "")),
                 "known": False,

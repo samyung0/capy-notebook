@@ -63,17 +63,17 @@ CREATE TABLE IF NOT EXISTS users (
   plan_tier             text NOT NULL DEFAULT 'free' REFERENCES plan_limits(plan_tier)
     CHECK (plan_tier IN ('free', 'pro')),
   locale                text NOT NULL DEFAULT 'en',
-  -- Per-surface user model preference. The provider/model pair names the
+  -- Per-slot user model preference. The provider/model pair names the
   -- catalog model; its latest enabled version is resolved per request.
-  -- populated from the registry surface default at account creation. Ingest,
-  -- embedding and vision are operator-only and are never stored here.
+  -- populated from the registry slot default at account creation. Ingest,
+  -- retrieval and captioning are operator-only and are never stored here.
   chat_model_provider_slug     text NOT NULL DEFAULT 'deepseek',
   chat_model_slug              text NOT NULL DEFAULT 'deepseek-v4-flash-vision-exp',
   generate_model_provider_slug text NOT NULL DEFAULT 'deepseek',
   generate_model_slug          text NOT NULL DEFAULT 'deepseek-v4-flash-vision-exp',
   -- Inline editor assistance (continue-writing, rewrite, the /complete
   -- copilot). Far higher call volume per user than chat, and each call is short,
-  -- so this is the surface where an expensive choice costs the most relative to
+  -- so this is the slot where an expensive choice costs the most relative to
   -- the value delivered — worth watching if credit burn looks wrong.
   editor_model_provider_slug   text NOT NULL DEFAULT 'deepseek',
   editor_model_slug            text NOT NULL DEFAULT 'deepseek-v4-flash-vision-exp',
@@ -84,6 +84,10 @@ CREATE TABLE IF NOT EXISTS users (
   -- Account lifecycle. deletion_requested_at starts the reactivation window;
   -- purge_after is when the purge job runs; deleted_at is set by the purge
   -- itself, after which the row is a scrubbed tombstone.
+  -- lifecycle_generation changes when support restores an account. A deletion
+  -- request must present the generation returned by its preflight so an older
+  -- request cannot put the restored account back into deletion.
+  lifecycle_generation bigint NOT NULL DEFAULT 0 CHECK (lifecycle_generation >= 0),
   deletion_requested_at timestamptz,
   purge_after           timestamptz,
   deleted_at            timestamptz,
@@ -91,6 +95,23 @@ CREATE TABLE IF NOT EXISTS users (
   -- there is no automated suspension policy.
   suspended_at          timestamptz,
   suspended_reason      text,
+  -- External identity deletion is retried independently after local purge.
+  -- A successful Clerk user.deleted webhook records identity_deleted_at.
+  identity_deleted_at   timestamptz,
+  identity_delete_pending boolean NOT NULL DEFAULT false,
+  identity_delete_attempts int NOT NULL DEFAULT 0 CHECK (identity_delete_attempts >= 0),
+  identity_delete_not_before timestamptz,
+  -- Self-service deletion closes the local gate before Clerk is called. These
+  -- fields make a failed session sweep durable and block support restoration
+  -- until every issued session has been revoked.
+  session_revoke_pending boolean NOT NULL DEFAULT false,
+  session_revoke_attempts int NOT NULL DEFAULT 0 CHECK (session_revoke_attempts >= 0),
+  session_revoke_not_before timestamptz,
+  session_revoke_last_error text NOT NULL DEFAULT '',
+  -- Remains null until the one-time starter workspace has been created. A
+  -- failed first-request provision can therefore be retried without creating
+  -- a replacement after the user later deletes all of their workspaces.
+  starter_workspace_provisioned_at timestamptz,
   created_at            timestamptz NOT NULL DEFAULT now(),
   updated_at            timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT users_model_refs_nonempty CHECK (
@@ -106,17 +127,17 @@ CREATE TABLE IF NOT EXISTS users (
   CONSTRAINT users_suspension_reason_check
     CHECK ((suspended_at IS NULL) = (suspended_reason IS NULL))
 );
--- Per (user, model, surface). Switching models must not reuse another
+-- Per (user, model, slot). Switching models must not reuse another
 -- model's effort: DeepSeek has no medium, Opus does.
 CREATE TABLE IF NOT EXISTS user_model_reasoning (
   user_id    text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   provider_slug text NOT NULL,
   model_slug text NOT NULL,
-  surface    text NOT NULL,
+  slot       text NOT NULL,
   thinking   text NOT NULL DEFAULT '',
-  PRIMARY KEY (user_id, provider_slug, model_slug, surface),
-  CONSTRAINT user_model_reasoning_surface_check CHECK (
-    surface IN ('chat', 'generate', 'quiz')
+  PRIMARY KEY (user_id, provider_slug, model_slug, slot),
+  CONSTRAINT user_model_reasoning_slot_check CHECK (
+    slot IN ('chat', 'generate', 'quiz')
   ),
   CONSTRAINT user_model_reasoning_thinking_check CHECK (
     thinking IN ('', 'instant', 'low', 'mid', 'high', 'max')
@@ -132,6 +153,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS users_email_active_uidx
 CREATE INDEX IF NOT EXISTS users_purge_due_idx
   ON users(purge_after)
   WHERE deleted_at IS NULL AND purge_after IS NOT NULL;
+CREATE INDEX IF NOT EXISTS users_identity_delete_due_idx
+  ON users(identity_delete_not_before)
+  WHERE identity_delete_pending;
+CREATE INDEX IF NOT EXISTS users_session_revoke_due_idx
+  ON users(session_revoke_not_before)
+  WHERE session_revoke_pending;
 
 -- Foreign keys onto users(id) follow one rule throughout this schema:
 --
@@ -153,7 +180,6 @@ CREATE TABLE IF NOT EXISTS workspaces (
   privacy          text NOT NULL DEFAULT 'private',
   -- Role granted to link/public visitors who are not explicit members.
   share_role       text NOT NULL DEFAULT 'viewer',
-  clone_count      int  NOT NULL DEFAULT 0,
   -- The vector space this workspace's index lives in. Pinned once at creation
   -- from the registry embedding default and never changed afterwards: there is
   -- no reindex job, so ingest and query must keep resolving this exact pin for
@@ -233,17 +259,19 @@ CREATE TABLE IF NOT EXISTS files (
   preview_blob_path     text,
   url                   text,
   content               text,
-  -- Parse-zip / derived-text object keys are owned by artifact_cache, not
-  -- these columns: a file delete must not reap a caption or transcript another
-  -- upload can reuse.
-  -- Kept as identity/debug only; the blob-refcount trigger ignores them.
+  -- Local parse-bundle identity/debug state. The required parser-to-ingest
+  -- handoff stays in the shared spool. A separate parse-bundles/* B2 cache key
+  -- is owned by artifact_cache, so the blob-refcount trigger ignores this path.
   parsed_blob_path      text,
   parsed_fingerprint    text,
   parsed_parser_version text,
   -- Source-level image captions, audio transcripts, or document figure
   -- captions. Identity/debug only; artifact_cache owns the blob reference.
   caption_blob_path     text,
-  source_etag           text,
+  -- Legacy multipart uploads have no provider ETag. Store that fence as the
+  -- empty string so every cancellation path can compare it without NULL's
+  -- three-valued semantics.
+  source_etag           text NOT NULL DEFAULT '',
   -- sha256 of the uploaded bytes, written by the ingest worker before parse.
   -- A ready rag_contents row with the same hash is a donor: copy its index
   -- instead of paying for parsing again. Computed server-side from the object;
@@ -311,7 +339,6 @@ CREATE TABLE IF NOT EXISTS materials (
   size_bytes     bigint NOT NULL DEFAULT 0 CHECK (size_bytes >= 0),
   node_count     int NOT NULL DEFAULT 0 CHECK (node_count >= 0),
   max_depth      int NOT NULL DEFAULT 0 CHECK (max_depth >= 0),
-  clone_count    int    NOT NULL DEFAULT 0,
   revision       bigint NOT NULL DEFAULT 1,
   created_at     timestamptz NOT NULL DEFAULT now(),
   updated_at     timestamptz NOT NULL DEFAULT now(),
@@ -327,6 +354,8 @@ CREATE TABLE IF NOT EXISTS materials (
   -- is only meaningful when it is filed in one.
   CONSTRAINT materials_chapter_requires_workspace_check
     CHECK (chapter_id IS NULL OR workspace_id IS NOT NULL),
+  CONSTRAINT materials_workspace_visibility_check
+    CHECK (workspace_id IS NULL OR privacy = 'private'),
   FOREIGN KEY (chapter_id, workspace_id)
     REFERENCES chapters(id, workspace_id) ON DELETE SET NULL (chapter_id)
 );
@@ -342,6 +371,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS materials_workspace_title_uidx
 CREATE INDEX IF NOT EXISTS materials_privacy_idx ON materials(privacy, kind) WHERE privacy = 'public';
 CREATE INDEX IF NOT EXISTS materials_creator_idx ON materials(created_by, kind, created_at DESC);
 CREATE INDEX IF NOT EXISTS materials_owner_idx ON materials(owner_user_id, created_at DESC);
+
+-- Popularity counters live off the source rows so a clone never takes a write
+-- lock that can delay collaboration persistence or projection. Source deletion
+-- takes the clone advisory lock before cascaded teardown and counter cleanup
+-- instead of adding an FK row lock.
+CREATE TABLE IF NOT EXISTS workspace_clone_counts (
+  workspace_id text PRIMARY KEY,
+  clone_count  int NOT NULL DEFAULT 0 CHECK (clone_count >= 0)
+);
+CREATE TABLE IF NOT EXISTS material_clone_counts (
+  material_id text PRIMARY KEY,
+  clone_count int NOT NULL DEFAULT 0 CHECK (clone_count >= 0)
+);
 
 CREATE TABLE IF NOT EXISTS material_revisions (
   material_id            text NOT NULL REFERENCES materials(id) ON DELETE CASCADE,
@@ -380,6 +422,27 @@ CREATE TABLE IF NOT EXISTS material_yjs_documents (
 CREATE INDEX IF NOT EXISTS material_yjs_projection_pending_idx
   ON material_yjs_documents(updated_at)
   WHERE projected_version < stored_version;
+
+-- ACL changes commit their collaboration invalidation in the same database
+-- transaction. Delivery is leased and retried by the gateway; eviction_id is
+-- stable across every retry so collaboration instances can deduplicate it.
+CREATE TABLE IF NOT EXISTS collaboration_eviction_outbox (
+  id              text PRIMARY KEY,
+  channel         text NOT NULL CHECK (channel IN (
+                    'evo:collaboration:evict',
+                    'evo:collaboration:user-evict'
+                  )),
+  payload         jsonb NOT NULL CHECK (jsonb_typeof(payload) = 'object'),
+  attempts        int NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  available_at    timestamptz NOT NULL DEFAULT now(),
+  lease_id        text,
+  lease_expires_at timestamptz,
+  last_error      text,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  CHECK ((lease_id IS NULL) = (lease_expires_at IS NULL))
+);
+CREATE INDEX IF NOT EXISTS collaboration_eviction_outbox_due_idx
+  ON collaboration_eviction_outbox(available_at, created_at);
 
 -- Per-card FSRS scheduling state (shape mirrors SrsState in src/api/types.ts),
 -- keyed by the flashcard element id inside the material document.
@@ -784,13 +847,76 @@ CREATE INDEX IF NOT EXISTS user_subscriptions_period_end_idx
   ON user_subscriptions(current_period_end)
   WHERE current_period_end IS NOT NULL;
 
+-- Checkout sessions are tracked locally so deletion/suspension races can
+-- expire a remote session that was created immediately before the account was
+-- locked. Completed sessions retain their subscription link for diagnostics.
+CREATE TABLE IF NOT EXISTS stripe_checkout_sessions (
+  id              text PRIMARY KEY,
+  provider_session_id text UNIQUE,
+  user_id         text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  customer_id     text NOT NULL DEFAULT '',
+  price_id        text NOT NULL DEFAULT '',
+  success_url     text NOT NULL DEFAULT '',
+  cancel_url      text NOT NULL DEFAULT '',
+  status          text NOT NULL DEFAULT 'creating'
+    CHECK (status IN ('creating','open','completed','expired','failed')),
+  subscription_id text,
+  expires_at      timestamptz NOT NULL DEFAULT (now()+interval '24 hours'),
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  updated_at      timestamptz NOT NULL DEFAULT now(),
+  completed_at    timestamptz
+);
+CREATE UNIQUE INDEX IF NOT EXISTS stripe_checkout_sessions_user_open_idx
+  ON stripe_checkout_sessions(user_id)
+  WHERE status IN ('creating','open');
+
+-- Durable, idempotent remote compensation. Account deletion and lifecycle-
+-- aware webhook/reconciliation paths enqueue work in their database
+-- transaction; an API worker retries Stripe mutations with a lease/backoff.
+CREATE TABLE IF NOT EXISTS stripe_compensations (
+  id               bigserial PRIMARY KEY,
+  user_id          text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  action           text NOT NULL CHECK (action IN (
+    'recover_checkout','expire_checkout','cancel_subscription',
+    'refund_payment_intent','refund_charge'
+  )),
+  object_id        text NOT NULL,
+  status           text NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending','running','succeeded','suppressed')),
+  attempts         int NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  generation       int NOT NULL DEFAULT 0 CHECK (generation >= 0),
+  provider_result_id text,
+  -- Set before a cancellation provider call begins. Restoration may suppress
+  -- an unstarted claim, but must wait for a started/uncertain call to reconcile.
+  provider_started_at timestamptz,
+  next_attempt_at  timestamptz NOT NULL DEFAULT now(),
+  lease_token      text,
+  lease_expires_at timestamptz,
+  last_error       text NOT NULL DEFAULT '',
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  updated_at       timestamptz NOT NULL DEFAULT now(),
+  completed_at     timestamptz,
+  UNIQUE (action, object_id),
+  CHECK (
+    (status='running' AND lease_token IS NOT NULL AND lease_expires_at IS NOT NULL)
+    OR (status<>'running' AND lease_token IS NULL AND lease_expires_at IS NULL)
+  )
+);
+CREATE INDEX IF NOT EXISTS stripe_compensations_claim_idx
+  ON stripe_compensations(next_attempt_at, id)
+  WHERE status IN ('pending','running');
+
 CREATE TABLE IF NOT EXISTS webhook_events (
-  id           text PRIMARY KEY,
+  id           text NOT NULL,
   source       text NOT NULL,
   event_type   text NOT NULL,
+  user_id      text REFERENCES users(id) ON DELETE SET NULL,
   payload      jsonb NOT NULL DEFAULT '{}',
+  processing_token text,
+  processing_started_at timestamptz,
   processed_at timestamptz,
-  error        text
+  error        text,
+  PRIMARY KEY (source, id)
 );
 CREATE INDEX IF NOT EXISTS webhook_events_source_idx ON webhook_events(source, processed_at);
 
@@ -851,7 +977,7 @@ CREATE INDEX IF NOT EXISTS jobs_lease_idx
   ON jobs(lease_expires_at)
   WHERE status = 'running';
 
--- One durable row for every queue claim. A capacity or external-provider wait
+-- One durable row for every queue claim. A capacity wait
 -- may undo jobs.attempts, so the generated id is the identity rather than the
 -- visible attempt number. The lease reaper closes rows left running by a dead
 -- process. Commonly charted values stay typed; stage_timings and details are
@@ -861,7 +987,7 @@ CREATE TABLE IF NOT EXISTS ingest_job_attempts (
   job_id                text NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
   operation_id          text NOT NULL,
   attempt               integer NOT NULL CHECK (attempt > 0),
-  job_type              text NOT NULL CHECK (job_type IN ('parse', 'ingest')),
+  job_type              text NOT NULL CHECK (job_type IN ('import', 'parse', 'ingest')),
   environment           text NOT NULL,
   host_id               text NOT NULL,
   worker_instance_id    text NOT NULL,
@@ -872,7 +998,7 @@ CREATE TABLE IF NOT EXISTS ingest_job_attempts (
   status                text NOT NULL DEFAULT 'running'
     CHECK (status IN (
       'running', 'succeeded', 'retrying', 'failed', 'superseded',
-      'lease_expired', 'capacity_wait', 'external_wait'
+      'lease_expired', 'capacity_wait'
     )),
   stage                 text NOT NULL DEFAULT 'claimed',
   error_category        text NOT NULL DEFAULT '',
@@ -903,7 +1029,6 @@ CREATE TABLE IF NOT EXISTS ingest_job_attempts (
   figures_applied       integer NOT NULL DEFAULT 0 CHECK (figures_applied >= 0),
   figures_failed        integer NOT NULL DEFAULT 0 CHECK (figures_failed >= 0),
   chunks_created        integer NOT NULL DEFAULT 0 CHECK (chunks_created >= 0),
-  concepts_created      integer NOT NULL DEFAULT 0 CHECK (concepts_created >= 0),
   donor_reused          boolean NOT NULL DEFAULT false,
   stage_timings         jsonb NOT NULL DEFAULT '{}'::jsonb,
   details               jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -922,71 +1047,22 @@ CREATE UNIQUE INDEX IF NOT EXISTS ingest_job_attempts_running_claim_idx
   ON ingest_job_attempts(job_id, attempt)
   WHERE status = 'running';
 
--- Durable state for asynchronous ElevenLabs Scribe jobs. pending rows reserve
--- weighted Starter-plan capacity; completed/failed rows release it. The source
--- job is re-pended without spending an attempt while this row is pending.
-CREATE TABLE IF NOT EXISTS audio_transcriptions (
-  id                         text PRIMARY KEY,
-  -- Cleanup must survive logical file/job deletion until the provider object
-  -- is removed. Active rows still carry both ids; deletion sets them null.
-  job_id                     text UNIQUE REFERENCES jobs(id) ON DELETE SET NULL,
-  file_id                    text REFERENCES files(id) ON DELETE SET NULL,
-  source_sha256              text NOT NULL,
-  provider                   text NOT NULL DEFAULT 'elevenlabs',
-  model                      text NOT NULL DEFAULT 'scribe_v2',
-  provider_transcription_id  text UNIQUE,
-  status                     text NOT NULL DEFAULT 'submitting'
-    CHECK (status IN ('submitting','pending','completed','finalized','failed')),
-  duration_seconds           double precision NOT NULL CHECK (duration_seconds > 0),
-  billable_seconds           int NOT NULL CHECK (billable_seconds > 0),
-  concurrency_units          int NOT NULL CHECK (concurrency_units BETWEEN 1 AND 4),
-  rate_resource_key          text NOT NULL DEFAULT 'audio_transcription_second'
-    CHECK (rate_resource_key = 'audio_transcription_second'),
-  rate_version               int NOT NULL,
-  credit_micros_per_second   bigint NOT NULL CHECK (credit_micros_per_second >= 0),
-  provider_call_id           text NOT NULL,
-  result                     jsonb,
-  error                      text,
-  cleanup_requested          boolean NOT NULL DEFAULT false,
-  cleanup_attempts           int NOT NULL DEFAULT 0 CHECK (cleanup_attempts >= 0),
-  cleanup_not_before         timestamptz,
-  cleanup_error              text,
-  submitted_at               timestamptz,
-  completed_at               timestamptz,
-  created_at                 timestamptz NOT NULL DEFAULT now(),
-  updated_at                 timestamptz NOT NULL DEFAULT now(),
-  FOREIGN KEY (rate_resource_key, rate_version)
-    REFERENCES resource_credit_rates(resource_key, version)
-    DEFERRABLE INITIALLY DEFERRED
+-- Synchronous provider calls still consume ElevenLabs' weighted concurrency.
+-- Short durable leases keep separate worker processes within the configured
+-- capacity and expire after a crashed worker. No transcript/provider state is
+-- persisted: the POST response is awaited by the ingest attempt itself.
+CREATE TABLE IF NOT EXISTS provider_capacity_leases (
+  id         text PRIMARY KEY,
+  provider   text NOT NULL,
+  units      int NOT NULL CHECK (units > 0),
+  expires_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS audio_transcriptions_pending_idx
-  ON audio_transcriptions(status, updated_at)
-  WHERE status IN ('submitting','pending');
-CREATE INDEX IF NOT EXISTS audio_transcriptions_cleanup_idx
-  ON audio_transcriptions(cleanup_not_before, updated_at)
-  WHERE cleanup_requested;
-
-CREATE OR REPLACE FUNCTION request_audio_cleanup_on_file_delete()
-RETURNS trigger LANGUAGE plpgsql AS $$
-BEGIN
-  UPDATE audio_transcriptions
-  SET cleanup_requested=true,
-      status=CASE WHEN status='finalized' THEN status ELSE 'failed' END,
-      error=CASE WHEN status='finalized' THEN error ELSE 'source deleted' END,
-      completed_at=COALESCE(completed_at, now()),
-      cleanup_not_before=now(),
-      updated_at=now()
-  WHERE file_id=OLD.id;
-  RETURN OLD;
-END $$;
-
-DROP TRIGGER IF EXISTS files_request_audio_cleanup ON files;
-CREATE TRIGGER files_request_audio_cleanup
-BEFORE DELETE ON files
-FOR EACH ROW EXECUTE FUNCTION request_audio_cleanup_on_file_delete();
+CREATE INDEX IF NOT EXISTS provider_capacity_leases_provider_expiry_idx
+  ON provider_capacity_leases(provider, expires_at);
 
 -- ============================================================================
--- Retrieval store — chunks, per-file summaries and the concept index
+-- Retrieval store — chunks and per-file summaries
 --
 -- Owned by this schema (the Python pipeline writes the rows but no longer owns
 -- the DDL), which is what makes deletion automatic: every table cascades from
@@ -1066,6 +1142,11 @@ CREATE TABLE IF NOT EXISTS rag_chunks (
   -- `space` records the coordinate convention so a later highlight overlay does
   -- not have to guess; parser blocks use 'page-1000-topleft'.
   regions      jsonb NOT NULL DEFAULT '[]'::jsonb,
+  -- Detected per chunk by the pipeline (lang.detect_lang): en fr de es zh ja
+  -- ko, or 'und'. Names the text-search configuration `search` was built
+  -- with, so a query is parsed with the same configuration when matched
+  -- against this row.
+  lang         text NOT NULL,
   -- Written by the pipeline, not generated: the tokenizer bigrams CJK runs so
   -- one column serves mixed-language corpora, which no built-in text search
   -- configuration can do.
@@ -1124,41 +1205,49 @@ CREATE TABLE IF NOT EXISTS rag_content_summaries (
 );
 CREATE INDEX IF NOT EXISTS rag_content_summaries_ws_idx ON rag_content_summaries(workspace_id);
 
--- Concept index: the relation-free half of a knowledge graph. Mentions are
--- per-chunk, so unlike an aggregated entity description they filter cleanly by
--- file, and co-mention self-joins give the bridging that relation extraction
--- was supposed to provide.
-CREATE TABLE IF NOT EXISTS rag_concepts (
-  id           text PRIMARY KEY,
-  workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-  name         text NOT NULL,
-  -- Casefolded/whitespace-collapsed form; the dedup key across files.
-  norm         text NOT NULL,
-  UNIQUE (workspace_id, norm)
+-- One row per search_workspace call, written when the chat turn ends so the
+-- row can say which hits the answer cited. Features and ids only: no query
+-- text, no passage text. The arrays are position-aligned over the hits in the
+-- order the model saw them. This is what tells us whether a ranking change
+-- helped (cited rate of the hits it added) without labelled data, and whether
+-- the lexical leg is alive for a language (lex_ranks all null). Pruned after
+-- 90 days by the writer.
+CREATE TABLE IF NOT EXISTS rag_search_events (
+  id            bigserial PRIMARY KEY,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  trace_id      text NOT NULL DEFAULT '',
+  workspace_id  text REFERENCES workspaces(id) ON DELETE SET NULL,
+  actor_user_id text REFERENCES users(id) ON DELETE CASCADE,
+  -- Assistant message of the turn; groups the turn's searches.
+  message_id    text NOT NULL DEFAULT '',
+  -- 1-based position of this search among the turn's search_workspace calls.
+  search_index  int  NOT NULL,
+  -- Majority language of the hits. A short question rarely carries enough
+  -- function words to detect its own language; what came back is the better
+  -- label for "which language was this search in".
+  hits_lang     text NOT NULL,
+  query_terms   int  NOT NULL,
+  cjk_runs      int  NOT NULL,
+  scope_files   int  NOT NULL,
+  embed_ms      int  NOT NULL,
+  sql_ms        int  NOT NULL,
+  hits          int  NOT NULL,
+  -- Hits the model had already been shown earlier in the same turn.
+  prior_overlap int  NOT NULL,
+  chunk_ids     text[]    NOT NULL,
+  file_ids      text[]    NOT NULL,
+  chunk_langs   text[]    NOT NULL,
+  -- Null element: that leg did not have the hit among its candidates.
+  vec_ranks     int[]     NOT NULL,
+  lex_ranks     int[]     NOT NULL,
+  vec_dists     real[]    NOT NULL,
+  -- In the result only because the exact tier raised its lexical weight.
+  tier_only     boolean[] NOT NULL,
+  -- Referenced as [n] in the final answer.
+  cited         boolean[] NOT NULL
 );
-
-CREATE TABLE IF NOT EXISTS rag_concept_mentions (
-  concept_id text NOT NULL REFERENCES rag_concepts(id) ON DELETE CASCADE,
-  chunk_id   text NOT NULL REFERENCES rag_chunks(id) ON DELETE CASCADE,
-  PRIMARY KEY (concept_id, chunk_id)
-);
-CREATE INDEX IF NOT EXISTS rag_concept_mentions_chunk_idx ON rag_concept_mentions(chunk_id);
-
-CREATE OR REPLACE FUNCTION delete_unreferenced_rag_concept() RETURNS trigger AS $$
-BEGIN
-  DELETE FROM rag_concepts c
-  WHERE c.id = OLD.concept_id
-    AND NOT EXISTS (
-      SELECT 1 FROM rag_concept_mentions m WHERE m.concept_id = OLD.concept_id
-    );
-  RETURN NULL;
-END $$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS rag_concept_mentions_delete_orphan ON rag_concept_mentions;
-CREATE CONSTRAINT TRIGGER rag_concept_mentions_delete_orphan
-  AFTER DELETE ON rag_concept_mentions
-  DEFERRABLE INITIALLY DEFERRED
-  FOR EACH ROW EXECUTE FUNCTION delete_unreferenced_rag_concept();
+CREATE INDEX IF NOT EXISTS rag_search_events_created_idx ON rag_search_events(created_at);
+CREATE INDEX IF NOT EXISTS rag_search_events_ws_idx ON rag_search_events(workspace_id, created_at);
 
 -- Canonical content exists only while at least one logical file references it.
 -- File/workspace cascades therefore clean the retrieval index without a job.
@@ -1202,12 +1291,12 @@ CREATE TABLE IF NOT EXISTS blobs (
   created_at  timestamptz NOT NULL DEFAULT now()
 );
 
--- Platform-owned parser objects, keyed by source identity rather than by a
--- file row. Office previews also have a live file-row reference while a file
+-- Platform-owned ingest cache objects, keyed by source identity rather than by
+-- a file row. Office previews also have a live file-row reference while a file
 -- uses them, so cache expiry cannot remove a preview that is still viewable.
 CREATE TABLE IF NOT EXISTS artifact_cache (
   object_path    text PRIMARY KEY,
-  kind           text NOT NULL CHECK (kind IN ('captions', 'derived_text', 'office_preview')),
+  kind           text NOT NULL CHECK (kind IN ('captions', 'derived_text', 'office_preview', 'parse_bundle')),
   source_sha256  text NOT NULL,
   size_bytes     bigint NOT NULL DEFAULT 0 CHECK (size_bytes >= 0),
   created_at     timestamptz NOT NULL DEFAULT now(),
@@ -1229,6 +1318,8 @@ CREATE TABLE IF NOT EXISTS pending_blob_deletions (
   not_before  timestamptz NOT NULL DEFAULT now(),
   attempts    int NOT NULL DEFAULT 0,
   last_error  text,
+  claim_token text,
+  claim_expires_at timestamptz,
   created_at  timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS pending_blob_deletions_due_idx
@@ -1240,11 +1331,14 @@ CREATE INDEX IF NOT EXISTS pending_blob_deletions_due_idx
 
 -- Editor media stored directly in Backblaze B2. The browser uploads to a
 -- short-lived, server-reserved object URL. Plate documents persist only the
--- stable editor_assets.id; read URLs are resolved on demand after
--- workspace/share authorization.
+-- stable editor_assets.id; read URLs are resolved on demand after authorization
+-- against the owning workspace or standalone material. Browser uploads are
+-- workspace-scoped. A standalone asset is created only while cloning a
+-- material and shares the source object's refcounted blob path.
 CREATE TABLE IF NOT EXISTS editor_assets (
   id           text PRIMARY KEY,
-  workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  workspace_id text REFERENCES workspaces(id) ON DELETE CASCADE,
+  material_id  text REFERENCES materials(id) ON DELETE CASCADE,
   user_id      text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   created_by   text REFERENCES users(id) ON DELETE SET NULL,
   name         text NOT NULL CHECK (length(name) BETWEEN 1 AND 255),
@@ -1261,6 +1355,9 @@ CREATE TABLE IF NOT EXISTS editor_assets (
   created_at   timestamptz NOT NULL DEFAULT now(),
   completed_at timestamptz,
   UNIQUE (id, workspace_id),
+  CONSTRAINT editor_assets_exactly_one_owner_check CHECK (
+    (workspace_id IS NOT NULL) <> (material_id IS NOT NULL)
+  ),
   CHECK (
     (purpose='image' AND size_bytes <= 20971520) OR
     (purpose='audio' AND size_bytes <= 104857600) OR
@@ -1271,6 +1368,8 @@ CREATE TABLE IF NOT EXISTS editor_assets (
 );
 CREATE INDEX IF NOT EXISTS editor_assets_workspace_idx
   ON editor_assets(workspace_id, status);
+CREATE INDEX IF NOT EXISTS editor_assets_material_idx
+  ON editor_assets(material_id, status);
 
 -- One reservation table for both upload flows. They were separate tables with
 -- ~90% identical columns, one shared reservation trigger and two near-duplicate
@@ -1348,9 +1447,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS upload_sessions_asset_uidx
 CREATE INDEX IF NOT EXISTS upload_sessions_replace_file_idx
   ON upload_sessions(file_id, status) WHERE target='source_replace';
 
--- Drive/OneDrive relay state is deliberately separate from upload_sessions.
--- The upload row owns quota and object finalization; this row is the durable
--- outbox plus attempt lease for the external Cloudflare Queue runner.
+-- Drive/OneDrive import state is deliberately separate from upload_sessions.
+-- The upload row owns quota and object finalization; this row carries the
+-- provider reference plus the attempt lease the pipeline's `import` job fences
+-- its callbacks with. Queueing and retry live on the matching `jobs` row.
 CREATE TABLE IF NOT EXISTS source_import_requests (
   actor_user_id  text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   request_id     text NOT NULL,
@@ -1377,13 +1477,9 @@ CREATE TABLE IF NOT EXISTS source_import_jobs (
   status             text NOT NULL DEFAULT 'pending'
     CHECK (status IN ('pending','running','succeeded','failed','cancelled')),
   attempts           integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
-  next_attempt_at    timestamptz NOT NULL DEFAULT now(),
   lease_token        text,
   lease_expires_at   timestamptz,
   attempt_object_path text,
-  enqueued_at        timestamptz,
-  dispatch_attempts  integer NOT NULL DEFAULT 0 CHECK (dispatch_attempts >= 0),
-  dispatch_after     timestamptz NOT NULL DEFAULT now(),
   last_error_code    text,
   last_error         text,
   created_at         timestamptz NOT NULL DEFAULT now(),
@@ -1396,12 +1492,6 @@ CREATE TABLE IF NOT EXISTS source_import_jobs (
     (completed_at IS NOT NULL)),
   UNIQUE (actor_user_id, idempotency_key)
 );
-CREATE INDEX IF NOT EXISTS source_import_jobs_dispatch_idx
-  ON source_import_jobs(dispatch_after, created_at)
-  WHERE enqueued_at IS NULL AND status='pending';
-CREATE INDEX IF NOT EXISTS source_import_jobs_retry_idx
-  ON source_import_jobs(next_attempt_at, created_at)
-  WHERE status IN ('pending','running');
 
 -- ============================================================================
 -- Logical storage accounting
@@ -1507,10 +1597,10 @@ $$;
 -- ============================================================================
 
 -- LLM rows (chat/generate/editor/quiz/ingest) must list thinking levels
--- from the product set. Instant is "no thinking". Embedding and vision-only
+-- from the product set. Instant is "no thinking". Retrieval and captioning
 -- rows omit thinking. DeepInfra is only legal for the seeded embed hop.
 CREATE OR REPLACE FUNCTION model_configs_thinking_ok(
-  surfaces text[],
+  slots text[],
   thinking_levels text[],
   default_thinking text
 )
@@ -1522,7 +1612,7 @@ DECLARE
   item text;
   has_llm boolean;
 BEGIN
-  has_llm := surfaces && ARRAY['chat','generate','editor','quiz','ingest']::text[];
+  has_llm := slots && ARRAY['chat','generate','editor','quiz','ingest']::text[];
   IF NOT has_llm THEN
     RETURN thinking_levels = '{}' AND default_thinking = '';
   END IF;
@@ -1532,7 +1622,7 @@ BEGIN
   IF NOT (default_thinking = ANY(thinking_levels)) THEN
     RETURN FALSE;
   END IF;
-  IF 'editor' = ANY(surfaces) AND NOT ('instant' = ANY(thinking_levels)) THEN
+  IF 'editor' = ANY(slots) AND NOT ('instant' = ANY(thinking_levels)) THEN
     RETURN FALSE;
   END IF;
   FOREACH item IN ARRAY thinking_levels
@@ -1558,12 +1648,18 @@ CREATE TABLE IF NOT EXISTS model_configs (
   platform_enabled             boolean NOT NULL DEFAULT false,
   byok_enabled                 boolean NOT NULL DEFAULT false,
   -- Tokens the product may pack into a request. Required on every
-  -- chat/generate/editor/quiz/ingest row. Unused (0) on embedding/vision.
+  -- chat/generate/editor/quiz/ingest row. Unused (0) on retrieval/captioning.
   context_window_tokens        int  NOT NULL,
   thinking_levels              text[] NOT NULL DEFAULT '{}',
   default_thinking             text NOT NULL DEFAULT '',
   params                       jsonb NOT NULL DEFAULT '{}'::jsonb,
-  surfaces                     text[] NOT NULL,
+  -- Slots this row may serve. A slot is a named place the product calls a
+  -- model; what each slot requires of the row is the Go map in
+  -- server/internal/models/slot.go, checked on every registry save.
+  slots                        text[] NOT NULL,
+  -- Operator-set capabilities of the model. agentic_loop is derived from the
+  -- checked-in certification file and is never stored here.
+  capabilities                 text[] NOT NULL DEFAULT '{}',
   -- Credit multipliers, in millionths of a credit per token. 1000 output
   -- micros is the 1x reference (one credit per 1k output tokens of Flash).
   micros_per_input_token       bigint NOT NULL,
@@ -1571,9 +1667,9 @@ CREATE TABLE IF NOT EXISTS model_configs (
   -- Cache-read credit rate. Never DEFAULT 0: that would make platform
   -- cache hits free.
   micros_per_cached_input_token bigint NOT NULL,
-  -- Chat/generate/editor/quiz/ingest/vision may flip this to retire a version.
-  -- Embedding rows may not: protect_embedding_model_configs refuses
-  -- enabled=false, DELETE, stripping or adding the embedding surface, and
+  -- Chat/generate/editor/quiz/ingest/captioning may flip this to retire a version.
+  -- Retrieval rows may not: protect_embedding_model_configs refuses
+  -- enabled=false, DELETE, stripping or adding the retrieval slot, and
   -- in-place changes to the pin, model_slug, or params. Same width
   -- is a different space; a new model is a new row.
   enabled                      boolean NOT NULL DEFAULT true,
@@ -1586,19 +1682,22 @@ CREATE TABLE IF NOT EXISTS model_configs (
   CONSTRAINT model_configs_slug_check CHECK (
     provider_slug <> '' AND model_slug <> ''
   ),
-  CONSTRAINT model_configs_surfaces_check CHECK (
-    surfaces <@ ARRAY['chat','generate','editor','quiz','ingest','embedding','vision']::text[]
-    AND surfaces <> '{}'
+  CONSTRAINT model_configs_slots_check CHECK (
+    slots <@ ARRAY['chat','generate','editor','quiz','ingest','retrieval','captioning']::text[]
+    AND slots <> '{}'
+  ),
+  CONSTRAINT model_configs_capabilities_check CHECK (
+    capabilities <@ ARRAY['vision','pdf','embedding']::text[]
   ),
   CONSTRAINT model_configs_default_for_check CHECK (
-    is_default_for <@ ARRAY['chat','generate','editor','quiz','ingest','embedding','vision']::text[]
+    is_default_for <@ ARRAY['chat','generate','editor','quiz','ingest','retrieval','captioning']::text[]
   ),
   CONSTRAINT model_configs_embedding_dim_check CHECK (
-    NOT ('embedding' = ANY(surfaces))
+    NOT ('retrieval' = ANY(slots))
     OR params->>'dimensions' IN ('2560')
   ),
   CONSTRAINT model_configs_embedding_enabled_check CHECK (
-    NOT ('embedding' = ANY(surfaces)) OR enabled
+    NOT ('retrieval' = ANY(slots)) OR enabled
   ),
   CONSTRAINT model_configs_enabled_path_check CHECK (
     NOT enabled OR platform_enabled OR byok_enabled
@@ -1607,32 +1706,32 @@ CREATE TABLE IF NOT EXISTS model_configs (
     platform_enabled OR is_default_for = '{}'
   ),
   CONSTRAINT model_configs_llm_window_check CHECK (
-    NOT (surfaces && ARRAY['chat','generate','editor','quiz','ingest']::text[])
+    NOT (slots && ARRAY['chat','generate','editor','quiz','ingest']::text[])
     OR context_window_tokens > 0
   ),
   -- Credit micros may be 0 only on BYOK-only rows. Platform chat/generate/
-  -- editor/quiz/ingest/vision need both sides > 0. Embedding needs input > 0;
-  -- output may be 0.
+  -- editor/quiz/ingest/captioning need both sides > 0. Retrieval needs
+  -- input > 0; output may be 0.
   CONSTRAINT model_configs_credit_rates_check CHECK (
     NOT platform_enabled
     OR (
-      'embedding' = ANY(surfaces)
+      'retrieval' = ANY(slots)
       AND micros_per_input_token > 0
       AND micros_per_cached_input_token >= 0
       AND micros_per_output_token >= 0
     )
     OR (
-      NOT ('embedding' = ANY(surfaces))
+      NOT ('retrieval' = ANY(slots))
       AND micros_per_input_token > 0
       AND micros_per_cached_input_token > 0
       AND micros_per_output_token > 0
     )
   ),
   CONSTRAINT model_configs_thinking_check CHECK (
-    model_configs_thinking_ok(surfaces, thinking_levels, default_thinking)
+    model_configs_thinking_ok(slots, thinking_levels, default_thinking)
   ),
   CONSTRAINT model_configs_embedding_table_check CHECK (
-    NOT ('embedding' = ANY(surfaces))
+    NOT ('retrieval' = ANY(slots))
     OR params->>'vector_table' ~ '^rag_chunk_vectors_[a-z0-9_]+$'
   ),
   -- DeepInfra is only the seeded qwen-embed hop. No other router rows.
@@ -1640,14 +1739,14 @@ CREATE TABLE IF NOT EXISTS model_configs (
     provider_slug <> 'deepinfra'
     OR (
       model_slug = 'Qwen/Qwen3-Embedding-4B'
-      AND surfaces = ARRAY['embedding']::text[]
+      AND slots = ARRAY['retrieval']::text[]
       AND NOT byok_enabled
     )
   )
 );
 
 -- Embedding pins live on the workspace for life. Disable, delete, stripping
--- the surface, or rewriting the model identity would leave those workspaces
+-- the slot, or rewriting the model identity would leave those workspaces
 -- resolving a row the operator thought had moved, or fail closed on every
 -- search and upload. A new embedding model, including another 2560-d one,
 -- is an INSERT. Every row's provider/model/version identity is immutable;
@@ -1655,14 +1754,14 @@ CREATE TABLE IF NOT EXISTS model_configs (
 CREATE OR REPLACE FUNCTION protect_embedding_model_configs() RETURNS trigger AS $$
 BEGIN
   IF TG_OP = 'DELETE' THEN
-    IF 'embedding' = ANY(OLD.surfaces) THEN
-      RAISE EXCEPTION 'embedding model_configs rows cannot be deleted';
+    IF 'retrieval' = ANY(OLD.slots) THEN
+      RAISE EXCEPTION 'retrieval model_configs rows cannot be deleted';
     END IF;
     RETURN OLD;
   END IF;
 
-  IF 'embedding' = ANY(NEW.surfaces) AND NOT NEW.enabled THEN
-    RAISE EXCEPTION 'embedding model_configs rows cannot be disabled';
+  IF 'retrieval' = ANY(NEW.slots) AND NOT NEW.enabled THEN
+    RAISE EXCEPTION 'retrieval model_configs rows cannot be disabled';
   END IF;
 
   IF TG_OP = 'UPDATE' THEN
@@ -1672,19 +1771,19 @@ BEGIN
       RAISE EXCEPTION 'model_configs identity is immutable; insert a new row or version';
     END IF;
 
-    IF 'embedding' = ANY(OLD.surfaces)
-       AND NOT ('embedding' = ANY(NEW.surfaces)) THEN
-      RAISE EXCEPTION 'cannot remove embedding from model_configs.surfaces';
+    IF 'retrieval' = ANY(OLD.slots)
+       AND NOT ('retrieval' = ANY(NEW.slots)) THEN
+      RAISE EXCEPTION 'cannot remove retrieval from model_configs.slots';
     END IF;
 
-    IF NOT ('embedding' = ANY(OLD.surfaces))
-       AND 'embedding' = ANY(NEW.surfaces) THEN
-      RAISE EXCEPTION 'cannot add embedding to an existing model_configs row; insert a new row';
+    IF NOT ('retrieval' = ANY(OLD.slots))
+       AND 'retrieval' = ANY(NEW.slots) THEN
+      RAISE EXCEPTION 'cannot add retrieval to an existing model_configs row; insert a new row';
     END IF;
 
-    IF 'embedding' = ANY(OLD.surfaces) THEN
+    IF 'retrieval' = ANY(OLD.slots) THEN
       IF NEW.params IS DISTINCT FROM OLD.params THEN
-        RAISE EXCEPTION 'cannot change params on an embedding model_configs row';
+        RAISE EXCEPTION 'cannot change params on a retrieval model_configs row';
       END IF;
     END IF;
   END IF;
@@ -1697,11 +1796,11 @@ CREATE TRIGGER model_configs_protect_embedding
   BEFORE INSERT OR UPDATE OR DELETE ON model_configs
   FOR EACH ROW EXECUTE FUNCTION protect_embedding_model_configs();
 
--- One live default per surface. The registry otherwise compares version across
+-- One live default per slot. The registry otherwise compares version across
 -- different model refs and a tie is last-row-wins on an unordered scan. Retarget by
 -- clearing the old row's is_default_for, then marking the new one, in one
 -- transaction, then bump model_registry_state.version.
-CREATE OR REPLACE FUNCTION protect_one_default_per_surface() RETURNS trigger AS $$
+CREATE OR REPLACE FUNCTION protect_one_default_per_slot() RETURNS trigger AS $$
 DECLARE
   clash text;
 BEGIN
@@ -1718,7 +1817,7 @@ BEGIN
   )
   LIMIT 1;
   IF clash IS NOT NULL THEN
-    RAISE EXCEPTION 'surface % already has a default; clear the other row first', clash;
+    RAISE EXCEPTION 'slot % already has a default; clear the other row first', clash;
   END IF;
   RETURN NEW;
 END $$ LANGUAGE plpgsql;
@@ -1726,7 +1825,7 @@ END $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS model_configs_one_default ON model_configs;
 CREATE TRIGGER model_configs_one_default
   BEFORE INSERT OR UPDATE OF is_default_for ON model_configs
-  FOR EACH ROW EXECUTE FUNCTION protect_one_default_per_surface();
+  FOR EACH ROW EXECUTE FUNCTION protect_one_default_per_slot();
 
 CREATE INDEX IF NOT EXISTS model_configs_enabled_idx
   ON model_configs (provider_slug, model_slug, version DESC) WHERE enabled;
@@ -1741,7 +1840,7 @@ INSERT INTO model_registry_state (id, version) VALUES (true, 1)
 
 -- Bootstrap the models the product ships with. New versions are written
 -- from the ops dashboard registry grid; these rows are the 1x Flash
--- reference and the embedding / vision defaults.
+-- reference and the retrieval / captioning defaults.
 --
 -- Retargeting the embedding default is not a hot reload and not a migration:
 -- each workspace pins its own embedding model at creation and keeps it, so a
@@ -1754,59 +1853,59 @@ INSERT INTO model_registry_state (id, version) VALUES (true, 1)
 INSERT INTO model_configs (
   version, provider_name, model_name, provider_slug, model_slug,
   platform_enabled, byok_enabled, context_window_tokens,
-  thinking_levels, default_thinking, params, surfaces,
+  thinking_levels, default_thinking, params, slots, capabilities,
   micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
   enabled, is_default_for
 ) VALUES
   (1, 'DeepSeek', 'Flash Vision', 'deepseek', 'deepseek-v4-flash-vision-exp',
    true, true, 1000000,
    ARRAY['instant','low','mid','high','max']::text[], 'instant',
-   '{"temperature":0.3,"modalities":{"vision":true}}'::jsonb,
-   ARRAY['chat','generate','editor','quiz','ingest','vision'],
+   '{"temperature":0.3}'::jsonb,
+   ARRAY['chat','generate','editor','quiz','ingest','captioning'], ARRAY['vision'],
    250, 1000, 25, true,
    ARRAY['chat','generate','editor','quiz','ingest']),
   (1, 'DeepSeek', 'Pro', 'deepseek', 'deepseek-v4-pro',
    true, true, 1000000,
    ARRAY['instant','low','mid','high','max']::text[], 'instant',
    '{"temperature":0.3}'::jsonb,
-   ARRAY['chat','generate','quiz'],
+   ARRAY['chat','generate','quiz'], ARRAY[]::text[],
    775, 3100, 78, true,
    ARRAY[]::text[]),
   (1, 'OpenAI', 'GPT-5.6 Sol', 'openai', 'gpt-5.6-sol',
    false, true, 400000,
    ARRAY['instant','low','mid','high','max']::text[], 'mid',
-   '{"temperature":0.3,"modalities":{"vision":true,"pdf":true}}'::jsonb,
-   ARRAY['generate','quiz'],
+   '{"temperature":0.3}'::jsonb,
+   ARRAY['generate','quiz'], ARRAY['vision','pdf'],
    0, 0, 0, true,
    ARRAY[]::text[]),
   (1, 'OpenAI', 'GPT-5.6 Terra', 'openai', 'gpt-5.6-terra',
    false, true, 400000,
    ARRAY['instant','low','mid','high','max']::text[], 'mid',
-   '{"temperature":0.3,"modalities":{"vision":true,"pdf":true}}'::jsonb,
-   ARRAY['generate','quiz'],
+   '{"temperature":0.3}'::jsonb,
+   ARRAY['generate','quiz'], ARRAY['vision','pdf'],
    0, 0, 0, true,
    ARRAY[]::text[]),
   (1, 'OpenAI', 'GPT-5.6 Luna', 'openai', 'gpt-5.6-luna',
    false, true, 400000,
    ARRAY['instant','low','mid','high','max']::text[], 'mid',
-   '{"temperature":0.3,"modalities":{"vision":true,"pdf":true}}'::jsonb,
-   ARRAY['generate','quiz'],
+   '{"temperature":0.3}'::jsonb,
+   ARRAY['generate','quiz'], ARRAY['vision','pdf'],
    0, 0, 0, true,
    ARRAY[]::text[]),
   (1, 'Qwen', 'Embedding 4B', 'deepinfra', 'Qwen/Qwen3-Embedding-4B',
    true, false, 0,
    ARRAY[]::text[], '',
    '{"dimensions": 2560, "vector_table": "rag_chunk_vectors_2560"}'::jsonb,
-   ARRAY['embedding'],
+   ARRAY['retrieval'], ARRAY['embedding'],
    50, 50, 0, true,
-   ARRAY['embedding']),
+   ARRAY['retrieval']),
   (1, 'Z.ai', 'GLM-5.3-Flash', 'zai', 'glm-5.3-flash',
    true, false, 1048576,
-   ARRAY['low','high','max']::text[], 'max',
-   '{"temperature": 0.2, "modalities": {"vision": true}}'::jsonb,
-   ARRAY['chat','vision'],
+   ARRAY['low','high','max']::text[], 'low',
+   '{"temperature": 0.2}'::jsonb,
+   ARRAY['chat','captioning'], ARRAY['vision'],
    150, 500, 30, true,
-   ARRAY['vision'])
+   ARRAY['captioning'])
 ON CONFLICT (provider_slug, model_slug, version) DO NOTHING;
 
 -- Per-user provider keys for BYOK rows. One key unlocks every catalog model
@@ -2171,6 +2270,11 @@ CREATE TABLE IF NOT EXISTS provider_calls (
   context_counting_version int NOT NULL DEFAULT 0 CHECK (context_counting_version >= 0),
   credit_micros  bigint NOT NULL DEFAULT 0,
   opened_at      timestamptz NOT NULL DEFAULT now(),
+  -- Closing the parent session prevents new calls but does not discard a
+  -- receipt for a request already sent to the provider. Python writes a
+  -- provider-timeout-specific deadline; the default covers the longest
+  -- synchronous provider timeout for direct SQL and recovery callers.
+  receipt_deadline_at timestamptz NOT NULL DEFAULT (now() + interval '12 hours 5 minutes'),
   received_at    timestamptz,
   applied_at     timestamptz,
   abandoned_at   timestamptz,
@@ -2182,10 +2286,16 @@ CREATE TABLE IF NOT EXISTS provider_calls (
   CONSTRAINT provider_calls_context_total_check CHECK (
     context_total_tokens = context_system_tokens
       + context_tool_tokens + context_conversation_tokens
+  ),
+  CONSTRAINT provider_calls_receipt_deadline_check CHECK (
+    receipt_deadline_at >= opened_at
   )
 );
 CREATE INDEX IF NOT EXISTS provider_calls_unbilled_idx
   ON provider_calls(opened_at)
+  WHERE status = 'open';
+CREATE INDEX IF NOT EXISTS provider_calls_receipt_deadline_idx
+  ON provider_calls(receipt_deadline_at)
   WHERE status = 'open';
 CREATE INDEX IF NOT EXISTS provider_calls_reservation_idx
   ON provider_calls(reservation_id, kind, status, opened_at DESC);
@@ -2645,11 +2755,17 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  SELECT w.user_id INTO NEW.user_id
-  FROM workspaces w
-  WHERE w.id = NEW.workspace_id;
+  IF NEW.workspace_id IS NOT NULL THEN
+    SELECT w.user_id INTO NEW.user_id
+    FROM workspaces w
+    WHERE w.id = NEW.workspace_id;
+  ELSE
+    SELECT m.owner_user_id INTO NEW.user_id
+    FROM materials m
+    WHERE m.id = NEW.material_id AND m.workspace_id IS NULL;
+  END IF;
   IF NEW.user_id IS NULL THEN
-    RAISE EXCEPTION 'workspace % has no storage owner', NEW.workspace_id;
+    RAISE EXCEPTION 'editor asset % has no storage owner', NEW.id;
   END IF;
   RETURN NEW;
 END;
@@ -2673,6 +2789,9 @@ BEGIN
       SELECT w.user_id INTO NEW.owner_user_id
       FROM workspaces w
       WHERE w.id = NEW.workspace_id;
+      -- Visibility belongs to the workspace. A copied/moved material cannot
+      -- carry a standalone public/link policy into it.
+      NEW.privacy = 'private';
     END IF;
     IF NEW.owner_user_id IS NULL THEN
       RAISE EXCEPTION 'material % has no storage owner', NEW.id;
@@ -2699,6 +2818,10 @@ BEGIN
   IF p_path IS NULL OR p_path = '' THEN
     RETURN;
   END IF;
+  -- This lock is shared with blob_ref/blob_unref and the remote reaper. It
+  -- closes the gap where a transaction has started adding a reference while a
+  -- reaper is deciding that the same path is unused.
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_path, 0));
   IF EXISTS (SELECT 1 FROM blobs WHERE object_path = p_path) THEN
     RETURN;
   END IF;
@@ -2713,15 +2836,30 @@ CREATE OR REPLACE FUNCTION blob_ref(p_path text)
 RETURNS void
 LANGUAGE plpgsql
 AS $$
+DECLARE
+	delete_claim text;
 BEGIN
   IF p_path IS NULL OR p_path = '' THEN
     RETURN;
   END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_path, 0));
+  -- A bucket deletion cannot be rolled back. A non-null claim means a worker
+  -- may already have deleted the object, even after its lease expired. Only an
+  -- explicit failed-request acknowledgement clears the token; otherwise the
+  -- reaper must reclaim and retry the idempotent bucket delete.
+  SELECT claim_token INTO delete_claim
+  FROM pending_blob_deletions
+  WHERE object_path = p_path
+  FOR UPDATE;
+  IF delete_claim IS NOT NULL THEN
+    RAISE EXCEPTION 'blob % is being deleted; retry the transaction', p_path
+      USING ERRCODE = '40001';
+  END IF;
+
   INSERT INTO blobs (object_path, ref_count) VALUES (p_path, 1)
   ON CONFLICT (object_path) DO UPDATE SET ref_count = blobs.ref_count + 1;
-  -- A queued path can come back to life: cloning a workspace re-references a
-  -- path whose last file was just deleted. Cancelling the queued delete is what
-  -- stops the reaper removing an object that is live again.
+  -- An unclaimed queued path can come back to life. Cancelling that queued
+  -- delete stops the reaper from removing an object that is live again.
   DELETE FROM pending_blob_deletions WHERE object_path = p_path;
 END;
 $$;
@@ -2736,6 +2874,7 @@ BEGIN
   IF p_path IS NULL OR p_path = '' THEN
     RETURN;
   END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_path, 0));
   -- Decrement only while other references remain; the last one deletes the row
   -- so the CHECK (ref_count > 0) invariant holds without a zero state.
   UPDATE blobs SET ref_count = ref_count - 1
@@ -2751,9 +2890,11 @@ $$;
 
 -- One function for every table that names blob paths. The columns arrive as
 -- trigger arguments and are read through to_jsonb, so files (source blob) and
--- editor_assets (one) share it. Parse zips and captions are owned by
--- artifact_cache instead, so a file delete cannot reap a caption another
--- upload of the same bytes still wants. Row-level AFTER triggers fire on FK
+-- editor_assets (one) share it. Durable captions, derived text, Office previews,
+-- and parse-bundle reuse copies are owned by artifact_cache instead, so deleting
+-- one file cannot reap a cache object another upload of the same bytes still
+-- wants. Local parse handoffs are governed by the shared-spool sweeper.
+-- Row-level AFTER triggers fire on FK
 -- cascades, which is the entire point: a workspace or user delete never runs
 -- handler code, and this is what keeps the bucket in step with it.
 CREATE OR REPLACE FUNCTION account_blob_refs()
@@ -2812,6 +2953,205 @@ BEGIN
     PERFORM adjust_user_storage_used(NEW.user_id, NEW.size_bytes - OLD.size_bytes);
   END IF;
   RETURN NULL;
+END;
+$$;
+
+-- Close the job, attempt, session, and reserved-credit bookkeeping selected by
+-- a lifecycle boundary. An already-open provider call remains eligible for its
+-- exact late receipt until receipt_deadline_at; the provider-call sweeper
+-- abandons it afterward. Callers choose and lock candidates with SKIP LOCKED so
+-- they never wait behind a worker that will observe the new file/account state.
+CREATE OR REPLACE FUNCTION cancel_pipeline_jobs(
+  target_job_ids text[],
+  attempt_outcome text,
+  terminal_category text,
+  terminal_code text,
+  terminal_detail text
+)
+RETURNS bigint
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  cancelled_count bigint;
+BEGIN
+  IF attempt_outcome NOT IN ('failed', 'superseded') THEN
+    RAISE EXCEPTION 'invalid pipeline cancellation outcome: %', attempt_outcome;
+  END IF;
+  WITH candidates AS MATERIALIZED (
+    SELECT id, payload->>'reservationId' AS reservation_id
+    FROM jobs
+    WHERE id=ANY(COALESCE(target_job_ids, ARRAY[]::text[]))
+      AND type IN ('parse','ingest') AND status IN ('pending','running')
+    FOR UPDATE
+  ), closed_attempts AS (
+    UPDATE ingest_job_attempts a SET
+      status=attempt_outcome, stage='cancelled', error_category=terminal_category,
+      error_code=terminal_code, error_detail=terminal_detail,
+      retryable=false, finished_at=COALESCE(a.finished_at, now())
+    FROM candidates c
+    WHERE a.job_id=c.id AND a.status='running'
+    RETURNING a.id
+  ), cancelled AS (
+    UPDATE jobs j SET status='failed', error=terminal_detail,
+      locked_at=NULL, lease_expires_at=NULL, updated_at=now()
+    FROM candidates c WHERE j.id=c.id
+    RETURNING c.reservation_id
+  ), closed AS (
+    UPDATE provider_sessions ps SET
+      status=CASE WHEN EXISTS (
+        SELECT 1 FROM usage_events ue WHERE ue.reservation_id=ps.id
+      ) THEN 'settled' ELSE 'released' END,
+      settled_at=now()
+    FROM cancelled c
+    WHERE ps.id=c.reservation_id AND ps.status='open'
+    RETURNING ps.actor_user_id, ps.reserved_micros
+  ), totals AS (
+    SELECT actor_user_id, sum(reserved_micros) AS reserved_micros
+    FROM closed GROUP BY actor_user_id
+  ), counters AS (
+    UPDATE user_credits uc SET
+      reserved_micros=GREATEST(0, uc.reserved_micros-t.reserved_micros),
+      updated_at=now()
+    FROM totals t WHERE uc.user_id=t.actor_user_id
+  )
+  SELECT count(*) INTO cancelled_count FROM cancelled;
+  RETURN cancelled_count;
+END;
+$$;
+
+-- Deleting a file is also cancellation of every parse/ingest lease that still
+-- names it. This is a database trigger because workspace/account deletion
+-- reaches files through FK cascades and never calls a Go handler.
+CREATE OR REPLACE FUNCTION cancel_file_pipeline_jobs()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  target_job_ids text[];
+BEGIN
+  SELECT COALESCE(array_agg(locked.id), ARRAY[]::text[])
+  INTO target_job_ids
+  FROM (
+    SELECT id FROM jobs
+    WHERE type IN ('parse','ingest')
+      AND payload->>'fileId'=OLD.id
+      AND status IN ('pending','running')
+    FOR UPDATE SKIP LOCKED
+  ) locked;
+  PERFORM cancel_pipeline_jobs(
+    target_job_ids, 'failed', 'lifecycle', 'source_deleted', 'source deleted'
+  );
+  RETURN OLD;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION cancel_source_import_on_upload_delete()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  -- A running cloud import may already have staged a provider download under
+  -- its attempt key. Preserve that key in the durable blob outbox before the
+  -- job row is cleared; otherwise account/workspace deletion loses the only
+  -- reference to imported bytes. The grace also covers an import worker upload
+  -- already in flight when this cancellation commits.
+  PERFORM blob_enqueue_deletion(attempt_object_path, interval '24 hours')
+  FROM source_import_jobs
+  WHERE upload_session_id=OLD.id
+    AND status IN ('pending','running')
+    AND attempt_object_path IS NOT NULL;
+  UPDATE source_import_jobs SET
+    status='cancelled', lease_token=NULL, lease_expires_at=NULL,
+    attempt_object_path=NULL, completed_at=COALESCE(completed_at, now()),
+    last_error_code='source_deleted', last_error='source deleted', updated_at=now()
+  WHERE upload_session_id=OLD.id AND status IN ('pending','running');
+  RETURN OLD;
+END;
+$$;
+
+-- Entering account deletion is an immediate execution boundary even though
+-- durable content remains recoverable for 30 days. Stop work that is billed to
+-- the user, work on content they own, and imports they initiated; release every
+-- open credit reservation so a locked account cannot keep consuming capacity.
+-- Calls already sent remain settleable by exact id until their receipt
+-- deadline; closing their sessions still prevents any new provider call.
+CREATE OR REPLACE FUNCTION cancel_user_async_work(target_user_id text)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  WITH candidates AS MATERIALIZED (
+    SELECT j.id, j.payload->>'reservationId' AS reservation_id,
+           j.payload->>'fileId' AS file_id,
+           COALESCE(j.payload->>'sourceETag', '') AS source_etag,
+           CASE WHEN jsonb_typeof(j.payload->'sourceRevision')='number'
+                THEN (j.payload->>'sourceRevision')::bigint END AS source_revision
+    FROM jobs j
+    LEFT JOIN files f ON f.id=j.payload->>'fileId'
+    LEFT JOIN workspaces w ON w.id=f.workspace_id
+    WHERE j.type IN ('import','parse','ingest')
+      AND j.status IN ('pending','running')
+      AND (j.payload->>'actorUserId'=target_user_id OR w.user_id=target_user_id)
+    FOR UPDATE OF j SKIP LOCKED
+  ), closed_attempts AS (
+    UPDATE ingest_job_attempts a SET
+      status='failed', stage='cancelled', error_category='lifecycle',
+      error_code='account_deletion', error_detail='account deletion requested',
+      retryable=false, finished_at=COALESCE(a.finished_at, now())
+    FROM candidates c
+    WHERE a.job_id=c.id AND a.status='running'
+  ), abandoned_content AS (
+    DELETE FROM rag_contents rc
+    USING candidates c
+    WHERE rc.claim_job_id=c.id AND rc.status='processing'
+  ), failed_files AS (
+    UPDATE files f SET status='failed', indexed=false, preview_blob_path=NULL
+    FROM candidates c
+    WHERE f.id=c.file_id
+      AND f.status IN ('pending','processing')
+      AND (c.source_revision IS NULL OR f.revision=c.source_revision)
+      AND COALESCE(f.source_etag, '')=c.source_etag
+  ), cancelled AS (
+    UPDATE jobs j SET status='failed', error='account deletion requested',
+      locked_at=NULL, lease_expires_at=NULL, updated_at=now()
+    FROM candidates c WHERE j.id=c.id
+    RETURNING c.reservation_id
+  ), provider_targets AS (
+    SELECT reservation_id AS id FROM cancelled WHERE reservation_id IS NOT NULL
+    UNION
+    SELECT id FROM provider_sessions
+    WHERE actor_user_id=target_user_id AND status='open'
+  ), closed AS (
+    UPDATE provider_sessions ps SET
+      status=CASE WHEN EXISTS (
+        SELECT 1 FROM usage_events ue WHERE ue.reservation_id=ps.id
+      ) THEN 'settled' ELSE 'released' END,
+      settled_at=now()
+    FROM provider_targets p
+    WHERE ps.id=p.id AND ps.status='open'
+    RETURNING ps.actor_user_id, ps.reserved_micros
+  ), totals AS (
+    SELECT actor_user_id, sum(reserved_micros) AS reserved_micros
+    FROM closed GROUP BY actor_user_id
+  )
+  UPDATE user_credits uc SET
+    reserved_micros=GREATEST(0, uc.reserved_micros-t.reserved_micros),
+    updated_at=now()
+  FROM totals t WHERE uc.user_id=t.actor_user_id;
+
+  -- Removing unfinished upload sessions releases storage reservations and the
+  -- existing delete trigger cancels/clears any cloud-import lease.
+  DELETE FROM upload_sessions us
+  USING workspaces w
+  WHERE us.workspace_id=w.id AND us.status='pending'
+    AND (
+      us.created_by=target_user_id OR w.user_id=target_user_id OR EXISTS (
+        SELECT 1 FROM source_import_jobs sij
+        WHERE sij.upload_session_id=us.id AND sij.actor_user_id=target_user_id
+      )
+    );
+
+  DELETE FROM source_import_requests WHERE actor_user_id=target_user_id;
 END;
 $$;
 
@@ -2923,6 +3263,10 @@ DROP TRIGGER IF EXISTS files_storage_owner_before ON files;
 CREATE TRIGGER files_storage_owner_before
 BEFORE INSERT OR UPDATE OF workspace_id ON files
 FOR EACH ROW EXECUTE FUNCTION set_file_storage_owner();
+DROP TRIGGER IF EXISTS files_cancel_pipeline_jobs_before ON files;
+CREATE TRIGGER files_cancel_pipeline_jobs_before
+BEFORE DELETE ON files
+FOR EACH ROW EXECUTE FUNCTION cancel_file_pipeline_jobs();
 DROP TRIGGER IF EXISTS files_storage_after ON files;
 CREATE TRIGGER files_storage_after
 AFTER INSERT OR UPDATE OR DELETE ON files
@@ -2932,9 +3276,9 @@ CREATE TRIGGER files_blob_refs_after
 AFTER INSERT OR UPDATE OF blob_path, preview_blob_path OR DELETE ON files
 FOR EACH ROW EXECUTE FUNCTION account_blob_refs('blob_path', 'preview_blob_path');
 
--- Parse zips are dropped on success while a concurrent worker may still be
--- downloading the same object, so unref waits 15 minutes. Caption GC can
--- tolerate the same delay.
+-- Durable cache readers may still be downloading an object when its cache row
+-- expires, so unref waits 15 minutes. Local parse handoffs never enter here;
+-- only their separate parse-bundles/* B2 copies do.
 CREATE OR REPLACE FUNCTION account_artifact_cache_refs()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -2963,6 +3307,10 @@ DROP TRIGGER IF EXISTS upload_sessions_reservation_after ON upload_sessions;
 CREATE TRIGGER upload_sessions_reservation_after
 AFTER UPDATE OR DELETE ON upload_sessions
 FOR EACH ROW EXECUTE FUNCTION account_upload_reservation();
+DROP TRIGGER IF EXISTS upload_sessions_cancel_import_before ON upload_sessions;
+CREATE TRIGGER upload_sessions_cancel_import_before
+BEFORE DELETE ON upload_sessions
+FOR EACH ROW EXECUTE FUNCTION cancel_source_import_on_upload_delete();
 DROP TRIGGER IF EXISTS upload_sessions_blob_deletion_after ON upload_sessions;
 CREATE TRIGGER upload_sessions_blob_deletion_after
 AFTER DELETE ON upload_sessions
@@ -2970,7 +3318,7 @@ FOR EACH ROW EXECUTE FUNCTION account_upload_blob_deletion();
 
 DROP TRIGGER IF EXISTS editor_assets_storage_owner_before ON editor_assets;
 CREATE TRIGGER editor_assets_storage_owner_before
-BEFORE INSERT OR UPDATE OF workspace_id ON editor_assets
+BEFORE INSERT OR UPDATE OF workspace_id, material_id ON editor_assets
 FOR EACH ROW EXECUTE FUNCTION set_editor_asset_storage_owner();
 DROP TRIGGER IF EXISTS editor_assets_blob_refs_after ON editor_assets;
 CREATE TRIGGER editor_assets_blob_refs_after
@@ -2989,6 +3337,280 @@ DROP TRIGGER IF EXISTS materials_storage_after ON materials;
 CREATE TRIGGER materials_storage_after
 AFTER INSERT OR UPDATE OR DELETE ON materials
 FOR EACH ROW EXECUTE FUNCTION account_material_storage();
+
+CREATE OR REPLACE FUNCTION enqueue_material_collaboration_eviction(
+  target_material_id text,
+  event_type text DEFAULT 'access-changed',
+  eviction_mode text DEFAULT 'discard'
+)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  eviction_id text := 'cev_' || substr(md5(
+    random()::text || clock_timestamp()::text || target_material_id
+  ), 1, 24);
+  room_schema int;
+  room_name text;
+BEGIN
+  IF eviction_mode NOT IN ('discard', 'drain') THEN
+    RAISE EXCEPTION 'invalid collaboration eviction mode %', eviction_mode;
+  END IF;
+  SELECT d.room_schema INTO room_schema
+  FROM material_yjs_documents d
+  WHERE d.material_id=target_material_id;
+  room_name := 'material:' || target_material_id || ':schema:' || COALESCE(room_schema, 1)::text;
+  INSERT INTO collaboration_eviction_outbox (id, channel, payload)
+  VALUES (
+    eviction_id,
+    'evo:collaboration:evict',
+    jsonb_build_object(
+      'evictionId', eviction_id,
+      'materialId', target_material_id,
+      'mode', eviction_mode,
+      'room', room_name,
+      'type', event_type
+    )
+  );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION enqueue_workspace_collaboration_evictions(
+  target_workspace_id text,
+  eviction_mode text DEFAULT 'discard'
+)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  material_row record;
+BEGIN
+  FOR material_row IN
+    SELECT id FROM materials WHERE workspace_id=target_workspace_id
+  LOOP
+    PERFORM enqueue_material_collaboration_eviction(
+      material_row.id, 'access-changed', eviction_mode
+    );
+  END LOOP;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION material_acl_eviction_trigger()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  eviction_mode text := 'discard';
+BEGIN
+  IF TG_OP='UPDATE'
+    AND OLD.workspace_id IS NOT DISTINCT FROM NEW.workspace_id
+    AND OLD.owner_user_id=NEW.owner_user_id
+    AND (
+      (OLD.privacy='private' AND NEW.privacy IN ('link','public'))
+      OR (OLD.privacy='link' AND NEW.privacy='public')
+    )
+  THEN
+    eviction_mode := 'drain';
+  END IF;
+  PERFORM enqueue_material_collaboration_eviction(
+    CASE WHEN TG_OP='DELETE' THEN OLD.id ELSE NEW.id END,
+    'access-changed',
+    eviction_mode
+  );
+  RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION workspace_acl_eviction_trigger()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  eviction_mode text := 'discard';
+BEGIN
+  IF OLD.user_id=NEW.user_id
+    AND (
+      -- A private workspace has no nonmember grant, so its dormant share role
+      -- cannot turn a privacy widening into a destructive reset.
+      OLD.privacy='private'
+      OR (
+        (CASE OLD.privacy
+          WHEN 'private' THEN 0 WHEN 'link' THEN 1 WHEN 'public' THEN 2
+        END) <= (CASE NEW.privacy
+          WHEN 'private' THEN 0 WHEN 'link' THEN 1 WHEN 'public' THEN 2
+        END)
+        AND (CASE OLD.share_role
+          WHEN 'viewer' THEN 0 WHEN 'commenter' THEN 1 WHEN 'editor' THEN 2
+        END) <= (CASE NEW.share_role
+          WHEN 'viewer' THEN 0 WHEN 'commenter' THEN 1 WHEN 'editor' THEN 2
+        END)
+      )
+    )
+  THEN
+    eviction_mode := 'drain';
+  END IF;
+  PERFORM enqueue_workspace_collaboration_evictions(NEW.id, eviction_mode);
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION workspace_member_acl_eviction_trigger()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  eviction_mode text := 'discard';
+BEGIN
+  IF TG_OP='INSERT' OR (
+    TG_OP='UPDATE'
+    AND (CASE OLD.role
+      WHEN 'viewer' THEN 0 WHEN 'commenter' THEN 1
+      WHEN 'editor' THEN 2 WHEN 'owner' THEN 3
+    END) <= (CASE NEW.role
+      WHEN 'viewer' THEN 0 WHEN 'commenter' THEN 1
+      WHEN 'editor' THEN 2 WHEN 'owner' THEN 3
+    END)
+  )
+  THEN
+    eviction_mode := 'drain';
+  END IF;
+  PERFORM enqueue_workspace_collaboration_evictions(
+    CASE WHEN TG_OP='DELETE' THEN OLD.workspace_id ELSE NEW.workspace_id END,
+    eviction_mode
+  );
+  RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION user_acl_eviction_trigger()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  target_user_id text := CASE WHEN TG_OP='DELETE' THEN OLD.id ELSE NEW.id END;
+  eviction_mode text := 'discard';
+  material_event_type text := 'access-changed';
+  eviction_id text := 'cev_' || substr(md5(
+    random()::text || clock_timestamp()::text || target_user_id
+  ), 1, 24);
+  material_row record;
+BEGIN
+  IF TG_OP='UPDATE'
+    AND NEW.deleted_at IS NULL
+    AND NEW.deletion_requested_at IS NULL
+    AND NEW.suspended_at IS NULL
+    AND (CASE OLD.plan_tier WHEN 'free' THEN 0 WHEN 'pro' THEN 1 END)
+      <= (CASE NEW.plan_tier WHEN 'free' THEN 0 WHEN 'pro' THEN 1 END)
+    AND (CASE OLD.subscription_status
+      WHEN 'none' THEN 0 WHEN 'canceled' THEN 0
+      WHEN 'past_due' THEN 1 WHEN 'trialing' THEN 1 WHEN 'active' THEN 1
+      ELSE -1
+    END) <= (CASE NEW.subscription_status
+      WHEN 'none' THEN 0 WHEN 'canceled' THEN 0
+      WHEN 'past_due' THEN 1 WHEN 'trialing' THEN 1 WHEN 'active' THEN 1
+      ELSE -1
+    END)
+  THEN
+    eviction_mode := 'drain';
+    material_event_type := 'account-access-restored';
+  END IF;
+  INSERT INTO collaboration_eviction_outbox (id, channel, payload)
+  VALUES (
+    eviction_id,
+    'evo:collaboration:user-evict',
+    jsonb_build_object(
+      'evictionId', eviction_id,
+      'mode', eviction_mode,
+      'type', 'account-access-changed',
+      'userId', target_user_id
+    )
+  );
+  FOR material_row IN
+    SELECT id FROM materials WHERE owner_user_id=target_user_id
+  LOOP
+    PERFORM enqueue_material_collaboration_eviction(
+      material_row.id, material_event_type, eviction_mode
+    );
+  END LOOP;
+  RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION cleanup_clone_count_trigger()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF TG_TABLE_NAME='workspaces' THEN
+    PERFORM pg_advisory_xact_lock(hashtextextended(
+      'clone-source:workspace:' || OLD.id, 0
+    ));
+    DELETE FROM workspace_clone_counts WHERE workspace_id=OLD.id;
+  ELSE
+    PERFORM pg_advisory_xact_lock(hashtextextended(
+      'clone-source:material:' || OLD.id, 0
+    ));
+    DELETE FROM material_clone_counts WHERE material_id=OLD.id;
+  END IF;
+  RETURN OLD;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS materials_acl_eviction_update ON materials;
+CREATE TRIGGER materials_acl_eviction_update
+AFTER UPDATE OF privacy, workspace_id, owner_user_id ON materials
+FOR EACH ROW
+WHEN (OLD.privacy IS DISTINCT FROM NEW.privacy
+  OR OLD.workspace_id IS DISTINCT FROM NEW.workspace_id
+  OR OLD.owner_user_id IS DISTINCT FROM NEW.owner_user_id)
+EXECUTE FUNCTION material_acl_eviction_trigger();
+DROP TRIGGER IF EXISTS materials_acl_eviction_delete ON materials;
+CREATE TRIGGER materials_acl_eviction_delete
+BEFORE DELETE ON materials
+FOR EACH ROW EXECUTE FUNCTION material_acl_eviction_trigger();
+
+DROP TRIGGER IF EXISTS workspaces_acl_eviction_update ON workspaces;
+CREATE TRIGGER workspaces_acl_eviction_update
+AFTER UPDATE OF privacy, share_role, user_id ON workspaces
+FOR EACH ROW
+WHEN (OLD.privacy IS DISTINCT FROM NEW.privacy
+  OR OLD.share_role IS DISTINCT FROM NEW.share_role
+  OR OLD.user_id IS DISTINCT FROM NEW.user_id)
+EXECUTE FUNCTION workspace_acl_eviction_trigger();
+
+DROP TRIGGER IF EXISTS workspace_members_acl_eviction_insert_update ON workspace_members;
+CREATE TRIGGER workspace_members_acl_eviction_insert_update
+AFTER INSERT OR UPDATE OF role ON workspace_members
+FOR EACH ROW
+EXECUTE FUNCTION workspace_member_acl_eviction_trigger();
+DROP TRIGGER IF EXISTS workspace_members_acl_eviction_delete ON workspace_members;
+CREATE TRIGGER workspace_members_acl_eviction_delete
+AFTER DELETE ON workspace_members
+FOR EACH ROW EXECUTE FUNCTION workspace_member_acl_eviction_trigger();
+
+DROP TRIGGER IF EXISTS users_acl_eviction_update ON users;
+CREATE TRIGGER users_acl_eviction_update
+AFTER UPDATE OF deleted_at, deletion_requested_at, suspended_at, plan_tier, subscription_status ON users
+FOR EACH ROW
+WHEN (OLD.deleted_at IS DISTINCT FROM NEW.deleted_at
+  OR OLD.deletion_requested_at IS DISTINCT FROM NEW.deletion_requested_at
+  OR OLD.suspended_at IS DISTINCT FROM NEW.suspended_at
+  OR OLD.plan_tier IS DISTINCT FROM NEW.plan_tier
+  OR OLD.subscription_status IS DISTINCT FROM NEW.subscription_status)
+EXECUTE FUNCTION user_acl_eviction_trigger();
+DROP TRIGGER IF EXISTS users_acl_eviction_delete ON users;
+CREATE TRIGGER users_acl_eviction_delete
+BEFORE DELETE ON users
+FOR EACH ROW EXECUTE FUNCTION user_acl_eviction_trigger();
+
+DROP TRIGGER IF EXISTS workspaces_clone_count_cleanup ON workspaces;
+CREATE TRIGGER workspaces_clone_count_cleanup
+BEFORE DELETE ON workspaces
+FOR EACH ROW EXECUTE FUNCTION cleanup_clone_count_trigger();
+DROP TRIGGER IF EXISTS materials_clone_count_cleanup ON materials;
+CREATE TRIGGER materials_clone_count_cleanup
+BEFORE DELETE ON materials
+FOR EACH ROW EXECUTE FUNCTION cleanup_clone_count_trigger();
 
 -- PostgreSQL grants function execution to PUBLIC by default. Keep operational
 -- roles deny-by-default; deployment grants each narrow SECURITY DEFINER entry

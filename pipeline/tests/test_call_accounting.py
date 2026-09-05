@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+import math
+
+import pytest
+
 from pipeline.registry import ModelConfig
 from pipeline.retrieval import accounting, models
 from pipeline.retrieval.usage_extract import NormalizedUsage
@@ -128,6 +133,109 @@ async def test_routed_glm_settles_transport_identity_and_keeps_catalog_pricing(
 async def test_open_and_abandon_are_noop_when_unbound():
     await accounting.open_call("pc_1", kind=accounting.KIND_LLM, purpose="agent")
     await accounting.abandon_call("pc_1")
+
+
+async def test_cancelled_tracked_call_waits_for_receipt_deadline(monkeypatch):
+    events: list[str] = []
+
+    async def open_call(*_args, **_kwargs):
+        events.append("open")
+
+    async def abandon_call(*_args, **_kwargs):
+        events.append("abandon")
+
+    monkeypatch.setattr(accounting, "open_call", open_call)
+    monkeypatch.setattr(accounting, "abandon_call", abandon_call)
+
+    with pytest.raises(asyncio.CancelledError):
+        async with models._tracked_call(kind=accounting.KIND_LLM, purpose="agent"):
+            raise asyncio.CancelledError
+
+    assert events == ["open"]
+
+
+async def test_settlement_failure_does_not_abandon_successful_provider_call(
+    monkeypatch,
+):
+    events: list[str] = []
+
+    async def open_call(*_args, **_kwargs):
+        events.append("open")
+
+    async def abandon_call(*_args, **_kwargs):
+        events.append("abandon")
+
+    monkeypatch.setattr(accounting, "open_call", open_call)
+    monkeypatch.setattr(accounting, "abandon_call", abandon_call)
+
+    with pytest.raises(accounting.SettlementError):
+        async with models._tracked_call(kind=accounting.KIND_LLM, purpose="agent"):
+            raise accounting.SettlementError("database unavailable")
+
+    assert events == ["open"]
+
+
+async def test_local_receipt_settlement_retries_the_same_call(monkeypatch):
+    attempts: list[str] = []
+
+    class TransientDatabaseError(RuntimeError):
+        sqlstate = "40001"
+
+    def settle(call_id: str) -> None:
+        attempts.append(call_id)
+        if len(attempts) < 3:
+            raise TransientDatabaseError("serialization retry")
+
+    async def no_sleep(_delay: float) -> None:
+        return None
+
+    monkeypatch.setattr(accounting.asyncio, "sleep", no_sleep)
+    await accounting._retry_local_settlement(
+        settle,
+        "pc_same",
+        deadline=accounting.time.monotonic() + 60,
+    )
+
+    assert attempts == ["pc_same", "pc_same", "pc_same"]
+
+
+async def test_local_receipt_settlement_rejects_deterministic_error_once():
+    attempts = 0
+
+    def settle() -> None:
+        nonlocal attempts
+        attempts += 1
+        raise RuntimeError("call identity mismatch")
+
+    with pytest.raises(accounting.SettlementError, match="rejected"):
+        await accounting._retry_local_settlement(
+            settle,
+            deadline=accounting.time.monotonic() + 12 * 60 * 60,
+        )
+
+    assert attempts == 1
+
+
+async def test_cancellation_waits_for_known_receipt_to_finish():
+    started = asyncio.Event()
+    release = asyncio.Event()
+    finished = asyncio.Event()
+
+    async def receipt() -> None:
+        started.set()
+        await release.wait()
+        finished.set()
+
+    settlement = asyncio.create_task(accounting._finish_known_receipt(receipt()))
+    await started.wait()
+    settlement.cancel()
+    await asyncio.sleep(0)
+    assert not settlement.done()
+
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await settlement
+    assert finished.is_set()
 
 
 def test_measure_context_separates_system_tools_and_conversation():
@@ -321,6 +429,7 @@ async def test_open_call_forwards_numeric_context_before_provider_call(monkeypat
                 accounting.PURPOSE_AGENT,
                 "high",
                 context,
+                max(1, math.ceil(accounting.cfg.interactive_provider_timeout_s)) + 300,
             ),
         )
     ]

@@ -145,13 +145,13 @@ export type AnalyticsEvent =
   | { name: 'subscription_checkout_started'; props: { tier: string } }
   | { name: 'note_created'; props: { workspaceId: string } }
   | {
-      name: 'deck_study_finished';
+      name: 'flashcards_study_finished';
       props: { cardCountBucket: string; source: 'app' | 'share' };
     }
   | {
       name: 'item_cloned';
       props: {
-        kind: 'workspace' | 'quiz' | 'deck';
+        kind: 'workspace' | 'quiz' | 'flashcards';
         source: 'share' | 'explore' | 'app';
       };
     }
@@ -165,8 +165,8 @@ const _analyticsEventNames: Record<AnalyticsEvent['name'], true> = {
   chat_turn_completed: true,
   chat_turn_sent: true,
   collaborator_invited: true,
-  deck_study_finished: true,
   editor_ai_used: true,
+  flashcards_study_finished: true,
   invite_accepted: true,
   item_cloned: true,
   material_generate_failed: true,
@@ -206,7 +206,7 @@ export function trackQuotaBlocked(error: unknown, surface: string): void {
 }
 
 export function trackItemCloned(
-  kind: 'workspace' | 'quiz' | 'deck',
+  kind: 'workspace' | 'quiz' | 'flashcards',
   pathname = typeof window === 'undefined' ? '' : window.location.pathname
 ): void {
   const source = cloneSourceFromPath(pathname);

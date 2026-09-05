@@ -69,6 +69,27 @@ func TestMigrateIsApplyOnce(t *testing.T) {
 	}
 }
 
+func TestApplyDevSeedMatchesSchemaInvariants(t *testing.T) {
+	s := openMigrateTestStore(t)
+	ctx := context.Background()
+	if err := s.Migrate(ctx); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	if err := s.ApplyDevSeed(ctx); err != nil {
+		t.Fatalf("first seed: %v", err)
+	}
+	if err := s.ApplyDevSeed(ctx); err != nil {
+		t.Fatalf("second seed: %v", err)
+	}
+	var privacy Privacy
+	if err := s.pool.QueryRow(ctx, `SELECT privacy FROM materials WHERE id='qz_3'`).Scan(&privacy); err != nil {
+		t.Fatal(err)
+	}
+	if privacy != PrivacyPrivate {
+		t.Fatalf("workspace seed material privacy=%q, want private", privacy)
+	}
+}
+
 func TestMigrateRejectsEditedChecksum(t *testing.T) {
 	s := openMigrateTestStore(t)
 	ctx := context.Background()

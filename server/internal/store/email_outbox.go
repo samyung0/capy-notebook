@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -45,8 +46,9 @@ type EmailOutboxParams struct {
 	Category       string
 }
 
-// EnqueueEmailTx writes a product email only when the recipient has enabled its
-// category. It must be called with the same transaction as the domain event.
+// EnqueueEmailTx writes a product email only when the recipient address is
+// nonblank and the recipient has enabled its category. It must be called with
+// the same transaction as the domain event.
 func EnqueueEmailTx(ctx context.Context, tx pgx.Tx, params EmailOutboxParams) (bool, error) {
 	switch params.Category {
 	case "workspace_invite", "membership", "billing", "lifecycle":
@@ -55,6 +57,10 @@ func EnqueueEmailTx(ctx context.Context, tx pgx.Tx, params EmailOutboxParams) (b
 	}
 	if params.IdempotencyKey == "" {
 		return false, ErrEmailIdempotencyRequired
+	}
+	params.ToEmail = strings.TrimSpace(params.ToEmail)
+	if params.ToEmail == "" {
+		return false, nil
 	}
 	enabled, err := notificationEmailEnabled(ctx, tx, params.UserID, params.Category)
 	if err != nil {
@@ -319,17 +325,6 @@ func emailClaimActive(ctx context.Context, q rowQueryer, item EmailOutbox) (bool
 		FROM email_outbox o
 		WHERE o.id=$1 AND o.status='sending' AND o.lease_token=$2
 			AND o.lease_expires_at > now()
-			AND (
-				o.template <> 'workspace-invite'
-				OR EXISTS (
-					SELECT 1 FROM workspace_invites wi
-					WHERE wi.id=o.payload->>'inviteId'
-						AND encode(wi.token_hash, 'hex')=o.payload->>'tokenHash'
-						AND wi.accepted_at IS NULL
-						AND wi.revoked_at IS NULL
-						AND wi.expires_at>now()
-				)
-			)
 			AND (
 				o.template <> 'workspace-role-changed'
 				OR EXISTS (

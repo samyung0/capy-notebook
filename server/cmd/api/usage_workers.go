@@ -29,6 +29,14 @@ func runUsageWorkers(
 	reconcileConfig reconcile.Config,
 ) {
 	go loop(ctx, reservationSweepInterval, "credit_sweeper", func(ctx context.Context) {
+		abandoned, err := st.SweepExpiredProviderCalls(ctx)
+		if err != nil {
+			obs.CaptureErr(ctx, err, map[string]string{"stage": "provider_call_sweep"})
+			return
+		}
+		if abandoned > 0 {
+			obs.Log(ctx).Info("abandoned expired provider calls", "count", abandoned)
+		}
 		released, err := st.SweepExpiredReservations(ctx)
 		if err != nil {
 			obs.CaptureErr(ctx, err, map[string]string{"stage": "reservation_sweep"})
@@ -40,6 +48,11 @@ func runUsageWorkers(
 	})
 
 	runner := reconcile.NewRunner(st, reconcileConfig)
+	go loop(ctx, reconciliationPollInterval, "stripe_compensation", func(ctx context.Context) {
+		if err := runner.DrainStripeCompensations(ctx); err != nil {
+			obs.CaptureErr(ctx, err, map[string]string{"stage": "stripe_compensation_run"})
+		}
+	})
 	go loop(ctx, reconciliationPollInterval, "reconciliation", func(ctx context.Context) {
 		if err := runner.EnqueueDaily(ctx, time.Now()); err != nil {
 			obs.CaptureErr(ctx, err, map[string]string{"stage": "reconciliation_enqueue"})

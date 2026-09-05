@@ -1,1 +1,1 @@
-"""In-house retrieval stack: chunk store, per-file summaries and concept index."""
+"""In-house retrieval stack: chunk store and per-file summaries."""

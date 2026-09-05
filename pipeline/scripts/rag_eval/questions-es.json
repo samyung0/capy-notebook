@@ -1,0 +1,94 @@
+[
+  {
+    "q": "Qué es el sesgo lingüístico digital en los modelos de lenguaje?",
+    "expect": [
+      ["sesgo-linguistico-digital.pdf", 1],
+      ["sesgo-linguistico-digital.pdf", 10],
+      ["sesgo-linguistico-digital.pdf", 11]
+    ],
+    "flag": 2
+  },
+  {
+    "q": "Qué pretenden ILENIA y las lenguas cooficiales?",
+    "expect": [
+      ["sesgo-linguistico-digital.pdf", 18],
+      ["sesgo-linguistico-digital.pdf", 19]
+    ],
+    "flag": 2
+  },
+  {
+    "q": "Qué variedades de español evalúan en el estudio?",
+    "expect": [
+      ["variedades-espanol.pdf", 5],
+      ["variedades-espanol.pdf", 7],
+      ["variedades-espanol.pdf", 0]
+    ],
+    "flag": 2
+  },
+  {
+    "q": "Qué modelo reconoce mejor el español andino?",
+    "expect": [["variedades-espanol.pdf", 12]],
+    "flag": 2
+  },
+  {
+    "q": "Cuál variedad de español identifican mejor todos los modelos?",
+    "expect": [["variedades-espanol.pdf", 18]],
+    "flag": 2
+  },
+  {
+    "q": "Qué crean los proyectos NEL-VIVES NEL-GAITU y NEL-NÓS?",
+    "expect": [
+      ["sesgo-linguistico-digital.pdf", 24],
+      ["sesgo-linguistico-digital.pdf", 23]
+    ],
+    "flag": 2
+  },
+  {
+    "q": "En qué lenguas se entrenó el modelo Águila 7B?",
+    "expect": [["sesgo-linguistico-digital.pdf", 30]],
+    "flag": 2
+  },
+  {
+    "q": "Qué mide el índice latinoamericano ILIA?",
+    "expect": [["sesgo-linguistico-digital.pdf", 9]],
+    "flag": 2
+  },
+  {
+    "q": "What is GPT-4o performance on Andean Spanish?",
+    "expect": [["variedades-espanol.pdf", 12], ["variedades-espanol.pdf", 1]],
+    "flag": 2
+  },
+  {
+    "q": "Cómo se define el sesgo lingüístico digital SLD?",
+    "expect": [
+      ["sesgo-linguistico-digital.pdf", 10],
+      ["sesgo-linguistico-digital.pdf", 11],
+      ["sesgo-linguistico-digital.pdf", 1]
+    ],
+    "flag": 2
+  },
+  {
+    "q": "Los modelos fallan el léxico cotidiano del español antillano?",
+    "expect": [["variedades-espanol.pdf", 14]],
+    "flag": 2
+  },
+  {
+    "q": "Qué implica el Plan LEIA para la lengua española?",
+    "expect": [["sesgo-linguistico-digital.pdf", 20]],
+    "flag": 2
+  },
+  {
+    "q": "Implicaciones de los modelos masivos para el español",
+    "expect": [
+      ["sesgo-linguistico-digital.pdf", 10],
+      ["sesgo-linguistico-digital.pdf", 11],
+      ["sesgo-linguistico-digital.pdf", 1]
+    ],
+    "flag": 2
+  },
+  {
+    "q": "Quiénes son Marina Mayor-Rocher y Pedro Reviriego?",
+    "expect": [["variedades-espanol.pdf", 0]],
+    "flag": 2
+  }
+]

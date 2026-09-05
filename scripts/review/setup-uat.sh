@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-ENV_FILE="${REVIEW_ENV_FILE:-$ROOT_DIR/review/.env.uat}"
+ENV_FILE="${REVIEW_ENV_FILE:-$ROOT_DIR/deploy/.env.uat}"
 GITHUB_ENVIRONMENT="uat"
 
 usage() {
@@ -11,7 +11,7 @@ usage() {
 Usage: scripts/review/setup-uat.sh
 
 Interactive setup for the Evo Notes UAT review environment. The wizard stores a
-local, ignored review/.env.uat file and can configure GitHub Actions variables
+local, ignored deploy/.env.uat file and can configure GitHub Actions variables
 and environment secrets through gh. It does not deploy infrastructure or create
 third-party accounts.
 EOF
@@ -123,7 +123,7 @@ fi
 stage 1 "GitHub UAT environment"
 printf '%s\n' \
   'Create an Actions environment named uat and restrict deployment branches.' \
-  'Do not require reviewers if deterministic UAT jobs must run unattended; agent-driven review workflows remain manual dispatch only.' \
+  'Do not require reviewers if deterministic UAT jobs must run unattended; agent-driven scans run locally, never in Actions.' \
   'Repository settings: Settings > Environments > New environment > uat.'
 if [[ "$CONFIGURE_GITHUB" == "true" ]] && confirm "Create or update the uat environment now?"; then
   gh api --method PUT "repos/$GITHUB_REPOSITORY/environments/$GITHUB_ENVIRONMENT" >/dev/null
@@ -156,29 +156,25 @@ set_uat_secret CLOUDFLARE_API_TOKEN "$cloudflare_api_token"
 unset coolify_api_token cloudflare_api_token
 pause
 
-stage 3 "Codex Security source scanner"
+stage 3 "Codex Security source scanner (local)"
 printf '%s\n' \
-  'In Codex, open Settings > Plugins and install or enable Codex Security.' \
-  'Grant repository access only. Do not grant deployment credentials to a source scanner.' \
-  'The review skill will use it when callable and will report a coverage gap otherwise.'
+  'Install the Codex CLI and enable the codex-security plugin in ~/.codex/config.toml.' \
+  'scripts/review/codex-security-scan.sh runs it on a clean checkout and posts the source/codex-security status.' \
+  'Nothing from this stage goes to GitHub Actions.'
 pause
 
-stage 4 "Strix scanner model and budget"
+stage 4 "Strix scanner model and budget (local)"
+printf '%s\n' \
+  'Strix runs only from your machine: uv tool install strix-agent==1.5.3 and a working Docker daemon.' \
+  'These values stay in deploy/.env.uat; GitHub Actions never receives the LLM key.'
 strix_llm="$(ask 'Strix model identifier' 'openai/gpt-5.4')"
 strix_budget="$(ask 'Maximum Strix UAT budget in USD' '40')"
-strix_source_budget="$(ask 'Maximum Strix source-review budget in USD' '40')"
 [[ "$strix_budget" =~ ^[0-9]+([.][0-9]+)?$ ]] || die "UAT budget must be numeric"
-[[ "$strix_source_budget" =~ ^[0-9]+([.][0-9]+)?$ ]] || die "source-review budget must be numeric"
-llm_api_key="$(ask_secret 'LLM API key for the Strix GitHub job')"
+llm_api_key="$(ask_secret 'LLM API key for local Strix scans')"
 [[ -n "$llm_api_key" ]] || die "LLM API key cannot be empty"
 write_env_value STRIX_LLM "$strix_llm"
 write_env_value STRIX_MAX_BUDGET "$strix_budget"
-write_env_value STRIX_SOURCE_MAX_BUDGET "$strix_source_budget"
 write_env_value LLM_API_KEY "$llm_api_key"
-set_uat_var STRIX_LLM "$strix_llm"
-set_uat_var STRIX_UAT_MAX_BUDGET "$strix_budget"
-set_uat_var STRIX_SOURCE_MAX_BUDGET "$strix_source_budget"
-set_uat_secret LLM_API_KEY "$llm_api_key"
 unset llm_api_key
 
 stage 5 "Authorized UAT targets"
@@ -225,9 +221,7 @@ for role in OWNER EDITOR COMMENTER VIEWER OTHER; do
 done
 printf 'Use synthetic addresses only. Complete all invitations before continuing.\n'
 strix_auth_instructions="$(ask_secret 'Optional Strix synthetic login instructions (blank for unauthenticated scanning)')"
-if [[ -n "$strix_auth_instructions" ]]; then
-  set_uat_secret STRIX_UAT_AUTH_INSTRUCTIONS "$strix_auth_instructions"
-fi
+write_env_value STRIX_UAT_AUTH_INSTRUCTIONS "$strix_auth_instructions"
 unset strix_auth_instructions
 pause
 
@@ -244,24 +238,23 @@ set_uat_var UAT_FIXTURE_MATERIAL_ID "$fixture_material_id"
 
 stage 9 "Stripe UAT sandbox"
 printf '%s\n' \
-  'Create a named Stripe sandbox for UAT. Create separate recurring Pro and Team prices and a UAT webhook.' \
+  'Create a named Stripe sandbox for UAT with a recurring Pro price and a UAT webhook.' \
+  'There is no Team price: plan_limits only knows free and pro, and no code reads STRIPE_PRICE_TEAM.' \
   'These values are stored locally for reference but are not copied to GitHub Actions. Paste them into the UAT Coolify resource.'
 stripe_secret_key="$(ask_secret 'Stripe sandbox secret key (must begin sk_test_)')"
 [[ "$stripe_secret_key" == sk_test_* ]] || die "Stripe UAT must use an sk_test_ key"
 stripe_webhook_secret="$(ask_secret 'Stripe UAT webhook signing secret')"
 stripe_price_pro="$(ask_required 'Stripe UAT Pro price ID')"
-stripe_price_team="$(ask_required 'Stripe UAT Team price ID')"
 write_env_value STRIPE_SECRET_KEY "$stripe_secret_key"
 write_env_value STRIPE_WEBHOOK_SECRET "$stripe_webhook_secret"
 write_env_value STRIPE_PRICE_PRO "$stripe_price_pro"
-write_env_value STRIPE_PRICE_TEAM "$stripe_price_team"
 unset stripe_secret_key stripe_webhook_secret
 pause
 
 stage 10 "Explicit authorization and activation"
 printf '%s\n' \
   'Confirm the targets are owned by you, isolated from production, contain only synthetic data, and match UAT_ALLOWED_HOSTS.' \
-  'Automatic post-CI deployment remains disabled until a successful manual baseline run. Strix always remains manual.'
+  'Automatic post-CI deployment remains disabled until a successful manual baseline run. Scanners only run when you start them locally.'
 if ! confirm "Authorize deterministic testing against exactly these UAT hosts?"; then
   write_env_value UAT_TARGET_AUTHORIZED false
   set_uat_var UAT_TARGET_AUTHORIZED false
@@ -276,5 +269,5 @@ printf '1. Copy Clerk and Stripe deployment values into the isolated UAT Coolify
 printf '2. Manually dispatch “Deploy UAT”; it deploys the selected SHA and calls the deterministic quality gate.\n'
 printf '3. Inspect the deployment, smoke, and Playwright evidence.\n'
 printf '4. After a clean baseline, set repository variable UAT_DEPLOYMENT_ENABLED=true.\n'
-printf "5. Dispatch Strix workflows or invoke \$review-repository only when you explicitly want a costly review.\n"
+printf '5. Before a promotion, run pnpm review:source:codex on the clean candidate and pnpm review:uat:strix against UAT; both post the commit statuses the promotion requires.\n'
 printf 'The wizard did not deploy or contact the application.\n'

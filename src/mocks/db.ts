@@ -10,12 +10,12 @@ import type {
   CalendarEvent,
   Chapter,
   Conversation,
-  Deck,
   Flashcard,
+  FlashcardSet,
   Label,
   Material,
   NotificationPrefs,
-  PublicDeck,
+  PublicFlashcardSet,
   PublicQuiz,
   PublicWorkspace,
   Question,
@@ -118,13 +118,13 @@ function seedSrs(known: boolean): SrsState {
 }
 function seedCard(
   id: string,
-  deckId: string,
+  materialId: string,
   front: string,
   back: string,
   known: boolean
 ): Flashcard {
   const srs = seedSrs(known);
-  return { back, deckId, front, id, known: isKnown(srs), srs };
+  return { back, front, id, known: isKnown(srs), materialId, srs };
 }
 
 const now = Date.now();
@@ -438,6 +438,7 @@ export const files: SourceFile[] = [
 
 const seedQuizzes: Quiz[] = [
   {
+    canEdit: true,
     chapters: ['Cell structure', 'Membranes & transport'],
     createdAt: days(4),
     id: 'qz_1',
@@ -554,6 +555,7 @@ const seedQuizzes: Quiz[] = [
     workspaceName: 'Biology 101',
   },
   {
+    canEdit: true,
     chapters: ['Genetics'],
     createdAt: days(2),
     id: 'qz_2',
@@ -651,12 +653,13 @@ const seedQuizzes: Quiz[] = [
     workspaceName: 'Biology 101',
   },
   {
+    canEdit: true,
     chapters: ['Techniques of integration'],
     createdAt: days(6),
     id: 'qz_3',
     isOwner: true,
     name: 'Integration techniques',
-    privacy: 'public',
+    privacy: 'private',
     questions: [
       {
         correct: [1],
@@ -847,8 +850,9 @@ export const attempts: (Attempt & {
   },
 ];
 
-const seedDecks: Deck[] = [
+const seedFlashcardSets: FlashcardSet[] = [
   {
+    canEdit: true,
     cardCount: 32,
     color: 'green',
     dueCount: 0,
@@ -861,6 +865,7 @@ const seedDecks: Deck[] = [
     workspaceName: 'Biology 101',
   },
   {
+    canEdit: true,
     cardCount: 24,
     color: 'purple',
     dueCount: 0,
@@ -873,6 +878,7 @@ const seedDecks: Deck[] = [
     workspaceName: 'Calculus II',
   },
   {
+    canEdit: true,
     cardCount: 40,
     color: 'amber',
     dueCount: 0,
@@ -1154,7 +1160,6 @@ const seedMaterials: MaterialDraft[] = [
     capabilities: ownerCapabilities,
     chapterId: 'ch_1',
     content: createMaterialDocument([
-      { children: [{ text: 'Cell biology mindmap' }], type: 'h1' },
       mermaidNode(
         'mindmap\n  root((Cell))\n    Membrane\n      Phospholipid bilayer\n      Transport\n        Diffusion\n        Osmosis\n    Organelles\n      Nucleus\n      Mitochondria\n      Ribosome\n    Energy\n      ATP\n      Respiration'
       ),
@@ -1174,13 +1179,6 @@ const seedMaterials: MaterialDraft[] = [
     capabilities: ownerCapabilities,
     chapterId: null,
     content: createMaterialDocument([
-      { children: [{ text: 'Protein secretion pathway' }], type: 'h1' },
-      {
-        children: [
-          { text: 'The path a secreted protein takes through the cell:' },
-        ],
-        type: 'p',
-      },
       mermaidNode(
         'flowchart LR\n  Ribosome --> RoughER\n  RoughER --> Golgi\n  Golgi --> Vesicle\n  Vesicle --> Membrane[Cell membrane]'
       ),
@@ -1314,9 +1312,9 @@ export const publicQuizzes: PublicQuiz[] = [
     privacy: 'public',
   },
 ];
-export const publicDecks: PublicDeck[] = [
+export const publicFlashcardSets: PublicFlashcardSet[] = [
   {
-    ...seedDecks[0],
+    ...seedFlashcardSets[0],
     author: 'mrslee',
     clones: 320,
     id: 'pub_dk_1',
@@ -1325,7 +1323,7 @@ export const publicDecks: PublicDeck[] = [
     privacy: 'public',
   },
   {
-    ...seedDecks[1],
+    ...seedFlashcardSets[1],
     author: 'mathpro',
     clones: 205,
     id: 'pub_dk_2',
@@ -1337,7 +1335,7 @@ export const publicDecks: PublicDeck[] = [
 
 /* ---------------- unified markdown materials + derived views ----------------
    Markdown (materials[].content) is the source of truth for quiz/flashcard
-   content; per-card FSRS state lives in cardStats. The seed quizzes/decks/cards
+   content; per-card FSRS state lives in cardStats. The seed quizzes/flashcards/cards
    above are authored as typed data, then folded into markdown materials here so
    the mock mirrors the backend's single-table model. */
 
@@ -1348,7 +1346,7 @@ export const cardStats: Record<
   { materialId: string; srs: SrsState; known: boolean }
 > = {};
 for (const c of seedCards)
-  cardStats[c.id] = { known: c.known, materialId: c.deckId, srs: c.srs };
+  cardStats[c.id] = { known: c.known, materialId: c.materialId, srs: c.srs };
 
 seedQuizzes.forEach((q) => {
   materials.push(
@@ -1374,8 +1372,8 @@ seedQuizzes.forEach((q) => {
     })
   );
 });
-seedDecks.forEach((d, i) => {
-  const deckCards = seedCards.filter((c) => c.deckId === d.id);
+seedFlashcardSets.forEach((d, i) => {
+  const flashcardSetCards = seedCards.filter((c) => c.materialId === d.id);
   materials.push(
     makeMaterial({
       capabilities: ownerCapabilities,
@@ -1383,7 +1381,11 @@ seedDecks.forEach((d, i) => {
       color: d.color,
       content: createMaterialDocument([
         flashcardsNode(
-          deckCards.map((c) => ({ back: c.back, front: c.front, id: c.id })),
+          flashcardSetCards.map((c) => ({
+            back: c.back,
+            front: c.front,
+            id: c.id,
+          })),
           d.id
         ),
       ]),
@@ -1468,6 +1470,7 @@ export function quizFromMaterial(mt: Material): Quiz {
           mt.content.value.find((node) => node.type === 'quiz') as QuizElement
         );
   return {
+    canEdit: true,
     chapters: mt.scopeChapters,
     createdAt: mt.createdAt,
     id: mt.id,
@@ -1496,20 +1499,21 @@ export function cardsFromMaterial(mt: Material): Flashcard[] {
     const srs = st?.srs ?? newSrsState();
     return {
       back: c.back,
-      deckId: mt.id,
       front: c.front,
       id: c.id,
       known: st?.known ?? false,
+      materialId: mt.id,
       srs,
     };
   });
 }
 
-/** Derive the typed Deck view (counts computed live from cardStats). */
-export function deckFromMaterial(mt: Material): Deck {
+/** Derive the typed FlashcardSet view (counts computed live from cardStats). */
+export function flashcardSetFromMaterial(mt: Material): FlashcardSet {
   const cs = cardsFromMaterial(mt);
   const known = cs.filter((c) => c.known).length;
   return {
+    canEdit: true,
     cardCount: cs.length,
     color: mt.color ?? 'green',
     dueCount: cs.filter((c) => isDue(c.srs)).length,
@@ -1525,5 +1529,5 @@ export function deckFromMaterial(mt: Material): Deck {
 
 /** Convenience accessors for the two derived material kinds. */
 export const quizMaterials = () => materials.filter((m) => m.kind === 'quiz');
-export const deckMaterials = () =>
+export const flashcardSetMaterials = () =>
   materials.filter((m) => m.kind === 'flashcards');

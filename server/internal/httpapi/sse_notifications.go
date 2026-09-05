@@ -112,6 +112,10 @@ func (a *api) notificationEvents(w http.ResponseWriter, r *http.Request) {
 			}
 			flusher.Flush()
 		case <-ping.C:
+			allowed, _, err := a.s.AccountSessionAllowed(ctx, userID)
+			if err != nil || !allowed {
+				return
+			}
 			if _, err := fmt.Fprint(w, ": ping\n\n"); err != nil {
 				return
 			}

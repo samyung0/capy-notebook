@@ -54,6 +54,9 @@ func (a *api) listLLMCredentials(ctx context.Context, _ *struct{}) (*llmCredenti
 }
 
 func (a *api) upsertLLMCredential(ctx context.Context, in *upsertLLMCredentialInput) (*Empty, error) {
+	if err := a.requireAccountMutate(ctx); err != nil {
+		return nil, err
+	}
 	slug := strings.TrimSpace(in.Body.ProviderSlug)
 	key := strings.TrimSpace(in.Body.APIKey)
 	if !store.ValidLLMProviderSlug(slug) {
@@ -69,6 +72,9 @@ func (a *api) upsertLLMCredential(ctx context.Context, in *upsertLLMCredentialIn
 }
 
 func (a *api) deleteLLMCredential(ctx context.Context, in *deleteLLMCredentialInput) (*Empty, error) {
+	if err := a.requireAccountMutate(ctx); err != nil {
+		return nil, err
+	}
 	slug := strings.TrimSpace(in.Provider)
 	if !store.ValidLLMProviderSlug(slug) {
 		return nil, huma.Error400BadRequest("unsupported provider")

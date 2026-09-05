@@ -266,7 +266,15 @@ func (s *Store) GetNotificationPrefs(ctx context.Context, userID string) (Notifi
 }
 
 func (s *Store) SetNotificationPrefs(ctx context.Context, userID string, prefs NotificationPrefs) (NotificationPrefs, error) {
-	_, err := s.pool.Exec(ctx, `INSERT INTO notification_prefs
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return NotificationPrefs{}, err
+	}
+	defer tx.Rollback(ctx)
+	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
+		return NotificationPrefs{}, err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO notification_prefs
 			(user_id, email_workspace_invite, email_membership, email_billing, updated_at)
 		VALUES ($1,$2,$3,$4,now())
 		ON CONFLICT (user_id) DO UPDATE SET
@@ -275,7 +283,13 @@ func (s *Store) SetNotificationPrefs(ctx context.Context, userID string, prefs N
 			email_billing=EXCLUDED.email_billing,
 			updated_at=now()`,
 		userID, prefs.EmailWorkspaceInvite, prefs.EmailMembership, prefs.EmailBilling)
-	return prefs, err
+	if err != nil {
+		return NotificationPrefs{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return NotificationPrefs{}, err
+	}
+	return prefs, nil
 }
 
 // DisableNotificationCategory changes exactly one category. Keeping this

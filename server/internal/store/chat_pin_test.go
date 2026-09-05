@@ -35,11 +35,11 @@ func TestAssistantMessagePinsTheResolvedChatModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := reg.ResolveUser(ctx, flashModelRef, models.SurfaceChat)
+	cfg, err := reg.ResolveUser(ctx, flashModelRef, models.SlotChat)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assistant, err := s.StartAssistantMessage(ctx, conv.ID, cfg)
+	assistant, err := s.StartAssistantMessage(ctx, userID, conv.ID, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,14 +81,14 @@ func TestConversationPromptLoadsEveryMessageAfterCheckpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.AddUserMessage(ctx, conv.ID, "checkpoint question"); err != nil {
+	if _, err := s.AddUserMessage(ctx, userID, conv.ID, "checkpoint question"); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := reg.ResolveUser(ctx, flashModelRef, models.SurfaceChat)
+	cfg, err := reg.ResolveUser(ctx, flashModelRef, models.SlotChat)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assistant, err := s.StartAssistantMessage(ctx, conv.ID, cfg)
+	assistant, err := s.StartAssistantMessage(ctx, userID, conv.ID, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestConversationPromptLoadsEveryMessageAfterCheckpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := range 205 {
-		if _, err := s.AddUserMessage(ctx, conv.ID, fmt.Sprintf("turn-%03d", i)); err != nil {
+		if _, err := s.AddUserMessage(ctx, userID, conv.ID, fmt.Sprintf("turn-%03d", i)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -147,7 +147,7 @@ func TestIngestJobPayloadPinsActorAndModels(t *testing.T) {
 	}
 	for _, key := range []string{
 		"ingestProviderSlug", "ingestModelSlug", "ingestModelVersion",
-		"visionProviderSlug", "visionModelSlug", "visionModelVersion",
+		"captioningProviderSlug", "captioningModelSlug", "captioningModelVersion",
 	} {
 		if payload[key] == nil || payload[key] == "" || payload[key] == 0.0 {
 			t.Fatalf("pin %s missing: %v", key, payload)
@@ -276,13 +276,13 @@ func TestCreateWorkspacePinsLiveEmbeddingDefault(t *testing.T) {
 		INSERT INTO model_configs (
 			version, provider_name, model_name, provider_slug, model_slug,
 			platform_enabled, byok_enabled, context_window_tokens,
-			thinking_levels, default_thinking, params, surfaces,
+			thinking_levels, default_thinking, params, slots,
 			micros_per_input_token, micros_per_output_token,
 			micros_per_cached_input_token, enabled, is_default_for
 		) VALUES (1, 'Alt', 'Embed', $1, $2,
 			true, false, 0, ARRAY[]::text[], '',
 			'{"dimensions": 2560, "vector_table": "rag_chunk_vectors_2560"}'::jsonb,
-			ARRAY['embedding'], 99, 99, 0, true, ARRAY['embedding'])`, altRef.ProviderSlug, altRef.ModelSlug); err != nil {
+			ARRAY['retrieval'], 99, 99, 0, true, ARRAY['retrieval'])`, altRef.ProviderSlug, altRef.ModelSlug); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.pool.Exec(ctx, `
@@ -290,14 +290,17 @@ func TestCreateWorkspacePinsLiveEmbeddingDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		// Embedding rows cannot be deleted. Clear the test default first.
-		_, _ = s.pool.Exec(context.Background(), `
-			UPDATE model_configs SET is_default_for='{}' WHERE provider_slug=$1 AND model_slug=$2`, altRef.ProviderSlug, altRef.ModelSlug)
-		_, _ = s.pool.Exec(context.Background(), `
-			UPDATE model_configs SET is_default_for=ARRAY['embedding']
-			 WHERE provider_slug=$1 AND model_slug=$2 AND version=1`, embedModelRef.ProviderSlug, embedModelRef.ModelSlug)
-		_, _ = s.pool.Exec(context.Background(), `
-			UPDATE model_registry_state SET version = version + 1 WHERE id = true`)
+		deleteEmbeddingRow(t, s, altRef)
+		if _, err := s.pool.Exec(context.Background(), `
+			UPDATE model_configs SET is_default_for=ARRAY['retrieval']
+			 WHERE provider_slug=$1 AND model_slug=$2 AND version=1`,
+			embedModelRef.ProviderSlug, embedModelRef.ModelSlug); err != nil {
+			t.Errorf("restore the seeded embedding default: %v", err)
+		}
+		if _, err := s.pool.Exec(context.Background(), `
+			UPDATE model_registry_state SET version = version + 1 WHERE id = true`); err != nil {
+			t.Errorf("bump the registry version: %v", err)
+		}
 	})
 
 	fresh, err := models.New(ctx, s.Pool())
@@ -369,9 +372,9 @@ func TestSetModelPrefsRejectsEmpty(t *testing.T) {
 	ctx := context.Background()
 	userID := newCreditsTestUser(t, s)
 	empty := models.Ref{}
-	for _, surface := range []string{"chat", "generate", "editor", "quiz"} {
+	for _, slot := range []string{"chat", "generate", "editor", "quiz"} {
 		var chat, generate, editor, quiz *models.Ref
-		switch surface {
+		switch slot {
 		case "chat":
 			chat = &empty
 		case "generate":
@@ -384,7 +387,7 @@ func TestSetModelPrefsRejectsEmpty(t *testing.T) {
 		if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{
 			ChatModel: chat, GenerateModel: generate, EditorModel: editor, QuizModel: quiz,
 		}); !errors.Is(err, ErrModelRefRequired) {
-			t.Fatalf("%s: got %v", surface, err)
+			t.Fatalf("%s: got %v", slot, err)
 		}
 	}
 }
@@ -398,7 +401,7 @@ func TestSetModelPrefsRevalidatesAfterWaitingForUserLock(t *testing.T) {
 		INSERT INTO model_configs (
 			version, provider_name, model_name, provider_slug, model_slug,
 			platform_enabled, byok_enabled, context_window_tokens,
-			thinking_levels, default_thinking, params, surfaces,
+			thinking_levels, default_thinking, params, slots,
 			micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
 			enabled, is_default_for
 		)
@@ -436,7 +439,7 @@ func TestSetModelPrefsRevalidatesAfterWaitingForUserLock(t *testing.T) {
 			SELECT EXISTS (
 				SELECT 1 FROM pg_stat_activity
 				 WHERE wait_event_type='Lock'
-				   AND query LIKE '%chat_model_provider_slug%generate_model_provider_slug%FOR UPDATE%'
+				   AND query LIKE '%deleted_at, deletion_requested_at%FOR UPDATE%'
 			)`).Scan(&waiting); err != nil {
 			t.Fatal(err)
 		}
@@ -550,7 +553,7 @@ func TestSetModelPrefsThinkingIsPerModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := prefs.Thinking(SurfaceChat); got != "" {
+	if got := prefs.Thinking(models.SlotChat); got != "" {
 		t.Fatalf("pro inherited flash prefs: %s", got)
 	}
 	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{
@@ -565,7 +568,35 @@ func TestSetModelPrefsThinkingIsPerModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := prefs.Thinking(SurfaceChat); got != models.ThinkingHigh {
+	if got := prefs.Thinking(models.SlotChat); got != models.ThinkingHigh {
 		t.Fatalf("flash prefs lost: %s", got)
+	}
+}
+
+// deleteEmbeddingRow drops a retrieval row a test inserted. Every package in
+// this module shares one database, so a row left behind is an unshipped
+// embedding model for the packages that run next. protect_embedding_model_configs
+// refuses plain deletes, hence the suppressed triggers.
+func deleteEmbeddingRow(t *testing.T, s *Store, ref models.Ref) {
+	t.Helper()
+	ctx := context.Background()
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		t.Errorf("delete %s: %v", ref, err)
+		return
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `SET LOCAL session_replication_role = replica`); err != nil {
+		t.Errorf("delete %s: %v", ref, err)
+		return
+	}
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM model_configs WHERE provider_slug=$1 AND model_slug=$2`,
+		ref.ProviderSlug, ref.ModelSlug); err != nil {
+		t.Errorf("delete %s: %v", ref, err)
+		return
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Errorf("delete %s: %v", ref, err)
 	}
 }

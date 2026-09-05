@@ -15,7 +15,6 @@ fast_commands=(
   "pnpm test"
   "pnpm --filter @evo-notes/ops test"
   "pnpm test:collaboration"
-  "pnpm test:import-relay"
   "pnpm test:pipeline:offline"
 )
 full_commands=(

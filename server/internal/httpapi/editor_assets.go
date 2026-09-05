@@ -284,8 +284,18 @@ func (a *api) resolveEditorAsset(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, store.ErrNotFound)
 		return
 	}
-	if _, err := a.s.WorkspaceAccess(r.Context(), uid(r), asset.WorkspaceID); err != nil {
-		a.fail(w, err)
+	if asset.WorkspaceID != "" {
+		if _, err := a.s.WorkspaceAccess(r.Context(), uid(r), asset.WorkspaceID); err != nil {
+			a.fail(w, err)
+			return
+		}
+	} else if asset.MaterialID != "" {
+		if _, err := a.s.MaterialEffectiveAccess(r.Context(), uid(r), asset.MaterialID); err != nil {
+			a.fail(w, err)
+			return
+		}
+	} else {
+		a.fail(w, store.ErrNotFound)
 		return
 	}
 	if a.blob == nil {

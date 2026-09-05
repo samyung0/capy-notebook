@@ -44,11 +44,12 @@ import {
   targetForRow,
 } from '@/registry-domain';
 import type {
+  Capability,
   CatalogConfig,
   DraftConfig,
   EliteLLMProvider,
   Registry,
-  Surface,
+  Slot,
 } from '@/types';
 
 function latestConfig(registry: Registry, rowId: string) {
@@ -83,12 +84,14 @@ function parseParams(
 }
 
 function DraftDialog({
+  capabilities,
   config,
   onCreate,
   onOpenChange,
   open,
   providers,
 }: {
+  capabilities: Capability[];
   config: CatalogConfig | undefined;
   onCreate: (draft: DraftConfig) => void;
   onOpenChange: (open: boolean) => void;
@@ -111,7 +114,7 @@ function DraftDialog({
   if (!config) {
     return null;
   }
-  const embedding = config.surfaces.includes('embedding');
+  const embedding = config.slots.includes('retrieval');
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -137,6 +140,7 @@ function DraftDialog({
         </DialogHeader>
         <form id="draft-form" onSubmit={submit}>
           <DraftFields
+            capabilities={capabilities}
             draft={draft}
             embedding={embedding}
             idPrefix="draft"
@@ -167,11 +171,13 @@ function DraftDialog({
 }
 
 function AddModelDialog({
+  capabilities,
   onCreate,
   onOpenChange,
   open,
   providers,
 }: {
+  capabilities: Capability[];
   onCreate: (draft: DraftConfig) => void;
   onOpenChange: (open: boolean) => void;
   open: boolean;
@@ -214,11 +220,12 @@ function AddModelDialog({
           <DialogTitle>Add model</DialogTitle>
           <DialogDescription>
             Pick a first-party provider and the exact model slug, then assign
-            surfaces on the grid and save.
+            slots on the grid and save.
           </DialogDescription>
         </DialogHeader>
         <form id="add-model-form" onSubmit={submit}>
           <DraftFields
+            capabilities={capabilities}
             draft={draft}
             embedding={false}
             idPrefix="add"
@@ -286,13 +293,13 @@ function RegistryEditor({ registry }: { registry: Registry }) {
 
   const changedEmbedding = embeddingChanged(state);
 
-  function setCell(rowId: string, surface: Surface) {
+  function setCell(rowId: string, slot: Slot) {
     const target = targetForRow(registry, state, rowId);
     if (!target) {
       return;
     }
     dispatch({
-      cell: { isDefault: false, rowId, surface, target },
+      cell: { isDefault: false, rowId, slot, target },
       type: 'set-cell',
     });
   }
@@ -350,14 +357,14 @@ function RegistryEditor({ registry }: { registry: Registry }) {
             </div>
           </div>
         }
-        description="Rows are provider/model identities. Cells control serving, defaults, and drafts. Clearing a preference remaps users to the surface default."
+        description="Rows are provider/model identities. Cells control serving, defaults, and drafts. Clearing a preference remaps users to the slot default."
         title="Model registry"
       />
 
       <div className="-mx-4 overflow-x-auto border-y bg-card sm:-mx-6 lg:-mx-8">
         <table className="w-full min-w-[1120px] border-collapse text-sm">
           <caption className="sr-only">
-            Provider and model slugs by supported product surface
+            Provider and model slugs by slot
           </caption>
           <thead className="sticky top-0 z-10 bg-card shadow-sm">
             <tr>
@@ -367,13 +374,13 @@ function RegistryEditor({ registry }: { registry: Registry }) {
               >
                 Provider / model
               </th>
-              {state.surfaces.map((surface) => (
+              {state.slots.map((slot) => (
                 <th
                   className="min-w-36 border-r border-b p-3 text-left font-medium capitalize"
-                  key={surface}
+                  key={slot}
                   scope="col"
                 >
-                  {surface}
+                  {slot}
                 </th>
               ))}
             </tr>
@@ -418,13 +425,13 @@ function RegistryEditor({ registry }: { registry: Registry }) {
                       ) : null}
                     </div>
                   </th>
-                  {state.surfaces.map((surface) => {
-                    const id = cellId(rowId, surface);
+                  {state.slots.map((slot) => {
+                    const id = cellId(rowId, slot);
                     const cell = state.cells.get(id);
                     return (
                       <td
                         className="border-r border-b p-2 align-top"
-                        key={surface}
+                        key={slot}
                       >
                         {cell ? (
                           <div
@@ -456,16 +463,16 @@ function RegistryEditor({ registry }: { registry: Registry }) {
                             </div>
                             <div className="mt-2 flex gap-1">
                               <Button
-                                aria-label={`Make ${model ? modelRefLabel(model) : rowId} the ${surface} default`}
+                                aria-label={`Make ${model ? modelRefLabel(model) : rowId} the ${slot} default`}
                                 disabled={
                                   cell.isDefault ||
-                                  (surface === 'embedding' &&
+                                  (slot === 'retrieval' &&
                                     !config?.embeddingDefaultEligible)
                                 }
                                 onClick={() =>
                                   dispatch({
                                     rowId,
-                                    surface,
+                                    slot,
                                     type: 'set-default',
                                   })
                                 }
@@ -477,11 +484,11 @@ function RegistryEditor({ registry }: { registry: Registry }) {
                                 Default
                               </Button>
                               <Button
-                                aria-label={`Clear ${surface} from ${model ? modelRefLabel(model) : rowId}`}
+                                aria-label={`Clear ${slot} from ${model ? modelRefLabel(model) : rowId}`}
                                 onClick={() =>
                                   dispatch({
                                     rowId,
-                                    surface,
+                                    slot,
                                     type: 'clear-cell',
                                   })
                                 }
@@ -498,7 +505,7 @@ function RegistryEditor({ registry }: { registry: Registry }) {
                           <Button
                             className="w-full border-dashed"
                             disabled={!targetForRow(registry, state, rowId)}
-                            onClick={() => setCell(rowId, surface)}
+                            onClick={() => setCell(rowId, slot)}
                             size="sm"
                             type="button"
                             variant="outline"
@@ -578,9 +585,7 @@ function RegistryEditor({ registry }: { registry: Registry }) {
           <p className="font-semibold">Registry changes need attention</p>
           <ul className="mt-2 list-inside list-disc text-sm">
             {issues.map((issue, index) => (
-              <li
-                key={`${issue.code}:${issue.rowId}:${issue.surface}:${index}`}
-              >
+              <li key={`${issue.code}:${issue.rowId}:${issue.slot}:${index}`}>
                 {issue.message}
               </li>
             ))}
@@ -617,6 +622,7 @@ function RegistryEditor({ registry }: { registry: Registry }) {
       </div>
 
       <DraftDialog
+        capabilities={registry.capabilities}
         config={cloneRow ? latestConfig(registry, cloneRow) : undefined}
         key={cloneRow ?? 'closed'}
         onCreate={createDraft}
@@ -629,6 +635,7 @@ function RegistryEditor({ registry }: { registry: Registry }) {
         providers={providers}
       />
       <AddModelDialog
+        capabilities={registry.capabilities}
         onCreate={createDraft}
         onOpenChange={setAdding}
         open={adding}

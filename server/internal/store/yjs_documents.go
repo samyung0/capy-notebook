@@ -59,6 +59,37 @@ func (s *Store) ProjectMaterialContent(
 	}
 	defer tx.Rollback(ctx)
 
+	// Serialize persistence, projection and compaction for this material. The
+	// collaboration service takes the same transaction-scoped advisory lock
+	// before touching the Y.Doc, which also keeps our row-lock order aligned.
+	if _, err := tx.Exec(ctx,
+		`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, materialID); err != nil {
+		return Material{}, err
+	}
+	var workspaceID *string
+	var ownerID string
+	if err := tx.QueryRow(ctx, `SELECT workspace_id, owner_user_id
+		FROM materials WHERE id=$1`, materialID).
+		Scan(&workspaceID, &ownerID); err != nil {
+		if isNoRows(err) {
+			return Material{}, ErrNotFound
+		}
+		return Material{}, err
+	}
+	if workspaceID != nil {
+		ownerID, err = s.storageOwnerTx(ctx, tx, *workspaceID)
+		if err != nil {
+			return Material{}, err
+		}
+	}
+	// A projection is still a material write even though it is authenticated by
+	// the collaboration service rather than a user session. Serialize its final
+	// admission with suspension and account deletion so queued projections
+	// cannot cross either boundary.
+	if err := s.lockAccountSessionsTx(ctx, tx, ownerID); err != nil {
+		return Material{}, err
+	}
+
 	var storedVersion, projectedVersion int64
 	if err := tx.QueryRow(ctx, `SELECT stored_version, projected_version
 		FROM material_yjs_documents WHERE material_id=$1 FOR UPDATE`, materialID).
@@ -78,16 +109,20 @@ func (s *Store) ProjectMaterialContent(
 		return s.GetMaterial(ctx, materialID)
 	}
 
-	var kind, title string
+	var kind, title, lockedOwnerID string
 	var revision int64
 	var unchanged bool
-	if err := tx.QueryRow(ctx, `SELECT kind, title, revision, content = $2::jsonb
+	if err := tx.QueryRow(ctx, `SELECT kind, title, revision, content = $2::jsonb,
+		owner_user_id
 		FROM materials WHERE id=$1 FOR UPDATE`, materialID, content).
-		Scan(&kind, &title, &revision, &unchanged); err != nil {
+		Scan(&kind, &title, &revision, &unchanged, &lockedOwnerID); err != nil {
 		if isNoRows(err) {
 			return Material{}, ErrNotFound
 		}
 		return Material{}, err
+	}
+	if lockedOwnerID != ownerID {
+		return Material{}, ErrConflict
 	}
 	// Retries and repeated stores of a settled document project identical JSON.
 	// Advance the watermark without inventing a revision nobody authored.

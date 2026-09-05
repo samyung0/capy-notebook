@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"strings"
@@ -48,14 +49,14 @@ func (a *api) getAccountStatus(ctx context.Context, _ *struct{}) (*accountStatus
 // A subscription already set to cancel at period end is not a blocker: the user
 // has done what we asked of them.
 func (a *api) liveSubscriptionBlocker(ctx context.Context, uid string) (*apimodel.SubscriptionBlocker, error) {
-	if a.cfg.StripeSecretKey == "" {
-		return nil, nil
-	}
 	customerID, err := a.s.GetStripeCustomerID(ctx, uid)
 	if err != nil || customerID == "" {
 		return nil, err
 	}
-	subscriptions, err := billing.ListEntitlingSubscriptions(customerID)
+	if strings.TrimSpace(a.cfg.StripeSecretKey) == "" || a.stripeEntitlements == nil {
+		return &apimodel.SubscriptionBlocker{Unavailable: true}, nil
+	}
+	subscriptions, err := a.stripeEntitlements(customerID)
 	if err != nil {
 		// Failing closed here would make the account permanently undeletable
 		// during a Stripe outage, so surface it as a blocker the user can retry
@@ -84,7 +85,8 @@ func (a *api) deletionPreflight(ctx context.Context, _ *struct{}) (*deletionPref
 		WorkspacesToDestroy:       []apimodel.Workspace{},
 		GraceDays:                 store.DeletionGraceDays,
 	}
-	blocking, err := a.s.WorkspacesBlockingDeletion(ctx, uid)
+	var err error
+	out.LifecycleGeneration, err = a.s.AccountLifecycleGeneration(ctx, uid)
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -92,12 +94,10 @@ func (a *api) deletionPreflight(ctx context.Context, _ *struct{}) (*deletionPref
 	if err != nil {
 		return nil, hErr(err)
 	}
-	// Both lists are owned by uid, so this resolves one account.
-	ownerStates, err := a.workspaceOwnerStates(ctx, append(append([]store.Workspace{}, blocking...), doomed...)...)
+	ownerStates, err := a.workspaceOwnerStates(ctx, doomed...)
 	if err != nil {
 		return nil, err
 	}
-	out.WorkspacesNeedingTransfer = apimodel.FromWorkspaces(blocking, ownerStates)
 	out.WorkspacesToDestroy = apimodel.FromWorkspaces(doomed, ownerStates)
 
 	out.Subscription, err = a.liveSubscriptionBlocker(ctx, uid)
@@ -109,7 +109,7 @@ func (a *api) deletionPreflight(ctx context.Context, _ *struct{}) (*deletionPref
 		return nil, hErr(err)
 	}
 	out.StorageUsedBytes = usage.UsedBytes
-	out.CanDelete = out.Subscription == nil && len(out.WorkspacesNeedingTransfer) == 0
+	out.CanDelete = out.Subscription == nil
 	return &deletionPreflightOutput{Body: out}, nil
 }
 
@@ -135,16 +135,14 @@ func (a *api) requestAccountDeletion(ctx context.Context, in *requestDeletionInp
 		}
 		return nil, huma.Error409Conflict("cancel your subscription before deleting your account")
 	}
-	blocking, err := a.s.WorkspacesBlockingDeletion(ctx, uid)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	if len(blocking) > 0 {
+	status, err := a.s.RequestAccountDeletionAtGenerationWithSessionRevocation(
+		ctx, uid, false, in.Body.LifecycleGeneration,
+	)
+	if errors.Is(err, store.ErrAccountLifecycleChanged) {
 		return nil, huma.Error409Conflict(
-			"transfer or remove the members of your shared workspaces first")
+			"account state changed after deletion preflight; review and try again",
+		)
 	}
-
-	status, err := a.s.RequestAccountDeletion(ctx, uid, false)
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -153,7 +151,14 @@ func (a *api) requestAccountDeletion(ctx context.Context, in *requestDeletionInp
 	if a.cfg.ClerkSecretKey != "" {
 		if err := integrations.RevokeUserSessions(ctx, uid); err != nil {
 			log.Printf("deletion: revoke sessions for %s: %v", uid, err)
+			if retryErr := a.s.RetrySessionRevocation(ctx, uid, err); retryErr != nil {
+				log.Printf("deletion: schedule session revocation retry for %s: %v", uid, retryErr)
+			}
+		} else if err := a.s.MarkSessionRevocationComplete(ctx, uid); err != nil {
+			log.Printf("deletion: finish session revocation for %s: %v", uid, err)
 		}
+	} else if err := a.s.MarkSessionRevocationComplete(ctx, uid); err != nil {
+		log.Printf("deletion: finish disabled session revocation for %s: %v", uid, err)
 	}
 	if err := a.s.NotifyAccountDeletionRequested(ctx, uid); err != nil {
 		log.Printf("deletion: notify request for %s: %v", uid, err)

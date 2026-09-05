@@ -3,21 +3,21 @@
 package copytext
 
 const (
-	User         = "user"
-	NewDeck      = "new_deck"
-	UntitledNote = "untitled_note"
-	UntitledQuiz = "untitled_quiz"
+	User          = "user"
+	NewFlashcards = "new_flashcards"
+	UntitledNote  = "untitled_note"
+	UntitledQuiz  = "untitled_quiz"
 )
 
 var table = map[string]string{
-	"user.en":          "User",
-	"user.zh":          "用户",
-	"new_deck.en":      "New deck",
-	"new_deck.zh":      "新建卡组",
-	"untitled_note.en": "Untitled note",
-	"untitled_note.zh": "未命名笔记",
-	"untitled_quiz.en": "Untitled quiz",
-	"untitled_quiz.zh": "未命名测验",
+	"user.en":           "User",
+	"user.zh":           "用户",
+	"new_flashcards.en": "New flashcards",
+	"new_flashcards.zh": "新建闪卡",
+	"untitled_note.en":  "Untitled note",
+	"untitled_note.zh":  "未命名笔记",
+	"untitled_quiz.en":  "Untitled quiz",
+	"untitled_quiz.zh":  "未命名测验",
 }
 
 func Locale(locale string) string {

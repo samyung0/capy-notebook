@@ -11,8 +11,10 @@ import asyncio
 import contextvars
 import json
 import logging
+import math
 import secrets
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from typing import Any
 
 import requests
@@ -35,12 +37,40 @@ PURPOSE_CHECKPOINT = "checkpoint"
 
 _SETTLE_ATTEMPTS = 4
 _SETTLE_TIMEOUT_S = 10
+_RECEIPT_SETTLEMENT_GRACE_S = 300
 CONTEXT_COUNTING_METHOD = "provider_shape_cjk_chars_latin_chars_div3"
 CONTEXT_COUNTING_VERSION = 2
 
 
 class AccountingError(RuntimeError):
     pass
+
+
+class SettlementError(AccountingError):
+    """A provider receipt exists but could not be applied to Evo's ledger."""
+
+
+def provider_status(exc: BaseException | None) -> int | None:
+    """Find a definitive HTTP response across mapped exception causes."""
+    seen: set[int] = set()
+    current = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        raw = getattr(current, "status_code", None)
+        response = getattr(current, "response", None)
+        if raw is None and response is not None:
+            raw = getattr(response, "status_code", None)
+        if isinstance(raw, int) and 100 <= raw <= 599:
+            return raw
+        current = current.__cause__ or current.__context__
+    return None
+
+
+def definitive_provider_failure(exc: BaseException) -> bool:
+    """True only when the provider answered with a failed HTTP response."""
+    return provider_status(exc) is not None or bool(
+        getattr(exc, "provider_not_called", False)
+    )
 
 
 @dataclass(frozen=True)
@@ -142,6 +172,7 @@ class RequestAccounting:
     resource_rates: dict[str, dict[str, Any]] | None = None
     job_attempt_id: int | None = None
     job_stage: str = ""
+    receipt_deadlines: dict[str, float] = field(default_factory=dict)
 
 
 _accounting: contextvars.ContextVar[RequestAccounting | None] = contextvars.ContextVar(
@@ -220,6 +251,15 @@ async def open_call(
     if not cfg.dsn:
         raise AccountingError("provider call open requires a database")
     call_context = context or ContextComposition()
+    if kind == KIND_AUDIO:
+        provider_timeout_s = cfg.elevenlabs_sync_timeout_s
+    elif state.settlement_mode == "ingest":
+        provider_timeout_s = cfg.ingest_provider_timeout_s
+    else:
+        provider_timeout_s = cfg.interactive_provider_timeout_s
+    receipt_timeout_s = (
+        max(1, math.ceil(provider_timeout_s)) + _RECEIPT_SETTLEMENT_GRACE_S
+    )
     arguments: tuple[Any, ...] = (
         state.session_id,
         call_id,
@@ -227,10 +267,12 @@ async def open_call(
         purpose,
         thinking,
         call_context,
+        receipt_timeout_s,
     )
     if state.job_attempt_id is not None or state.job_stage:
         arguments += (state.job_attempt_id, state.job_stage)
     await asyncio.to_thread(_open_call_sync, *arguments)
+    state.receipt_deadlines[call_id] = time.monotonic() + receipt_timeout_s
 
 
 async def abandon_call(call_id: str, exc: BaseException | None = None) -> None:
@@ -251,6 +293,7 @@ def _open_call_sync(
     purpose: str,
     thinking: str,
     context: ContextComposition,
+    receipt_timeout_s: int,
     job_attempt_id: int | None = None,
     job_stage: str = "",
 ) -> None:
@@ -274,6 +317,7 @@ def _open_call_sync(
                 context_window_tokens=context.window_tokens,
                 context_counting_method=context.counting_method,
                 context_counting_version=context.counting_version,
+                receipt_timeout_seconds=receipt_timeout_s,
             )
         conn.commit()
 
@@ -281,13 +325,10 @@ def _open_call_sync(
 def _abandon_call_sync(call_id: str, exc: BaseException | None) -> None:
     from ..store import db
 
-    raw_status = getattr(exc, "status_code", None) if exc is not None else None
-    provider_status = (
-        raw_status if isinstance(raw_status, int) and 100 <= raw_status <= 599 else None
-    )
-    if provider_status is not None:
+    response_status = provider_status(exc)
+    if response_status is not None:
         category = "provider"
-        code = f"provider_http_{provider_status}"
+        code = f"provider_http_{response_status}"
     elif exc is not None:
         category = "provider"
         code = (
@@ -307,7 +348,7 @@ def _abandon_call_sync(call_id: str, exc: BaseException | None) -> None:
                 call_id,
                 error_category=category,
                 error_code=code,
-                provider_status=provider_status,
+                provider_status=response_status,
             )
         conn.commit()
 
@@ -325,16 +366,19 @@ async def settle(
     if state is None:
         return None
     if state.settlement_mode == "ingest":
-        await asyncio.to_thread(
-            _settle_ingest_call_sync,
-            state.session_id,
-            call_id,
-            kind,
-            purpose,
-            thinking,
-            spec,
-            usage,
-            state.resource_rates or {},
+        await _finish_known_receipt(
+            _retry_local_settlement(
+                _settle_ingest_call_sync,
+                state.session_id,
+                call_id,
+                kind,
+                purpose,
+                thinking,
+                spec,
+                usage,
+                state.resource_rates or {},
+                deadline=state.receipt_deadlines.get(call_id),
+            )
         )
         state.settled_calls += 1
         return state
@@ -348,7 +392,12 @@ async def settle(
         "model": elitellm.transport_model_slug(spec),
         **usage.as_dict(),
     }
-    response = await _post_settlement(payload)
+    deadline = state.receipt_deadlines.get(call_id)
+    response = await _finish_known_receipt(
+        _post_settlement(payload, deadline=deadline)
+        if deadline is not None
+        else _post_settlement(payload)
+    )
     state.credits_exhausted = bool(response.get("creditsExhausted"))
     state.terminal_call_allowed = bool(response.get("terminalCallAllowed"))
     state.settled_calls += 1
@@ -375,37 +424,143 @@ async def settle_units(
     if state.settlement_mode == "ingest":
         if credit_micros is None or credit_micros < 0:
             raise AccountingError("ingest unit settlement requires snapshotted credits")
-        await asyncio.to_thread(
-            _settle_ingest_units_sync,
-            state.session_id,
-            call_id,
-            kind,
-            purpose,
-            provider,
-            model,
-            units,
-            unit,
-            credit_micros,
+        await _finish_known_receipt(
+            _retry_local_settlement(
+                _settle_ingest_units_sync,
+                state.session_id,
+                call_id,
+                kind,
+                purpose,
+                provider,
+                model,
+                units,
+                unit,
+                credit_micros,
+                deadline=state.receipt_deadlines.get(call_id),
+            )
         )
         state.settled_calls += 1
         return state
-    response = await _post_settlement(
-        {
-            "sessionId": state.session_id,
-            "callId": call_id,
-            "kind": kind,
-            "purpose": purpose,
-            "thinking": "",
-            "provider": provider,
-            "model": model,
-            "units": units,
-            "unit": unit,
-        }
+    payload = {
+        "sessionId": state.session_id,
+        "callId": call_id,
+        "kind": kind,
+        "purpose": purpose,
+        "thinking": "",
+        "provider": provider,
+        "model": model,
+        "units": units,
+        "unit": unit,
+    }
+    deadline = state.receipt_deadlines.get(call_id)
+    response = await _finish_known_receipt(
+        _post_settlement(payload, deadline=deadline)
+        if deadline is not None
+        else _post_settlement(payload)
     )
     state.credits_exhausted = bool(response.get("creditsExhausted"))
     state.terminal_call_allowed = bool(response.get("terminalCallAllowed"))
     state.settled_calls += 1
     return state
+
+
+async def settle_ingest_units_for_session(
+    *,
+    session_id: str,
+    call_id: str,
+    kind: str,
+    purpose: str,
+    provider: str,
+    model: str,
+    units: int,
+    unit: str,
+    credit_micros: int,
+) -> None:
+    """Recover a pending artifact against the call's original reservation."""
+    if not cfg.dsn:
+        raise AccountingError("ingest unit recovery requires a database")
+    if not session_id or not call_id:
+        raise AccountingError("ingest unit recovery requires session and call ids")
+    await _retry_local_settlement(
+        _settle_ingest_units_sync,
+        session_id,
+        call_id,
+        kind,
+        purpose,
+        provider,
+        model,
+        units,
+        unit,
+        credit_micros,
+        deadline=None,
+    )
+
+
+async def _retry_local_settlement(
+    function: Any,
+    *args: Any,
+    deadline: float | None,
+) -> None:
+    """Keep the exact in-memory receipt until it applies or its window closes."""
+    attempt = 0
+    while True:
+        try:
+            await asyncio.to_thread(function, *args)
+            return
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            attempt += 1
+            if type(exc).__name__ == "ProviderReceiptExpired":
+                raise SettlementError("provider receipt deadline elapsed") from exc
+            if not _transient_local_settlement_error(exc):
+                raise SettlementError("provider receipt settlement rejected") from exc
+            if deadline is None:
+                if attempt >= _SETTLE_ATTEMPTS:
+                    raise SettlementError("provider receipt settlement failed") from exc
+            elif time.monotonic() >= deadline:
+                raise SettlementError(
+                    "provider receipt settlement deadline elapsed"
+                ) from exc
+            delay = min(5.0, 0.25 * (2 ** min(attempt - 1, 5)))
+            if deadline is not None:
+                delay = min(delay, max(0.0, deadline - time.monotonic()))
+            if delay <= 0:
+                raise SettlementError(
+                    "provider receipt settlement deadline elapsed"
+                ) from exc
+            await asyncio.sleep(delay)
+
+
+async def _finish_known_receipt(awaitable: Any) -> Any:
+    """Do not discard measured provider usage when the requester disconnects."""
+    task = asyncio.create_task(awaitable)
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        # The provider response is already known. Keep the exact receipt alive
+        # through its settlement deadline, then preserve caller cancellation.
+        try:
+            await task
+        except Exception:
+            log.exception("provider receipt could not be settled after cancellation")
+        raise
+
+
+def _transient_local_settlement_error(exc: BaseException) -> bool:
+    """Retry only database availability/serialization outcomes that can heal."""
+    sqlstate = getattr(exc, "sqlstate", None)
+    if isinstance(sqlstate, str) and (
+        sqlstate.startswith("08")
+        or sqlstate in {"40001", "40P01", "53300", "57P01", "57P02", "57P03"}
+    ):
+        return True
+    return type(exc).__name__ in {
+        "ConnectionTimeout",
+        "InterfaceError",
+        "OperationalError",
+        "PoolTimeout",
+    }
 
 
 def _settle_ingest_call_sync(
@@ -435,7 +590,7 @@ def _settle_ingest_call_sync(
         credit_micros += int(rate["creditMicrosPerUnit"])
     with db.connect() as conn:
         with conn.cursor() as cur:
-            db.settle_ingest_provider_call(
+            result = db.settle_ingest_provider_call(
                 cur,
                 session_id=session_id,
                 call_id=call_id,
@@ -451,6 +606,8 @@ def _settle_ingest_call_sync(
                 credit_micros=credit_micros,
             )
         conn.commit()
+        if result == "expired":
+            raise db.ProviderReceiptExpired("provider receipt deadline elapsed")
 
 
 def _settle_ingest_units_sync(
@@ -468,7 +625,7 @@ def _settle_ingest_units_sync(
 
     with db.connect() as conn:
         with conn.cursor() as cur:
-            db.settle_ingest_provider_call(
+            result = db.settle_ingest_provider_call(
                 cur,
                 session_id=session_id,
                 call_id=call_id,
@@ -486,9 +643,13 @@ def _settle_ingest_units_sync(
                 unit=unit,
             )
         conn.commit()
+        if result == "expired":
+            raise db.ProviderReceiptExpired("provider receipt deadline elapsed")
 
 
-async def _post_settlement(payload: dict[str, Any]) -> dict[str, Any]:
+async def _post_settlement(
+    payload: dict[str, Any], *, deadline: float | None = None
+) -> dict[str, Any]:
     url = cfg.gateway_url.rstrip("/") + "/api/internal/provider-calls"
     headers = {
         "Content-Type": "application/json",
@@ -496,7 +657,9 @@ async def _post_settlement(payload: dict[str, Any]) -> dict[str, Any]:
         **obs.outbound_headers(),
     }
     last_error = ""
-    for attempt in range(_SETTLE_ATTEMPTS):
+    attempt = 0
+    while True:
+        retryable = True
         try:
 
             def _post() -> requests.Response:
@@ -512,21 +675,38 @@ async def _post_settlement(payload: dict[str, Any]) -> dict[str, Any]:
                 try:
                     body = response.json()
                 except ValueError as exc:
-                    raise AccountingError("accounting returned invalid JSON") from exc
+                    raise SettlementError("accounting returned invalid JSON") from exc
                 if not isinstance(body, dict):
-                    raise AccountingError("accounting returned an invalid body")
+                    raise SettlementError("accounting returned an invalid body")
                 return body
             last_error = _response_detail(response) or str(response.status_code)
             if response.status_code < 500 and response.status_code != 429:
-                break
+                retryable = False
         except (requests.Timeout, requests.ConnectionError) as exc:
             last_error = str(exc)
         except requests.RequestException as exc:
             last_error = str(exc)
-            break
-        if attempt < _SETTLE_ATTEMPTS - 1:
-            await asyncio.sleep(0.25 * (2**attempt))
-    raise AccountingError(f"accounting failed: {last_error or 'unavailable'}")
+            retryable = False
+        attempt += 1
+        if not retryable:
+            raise SettlementError(f"accounting failed: {last_error or 'unavailable'}")
+        if deadline is None:
+            if attempt >= _SETTLE_ATTEMPTS:
+                raise SettlementError(
+                    f"accounting failed: {last_error or 'unavailable'}"
+                )
+        elif time.monotonic() >= deadline:
+            raise SettlementError(
+                f"accounting failed before receipt deadline: {last_error or 'unavailable'}"
+            )
+        delay = min(5.0, 0.25 * (2 ** min(attempt - 1, 5)))
+        if deadline is not None:
+            delay = min(delay, max(0.0, deadline - time.monotonic()))
+        if delay <= 0:
+            raise SettlementError(
+                f"accounting failed before receipt deadline: {last_error or 'unavailable'}"
+            )
+        await asyncio.sleep(delay)
 
 
 def _response_detail(response: requests.Response) -> str:

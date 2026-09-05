@@ -1,0 +1,56 @@
+[
+  {
+    "q": "Switch Transformer",
+    "expect": [["jp_llm2.pptx", 66], ["jp_llm2.pptx", 69]],
+    "flag": 1
+  },
+  {
+    "q": "FlashAttention",
+    "expect": [["jp_llm2.pptx", 55], ["jp_llm2.pptx", 56]],
+    "flag": 1
+  },
+  {
+    "q": "PR-MoE",
+    "expect": [["jp_llm2.pptx", 73], ["jp_llm2.pptx", 74]],
+    "flag": 1
+  },
+  { "q": "VaultGemma", "expect": [["jp_llm.pdf", 84]], "flag": 1 },
+  {
+    "q": "BoolQ",
+    "expect": [["jp_llm.pdf", 55], ["jp_llm.pdf", 56]],
+    "flag": 1
+  },
+  {
+    "q": "表 1",
+    "expect": [["jp_llm.pdf", 53], ["jp_llm.pdf", 52]],
+    "flag": 1
+  },
+  { "q": "RFM 分析", "expect": [["jp_llm.pdf", 68]], "flag": 1 },
+  {
+    "q": "ハルシネーション 不可避性",
+    "expect": [["jp_llm.pdf", 10], ["jp_llm.pdf", 66], ["jp_llm.pdf", 63]],
+    "flag": 1
+  },
+  {
+    "q": "差分プライバシー",
+    "expect": [["jp_llm.pdf", 81], ["jp_llm.pdf", 83]],
+    "flag": 1
+  },
+  {
+    "q": "ZeRO stage",
+    "expect": [["jp_llm2.pptx", 86], ["jp_llm2.pptx", 88]],
+    "flag": 1
+  },
+  {
+    "q": "LLM.int8",
+    "expect": [["jp_llm2.pptx", 95], ["jp_llm2.pptx", 97]],
+    "flag": 1
+  },
+  {
+    "q": "LIMA",
+    "expect": [["jp_llm2.pptx", 16], ["jp_llm2.pptx", 17]],
+    "flag": 1
+  },
+  { "q": "Informer", "expect": [["jp_llm.pdf", 74]], "flag": 1 },
+  { "q": "新美 潤一郎", "expect": [], "flag": 1 }
+]

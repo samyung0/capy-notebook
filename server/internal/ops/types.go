@@ -40,10 +40,10 @@ type preferenceColumns struct {
 }
 
 var userPreferenceColumns = map[string]preferenceColumns{
-	models.SurfaceChat:     {"chat_model_provider_slug", "chat_model_slug"},
-	models.SurfaceGenerate: {"generate_model_provider_slug", "generate_model_slug"},
-	models.SurfaceEditor:   {"editor_model_provider_slug", "editor_model_slug"},
-	models.SurfaceQuiz:     {"quiz_model_provider_slug", "quiz_model_slug"},
+	models.SlotChat:     {"chat_model_provider_slug", "chat_model_slug"},
+	models.SlotGenerate: {"generate_model_provider_slug", "generate_model_slug"},
+	models.SlotEditor:   {"editor_model_provider_slug", "editor_model_slug"},
+	models.SlotQuiz:     {"quiz_model_provider_slug", "quiz_model_slug"},
 }
 
 type Session struct {
@@ -123,7 +123,6 @@ type IngestAttemptSummary struct {
 	Retrying                    int64 `json:"retrying"`
 	Failed                      int64 `json:"failed"`
 	CapacityWaits               int64 `json:"capacityWaits"`
-	ExternalWaits               int64 `json:"externalWaits"`
 	LeaseExpired                int64 `json:"leaseExpired"`
 	Pages                       int64 `json:"pages"`
 	OCRPages                    int64 `json:"ocrPages"`
@@ -133,7 +132,6 @@ type IngestAttemptSummary struct {
 	FiguresCaptioned            int64 `json:"figuresCaptioned"`
 	FiguresFailed               int64 `json:"figuresFailed"`
 	ChunksCreated               int64 `json:"chunksCreated"`
-	ConceptsCreated             int64 `json:"conceptsCreated"`
 	AverageQueueMilliseconds    int64 `json:"averageQueueMilliseconds"`
 	P95QueueMilliseconds        int64 `json:"p95QueueMilliseconds"`
 	AverageDurationMilliseconds int64 `json:"averageDurationMilliseconds"`
@@ -145,6 +143,9 @@ type IngestAttemptSummary struct {
 }
 
 type IngestQueueSummary struct {
+	ImportReady    int64 `json:"importReady"`
+	ImportDelayed  int64 `json:"importDelayed"`
+	ImportRunning  int64 `json:"importRunning"`
 	ParseReady     int64 `json:"parseReady"`
 	ParseDelayed   int64 `json:"parseDelayed"`
 	ParseRunning   int64 `json:"parseRunning"`
@@ -448,17 +449,21 @@ type UsageEvent struct {
 }
 
 type UserDetail struct {
-	UserID       string          `json:"userId"`
-	Name         string          `json:"name"`
-	Email        string          `json:"email"`
-	PlanTier     string          `json:"planTier"`
-	AccountState string          `json:"accountState"`
-	Credits      CreditBalance   `json:"credits"`
-	Storage      StorageBalance  `json:"storage"`
-	UsageByKind  []UsagePoint    `json:"usageByKind"`
-	Workspaces   []UserWorkspace `json:"workspaces"`
-	RecentUsage  []UsageEvent    `json:"recentUsage"`
-	DataAsOf     time.Time       `json:"dataAsOf"`
+	UserID                    string          `json:"userId"`
+	Name                      string          `json:"name"`
+	Email                     string          `json:"email"`
+	PlanTier                  string          `json:"planTier"`
+	AccountState              string          `json:"accountState"`
+	SessionRevocationPending  bool            `json:"sessionRevocationPending"`
+	SessionRevocationAttempts int             `json:"sessionRevocationAttempts"`
+	SessionRevocationDueAt    *time.Time      `json:"sessionRevocationDueAt,omitempty"`
+	SessionRevocationError    string          `json:"sessionRevocationError"`
+	Credits                   CreditBalance   `json:"credits"`
+	Storage                   StorageBalance  `json:"storage"`
+	UsageByKind               []UsagePoint    `json:"usageByKind"`
+	Workspaces                []UserWorkspace `json:"workspaces"`
+	RecentUsage               []UsageEvent    `json:"recentUsage"`
+	DataAsOf                  time.Time       `json:"dataAsOf"`
 }
 
 type CostRow struct {
@@ -517,7 +522,8 @@ type CatalogConfig struct {
 	ThinkingLevels            []string        `json:"thinkingLevels"`
 	DefaultThinking           string          `json:"defaultThinking"`
 	Params                    json.RawMessage `json:"params"`
-	Surfaces                  []string        `json:"surfaces"`
+	Slots                     []string        `json:"slots"`
+	Capabilities              []string        `json:"capabilities"`
 	MicrosPerInputToken       int64           `json:"microsPerInputToken"`
 	MicrosPerCachedInputToken int64           `json:"microsPerCachedInputToken"`
 	MicrosPerOutputToken      int64           `json:"microsPerOutputToken"`
@@ -551,7 +557,8 @@ type EmbeddingWorkspaceCount struct {
 
 type RegistrySnapshot struct {
 	Version                  int64                            `json:"revision"`
-	Surfaces                 []models.Surface                 `json:"surfaces"`
+	Slots                    []models.Slot                    `json:"slots"`
+	Capabilities             []models.Capability              `json:"capabilities"`
 	AliasesAllowed           bool                             `json:"aliasesAllowed"`
 	Configs                  []CatalogConfig                  `json:"configs"`
 	ProviderCredentials      []ProviderCredentialAvailability `json:"providerCredentials"`
@@ -569,7 +576,8 @@ type DraftConfig struct {
 	ThinkingLevels      []string        `json:"thinkingLevels"`
 	DefaultThinking     string          `json:"defaultThinking"`
 	Params              json.RawMessage `json:"params"`
-	Surfaces            []string        `json:"surfaces"`
+	Slots               []string        `json:"slots"`
+	Capabilities        []string        `json:"capabilities"`
 	DefaultFor          []string        `json:"defaultFor"`
 	Rates               CreditRates     `json:"rates"`
 }
@@ -593,7 +601,6 @@ type EliteLLMProviderPage struct {
 type EliteLLMProvider struct {
 	Slug        string   `json:"slug"`
 	Name        string   `json:"name"`
-	Modes       []string `json:"modes"`
 	BYOK        bool     `json:"byok"`
 	PlatformEnv string   `json:"platformEnv"`
 	Thinking    []string `json:"thinking"`

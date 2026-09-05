@@ -36,16 +36,16 @@ func openRegistryTestTx(t *testing.T) (*RegistryStore, pgx.Tx) {
 
 func gridRequest(snapshot RegistrySnapshot) gridSaveRequest {
 	type cellKey struct {
-		model   models.Ref
-		surface string
+		model models.Ref
+		slot  string
 	}
 	live := map[cellKey]CatalogConfig{}
 	for _, config := range snapshot.Configs {
 		if !config.Enabled {
 			continue
 		}
-		for _, surface := range config.Surfaces {
-			key := cellKey{model: config.Ref(), surface: surface}
+		for _, slot := range config.Slots {
+			key := cellKey{model: config.Ref(), slot: slot}
 			current, ok := live[key]
 			if !ok || config.Version > current.Version {
 				live[key] = config
@@ -55,19 +55,19 @@ func gridRequest(snapshot RegistrySnapshot) gridSaveRequest {
 	request := gridSaveRequest{ExpectedVersion: snapshot.Version}
 	for key, config := range live {
 		request.Cells = append(request.Cells, GridCell{
-			Row:     key.model,
-			Surface: key.surface,
+			Row:  key.model,
+			Slot: key.slot,
 			Target: CellTarget{
 				Kind:    "catalog",
 				Model:   config.Ref(),
 				Version: config.Version,
 			},
-			IsDefault: contains(config.IsDefaultFor, key.surface),
+			IsDefault: contains(config.IsDefaultFor, key.slot),
 		})
 	}
 	sort.Slice(request.Cells, func(i, j int) bool {
 		if request.Cells[i].Row == request.Cells[j].Row {
-			return request.Cells[i].Surface < request.Cells[j].Surface
+			return request.Cells[i].Slot < request.Cells[j].Slot
 		}
 		return request.Cells[i].Row.String() < request.Cells[j].Row.String()
 	})
@@ -87,6 +87,7 @@ func draftFromConfig(id string, config CatalogConfig) gridDraft {
 		ThinkingLevels:            append([]string(nil), config.ThinkingLevels...),
 		DefaultThinking:           config.DefaultThinking,
 		Params:                    append(json.RawMessage(nil), config.Params...),
+		Capabilities:              append([]string(nil), config.Capabilities...),
 		MicrosPerInputToken:       config.MicrosPerInputToken,
 		MicrosPerCachedInputToken: config.MicrosPerCachedInputToken,
 		MicrosPerOutputToken:      config.MicrosPerOutputToken,
@@ -150,19 +151,19 @@ func TestRegistrySaveInsertsVersionAndDisablesOldWithoutChangingPreferences(t *t
 		t.Fatalf("unexpected save result: %+v", result)
 	}
 	var oldEnabled bool
-	var oldSurfaces []string
+	var oldSlots []string
 	if err := tx.QueryRow(ctx, `
-		SELECT enabled, surfaces FROM model_configs
+		SELECT enabled, slots FROM model_configs
 		WHERE provider_slug=$1 AND model_slug=$2 AND version=$3`,
 		current.ProviderSlug, current.ModelSlug, current.Version,
-	).Scan(&oldEnabled, &oldSurfaces); err != nil {
+	).Scan(&oldEnabled, &oldSlots); err != nil {
 		t.Fatal(err)
 	}
 	if oldEnabled {
 		t.Fatal("old immutable version remained enabled")
 	}
-	if !sameStringSet(oldSurfaces, current.Surfaces) {
-		t.Fatalf("old version was mutated: got %v want %v", oldSurfaces, current.Surfaces)
+	if !sameStringSet(oldSlots, current.Slots) {
+		t.Fatalf("old version was mutated: got %v want %v", oldSlots, current.Slots)
 	}
 	var newVersion int
 	if err := tx.QueryRow(ctx, `
@@ -192,16 +193,16 @@ func TestRegistrySaveInsertsVersionAndDisablesOldWithoutChangingPreferences(t *t
 	if createdBy != "ops-user" || updatedBy != "ops-user" || oldUpdatedBy != "ops-user" {
 		t.Fatalf("audit actors = new %q/%q old %q", createdBy, updatedBy, oldUpdatedBy)
 	}
-	for _, surface := range snapshot.Surfaces {
+	for _, slot := range snapshot.Slots {
 		var defaults int
 		if err := tx.QueryRow(ctx, `
 			SELECT count(*) FROM model_configs
-			WHERE enabled AND $1 = ANY(is_default_for)`, surface,
+			WHERE enabled AND $1 = ANY(is_default_for)`, slot,
 		).Scan(&defaults); err != nil {
 			t.Fatal(err)
 		}
 		if defaults != 1 {
-			t.Fatalf("surface %s has %d defaults after Save", surface, defaults)
+			t.Fatalf("slot %s has %d defaults after Save", slot, defaults)
 		}
 	}
 	var afterPreferences [8]string
@@ -280,7 +281,7 @@ func TestRegistrySaveRemapsRemovedPrefToDefault(t *testing.T) {
 	proRef := models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-pro"}
 	filtered := request.Cells[:0]
 	for _, cell := range request.Cells {
-		if cell.Row == proRef && cell.Surface == "chat" {
+		if cell.Row == proRef && cell.Slot == "chat" {
 			continue
 		}
 		filtered = append(filtered, cell)
@@ -321,6 +322,43 @@ func TestRegistrySaveRemapsRemovedPrefToDefault(t *testing.T) {
 	}
 }
 
+func TestRegistrySaveRevalidatesExistingRowsAgainstSlotRequirements(t *testing.T) {
+	registry, tx := openRegistryTestTx(t)
+	ctx := context.Background()
+	suffix := time.Now().UTC().Format("150405000000")
+	ref := models.Ref{ProviderSlug: "deepseek", ModelSlug: "uncertified-" + suffix}
+	// An enabled chat row whose exact slug has no agentic-loop certificate can
+	// only exist if the certificate was revoked after the row was written.
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO model_configs (
+			version, provider_name, model_name, provider_slug, model_slug,
+			platform_enabled, byok_enabled, context_window_tokens,
+			thinking_levels, default_thinking, params,
+			slots, micros_per_input_token, micros_per_cached_input_token,
+			micros_per_output_token, enabled, is_default_for
+		) VALUES (
+			1, 'Stale', 'Chat', $1, $2,
+			true, false, 100000,
+			ARRAY['instant']::text[], 'instant', '{}'::jsonb,
+			ARRAY['chat'], 1, 1, 1, true, '{}'
+		)`, ref.ProviderSlug, ref.ModelSlug,
+	); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := snapshotFrom(ctx, tx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Submitting the grid unchanged keeps the row on chat via an existing
+	// target, which is the path a stale row would use to bypass the gate.
+	_, err = registry.saveTx(ctx, tx, gridRequest(snapshot))
+	var coded *ValidationError
+	if !errors.As(err, &coded) || coded.Code != "agentic_loop_not_certified" ||
+		coded.Slot != models.SlotChat || coded.ModelSlug != ref.ModelSlug {
+		t.Fatalf("unchanged save with an uncertified chat row = %#v", err)
+	}
+}
+
 func TestRegistrySaveRemapsEveryUserPreferenceAndDisablesRetiredRows(t *testing.T) {
 	registry, tx := openRegistryTestTx(t)
 	ctx := context.Background()
@@ -332,7 +370,7 @@ func TestRegistrySaveRemapsEveryUserPreferenceAndDisablesRetiredRows(t *testing.
 			version, provider_name, model_name, provider_slug, model_slug,
 			platform_enabled, byok_enabled, context_window_tokens,
 			thinking_levels, default_thinking, params,
-			surfaces, micros_per_input_token, micros_per_cached_input_token,
+			slots, micros_per_input_token, micros_per_cached_input_token,
 			micros_per_output_token, enabled, is_default_for
 		) VALUES (
 			1, 'Retired', 'Model', $1, $2,
@@ -373,7 +411,7 @@ func TestRegistrySaveRemapsEveryUserPreferenceAndDisablesRetiredRows(t *testing.
 		t.Fatal(err)
 	}
 	if result.RemappedUsers != 4 || result.DisabledRows < 1 {
-		t.Fatalf("unexpected all-surface remap result: %+v", result)
+		t.Fatalf("unexpected all-slot remap result: %+v", result)
 	}
 	var preferences [4]models.Ref
 	if err := tx.QueryRow(ctx, `
@@ -440,11 +478,12 @@ func TestRegistrySaveRejectsStaleVersionWithCurrentSnapshot(t *testing.T) {
 
 func TestRegistryCompileRefusesMissingDefaultAliasAndEmbeddingRewrite(t *testing.T) {
 	snapshot := RegistrySnapshot{
-		Version:  1,
-		Surfaces: models.AllSurfaces(),
+		Version: 1,
+		Slots:   models.AllSlots(),
 		Configs: []CatalogConfig{{
 			ProviderSlug: "embedtest", ModelSlug: "embed-model",
-			Version: 1, Enabled: true, Surfaces: []string{"embedding"}, IsDefaultFor: []string{"embedding"},
+			Version: 1, Enabled: true, Slots: []string{"retrieval"}, IsDefaultFor: []string{"retrieval"},
+			Capabilities: []string{models.CapabilityEmbedding},
 		}},
 	}
 	request := gridRequest(snapshot)
@@ -458,7 +497,7 @@ func TestRegistryCompileRefusesMissingDefaultAliasAndEmbeddingRewrite(t *testing
 		t.Fatalf("expected default validation, got %v", err)
 	}
 	request = gridRequest(snapshot)
-	request.Cells[0].Surface = "vision"
+	request.Cells[0].Slot = "captioning"
 	if _, _, _, err := compileGrid(request, snapshot); !IsValidation(err) {
 		t.Fatalf("expected embedding immutability validation, got %v", err)
 	}
@@ -494,9 +533,10 @@ func TestActiveDraftRejectsEmbeddingHopChange(t *testing.T) {
 		Params: json.RawMessage(
 			`{"dimensions":2560,"vector_table":"rag_chunk_vectors_2560"}`,
 		),
-		Surfaces:            []string{models.SurfaceEmbedding},
+		Slots:               []string{models.SlotRetrieval},
+		Capabilities:        []string{models.CapabilityEmbedding},
 		MicrosPerInputToken: 50, Enabled: true,
-		IsDefaultFor: []string{models.SurfaceEmbedding},
+		IsDefaultFor: []string{models.SlotRetrieval},
 	}
 	request := RegistrySaveRequest{
 		Revision: 7,
@@ -505,7 +545,7 @@ func TestActiveDraftRejectsEmbeddingHopChange(t *testing.T) {
 			ModelName: current.ModelName,
 			ModelSlug: "deepseek-v4-flash", PlatformEnabled: current.PlatformEnabled,
 			ContextWindowTokens: current.ContextWindowTokens, Params: current.Params,
-			Surfaces: current.Surfaces, DefaultFor: current.IsDefaultFor,
+			Slots: current.Slots, Capabilities: current.Capabilities, DefaultFor: current.IsDefaultFor,
 			Rates: CreditRates{InputMicros: current.MicrosPerInputToken},
 		}},
 	}
@@ -523,7 +563,8 @@ func TestEmbeddingDefaultEligibilityRefusesInvalidPinsAndTables(t *testing.T) {
 	base := CatalogConfig{
 		ProviderSlug: "deepinfra", ModelSlug: models.SeededHopEmbedSlug,
 		Version: 1, Enabled: true,
-		Surfaces: []string{models.SurfaceEmbedding},
+		Slots:        []string{models.SlotRetrieval},
+		Capabilities: []string{models.CapabilityEmbedding},
 		Params: json.RawMessage(
 			`{"dimensions":2560,"vector_table":"rag_chunk_vectors_2560"}`,
 		),
@@ -599,12 +640,12 @@ func TestRegistrySaveMovesEmbeddingDefaultOnlyToPreShippedAllowedRow(t *testing.
 		INSERT INTO model_configs (
 			version, provider_name, model_name, provider_slug, model_slug,
 			platform_enabled, byok_enabled, context_window_tokens,
-			thinking_levels, default_thinking, params, surfaces,
+			thinking_levels, default_thinking, params, slots, capabilities,
 			micros_per_input_token, micros_per_cached_input_token,
 			micros_per_output_token, enabled, is_default_for
 		) VALUES (
 			1, 'Ops', 'Embed', $1, $2,
-			true, false, 0, ARRAY[]::text[], '', $3::jsonb, ARRAY['embedding'],
+			true, false, 0, ARRAY[]::text[], '', $3::jsonb, ARRAY['retrieval'], ARRAY['embedding'],
 			50, 0, 0, true, ARRAY[]::text[]
 		)`, modelRef.ProviderSlug, modelRef.ModelSlug, params,
 	); err != nil {
@@ -617,7 +658,7 @@ func TestRegistrySaveMovesEmbeddingDefaultOnlyToPreShippedAllowedRow(t *testing.
 	request := gridRequest(snapshot)
 	for index := range request.Cells {
 		cell := &request.Cells[index]
-		if cell.Surface != models.SurfaceEmbedding {
+		if cell.Slot != models.SlotRetrieval {
 			continue
 		}
 		cell.IsDefault = cell.Row == modelRef
@@ -663,8 +704,8 @@ func TestRegistrySaveMovesEmbeddingDefaultOnlyToPreShippedAllowedRow(t *testing.
 	if !old.Enabled || !moved.Enabled {
 		t.Fatalf("embedding rows were disabled: old=%v new=%v", old.Enabled, moved.Enabled)
 	}
-	if contains(old.IsDefaultFor, models.SurfaceEmbedding) ||
-		!contains(moved.IsDefaultFor, models.SurfaceEmbedding) {
+	if contains(old.IsDefaultFor, models.SlotRetrieval) ||
+		!contains(moved.IsDefaultFor, models.SlotRetrieval) {
 		t.Fatalf("embedding defaults not moved: old=%v new=%v",
 			old.IsDefaultFor, moved.IsDefaultFor)
 	}
@@ -690,6 +731,17 @@ func TestBindEliteLLMDraftRejectsMarketplaceHop(t *testing.T) {
 	}
 }
 
+func TestBindEliteLLMDraftRejectsNonCanonicalSlugs(t *testing.T) {
+	for _, draft := range []gridDraft{
+		{ProviderSlug: " deepseek", ModelSlug: "deepseek-v4-pro"},
+		{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-pro "},
+	} {
+		if err := bindEliteLLMDraft(&draft, nil); !IsValidation(err) {
+			t.Fatalf("bind %q = %v, want validation", draft.Ref(), err)
+		}
+	}
+}
+
 func TestBindEliteLLMDraftAllowsFirstPartyAndSeededEmbed(t *testing.T) {
 	t.Setenv("DEEPSEEK_API_KEY", "sk-test")
 	t.Setenv("DEEPINFRA_API_KEY", "sk-test")
@@ -701,15 +753,16 @@ func TestBindEliteLLMDraftAllowsFirstPartyAndSeededEmbed(t *testing.T) {
 		ThinkingLevels:  []string{"instant", "low", "mid", "high", "max"},
 		DefaultThinking: "instant",
 	}
-	if err := bindEliteLLMDraft(&flash, []string{models.SurfaceChat}); err != nil {
+	if err := bindEliteLLMDraft(&flash, []string{models.SlotChat}); err != nil {
 		t.Fatalf("flash bind: %v", err)
 	}
 	embed := gridDraft{
 		ProviderSlug:    models.ProviderDeepInfra,
 		ModelSlug:       models.SeededHopEmbedSlug,
 		PlatformEnabled: true,
+		Capabilities:    []string{models.CapabilityEmbedding},
 	}
-	if err := bindEliteLLMDraft(&embed, []string{models.SurfaceEmbedding}); err != nil {
+	if err := bindEliteLLMDraft(&embed, []string{models.SlotRetrieval}); err != nil {
 		t.Fatalf("seeded embed bind: %v", err)
 	}
 }
@@ -748,7 +801,7 @@ func TestBindEliteLLMDraftRequiresPlatformEnv(t *testing.T) {
 	}
 }
 
-func TestBindEliteLLMDraftAppliesAgenticLoopSurfacePolicy(t *testing.T) {
+func TestBindEliteLLMDraftAppliesAgenticLoopSlotPolicy(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "sk-test")
 	draft := gridDraft{
 		ProviderSlug:    "anthropic",
@@ -757,32 +810,49 @@ func TestBindEliteLLMDraftAppliesAgenticLoopSurfacePolicy(t *testing.T) {
 		ThinkingLevels:  []string{"high"},
 		DefaultThinking: "high",
 	}
-	err := bindEliteLLMDraft(&draft, []string{models.SurfaceChat})
+	err := bindEliteLLMDraft(&draft, []string{models.SlotChat})
 	var coded *ValidationError
 	if !errors.As(err, &coded) || coded.Code != "agentic_loop_not_certified" {
 		t.Fatalf("uncertified agentic-loop bind = %#v", err)
 	}
-	if err := bindEliteLLMDraft(&draft, []string{models.SurfaceChat}); err == nil {
+	if err := bindEliteLLMDraft(&draft, []string{models.SlotChat}); err == nil {
 		t.Fatal("already-on-chat re-save bypassed certification")
 	}
-	if err := bindEliteLLMDraft(&draft, []string{models.SurfaceGenerate}); err != nil {
-		t.Fatalf("non-agentic surface required certification: %v", err)
+	if err := bindEliteLLMDraft(&draft, []string{models.SlotGenerate}); err != nil {
+		t.Fatalf("non-agentic slot required certification: %v", err)
 	}
 }
 
-func TestBindEliteLLMDraftRejectsSurfaceWithoutImplementedProviderMode(t *testing.T) {
-	t.Setenv("GEMINI_API_KEY", "sk-test")
+func TestBindEliteLLMDraftRequiresSlotCapabilities(t *testing.T) {
+	t.Setenv("DEEPINFRA_API_KEY", "sk-test")
 	draft := gridDraft{
-		ProviderSlug:    "gemini",
-		ModelSlug:       "gemini-3.1-flash-lite-preview",
+		ProviderSlug:    "deepinfra",
+		ModelSlug:       "Qwen/Qwen3-Embedding-4B",
+		PlatformEnabled: true,
+	}
+	err := bindEliteLLMDraft(&draft, []string{models.SlotRetrieval})
+	var coded *ValidationError
+	if !errors.As(err, &coded) || coded.Code != "capability_missing" || coded.Slot != models.SlotRetrieval {
+		t.Fatalf("retrieval without embedding capability = %#v", err)
+	}
+	draft.Capabilities = []string{models.CapabilityEmbedding}
+	if err := bindEliteLLMDraft(&draft, []string{models.SlotRetrieval}); err != nil {
+		t.Fatalf("embedding-capable row refused retrieval: %v", err)
+	}
+	t.Setenv("DEEPSEEK_API_KEY", "sk-test")
+	text := gridDraft{
+		ProviderSlug:    "deepseek",
+		ModelSlug:       "deepseek-v4-pro",
 		PlatformEnabled: true,
 		ThinkingLevels:  []string{"instant"},
 		DefaultThinking: "instant",
 	}
-	err := bindEliteLLMDraft(&draft, []string{models.SurfaceChat})
-	var coded *ValidationError
-	if !errors.As(err, &coded) || coded.Code != "unsupported_surface" {
-		t.Fatalf("unsupported provider mode = %#v", err)
+	err = bindEliteLLMDraft(&text, []string{models.SlotCaptioning})
+	if !errors.As(err, &coded) || coded.Code != "capability_missing" {
+		t.Fatalf("captioning without vision capability = %#v", err)
+	}
+	if _, err := uniqueCapabilities([]string{models.CapabilityAgenticLoop}); !IsValidation(err) {
+		t.Fatalf("operator-set agentic_loop = %v, want validation", err)
 	}
 }
 

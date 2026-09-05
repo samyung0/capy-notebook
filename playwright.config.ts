@@ -8,7 +8,7 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 
 // TODO: use existing packages for loading env?
 function loadLocalEnv() {
-  const envFile = path.join(root, 'e2e', '.env');
+  const envFile = path.join(root, 'deploy', '.env');
   if (!existsSync(envFile)) return;
   for (const rawLine of readFileSync(envFile, 'utf8').split(/\r?\n/)) {
     const line = rawLine.trim();

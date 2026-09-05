@@ -58,8 +58,7 @@ async def gather_context(
     ]
     if not files:
         return "", []
-    # ~400 tokens per packed chunk (EVO_CHUNK_CHARS is 1600 latin chars).
-    per_file = max(1, budget // (len(files) * 400))
+    per_file = max(1, budget // (len(files) * cfg.chunk_tokens))
     passages: list[Passage] = []
     for file in files:
         rows = await store.read_file_range(

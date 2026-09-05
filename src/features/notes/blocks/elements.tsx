@@ -33,6 +33,7 @@ import {
   quizNodeFromFence,
   quizQuestionElementToQuestion,
 } from '@/features/materials/document';
+import { StandaloneMaterialTitle } from '@/features/materials/MaterialRenderContext';
 import { Mermaid } from '@/features/materials/Mermaid';
 import { mermaidBlockLabel } from '@/features/materials/MermaidBlockLabel';
 import { answerKey } from '@/features/quizzes/grade';
@@ -342,16 +343,19 @@ function BlockShell({
   props,
   onEdit,
   label,
+  title,
   children,
 }: {
   props: PlateElementProps;
   onEdit?: () => void;
   label: string;
+  title?: React.ReactNode;
   children?: React.ReactNode;
 }) {
   const readOnly = useReadOnly();
   return (
     <PlateElement {...props} className={BLOCK_SHELL_CLASS}>
+      {title}
       <div contentEditable={false}>
         <div className="mb-1 flex items-center justify-between">
           <span className="t-label text-fg-muted">{label}</span>
@@ -386,7 +390,11 @@ export function QuizElement(props: PlateElementProps) {
       );
     });
   }
-  return <StudyBlockRoot onEdit={dialogs ? edit : undefined} props={props} />;
+  return (
+    <StudyBlockRoot onEdit={dialogs ? edit : undefined} props={props}>
+      <StandaloneMaterialTitle kinds="quiz" />
+    </StudyBlockRoot>
+  );
 }
 
 export function FlashcardsElement(props: PlateElementProps) {
@@ -410,7 +418,9 @@ export function FlashcardsElement(props: PlateElementProps) {
       className="gap-2"
       onEdit={dialogs ? edit : undefined}
       props={props}
-    />
+    >
+      <StandaloneMaterialTitle kinds="flashcards" />
+    </StudyBlockRoot>
   );
 }
 
@@ -434,6 +444,7 @@ export function MermaidElement(props: PlateElementProps) {
       }
       onEdit={readOnly ? undefined : edit}
       props={props}
+      title={<StandaloneMaterialTitle kinds={['mindmap', 'diagram']} />}
     >
       <div contentEditable={false}>
         <Mermaid code={element.source} />

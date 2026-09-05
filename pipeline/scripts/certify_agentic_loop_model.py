@@ -7,19 +7,25 @@ import getpass
 import os
 import signal
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.application import get_app
 from prompt_toolkit.completion import WordCompleter
+from prompt_toolkit.formatted_text import StyleAndTextTuples
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
+from prompt_toolkit.layout.containers import FloatContainer, WindowRenderInfo
+from prompt_toolkit.layout.controls import UIContent
+from prompt_toolkit.layout.margins import Margin
+from prompt_toolkit.layout.menus import CompletionsMenu
 from prompt_toolkit.shortcuts import CompleteStyle
 from prompt_toolkit.validation import Validator
 
 from pipeline.config import env_name_for_provider
 from pipeline.model_replay_cert import (
+    ModelListAuthError,
     ModelListError,
     certified_model_slugs,
     certify_model,
@@ -29,6 +35,50 @@ from pipeline.model_replay_cert import (
     require_chat_provider,
     selectable_model_slugs,
 )
+
+
+class SelectedCheckMargin(Margin):
+    def get_width(self, get_ui_content: Callable[[], UIContent]) -> int:
+        return 2
+
+    def create_margin(
+        self, window_render_info: WindowRenderInfo, width: int, height: int
+    ) -> StyleAndTextTuples:
+        state = get_app().current_buffer.complete_state
+        selected = state.complete_index if state else None
+        result: StyleAndTextTuples = []
+        for lineno in window_render_info.displayed_lines:
+            current = lineno == selected
+            style = (
+                "class:completion-menu.completion.current"
+                if current
+                else "class:completion-menu.completion"
+            )
+            result.append((style, "✓ " if current else "  "))
+            result.append(("", "\n"))
+        return result
+
+
+def align_model_catalog_menu(session: PromptSession[str]) -> None:
+    seen: set[int] = set()
+    for node in session.layout.walk():
+        if not isinstance(node, FloatContainer):
+            continue
+        for floating in node.floats:
+            if id(floating) in seen or not isinstance(
+                floating.content, CompletionsMenu
+            ):
+                continue
+            seen.add(id(floating))
+            floating.xcursor = False
+            floating.left = 0
+            window = floating.content.content
+            if any(
+                isinstance(margin, SelectedCheckMargin)
+                for margin in window.left_margins
+            ):
+                continue
+            window.left_margins = [SelectedCheckMargin(), *window.left_margins]
 
 
 class CertificationInterrupted(KeyboardInterrupt):
@@ -156,6 +206,7 @@ def choose_model(
                     move_cursor_to_end=True,
                 ),
             )
+            align_model_catalog_menu(session)
 
             def show_choices() -> None:
                 get_app().current_buffer.start_completion(select_first=False)
@@ -208,6 +259,8 @@ def main(argv: list[str] | None = None) -> int:
         print("Fetching model slugs available to this API key...")
         try:
             available_models = fetch_available_model_slugs(provider_slug, api_key)
+        except ModelListAuthError as error:
+            raise SystemExit(str(error)) from None
         except ModelListError as error:
             print(f"Warning: {error}", file=sys.stderr)
             print("You can still type an exact model slug.", file=sys.stderr)

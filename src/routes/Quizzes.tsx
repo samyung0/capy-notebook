@@ -7,7 +7,7 @@ import {
   useDeleteQuiz,
   useMistakes,
   useQuizzes,
-  useUpdateQuiz,
+  useUpdateQuizSharing,
 } from '@/api/hooks';
 import type { Attempt, Quiz } from '@/api/types';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
@@ -66,7 +66,7 @@ function AllQuizzes() {
   const { mutate: deleteQuiz } = useDeleteQuiz();
   const { mutate: cloneQuiz } = useCloneQuiz();
   const { isPending: updateIsPending, mutateAsync: updateQuiz } =
-    useUpdateQuiz();
+    useUpdateQuizSharing();
   const [info, setInfo] = useState<Quiz | null>(null);
   const [sharing, setSharing] = useState<Quiz | null>(null);
   const [quizToDelete, setQuizToDelete] = useState<Quiz | null>(null);
@@ -104,15 +104,19 @@ function AllQuizzes() {
             >
               <Menu
                 items={[
-                  {
-                    icon: 'settings',
-                    label: m.action_edit(),
-                    onClick: () =>
-                      navigate({
-                        params: { quizId: q.id },
-                        to: '/quizzes/$quizId/edit',
-                      }),
-                  },
+                  ...(q.canEdit
+                    ? [
+                        {
+                          icon: 'settings' as const,
+                          label: m.action_edit(),
+                          onClick: () =>
+                            navigate({
+                              params: { quizId: q.id },
+                              to: '/quizzes/$quizId/edit',
+                            }),
+                        },
+                      ]
+                    : []),
                   {
                     icon: 'quiz',
                     label: m.quiz_start(),
@@ -122,22 +126,34 @@ function AllQuizzes() {
                         to: '/quizzes/$quizId/attempt',
                       }),
                   },
-                  {
-                    icon: 'link',
-                    label: m.action_share(),
-                    onClick: () => setSharing(q),
-                  },
-                  {
-                    icon: 'plus',
-                    label: m.action_clone(),
-                    onClick: () => cloneQuiz(q.id),
-                  },
-                  {
-                    danger: true,
-                    icon: 'trash',
-                    label: m.action_delete(),
-                    onClick: () => setQuizToDelete(q),
-                  },
+                  ...(q.isOwner && !q.workspaceId
+                    ? [
+                        {
+                          icon: 'link' as const,
+                          label: m.action_share(),
+                          onClick: () => setSharing(q),
+                        },
+                      ]
+                    : []),
+                  ...(q.canEdit
+                    ? []
+                    : [
+                        {
+                          icon: 'plus' as const,
+                          label: m.action_clone(),
+                          onClick: () => cloneQuiz(q.id),
+                        },
+                      ]),
+                  ...(q.canEdit
+                    ? [
+                        {
+                          danger: true,
+                          icon: 'trash' as const,
+                          label: m.action_delete(),
+                          onClick: () => setQuizToDelete(q),
+                        },
+                      ]
+                    : []),
                 ]}
               />
             </div>
@@ -195,7 +211,7 @@ function AllQuizzes() {
           </div>
         )}
       </SimpleDialog>
-      {sharing && (
+      {sharing && !sharing.workspaceId && (
         <ShareDialog
           link={`/share/quizzes/${sharing.id}`}
           onClose={() => setSharing(null)}

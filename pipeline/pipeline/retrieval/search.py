@@ -2,14 +2,14 @@
 
 The pipeline is: embed the query, run vector and lexical search in one SQL
 statement, fuse by reciprocal rank, cap how much any single file may contribute,
-expand each survivor with its neighbours, and return passages carrying enough
-provenance to cite. A reranker slots in at :func:`_rerank` — see the note there
-for why V1 ships without one.
+and return the hit passages. A reranker slots in at :func:`_rerank` — see the
+note there for why V1 ships without one.
 """
 
 from __future__ import annotations
 
-import logging
+import time
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -17,8 +17,7 @@ from .. import registry
 from ..config import cfg
 from . import models, store
 from .chunking import search_query_terms
-
-log = logging.getLogger("evo.retrieval.search")
+from .lang import UND
 
 
 @dataclass
@@ -29,16 +28,25 @@ class Passage:
     chunk_idx: int
     section_path: str
     text: str
-    # The matched chunk on its own. text may grow to include neighbours, but a
-    # citation should point at what actually matched.
+    # Citation snippet. Same as text for search hits; callers may attach extra
+    # context to text without moving the citation.
     hit_text: str = ""
     page_start: int | None = None
     page_end: int | None = None
     regions: list[dict[str, Any]] = field(default_factory=list)
     score: float = 0.0
+    # Retrieval evidence for telemetry: which leg found the hit and how well.
+    # None rank means the leg did not have it among its candidates.
+    lang: str = UND
+    vec_rank: int | None = None
+    vec_dist: float | None = None
+    lex_rank: int | None = None
+    # In the returned set only because the exact tier raised its lexical weight.
+    tier_only: bool = False
 
     @classmethod
     def from_row(cls, row: dict[str, Any]) -> Passage:
+        dist = row.get("vec_dist")
         return cls(
             chunk_id=row["id"],
             file_id=row["file_id"],
@@ -51,6 +59,10 @@ class Passage:
             page_end=row.get("page_end"),
             regions=store.decode_regions(row.get("regions")),
             score=float(row.get("score") or 0.0),
+            lang=row.get("lang") or UND,
+            vec_rank=row.get("vec_rank"),
+            vec_dist=None if dist is None else float(dist),
+            lex_rank=row.get("lex_rank"),
         )
 
     def location(self) -> str:
@@ -84,13 +96,29 @@ class Passage:
         return citation
 
 
+@dataclass
+class SearchStats:
+    """Per-search telemetry, filled in by :func:`search` when a caller passes one.
+
+    ``hits_lang`` is the majority language of the returned hits rather than a
+    detection on the question: on the lab sets 30 of 42 French, German and
+    Spanish questions were too short for ``detect_lang`` and read as ``und``.
+    """
+
+    hits_lang: str = UND
+    query_terms: int = 0
+    cjk_runs: int = 0
+    embed_ms: int = 0
+    sql_ms: int = 0
+
+
 async def search(
     *,
     workspace_id: str,
     query: str,
     file_ids: list[str] | None = None,
     top_k: int | None = None,
-    expand: bool = True,
+    stats: SearchStats | None = None,
 ) -> list[Passage]:
     top_k = top_k or cfg.search_top_k
     # The query has to be embedded by the same model as the chunks it will be
@@ -102,24 +130,53 @@ async def search(
         pin["embedding_provider_slug"],
         pin["embedding_model_slug"],
         pin["embedding_model_version"],
-        registry.Surface.EMBEDDING,
+        registry.Slot.RETRIEVAL,
     )
+    started = time.monotonic()
     vectors = await models.embed([models.format_query(query, spec)], spec=spec)
+    embedded = time.monotonic()
     if not vectors:
         return []
+    terms = search_query_terms(query)
     rows = await store.hybrid_search(
         workspace_id=workspace_id,
         vector=vectors[0],
-        terms=search_query_terms(query),
+        terms=terms,
         file_ids=file_ids,
         candidates=cfg.search_candidates,
     )
     passages = [Passage.from_row(row) for row in rows]
     passages = await _rerank(query, passages)
-    passages = _cap_per_file(passages, cfg.search_per_file_cap)[:top_k]
-    if expand:
-        passages = await _expand_neighbours(passages)
-    return passages
+    top = _cap_per_file(passages, cfg.search_per_file_cap)[:top_k]
+    _mark_tier_only(top, rows, top_k)
+    if stats is not None:
+        langs = Counter(p.lang for p in top)
+        stats.hits_lang = langs.most_common(1)[0][0] if langs else UND
+        stats.query_terms = terms.terms
+        stats.cjk_runs = terms.cjk_runs
+        stats.embed_ms = int((embedded - started) * 1000)
+        stats.sql_ms = int((time.monotonic() - embedded) * 1000)
+    return top
+
+
+def _mark_tier_only(top: list[Passage], rows: list[dict[str, Any]], top_k: int) -> None:
+    """Flag hits that the exact tier alone put in the returned set.
+
+    ``flat_score`` is the fusion with every lexical row at half weight. Ranking
+    the candidates by it, with the same per-file cap, gives the set the caller
+    would have seen without the tier; anything in ``top`` but not in that set
+    owes its place to the tier. This is the counterfactual the telemetry
+    needs to judge whether the tier surfaces answers or noise.
+    """
+    if not any(row["score"] != row["flat_score"] for row in rows):
+        return
+    flat = sorted(rows, key=lambda row: row["flat_score"], reverse=True)
+    flat_top = _cap_per_file(
+        [Passage.from_row(row) for row in flat], cfg.search_per_file_cap
+    )
+    without_tier = {p.chunk_id for p in flat_top[:top_k]}
+    for passage in top:
+        passage.tier_only = passage.chunk_id not in without_tier
 
 
 async def _rerank(query: str, passages: list[Passage]) -> list[Passage]:
@@ -128,9 +185,9 @@ async def _rerank(query: str, passages: list[Passage]) -> list[Passage]:
     A cross-encoder is the single highest-value addition to this file, and it is
     deliberately not here yet: it needs either a hosted rerank API (a new vendor
     and per-query cost) or a local model (a GPU in the retrieval container).
-    Contextual prefixes, the per-file cap and neighbour expansion recover a large
-    share of the same benefit for free, so the ordering below stays RRF until
-    retrieval quality is measured against real workspaces.
+    Heading prefixes and the per-file cap recover a large share of the same
+    benefit for free, so the ordering below stays RRF until retrieval quality is
+    measured against real workspaces.
     """
     return passages
 
@@ -139,8 +196,8 @@ def _cap_per_file(passages: list[Passage], cap: int) -> list[Passage]:
     """Limit each file's share of the result set, preserving fused order.
 
     Without this, a query whose terms recur throughout one long textbook returns
-    that textbook eight times and the four other sources that actually answer
-    the question never make the context window.
+    that textbook five times and the other sources that actually answer the
+    question never make the context window.
     """
     seen: dict[str, int] = {}
     kept: list[Passage] = []
@@ -155,30 +212,3 @@ def _cap_per_file(passages: list[Passage], cap: int) -> list[Passage]:
     # Overflow is appended rather than dropped: in a single-file workspace the
     # cap would otherwise throw away every result but the first few.
     return kept + overflow
-
-
-async def _expand_neighbours(passages: list[Passage]) -> list[Passage]:
-    """Attach adjacent chunks to each hit, merging overlaps.
-
-    Chunk boundaries are a packing artifact, so a hit that starts mid-argument
-    reads as a fragment. Neighbours are merged into the hit's text rather than
-    returned as separate passages, which keeps the citation count honest.
-    """
-    out: list[Passage] = []
-    for passage in passages:
-        try:
-            rows = await store.neighbor_chunks(
-                file_id=passage.file_id, chunk_idx=passage.chunk_idx
-            )
-        except Exception:
-            log.warning("neighbour expansion failed", exc_info=True)
-            out.append(passage)
-            continue
-        if len(rows) <= 1:
-            out.append(passage)
-            continue
-        # Pages stay those of the hit: the citation should send the reader to
-        # where the answer is, not to the start of the surrounding context.
-        passage.text = "\n\n".join(row["text"] for row in rows)
-        out.append(passage)
-    return out

@@ -28,12 +28,14 @@ This repository defines deployment as follows:
    `UAT_DEPLOYMENT_ENABLED=true` only after the first manual baseline.
 2. **Push to production:** manually dispatch **Promote revision to production**
    from `main` with a full 40-character SHA. The workflow re-deploys that SHA
-   to UAT, re-runs the same deterministic UAT gate, and only then reaches the
-   protected `production` GitHub environment. Approving that environment is
-   the release action.
-3. **Costly review:** `$review-repository`, Codex Security, and both Strix
-   workflows remain separately and explicitly invoked. They never run because
-   code was pushed or deployed.
+   to UAT, re-runs the deterministic UAT gate and the editor perf budgets, and
+   requires the `source/codex-security` and `uat/strix` commit statuses to be
+   `success` on that SHA. Only then does it reach the protected `production`
+   GitHub environment. Approving that environment is the release action.
+3. **Agent-driven review:** `$review-repository`, the Codex Security source
+   scan, and the Strix UAT scan run only on a developer machine when a person
+   starts them. They post the commit statuses above; GitHub Actions never runs
+   them. See `review-automation.md`.
 
 Configure `main` branch protection to require `CI`. Configure the `uat`
 environment without a reviewer so post-CI deployment can run unattended.
@@ -223,12 +225,31 @@ Details that are easy to get wrong:
 - Cloudflare SSL/TLS **Full** is enough: the tunnel is already encrypted, and
   the last hop is HTTP to the proxy. **Full (strict)** needs origin certs —
   Coolify's [full TLS guide](https://coolify.io/docs/integrations/cloudflare/tunnels/full-tls).
-- Do not publish `8080` / `1234` / `8001` on the host. Traefik + the tunnel is
-  the public path. `:8001` must stay private.
+- Do not publish `8080` / `1234` / `8001` on a public interface. Traefik + the
+  tunnel is the public path; `8080` is published only on the WireGuard address
+  for the ingest host's import worker (§2.2), and `:8001` must stay private.
 - Chat SSE and collab WebSockets both pass through Traefik. If streams die at
   ~60–100s, raise the proxy read timeout on `api.abcd.com`. Cloudflare Tunnel
   itself is not subject to the 100s orange-cloud proxy timeout; Traefik still
   is.
+- Coolify parses every `${VAR:?message}` in the compose file and stores
+  `message` as that variable's value. The guard then cannot fire, because the
+  variable is not empty: the gateway boots with `CLERK_SECRET_KEY` set to the
+  literal `set CLERK_SECRET_KEY` and fails every request instead of refusing to
+  start. Once the resource exists, blank every variable you have not filled in
+  yourself. `SOURCE_COMMIT` picks up the literal `${RELEASE_SHA:-}` the same
+  way; blank it and let Coolify inject the real commit.
+- Coolify keeps a second value per variable for pull-request preview
+  deployments, and creates a twin of every key when it parses the compose file.
+  Preview deployments are disabled in this repository, so delete the preview
+  set rather than maintaining two columns.
+- Do not mark a generated secret **shown once**. Coolify then hides it from the
+  UI and the API permanently, and nothing can read back the Postgres password
+  that the ingest host queue env and `OPS_INGEST_UAT_DATABASE_URL` both need.
+  Keep those values in the ignored local env file.
+- Coolify caches its compose parse. Blanking a variable does not rewrite that
+  cache, and only a deploy re-parses the repository. Check the container
+  environment after the first deploy instead of trusting the stored parse.
 
 In the tunnel's Public Hostnames page, add `ops.evonotes.com` with service
 `http://localhost:80`, or the Coolify proxy address from the table. Cloudflare
@@ -269,17 +290,16 @@ are `http://`; these vars stay `https://` / `wss://`. Copy the rest from
 `RATE_LIMIT_AI_PER_HOUR` defaults to 200; the 15/minute AI burst and
 120/minute editor class are not env-overridable.
 
-`ELEVENLABS_API_KEY` and `ELEVENLABS_WEBHOOK_ID` are needed only by the Netcup
-ingest worker. `ELEVENLABS_WEBHOOK_SECRET` is needed only by the gateway, which
-serves `POST /webhooks/elevenlabs`. Do not add these values to any `VITE_*`
-variable. Subscribe the ElevenLabs webhook to **Transcription completed** and
-set its public HTTPS callback to that gateway route.
+`ELEVENLABS_API_KEY` is needed only by the Netcup ingest worker. Audio sends the
+model and presigned source URL as multipart fields and waits for the synchronous
+Scribe response, so there is no ElevenLabs webhook ID, secret, or gateway
+callback. Do not add the key to any `VITE_*` variable.
 
 Disable provider training in the ElevenLabs Data Use settings. Starter does not
 offer zero-retention mode: the app privacy policy must disclose ElevenLabs as an
 audio transcription processor and its retention before audio upload is enabled.
-Evo Notes deletes the provider transcript after the durable derived artifact and
-usage receipt are written, but must not claim that provider logs or backups are
+Evo Notes does not persist a provider transcript ID or webhook payload, but must
+not claim that provider logs or backups are
 immediately erased. Do not process PHI without an enterprise agreement.
 
 Gateway env once those hostnames exist:
@@ -302,6 +322,19 @@ OPS_INGEST_PRIMARY_ENVIRONMENT=production
 # Optional: the same column-limited evo_ops role in the other app databases.
 OPS_INGEST_UAT_DATABASE_URL=postgres://evo_ops:<password>@<uat-postgres-host>:5432/evo?sslmode=require
 OPS_INGEST_LOCAL_DATABASE_URL=postgres://evo_ops:<password>@<local-postgres-host>:5432/evo?sslmode=require
+
+`OPS_INGEST_PRIMARY_ENVIRONMENT` names which environment wrote the rows in
+`OPS_DATABASE_URL`, and must equal the `EVO_INGEST_ENVIRONMENT` of the queue
+consumers pointed at that database: `production` here, `uat` in the UAT
+resource, `local` in the local compose stack. Every ingest attempt, provider
+call, and host sample is filtered on it. A mismatch is not rejected at startup
+and raises no error: the ingest pages render one tab of zeros while the queue
+counters, which are not environment-scoped, keep reporting real depth. Startup
+does reject the secondary DSN that duplicates the primary, so leave
+`OPS_INGEST_UAT_DATABASE_URL` unset when the primary is `uat`, and
+`OPS_INGEST_LOCAL_DATABASE_URL` unset when it is `local`. Sharing one ingest
+host does not merge the labels: the nonproduction project runs separate local
+and UAT consumers that write `local` and `uat` into their own databases.
 OPS_CF_ACCESS_ISSUER=https://<team-name>.cloudflareaccess.com
 OPS_CF_ACCESS_AUDIENCE=<Access application AUD>
 # OPS_CF_ACCESS_JWKS_URL defaults to <issuer>/cdn-cgi/access/certs
@@ -323,8 +356,9 @@ migration first, then start ops.
 Startup verifies both database sessions against their privilege contracts. It
 rejects superusers, owner sessions with broad writes, inherited roles,
 customer-content reads, direct operator-table writes, direct reconciliation
-queue writes, and `model_configs` DELETE. Missing required column grants also
-stop startup. Local owner URLs are accepted only with
+queue writes, table-level writes on any public relation, unexpected
+column-level `INSERT`/`UPDATE`/`REFERENCES`, and `model_configs` DELETE. Missing
+required column grants also stop startup. Local owner URLs are accepted only with
 `APP_ENV=development` and `OPS_UNSAFE_DEVELOPMENT=true`. Auth bypasses also
 require their individual `OPS_ACCESS_DISABLED=true` or
 `OPS_AUTH_DISABLED=true` switch. None of these unsafe settings is accepted
@@ -363,9 +397,9 @@ Action: Block, 60s timeout
 The window on the free tier is fixed at 10 seconds, which is why anything
 expressed in requests-per-hour lives in the application instead.
 
-**Excluding `/webhooks/` is not optional.** Stripe, Clerk, and ElevenLabs burst
-deliveries and retries from small sets of IPs. Rate limiting them can lose
-subscription, identity, or transcription completion events.
+**Excluding `/webhooks/` is not optional.** Stripe and Clerk burst deliveries
+and retries from small sets of IPs. Rate limiting them can lose subscription or
+identity events.
 
 **WAF custom rules:**
 
@@ -441,54 +475,51 @@ chat streams. Parser traffic stays on WireGuard and does not cross Cloudflare.
 Coolify's Traefik/Caddy in front of the tunnel still has its own read timeout —
 raise that on `api.abcd.com` if streams die around a minute.
 
-### 2.2 Drive import Queue relay
+### 2.2 Drive import worker
 
-Drive and OneDrive imports require the paid Workers plan. The relay buffers one
-bounded file per isolate so its queue consumer is intentionally pinned to batch
-size 1 and concurrency 1. Do not raise concurrency until production memory
-telemetry shows enough headroom at the plan's largest upload.
-The main queue retries every five minutes up to 20 times so temporary provider
-or ingest-capacity pressure does not discard an accepted import. The DLQ also
-retries every five minutes up to 50 times; its retry window must remain longer
-than the gateway's 12-minute attempt lease before terminal cleanup can succeed.
+Google Drive and OneDrive imports run on the ingest host as the `import` job
+type of the pipeline's Postgres `jobs` queue (`import-worker` in
+`deploy/docker-compose.ingest-host.yml`, `import-worker-local` / `-uat` in the
+nonprod stack). The gateway writes the import row, its upload reservation and
+the queue job in one transaction; the worker asks the gateway for a download
+grant, streams the provider file into the attempt's incoming B2 object with the
+host's own B2 credentials, and reports completion so the gateway finalizes the
+file and enqueues the normal parse or ingest job. A parse or ingest job only
+exists once the bytes are in B2, and import work takes its own capacity slot so
+a slow download never holds an ingest slot.
 
-Create both queues once, then deploy the Worker:
+The worker reaches the gateway's `/api/internal/import/*` routes with
+`GATEWAY_URL` and the gateway's `PIPELINE_SECRET`. Production publishes the
+gateway on `EVO_PRIVATE_BIND_ADDRESS:8080` next to Postgres and Redis, so the
+ingest host uses `http://10.77.0.1:8080`; the nonprod queue env files carry each
+environment's own gateway URL and secret. That publication exposes the whole
+gateway API to the ingest host, not only `/api/internal/`; the host is trusted
+infrastructure, so no further gate is added. An empty `PIPELINE_SECRET` on the
+gateway disables new imports with `503` instead of creating stranded
+reservations.
 
-```sh
-cd workers/drive-import-relay
-pnpm exec wrangler queues create evo-drive-imports
-pnpm exec wrangler queues create evo-drive-imports-dlq
-pnpm exec wrangler secret put IMPORT_RELAY_SECRET
-pnpm exec wrangler deploy
-```
+Retry scheduling lives on the `jobs` row (four attempts, 30 s doubling
+backoff, `EVO_IMPORT_JOB_TIMEOUT` per attempt). The gateway's twelve-minute
+attempt lease only fences stale callbacks: a retryable failure releases it before
+the requeue, a terminal failure or an exhausted budget closes the import and
+releases its reservation, and a worker that finds the lease still held by a
+reaped predecessor waits out the remaining lease (the gateway's `Retry-After`)
+without spending an attempt. A `too_many_ingest_leases` answer at completion also
+waits without spending an attempt: the worker releases the gateway lease and
+backs off by `Retry-After`; the object is already promoted, so the next claim
+resumes at completion without downloading again. Import upload sessions expire after one hour, so the
+upload-session sweeper frees within the hour a reservation whose worker died
+with its budget spent. One import request carries at most 20 files, the
+per-actor ingest lease cap.
 
-Before deploy, replace `API_BASE_URL` in `wrangler.jsonc` with the public gateway
-origin, for example `https://api.abcd.com`. Generate the shared secret with
-`openssl rand -hex 32`; give the exact same value to the Worker secret and the
-gateway's `IMPORT_RELAY_SECRET`. Set the gateway's
-`IMPORT_RELAY_ENQUEUE_URL` to the deployed Worker URL plus `/enqueue`.
-Both gateway variables must be present or both absent; the latter disables new
-imports with `503` instead of creating stranded reservations.
-
-The Worker enqueue endpoint is public but accepts only a timestamped
-HMAC-SHA256 request. Worker callbacks use the same canonical signature, and
-each import attempt also has a short database lease. The Queue message contains
-only an opaque job id. Microsoft downloads use a one-file preauthenticated URL;
-the Microsoft OAuth bearer is never sent to Worker execution.
-Every attempt receives a distinct incoming object key. A stale presigned PUT
-therefore cannot replace bytes uploaded by a newer lease.
-
-Keep the DLQ consumer configured. It calls the gateway's terminal cleanup route,
-which marks the job failed and releases its upload reservation. As a backstop,
-the normal upload-session sweeper expires any job that never reaches the DLQ.
-The same minute worker reopens expired attempt leases. It reopens pending
-deliveries after six hours, beyond the roughly four-hour DLQ retry horizon, so
-a live DLQ callback cannot fail a newly dispatched generation. Losing both a
-Queue delivery and its DLQ callback therefore does not strand a job for a day.
-Gateway-to-Worker dispatch uses capped exponential backoff and fails
-non-retryable 4xx responses immediately.
-An unsigned `POST /enqueue` must return `401`; a signed import should move
-`source_import_jobs.status` from `pending` to `running` and then `succeeded`.
+Download URLs the gateway did not build itself (Microsoft's preauthenticated
+URL, every redirect) are checked per hop: the host must match a suffix in
+`EVO_IMPORT_DOWNLOAD_HOSTS`, every resolved address must be public, and the
+connection goes to that validated address with the hostname as SNI so a second
+lookup cannot redirect it. A redirect that changes origin drops the bearer
+token. Providers move download tiers without notice (OneDrive personal answers
+on `microsoftpersonalcontent.com`), so extend the host list in the environment
+rather than in code.
 
 ---
 
@@ -518,35 +549,41 @@ Pick one:
 3. Set `B2_ENDPOINT`, `B2_REGION`, `B2_BUCKET`, and `B2_PRESIGN_TTL` (default
    900 s).
 4. **CORS rules on the bucket.** The browser uploads directly to B2 via
-   presigned PUT, so B2 itself must allow the SPA origin:
+   presigned PUT (`VITE_DIRECT_B2_UPLOAD`, on by default in every deployed
+   build), so B2 itself must allow the SPA origin. Apply the file for the
+   bucket's environment rather than hand-writing rules:
 
-   ```
-   allowedOrigins: ["https://abcd.com"]
-   allowedOperations: ["s3_put", "s3_get", "s3_head"]
-   allowedHeaders: ["*"]
-   exposeHeaders: ["etag"]
-   maxAgeSeconds: 3600
-   ```
+   | Bucket             | File                       | Origins                                            |
+   | ------------------ | -------------------------- | -------------------------------------------------- |
+   | production         | `deploy/b2-cors.prod.json` | the production SPA                                  |
+   | UAT (local shares it) | `deploy/b2-cors.uat.json` | UAT SPA, the tunnelled dev origin, `localhost:5173` |
 
-   `etag` must be exposed or upload completion cannot verify what was stored.
+   `PresignPut` sends only `Content-Type`, so the allowed headers do not grow
+   as the app does. `etag` must be exposed or upload completion cannot verify
+   what was stored.
 
 5. **Lifecycle rule:** delete unfinished large-file uploads after 1 day. An
    aborted multipart upload is billed indefinitely and is invisible in the
-   bucket listing.
+   bucket listing. `deploy/b2-lifecycle.prod.json` and
+   `deploy/b2-lifecycle.uat.json` hold the same rules — the split exists so
+   each bucket is applied from its own file, not because the policies differ.
 6. Leave file versioning off, or set versions to expire after 1 day. With
    versioning on, the blob reaper's deletes only hide objects and storage grows
    without bound.
 
-Do **not** put a B2 lifecycle rule on `captions/` or `derived-text/`. Those
-prefixes are owned by `artifact_cache` and the blob reaper: a lifecycle rule
-would delete objects the database still believes are live. Caption and
-derived-text entries expire by TTL-since-last-use (default 90 days).
+Do **not** put a B2 lifecycle rule on `captions/`, `derived-text/`, `previews/`,
+or `parse-bundles/`. Those prefixes are owned by `artifact_cache` and the blob
+reaper. A bucket lifecycle rule would delete objects the database still
+believes are live. They expire by TTL-since-last-use, which defaults to 90 days.
 
-Parse zips no longer use B2. `EVO_PARSE_ZIP_TTL_HOURS` controls fingerprint
-bundles in the parser/worker shared local volume, and
+The required parse ZIP handoff remains in the parser/worker shared local volume.
+`EVO_PARSE_ZIP_TTL_HOURS` controls those local fingerprint bundles, and
 `EVO_PARSE_SOURCE_TTL_HOURS` controls abandoned job-scoped source files. The
-worker sweeps both on a 5-minute timer while the queue is idle. A job retains
-its verified source across capacity waits and retries, then deletes it after
+worker sweeps both on a 5-minute timer while the queue is idle. After verifying
+a local parse ZIP, the coordinator makes up to three attempts to copy it to the
+separate `parse-bundles/` B2 prefix for later identical-source reuse. A failed
+copy does not fail the current job and creates no cache row. A job retains its
+verified source across capacity waits and retries, then deletes it after
 committed success or terminal failure.
 
 ### Ingest worker replicas
@@ -556,7 +593,7 @@ claims only `ingest` rows and runs exactly one direct-route or post-parse job.
 Each has a 1 CPU, 1 GiB RAM, 1.25 GiB memory-plus-swap, and 128-process hard
 ceiling. `EVO_CAPTION_CONCURRENCY=4` caps embedded-figure fan-out inside each
 job, so four workers can make at most sixteen uncached figure-caption calls at
-once. Embedding, summary, and concept calls remain sequential inside each job;
+once. Embedding and summary calls remain sequential inside each job;
 their host-wide concurrency is at most four. These are limits, not reserved
 capacity; idle containers use little CPU or memory. The legacy app-host
 debugging profile still defaults to one worker.
@@ -610,8 +647,9 @@ re-embedding stays on the parse path and is handled later by ingest.
 ## 7. Dedicated ingest host
 
 The Netcup ingest host runs the parse coordinator, ingest workers, parser, and
-host sampler. Uploaded bytes move from the Cloudflare relay to B2 and once from
-B2 to this ingest host; they do not traverse the Go application process.
+host sampler, and the Drive/OneDrive import worker. Browser uploads go straight
+to B2 and imported files are streamed into B2 by the import worker here; source
+bytes do not traverse the Go application process.
 Coordinator, worker, and parser containers mount the same `parse_spool` volume.
 The compose init service gives the unprivileged pipeline user access before
 those services start.
@@ -623,7 +661,8 @@ those services start.
    [community WireGuard guide](https://community.netcup.com/en/tutorials/how-to-setup-wireguard-ubuntu)
    covers the provider-specific setup and applies to Debian. Do not add a
    default route, DNS override, NAT, or forwarding: this tunnel carries only
-   parser HTTP, Postgres, and Redis.
+   parser HTTP, Postgres, Redis, and the gateway's `:8080` for the import
+   worker.
 2. On the app host, set `EVO_PRIVATE_BIND_ADDRESS=10.77.0.1` before deploying
    this branch. The app-host playbook stops the confirmed-unused native
    PostgreSQL cluster but preserves its files under `/var/lib/postgresql`.
@@ -638,13 +677,16 @@ those services start.
    password guessing. Fail2ban reduces repeated attempts but does not remove
    the risk of a reusable password.
 4. Store the values from `deploy/ingest-host.env.example` in the ignored
-   `ingest_env`, including `ELEVENLABS_API_KEY` and `ELEVENLABS_WEBHOOK_ID` for
+   `ingest_env`, including `GATEWAY_URL` and `PIPELINE_SECRET` for the import
+   worker and `ELEVENLABS_API_KEY` for
    uploaded-audio transcription. The worker also needs `DEEPINFRA_API_KEY` for the seeded Qwen
    embedding route and the exact ZAI GLM routing exception used by
    standalone-image captions. Those calls happen on this ingest host after it
    downloads the B2 object, never in Go. The parser binds only to
    `PARSER_BIND_ADDRESS`; its bearer token remains defense in depth. The
-   measured default is MinerU pipeline with OCR `auto`.
+   measured default is MinerU pipeline with OCR `auto`. Synchronous audio calls
+   use `EVO_ELEVENLABS_SYNC_TIMEOUT_S` (12 hours by default) so the documented
+   10-hour source limit is not cut off by the ordinary 20-minute ingest timeout.
    Initial limits are four coordinator processes, four admitted document jobs,
    and four active 26-page slices. The default time hierarchy is a 600-second
    per-slice execution deadline, 40-minute parser request, 45-minute Redis slot,
@@ -930,6 +972,8 @@ to prevent a repair loop.
      id, occurred_at, actor_user_id, actor_role, action,
      target_type, target_id, outcome, trace_id, metadata
    ) ON operator_audit_events TO evo_ops;
+   -- Retrieval telemetry: features and ids only, no text columns exist.
+   GRANT SELECT ON rag_search_events TO evo_ops;
    GRANT SELECT (
      user_id, used_bytes, reserved_bytes
    ) ON user_storage TO evo_ops;
@@ -937,10 +981,17 @@ to prevent a repair loop.
      user_id, delta_bytes
    ) ON user_storage_deltas TO evo_ops;
    GRANT SELECT (
-     id, name, email, plan_tier, deletion_requested_at, purge_after,
-     deleted_at, suspended_at, suspended_reason, created_at
+     id, name, email, plan_tier, subscription_status,
+     deletion_requested_at, purge_after,
+     deleted_at, suspended_at, suspended_reason,
+     session_revoke_pending, session_revoke_attempts,
+     session_revoke_not_before, session_revoke_last_error, created_at
    ) ON users TO evo_ops;
-   GRANT SELECT (user_id, current_period_end)
+   -- AccountAccess computes the active user's lifecycle state on this pool.
+   GRANT SELECT (
+     user_id, status, plan_tier, current_period_end, ended_at,
+     canceled_at, stripe_event_created, updated_at
+   )
      ON user_subscriptions TO evo_ops;
    GRANT SELECT (
      id, user_id, name, embedding_provider_slug, embedding_model_slug,
@@ -952,7 +1003,7 @@ to prevent a repair loop.
    GRANT SELECT (
      version, provider_name, model_name, provider_slug, model_slug,
      platform_enabled, byok_enabled, thinking_levels, default_thinking,
-     context_window_tokens, params, surfaces, micros_per_input_token,
+     context_window_tokens, params, slots, capabilities, micros_per_input_token,
      micros_per_cached_input_token, micros_per_output_token, enabled,
      is_default_for, created_at, updated_at, created_by, updated_by
    ) ON model_configs TO evo_ops;
@@ -1004,7 +1055,7 @@ to prevent a repair loop.
      finished_at, next_retry_at, queue_milliseconds, duration_milliseconds,
      stage_timings,
      parse_pages, parse_ocr_pages, parse_slices, figures_selected, figures_cached,
-     figures_captioned, figures_failed, chunks_created, concepts_created
+     figures_captioned, figures_failed, chunks_created
    ) ON ingest_job_attempts TO evo_ops;
 
    GRANT EXECUTE ON FUNCTION touch_operator_seen(text) TO evo_ops;
@@ -1021,7 +1072,7 @@ to prevent a repair loop.
    GRANT SELECT (
      version, provider_name, model_name, provider_slug, model_slug,
      platform_enabled, byok_enabled, thinking_levels, default_thinking,
-     context_window_tokens, params, surfaces, micros_per_input_token,
+     context_window_tokens, params, slots, capabilities, micros_per_input_token,
      micros_per_cached_input_token, micros_per_output_token, enabled,
      is_default_for, created_at, updated_at, created_by, updated_by
    ) ON model_configs TO evo_ops_admin;
@@ -1052,11 +1103,12 @@ to prevent a repair loop.
    GRANT INSERT (
      version, provider_name, model_name, provider_slug, model_slug,
      platform_enabled, byok_enabled, thinking_levels, default_thinking,
-     context_window_tokens, params, surfaces, micros_per_input_token,
+     context_window_tokens, params, slots, capabilities, micros_per_input_token,
      micros_per_cached_input_token, micros_per_output_token, enabled,
      is_default_for, created_by, updated_by
    ) ON model_configs TO evo_ops_admin;
-   GRANT UPDATE ON model_configs TO evo_ops_admin;
+   GRANT UPDATE (enabled, is_default_for, updated_at, updated_by)
+     ON model_configs TO evo_ops_admin;
    GRANT EXECUTE ON FUNCTION model_configs_thinking_ok(text[], text[], text)
      TO evo_ops_admin;
    GRANT UPDATE (version, updated_at)
@@ -1076,6 +1128,10 @@ to prevent a repair loop.
    ) ON email_outbox TO evo_ops_admin;
    ```
 
+   Ops validates the eight `plan_limits` column grants before it loads the
+   startup catalog. A missing grant therefore fails as a role-contract error,
+   rather than as a later plan-catalog query error.
+
    `ops_assistant_turns` exposes only an assistant message id, owning user id,
    lifecycle status, trace id, and timestamp. Do not replace that view grant
    with `SELECT` on `messages`.
@@ -1088,8 +1144,11 @@ to prevent a repair loop.
    `UPDATE`, `DELETE`, and `TRUNCATE`, including attempts by the database owner.
    `model_configs_thinking_ok` is the CHECK helper for registry inserts; grant
    EXECUTE to `evo_ops_admin` only. Do not grant `UPDATE` on `operators`,
-   `DELETE` on `model_configs`, audit-table writes, schema creation, sequence access, or generic
+   table-level `UPDATE`, any other update column, or `DELETE` on `model_configs`,
+   audit-table writes, schema creation, sequence access, or generic
    `ALL TABLES IN SCHEMA` privileges.
+   Registry saves serialize on the `model_registry_state` row; they do not need
+   a table-level `model_configs` lock.
 
    PostgreSQL grants function execution to `PUBLIC` by default. The two
    `REVOKE EXECUTE` statements above close that path for existing and future
@@ -1106,16 +1165,16 @@ to prevent a repair loop.
 
 ## 9. Changing models in the registry
 
-Most surfaces are safe to retarget from the ops dashboard: chat, generate,
-editor, ingest and vision all resolve a pin per request or per job, so a new
+Most slots are safe to retarget from the ops dashboard: chat, generate,
+editor, ingest and captioning all resolve a pin per request or per job, so a new
 default applies to the next one and everything in flight keeps what it had.
 
 The dashboard deliberately disallows aliases: each grid row is the natural
-`(provider_slug, model_slug)` identity. Each surface cell may still select a
+`(provider_slug, model_slug)` identity. Each slot cell may still select a
 different immutable version of that identity. User preferences store the same
 two slugs, so there is no second hidden key namespace.
 
-Embedding is not one of those, and neither is deleting any row.
+Retrieval is not one of those, and neither is deleting any row.
 
 ### Retargeting the embedding default
 
@@ -1130,14 +1189,14 @@ changing it, be sure you accept:
   quality afterwards has to account for that.
 - **The old model must keep working forever.** Every existing workspace still
   resolves it on every search and every upload. Postgres refuses
-  `enabled=false`, `DELETE`, stripping or adding the embedding surface, and
+  `enabled=false`, `DELETE`, stripping or adding the retrieval slot, and
   in-place changes to the pin, `model_slug`, or `params`
   (`protect_embedding_model_configs`). Same width from another model is a
   different space and a different table. Add a `rag_chunk_vectors_*` table,
   an allowlist entry in both languages, a `model_configs` row with
   `params.vector_table`, then in one transaction clear the old
   `is_default_for` and mark the new row (Postgres refuses two defaults for
-  the same surface). Bump `model_registry_state.version`. Old workspaces
+  the same slot). Bump `model_registry_state.version`. Old workspaces
   stay on the old pin. If a vendor drops the model, create a new version
   with a different exact `model_slug` that serves the **same weights**.
 - **Deprecating a table is not possible.** Every embedding row stays
@@ -1223,8 +1282,10 @@ VITE_GOOGLE_PICKER_APP_ID=...
 ```
 
 Missing either variable shows a toast instead of a blank picker. `drive.file`
-is a restricted Google scope. A verification review may be required before
-unverified users can connect.
+is non-sensitive: it is the per-file scope Google recommends so that Picker
+apps skip the restricted-scope verification and security assessment. The key
+itself only needs the Picker API; Drive calls are made server-side with the
+user's OAuth token, which never uses an API key.
 
 ### OneDrive File Picker v8 (MSAL)
 
@@ -1234,7 +1295,9 @@ web app.
 1. Authentication. Platform **Single-page application**. Redirect URIs are
    `{SPA origin}/msal-redirect.html`, for example
    `http://localhost:5173/msal-redirect.html` and
-   `https://abcd.com/msal-redirect.html`. Enable access tokens and ID tokens.
+   `https://abcd.com/msal-redirect.html`. Leave **Implicit grant and hybrid
+   flows** unchecked: `@azure/msal-browser` v5 uses auth code + PKCE, and the
+   SPA platform already enables the CORS-enabled token endpoint.
 2. Supported account types. Choose personal, work and school, or both. The
    picker uses the `consumers` authority for `driveType=personal` and
    `organizations` for work.
@@ -1285,7 +1348,7 @@ Start the guided setup from the repository root:
 scripts/review/setup-uat.sh
 ```
 
-The wizard records local values in ignored `review/.env.uat` with mode `0600`.
+The wizard records local values in ignored `deploy/.env.uat` with mode `0600`.
 When the GitHub CLI is authenticated, it can also populate the repository
 variables and `uat` environment secrets listed below. It cannot create Clerk,
 Stripe, Coolify, DNS, database, or bucket resources; those remain deliberate
@@ -1305,7 +1368,8 @@ never mounts that volume.
 | Blob storage        | local/test bucket                    | dedicated private UAT bucket and key                                                        | production private bucket and key               |
 | Ingest host         | shared nonprod project, local queue consumers | same nonprod project, UAT queue consumers; one global `1/1/1` capacity with local | production project and `evo-ingest_parse_spool` |
 | Clerk               | development instance                 | separate Clerk application, Production instance                                             | production application's Production instance    |
-| Stripe              | sandbox/test data                    | named UAT sandbox                                                                           | live mode                                       |
+| Stripe              | `Stable Studio Dev` sandbox, `stripe listen` | named UAT sandbox with a registered endpoint                                             | live mode                                       |
+| Product mail        | log backend, no credentials          | Resend `uat.capynotebook.com`, domain-scoped key                                            | Resend on the production domain                 |
 | Users and content   | developer fixtures                   | synthetic accounts and fixtures only                                                        | real users and content                          |
 | Scanner credentials | local only                           | GitHub `uat` environment                                                                    | never supplied to scanners                      |
 
@@ -1326,17 +1390,23 @@ authentication strategy.
 2. Provision separate Postgres and Redis state. A separate database on the same
    managed cluster is acceptable only if it has a distinct owner, database
    name, credentials, backup policy, and no cross-database application grants.
-3. Create a separate private B2 bucket and bucket-scoped key. Apply the same
-   CORS and lifecycle policy described in §4, substituting only the UAT SPA
-   origin. Do not point UAT at the production bucket.
-4. Choose explicit hostnames, for example `uat.example.com`,
-   `api.uat.example.com`, `collab.uat.example.com`, and optionally
-   `ops.uat.example.com`. Configure DNS, Cloudflare, tunnel routing, origin
-   lockdown, cache bypass, WebSocket support, and `/api` reverse proxy using
-   §§1–3. Do not use wildcard host authorization for review tooling.
+3. Create a separate private B2 bucket and bucket-scoped key. Apply
+   `deploy/b2-cors.uat.json` and `deploy/b2-lifecycle.uat.json` (§4). Do not
+   point UAT at the production bucket.
+4. Choose explicit hostnames one level below the zone, for example
+   `uat.example.com`, `uat-api.example.com`, `uat-collab.example.com`, and
+   optionally `uat-ops.example.com`. Cloudflare's free Universal certificate
+   covers only `example.com` and `*.example.com`; a name like
+   `api.uat.example.com` fails the TLS handshake at the edge unless the zone
+   pays for Advanced Certificate Manager. Configure DNS, Cloudflare, tunnel
+   routing, origin lockdown, cache bypass, WebSocket support, and `/api`
+   reverse proxy using §§1–3. Do not use wildcard host authorization for
+   review tooling.
 5. Copy `deploy/.env.prod.example` into the UAT resource and fill it with only
    UAT values. Set `APP_ENV=production`; UAT must exercise production safety
-   checks. Use the UAT origins in `APP_URL`, CORS, collaboration, OAuth, Sentry,
+   checks. Set `OPS_INGEST_PRIMARY_ENVIRONMENT=uat` and leave
+   `OPS_INGEST_UAT_DATABASE_URL` unset: the compose default is `production`,
+   which would silently empty the UAT ingest dashboard (§8). Use the UAT origins in `APP_URL`, CORS, collaboration, OAuth, Sentry,
    and browser build variables.
 6. Create a separate Cloudflare Pages project for the UAT SPA. Either create it
    as Direct Upload or disable builds on an existing Git-integrated project;
@@ -1377,7 +1447,7 @@ In the Clerk dashboard:
 3. Add the UAT SPA and ops origins to the instance's allowed origins and
    redirect URLs. Do not add production origins unless the provider explicitly
    requires them.
-4. Create `https://api.uat.example.com/webhooks/clerk`, selecting the same
+4. Create `https://uat-api.example.com/webhooks/clerk`, selecting the same
    events as production. Copy its signing secret into UAT
    `CLERK_WEBHOOK_SECRET` and redeploy.
 5. Put the UAT publishable key in the SPA build as
@@ -1385,6 +1455,67 @@ In the Clerk dashboard:
    `CLERK_SECRET_KEY`. The GitHub authenticated tests receive the same values
    as `CLERK_PUBLISHABLE_KEY` and the protected `CLERK_SECRET_KEY` environment
    secret. Never put the secret key in a repository variable or browser build.
+
+The gateway refuses startup when normal Clerk authentication has either a
+blank `CLERK_SECRET_KEY` or a blank `CLERK_WEBHOOK_SECRET`. Development with
+`AUTH_DISABLED=true` and the disposable E2E identity mode are the only
+exemptions.
+
+#### Running the SPA locally against UAT
+
+A Clerk production instance does not authenticate on `localhost`, so a local
+`pnpm dev` that talks to the UAT gateway has to be served from a real origin.
+`pnpm dev:tunnel` publishes the dev server through its own Cloudflare tunnel,
+created on the developer's machine and unrelated to the `evo-uat` tunnel on
+the VM, at the hostname in `VITE_DEV_HOST`. The DNS record points at that
+laptop; only the API calls Vite proxies reach the VM. `pnpm dev:public` then
+serves it (plain `pnpm dev` stays on localhost).
+
+The hostname is one label under the instance's Clerk primary domain,
+`dev-<name>.uat.capynotebook.com`. Clerk shares sessions across subdomains of
+the primary domain with no SPA configuration; a sibling such as
+`dev.capynotebook.com` would be a satellite domain instead, needing its own
+Clerk registration, a `clerk.` CNAME per developer, and `isSatellite` props in
+`AppAuthProvider`. Two labels is past the free Universal certificate, so the
+zone carries an Advanced Certificate Manager pack for `uat.capynotebook.com`
+and `*.uat.capynotebook.com`. The tunnel script derives the expected domain by
+decoding `VITE_CLERK_PUBLISHABLE_KEY` and refuses a hostname that would land
+outside it.
+
+Per developer, the only entry that is not already a wildcard is the collab
+origin: append `https://dev-<name>.uat.capynotebook.com` to
+`COLLABORATION_ALLOWED_ORIGINS` and redeploy, or no note connects to the
+editor websocket. `deploy/b2-cors.uat.json` covers every such hostname with
+`https://*.uat.capynotebook.com`, and Clerk needs nothing unless the instance
+has the subdomain allowlist enabled.
+
+The browser key must belong to the instance the gateway validates against:
+`VITE_API_URL=https://uat-api.capynotebook.com` requires the UAT `pk_live` in
+`VITE_CLERK_PUBLISHABLE_KEY`. A `pk_test` there is a 401 on every request.
+
+The same tunnel carries `/webhooks/` to a locally-run gateway on port 8080,
+ahead of the catch-all rule that serves Vite. That is how the Clerk
+**development** instance reaches a developer's machine, which it otherwise
+cannot: point its webhook at
+`https://dev-<name>.uat.capynotebook.com/webhooks/clerk` with the same three
+events, and put that endpoint's signing secret in the developer's
+`CLERK_WEBHOOK_SECRET`. Those deliveries return 502 whenever no local gateway
+is running, which is the normal state in this lane. The UAT production
+instance keeps delivering to `uat-api` and is unaffected.
+
+Endpoints are per developer, never shared: a hostname reaches exactly one
+laptop, and each endpoint carries its own signing secret. The development
+instance fans every subscribed event out to all of them, so a second
+developer's signup arrives at everyone's local gateway and lands in each local
+database. Create an endpoint only while actually working on webhook handling,
+and disable it afterwards, or Clerk eventually disables it for sustained
+delivery failures anyway.
+
+This lane shares one UAT database and bucket, and it cannot change the
+backend. The migrator records a checksum per migration and refuses to run when
+an applied file changes (`server/internal/store/migrate.go`), so schema work
+needs a database the developer can drop or migrate forward: the gateway,
+Postgres and Redis run locally on the Clerk development instance for that.
 
 Create five synthetic accounts. Dedicated inbox aliases are sufficient if the
 mail provider routes them separately:
@@ -1403,38 +1534,132 @@ sign-in-token flow works before enabling unattended runs. Suspended and
 over-quota accounts are useful future fixtures but are not required by the
 initial UAT workflow.
 
-### 12.4 Stripe: a persistent UAT sandbox
+### 12.4 Stripe: a UAT sandbox and a separate local lane
 
 Stripe's dashboard view switch does not turn a live integration into a test
-integration. Live mode and sandboxes/test data have separate API keys,
-customers, products, prices, events, and webhook secrets. Keep production in
-live mode and create a named, persistent `Evo Notes UAT` sandbox for the UAT
-deployment. Local development may use the same sandbox at first, but a separate
-developer sandbox is preferable once tests mutate subscriptions concurrently.
+integration. Live mode and each named sandbox carry
+separate API keys, customers, products, prices, events, and webhook secrets.
 
-In the UAT sandbox:
+The split matters because Stripe fans every event in an environment out to
+every endpoint registered in that environment, with no filtering by which API
+key created the object. Share one environment and a local checkout delivers to
+the UAT endpoint while every UAT subscription change delivers to whoever is
+listening locally. The gateway tolerates it — an unresolved customer leaves
+`userID` empty and the case returns 200 without an error
+(`server/internal/httpapi/webhooks.go`) — but each foreign event is still
+claimed into both databases, and `stripeSubscriptionUser` returns
+`store.ErrConflict` when its identity sources disagree, which is a signal that
+should never fire on cross-environment noise.
 
-1. Create the Pro and Team products and recurring prices with the same billing
-   intervals and entitlements intended for production. Record the UAT price
-   IDs; they are not interchangeable with live price IDs.
-2. Create a webhook endpoint at
-   `https://api.uat.example.com/webhooks/stripe` with the same event selection
-   as production. Record this endpoint's UAT signing secret.
-3. Put only `sk_test_…`, the UAT webhook secret, and UAT price IDs in the UAT
-   Coolify resource as `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`,
-   `STRIPE_PRICE_PRO`, and `STRIPE_PRICE_TEAM`. Set the matching sandbox
-   publishable key in `VITE_STRIPE_PUBLISHABLE_KEY` if the frontend needs it.
-4. Exercise one successful subscription, update, cancellation, failed payment,
-   duplicate webhook delivery, and out-of-order delivery using synthetic
-   customers. Confirm plan state, idempotency, and reconciliation before the
-   first production release.
+Three lanes, none of them shared:
+
+| Lane       | Stripe environment                                | Delivery                     |
+| ---------- | ------------------------------------------------- | ---------------------------- |
+| production | live mode                                         | registered endpoint          |
+| UAT        | `Stable Studio UAT`, `acct_1U8Djl2ZZopeANOe`      | registered endpoint          |
+| local dev  | `Stable Studio Dev`, `acct_1UC8tXFKth3QfmPW`      | `stripe listen`, no endpoint |
+
+**UAT sandbox.** `Capy Notebook Pro` (`prod_VBvlTdsu2tTdkK`) with a monthly
+USD 8.00 price, `price_1UBXuV2ZZopeANOehrbUr1Qx`. The endpoint is
+`we_1UBtgI2ZZopeANOeoftHsYMT` at
+`https://uat-api.capynotebook.com/webhooks/stripe`. Put the sandbox
+`sk_test_…`, that endpoint's signing secret, and the price ID into the UAT
+Coolify resource as `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and
+`STRIPE_PRICE_PRO`. There is no publishable-key setting: checkout is a
+server-side redirect to Stripe's hosted page (`CreateCheckoutSession` returns
+the URL) and the SPA never loads Stripe.js.
+
+**Local dev.** `Capy Notebook Pro` (`prod_VCY2Q2oiYYu0lf`), price
+`price_1UC8wXFKth3QfmPWxTiKOqC1`, same USD 8.00 monthly shape. Register no
+webhook endpoint here. Each developer runs
+
+```
+stripe listen --forward-to localhost:8080/webhooks/stripe
+```
+
+which prints the `whsec_…` for that session's `STRIPE_WEBHOOK_SECRET` and
+needs no tunnel — unlike Clerk, whose development instance can only reach a
+laptop through the `dev-<name>` hostname (§12.3). Nothing persists in the
+dashboard, so there is no endpoint to auto-disable while a laptop is off and
+no per-developer secret to rotate. Other developers' events still arrive,
+because the fan-out is per environment; only per-developer sandboxes would
+stop that, and that is not worth the setup today.
+
+The event selection in every lane is exactly what the handler switches on:
+`checkout.session.completed`, `customer.subscription.created`,
+`customer.subscription.updated`, `customer.subscription.deleted`, and
+`invoice.payment_failed`. Anything else is delivery the gateway discards.
+
+There is no Team product in any environment and no `STRIPE_PRICE_TEAM`
+setting: `plan_limits` restricts `plan_tier` to `free` and `pro`
+(`server/migrations/0001_init.sql`). Add the price and the variable together
+when the schema grows a tier to hold one.
+
+Exercise one successful subscription, update, cancellation, failed payment,
+duplicate webhook delivery, and out-of-order delivery using synthetic
+customers. Confirm plan state, idempotency, and reconciliation before the
+first production release.
 
 Stripe credentials are deployment secrets, not review-runner secrets. The
 wizard keeps them locally only to reduce transcription mistakes; paste them
 into Coolify yourself. Do not add them to GitHub Actions unless a future test
 has a narrow, documented reason to call Stripe directly.
 
-### 12.5 Create the authorization fixture
+Leaving the gateway's Stripe secret, webhook secret, and Pro price blank keeps
+billing disabled. If either `STRIPE_WEBHOOK_SECRET` or `STRIPE_PRICE_PRO` is
+configured, the gateway refuses startup without `STRIPE_SECRET_KEY`. This
+keeps Stripe optional for local deployments without allowing a partially
+configured billing deployment to skip provider-authoritative deletion checks.
+
+### 12.5 Resend: one UAT sending domain
+
+Resend has no sandbox. Isolation is per sending domain, and both reputation
+and the suppression list follow the domain, so UAT and production must never
+share one. UAT sends from `uat.capynotebook.com`; production takes
+`capynotebook.com`, or a `mail.` subdomain under it, when it exists.
+
+Local development needs no Resend credentials. `newEmailSender`
+(`server/cmd/api/email.go`) falls back to the log backend when
+`RESEND_API_KEY` is empty and refuses `resend` outright under `APP_ENV=e2e`,
+so local keeps `EMAIL_BACKEND=log` and leaves the key blank. Setting
+`EMAIL_BACKEND=resend` without a key fails gateway startup rather than
+degrading.
+
+DNS for `uat.capynotebook.com` goes in the `capynotebook.com` Cloudflare zone.
+Cloudflare appends the zone to the name, so enter these exactly as written;
+TXT and MX are never proxied, so there is no orange-cloud decision:
+
+| Type | Name                    | Value                                          | Priority |
+| ---- | ----------------------- | ---------------------------------------------- | -------- |
+| TXT  | `resend._domainkey.uat` | the DKIM `p=…` value from the Resend dashboard | —        |
+| MX   | `send.uat`              | `feedback-smtp.us-east-1.amazonses.com`        | 10       |
+| TXT  | `send.uat`              | `v=spf1 include:amazonses.com ~all`            | —        |
+
+All three resolve and the domain is verified. Set `EMAIL_BACKEND=resend`,
+`RESEND_API_KEY` to the domain-scoped `Evo Notes UAT (sending)` key,
+`EMAIL_FROM=Evo Notes <notifications@uat.capynotebook.com>`, and a fresh
+32-byte `EMAIL_UNSUBSCRIBE_SECRET` in the UAT Coolify resource. A
+sending-scoped key restricted to this domain cannot send from production's
+domain even if it leaks.
+
+Neither `capynotebook.com` nor the UAT subdomain publishes DMARC. Low-volume
+authenticated mail is accepted without it, so this does not block UAT, but
+`_dmarc.uat.capynotebook.com` as `v=DMARC1; p=none;` is worth adding before any
+real volume. Mind the inheritance when production arrives: a subdomain with no
+record of its own falls back to the organizational domain's policy, so
+publishing `p=reject` at `capynotebook.com` starts rejecting UAT's failures too
+unless that record carries an explicit `sp=`.
+
+Resend does have webhooks — `email.sent`, `email.delivered`, `email.bounced`,
+`email.complained`, and the open/click pair. The gateway subscribes to none of
+them and there is no `RESEND_WEBHOOK_SECRET` anywhere in the tree, so no
+endpoint is registered and no cross-environment fan-out exists. Adding bounce
+or complaint handling reopens the same per-environment question Stripe has.
+
+`bounced@resend.dev` and `complained@resend.dev` exercise the failure paths
+without touching a real inbox or the domain's suppression list.
+
+### 12.6 Create the authorization fixture
 
 After Clerk webhooks are healthy and the UAT deployment is stable:
 
@@ -1456,12 +1681,13 @@ suspension, over-quota, deletion, billing, import, and asynchronous lifecycle
 tests; each extension should use bounded synthetic data and deterministic
 cleanup.
 
-### 12.6 GitHub Actions configuration
+### 12.7 GitHub Actions configuration
 
 Create Actions environments named `uat` and `production`, both restricted to
 `main`. Do not add required reviewers to `uat`, because successful `main` CI is
 supposed to deploy there unattended. Add the available approval protection to
-`production`. The agent-driven Strix workflows remain manual dispatch only.
+`production`. No workflow runs Strix or Codex Security; those scans run
+locally and only their commit statuses reach GitHub.
 
 Repository variables used by UAT validation and activation:
 
@@ -1469,10 +1695,10 @@ Repository variables used by UAT validation and activation:
 UAT_DEPLOYMENT_ENABLED=false
 UAT_TARGET_AUTHORIZED=true
 UAT_APP_URL=https://uat.example.com
-UAT_API_URL=https://api.uat.example.com
-UAT_COLLAB_URL=wss://collab.uat.example.com
-UAT_OPS_URL=https://ops.uat.example.com
-UAT_ALLOWED_HOSTS=uat.example.com,api.uat.example.com,collab.uat.example.com,ops.uat.example.com
+UAT_API_URL=https://uat-api.example.com
+UAT_COLLAB_URL=wss://uat-collab.example.com
+UAT_OPS_URL=https://uat-ops.example.com
+UAT_ALLOWED_HOSTS=uat.example.com,uat-api.example.com,uat-collab.example.com,uat-ops.example.com
 CLERK_PUBLISHABLE_KEY=<UAT publishable key>
 UAT_OWNER_EMAIL=<synthetic owner>
 UAT_EDITOR_EMAIL=<synthetic editor>
@@ -1481,23 +1707,20 @@ UAT_VIEWER_EMAIL=<synthetic viewer>
 UAT_OTHER_EMAIL=<synthetic unrelated user>
 UAT_FIXTURE_WORKSPACE_ID=<fixture id>
 UAT_FIXTURE_MATERIAL_ID=<fixture id>
-STRIX_LLM=openai/gpt-5.4
-STRIX_UAT_MAX_BUDGET=40
-STRIX_SOURCE_MAX_BUDGET=40
 ```
 
 Variables on the `uat` environment:
 
 ```text
-COOLIFY_API_URL=https://coolify.example.com/api/v1
+COOLIFY_API_URL=https://uat-coolify.example.com/api/v1
 COOLIFY_RESOURCE_UUID=<UAT Coolify application UUID>
 CLOUDFLARE_ACCOUNT_ID=<account id>
 CLOUDFLARE_PAGES_PROJECT=<UAT Pages project>
 CLOUDFLARE_PAGES_BRANCH=main
 DEPLOYMENT_APP_URL=https://uat.example.com
-DEPLOYMENT_API_URL=https://api.uat.example.com
-DEPLOYMENT_COLLAB_URL=wss://collab.uat.example.com
-DEPLOYMENT_OPS_URL=https://ops.uat.example.com
+DEPLOYMENT_API_URL=https://uat-api.example.com
+DEPLOYMENT_COLLAB_URL=wss://uat-collab.example.com
+DEPLOYMENT_OPS_URL=https://uat-ops.example.com
 CLERK_PUBLISHABLE_KEY=<UAT publishable key>
 # Optional public VITE_* values: Sentry, PostHog, picker/OAuth, feature flags
 ```
@@ -1508,9 +1731,11 @@ Protected secrets on the `uat` environment:
 COOLIFY_API_TOKEN=<token able to update, deploy, and read the UAT application>
 CLOUDFLARE_API_TOKEN=<token with Cloudflare Pages Edit for the UAT project>
 CLERK_SECRET_KEY=<UAT Clerk secret key>
-LLM_API_KEY=<key accepted by STRIX_LLM>
-STRIX_UAT_AUTH_INSTRUCTIONS=<optional synthetic-only instructions>
 ```
+
+If `LLM_API_KEY` or `STRIX_UAT_AUTH_INSTRUCTIONS` still exist as GitHub
+secrets from the retired Strix workflows, delete them. They belong only in the
+ignored local `deploy/.env.uat`.
 
 Configure the `production` environment with the same deployment variable names,
 but production URLs, the production Coolify UUID, the production Pages project,
@@ -1520,19 +1745,19 @@ Clerk, Stripe, database, B2, or LLM server secrets to GitHub: those stay in the
 production Coolify resource. Disable native Git auto-deploy on both production
 resources so the protected workflow is the only release path.
 
-Keep `STRIX_UAT_AUTH_INSTRUCTIONS` limited to synthetic accounts and the
-minimum navigation needed. If authenticated autonomous exploration is worth
+Keep the local `STRIX_UAT_AUTH_INSTRUCTIONS` limited to synthetic accounts and
+the minimum navigation needed. If authenticated autonomous exploration is worth
 the extra coverage, it may contain a dedicated synthetic password; rotate that
-password after the scan and inspect artifacts for accidental disclosure. The
-workflow writes the value to a mode-`0600` temporary file and removes that file
-after the scan. The short-lived Clerk-token Playwright suite covers the fixed
-authorization matrix even when Strix remains unauthenticated.
+password after the scan and inspect `review-results/` for accidental
+disclosure. `scripts/review/strix-scan.sh` writes the value to a mode-`0600`
+temporary file and removes it after the scan. The short-lived Clerk-token
+Playwright suite covers the fixed authorization matrix even when Strix remains
+unauthenticated.
 
-### 12.7 Baseline, automation, and release gate
+### 12.8 Baseline, automation, and release gate
 
 1. Leave `UAT_DEPLOYMENT_ENABLED=false` initially. This prevents successful CI
-   runs from deploying to a half-configured target. It does not control Strix:
-   both Strix workflows are permanently manual dispatch only.
+   runs from deploying to a half-configured target.
 2. Manually dispatch **Deploy UAT** from `main`. It deploys the selected SHA and
    automatically calls **Deterministic UAT quality**. Inspect Coolify, Pages,
    smoke, and Playwright evidence, including release-SHA, accessibility, and
@@ -1541,30 +1766,31 @@ authorization matrix even when Strix remains unauthenticated.
    weaken authorization assertions or allow-host guards to make a run green.
 4. After a stable baseline, set `UAT_DEPLOYMENT_ENABLED=true`. Every successful
    `CI` run for `main` then deploys its exact SHA to UAT and calls the same gate.
-   Editor performance remains manual; no review workflow has a schedule.
-5. When you explicitly want the costly scanner baseline, manually dispatch
-   **Manual repository security review** and **Manual UAT review with Strix**
-   with enforcement off. Triage candidates rather than suppressing unexplained
-   results. Neither workflow has a schedule.
-6. When the release warrants the costly review, explicitly invoke
-   `$review-repository` in `release` mode and manually dispatch both Strix
-   workflows for the exact candidate revision with `enforce_findings=true`.
-   Review medium findings and coverage gaps manually. This remains a human
-   release decision, not an automatic production prerequisite.
-7. Perform the manual Stripe sandbox sequence in §12.4 plus the release checks
+   Dispatch **Editor perf** once so later runs have a baseline to diff. No
+   workflow has a schedule.
+5. Before a promotion, on the developer machine with `gh auth login` done:
+   run `pnpm review:source:codex` on the clean candidate checkout, and
+   `pnpm review:uat:strix` while UAT serves that SHA. Each posts its commit
+   status (`source/codex-security`, `uat/strix`) on the SHA. Triage candidates
+   rather than suppressing unexplained results. When the release warrants the
+   full review, invoke `$review-repository` in `release` mode; it runs both
+   scans as part of its procedure.
+6. Perform the manual Stripe sandbox sequence in §12.4 plus the release checks
    for over-quota/suspension, ingest/index/search, cleanup, reconciliation,
    collaboration revocation, and recovery until dedicated synthetic fixtures
    automate them.
-8. Dispatch **Promote revision to production** with the exact full SHA. The
-   workflow re-stages UAT, re-runs the deterministic gate, waits for production
-   approval, deploys both production resources, and verifies the public release
-   SHA and health. Then perform the bounded login, upload, collaboration,
-   webhook, and observability checks in §10. Production is not a penetration-
-   test target.
+7. Dispatch **Promote revision to production** with the exact full SHA. The
+   workflow re-stages UAT, re-runs the deterministic gate and editor perf on
+   that SHA, refuses the SHA unless both scanner statuses are `success`, waits
+   for production approval, deploys both production resources, and verifies
+   the public release SHA and health. Then perform the bounded login, upload,
+   collaboration, webhook, and observability checks in §10. Production is not
+   a penetration-test target.
 
 Set `UAT_DEPLOYMENT_ENABLED=false` immediately if UAT is being rebuilt, its
 fixture is invalid, or allowed-host ownership changes. Manual deployment and
-quality dispatch remain available for repair. Strix cannot run until a person
-dispatches it. Rotate Clerk and LLM secrets after exposure or personnel
-changes. Delete stale artifacts under the repository's retention policy; they
-should contain sanitized evidence, but they are still security-sensitive.
+quality dispatch remain available for repair. Rotate Clerk and LLM secrets
+after exposure or personnel changes. Delete stale artifacts under the
+repository's retention policy; they should contain sanitized evidence, but
+they are still security-sensitive. Local `review-results/` bundles are
+unsanitized; keep them out of shared drives and chat.

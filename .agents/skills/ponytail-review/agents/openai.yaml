@@ -1,0 +1,6 @@
+interface:
+  display_name: "Review Repository"
+  short_description: "Code review focused exclusively on over-engineering. "
+  default_prompt: "Use $ponytail-review to find reinvented standard library, unneeded dependencies, speculative abstractions, dead flexibility."
+policy:
+  allow_implicit_invocation: false

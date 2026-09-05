@@ -54,9 +54,9 @@ export function sortModelOptions(models: ModelOption[]): ModelOption[] {
 }
 
 export function thinkingField(
-  surface: 'chat' | 'generate'
+  slot: 'chat' | 'generate'
 ): 'chatThinking' | 'generateThinking' {
-  return surface === 'chat' ? 'chatThinking' : 'generateThinking';
+  return slot === 'chat' ? 'chatThinking' : 'generateThinking';
 }
 
 export function hasThinkingControls(

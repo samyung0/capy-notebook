@@ -15,6 +15,14 @@ function paragraph(text: string) {
   return { children: [{ text }], type: 'p' };
 }
 
+function nestedParagraph(depth: number) {
+  let node: Record<string, unknown> = { text: 'bottom' };
+  for (let level = 0; level < depth; level += 1) {
+    node = { children: [node], type: 'blockquote' };
+  }
+  return node;
+}
+
 function documentWithValue(value: unknown[]) {
   const document = new Y.Doc({ gc: true });
   document
@@ -54,6 +62,13 @@ describe('material document measurement', () => {
     expect(metrics.contentBytes).toBeGreaterThan(0);
   });
 
+  it('measures every node in a structurally valid deep document', () => {
+    const metrics = measureMaterialValue([nestedParagraph(300)]);
+
+    expect(metrics.maxDepth).toBe(300);
+    expect(metrics.nodeCount).toBe(301);
+  });
+
   it('names the limit that a document breaks', () => {
     expect(
       materialLimitCode(measureMaterialValue([paragraph('ok')]))
@@ -72,6 +87,35 @@ describe('material document measurement', () => {
         nodeCount: 1,
       })
     ).toBe('document_depth_exceeded');
+  });
+
+  it('excludes runtime comment marks from persisted content metrics', () => {
+    const clean = [
+      {
+        children: [{ bold: true, commentary: 'kept', text: 'annotated' }],
+        id: 'block_1',
+        type: 'p',
+      },
+    ];
+    const runtimeMarked = [
+      {
+        children: [
+          {
+            bold: true,
+            comment: 'discussion_1',
+            comment_thread_1: true,
+            commentary: 'kept',
+            text: 'annotated',
+          },
+        ],
+        id: 'block_1',
+        type: 'p',
+      },
+    ];
+
+    expect(measureMaterialValue(runtimeMarked)).toEqual(
+      measureMaterialValue(clean)
+    );
   });
 });
 
@@ -103,6 +147,25 @@ describe('recovering an over-limit document', () => {
 });
 
 describe('inbound update validation', () => {
+  it('rejects arbitrary top-level Yjs roots', () => {
+    const store = validator();
+    const document = documentWithValue([paragraph('small')]);
+    const attacker = new Y.Doc({ gc: true });
+    Y.applyUpdate(attacker, Y.encodeStateAsUpdate(document));
+    attacker.getText('unmetered').insert(0, 'hidden growth');
+    const update = Y.encodeStateAsUpdate(
+      attacker,
+      Y.encodeStateVector(document)
+    );
+
+    expect(() => store.validateUpdate(room, document, update)).toThrow(
+      'unsupported collaboration document root: unmetered'
+    );
+
+    attacker.destroy();
+    document.destroy();
+  });
+
   it('rejects an update that pushes the document past a limit', () => {
     const store = validator();
     const document = documentWithValue([paragraph('small')]);
@@ -151,5 +214,22 @@ describe('inbound update validation', () => {
         (error as MaterialDocumentLimitError).metrics.maxDepth
       ).toBeGreaterThan(MATERIAL_DOCUMENT_LIMITS.maxDepth);
     }
+  });
+
+  it('rejects deep-branch growth hidden behind otherwise shrinking content', () => {
+    const store = validator();
+    const document = documentWithValue([
+      nestedParagraph(300),
+      ...Array.from({ length: 1000 }, (_, index) =>
+        paragraph(`discarded sibling ${index}`)
+      ),
+    ]);
+    const update = updateReplacingValue(document, [nestedParagraph(301)]);
+
+    expect(() =>
+      store.validateUpdate(room, document, update, { shrinkOnly: true })
+    ).toThrow(MaterialDocumentLimitError);
+
+    document.destroy();
   });
 });

@@ -36,10 +36,10 @@ export const seed = {
     id: 'ws_e2e_invite',
     name: 'E2E Invite Only Workspace',
   },
-  linkDeck: {
+  linkFlashcardSet: {
     front: 'Link front',
     id: 'dk_e2e_link',
-    name: 'E2E Link Deck',
+    name: 'E2E Link Flashcards',
   },
   linkQuiz: {
     id: 'qz_e2e_link',
@@ -50,9 +50,9 @@ export const seed = {
     id: 'ws_e2e_link',
     name: 'E2E Link Workspace',
   },
-  mutateDeck: {
+  mutateFlashcardSet: {
     id: 'dk_e2e_mutate',
-    name: 'E2E Mutate Deck',
+    name: 'E2E Mutate Flashcards',
   },
   mutateQuiz: {
     id: 'qz_e2e_mutate',
@@ -62,10 +62,10 @@ export const seed = {
     id: 'ws_e2e_mutate',
     name: 'E2E Mutate Workspace',
   },
-  privateDeck: {
+  privateFlashcardSet: {
     front: 'Private front',
     id: 'dk_e2e_private',
-    name: 'E2E Private Deck',
+    name: 'E2E Private Flashcards',
   },
   privateQuiz: {
     id: 'qz_e2e_private',
@@ -78,10 +78,10 @@ export const seed = {
     secretFile: 'secret-notes.md',
     secretTitle: 'Secret private title',
   },
-  publicDeck: {
+  publicFlashcardSet: {
     front: 'Public front',
     id: 'dk_e2e_public',
-    name: 'E2E Public Deck',
+    name: 'E2E Public Flashcards',
   },
   publicQuiz: {
     id: 'qz_e2e_public',

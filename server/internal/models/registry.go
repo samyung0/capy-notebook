@@ -9,13 +9,13 @@
 // quietly reprice an in-flight pin. A miss the database also cannot satisfy is
 // an error. Rows are disabled rather than deleted for that reason.
 //
-// Nothing here is frozen at process start. Embedding and vision defaults used
-// to be, so that a 30s poll could not mix vector spaces within one corpus, but
-// that made the model a query was embedded with depend on when the container
-// last booted and left two replicas legitimately disagreeing. The guarantee now
-// comes from pins instead: embedding belongs to the workspace for its lifetime,
-// and vision is snapshotted onto each ingest
-// job at enqueue.
+// Nothing here is frozen at process start. Retrieval and captioning defaults
+// used to be, so that a 30s poll could not mix vector spaces within one corpus,
+// but that made the model a query was embedded with depend on when the
+// container last booted and left two replicas legitimately disagreeing. The
+// guarantee now comes from pins instead: the embedding model belongs to the
+// workspace for its lifetime, and the captioning model is snapshotted onto each
+// ingest job at enqueue.
 package models
 
 import (
@@ -45,7 +45,7 @@ const (
 const modelConfigSelect = `
 		SELECT version, provider_name, model_name, provider_slug, model_slug,
 		       platform_enabled, byok_enabled, context_window_tokens,
-		       thinking_levels, default_thinking, params, surfaces,
+		       thinking_levels, default_thinking, params, slots, capabilities,
 		       micros_per_input_token, micros_per_output_token, enabled, is_default_for,
 		       micros_per_cached_input_token
 		  FROM model_configs`
@@ -85,7 +85,8 @@ type Config struct {
 	ThinkingLevels            []string
 	DefaultThinking           string
 	Params                    map[string]any
-	Surfaces                  []string
+	Slots                     []string
+	Capabilities              []string
 	MicrosPerInputToken       int64
 	MicrosPerOutputToken      int64
 	Enabled                   bool
@@ -101,18 +102,18 @@ func (c Config) DisplayName() string {
 	return JoinModelLabel(c.ProviderName, c.ModelName)
 }
 
-func (c Config) Allows(surface string) bool {
-	for _, s := range c.Surfaces {
-		if s == surface {
+func (c Config) Allows(slot string) bool {
+	for _, s := range c.Slots {
+		if s == slot {
 			return true
 		}
 	}
 	return false
 }
 
-func (c Config) DefaultFor(surface string) bool {
+func (c Config) DefaultFor(slot string) bool {
 	for _, s := range c.IsDefaultFor {
-		if s == surface {
+		if s == slot {
 			return true
 		}
 	}
@@ -179,21 +180,20 @@ func (c Config) ResolveThinking(stored string) (string, error) {
 	return "", fmt.Errorf("model %s does not support thinking %q", c.Ref(), stored)
 }
 
-func ValidateThinking(surfaces, levels []string, defaultThinking string) error {
+func ValidateThinking(slots, levels []string, defaultThinking string) error {
 	hasLLM := false
 	hasEditor := false
-	for _, surface := range surfaces {
-		switch surface {
-		case SurfaceChat, SurfaceGenerate, SurfaceEditor, SurfaceQuiz, SurfaceIngest:
+	for _, slot := range slots {
+		if IsLLMSlot(slot) {
 			hasLLM = true
 		}
-		if surface == SurfaceEditor {
+		if slot == SlotEditor {
 			hasEditor = true
 		}
 	}
 	if !hasLLM {
 		if len(levels) > 0 || defaultThinking != "" {
-			return fmt.Errorf("embedding/vision rows must omit thinking")
+			return fmt.Errorf("retrieval/captioning rows must omit thinking")
 		}
 		return nil
 	}
@@ -267,7 +267,7 @@ type Registry struct {
 
 	mu      sync.RWMutex
 	byPin   map[cacheKey]Config
-	current map[string]Pin // surface -> default pin
+	current map[string]Pin // slot -> default pin
 	rev     int64
 }
 
@@ -335,10 +335,10 @@ func (r *Registry) refresh(ctx context.Context) error {
 		if !cfg.Enabled {
 			continue
 		}
-		for _, surface := range cfg.IsDefaultFor {
-			prev, ok := current[surface]
+		for _, slot := range cfg.IsDefaultFor {
+			prev, ok := current[slot]
 			if !ok || cfg.Version >= prev.Version {
-				current[surface] = cfg.Pin()
+				current[slot] = cfg.Pin()
 			}
 		}
 	}
@@ -351,8 +351,8 @@ func (r *Registry) refresh(ctx context.Context) error {
 	for k, cfg := range byPin {
 		r.byPin[k] = cfg
 	}
-	for surface, pin := range current {
-		r.current[surface] = pin
+	for slot, pin := range current {
+		r.current[slot] = pin
 	}
 	r.rev = rev
 	return nil
@@ -364,24 +364,26 @@ type rowScanner interface {
 
 func scanConfig(row rowScanner) (Config, error) {
 	var (
-		c          Config
-		params     []byte
-		surfaces   []string
-		defaultFor []string
-		thinking   []string
+		c            Config
+		params       []byte
+		slots        []string
+		capabilities []string
+		defaultFor   []string
+		thinking     []string
 	)
 	err := row.Scan(
 		&c.Version, &c.ProviderName, &c.ModelName, &c.ProviderSlug, &c.ModelSlug,
 		&c.PlatformEnabled, &c.ByokEnabled, &c.ContextWindowTokens,
 		&thinking, &c.DefaultThinking,
-		&params, &surfaces, &c.MicrosPerInputToken, &c.MicrosPerOutputToken,
+		&params, &slots, &capabilities, &c.MicrosPerInputToken, &c.MicrosPerOutputToken,
 		&c.Enabled, &defaultFor, &c.MicrosPerCachedInputToken,
 	)
 	if err != nil {
 		return Config{}, err
 	}
 	c.ThinkingLevels = thinking
-	c.Surfaces = surfaces
+	c.Slots = slots
+	c.Capabilities = capabilities
 	c.IsDefaultFor = defaultFor
 	if len(params) > 0 {
 		_ = json.Unmarshal(params, &c.Params)
@@ -394,7 +396,7 @@ func scanConfig(row rowScanner) (Config, error) {
 
 // Get returns the exact provider/model/version pin. Load-on-miss from the table; never
 // falls back to the current default. Disabled chat/generate rows still
-// resolve so a pinned conversation keeps working. Embedding rows cannot be
+// resolve so a pinned conversation keeps working. Retrieval rows cannot be
 // disabled or rewritten onto a different model: Postgres rejects the write.
 func (r *Registry) Get(ctx context.Context, ref Ref, version int) (Config, error) {
 	if ref.Zero() || version <= 0 {
@@ -428,21 +430,21 @@ func (r *Registry) load(ctx context.Context, ref Ref, version int) (Config, erro
 	return cfg, err
 }
 
-// DefaultPin is the current default for a surface. Callers that are choosing on
+// DefaultPin is the current default for a slot. Callers that are choosing on
 // somebody's behalf (enqueue, account creation, workspace creation) resolve it
 // once and store the result; nothing downstream is allowed to call this again.
-func (r *Registry) DefaultPin(surface string) (Pin, error) {
+func (r *Registry) DefaultPin(slot string) (Pin, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	pin, ok := r.current[surface]
+	pin, ok := r.current[slot]
 	if !ok || pin.Zero() {
-		return Pin{}, fmt.Errorf("%w: no default for %s", ErrNotFound, surface)
+		return Pin{}, fmt.Errorf("%w: no default for %s", ErrNotFound, slot)
 	}
 	return pin, nil
 }
 
-func (r *Registry) Default(ctx context.Context, surface string) (Config, error) {
-	pin, err := r.DefaultPin(surface)
+func (r *Registry) Default(ctx context.Context, slot string) (Config, error) {
+	pin, err := r.DefaultPin(slot)
 	if err != nil {
 		return Config{}, err
 	}
@@ -450,22 +452,22 @@ func (r *Registry) Default(ctx context.Context, surface string) (Config, error) 
 }
 
 // ResolveUser returns the latest enabled config for the user's preferred model
-// on this surface. The preference must be a non-empty ref that still resolves;
-// there is no fallback to the surface default. Account creation snapshots the
+// on this slot. The preference must be a non-empty ref that still resolves;
+// there is no fallback to the slot default. Account creation snapshots the
 // default onto the user row so a live request always has a concrete model ref.
-func (r *Registry) ResolveUser(ctx context.Context, pref Ref, surface string) (Config, error) {
+func (r *Registry) ResolveUser(ctx context.Context, pref Ref, slot string) (Config, error) {
 	if pref.Zero() {
-		return Config{}, fmt.Errorf("%w: empty preference for %s", ErrNotFound, surface)
+		return Config{}, fmt.Errorf("%w: empty preference for %s", ErrNotFound, slot)
 	}
-	return r.latestEnabled(ctx, pref, surface)
+	return r.latestEnabled(ctx, pref, slot)
 }
 
-func (r *Registry) latestEnabled(ctx context.Context, ref Ref, surface string) (Config, error) {
+func (r *Registry) latestEnabled(ctx context.Context, ref Ref, slot string) (Config, error) {
 	r.mu.RLock()
 	var best Config
 	found := false
 	for _, cfg := range r.byPin {
-		if cfg.Ref() == ref && cfg.Enabled && cfg.Allows(surface) {
+		if cfg.Ref() == ref && cfg.Enabled && cfg.Allows(slot) {
 			if !found || cfg.Version > best.Version {
 				best = cfg
 				found = true
@@ -477,8 +479,8 @@ func (r *Registry) latestEnabled(ctx context.Context, ref Ref, surface string) (
 		return best, nil
 	}
 	row := r.pool.QueryRow(ctx, modelConfigSelect+`
-		 WHERE provider_slug=$1 AND model_slug=$2 AND enabled AND $3 = ANY(surfaces)
-		 ORDER BY version DESC LIMIT 1`, ref.ProviderSlug, ref.ModelSlug, surface)
+		 WHERE provider_slug=$1 AND model_slug=$2 AND enabled AND $3 = ANY(slots)
+		 ORDER BY version DESC LIMIT 1`, ref.ProviderSlug, ref.ModelSlug, slot)
 	cfg, err := scanConfig(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Config{}, fmt.Errorf("%w: %s", ErrNotFound, ref)
@@ -493,24 +495,24 @@ func (r *Registry) latestEnabled(ctx context.Context, ref Ref, surface string) (
 }
 
 // SnapshotIngest returns the pins written onto an ingest job at enqueue: the
-// two surfaces whose defaults are hot-reloadable and whose job may still be
+// two slots whose defaults are hot-reloadable and whose job may still be
 // queued when one moves.
 //
-// Embedding is deliberately absent. It comes from the workspace row instead,
+// Retrieval is deliberately absent. It comes from the workspace row instead,
 // because a workspace's vector space outlives any single job and must not be
 // re-decided per upload.
-func (r *Registry) SnapshotIngest(ctx context.Context) (ingest, vision Config, err error) {
-	ingest, err = r.Default(ctx, SurfaceIngest)
+func (r *Registry) SnapshotIngest(ctx context.Context) (ingest, captioning Config, err error) {
+	ingest, err = r.Default(ctx, SlotIngest)
 	if err != nil {
 		return
 	}
-	vision, err = r.Default(ctx, SurfaceVision)
+	captioning, err = r.Default(ctx, SlotCaptioning)
 	return
 }
 
 // EmbeddingDim is the vector width a config emits. The vector table is chosen
 // by pin, not by width; this value sizes the halfvec write. A check constraint
-// in the migration requires it on every embedding row, so a zero here means
+// in the migration requires it on every retrieval row, so a zero here means
 // the row was written around the schema.
 func (c Config) EmbeddingDim() (int, error) {
 	dim := int(c.ParamFloat("dimensions", 0))
@@ -520,14 +522,14 @@ func (c Config) EmbeddingDim() (int, error) {
 	return dim, nil
 }
 
-// ListEnabled returns enabled configs that advertise surface, newest version
+// ListEnabled returns enabled configs that advertise slot, newest version
 // per provider/model identity, for the model picker.
-func (r *Registry) ListEnabled(surface string) []Config {
+func (r *Registry) ListEnabled(slot string) []Config {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	best := map[Ref]Config{}
 	for _, cfg := range r.byPin {
-		if !cfg.Enabled || !cfg.Allows(surface) {
+		if !cfg.Enabled || !cfg.Allows(slot) {
 			continue
 		}
 		ref := cfg.Ref()

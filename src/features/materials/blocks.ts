@@ -15,7 +15,7 @@
    The payload is YAML. JSON is a subset of YAML, so blocks backfilled from the
    legacy JSON tables parse identically; we re-emit clean YAML on every write.
    Shared by the read-only Plate renderer and the MSW mock (which derives the
-   typed Quiz/Deck/Flashcard views the existing UI expects).
+   typed Quiz/FlashcardSet/Flashcard views the existing UI expects).
    ============================================================ */
 import YAML from 'yaml';
 import type { Question } from '@/api/types';
@@ -100,20 +100,17 @@ export function parseFlashcardsFenceBody(body: string): FlashcardsBlock {
   return parseFlashcardsYaml(body);
 }
 
-function fenceDoc(title: string, lang: string, payload: unknown): string {
+function fenceDoc(lang: string, payload: unknown): string {
   const body = YAML.stringify(payload); // trailing newline included
-  return `# ${title}\n\n\`\`\`${lang}\n${body}\`\`\`\n`;
+  return `\`\`\`${lang}\n${body}\`\`\`\n`;
 }
 
-export function quizMarkdown(title: string, data: QuizBlock): string {
+export function quizMarkdown(data: QuizBlock): string {
   const payload: Record<string, unknown> = { questions: data.questions ?? [] };
   if (data.timeLimitMin != null) payload.timeLimitMin = data.timeLimitMin;
-  return fenceDoc(title || 'Quiz', 'quiz', payload);
+  return fenceDoc('quiz', payload);
 }
 
-export function flashcardsMarkdown(
-  title: string,
-  cards: FlashcardContent[]
-): string {
-  return fenceDoc(title || 'Flashcards', 'flashcards', { cards: cards ?? [] });
+export function flashcardsMarkdown(cards: FlashcardContent[]): string {
+  return fenceDoc('flashcards', { cards: cards ?? [] });
 }

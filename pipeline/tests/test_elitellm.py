@@ -19,7 +19,6 @@ from pipeline.elitellm.client import (
     deepseek_request,
     deepseek_thinking_body,
     embed_batch,
-    gemini_thinking_config,
     jsonable,
     message_from_response,
     openai_chat_request,
@@ -55,7 +54,7 @@ def _spec(**overrides) -> ModelConfig:
         "byok_enabled": True,
         "thinking_levels": ("instant", "low", "mid", "high", "max"),
         "default_thinking": "instant",
-        "surfaces": ("chat",),
+        "slots": ("chat",),
         "params": {"temperature": 0.3},
     }
     base.update(overrides)
@@ -107,25 +106,21 @@ def test_openai_mid_maps_to_medium_and_max_to_xhigh():
 
 def test_no_reasoning_uses_provider_off_or_lowest_setting():
     vision = _spec(
-        provider_slug="gemini",
-        model_slug="gemini-3.1-flash-lite",
+        provider_slug="openai",
+        model_slug="gpt-5.6-luna",
         thinking_levels=(),
         default_thinking="",
-        surfaces=("vision",),
+        slots=("captioning",),
     )
 
     assert _thinking_for_call(vision, False) == ""
     assert _thinking_for_call(_spec(thinking_levels=("low", "high")), False) == ""
-    assert gemini_thinking_config("gemini-2.5-flash-lite", "") == {"thinkingBudget": 0}
-    assert gemini_thinking_config("gemini-3.1-flash-lite", "") == {
-        "thinkingLevel": "minimal"
-    }
     zai_vision = _spec(
         provider_slug="zai",
         model_slug="glm-5.3-flash",
         thinking_levels=("low", "high", "max"),
         default_thinking="max",
-        surfaces=("chat", "vision"),
+        slots=("chat", "captioning"),
     )
     assert _thinking_for_call(zai_vision, False) == "low"
     assert _thinking_for_call(zai_vision, None) == "max"
@@ -137,7 +132,7 @@ def test_zai_caption_request_uses_deepinfra_low_reasoning():
         model_slug="glm-5.3-flash",
         thinking_levels=("low", "high", "max"),
         default_thinking="max",
-        surfaces=("chat", "vision"),
+        slots=("chat", "captioning"),
     )
     messages = [
         {
@@ -180,7 +175,7 @@ async def test_zai_complete_uses_exact_deepinfra_exception(
         model_slug="glm-5.3-flash",
         thinking_levels=("low", "high", "max"),
         default_thinking="max",
-        surfaces=("chat", "vision"),
+        slots=("chat", "captioning"),
     )
     seen: dict[str, object] = {}
 
@@ -223,7 +218,7 @@ async def test_zai_stream_uses_deepinfra_and_max_by_default(
         byok_enabled=False,
         thinking_levels=("low", "high", "max"),
         default_thinking="max",
-        surfaces=("chat", "vision"),
+        slots=("chat", "captioning"),
     )
     seen: dict[str, object] = {}
 
@@ -265,7 +260,7 @@ async def test_qwen_embedding_uses_exact_deepinfra_route(
         byok_enabled=False,
         thinking_levels=(),
         default_thinking="",
-        surfaces=("embedding",),
+        slots=("retrieval",),
     )
 
     await embed_batch(spec, ["one", "two"], dimensions=2560)

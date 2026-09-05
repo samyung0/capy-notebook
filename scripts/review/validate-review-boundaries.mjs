@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
@@ -7,61 +7,49 @@ const root = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '../..'
 );
-const agentToolPattern =
-  /\bstrix\b|\$review-repository|codex security|spawn[_ -]?agent/i;
+const workflowsDir = path.join(root, '.github/workflows');
 
-function eventMap(workflow, label) {
-  const events = workflow.on;
-  if (!events || typeof events !== 'object') {
+/** Agent-driven scanners run locally; a workflow that invokes one is a leak. */
+const AGENT_SCANNER_MARKERS = [
+  'strix-scan.sh',
+  'strix-agent',
+  'codex-security-scan.sh',
+  'codex exec',
+];
+
+const REQUIRED_STATUS_CONTEXTS = ['source/codex-security', 'uat/strix'];
+
+function events(source, label) {
+  const workflow = parse(source);
+  const map = workflow?.on;
+  if (!map || typeof map !== 'object') {
     throw new Error(`${label}: workflow must declare an event map`);
   }
-  return events;
+  return Object.keys(map);
 }
 
-function validateDispatchOnlyWorkflow(source, label, subject) {
-  const workflow = parse(source);
-  const events = eventMap(workflow, label);
-  const names = Object.keys(events);
-  if (names.length !== 1 || names[0] !== 'workflow_dispatch') {
-    throw new Error(
-      `${label}: ${subject} must be workflow_dispatch-only; found ${names.join(', ')}`
-    );
+export function validateWorkflowIsDeterministic(source, label) {
+  if (events(source, label).includes('schedule')) {
+    throw new Error(`${label}: workflows must not be scheduled`);
   }
-}
-
-export function validateManualAgentWorkflow(source, label) {
-  validateDispatchOnlyWorkflow(source, label, 'agent-driven workflow');
-}
-
-export function validateManualDeterministicWorkflow(source, label) {
-  validateDispatchOnlyWorkflow(source, label, 'manual deterministic workflow');
-  if (agentToolPattern.test(source)) {
-    throw new Error(
-      `${label}: manual deterministic workflow contains an agent-driven tool`
-    );
+  for (const marker of AGENT_SCANNER_MARKERS) {
+    if (source.includes(marker)) {
+      throw new Error(
+        `${label}: agent-driven scanner '${marker}' must run locally, not in Actions`
+      );
+    }
   }
 }
 
-export function validateDeterministicWorkflow(source, label) {
-  const workflow = parse(source);
-  const events = eventMap(workflow, label);
-  if (agentToolPattern.test(source)) {
+export function validateCallableGate(source, label) {
+  const names = events(source, label);
+  if (
+    !names.includes('workflow_dispatch') ||
+    !names.includes('workflow_call')
+  ) {
     throw new Error(
-      `${label}: deterministic workflow contains an agent-driven tool`
+      `${label}: gate must be manually runnable and callable by deployment flows`
     );
-  }
-  if (!Object.hasOwn(events, 'workflow_dispatch')) {
-    throw new Error(
-      `${label}: deterministic workflow must remain manually runnable`
-    );
-  }
-  if (!Object.hasOwn(events, 'workflow_call')) {
-    throw new Error(
-      `${label}: deterministic workflow must be callable by deployment flows`
-    );
-  }
-  if (Object.hasOwn(events, 'schedule')) {
-    throw new Error(`${label}: deterministic workflow must not be scheduled`);
   }
 }
 
@@ -70,13 +58,11 @@ export function validateDeploymentWorkflows(
   productionSource,
   reusableSource
 ) {
-  const uat = parse(uatSource);
-  const uatEvents = eventMap(uat, 'deploy-uat.yml');
+  const uatEvents = events(uatSource, 'deploy-uat.yml');
   if (
-    !Object.hasOwn(uatEvents, 'workflow_run') ||
-    !Object.hasOwn(uatEvents, 'workflow_dispatch') ||
-    Object.hasOwn(uatEvents, 'push') ||
-    Object.hasOwn(uatEvents, 'schedule')
+    !uatEvents.includes('workflow_run') ||
+    !uatEvents.includes('workflow_dispatch') ||
+    uatEvents.includes('push')
   ) {
     throw new Error(
       'deploy-uat.yml must run after CI or by manual dispatch only'
@@ -86,43 +72,26 @@ export function validateDeploymentWorkflows(
     throw new Error('deploy-uat.yml must call the reusable UAT quality gate');
   }
 
-  validateDispatchOnlyWorkflow(
-    productionSource,
-    'promote-production.yml',
-    'production promotion workflow'
-  );
-  if (!productionSource.includes('./.github/workflows/uat-quality.yml')) {
-    throw new Error(
-      'promote-production.yml must call the reusable UAT quality gate'
-    );
+  const productionEvents = events(productionSource, 'promote-production.yml');
+  if (productionEvents.join() !== 'workflow_dispatch') {
+    throw new Error('promote-production.yml must be workflow_dispatch-only');
   }
-  if (!productionSource.includes('environment_name: production')) {
-    throw new Error(
-      'promote-production.yml must deploy through the production environment'
-    );
+  for (const gate of [
+    './.github/workflows/uat-quality.yml',
+    './.github/workflows/perf.yml',
+    'scripts/review/require-statuses.sh',
+    ...REQUIRED_STATUS_CONTEXTS,
+    'environment_name: production',
+  ]) {
+    if (!productionSource.includes(gate)) {
+      throw new Error(`promote-production.yml must include '${gate}'`);
+    }
   }
 
-  const reusable = parse(reusableSource);
-  const reusableEvents = eventMap(reusable, 'deploy-environment.yml');
-  const reusableNames = Object.keys(reusableEvents);
-  if (reusableNames.length !== 1 || reusableNames[0] !== 'workflow_call') {
-    throw new Error('deploy-environment.yml must be workflow_call-only');
-  }
   if (
-    agentToolPattern.test(
-      `${uatSource}\n${productionSource}\n${reusableSource}`
-    )
+    events(reusableSource, 'deploy-environment.yml').join() !== 'workflow_call'
   ) {
-    throw new Error('deployment workflows must not contain agent-driven tools');
-  }
-}
-
-export function validateSkillMetadata(source) {
-  const metadata = parse(source);
-  if (metadata?.policy?.allow_implicit_invocation !== false) {
-    throw new Error(
-      'review-repository metadata must set policy.allow_implicit_invocation=false'
-    );
+    throw new Error('deploy-environment.yml must be workflow_call-only');
   }
 }
 
@@ -131,29 +100,21 @@ function read(relative) {
 }
 
 export function validateRepositoryBoundaries() {
-  validateManualAgentWorkflow(
-    read('.github/workflows/repository-review.yml'),
-    'repository-review.yml'
-  );
-  validateManualAgentWorkflow(
-    read('.github/workflows/uat-review.yml'),
-    'uat-review.yml'
-  );
-  validateDeterministicWorkflow(
+  for (const file of readdirSync(workflowsDir)) {
+    validateWorkflowIsDeterministic(
+      readFileSync(path.join(workflowsDir, file), 'utf8'),
+      file
+    );
+  }
+  validateCallableGate(
     read('.github/workflows/uat-quality.yml'),
     'uat-quality.yml'
   );
-  validateManualDeterministicWorkflow(
-    read('.github/workflows/perf.yml'),
-    'perf.yml'
-  );
+  validateCallableGate(read('.github/workflows/perf.yml'), 'perf.yml');
   validateDeploymentWorkflows(
     read('.github/workflows/deploy-uat.yml'),
     read('.github/workflows/promote-production.yml'),
     read('.github/workflows/deploy-environment.yml')
-  );
-  validateSkillMetadata(
-    read('.agents/skills/review-repository/agents/openai.yaml')
   );
 }
 

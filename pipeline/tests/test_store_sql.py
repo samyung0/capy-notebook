@@ -13,91 +13,180 @@ the interpolated table name inside the set the schema actually defines.
 from __future__ import annotations
 
 import hashlib
+import json
 import secrets
+import threading
+import time
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
 from pipeline.config import cfg
 from pipeline.retrieval import store
-from pipeline.retrieval.chunking import tokenize_for_search
+from pipeline.retrieval.chunking import search_query_terms, tokenize_for_search
 from pipeline.retrieval.usage_extract import NormalizedUsage
 from pipeline.store import db
 
 pytestmark = pytest.mark.integration
 
 
-def test_audio_age_out_and_submission_race_retain_cleanup_identity(workspace):
+def _install_running_pipeline_claim(
+    conn,
+    *,
+    workspace_id: str,
+    file_id: str,
+    actor_user_id: str,
+    source_etag: str = "etag-a",
+) -> tuple[str, int, str]:
+    reservation_id = f"cr_{secrets.token_hex(6)}"
+    job_id = f"job_{secrets.token_hex(6)}"
+    conn.execute(
+        """
+        INSERT INTO provider_sessions
+          (id, actor_user_id, workspace_id, surface, expires_at)
+        VALUES (%s,%s,%s,'ingest',now()+interval '1 hour')
+        """,
+        (reservation_id, actor_user_id, workspace_id),
+    )
+    conn.execute(
+        """
+        INSERT INTO jobs (id, type, payload, status, attempts, lease_expires_at)
+        VALUES (%s, 'ingest', %s::jsonb, 'running', 1, now()+interval '3 minutes')
+        """,
+        (
+            job_id,
+            json.dumps(
+                {
+                    "actorUserId": actor_user_id,
+                    "fileId": file_id,
+                    "reservationId": reservation_id,
+                    "sourceETag": source_etag,
+                    "sourceRevision": 1,
+                    "workspaceId": workspace_id,
+                }
+            ),
+        ),
+    )
+    attempt_id = conn.execute(
+        """
+        INSERT INTO ingest_job_attempts
+          (job_id, operation_id, attempt, job_type, environment, host_id,
+           worker_instance_id, trace_id, queued_at)
+        VALUES (%s,%s,1,'ingest','test','test-host','test-worker',%s,now())
+        RETURNING id
+        """,
+        (job_id, f"op_{secrets.token_hex(6)}", f"trace_{secrets.token_hex(6)}"),
+    ).fetchone()[0]
+    return job_id, int(attempt_id), reservation_id
+
+
+def _commit_lifecycle_while_job_is_locked(
+    dsn: str,
+    job_id: str,
+    lifecycle: Callable[[object], None],
+) -> None:
     import psycopg
 
-    file_id = f"f_{secrets.token_hex(6)}"
-    job_id = f"job_{secrets.token_hex(6)}"
-    transcription_id = f"at_{secrets.token_hex(6)}"
-    provider_call_id = f"pc_{secrets.token_hex(6)}"
-    with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO files (id, workspace_id, user_id, name, kind, blob_path)
-            VALUES (%s, %s, %s, 'lecture.mp3', 'audio', 'sources/audio')
-            """,
-            (file_id, workspace.id, workspace.user_id),
-        )
-        cur.execute(
-            "INSERT INTO jobs (id, type, payload) VALUES (%s, 'ingest', '{}')",
-            (job_id,),
-        )
-        cur.execute(
-            """
-            INSERT INTO audio_transcriptions (
-              id, job_id, file_id, source_sha256, duration_seconds,
-              billable_seconds, concurrency_units, rate_version,
-              credit_micros_per_second, provider_call_id, status
-            ) VALUES (%s,%s,%s,%s,10,10,1,1,250000,%s,'submitting')
-            """,
-            (transcription_id, job_id, file_id, "ab" * 32, provider_call_id),
-        )
-        db.fail_audio_transcription(
-            cur,
-            transcription_id,
-            "submission could not be reconciled",
-            cleanup_requested=True,
-        )
-        db.mark_audio_pending(cur, transcription_id, "provider-late")
-        cur.execute(
-            """
-            SELECT provider_transcription_id, status, cleanup_requested
-            FROM audio_transcriptions WHERE id=%s
-            """,
-            (transcription_id,),
-        )
-        assert cur.fetchone() == ("provider-late", "failed", True)
+    def commit_lifecycle() -> None:
+        with psycopg.connect(dsn) as conn:
+            lifecycle(conn)
 
-        candidate = db.claim_audio_cleanup(cur)
-        assert candidate is not None
-        assert candidate["id"] == transcription_id
-        assert candidate["provider_transcription_id"] == "provider-late"
-        db.complete_audio_cleanup(cur, transcription_id, provider_call_id)
-        cur.execute(
-            "SELECT 1 FROM audio_transcriptions WHERE id=%s", (transcription_id,)
+    with psycopg.connect(dsn) as worker_conn:
+        worker_conn.execute("SELECT id FROM jobs WHERE id=%s FOR UPDATE", (job_id,))
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            executor.submit(commit_lifecycle).result(timeout=5)
+        worker_conn.rollback()
+
+
+def _assert_heartbeat_cancelled_claim(
+    conn,
+    *,
+    job_id: str,
+    attempt_id: int,
+    reservation_id: str,
+    attempt_status: str,
+    error_code: str,
+) -> None:
+    with conn.cursor() as cur:
+        assert not db.heartbeat_job(cur, job_id, 180, 1)
+    state = conn.execute(
+        """
+        SELECT j.status, j.lease_expires_at, a.status, a.error_code, ps.status
+        FROM jobs j
+        JOIN ingest_job_attempts a ON a.id=%s
+        JOIN provider_sessions ps ON ps.id=%s
+        WHERE j.id=%s
+        """,
+        (attempt_id, reservation_id, job_id),
+    ).fetchone()
+    assert state == ("failed", None, attempt_status, error_code, "released")
+
+
+def test_provider_capacity_leases_enforce_weighted_limit(workspace):
+    import psycopg
+
+    first = f"pcl_{secrets.token_hex(6)}"
+    second = f"pcl_{secrets.token_hex(6)}"
+    with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
+        assert db.acquire_provider_capacity(
+            cur,
+            lease_id=first,
+            provider="elevenlabs:scribe_v2",
+            units=4,
+            capacity=4,
+            lease_seconds=60,
         )
-        assert cur.fetchone() is None
+        assert not db.acquire_provider_capacity(
+            cur,
+            lease_id=second,
+            provider="elevenlabs:scribe_v2",
+            units=1,
+            capacity=4,
+            lease_seconds=60,
+        )
+        before = cur.execute(
+            "SELECT expires_at FROM provider_capacity_leases WHERE id=%s", (first,)
+        ).fetchone()[0]
+        assert db.renew_provider_capacity(cur, first, 120)
+        after = cur.execute(
+            "SELECT expires_at FROM provider_capacity_leases WHERE id=%s", (first,)
+        ).fetchone()[0]
+        assert after > before
+        db.release_provider_capacity(cur, first)
+        assert not db.renew_provider_capacity(cur, first, 120)
+        assert db.acquire_provider_capacity(
+            cur,
+            lease_id=second,
+            provider="elevenlabs:scribe_v2",
+            units=1,
+            capacity=4,
+            lease_seconds=60,
+        )
 
 
 def test_ingest_provider_call_links_context_and_usage_atomically(workspace):
     import psycopg
 
-    reservation_id = f"cr_{secrets.token_hex(6)}"
     call_id = f"pc_{secrets.token_hex(6)}"
+    file_id = workspace.add_file("provider-context.txt")
     with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO provider_sessions (
-              id, actor_user_id, workspace_id, trace_id, surface,
-              reserved_micros, expires_at
-            ) VALUES (%s, %s, %s, 'trace-ingest', 'ingest', 0,
-                      now() + interval '30 minutes')
-            """,
-            (reservation_id, workspace.user_id, workspace.id),
+        cur.execute("UPDATE files SET source_etag='etag-a' WHERE id=%s", (file_id,))
+        job_id, attempt_id, reservation_id = _install_running_pipeline_claim(
+            conn,
+            workspace_id=workspace.id,
+            file_id=file_id,
+            actor_user_id=workspace.user_id,
         )
+        with pytest.raises(RuntimeError, match="requires a job attempt"):
+            db.open_provider_call(
+                cur,
+                reservation_id,
+                f"pc_{secrets.token_hex(6)}",
+                "llm",
+                "ingest_summary",
+                "instant",
+            )
         db.open_provider_call(
             cur,
             reservation_id,
@@ -105,6 +194,7 @@ def test_ingest_provider_call_links_context_and_usage_atomically(workspace):
             "llm",
             "ingest_summary",
             "instant",
+            job_attempt_id=attempt_id,
             context_system_tokens=11,
             context_tool_tokens=7,
             context_conversation_tokens=23,
@@ -113,6 +203,7 @@ def test_ingest_provider_call_links_context_and_usage_atomically(workspace):
             context_counting_method="test_estimator",
             context_counting_version=1,
         )
+        db.release_credit_reservation(cur, reservation_id)
         db.settle_ingest_provider_call(
             cur,
             session_id=reservation_id,
@@ -133,8 +224,9 @@ def test_ingest_provider_call_links_context_and_usage_atomically(workspace):
         row = conn.execute(
             """
             SELECT pc.status, pc.context_total_tokens, ue.input_tokens,
-                   ue.provider_call_id
+                   ue.provider_call_id, ps.status
             FROM provider_calls pc
+            JOIN provider_sessions ps ON ps.id = pc.reservation_id
             JOIN usage_events ue
               ON ue.reservation_id = pc.reservation_id
              AND ue.provider_call_id = pc.id
@@ -142,9 +234,414 @@ def test_ingest_provider_call_links_context_and_usage_atomically(workspace):
             """,
             (call_id,),
         ).fetchone()
-        assert row == ("applied", 41, 44, call_id)
+        assert row == ("applied", 41, 44, call_id, "settled")
         conn.execute("DELETE FROM usage_events WHERE provider_call_id = %s", (call_id,))
         conn.execute("DELETE FROM provider_sessions WHERE id = %s", (reservation_id,))
+        conn.execute("DELETE FROM jobs WHERE id = %s", (job_id,))
+
+
+def test_ingest_provider_call_rejects_a_closed_exact_attempt(workspace):
+    import psycopg
+
+    file_id = workspace.add_file("provider-closed-attempt.txt")
+    with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
+        cur.execute("UPDATE files SET source_etag='etag-a' WHERE id=%s", (file_id,))
+        job_id, attempt_id, reservation_id = _install_running_pipeline_claim(
+            conn,
+            workspace_id=workspace.id,
+            file_id=file_id,
+            actor_user_id=workspace.user_id,
+        )
+        cur.execute(
+            "UPDATE ingest_job_attempts SET status='lease_expired' WHERE id=%s",
+            (attempt_id,),
+        )
+        cur.execute(
+            "UPDATE jobs SET status='pending', lease_expires_at=NULL WHERE id=%s",
+            (job_id,),
+        )
+        with pytest.raises(RuntimeError, match="claim is no longer current"):
+            db.open_provider_call(
+                cur,
+                reservation_id,
+                f"pc_{secrets.token_hex(6)}",
+                "embedding",
+                "indexing",
+                "",
+                job_attempt_id=attempt_id,
+            )
+
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        conn.execute("DELETE FROM provider_sessions WHERE id = %s", (reservation_id,))
+        conn.execute("DELETE FROM jobs WHERE id = %s", (job_id,))
+
+
+def test_ingest_provider_admission_serializes_with_lease_reclaim(workspace):
+    import psycopg
+
+    file_id = workspace.add_file("provider-reclaim-race.txt")
+    call_id = f"pc_{secrets.token_hex(6)}"
+    with psycopg.connect(workspace.dsn) as setup_conn:
+        setup_conn.execute(
+            "UPDATE files SET source_etag='etag-a' WHERE id=%s", (file_id,)
+        )
+        job_id, attempt_id, reservation_id = _install_running_pipeline_claim(
+            setup_conn,
+            workspace_id=workspace.id,
+            file_id=file_id,
+            actor_user_id=workspace.user_id,
+        )
+        setup_conn.execute(
+            "UPDATE jobs SET lease_expires_at=now()+interval '500 milliseconds' WHERE id=%s",
+            (job_id,),
+        )
+
+    def reclaim() -> list[dict]:
+        with psycopg.connect(workspace.dsn) as reaper_conn, reaper_conn.cursor() as cur:
+            reclaimed = db.reclaim_expired_leases(
+                cur,
+                max_attempts={"ingest": 2},
+                backoff_base_s={"ingest": 0},
+            )
+            reaper_conn.commit()
+            return reclaimed
+
+    with psycopg.connect(workspace.dsn) as worker_conn, worker_conn.cursor() as cur:
+        db.open_provider_call(
+            cur,
+            reservation_id,
+            call_id,
+            "embedding",
+            "indexing",
+            "",
+            job_attempt_id=attempt_id,
+        )
+        time.sleep(0.8)
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            # Admission holds the job before the attempt. The reaper's
+            # SKIP LOCKED scan must skip it instead of changing the job and
+            # then waiting behind the attempt lock.
+            assert executor.submit(reclaim).result(timeout=2) == []
+        worker_conn.commit()
+
+    reclaimed = reclaim()
+    assert len(reclaimed) == 1
+    assert reclaimed[0]["id"] == job_id
+    assert reclaimed[0]["outcome"] == "pending"
+
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        state = conn.execute(
+            """
+            SELECT j.status, a.status
+            FROM jobs j
+            JOIN ingest_job_attempts a ON a.id=%s
+            WHERE j.id=%s
+            """,
+            (attempt_id, job_id),
+        ).fetchone()
+        assert state == ("pending", "lease_expired")
+        conn.execute("DELETE FROM provider_sessions WHERE id=%s", (reservation_id,))
+        conn.execute("DELETE FROM jobs WHERE id=%s", (job_id,))
+
+
+def test_stale_donor_cleanup_leaves_successor_preview(workspace):
+    import psycopg
+
+    from pipeline.ingest import worker
+
+    file_id = workspace.add_file("successor-preview.docx")
+    successor_preview = "previews/successor/preview.pdf"
+    with psycopg.connect(workspace.dsn) as conn:
+        conn.execute(
+            """
+            UPDATE files
+            SET source_etag='etag-a', status='processing', preview_blob_path=%s
+            WHERE id=%s
+            """,
+            (successor_preview, file_id),
+        )
+        job_id, old_attempt_id, reservation_id = _install_running_pipeline_claim(
+            conn,
+            workspace_id=workspace.id,
+            file_id=file_id,
+            actor_user_id=workspace.user_id,
+        )
+        conn.execute(
+            "UPDATE ingest_job_attempts SET status='lease_expired' WHERE id=%s",
+            (old_attempt_id,),
+        )
+        conn.execute(
+            """
+            UPDATE jobs
+            SET status='running', attempts=2,
+                lease_expires_at=now()+interval '3 minutes'
+            WHERE id=%s
+            """,
+            (job_id,),
+        )
+        conn.execute(
+            """
+            INSERT INTO ingest_job_attempts
+              (job_id, operation_id, attempt, job_type, environment, host_id,
+               worker_instance_id, trace_id, queued_at)
+            VALUES (%s,%s,2,'ingest','test','test-host','successor',%s,now())
+            """,
+            (job_id, f"op_{secrets.token_hex(6)}", f"trace_{secrets.token_hex(6)}"),
+        )
+
+    assert not worker._clear_preview_blob(
+        file_id,
+        1,
+        "etag-a",
+        workspace.user_id,
+        job_id=job_id,
+        attempt=1,
+        workspace_id=workspace.id,
+        reservation_id=reservation_id,
+    )
+
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        assert (
+            conn.execute(
+                "SELECT preview_blob_path FROM files WHERE id=%s", (file_id,)
+            ).fetchone()[0]
+            == successor_preview
+        )
+        conn.execute("DELETE FROM provider_sessions WHERE id=%s", (reservation_id,))
+        conn.execute("DELETE FROM jobs WHERE id=%s", (job_id,))
+
+
+def test_applied_ingest_provider_receipt_exact_replay_is_duplicate(workspace):
+    import psycopg
+
+    reservation_id = ""
+    call_id = f"pc_{secrets.token_hex(6)}"
+    file_id = workspace.add_file("provider-replay.txt")
+    receipt = {
+        "session_id": reservation_id,
+        "call_id": call_id,
+        "kind": "llm",
+        "purpose": "ingest_summary",
+        "thinking": "high",
+        "provider": "openai",
+        "model": "gpt-test",
+        "catalog_provider_slug": "openai",
+        "catalog_model_slug": "gpt-test",
+        "model_version": 7,
+        "usage": NormalizedUsage(
+            input_tokens=101,
+            output_tokens=29,
+            cached_read_tokens=17,
+            cache_write_tokens=3,
+            reasoning_tokens=11,
+            anomaly="test_anomaly",
+        ),
+        "credit_micros": 123_456,
+        "units": 130,
+        "unit": "tokens",
+    }
+    with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
+        cur.execute("UPDATE files SET source_etag='etag-a' WHERE id=%s", (file_id,))
+        job_id, attempt_id, reservation_id = _install_running_pipeline_claim(
+            conn,
+            workspace_id=workspace.id,
+            file_id=file_id,
+            actor_user_id=workspace.user_id,
+        )
+        receipt["session_id"] = reservation_id
+        db.open_provider_call(
+            cur,
+            reservation_id,
+            call_id,
+            "llm",
+            "ingest_summary",
+            "high",
+            job_attempt_id=attempt_id,
+        )
+        assert db.settle_ingest_provider_call(cur, **receipt) == "applied"
+        db.release_credit_reservation(cur, reservation_id)
+        assert db.settle_ingest_provider_call(cur, **receipt) == "duplicate"
+        count = cur.execute(
+            "SELECT count(*) FROM usage_events WHERE provider_call_id = %s",
+            (call_id,),
+        ).fetchone()[0]
+        assert count == 1
+
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        conn.execute("DELETE FROM usage_events WHERE provider_call_id = %s", (call_id,))
+        conn.execute("DELETE FROM provider_sessions WHERE id = %s", (reservation_id,))
+        conn.execute("DELETE FROM jobs WHERE id = %s", (job_id,))
+
+
+def test_applied_ingest_provider_receipt_conflicting_replays_are_rejected(workspace):
+    import psycopg
+
+    reservation_id = ""
+    other_reservation_id = f"cr_{secrets.token_hex(6)}"
+    call_id = f"pc_{secrets.token_hex(6)}"
+    file_id = workspace.add_file("provider-conflict.txt")
+    usage = NormalizedUsage(
+        input_tokens=101,
+        output_tokens=29,
+        cached_read_tokens=17,
+        cache_write_tokens=3,
+        reasoning_tokens=11,
+        anomaly="test_anomaly",
+    )
+    receipt = {
+        "session_id": reservation_id,
+        "call_id": call_id,
+        "kind": "llm",
+        "purpose": "ingest_summary",
+        "thinking": "high",
+        "provider": "openai",
+        "model": "gpt-test",
+        "catalog_provider_slug": "openai",
+        "catalog_model_slug": "gpt-test",
+        "model_version": 7,
+        "usage": usage,
+        "credit_micros": 123_456,
+        "units": 130,
+        "unit": "tokens",
+    }
+    changed_usage = {
+        field: NormalizedUsage(
+            **{
+                **usage.__dict__,
+                field: "other_anomaly"
+                if field == "anomaly"
+                else getattr(usage, field) + 1,
+            }
+        )
+        for field in usage.__dict__
+    }
+    conflicts = [
+        {"session_id": other_reservation_id},
+        {"call_id": f"pc_{secrets.token_hex(6)}"},
+        {"kind": "embedding"},
+        {"purpose": "different_purpose"},
+        {"thinking": "instant"},
+        {"provider": "anthropic"},
+        {"model": "different-model"},
+        {"catalog_provider_slug": "different-provider"},
+        {"catalog_model_slug": "different-model"},
+        {"model_version": 8},
+        *({"usage": changed} for changed in changed_usage.values()),
+        {"credit_micros": 123_457},
+        {"units": 131},
+        {"unit": "seconds"},
+    ]
+
+    with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
+        cur.execute("UPDATE files SET source_etag='etag-a' WHERE id=%s", (file_id,))
+        job_id, attempt_id, reservation_id = _install_running_pipeline_claim(
+            conn,
+            workspace_id=workspace.id,
+            file_id=file_id,
+            actor_user_id=workspace.user_id,
+        )
+        receipt["session_id"] = reservation_id
+        cur.execute(
+            """
+            INSERT INTO provider_sessions (
+              id, actor_user_id, workspace_id, surface, reserved_micros,
+              expires_at
+            ) VALUES (%s, %s, %s, 'ingest', 0, now() + interval '30 minutes')
+            """,
+            (other_reservation_id, workspace.user_id, workspace.id),
+        )
+        db.open_provider_call(
+            cur,
+            reservation_id,
+            call_id,
+            "llm",
+            "ingest_summary",
+            "high",
+            job_attempt_id=attempt_id,
+        )
+        assert db.settle_ingest_provider_call(cur, **receipt) == "applied"
+        for conflict in conflicts:
+            replay = {**receipt, **conflict}
+            with pytest.raises(db.ProviderSettlementRejected, match="(conflicts|stub)"):
+                db.settle_ingest_provider_call(cur, **replay)
+
+        count = cur.execute(
+            "SELECT count(*) FROM usage_events WHERE provider_call_id = %s",
+            (call_id,),
+        ).fetchone()[0]
+        assert count == 1
+
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        conn.execute("DELETE FROM usage_events WHERE provider_call_id = %s", (call_id,))
+        conn.execute(
+            "DELETE FROM provider_sessions WHERE id = ANY(%s)",
+            ([reservation_id, other_reservation_id],),
+        )
+        conn.execute("DELETE FROM jobs WHERE id = %s", (job_id,))
+
+
+def test_ingest_provider_receipt_expires_even_before_sweeper(workspace):
+    import psycopg
+
+    call_id = f"pc_{secrets.token_hex(6)}"
+    file_id = workspace.add_file("provider-expiry.txt")
+    with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
+        cur.execute("UPDATE files SET source_etag='etag-a' WHERE id=%s", (file_id,))
+        job_id, attempt_id, reservation_id = _install_running_pipeline_claim(
+            conn,
+            workspace_id=workspace.id,
+            file_id=file_id,
+            actor_user_id=workspace.user_id,
+        )
+        db.open_provider_call(
+            cur,
+            reservation_id,
+            call_id,
+            "audio",
+            "transcription",
+            "",
+            job_attempt_id=attempt_id,
+            receipt_timeout_seconds=1,
+        )
+        cur.execute(
+            """UPDATE provider_calls
+               SET opened_at=now()-interval '2 seconds',
+                   receipt_deadline_at=now()-interval '1 second'
+               WHERE id=%s""",
+            (call_id,),
+        )
+        result = db.settle_ingest_provider_call(
+            cur,
+            session_id=reservation_id,
+            call_id=call_id,
+            kind="audio",
+            purpose="transcription",
+            thinking="",
+            provider="elevenlabs",
+            model="scribe_v2",
+            catalog_provider_slug="",
+            catalog_model_slug="",
+            model_version=0,
+            usage=NormalizedUsage(),
+            credit_micros=0,
+            units=10,
+            unit="seconds",
+        )
+        assert result == "expired"
+
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        row = conn.execute(
+            """SELECT status, error_code FROM provider_calls WHERE id=%s""",
+            (call_id,),
+        ).fetchone()
+        assert row == ("abandoned", "receipt_timeout")
+        count = conn.execute(
+            """SELECT count(*) FROM usage_events WHERE provider_call_id=%s""",
+            (call_id,),
+        ).fetchone()[0]
+        assert count == 0
+        conn.execute("DELETE FROM provider_sessions WHERE id=%s", (reservation_id,))
+        conn.execute("DELETE FROM jobs WHERE id=%s", (job_id,))
 
 
 def test_provider_call_open_enforces_terminal_slot_and_idempotency(workspace):
@@ -182,11 +679,31 @@ def test_provider_call_open_enforces_terminal_slot_and_idempotency(workspace):
             )
 
         db.open_provider_call(
-            cur, reservation_id, terminal_call_id, "llm", "terminal", "instant"
+            cur,
+            reservation_id,
+            terminal_call_id,
+            "llm",
+            "terminal",
+            "instant",
+            receipt_timeout_seconds=60,
         )
         db.open_provider_call(
-            cur, reservation_id, terminal_call_id, "llm", "terminal", "instant"
+            cur,
+            reservation_id,
+            terminal_call_id,
+            "llm",
+            "terminal",
+            "instant",
+            receipt_timeout_seconds=60,
         )
+        receipt_window = cur.execute(
+            """
+            SELECT extract(epoch FROM receipt_deadline_at - opened_at)
+              FROM provider_calls WHERE id = %s
+            """,
+            (terminal_call_id,),
+        ).fetchone()[0]
+        assert receipt_window == 60
         with pytest.raises(
             RuntimeError, match="terminal provider call was already used"
         ):
@@ -289,7 +806,9 @@ def _unit_vector(axis: int) -> list[float]:
     return vector
 
 
-async def _write(ws, file_id: str, texts: list[str], *, axis_base: int = 0) -> None:
+async def _write(
+    ws, file_id: str, texts: list[str], *, axis_base: int = 0, lang: str = "en"
+) -> None:
     content_hash = hashlib.sha256("\x00".join(texts).encode()).hexdigest()
     association = await store.attach_file_content(
         workspace_id=ws.id, file_id=file_id, content_hash=content_hash
@@ -307,6 +826,7 @@ async def _write(ws, file_id: str, texts: list[str], *, axis_base: int = 0) -> N
             "regions": [
                 {"page": i + 1, "bbox": [1, 2, 3, 4], "space": "page-1000-topleft"}
             ],
+            "lang": lang,
             "search_text": tokenize_for_search(text),
             "embedding": store.vector_literal(_unit_vector(axis_base + i)),
         }
@@ -330,13 +850,120 @@ async def test_lexical_half_matches_without_a_useful_vector(workspace):
     rows = await store.hybrid_search(
         workspace_id=workspace.id,
         vector=_unit_vector(999),
-        terms="chlorophyll or absorbs",
+        terms=search_query_terms("chlorophyll absorbs"),
         file_ids=None,
         candidates=10,
     )
 
     assert rows[0]["text"] == "Chlorophyll absorbs red light"
     assert rows[0]["file_name"] == "bio.txt"
+
+
+async def test_lexical_half_stems_and_ignores_stopwords(workspace):
+    """A question's function words must not decide the lexical ranking, and an
+    inflected query word must still reach the passage that uses another form."""
+    file_id = workspace.add_file("bio.txt")
+    await _write(
+        workspace,
+        file_id,
+        [
+            "The the the a of of of and and an and the the a",
+            "Chlorophyll absorbs red light",
+        ],
+    )
+
+    rows = await store.hybrid_search(
+        workspace_id=workspace.id,
+        vector=_unit_vector(999),
+        terms=search_query_terms("what does the chlorophyll absorb?"),
+        file_ids=None,
+        candidates=10,
+    )
+
+    # The stopword chunk still arrives through the vector leg (every chunk is
+    # a vector candidate here); it must not lead on lexical grounds.
+    assert rows[0]["text"] == "Chlorophyll absorbs red light"
+
+
+async def test_a_passage_matching_every_term_outranks_frequent_partial_matches(
+    workspace,
+):
+    """'Figure 3.20': by OR alone every passage that says 'figure' many times
+    outranks the one passage that says '3.20', because ts_rank_cd rewards
+    frequency and the rare token adds little. All-terms matches go first, and
+    for a two- or three-term query they count at full weight.
+
+    The vector leg is made to prefer the three 'figure' passages, in order,
+    over the target. At half weight a lexical rank could only lift the target
+    over the weakest of them; the full-weight exact tier puts it first.
+    """
+    file_id = workspace.add_file("bio.txt")
+    spam = "Figure figure figure figure figure figure figure figure figure"
+    target = "Figure 3.20 shows the rate of photosynthesis against light intensity"
+    await _write(workspace, file_id, [spam, spam + " again", spam + " more", target])
+    query = [0.0] * cfg.embedding_dim
+    for axis, weight in enumerate((0.9, 0.8, 0.7, 0.6)):
+        query[axis] = weight
+
+    rows = await store.hybrid_search(
+        workspace_id=workspace.id,
+        vector=query,
+        terms=search_query_terms("Figure 3.20"),
+        file_ids=None,
+        candidates=10,
+    )
+
+    assert rows[0]["text"] == target
+
+
+async def test_a_long_question_does_not_get_the_exact_match_boost(workspace):
+    """A passage that repeats every word of a four-term question echoes its
+    phrasing, not its answer; only two- and three-term lookups count at full
+    weight. Here the vector leg prefers the answer and the echo must not win."""
+    file_id = workspace.add_file("bio.txt")
+    answer = (
+        "Bats and insects evolved wings independently; this is convergent evolution"
+    )
+    echo = "Give an example of convergent evolution in this exercise"
+    await _write(workspace, file_id, [answer, echo])
+    query = [0.0] * cfg.embedding_dim
+    query[0], query[1] = 0.9, 0.8
+
+    rows = await store.hybrid_search(
+        workspace_id=workspace.id,
+        vector=query,
+        terms=search_query_terms("convergent evolution give example"),
+        file_ids=None,
+        candidates=10,
+    )
+
+    assert rows[0]["text"] == answer
+
+
+async def test_a_short_question_with_function_words_is_not_a_lookup(workspace):
+    """'What is CIL-LLM?' is three words as typed. Under the english
+    configuration 'what' and 'is' are stopwords, so counting after stopword
+    removal made it a one-identifier lookup and the tier promoted every
+    English caption and reference row that named the model over the abstract.
+    A lookup is content only; a query that carries a function word of the
+    chunk's language is a question and its all-terms echo stays at half weight."""
+    file_id = workspace.add_file("paper.txt")
+    answer = "CIL-LLM learns classes incrementally by prompting a frozen model"
+    echo = "[12] What is CIL-LLM? What is CIL-LLM? What is CIL-LLM? See ref."
+    await _write(workspace, file_id, [answer, echo])
+    query = [0.0] * cfg.embedding_dim
+    query[0], query[1] = 0.9, 0.8
+
+    rows = await store.hybrid_search(
+        workspace_id=workspace.id,
+        vector=query,
+        terms=search_query_terms("What is CIL-LLM?"),
+        file_ids=None,
+        candidates=10,
+    )
+
+    assert rows[0]["text"] == answer
+    assert all(row["score"] == row["flat_score"] for row in rows)
 
 
 async def test_vector_half_matches_without_shared_vocabulary(workspace):
@@ -346,7 +973,7 @@ async def test_vector_half_matches_without_shared_vocabulary(workspace):
     rows = await store.hybrid_search(
         workspace_id=workspace.id,
         vector=_unit_vector(1),
-        terms="nothing matches this",
+        terms=search_query_terms("nothing matches this"),
         file_ids=None,
         candidates=10,
     )
@@ -358,17 +985,158 @@ async def test_cjk_is_retrievable_through_the_bigram_tokenizer(workspace):
     """Postgres' built-in configurations make one token of a Chinese sentence;
     the application-side bigrams are what make this query possible at all."""
     file_id = workspace.add_file("zh.txt")
-    await _write(workspace, file_id, ["光合作用把光能转化为化学能", "无关内容"])
+    await _write(
+        workspace, file_id, ["光合作用把光能转化为化学能", "无关内容"], lang="zh"
+    )
 
     rows = await store.hybrid_search(
         workspace_id=workspace.id,
         vector=_unit_vector(999),
-        terms="光合 or 合作 or 作用",
+        terms=search_query_terms("光合作用"),
         file_ids=None,
         candidates=10,
     )
 
     assert rows and rows[0]["text"].startswith("光合作用")
+
+
+async def test_a_french_chunk_is_stemmed_and_destopped_in_french(workspace):
+    """'english' on French text keeps 'les', 'des', 'du' as index terms and
+    never matches 'plante' to 'plantes'. Each chunk is indexed with its own
+    language's configuration, and the query is parsed the same way for it."""
+    file_id = workspace.add_file("bio-fr.txt")
+    await _write(
+        workspace,
+        file_id,
+        [
+            "Les les les des des du et et la la une une",
+            "Les plantes absorbent la lumière rouge",
+        ],
+        lang="fr",
+    )
+
+    rows = await store.hybrid_search(
+        workspace_id=workspace.id,
+        vector=_unit_vector(999),
+        terms=search_query_terms("des plante du lumière"),
+        file_ids=None,
+        candidates=10,
+    )
+
+    assert rows[0]["text"] == "Les plantes absorbent la lumière rouge"
+    assert rows[0]["lang"] == "fr"
+    # 'des' and 'du' are French stopwords, so the stopword-only chunk has
+    # nothing to match and only the vector leg places it.
+    assert [row["lex_rank"] for row in rows] == [1, None]
+
+
+async def test_a_single_cjk_term_does_not_get_the_exact_match_boost(workspace):
+    """'光合作用' is one term to a reader and three bigrams to the tokenizer.
+    Counting bigrams made every two-character-plus CJK word a 'lookup'; the
+    tier counts runs, so this behaves like the single Latin word it is."""
+    file_id = workspace.add_file("zh.txt")
+    # The vector leg prefers the answer; both match lexically (the answer on
+    # one bigram, the echo on all three). Only the tier's full weight would
+    # let the echo's lexical rank overturn the vector order.
+    answer = "叶绿素吸收光能，光合速率随光强上升"
+    echo = "光合作用 光合作用 光合作用 光合作用 光合作用"
+    await _write(workspace, file_id, [answer, echo], lang="zh")
+    query = [0.0] * cfg.embedding_dim
+    query[0], query[1] = 0.9, 0.8
+
+    rows = await store.hybrid_search(
+        workspace_id=workspace.id,
+        vector=query,
+        terms=search_query_terms("光合作用"),
+        file_ids=None,
+        candidates=10,
+    )
+
+    assert rows[0]["text"] == answer
+
+
+async def test_two_cjk_terms_are_a_lookup(workspace):
+    file_id = workspace.add_file("zh.txt")
+    spam = "标准 标准 标准 标准 标准 标准 标准 标准 标准 标准"
+    target = "标准差的计算方法见附录"
+    await _write(
+        workspace, file_id, [spam, spam + " 再", spam + " 又", target], lang="zh"
+    )
+    query = [0.0] * cfg.embedding_dim
+    for axis, weight in enumerate((0.9, 0.8, 0.7, 0.6)):
+        query[axis] = weight
+
+    rows = await store.hybrid_search(
+        workspace_id=workspace.id,
+        vector=query,
+        terms=search_query_terms("标准差 计算"),
+        file_ids=None,
+        candidates=10,
+    )
+
+    assert rows[0]["text"] == target
+
+
+async def test_search_rows_carry_the_evidence_from_each_leg(workspace):
+    file_id = workspace.add_file("bio.txt")
+    await _write(workspace, file_id, ["Chlorophyll absorbs red light", "alpha"])
+
+    rows = await store.hybrid_search(
+        workspace_id=workspace.id,
+        vector=_unit_vector(1),
+        terms=search_query_terms("chlorophyll"),
+        file_ids=None,
+        candidates=10,
+    )
+
+    by_text = {row["text"]: row for row in rows}
+    lexical = by_text["Chlorophyll absorbs red light"]
+    vector_only = by_text["alpha"]
+    assert lexical["lex_rank"] == 1 and lexical["vec_rank"] == 2
+    assert vector_only["lex_rank"] is None and vector_only["vec_rank"] == 1
+    assert vector_only["vec_dist"] < lexical["vec_dist"]
+    # No exact tier fired (one term), so the flat fusion is the real one.
+    assert all(row["score"] == row["flat_score"] for row in rows)
+
+
+async def test_search_events_store_features_and_ids_only(workspace):
+    event = {
+        "trace_id": "t" * 32,
+        "workspace_id": workspace.id,
+        "actor_user_id": None,
+        "message_id": "m_1",
+        "search_index": 1,
+        "hits_lang": "en",
+        "query_terms": 2,
+        "cjk_runs": 0,
+        "scope_files": 1,
+        "embed_ms": 12,
+        "sql_ms": 3,
+        "hits": 2,
+        "prior_overlap": 0,
+        "chunk_ids": ["c1", "c2"],
+        "file_ids": ["f1", "f1"],
+        "chunk_langs": ["en", "und"],
+        "vec_ranks": [1, None],
+        "lex_ranks": [None, 1],
+        "vec_dists": [0.31, None],
+        "tier_only": [False, True],
+        "cited": [True, False],
+    }
+
+    await store.record_search_events([event])
+
+    stored = workspace.scalar(
+        "SELECT ARRAY[vec_ranks::text, lex_ranks::text, tier_only::text, cited::text] "
+        "FROM rag_search_events WHERE workspace_id = %s",
+        (workspace.id,),
+    )
+    assert stored == ["{1,NULL}", "{NULL,1}", "{f,t}", "{t,f}"]
+    columns = workspace.scalar(
+        "SELECT array_agg(column_name::text) FROM information_schema.columns "
+        "WHERE table_name = 'rag_search_events'"
+    )
+    assert not {"query", "text", "passages"} & set(columns)
 
 
 async def test_search_is_scoped_to_the_workspace_and_the_file_filter(workspace):
@@ -380,7 +1148,7 @@ async def test_search_is_scoped_to_the_workspace_and_the_file_filter(workspace):
     rows = await store.hybrid_search(
         workspace_id=workspace.id,
         vector=_unit_vector(0),
-        terms="chlorophyll",
+        terms=search_query_terms("chlorophyll"),
         file_ids=[keep],
         candidates=10,
     )
@@ -395,7 +1163,7 @@ async def test_chunks_carry_the_provenance_a_citation_needs(workspace):
     rows = await store.hybrid_search(
         workspace_id=workspace.id,
         vector=_unit_vector(0),
-        terms="chlorophyll",
+        terms=search_query_terms("chlorophyll"),
         file_ids=None,
         candidates=10,
     )
@@ -404,15 +1172,6 @@ async def test_chunks_carry_the_provenance_a_citation_needs(workspace):
     assert (row["page_start"], row["page_end"]) == (1, 1)
     assert store.decode_regions(row["regions"])[0]["space"] == "page-1000-topleft"
     assert row["section_path"] == "Ch 1 › Section"
-
-
-async def test_neighbours_come_back_in_document_order(workspace):
-    file_id = workspace.add_file("bio.txt")
-    await _write(workspace, file_id, ["one", "two", "three", "four"])
-
-    rows = await store.neighbor_chunks(file_id=file_id, chunk_idx=2)
-
-    assert [row["text"] for row in rows] == ["two", "three", "four"]
 
 
 async def test_reindexing_removes_the_tail_of_the_previous_run(workspace):
@@ -427,82 +1186,6 @@ async def test_reindexing_removes_the_tail_of_the_previous_run(workspace):
             (file_id,),
         )
         == 1
-    )
-
-
-# ------------------------------------------------------------------ concepts
-
-
-async def _concepts(ws, file_id: str, names_to_chunks: dict[str, list[str]]) -> None:
-    content_id = ws.scalar(
-        "SELECT content_id FROM rag_file_contents WHERE file_id = %s", (file_id,)
-    )
-    await store.replace_content_concepts(
-        workspace_id=ws.id,
-        content_id=content_id,
-        concepts=[
-            {
-                "id": f"cpt_{file_id}_{i}",
-                "name": name,
-                "norm": store.normalize_concept(name),
-                "chunk_ids": chunk_ids,
-            }
-            for i, (name, chunk_ids) in enumerate(names_to_chunks.items())
-        ],
-    )
-
-
-async def test_a_concept_named_by_two_files_is_one_row(workspace):
-    """Co-mention is the whole point of the index, so the same idea in two
-    documents must not become two concepts."""
-    a = workspace.add_file("a.txt")
-    b = workspace.add_file("b.txt")
-    await _write(workspace, a, ["alpha"])
-    await _write(workspace, b, ["beta"], axis_base=10)
-    await _concepts(workspace, a, {"ATP": [f"{a}_c0"]})
-    await _concepts(workspace, b, {"  atp  ": [f"{b}_c0"]})
-
-    assert (
-        workspace.scalar(
-            "SELECT count(*) FROM rag_concepts WHERE workspace_id = %s", (workspace.id,)
-        )
-        == 1
-    )
-    assert (
-        workspace.scalar(
-            "SELECT count(*) FROM rag_concept_mentions m JOIN rag_concepts c "
-            "ON c.id = m.concept_id WHERE c.workspace_id = %s",
-            (workspace.id,),
-        )
-        == 2
-    )
-
-
-async def test_related_concepts_reports_co_mention_and_where(workspace):
-    a = workspace.add_file("a.txt")
-    b = workspace.add_file("b.txt")
-    await _write(workspace, a, ["alpha"])
-    await _write(workspace, b, ["beta"], axis_base=10)
-    await _concepts(workspace, a, {"ATP": [f"{a}_c0"], "Calvin cycle": [f"{a}_c0"]})
-    await _concepts(workspace, b, {"ATP": [f"{b}_c0"], "Mitochondria": [f"{b}_c0"]})
-
-    rows = await store.related_concepts(workspace_id=workspace.id, name="atp")
-
-    assert {row["name"] for row in rows} == {"Calvin cycle", "Mitochondria"}
-    assert all(row["mentions"] >= 1 for row in rows)
-
-
-async def test_a_concept_loses_its_row_when_its_last_mention_goes(workspace):
-    file_id = workspace.add_file("a.txt")
-    await _write(workspace, file_id, ["alpha"])
-    await _concepts(workspace, file_id, {"Ephemeral": [f"{file_id}_c0"]})
-    await _concepts(workspace, file_id, {})
-
-    assert (
-        workspace.scalar(
-            "SELECT count(*) FROM rag_concepts WHERE workspace_id = %s", (workspace.id,)
-        )
-        == 0
     )
 
 
@@ -569,7 +1252,7 @@ async def test_duplicate_alias_survives_deleting_first_file(workspace):
     rows = await store.hybrid_search(
         workspace_id=workspace.id,
         vector=_unit_vector(0),
-        terms="chlorophyll",
+        terms=search_query_terms("chlorophyll"),
         file_ids=[second],
         candidates=10,
     )
@@ -590,7 +1273,6 @@ async def test_duplicate_alias_survives_deleting_first_file(workspace):
 async def test_deleting_a_file_takes_its_index_with_it(workspace):
     file_id = workspace.add_file("a.txt")
     await _write(workspace, file_id, ["alpha"])
-    await _concepts(workspace, file_id, {"ATP": [f"{file_id}_c0"]})
     content_id = workspace.scalar(
         "SELECT content_id FROM rag_file_contents WHERE file_id = %s", (file_id,)
     )
@@ -600,20 +1282,6 @@ async def test_deleting_a_file_takes_its_index_with_it(workspace):
     assert (
         workspace.scalar(
             "SELECT count(*) FROM rag_chunks WHERE content_id = %s", (content_id,)
-        )
-        == 0
-    )
-    assert (
-        workspace.scalar(
-            "SELECT count(*) FROM rag_concept_mentions m JOIN rag_chunks c "
-            "ON c.id = m.chunk_id WHERE c.content_id = %s",
-            (content_id,),
-        )
-        == 0
-    )
-    assert (
-        workspace.scalar(
-            "SELECT count(*) FROM rag_concepts WHERE workspace_id = %s", (workspace.id,)
         )
         == 0
     )
@@ -836,28 +1504,252 @@ def test_job_attempt_records_claim_metrics_and_terminal_outcome(workspace):
     )
 
 
-def test_lease_reclaim_fails_after_budget(workspace):
-    from pipeline.store import db
+def test_terminal_reclaim_commits_file_claim_and_credit_cleanup(workspace):
+    file_id = workspace.add_file("terminal-reclaim.txt")
+    content_id = f"rgc_{secrets.token_hex(8)}"
+    with workspace._connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE files
+            SET source_etag='etag-a', status='processing', indexed=true
+            WHERE id=%s
+            """,
+            (file_id,),
+        )
+        job_id, attempt_id, reservation_id = _install_running_pipeline_claim(
+            conn,
+            workspace_id=workspace.id,
+            file_id=file_id,
+            actor_user_id=workspace.user_id,
+        )
+        cur.execute(
+            """
+            UPDATE jobs
+            SET lease_expires_at=now()-interval '1 minute'
+            WHERE id=%s
+            """,
+            (job_id,),
+        )
+        cur.execute(
+            "UPDATE provider_sessions SET reserved_micros=500 WHERE id=%s",
+            (reservation_id,),
+        )
+        cur.execute(
+            """
+            INSERT INTO user_credits (user_id, reserved_micros)
+            VALUES (%s, 500)
+            ON CONFLICT (user_id) DO UPDATE SET reserved_micros=500
+            """,
+            (workspace.user_id,),
+        )
+        cur.execute(
+            """
+            INSERT INTO rag_contents
+              (id, workspace_id, content_hash, status, claim_job_id)
+            VALUES (%s, %s, %s, 'processing', %s)
+            """,
+            (content_id, workspace.id, secrets.token_hex(32), job_id),
+        )
+        reclaimed = db.reclaim_expired_leases(
+            cur, max_attempts={"ingest": 1}, backoff_base_s={"ingest": 30}
+        )
+        conn.commit()
 
-    job_id = f"job_{workspace.id[-8:]}"
+    assert len(reclaimed) == 1
+    assert reclaimed[0] == {
+        "id": job_id,
+        "type": "ingest",
+        "payload": reclaimed[0]["payload"],
+        "attempts": 1,
+        "outcome": "failed",
+        "file_failed": True,
+    }
+    with workspace._connect() as conn:
+        state = conn.execute(
+            """
+            SELECT j.status, f.status, f.indexed, a.status, ps.status,
+                   uc.reserved_micros,
+                   EXISTS(SELECT 1 FROM rag_contents WHERE id=%s)
+            FROM jobs j
+            JOIN files f ON f.id=%s
+            JOIN ingest_job_attempts a ON a.id=%s
+            JOIN provider_sessions ps ON ps.id=%s
+            JOIN user_credits uc ON uc.user_id=%s
+            WHERE j.id=%s
+            """,
+            (
+                content_id,
+                file_id,
+                attempt_id,
+                reservation_id,
+                workspace.user_id,
+                job_id,
+            ),
+        ).fetchone()
+    # No post-commit worker callback runs here. The reaper commit is enough.
+    assert state == ("failed", "failed", False, "lease_expired", "released", 0, False)
+
+
+def test_terminal_parse_reclaim_drops_its_processing_content_claim(workspace):
+    job_id = f"job_parse_{workspace.id[-8:]}"
+    content_id = f"rgc_{secrets.token_hex(8)}"
     workspace.scalar(
         """
         INSERT INTO jobs (id, type, payload, status, attempts, lease_expires_at)
-        VALUES (%s, 'ingest', '{}'::jsonb, 'running', 3, now() - interval '1 minute')
+        VALUES (%s, 'parse', '{}'::jsonb, 'running', 2, now() - interval '1 minute')
         RETURNING id
         """,
         (job_id,),
     )
-    with workspace._connect() as conn:
-        cur = conn.cursor()
-        reclaimed = db.reclaim_expired_leases(
-            cur, max_attempts={"ingest": 3}, backoff_base_s={"ingest": 30}
+    workspace.scalar(
+        """
+        INSERT INTO rag_contents
+          (id, workspace_id, content_hash, status, claim_job_id)
+        VALUES (%s, %s, %s, 'processing', %s)
+        RETURNING id
+        """,
+        (content_id, workspace.id, secrets.token_hex(32), job_id),
+    )
+
+    with workspace._connect() as conn, conn.cursor() as cur:
+        db.reclaim_expired_leases(
+            cur, max_attempts={"parse": 2}, backoff_base_s={"parse": 30}
         )
         conn.commit()
-    assert reclaimed[0]["outcome"] == "failed"
-    assert (
-        workspace.scalar("SELECT status FROM jobs WHERE id = %s", (job_id,)) == "failed"
+
+    assert not workspace.scalar(
+        "SELECT count(*) FROM rag_contents WHERE id=%s", (content_id,)
     )
+
+
+@pytest.mark.parametrize(
+    ("current_revision", "current_etag", "file_failed"),
+    [(1, "", True), (2, "etag-b", False)],
+    ids=["legacy-empty-etag", "replaced-source"],
+)
+def test_terminal_reclaim_respects_exact_source_fence(
+    workspace, current_revision: int, current_etag: str, file_failed: bool
+):
+    file_id = workspace.add_file("terminal-reclaim-fence.txt")
+    with workspace._connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE files
+            SET revision=%s, source_etag=%s, status='pending'
+            WHERE id=%s
+            """,
+            (current_revision, current_etag, file_id),
+        )
+        job_id, _attempt_id, reservation_id = _install_running_pipeline_claim(
+            conn,
+            workspace_id=workspace.id,
+            file_id=file_id,
+            actor_user_id=workspace.user_id,
+            source_etag="",
+        )
+        cur.execute(
+            """
+            UPDATE jobs
+            SET lease_expires_at=now()-interval '1 minute'
+            WHERE id=%s
+            """,
+            (job_id,),
+        )
+        reclaimed = db.reclaim_expired_leases(
+            cur, max_attempts={"ingest": 1}, backoff_base_s={"ingest": 30}
+        )
+        conn.commit()
+
+    assert reclaimed[0]["file_failed"] is file_failed
+    assert workspace.scalar("SELECT status FROM files WHERE id=%s", (file_id,)) == (
+        "failed" if file_failed else "pending"
+    )
+    assert (
+        workspace.scalar(
+            "SELECT status FROM provider_sessions WHERE id=%s", (reservation_id,)
+        )
+        == "released"
+    )
+
+
+def test_cancelled_pipeline_file_write_is_revision_and_etag_fenced(workspace):
+    file_id = workspace.add_file("cancel-fence.txt")
+    workspace.scalar(
+        """
+        UPDATE files
+        SET revision=2, source_etag='etag-b', status='pending'
+        WHERE id=%s RETURNING id
+        """,
+        (file_id,),
+    )
+    old_payload = {
+        "fileId": file_id,
+        "sourceRevision": 1,
+        "sourceETag": "etag-a",
+    }
+    with workspace._connect() as conn, conn.cursor() as cur:
+        assert not db.fail_pipeline_file_if_current(cur, old_payload)
+        conn.commit()
+    assert (
+        workspace.scalar("SELECT status FROM files WHERE id=%s", (file_id,))
+        == "pending"
+    )
+
+    current_payload = {
+        "fileId": file_id,
+        "sourceRevision": 2,
+        "sourceETag": "etag-b",
+    }
+    with workspace._connect() as conn, conn.cursor() as cur:
+        assert db.fail_pipeline_file_if_current(cur, current_payload)
+        conn.commit()
+    assert (
+        workspace.scalar("SELECT status FROM files WHERE id=%s", (file_id,)) == "failed"
+    )
+
+
+def test_cancelled_legacy_multipart_file_uses_empty_etag_fence(workspace):
+    file_id = workspace.add_file("legacy-multipart.txt")
+    workspace.scalar(
+        "UPDATE files SET source_etag='', status='processing' WHERE id=%s RETURNING id",
+        (file_id,),
+    )
+    with workspace._connect() as conn, conn.cursor() as cur:
+        assert db.fail_pipeline_file_if_current(
+            cur,
+            {"fileId": file_id, "sourceRevision": 1, "sourceETag": ""},
+        )
+        conn.commit()
+    assert workspace.scalar("SELECT status FROM files WHERE id=%s", (file_id,)) == (
+        "failed"
+    )
+
+
+def test_account_cancellation_fails_legacy_multipart_file(workspace):
+    import psycopg
+
+    file_id = workspace.add_file("legacy-account-delete.txt")
+    with psycopg.connect(workspace.dsn) as conn:
+        conn.execute(
+            "UPDATE files SET source_etag='', status='processing' WHERE id=%s",
+            (file_id,),
+        )
+        job_id, _attempt_id, reservation_id = _install_running_pipeline_claim(
+            conn,
+            workspace_id=workspace.id,
+            file_id=file_id,
+            actor_user_id=workspace.user_id,
+            source_etag="",
+        )
+        conn.execute("SELECT cancel_user_async_work(%s)", (workspace.user_id,))
+        assert (
+            conn.execute("SELECT status FROM files WHERE id=%s", (file_id,)).fetchone()[
+                0
+            ]
+            == "failed"
+        )
+        conn.execute("DELETE FROM jobs WHERE id=%s", (job_id,))
+        conn.execute("DELETE FROM provider_sessions WHERE id=%s", (reservation_id,))
 
 
 async def test_donor_copy_reuses_chunks_across_workspaces(workspace):
@@ -1152,6 +2044,56 @@ def test_only_the_claiming_attempt_may_write_its_outcome(workspace):
     assert current is True
 
 
+def test_expired_pipeline_claim_cannot_heartbeat_or_cross_final_boundary(workspace):
+    """Lease expiry fences an attempt before the reaper changes its status."""
+    file_id = workspace.add_file("expired-claim.txt")
+    with workspace._connect() as conn:
+        conn.execute(
+            "UPDATE files SET source_etag='etag-a', status='processing' WHERE id=%s",
+            (file_id,),
+        )
+        job_id, _attempt_id, reservation_id = _install_running_pipeline_claim(
+            conn,
+            workspace_id=workspace.id,
+            file_id=file_id,
+            actor_user_id=workspace.user_id,
+        )
+        conn.execute(
+            "UPDATE jobs SET lease_expires_at=now()-interval '1 minute' WHERE id=%s",
+            (job_id,),
+        )
+        expired_at = conn.execute(
+            "SELECT lease_expires_at FROM jobs WHERE id=%s", (job_id,)
+        ).fetchone()[0]
+        payload = {
+            "actorUserId": workspace.user_id,
+            "fileId": file_id,
+            "reservationId": reservation_id,
+            "sourceETag": "etag-a",
+            "sourceRevision": 1,
+            "workspaceId": workspace.id,
+        }
+
+        with conn.cursor() as cur:
+            assert not db.heartbeat_job(cur, job_id, 180, 1)
+            assert not db.claim_is_current(cur, job_id, 1)
+            assert (
+                db.lock_pipeline_claim_boundary(
+                    cur,
+                    job_id=job_id,
+                    attempt=1,
+                    payload=payload,
+                )
+                == "lost"
+            )
+        assert (
+            conn.execute(
+                "SELECT lease_expires_at FROM jobs WHERE id=%s", (job_id,)
+            ).fetchone()[0]
+            == expired_at
+        )
+
+
 def test_a_stale_worker_does_not_finish_the_successors_job(workspace):
     from pipeline.ingest import worker
 
@@ -1209,13 +2151,15 @@ def test_lost_attempt_does_not_close_the_successors_reservation(workspace):
     )
     workspace.scalar(
         """
-        INSERT INTO jobs (id, type, payload, status, attempts)
-        VALUES (%s,'ingest',%s::jsonb,'running',2) RETURNING id
+        INSERT INTO jobs (id, type, payload, status, attempts, lease_expires_at)
+        VALUES (%s,'ingest',%s::jsonb,'running',2,now()+interval '3 minutes')
+        RETURNING id
         """,
         (
             job_id,
             json.dumps(
                 {
+                    "actorUserId": workspace.user_id,
                     "fileId": file_id,
                     "workspaceId": workspace.id,
                     "sourceRevision": 1,
@@ -1234,6 +2178,8 @@ def test_lost_attempt_does_not_close_the_successors_reservation(workspace):
         job_id,
         "attempt-one",
         attempt=1,
+        actor_user_id=workspace.user_id,
+        workspace_id=workspace.id,
         reservation_id=reservation_id,
         source_revision=1,
         source_etag="etag-a",
@@ -1251,6 +2197,8 @@ def test_lost_attempt_does_not_close_the_successors_reservation(workspace):
         job_id,
         "attempt-two",
         attempt=2,
+        actor_user_id=workspace.user_id,
+        workspace_id=workspace.id,
         reservation_id=reservation_id,
         source_revision=1,
         source_etag="etag-a",
@@ -1292,6 +2240,7 @@ async def test_replaced_source_rejects_a_paused_ingests_stale_writes(workspace):
         (reservation_id, workspace.user_id, workspace.id),
     )
     job_payload = {
+        "actorUserId": workspace.user_id,
         "fileId": file_id,
         "workspaceId": workspace.id,
         "sourceRevision": old_revision,
@@ -1300,8 +2249,8 @@ async def test_replaced_source_rejects_a_paused_ingests_stale_writes(workspace):
     }
     workspace.scalar(
         """
-        INSERT INTO jobs (id, type, payload, status, attempts)
-        VALUES (%s, 'ingest', %s::jsonb, 'running', 1)
+        INSERT INTO jobs (id, type, payload, status, attempts, lease_expires_at)
+        VALUES (%s, 'ingest', %s::jsonb, 'running', 1, now()+interval '3 minutes')
         RETURNING id
         """,
         (
@@ -1323,9 +2272,13 @@ async def test_replaced_source_rejects_a_paused_ingests_stale_writes(workspace):
     )
 
     with pytest.raises(TerminalError, match="superseded"):
-        worker._record_source_sha(file_id, "a" * 64, old_revision, old_etag)
+        worker._record_source_sha(
+            file_id, "a" * 64, old_revision, old_etag, workspace.user_id
+        )
     with pytest.raises(TerminalError, match="superseded"):
-        worker._record_preview_blob(file_id, "previews/a.pdf", old_revision, old_etag)
+        worker._record_preview_blob(
+            file_id, "previews/a.pdf", old_revision, old_etag, workspace.user_id
+        )
     with pytest.raises(TerminalError, match="superseded"):
         await store.attach_file_content(
             workspace_id=workspace.id,
@@ -1337,16 +2290,18 @@ async def test_replaced_source_rejects_a_paused_ingests_stale_writes(workspace):
             source_revision=old_revision,
             source_etag=old_etag,
         )
-    with pytest.raises(TerminalError, match="superseded"):
-        worker._finish_ok(
-            file_id,
-            "replacement.docx",
-            job_id,
-            "content-a",
-            attempt=1,
-            source_revision=old_revision,
-            source_etag=old_etag,
-        )
+    assert not worker._finish_ok(
+        file_id,
+        "replacement.docx",
+        job_id,
+        "content-a",
+        attempt=1,
+        actor_user_id=workspace.user_id,
+        workspace_id=workspace.id,
+        reservation_id=reservation_id,
+        source_revision=old_revision,
+        source_etag=old_etag,
+    )
     await worker._handle_job_failure(
         {"id": job_id, "type": "ingest", "attempts": 1, "payload": job_payload},
         db.SourceSupersededError("ingest source was superseded"),
@@ -1377,6 +2332,450 @@ async def test_replaced_source_rejects_a_paused_ingests_stale_writes(workspace):
     assert associations == 0
     assert job_status == "failed"
     assert reservation_status == "released"
+
+
+def test_heartbeat_cancels_replacement_job_skipped_while_locked(workspace):
+    import psycopg
+
+    file_id = workspace.add_file("heartbeat-replacement.txt")
+    with psycopg.connect(workspace.dsn) as conn:
+        conn.execute(
+            "UPDATE files SET source_etag='etag-a', status='processing' WHERE id=%s",
+            (file_id,),
+        )
+        job_id, attempt_id, reservation_id = _install_running_pipeline_claim(
+            conn,
+            workspace_id=workspace.id,
+            file_id=file_id,
+            actor_user_id=workspace.user_id,
+        )
+
+    def replace_source(conn) -> None:
+        conn.execute(
+            "UPDATE files SET revision=2, source_etag='etag-b' WHERE id=%s",
+            (file_id,),
+        )
+        conn.execute(
+            """
+            WITH candidates AS MATERIALIZED (
+              SELECT id FROM jobs
+              WHERE type IN ('parse','ingest') AND payload->>'fileId'=%s
+                AND status IN ('pending','running')
+                AND (payload->>'sourceRevision')::bigint < 2
+              FOR UPDATE SKIP LOCKED
+            )
+            SELECT cancel_pipeline_jobs(
+              COALESCE(array_agg(id), ARRAY[]::text[]),
+              'superseded', 'superseded', 'source_superseded',
+              'superseded by file replacement'
+            ) FROM candidates
+            """,
+            (file_id,),
+        )
+
+    _commit_lifecycle_while_job_is_locked(workspace.dsn, job_id, replace_source)
+
+    with psycopg.connect(workspace.dsn) as conn:
+        with (
+            conn.cursor() as cur,
+            pytest.raises(RuntimeError, match="superseded by file replacement"),
+        ):
+            db.open_provider_call(
+                cur,
+                reservation_id,
+                f"pc_{secrets.token_hex(6)}",
+                "embedding",
+                "indexing",
+                "",
+                job_attempt_id=attempt_id,
+            )
+        _assert_heartbeat_cancelled_claim(
+            conn,
+            job_id=job_id,
+            attempt_id=attempt_id,
+            reservation_id=reservation_id,
+            attempt_status="superseded",
+            error_code="source_superseded",
+        )
+        conn.execute("DELETE FROM jobs WHERE id=%s", (job_id,))
+        conn.execute("DELETE FROM provider_sessions WHERE id=%s", (reservation_id,))
+
+
+def test_heartbeat_cancels_deleted_file_job_skipped_while_locked(workspace):
+    import psycopg
+
+    file_id = workspace.add_file("heartbeat-deleted.txt")
+    with psycopg.connect(workspace.dsn) as conn:
+        conn.execute(
+            "UPDATE files SET source_etag='etag-a', status='processing' WHERE id=%s",
+            (file_id,),
+        )
+        job_id, attempt_id, reservation_id = _install_running_pipeline_claim(
+            conn,
+            workspace_id=workspace.id,
+            file_id=file_id,
+            actor_user_id=workspace.user_id,
+        )
+
+    def delete_file(conn) -> None:
+        conn.execute("DELETE FROM files WHERE id=%s", (file_id,))
+
+    _commit_lifecycle_while_job_is_locked(workspace.dsn, job_id, delete_file)
+
+    with psycopg.connect(workspace.dsn) as conn:
+        with (
+            conn.cursor() as cur,
+            pytest.raises(RuntimeError, match="source deleted"),
+        ):
+            db.open_provider_call(
+                cur,
+                reservation_id,
+                f"pc_{secrets.token_hex(6)}",
+                "embedding",
+                "indexing",
+                "",
+                job_attempt_id=attempt_id,
+            )
+        _assert_heartbeat_cancelled_claim(
+            conn,
+            job_id=job_id,
+            attempt_id=attempt_id,
+            reservation_id=reservation_id,
+            attempt_status="failed",
+            error_code="source_deleted",
+        )
+        conn.execute("DELETE FROM jobs WHERE id=%s", (job_id,))
+        conn.execute("DELETE FROM provider_sessions WHERE id=%s", (reservation_id,))
+
+
+@pytest.mark.parametrize("source_etag", ["etag-a", ""])
+def test_heartbeat_cancels_collaborator_job_after_owner_deletion_skip(
+    workspace, source_etag: str
+):
+    import psycopg
+
+    owner_id = f"u_{secrets.token_hex(6)}"
+    actor_id = f"u_{secrets.token_hex(6)}"
+    workspace_id = f"ws_{secrets.token_hex(6)}"
+    file_id = f"f_{secrets.token_hex(6)}"
+    with psycopg.connect(workspace.dsn) as conn:
+        conn.execute(
+            "INSERT INTO users (id, name, email) VALUES (%s,%s,%s)",
+            (owner_id, "Lifecycle owner", f"{owner_id}@example.com"),
+        )
+        conn.execute(
+            "INSERT INTO users (id, name, email) VALUES (%s,%s,%s)",
+            (actor_id, "Lifecycle actor", f"{actor_id}@example.com"),
+        )
+        conn.execute(
+            "INSERT INTO workspaces (id,user_id,name,color) VALUES (%s,%s,'Lifecycle','green')",
+            (workspace_id, owner_id),
+        )
+        conn.execute(
+            "INSERT INTO workspace_members (workspace_id,user_id,role) VALUES (%s,%s,'editor')",
+            (workspace_id, actor_id),
+        )
+        conn.execute(
+            """
+            INSERT INTO files
+              (id,workspace_id,user_id,created_by,name,kind,blob_path,
+               source_etag,revision,status)
+            VALUES (%s,%s,%s,%s,'owned.txt','txt',%s,%s,1,'processing')
+            """,
+            (
+                file_id,
+                workspace_id,
+                owner_id,
+                actor_id,
+                f"sources/{file_id}",
+                source_etag,
+            ),
+        )
+        job_id, attempt_id, reservation_id = _install_running_pipeline_claim(
+            conn,
+            workspace_id=workspace_id,
+            file_id=file_id,
+            actor_user_id=actor_id,
+            source_etag=source_etag,
+        )
+
+    def request_owner_deletion(conn) -> None:
+        conn.execute(
+            "UPDATE users SET deletion_requested_at=now(), purge_after=now()+interval '30 days' WHERE id=%s",
+            (owner_id,),
+        )
+        conn.execute("SELECT cancel_user_async_work(%s)", (owner_id,))
+
+    _commit_lifecycle_while_job_is_locked(workspace.dsn, job_id, request_owner_deletion)
+
+    with psycopg.connect(workspace.dsn) as conn:
+        assert (
+            conn.execute(
+                "SELECT status FROM provider_sessions WHERE id=%s", (reservation_id,)
+            ).fetchone()[0]
+            == "open"
+        )
+        _assert_heartbeat_cancelled_claim(
+            conn,
+            job_id=job_id,
+            attempt_id=attempt_id,
+            reservation_id=reservation_id,
+            attempt_status="failed",
+            error_code="account_deletion",
+        )
+        assert conn.execute(
+            "SELECT deletion_requested_at IS NULL FROM users WHERE id=%s", (actor_id,)
+        ).fetchone()[0]
+        conn.execute("DELETE FROM jobs WHERE id=%s", (job_id,))
+        conn.execute("DELETE FROM provider_sessions WHERE id=%s", (reservation_id,))
+        conn.execute("DELETE FROM workspaces WHERE id=%s", (workspace_id,))
+        conn.execute("DELETE FROM users WHERE id=ANY(%s)", ([owner_id, actor_id],))
+
+
+@pytest.mark.parametrize("revocation", ["demote", "remove"])
+def test_ingest_boundaries_cancel_after_editor_membership_is_revoked(
+    workspace, revocation: str
+):
+    import psycopg
+
+    from pipeline.ingest import worker
+
+    actor_id = f"u_{secrets.token_hex(6)}"
+    file_id = f"f_{secrets.token_hex(6)}"
+    with psycopg.connect(workspace.dsn) as conn:
+        conn.execute(
+            "INSERT INTO users (id, name, email) VALUES (%s, 'Actor', %s)",
+            (actor_id, f"{actor_id}@example.com"),
+        )
+        conn.execute(
+            "INSERT INTO workspace_members (workspace_id,user_id,role) "
+            "VALUES (%s,%s,'editor')",
+            (workspace.id, actor_id),
+        )
+        conn.execute(
+            """
+            INSERT INTO files
+              (id,workspace_id,user_id,created_by,name,kind,blob_path,
+               source_etag,revision,status)
+            VALUES (%s,%s,%s,%s,'member.txt','txt',%s,'etag-a',1,'processing')
+            """,
+            (
+                file_id,
+                workspace.id,
+                workspace.user_id,
+                actor_id,
+                f"sources/{file_id}",
+            ),
+        )
+        job_id, attempt_id, reservation_id = _install_running_pipeline_claim(
+            conn,
+            workspace_id=workspace.id,
+            file_id=file_id,
+            actor_user_id=actor_id,
+        )
+        if revocation == "demote":
+            conn.execute(
+                "UPDATE workspace_members SET role='viewer' "
+                "WHERE workspace_id=%s AND user_id=%s",
+                (workspace.id, actor_id),
+            )
+        else:
+            conn.execute(
+                "DELETE FROM workspace_members WHERE workspace_id=%s AND user_id=%s",
+                (workspace.id, actor_id),
+            )
+
+    assert not worker._account_allows_ingest(
+        file_id,
+        {
+            "actorUserId": actor_id,
+            "sourceETag": "etag-a",
+            "sourceRevision": 1,
+            "workspaceId": workspace.id,
+        },
+    )
+    with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
+        with pytest.raises(RuntimeError, match="editor access was revoked"):
+            db.open_provider_call(
+                cur,
+                reservation_id,
+                f"pc_{secrets.token_hex(6)}",
+                "embedding",
+                "indexing",
+                "",
+                job_attempt_id=attempt_id,
+            )
+        assert not db.heartbeat_job(cur, job_id, 180, 1)
+        state = conn.execute(
+            """
+            SELECT j.status, a.status, a.error_category, a.error_code, ps.status
+            FROM jobs j
+            JOIN ingest_job_attempts a ON a.id=%s
+            JOIN provider_sessions ps ON ps.id=%s
+            WHERE j.id=%s
+            """,
+            (attempt_id, reservation_id, job_id),
+        ).fetchone()
+        assert state == (
+            "failed",
+            "failed",
+            "authorization",
+            "workspace_access_revoked",
+            "released",
+        )
+        assert (
+            conn.execute("SELECT status FROM files WHERE id=%s", (file_id,)).fetchone()[
+                0
+            ]
+            == "failed"
+        )
+        conn.execute("DELETE FROM jobs WHERE id=%s", (job_id,))
+        conn.execute("DELETE FROM provider_sessions WHERE id=%s", (reservation_id,))
+        conn.execute("DELETE FROM users WHERE id=%s", (actor_id,))
+
+
+@pytest.mark.parametrize("boundary", ["heartbeat", "final", "reaper"])
+@pytest.mark.parametrize("mutation", ["delete", "replace"])
+def test_pipeline_lock_order_serializes_with_file_lifecycle(
+    workspace, boundary: str, mutation: str
+):
+    """A pipeline boundary waiting on workspace never blocks lifecycle locks."""
+    import psycopg
+
+    file_id = workspace.add_file(f"lock-order-{boundary}-{mutation}.txt")
+    with psycopg.connect(workspace.dsn) as conn:
+        conn.execute(
+            "UPDATE files SET source_etag='etag-a', status='processing' WHERE id=%s",
+            (file_id,),
+        )
+        job_id, _attempt_id, reservation_id = _install_running_pipeline_claim(
+            conn,
+            workspace_id=workspace.id,
+            file_id=file_id,
+            actor_user_id=workspace.user_id,
+        )
+        if boundary == "reaper":
+            conn.execute(
+                """
+                UPDATE jobs
+                SET lease_expires_at=now()-interval '1 minute'
+                WHERE id=%s
+                """,
+                (job_id,),
+            )
+    payload = {
+        "actorUserId": workspace.user_id,
+        "fileId": file_id,
+        "reservationId": reservation_id,
+        "sourceETag": "etag-a",
+        "sourceRevision": 1,
+        "workspaceId": workspace.id,
+    }
+    started = threading.Event()
+
+    def run_worker_boundary() -> bool:
+        with (
+            psycopg.connect(
+                workspace.dsn, application_name="pipeline-lock-order-test"
+            ) as worker_conn,
+            worker_conn.cursor() as cur,
+        ):
+            started.set()
+            if boundary == "heartbeat":
+                return db.heartbeat_job(cur, job_id, 180, 1)
+            if boundary == "reaper":
+                return bool(
+                    db.reclaim_expired_leases(
+                        cur,
+                        max_attempts={"ingest": 1},
+                        backoff_base_s={"ingest": 30},
+                    )
+                )
+            return (
+                db.lock_pipeline_claim_boundary(
+                    cur,
+                    job_id=job_id,
+                    attempt=1,
+                    payload=payload,
+                )
+                == "current"
+            )
+
+    with psycopg.connect(workspace.dsn) as lifecycle_conn:
+        lifecycle_conn.execute(
+            "SELECT id FROM workspaces WHERE id=%s FOR UPDATE", (workspace.id,)
+        )
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(run_worker_boundary)
+            assert started.wait(timeout=2)
+            time.sleep(0.1)
+            if mutation == "delete":
+                lifecycle_conn.execute("DELETE FROM files WHERE id=%s", (file_id,))
+            else:
+                lifecycle_conn.execute(
+                    "UPDATE files SET revision=2, source_etag='etag-b' WHERE id=%s",
+                    (file_id,),
+                )
+                lifecycle_conn.execute(
+                    """
+                    SELECT cancel_pipeline_jobs(
+                      ARRAY[%s]::text[], 'superseded', 'superseded',
+                      'source_superseded', 'superseded by file replacement'
+                    )
+                    """,
+                    (job_id,),
+                )
+            lifecycle_conn.commit()
+            assert future.result(timeout=5) is False
+
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        conn.execute("DELETE FROM jobs WHERE id=%s", (job_id,))
+        conn.execute("DELETE FROM provider_sessions WHERE id=%s", (reservation_id,))
+
+
+def test_suspended_collaborator_cannot_persist_ingest_metadata(workspace):
+    import psycopg
+
+    from pipeline.ingest import worker
+    from pipeline.jobs import TerminalError
+
+    actor_id = f"u_{secrets.token_hex(6)}"
+    file_id = f"f_{secrets.token_hex(6)}"
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        conn.execute(
+            "INSERT INTO users (id, name, email) VALUES (%s, 'Actor', %s)",
+            (actor_id, f"{actor_id}@example.com"),
+        )
+        conn.execute(
+            "INSERT INTO workspace_members (workspace_id, user_id, role) "
+            "VALUES (%s, %s, 'editor')",
+            (workspace.id, actor_id),
+        )
+        conn.execute(
+            """
+            INSERT INTO files (
+              id, workspace_id, user_id, created_by, name, kind, blob_path,
+              source_etag, revision, status
+            ) VALUES (%s,%s,%s,%s,'actor.txt','txt','sources/actor','etag-a',1,'pending')
+            """,
+            (file_id, workspace.id, workspace.user_id, actor_id),
+        )
+        conn.execute(
+            "UPDATE users SET suspended_at=now(), suspended_reason='test' WHERE id=%s",
+            (actor_id,),
+        )
+
+    with pytest.raises(TerminalError, match="suspended or deleting"):
+        worker._record_source_sha(file_id, "a" * 64, 1, "etag-a", actor_id)
+
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        assert (
+            conn.execute(
+                "SELECT source_sha256 FROM files WHERE id=%s", (file_id,)
+            ).fetchone()[0]
+            is None
+        )
+        conn.execute("DELETE FROM users WHERE id=%s", (actor_id,))
 
 
 async def test_a_waiter_cannot_keep_the_creators_claim_alive(workspace):
@@ -1422,7 +2821,18 @@ async def test_a_waiter_cannot_keep_the_creators_claim_alive(workspace):
         VALUES (%s, 'ingest', %s::jsonb, 'running', 1)
         RETURNING id
         """,
-        (waiter_job, json.dumps({"fileId": waiter_file, "workspaceId": workspace.id})),
+        (
+            waiter_job,
+            json.dumps(
+                {
+                    "actorUserId": workspace.user_id,
+                    "fileId": waiter_file,
+                    "sourceETag": "",
+                    "sourceRevision": 1,
+                    "workspaceId": workspace.id,
+                }
+            ),
+        ),
     )
 
     with workspace._connect() as conn:
@@ -1582,6 +2992,32 @@ async def test_artifact_gc_skips_in_flight_jobs(workspace):
     )
 
 
+async def test_artifact_gc_owns_cold_durable_parse_bundles(workspace):
+    from pipeline.store import db
+
+    sha = "ce" * 32
+    key = f"parse-bundles/{sha}.zip"
+    workspace.scalar(
+        """
+        INSERT INTO artifact_cache
+            (object_path, kind, source_sha256, size_bytes, last_used_at)
+        VALUES (%s, 'parse_bundle', %s, 128, now() - interval '200 days')
+        RETURNING object_path
+        """,
+        (key, sha),
+    )
+
+    with workspace._connect() as conn:
+        cur = conn.cursor()
+        deleted = db.sweep_artifact_cache(cur, caption_ttl_days=90)
+        conn.commit()
+
+    assert deleted >= 1
+    assert not workspace.scalar(
+        "SELECT count(*) FROM artifact_cache WHERE object_path = %s", (key,)
+    )
+
+
 async def test_steal_refuses_a_creator_whose_lease_is_still_live(workspace):
     import json
 
@@ -1676,7 +3112,7 @@ async def test_replace_content_chunks_refuses_a_taken_over_claim(workspace):
         )
 
 
-def test_finishing_a_deleted_file_still_marks_the_job_done(workspace):
+def test_deleting_a_file_fences_its_inflight_job(workspace):
     import json
 
     from pipeline.ingest import worker
@@ -1693,7 +3129,9 @@ def test_finishing_a_deleted_file_still_marks_the_job_done(workspace):
     )
     workspace.scalar("DELETE FROM files WHERE id = %s RETURNING id", (file_id,))
     worker._finish_ok(file_id, "gone.txt", job_id, attempt=1)
-    assert workspace.scalar("SELECT status FROM jobs WHERE id=%s", (job_id,)) == "done"
+    assert (
+        workspace.scalar("SELECT status FROM jobs WHERE id=%s", (job_id,)) == "failed"
+    )
     assert (
         workspace.scalar(
             "SELECT count(*) FROM notifications WHERE workspace_id=%s",

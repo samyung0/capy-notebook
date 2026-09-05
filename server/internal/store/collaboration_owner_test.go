@@ -22,7 +22,6 @@ func pushOverQuota(t *testing.T, s *Store, userID, workspaceID string) {
 	lapsed := time.Now().Add(-2 * 24 * time.Hour).UTC()
 	ended := proSubscription(userID, subID, 2000)
 	ended.Status = "canceled"
-	ended.PlanTier = PlanFree
 	ended.CurrentPeriodEnd = &lapsed
 	if err := s.UpsertSubscription(ctx, ended); err != nil {
 		t.Fatal(err)
@@ -49,6 +48,7 @@ func TestCollaborationWriteDirectionFollowsTheStorageOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	addWorkspaceEditor(t, s, healthyWS.ID, overQuotaUser)
 
 	// Both materials are authored by the over-quota user. Only the workspace
 	// they sit in differs, which is exactly the distinction the old actor-keyed
@@ -107,6 +107,7 @@ func TestActiveEditorCannotGrowAnOverQuotaOwnersMaterial(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	addWorkspaceEditor(t, s, ws.ID, editor)
 	material, err := s.CreateMaterial(ctx, Material{
 		CreatedBy: editor, WorkspaceID: ws.ID, Kind: "note", Title: "Written by the editor",
 	})

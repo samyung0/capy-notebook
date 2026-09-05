@@ -1,0 +1,6 @@
+interface:
+  display_name: "Human"
+  short_description: "Decisions recording and decisions based coding."
+  default_prompt: "Use $human to perform coding tasks base on decisions."
+policy:
+  allow_implicit_invocation: true

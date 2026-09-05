@@ -10,9 +10,9 @@ export interface Flashcard {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   back: string;
-  deckId: string;
   front: string;
   id: string;
   known: boolean;
+  materialId: string;
   srs: SrsState;
 }

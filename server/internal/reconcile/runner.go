@@ -23,6 +23,25 @@ type Runner struct {
 	config Config
 }
 
+type subscriptionCleanupDecision struct {
+	suppress bool
+	refund   bool
+	cancel   bool
+}
+
+func decideSubscriptionCleanup(canceled, cancelAtPeriodEnd bool) subscriptionCleanupDecision {
+	if canceled && cancelAtPeriodEnd {
+		// Stripe can retain cancel_at_period_end on an already-canceled
+		// subscription. That is terminal provider truth, not a reason to suppress
+		// the local tombstone or refund a period the customer already consumed.
+		return subscriptionCleanupDecision{}
+	}
+	if cancelAtPeriodEnd {
+		return subscriptionCleanupDecision{suppress: true}
+	}
+	return subscriptionCleanupDecision{refund: true, cancel: !canceled}
+}
+
 func NewRunner(st *store.Store, config Config) *Runner {
 	if config.StripeSecretKey != "" {
 		billing.Init(billing.Config{SecretKey: config.StripeSecretKey})
@@ -157,7 +176,7 @@ func (r *Runner) reconcileStripe(
 	}
 	for _, customer := range customers {
 		result.ScannedCount++
-		changed, live, err := r.reconcileStripeCustomer(ctx, run, customer.UserID, customer.CustomerID)
+		changed, live, err := r.reconcileStripeCustomer(ctx, run, customer)
 		if err != nil {
 			result.ErrorCount++
 			result.Status = store.ReconcileStatusPartial
@@ -205,15 +224,15 @@ func (r *Runner) reconcileStripe(
 func (r *Runner) reconcileStripeCustomer(
 	ctx context.Context,
 	run store.ReconcileRun,
-	userID, customerID string,
+	customer store.StripeCustomer,
 ) (bool, []store.Subscription, error) {
 	for range 3 {
-		version, err := r.store.SubscriptionVersion(ctx, userID)
+		version, err := r.store.SubscriptionVersion(ctx, customer.UserID)
 		if err != nil {
 			return false, nil, err
 		}
 		readStartedAt := time.Now().UTC()
-		subscriptions, err := billing.ListEntitlingSubscriptions(customerID)
+		subscriptions, err := billing.ListEntitlingSubscriptions(customer.CustomerID)
 		if err != nil {
 			return false, nil, err
 		}
@@ -221,14 +240,14 @@ func (r *Runner) reconcileStripeCustomer(
 		for _, subscription := range subscriptions {
 			live = append(live, billing.SubscriptionRecord(
 				subscription,
-				userID,
+				customer.UserID,
 				r.config.StripePricePro,
 				readStartedAt.Unix(),
 			))
 		}
 		changed, err := r.store.SyncSubscriptionsFromStripe(
 			ctx,
-			userID,
+			customer.UserID,
 			live,
 			version,
 			readStartedAt.Unix(),
@@ -240,4 +259,149 @@ func (r *Runner) reconcileStripeCustomer(
 		return changed, live, err
 	}
 	return false, nil, store.ErrReconciliationStale
+}
+
+// RunNextStripeCompensation executes one durable remote cleanup. Each remote
+// mutation is idempotent (or preceded by a state read), and failures are put
+// back with backoff by FinishStripeCompensation.
+func (r *Runner) RunNextStripeCompensation(ctx context.Context) (bool, error) {
+	if r.config.StripeSecretKey == "" {
+		return false, nil
+	}
+	job, err := r.store.ClaimStripeCompensation(ctx, time.Minute)
+	if err != nil || job == nil {
+		return false, err
+	}
+	release, allowed, err := r.store.BeginStripeCompensation(ctx, *job)
+	if err != nil {
+		return true, err
+	}
+	if !allowed {
+		return true, nil
+	}
+	defer release()
+	var runErr error
+	advanceRefundGeneration := false
+	refundPending := false
+	switch job.Action {
+	case store.StripeRecoverCheckout:
+		var recovery store.StripeCheckoutRecovery
+		recovery, runErr = r.store.StripeCheckoutRecovery(ctx, job.ObjectID)
+		if runErr == nil && recovery.CustomerID == "" {
+			recovery.CustomerID, runErr = billing.CreateCustomer(
+				recovery.Email,
+				recovery.Name,
+				recovery.UserID,
+				"checkout-customer-"+recovery.ID,
+			)
+		}
+		var session billing.CheckoutSession
+		if runErr == nil {
+			session, runErr = billing.CreateCheckoutSession(
+				recovery.CustomerID,
+				recovery.PriceID,
+				recovery.UserID,
+				recovery.SuccessURL,
+				recovery.CancelURL,
+				recovery.ID,
+				"checkout-session-"+recovery.ID,
+			)
+		}
+		if runErr == nil {
+			runErr = billing.ExpireCheckoutSession(session.ID)
+		}
+		if runErr == nil {
+			runErr = r.store.CompleteStripeCheckoutRecovery(
+				ctx,
+				recovery.ID,
+				recovery.CustomerID,
+				session.ID,
+			)
+		}
+	case store.StripeExpireCheckout:
+		runErr = billing.ExpireCheckoutSession(job.ObjectID)
+	case store.StripeCancelSubscription:
+		var action store.StripeCompensationAction
+		var objectID string
+		var canceled, cancelAtPeriodEnd bool
+		runErr = r.store.MarkStripeCompensationProviderStarted(ctx, *job)
+		if runErr == nil {
+			action, objectID, canceled, cancelAtPeriodEnd, runErr =
+				billing.SubscriptionRefundTarget(job.ObjectID)
+		}
+		decision := decideSubscriptionCleanup(canceled, cancelAtPeriodEnd)
+		// The provider read is authoritative here. A delayed webhook may leave
+		// cancel_at_period_end=false locally even though Stripe already accepted
+		// an end-of-period cancellation on a still-live subscription. Do not turn
+		// that harmless lag into an immediate cancellation, refund, or terminal
+		// local tombstone.
+		if runErr == nil && decision.suppress {
+			runErr = r.store.SuppressStripeCancellationAtPeriodEnd(ctx, *job)
+			if runErr == nil {
+				return true, nil
+			}
+		}
+		if runErr == nil && decision.refund && objectID != "" {
+			runErr = r.store.EnqueueStripeCompensation(ctx, job.UserID, action, objectID)
+		}
+		if runErr == nil && decision.cancel {
+			runErr = billing.CancelSubscription(job.ObjectID)
+		}
+	case store.StripeRefundPayment, store.StripeRefundCharge:
+		var result billing.RefundResult
+		if job.ProviderResultID == "" {
+			result, runErr = billing.CreateRefund(job.Action, job.ObjectID, job.Generation)
+			if runErr == nil {
+				runErr = r.store.SetStripeCompensationProviderResult(ctx, *job, result.ID)
+			}
+		} else {
+			result, runErr = billing.GetRefund(job.ProviderResultID)
+		}
+		if runErr == nil {
+			switch result.Status {
+			case "succeeded":
+			case "failed", "canceled":
+				runErr = errors.New("Stripe refund reached a failed terminal state")
+				advanceRefundGeneration = true
+			case "pending":
+				runErr = errors.New("Stripe refund is not terminal")
+				refundPending = true
+			default:
+				runErr = errors.New("Stripe refund requires operator attention")
+			}
+		}
+	default:
+		runErr = errors.New("unsupported Stripe compensation action")
+	}
+	if advanceRefundGeneration {
+		if finishErr := r.store.AdvanceStripeRefundGeneration(ctx, *job, runErr); finishErr != nil {
+			return true, finishErr
+		}
+	} else if finishErr := r.store.FinishStripeCompensation(ctx, *job, runErr); finishErr != nil {
+		return true, finishErr
+	}
+	if runErr != nil && !refundPending {
+		obs.CaptureErr(ctx, runErr, map[string]string{
+			"stage":  "stripe_compensation",
+			"action": string(job.Action),
+			"userId": job.UserID,
+		})
+	}
+	if refundPending {
+		return true, nil
+	}
+	return true, runErr
+}
+
+func (r *Runner) DrainStripeCompensations(ctx context.Context) error {
+	var joined error
+	for {
+		ran, err := r.RunNextStripeCompensation(ctx)
+		if err != nil {
+			joined = errors.Join(joined, err)
+		}
+		if !ran {
+			return joined
+		}
+	}
 }

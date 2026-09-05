@@ -43,8 +43,9 @@ The important boundaries are:
 - Browser to product gateway
 - Browser to Clerk, Stripe, object storage, and collaboration WebSocket
 - Cloudflare to public origins
-- Gateway to retrieval, import relay, collaboration, Redis, Postgres, and B2
+- Gateway to retrieval, collaboration, Redis, Postgres, and B2
 - Worker to the parser service, model providers, B2, Redis, and Postgres
+- Import worker to Google Drive / OneDrive download hosts, B2, and the gateway's internal import routes over WireGuard
 - Provider webhooks to unauthenticated webhook routes
 - Operator browser through Cloudflare Access and Clerk to the operator API
 - Operator API to its four least-privilege database roles

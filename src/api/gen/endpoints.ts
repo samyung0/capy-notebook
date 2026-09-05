@@ -23,22 +23,22 @@ import type {
   CreateCardReq,
   CreateCommentReq,
   CreateConversationReq,
-  CreateDeckReq,
   CreateDiscussionReq,
   CreateEventReq,
   CreateFileReplacementUploadReq,
+  CreateFlashcardSetReq,
   CreateMaterialReq,
   CreateQuizReq,
   CreateSourceUploadReq,
   CreateWorkspaceInviteReq,
   CreateWorkspaceReq,
-  Deck,
   DeletionPreflight,
   Discussion,
   ErrorModel,
   Event,
   File,
   Flashcard,
+  FlashcardSet,
   Generate200,
   GenerateReq,
   GetSourceUploadPolicyParams,
@@ -61,13 +61,13 @@ import type {
   MaterialUpdateResult,
   Message,
   MicrosoftDriveHost,
-  ModelSurfacesOutputBody,
+  ModelSlotsOutputBody,
   ModelsResponse,
   NotificationCountOutputBody,
   NotificationPage,
   NotificationPrefs,
   ProjectMaterialReq,
-  PublicDeck,
+  PublicFlashcardSet,
   PublicQuiz,
   PublicWorkspace,
   Quiz,
@@ -88,15 +88,18 @@ import type {
   TransferWorkspaceReq,
   URLResp,
   UpdateCardReq,
+  UpdateCardStudyStateReq,
   UpdateChapterReq,
   UpdateCommentReq,
-  UpdateDeckReq,
   UpdateDiscussionReq,
   UpdateEventReq,
   UpdateFileReq,
+  UpdateFlashcardSetReq,
   UpdateLabelReq,
   UpdateMaterialReq,
-  UpdateQuizReq,
+  UpdateQuizContentReq,
+  UpdateQuizMetadataReq,
+  UpdateStandaloneSharingReq,
   UpdateTaskReq,
   UpdateWorkspaceMemberReq,
   UpdateWorkspaceReq,
@@ -544,107 +547,6 @@ export const billingPortal = async ( options?: RequestInit): Promise<billingPort
 
 
 
-export type deleteCardResponse204 = {
-  data: void
-  status: 204
-}
-
-export type deleteCardResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 204>
-}
-
-export type deleteCardResponseSuccess = (deleteCardResponse204) & {
-  headers: Headers;
-};
-export type deleteCardResponseError = (deleteCardResponseDefault) & {
-  headers: Headers;
-};
-
-export type deleteCardResponse = (deleteCardResponseSuccess | deleteCardResponseError)
-
-export const getDeleteCardUrl = (id: string,) => {
-
-
-
-
-  return `/api/cards/${id}`
-}
-
-/**
- * @summary Delete a card
- */
-export const deleteCard = async (id: string, options?: RequestInit): Promise<deleteCardResponse> => {
-
-  const res = await fetch(getDeleteCardUrl(id),
-  {
-    ...options,
-    method: 'DELETE'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: deleteCardResponse['data'] = body ? JSON.parse(body) : undefined
-  return { data, status: res.status, headers: res.headers } as deleteCardResponse
-}
-
-
-
-export type updateCardResponse200 = {
-  data: Flashcard
-  status: 200
-}
-
-export type updateCardResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type updateCardResponseSuccess = (updateCardResponse200) & {
-  headers: Headers;
-};
-export type updateCardResponseError = (updateCardResponseDefault) & {
-  headers: Headers;
-};
-
-export type updateCardResponse = (updateCardResponseSuccess | updateCardResponseError)
-
-export const getUpdateCardUrl = (id: string,) => {
-
-
-
-
-  return `/api/cards/${id}`
-}
-
-/**
- * @summary Update a card
- */
-export const updateCard = async (id: string,
-    updateCardReq: NonReadonly<UpdateCardReq>, options?: RequestInit): Promise<updateCardResponse> => {
-
-  const res = await fetch(getUpdateCardUrl(id),
-  {
-    ...options,
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(updateCardReq)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: updateCardResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as updateCardResponse
-}
-
-
-
 export type deleteChapterResponse204 = {
   data: void
   status: 204
@@ -943,358 +845,6 @@ export const listMessages = async (id: string, options?: RequestInit): Promise<l
 
   const data: listMessagesResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as listMessagesResponse
-}
-
-
-
-export type listDecksResponse200 = {
-  data: Deck[]
-  status: 200
-}
-
-export type listDecksResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type listDecksResponseSuccess = (listDecksResponse200) & {
-  headers: Headers;
-};
-export type listDecksResponseError = (listDecksResponseDefault) & {
-  headers: Headers;
-};
-
-export type listDecksResponse = (listDecksResponseSuccess | listDecksResponseError)
-
-export const getListDecksUrl = () => {
-
-
-
-
-  return `/api/decks`
-}
-
-/**
- * @summary List decks
- */
-export const listDecks = async ( options?: RequestInit): Promise<listDecksResponse> => {
-
-  const res = await fetch(getListDecksUrl(),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: listDecksResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listDecksResponse
-}
-
-
-
-export type createDeckResponse201 = {
-  data: Deck
-  status: 201
-}
-
-export type createDeckResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 201>
-}
-
-export type createDeckResponseSuccess = (createDeckResponse201) & {
-  headers: Headers;
-};
-export type createDeckResponseError = (createDeckResponseDefault) & {
-  headers: Headers;
-};
-
-export type createDeckResponse = (createDeckResponseSuccess | createDeckResponseError)
-
-export const getCreateDeckUrl = () => {
-
-
-
-
-  return `/api/decks`
-}
-
-/**
- * @summary Create a deck
- */
-export const createDeck = async (createDeckReq: NonReadonly<CreateDeckReq>, options?: RequestInit): Promise<createDeckResponse> => {
-
-  const res = await fetch(getCreateDeckUrl(),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(createDeckReq)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: createDeckResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as createDeckResponse
-}
-
-
-
-export type getDeckResponse200 = {
-  data: Deck
-  status: 200
-}
-
-export type getDeckResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type getDeckResponseSuccess = (getDeckResponse200) & {
-  headers: Headers;
-};
-export type getDeckResponseError = (getDeckResponseDefault) & {
-  headers: Headers;
-};
-
-export type getDeckResponse = (getDeckResponseSuccess | getDeckResponseError)
-
-export const getGetDeckUrl = (id: string,) => {
-
-
-
-
-  return `/api/decks/${id}`
-}
-
-/**
- * @summary Get a deck
- */
-export const getDeck = async (id: string, options?: RequestInit): Promise<getDeckResponse> => {
-
-  const res = await fetch(getGetDeckUrl(id),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: getDeckResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as getDeckResponse
-}
-
-
-
-export type updateDeckResponse200 = {
-  data: Deck
-  status: 200
-}
-
-export type updateDeckResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type updateDeckResponseSuccess = (updateDeckResponse200) & {
-  headers: Headers;
-};
-export type updateDeckResponseError = (updateDeckResponseDefault) & {
-  headers: Headers;
-};
-
-export type updateDeckResponse = (updateDeckResponseSuccess | updateDeckResponseError)
-
-export const getUpdateDeckUrl = (id: string,) => {
-
-
-
-
-  return `/api/decks/${id}`
-}
-
-/**
- * @summary Update a deck (rename / recolor / share)
- */
-export const updateDeck = async (id: string,
-    updateDeckReq: NonReadonly<UpdateDeckReq>, options?: RequestInit): Promise<updateDeckResponse> => {
-
-  const res = await fetch(getUpdateDeckUrl(id),
-  {
-    ...options,
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(updateDeckReq)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: updateDeckResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as updateDeckResponse
-}
-
-
-
-export type listCardsResponse200 = {
-  data: Flashcard[]
-  status: 200
-}
-
-export type listCardsResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type listCardsResponseSuccess = (listCardsResponse200) & {
-  headers: Headers;
-};
-export type listCardsResponseError = (listCardsResponseDefault) & {
-  headers: Headers;
-};
-
-export type listCardsResponse = (listCardsResponseSuccess | listCardsResponseError)
-
-export const getListCardsUrl = (id: string,) => {
-
-
-
-
-  return `/api/decks/${id}/cards`
-}
-
-/**
- * @summary List cards in a deck
- */
-export const listCards = async (id: string, options?: RequestInit): Promise<listCardsResponse> => {
-
-  const res = await fetch(getListCardsUrl(id),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: listCardsResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listCardsResponse
-}
-
-
-
-export type createCardResponse201 = {
-  data: Flashcard
-  status: 201
-}
-
-export type createCardResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 201>
-}
-
-export type createCardResponseSuccess = (createCardResponse201) & {
-  headers: Headers;
-};
-export type createCardResponseError = (createCardResponseDefault) & {
-  headers: Headers;
-};
-
-export type createCardResponse = (createCardResponseSuccess | createCardResponseError)
-
-export const getCreateCardUrl = (id: string,) => {
-
-
-
-
-  return `/api/decks/${id}/cards`
-}
-
-/**
- * @summary Create a card
- */
-export const createCard = async (id: string,
-    createCardReq: NonReadonly<CreateCardReq>, options?: RequestInit): Promise<createCardResponse> => {
-
-  const res = await fetch(getCreateCardUrl(id),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(createCardReq)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: createCardResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as createCardResponse
-}
-
-
-
-export type cloneDeckResponse201 = {
-  data: Deck
-  status: 201
-}
-
-export type cloneDeckResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 201>
-}
-
-export type cloneDeckResponseSuccess = (cloneDeckResponse201) & {
-  headers: Headers;
-};
-export type cloneDeckResponseError = (cloneDeckResponseDefault) & {
-  headers: Headers;
-};
-
-export type cloneDeckResponse = (cloneDeckResponseSuccess | cloneDeckResponseError)
-
-export const getCloneDeckUrl = (id: string,) => {
-
-
-
-
-  return `/api/decks/${id}/clone`
-}
-
-/**
- * @summary Clone a shared deck
- */
-export const cloneDeck = async (id: string, options?: RequestInit): Promise<cloneDeckResponse> => {
-
-  const res = await fetch(getCloneDeckUrl(id),
-  {
-    ...options,
-    method: 'POST'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: cloneDeckResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as cloneDeckResponse
 }
 
 
@@ -1652,39 +1202,39 @@ export const updateEvent = async (id: string,
 
 
 
-export type exploreDecksResponse200 = {
-  data: PublicDeck[]
+export type exploreFlashcardSetsResponse200 = {
+  data: PublicFlashcardSet[]
   status: 200
 }
 
-export type exploreDecksResponseDefault = {
+export type exploreFlashcardSetsResponseDefault = {
   data: ErrorModel
   status: Exclude<HTTPStatusCodes, 200>
 }
 
-export type exploreDecksResponseSuccess = (exploreDecksResponse200) & {
+export type exploreFlashcardSetsResponseSuccess = (exploreFlashcardSetsResponse200) & {
   headers: Headers;
 };
-export type exploreDecksResponseError = (exploreDecksResponseDefault) & {
+export type exploreFlashcardSetsResponseError = (exploreFlashcardSetsResponseDefault) & {
   headers: Headers;
 };
 
-export type exploreDecksResponse = (exploreDecksResponseSuccess | exploreDecksResponseError)
+export type exploreFlashcardSetsResponse = (exploreFlashcardSetsResponseSuccess | exploreFlashcardSetsResponseError)
 
-export const getExploreDecksUrl = () => {
-
-
+export const getExploreFlashcardSetsUrl = () => {
 
 
-  return `/api/explore/decks`
+
+
+  return `/api/explore/flashcards`
 }
 
 /**
- * @summary Public flashcard decks
+ * @summary Public flashcards
  */
-export const exploreDecks = async ( options?: RequestInit): Promise<exploreDecksResponse> => {
+export const exploreFlashcardSets = async ( options?: RequestInit): Promise<exploreFlashcardSetsResponse> => {
 
-  const res = await fetch(getExploreDecksUrl(),
+  const res = await fetch(getExploreFlashcardSetsUrl(),
   {
     ...options,
     method: 'GET'
@@ -1696,8 +1246,8 @@ export const exploreDecks = async ( options?: RequestInit): Promise<exploreDecks
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: exploreDecksResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as exploreDecksResponse
+  const data: exploreFlashcardSetsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as exploreFlashcardSetsResponse
 }
 
 
@@ -2102,6 +1652,561 @@ export const completeFileReplacementUpload = async (id: string,
 
   const data: completeFileReplacementUploadResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as completeFileReplacementUploadResponse
+}
+
+
+
+export type listFlashcardSetsResponse200 = {
+  data: FlashcardSet[]
+  status: 200
+}
+
+export type listFlashcardSetsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listFlashcardSetsResponseSuccess = (listFlashcardSetsResponse200) & {
+  headers: Headers;
+};
+export type listFlashcardSetsResponseError = (listFlashcardSetsResponseDefault) & {
+  headers: Headers;
+};
+
+export type listFlashcardSetsResponse = (listFlashcardSetsResponseSuccess | listFlashcardSetsResponseError)
+
+export const getListFlashcardSetsUrl = () => {
+
+
+
+
+  return `/api/flashcards`
+}
+
+/**
+ * @summary List flashcard sets
+ */
+export const listFlashcardSets = async ( options?: RequestInit): Promise<listFlashcardSetsResponse> => {
+
+  const res = await fetch(getListFlashcardSetsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listFlashcardSetsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listFlashcardSetsResponse
+}
+
+
+
+export type createFlashcardSetResponse201 = {
+  data: FlashcardSet
+  status: 201
+}
+
+export type createFlashcardSetResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 201>
+}
+
+export type createFlashcardSetResponseSuccess = (createFlashcardSetResponse201) & {
+  headers: Headers;
+};
+export type createFlashcardSetResponseError = (createFlashcardSetResponseDefault) & {
+  headers: Headers;
+};
+
+export type createFlashcardSetResponse = (createFlashcardSetResponseSuccess | createFlashcardSetResponseError)
+
+export const getCreateFlashcardSetUrl = () => {
+
+
+
+
+  return `/api/flashcards`
+}
+
+/**
+ * @summary Create flashcards
+ */
+export const createFlashcardSet = async (createFlashcardSetReq: NonReadonly<CreateFlashcardSetReq>, options?: RequestInit): Promise<createFlashcardSetResponse> => {
+
+  const res = await fetch(getCreateFlashcardSetUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(createFlashcardSetReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createFlashcardSetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createFlashcardSetResponse
+}
+
+
+
+export type deleteCardResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteCardResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type deleteCardResponseSuccess = (deleteCardResponse204) & {
+  headers: Headers;
+};
+export type deleteCardResponseError = (deleteCardResponseDefault) & {
+  headers: Headers;
+};
+
+export type deleteCardResponse = (deleteCardResponseSuccess | deleteCardResponseError)
+
+export const getDeleteCardUrl = (id: string,) => {
+
+
+
+
+  return `/api/flashcards/cards/${id}`
+}
+
+/**
+ * @summary Delete a card
+ */
+export const deleteCard = async (id: string, options?: RequestInit): Promise<deleteCardResponse> => {
+
+  const res = await fetch(getDeleteCardUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteCardResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as deleteCardResponse
+}
+
+
+
+export type updateCardResponse200 = {
+  data: Flashcard
+  status: 200
+}
+
+export type updateCardResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type updateCardResponseSuccess = (updateCardResponse200) & {
+  headers: Headers;
+};
+export type updateCardResponseError = (updateCardResponseDefault) & {
+  headers: Headers;
+};
+
+export type updateCardResponse = (updateCardResponseSuccess | updateCardResponseError)
+
+export const getUpdateCardUrl = (id: string,) => {
+
+
+
+
+  return `/api/flashcards/cards/${id}/content`
+}
+
+/**
+ * @summary Update card content
+ */
+export const updateCard = async (id: string,
+    updateCardReq: NonReadonly<UpdateCardReq>, options?: RequestInit): Promise<updateCardResponse> => {
+
+  const res = await fetch(getUpdateCardUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updateCardReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateCardResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateCardResponse
+}
+
+
+
+export type updateCardStudyStateResponse200 = {
+  data: Flashcard
+  status: 200
+}
+
+export type updateCardStudyStateResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type updateCardStudyStateResponseSuccess = (updateCardStudyStateResponse200) & {
+  headers: Headers;
+};
+export type updateCardStudyStateResponseError = (updateCardStudyStateResponseDefault) & {
+  headers: Headers;
+};
+
+export type updateCardStudyStateResponse = (updateCardStudyStateResponseSuccess | updateCardStudyStateResponseError)
+
+export const getUpdateCardStudyStateUrl = (id: string,) => {
+
+
+
+
+  return `/api/flashcards/cards/${id}/study-state`
+}
+
+/**
+ * @summary Update card study state
+ */
+export const updateCardStudyState = async (id: string,
+    updateCardStudyStateReq: NonReadonly<UpdateCardStudyStateReq>, options?: RequestInit): Promise<updateCardStudyStateResponse> => {
+
+  const res = await fetch(getUpdateCardStudyStateUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updateCardStudyStateReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateCardStudyStateResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateCardStudyStateResponse
+}
+
+
+
+export type getFlashcardSetResponse200 = {
+  data: FlashcardSet
+  status: 200
+}
+
+export type getFlashcardSetResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getFlashcardSetResponseSuccess = (getFlashcardSetResponse200) & {
+  headers: Headers;
+};
+export type getFlashcardSetResponseError = (getFlashcardSetResponseDefault) & {
+  headers: Headers;
+};
+
+export type getFlashcardSetResponse = (getFlashcardSetResponseSuccess | getFlashcardSetResponseError)
+
+export const getGetFlashcardSetUrl = (id: string,) => {
+
+
+
+
+  return `/api/flashcards/${id}`
+}
+
+/**
+ * @summary Get flashcards
+ */
+export const getFlashcardSet = async (id: string, options?: RequestInit): Promise<getFlashcardSetResponse> => {
+
+  const res = await fetch(getGetFlashcardSetUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getFlashcardSetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getFlashcardSetResponse
+}
+
+
+
+export type listCardsResponse200 = {
+  data: Flashcard[]
+  status: 200
+}
+
+export type listCardsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listCardsResponseSuccess = (listCardsResponse200) & {
+  headers: Headers;
+};
+export type listCardsResponseError = (listCardsResponseDefault) & {
+  headers: Headers;
+};
+
+export type listCardsResponse = (listCardsResponseSuccess | listCardsResponseError)
+
+export const getListCardsUrl = (id: string,) => {
+
+
+
+
+  return `/api/flashcards/${id}/cards`
+}
+
+/**
+ * @summary List cards
+ */
+export const listCards = async (id: string, options?: RequestInit): Promise<listCardsResponse> => {
+
+  const res = await fetch(getListCardsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listCardsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listCardsResponse
+}
+
+
+
+export type createCardResponse201 = {
+  data: Flashcard
+  status: 201
+}
+
+export type createCardResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 201>
+}
+
+export type createCardResponseSuccess = (createCardResponse201) & {
+  headers: Headers;
+};
+export type createCardResponseError = (createCardResponseDefault) & {
+  headers: Headers;
+};
+
+export type createCardResponse = (createCardResponseSuccess | createCardResponseError)
+
+export const getCreateCardUrl = (id: string,) => {
+
+
+
+
+  return `/api/flashcards/${id}/cards`
+}
+
+/**
+ * @summary Create a card
+ */
+export const createCard = async (id: string,
+    createCardReq: NonReadonly<CreateCardReq>, options?: RequestInit): Promise<createCardResponse> => {
+
+  const res = await fetch(getCreateCardUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(createCardReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createCardResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createCardResponse
+}
+
+
+
+export type cloneFlashcardSetResponse201 = {
+  data: FlashcardSet
+  status: 201
+}
+
+export type cloneFlashcardSetResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 201>
+}
+
+export type cloneFlashcardSetResponseSuccess = (cloneFlashcardSetResponse201) & {
+  headers: Headers;
+};
+export type cloneFlashcardSetResponseError = (cloneFlashcardSetResponseDefault) & {
+  headers: Headers;
+};
+
+export type cloneFlashcardSetResponse = (cloneFlashcardSetResponseSuccess | cloneFlashcardSetResponseError)
+
+export const getCloneFlashcardSetUrl = (id: string,) => {
+
+
+
+
+  return `/api/flashcards/${id}/clone`
+}
+
+/**
+ * @summary Clone shared flashcards
+ */
+export const cloneFlashcardSet = async (id: string, options?: RequestInit): Promise<cloneFlashcardSetResponse> => {
+
+  const res = await fetch(getCloneFlashcardSetUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: cloneFlashcardSetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as cloneFlashcardSetResponse
+}
+
+
+
+export type updateFlashcardSetResponse200 = {
+  data: FlashcardSet
+  status: 200
+}
+
+export type updateFlashcardSetResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type updateFlashcardSetResponseSuccess = (updateFlashcardSetResponse200) & {
+  headers: Headers;
+};
+export type updateFlashcardSetResponseError = (updateFlashcardSetResponseDefault) & {
+  headers: Headers;
+};
+
+export type updateFlashcardSetResponse = (updateFlashcardSetResponseSuccess | updateFlashcardSetResponseError)
+
+export const getUpdateFlashcardSetUrl = (id: string,) => {
+
+
+
+
+  return `/api/flashcards/${id}/metadata`
+}
+
+/**
+ * @summary Update flashcard metadata
+ */
+export const updateFlashcardSet = async (id: string,
+    updateFlashcardSetReq: NonReadonly<UpdateFlashcardSetReq>, options?: RequestInit): Promise<updateFlashcardSetResponse> => {
+
+  const res = await fetch(getUpdateFlashcardSetUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updateFlashcardSetReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateFlashcardSetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateFlashcardSetResponse
+}
+
+
+
+export type updateFlashcardSetSharingResponse200 = {
+  data: FlashcardSet
+  status: 200
+}
+
+export type updateFlashcardSetSharingResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type updateFlashcardSetSharingResponseSuccess = (updateFlashcardSetSharingResponse200) & {
+  headers: Headers;
+};
+export type updateFlashcardSetSharingResponseError = (updateFlashcardSetSharingResponseDefault) & {
+  headers: Headers;
+};
+
+export type updateFlashcardSetSharingResponse = (updateFlashcardSetSharingResponseSuccess | updateFlashcardSetSharingResponseError)
+
+export const getUpdateFlashcardSetSharingUrl = (id: string,) => {
+
+
+
+
+  return `/api/flashcards/${id}/sharing`
+}
+
+/**
+ * @summary Update standalone flashcard sharing
+ */
+export const updateFlashcardSetSharing = async (id: string,
+    updateStandaloneSharingReq: NonReadonly<UpdateStandaloneSharingReq>, options?: RequestInit): Promise<updateFlashcardSetSharingResponse> => {
+
+  const res = await fetch(getUpdateFlashcardSetSharingUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updateStandaloneSharingReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateFlashcardSetSharingResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateFlashcardSetSharingResponse
 }
 
 
@@ -2557,57 +2662,6 @@ export const getMaterial = async (id: string, options?: RequestInit): Promise<ge
 
 
 
-export type updateMaterialResponse200 = {
-  data: MaterialUpdateResult
-  status: 200
-}
-
-export type updateMaterialResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type updateMaterialResponseSuccess = (updateMaterialResponse200) & {
-  headers: Headers;
-};
-export type updateMaterialResponseError = (updateMaterialResponseDefault) & {
-  headers: Headers;
-};
-
-export type updateMaterialResponse = (updateMaterialResponseSuccess | updateMaterialResponseError)
-
-export const getUpdateMaterialUrl = (id: string,) => {
-
-
-
-
-  return `/api/materials/${id}`
-}
-
-/**
- * @summary Update a material
- */
-export const updateMaterial = async (id: string,
-    updateMaterialReq: NonReadonly<UpdateMaterialReq>, options?: RequestInit): Promise<updateMaterialResponse> => {
-
-  const res = await fetch(getUpdateMaterialUrl(id),
-  {
-    ...options,
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(updateMaterialReq)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: updateMaterialResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as updateMaterialResponse
-}
-
-
-
 export type cloneMaterialResponse201 = {
   data: Material
   status: 201
@@ -2809,6 +2863,57 @@ export const createMaterialDiscussion = async (id: string,
 
 
 
+export type updateMaterialResponse200 = {
+  data: MaterialUpdateResult
+  status: 200
+}
+
+export type updateMaterialResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type updateMaterialResponseSuccess = (updateMaterialResponse200) & {
+  headers: Headers;
+};
+export type updateMaterialResponseError = (updateMaterialResponseDefault) & {
+  headers: Headers;
+};
+
+export type updateMaterialResponse = (updateMaterialResponseSuccess | updateMaterialResponseError)
+
+export const getUpdateMaterialUrl = (id: string,) => {
+
+
+
+
+  return `/api/materials/${id}/metadata`
+}
+
+/**
+ * @summary Update material metadata
+ */
+export const updateMaterial = async (id: string,
+    updateMaterialReq: NonReadonly<UpdateMaterialReq>, options?: RequestInit): Promise<updateMaterialResponse> => {
+
+  const res = await fetch(getUpdateMaterialUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updateMaterialReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateMaterialResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateMaterialResponse
+}
+
+
+
 export type listMaterialRevisionsResponse200 = {
   data: MaterialRevision[]
   status: 200
@@ -2855,6 +2960,57 @@ export const listMaterialRevisions = async (id: string, options?: RequestInit): 
 
   const data: listMaterialRevisionsResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as listMaterialRevisionsResponse
+}
+
+
+
+export type updateMaterialSharingResponse200 = {
+  data: Material
+  status: 200
+}
+
+export type updateMaterialSharingResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type updateMaterialSharingResponseSuccess = (updateMaterialSharingResponse200) & {
+  headers: Headers;
+};
+export type updateMaterialSharingResponseError = (updateMaterialSharingResponseDefault) & {
+  headers: Headers;
+};
+
+export type updateMaterialSharingResponse = (updateMaterialSharingResponseSuccess | updateMaterialSharingResponseError)
+
+export const getUpdateMaterialSharingUrl = (id: string,) => {
+
+
+
+
+  return `/api/materials/${id}/sharing`
+}
+
+/**
+ * @summary Update standalone material sharing
+ */
+export const updateMaterialSharing = async (id: string,
+    updateStandaloneSharingReq: NonReadonly<UpdateStandaloneSharingReq>, options?: RequestInit): Promise<updateMaterialSharingResponse> => {
+
+  const res = await fetch(getUpdateMaterialSharingUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updateStandaloneSharingReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateMaterialSharingResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateMaterialSharingResponse
 }
 
 
@@ -3259,39 +3415,39 @@ export const getMistakes = async ( options?: RequestInit): Promise<getMistakesRe
 
 
 
-export type listModelSurfacesResponse200 = {
-  data: ModelSurfacesOutputBody
+export type listModelSlotsResponse200 = {
+  data: ModelSlotsOutputBody
   status: 200
 }
 
-export type listModelSurfacesResponseDefault = {
+export type listModelSlotsResponseDefault = {
   data: ErrorModel
   status: Exclude<HTTPStatusCodes, 200>
 }
 
-export type listModelSurfacesResponseSuccess = (listModelSurfacesResponse200) & {
+export type listModelSlotsResponseSuccess = (listModelSlotsResponse200) & {
   headers: Headers;
 };
-export type listModelSurfacesResponseError = (listModelSurfacesResponseDefault) & {
+export type listModelSlotsResponseError = (listModelSlotsResponseDefault) & {
   headers: Headers;
 };
 
-export type listModelSurfacesResponse = (listModelSurfacesResponseSuccess | listModelSurfacesResponseError)
+export type listModelSlotsResponse = (listModelSlotsResponseSuccess | listModelSlotsResponseError)
 
-export const getListModelSurfacesUrl = () => {
-
-
+export const getListModelSlotsUrl = () => {
 
 
-  return `/api/model-surfaces`
+
+
+  return `/api/model-slots`
 }
 
 /**
- * @summary Known model surfaces
+ * @summary Known model slots
  */
-export const listModelSurfaces = async ( options?: RequestInit): Promise<listModelSurfacesResponse> => {
+export const listModelSlots = async ( options?: RequestInit): Promise<listModelSlotsResponse> => {
 
-  const res = await fetch(getListModelSurfacesUrl(),
+  const res = await fetch(getListModelSlotsUrl(),
   {
     ...options,
     method: 'GET'
@@ -3303,8 +3459,8 @@ export const listModelSurfaces = async ( options?: RequestInit): Promise<listMod
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: listModelSurfacesResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listModelSurfacesResponse
+  const data: listModelSlotsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listModelSlotsResponse
 }
 
 
@@ -3344,7 +3500,7 @@ export const getListModelsUrl = (params?: ListModelsParams,) => {
 }
 
 /**
- * @summary Enabled models for a surface
+ * @summary Enabled models for a slot
  */
 export const listModels = async (params?: ListModelsParams, options?: RequestInit): Promise<listModelsResponse> => {
 
@@ -3923,57 +4079,6 @@ export const getQuiz = async (id: string, options?: RequestInit): Promise<getQui
 
 
 
-export type updateQuizResponse200 = {
-  data: Quiz
-  status: 200
-}
-
-export type updateQuizResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type updateQuizResponseSuccess = (updateQuizResponse200) & {
-  headers: Headers;
-};
-export type updateQuizResponseError = (updateQuizResponseDefault) & {
-  headers: Headers;
-};
-
-export type updateQuizResponse = (updateQuizResponseSuccess | updateQuizResponseError)
-
-export const getUpdateQuizUrl = (id: string,) => {
-
-
-
-
-  return `/api/quizzes/${id}`
-}
-
-/**
- * @summary Update a quiz
- */
-export const updateQuiz = async (id: string,
-    updateQuizReq: NonReadonly<UpdateQuizReq>, options?: RequestInit): Promise<updateQuizResponse> => {
-
-  const res = await fetch(getUpdateQuizUrl(id),
-  {
-    ...options,
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(updateQuizReq)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: updateQuizResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as updateQuizResponse
-}
-
-
-
 export type createAttemptResponse201 = {
   data: Attempt
   status: 201
@@ -4071,6 +4176,159 @@ export const cloneQuiz = async (id: string, options?: RequestInit): Promise<clon
 
   const data: cloneQuizResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as cloneQuizResponse
+}
+
+
+
+export type updateQuizContentResponse200 = {
+  data: Quiz
+  status: 200
+}
+
+export type updateQuizContentResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type updateQuizContentResponseSuccess = (updateQuizContentResponse200) & {
+  headers: Headers;
+};
+export type updateQuizContentResponseError = (updateQuizContentResponseDefault) & {
+  headers: Headers;
+};
+
+export type updateQuizContentResponse = (updateQuizContentResponseSuccess | updateQuizContentResponseError)
+
+export const getUpdateQuizContentUrl = (id: string,) => {
+
+
+
+
+  return `/api/quizzes/${id}/content`
+}
+
+/**
+ * @summary Update quiz content
+ */
+export const updateQuizContent = async (id: string,
+    updateQuizContentReq: NonReadonly<UpdateQuizContentReq>, options?: RequestInit): Promise<updateQuizContentResponse> => {
+
+  const res = await fetch(getUpdateQuizContentUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updateQuizContentReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateQuizContentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateQuizContentResponse
+}
+
+
+
+export type updateQuizMetadataResponse200 = {
+  data: Quiz
+  status: 200
+}
+
+export type updateQuizMetadataResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type updateQuizMetadataResponseSuccess = (updateQuizMetadataResponse200) & {
+  headers: Headers;
+};
+export type updateQuizMetadataResponseError = (updateQuizMetadataResponseDefault) & {
+  headers: Headers;
+};
+
+export type updateQuizMetadataResponse = (updateQuizMetadataResponseSuccess | updateQuizMetadataResponseError)
+
+export const getUpdateQuizMetadataUrl = (id: string,) => {
+
+
+
+
+  return `/api/quizzes/${id}/metadata`
+}
+
+/**
+ * @summary Update quiz metadata
+ */
+export const updateQuizMetadata = async (id: string,
+    updateQuizMetadataReq: NonReadonly<UpdateQuizMetadataReq>, options?: RequestInit): Promise<updateQuizMetadataResponse> => {
+
+  const res = await fetch(getUpdateQuizMetadataUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updateQuizMetadataReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateQuizMetadataResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateQuizMetadataResponse
+}
+
+
+
+export type updateQuizSharingResponse200 = {
+  data: Quiz
+  status: 200
+}
+
+export type updateQuizSharingResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type updateQuizSharingResponseSuccess = (updateQuizSharingResponse200) & {
+  headers: Headers;
+};
+export type updateQuizSharingResponseError = (updateQuizSharingResponseDefault) & {
+  headers: Headers;
+};
+
+export type updateQuizSharingResponse = (updateQuizSharingResponseSuccess | updateQuizSharingResponseError)
+
+export const getUpdateQuizSharingUrl = (id: string,) => {
+
+
+
+
+  return `/api/quizzes/${id}/sharing`
+}
+
+/**
+ * @summary Update standalone quiz sharing
+ */
+export const updateQuizSharing = async (id: string,
+    updateStandaloneSharingReq: NonReadonly<UpdateStandaloneSharingReq>, options?: RequestInit): Promise<updateQuizSharingResponse> => {
+
+  const res = await fetch(getUpdateQuizSharingUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updateStandaloneSharingReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateQuizSharingResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateQuizSharingResponse
 }
 
 
@@ -5438,7 +5696,7 @@ export const getGenerateUrl = (id: string,) => {
 }
 
 /**
- * @summary Generate a quiz, deck, mindmap, or diagram
+ * @summary Generate a quiz, flashcards, mindmap, or diagram
  */
 export const generate = async (id: string,
     generateReq: NonReadonly<GenerateReq>, options?: RequestInit): Promise<generateResponse> => {

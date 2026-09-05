@@ -32,7 +32,9 @@ func (a *api) ingestEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no") // disable proxy buffering (nginx)
 
-	ctx := r.Context()
+	userID := uid(r)
+	ctx, cancelLiveAuthorization := a.liveWorkspaceContext(r.Context(), userID, wsID)
+	defer cancelLiveAuthorization()
 	sub := a.rdb.Subscribe(ctx, "ingest:"+wsID)
 	defer sub.Close()
 	ch := sub.Channel()

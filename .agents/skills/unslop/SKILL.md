@@ -1,6 +1,6 @@
 ---
 name: unslop
-description: Cut AI tells from any writing. Must always apply.
+description: Cut AI tells from user-facing writing. Must always apply on response when talking to user.
 ---
 
 # Unslop

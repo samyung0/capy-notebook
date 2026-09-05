@@ -2,6 +2,12 @@ name: Editor perf
 
 on:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      revision:
+        description: Full Git SHA to measure
+        required: true
+        type: string
 
 jobs:
   perf:
@@ -12,6 +18,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.revision || github.sha }}
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -38,6 +46,7 @@ jobs:
         if: always()
         run: pnpm exec tsx e2e/perf/compare-cli.ts assemble e2e/perf/.results perf-snapshot.json
         env:
+          PERF_COMMIT: ${{ inputs.revision || github.sha }}
           PERF_CPU: 4
       - name: Upload failed Playwright artifacts
         if: always() && steps.perf.outcome == 'failure'
@@ -50,28 +59,27 @@ jobs:
             playwright-report-perf/
             test-results/
           retention-days: 7
-      - name: Find previous successful run
-        id: baseline
+      # Green snapshots come from manual dispatches and from promotions, which
+      # call this workflow, so both run lists are read. compare-cli sorts them
+      # by creation time and picks the median-of-5 and best baselines itself.
+      - name: Download retained green snapshots
         if: always()
         continue-on-error: true
-        run: |
-          run_id="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow=perf.yml --status=success --limit=1 --json databaseId --jq '.[0].databaseId // empty')"
-          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
         env:
           GH_TOKEN: ${{ github.token }}
-      - name: Download previous snapshot
-        if: always() && steps.baseline.outputs.run_id != ''
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          github-token: ${{ github.token }}
-          name: perf-snapshot
-          path: baseline
-          run-id: ${{ steps.baseline.outputs.run_id }}
+        run: |
+          mkdir -p baselines
+          for workflow in perf.yml promote-production.yml; do
+            gh run list --repo "$GITHUB_REPOSITORY" --workflow="$workflow" \
+              --status=success --limit=10 --json databaseId --jq '.[].databaseId'
+          done | while read -r run_id; do
+            gh run download "$run_id" --repo "$GITHUB_REPOSITORY" \
+              --name perf-snapshot --dir "baselines/$run_id" || true
+          done
       - name: Write performance comparison
         if: always()
         continue-on-error: true
-        run: pnpm exec tsx e2e/perf/compare-cli.ts compare perf-snapshot.json baseline/perf-snapshot.json >> "$GITHUB_STEP_SUMMARY"
+        run: pnpm exec tsx e2e/perf/compare-cli.ts compare perf-snapshot.json baselines/*/perf-snapshot.json >> "$GITHUB_STEP_SUMMARY"
       - name: Upload performance snapshot
         if: always()
         uses: actions/upload-artifact@v4

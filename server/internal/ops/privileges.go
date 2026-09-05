@@ -29,6 +29,14 @@ type tablePrivilege struct {
 }
 
 var readRequiredPrivileges = []columnPrivilege{
+	{"plan_limits", "plan_tier", "SELECT"},
+	{"plan_limits", "storage_limit_bytes", "SELECT"},
+	{"plan_limits", "credit_limit_micros", "SELECT"},
+	{"plan_limits", "source_file_max_bytes", "SELECT"},
+	{"plan_limits", "material_revision_limit", "SELECT"},
+	{"plan_limits", "owned_workspace_limit", "SELECT"},
+	{"plan_limits", "files_per_workspace", "SELECT"},
+	{"plan_limits", "files_per_upload", "SELECT"},
 	{"resource_credit_rates", "resource_key", "SELECT"},
 	{"resource_credit_rates", "version", "SELECT"},
 	{"resource_credit_rates", "unit", "SELECT"},
@@ -116,18 +124,29 @@ var readRequiredPrivileges = []columnPrivilege{
 	{"users", "name", "SELECT"},
 	{"users", "email", "SELECT"},
 	{"users", "plan_tier", "SELECT"},
+	{"users", "subscription_status", "SELECT"},
 	{"users", "deletion_requested_at", "SELECT"},
 	{"users", "purge_after", "SELECT"},
 	{"users", "deleted_at", "SELECT"},
 	{"users", "suspended_at", "SELECT"},
 	{"users", "suspended_reason", "SELECT"},
+	{"users", "session_revoke_pending", "SELECT"},
+	{"users", "session_revoke_attempts", "SELECT"},
+	{"users", "session_revoke_not_before", "SELECT"},
+	{"users", "session_revoke_last_error", "SELECT"},
 	{"users", "created_at", "SELECT"},
 	{"operators", "user_id", "SELECT"},
 	{"operators", "role", "SELECT"},
 	{"ops_permissions", "role", "SELECT"},
 	{"ops_permissions", "permission", "SELECT"},
 	{"user_subscriptions", "user_id", "SELECT"},
+	{"user_subscriptions", "status", "SELECT"},
+	{"user_subscriptions", "plan_tier", "SELECT"},
 	{"user_subscriptions", "current_period_end", "SELECT"},
+	{"user_subscriptions", "ended_at", "SELECT"},
+	{"user_subscriptions", "canceled_at", "SELECT"},
+	{"user_subscriptions", "stripe_event_created", "SELECT"},
+	{"user_subscriptions", "updated_at", "SELECT"},
 	{"workspaces", "id", "SELECT"},
 	{"workspaces", "user_id", "SELECT"},
 	{"workspaces", "name", "SELECT"},
@@ -161,7 +180,8 @@ var readRequiredPrivileges = []columnPrivilege{
 	{"model_configs", "default_thinking", "SELECT"},
 	{"model_configs", "context_window_tokens", "SELECT"},
 	{"model_configs", "params", "SELECT"},
-	{"model_configs", "surfaces", "SELECT"},
+	{"model_configs", "slots", "SELECT"},
+	{"model_configs", "capabilities", "SELECT"},
 	{"model_configs", "micros_per_input_token", "SELECT"},
 	{"model_configs", "micros_per_cached_input_token", "SELECT"},
 	{"model_configs", "micros_per_output_token", "SELECT"},
@@ -278,7 +298,6 @@ var readRequiredPrivileges = []columnPrivilege{
 	{"ingest_job_attempts", "figures_captioned", "SELECT"},
 	{"ingest_job_attempts", "figures_failed", "SELECT"},
 	{"ingest_job_attempts", "chunks_created", "SELECT"},
-	{"ingest_job_attempts", "concepts_created", "SELECT"},
 }
 
 var registryRequiredPrivileges = []columnPrivilege{
@@ -293,7 +312,8 @@ var registryRequiredPrivileges = []columnPrivilege{
 	{"model_configs", "default_thinking", "SELECT"},
 	{"model_configs", "context_window_tokens", "SELECT"},
 	{"model_configs", "params", "SELECT"},
-	{"model_configs", "surfaces", "SELECT"},
+	{"model_configs", "slots", "SELECT"},
+	{"model_configs", "capabilities", "SELECT"},
 	{"model_configs", "micros_per_input_token", "SELECT"},
 	{"model_configs", "micros_per_cached_input_token", "SELECT"},
 	{"model_configs", "micros_per_output_token", "SELECT"},
@@ -349,7 +369,8 @@ var registryRequiredPrivileges = []columnPrivilege{
 	{"model_configs", "default_thinking", "INSERT"},
 	{"model_configs", "context_window_tokens", "INSERT"},
 	{"model_configs", "params", "INSERT"},
-	{"model_configs", "surfaces", "INSERT"},
+	{"model_configs", "slots", "INSERT"},
+	{"model_configs", "capabilities", "INSERT"},
 	{"model_configs", "micros_per_input_token", "INSERT"},
 	{"model_configs", "micros_per_cached_input_token", "INSERT"},
 	{"model_configs", "micros_per_output_token", "INSERT"},
@@ -654,21 +675,24 @@ func validateNoBroadWrites(ctx context.Context, pool *pgxpool.Pool) []string {
 		SELECT format('%I.%I', n.nspname, c.relname)
 		FROM pg_class c
 		JOIN pg_namespace n ON n.oid = c.relnamespace
-		WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')
+		WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v')
 		  AND (
 			has_table_privilege(current_user, c.oid, 'INSERT') OR
 			has_table_privilege(current_user, c.oid, 'UPDATE') OR
 			has_table_privilege(current_user, c.oid, 'DELETE') OR
 			has_table_privilege(current_user, c.oid, 'TRUNCATE') OR
-			has_table_privilege(current_user, c.oid, 'TRIGGER')
+			has_table_privilege(current_user, c.oid, 'TRIGGER') OR
+			has_any_column_privilege(
+			  current_user, c.oid, 'INSERT,UPDATE,REFERENCES'
+			)
 		  )
 		ORDER BY c.relname LIMIT 1
 	`).Scan(&table)
 	if err == nil {
-		return []string{"has broad write privilege on " + table}
+		return []string{"has write-capable privilege on " + table}
 	}
 	if err != pgx.ErrNoRows {
-		return []string{"could not inspect broad table writes"}
+		return []string{"could not inspect write-capable privileges"}
 	}
 	return nil
 }
@@ -738,29 +762,63 @@ func validateRegistryTableWrites(
 	ctx context.Context,
 	pool *pgxpool.Pool,
 ) []string {
-	checks := []tablePrivilege{
-		{"model_configs", "INSERT"},
-		{"model_registry_state", "UPDATE"},
-		{"users", "UPDATE"},
-		{"notifications", "INSERT"},
-		{"email_outbox", "INSERT"},
-		{"operator_audit_events", "INSERT"},
-	}
 	var problems []string
-	for _, check := range checks {
-		var broad bool
-		if err := pool.QueryRow(ctx,
-			`SELECT has_table_privilege(current_user, $1, $2)`,
-			check.table, check.privilege,
-		).Scan(&broad); err != nil {
-			problems = append(problems, fmt.Sprintf(
-				"cannot inspect broad %s on %s", check.privilege, check.table,
-			))
-		} else if broad {
-			problems = append(problems, fmt.Sprintf(
-				"has table-level %s on %s", check.privilege, check.table,
-			))
+	var table, privilege string
+	err := pool.QueryRow(ctx, `
+		SELECT format('%I.%I', n.nspname, c.relname), privilege
+		FROM pg_class c
+		JOIN pg_namespace n ON n.oid=c.relnamespace
+		CROSS JOIN unnest(ARRAY[
+		  'INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER'
+		]) privilege
+		WHERE n.nspname='public' AND c.relkind IN ('r','p','v')
+		  AND has_table_privilege(current_user, c.oid, privilege)
+		ORDER BY c.relname, privilege
+		LIMIT 1`).Scan(&table, &privilege)
+	if err == nil {
+		problems = append(problems, fmt.Sprintf(
+			"has table-level %s on %s", privilege, table,
+		))
+	} else if err != pgx.ErrNoRows {
+		problems = append(problems, "cannot inspect admin table writes")
+	}
+
+	allowed := make(map[string]struct{})
+	for _, grant := range registryRequiredPrivileges {
+		if grant.privilege != "SELECT" {
+			allowed[grant.table+"\x00"+grant.column+"\x00"+grant.privilege] = struct{}{}
 		}
+	}
+	rows, err := pool.Query(ctx, `
+		SELECT c.relname, a.attname, privilege
+		FROM pg_class c
+		JOIN pg_namespace n ON n.oid=c.relnamespace
+		JOIN pg_attribute a ON a.attrelid=c.oid
+		CROSS JOIN unnest(ARRAY['INSERT','UPDATE','REFERENCES']) privilege
+		WHERE n.nspname='public' AND c.relkind IN ('r','p','v')
+		  AND a.attnum > 0 AND NOT a.attisdropped
+		  AND has_column_privilege(
+		    current_user, c.oid, a.attname, privilege
+		  )
+		ORDER BY c.relname, a.attnum, privilege`)
+	if err != nil {
+		return append(problems, "cannot inspect admin column writes")
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var column string
+		if err := rows.Scan(&table, &column, &privilege); err != nil {
+			return append(problems, "cannot inspect admin column writes")
+		}
+		if _, ok := allowed[table+"\x00"+column+"\x00"+privilege]; !ok {
+			problems = append(problems, fmt.Sprintf(
+				"can %s %s.%s", privilege, table, column,
+			))
+			break
+		}
+	}
+	if err := rows.Err(); err != nil {
+		problems = append(problems, "cannot inspect admin column writes")
 	}
 	return problems
 }

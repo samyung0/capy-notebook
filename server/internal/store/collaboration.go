@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 )
@@ -55,12 +56,12 @@ func (s *Store) ListWorkspaceCollaborators(ctx context.Context, wsID string) ([]
 	return out, rows.Err()
 }
 
-func (s *Store) SetWorkspaceMemberRole(ctx context.Context, wsID, memberID string, role WorkspaceRole) error {
-	_, _, err := s.SetWorkspaceMemberRoleWithResult(ctx, wsID, memberID, role)
+func (s *Store) SetWorkspaceMemberRole(ctx context.Context, actorID, wsID, memberID string, role WorkspaceRole) error {
+	_, _, err := s.SetWorkspaceMemberRoleWithResult(ctx, actorID, wsID, memberID, role)
 	return err
 }
 
-func (s *Store) SetWorkspaceMemberRoleWithResult(ctx context.Context, wsID, memberID string, role WorkspaceRole) (*Notification, bool, error) {
+func (s *Store) SetWorkspaceMemberRoleWithResult(ctx context.Context, actorID, wsID, memberID string, role WorkspaceRole) (*Notification, bool, error) {
 	if role != RoleEditor && role != RoleCommenter && role != RoleViewer {
 		return nil, false, ErrForbidden
 	}
@@ -70,6 +71,13 @@ func (s *Store) SetWorkspaceMemberRoleWithResult(ctx context.Context, wsID, memb
 		return nil, false, err
 	}
 	defer tx.Rollback(ctx)
+	ownerID, err := s.lockWorkspaceMutationTx(ctx, tx, wsID, actorID)
+	if err != nil {
+		return nil, false, err
+	}
+	if actorID != "" && ownerID != actorID {
+		return nil, false, ErrForbidden
+	}
 
 	var memberEmail, locale, workspaceName string
 	var currentRole WorkspaceRole
@@ -92,6 +100,15 @@ func (s *Store) SetWorkspaceMemberRoleWithResult(ctx context.Context, wsID, memb
 	}
 	if currentRole == role {
 		return nil, false, nil
+	}
+	if roleRank(role) > roleRank(currentRole) {
+		status, err := s.accountAccess(ctx, tx, ownerID)
+		if err != nil {
+			return nil, false, err
+		}
+		if err := status.Err(); err != nil {
+			return nil, false, err
+		}
 	}
 	// Only pending rows are dropped here. A row already claimed for sending is
 	// row-locked by the dispatcher for the whole provider call, so deleting it
@@ -156,17 +173,24 @@ func (s *Store) SetWorkspaceMemberRoleWithResult(ctx context.Context, wsID, memb
 	return &notification, true, nil
 }
 
-func (s *Store) RemoveWorkspaceMember(ctx context.Context, wsID, memberID string) error {
-	_, _, err := s.RemoveWorkspaceMemberWithResult(ctx, wsID, memberID)
+func (s *Store) RemoveWorkspaceMember(ctx context.Context, actorID, wsID, memberID string) error {
+	_, _, err := s.RemoveWorkspaceMemberWithResult(ctx, actorID, wsID, memberID)
 	return err
 }
 
-func (s *Store) RemoveWorkspaceMemberWithResult(ctx context.Context, wsID, memberID string) (*Notification, bool, error) {
+func (s *Store) RemoveWorkspaceMemberWithResult(ctx context.Context, actorID, wsID, memberID string) (*Notification, bool, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, false, err
 	}
 	defer tx.Rollback(ctx)
+	ownerID, err := s.lockWorkspaceMutationTx(ctx, tx, wsID, actorID)
+	if err != nil {
+		return nil, false, err
+	}
+	if actorID != "" && ownerID != actorID {
+		return nil, false, ErrForbidden
+	}
 
 	var memberEmail, locale, workspaceName string
 	if _, err := tx.Exec(ctx, `DELETE FROM email_outbox
@@ -252,16 +276,36 @@ func (s *Store) CreateWorkspaceInviteWithResult(ctx context.Context, wsID, ident
 		return nil, false, err
 	}
 	defer tx.Rollback(ctx)
+	ownerID, err := s.lockWorkspaceMutationTx(ctx, tx, wsID, invitedBy)
+	if err != nil {
+		return nil, false, err
+	}
+	if ownerID != invitedBy {
+		return nil, false, ErrForbidden
+	}
+	status, err := s.accountAccess(ctx, tx, ownerID)
+	if err != nil {
+		return nil, false, err
+	}
+	if err := status.Err(); err != nil {
+		return nil, false, err
+	}
 
 	var inviteID, invitedUserID, workspaceName, inviteEmail, locale string
 	err = tx.QueryRow(ctx, `
 		WITH candidates AS (
-			SELECT id FROM users WHERE id=$2 AND deleted_at IS NULL
+			SELECT id FROM users WHERE id=$2
+				AND deleted_at IS NULL AND deletion_requested_at IS NULL
+				AND suspended_at IS NULL
 			UNION ALL
 			SELECT id FROM users
-			WHERE lower(email)=lower($2) AND deleted_at IS NULL
+			WHERE lower(email)=lower($2)
+				AND deleted_at IS NULL AND deletion_requested_at IS NULL
+				AND suspended_at IS NULL
 				AND NOT EXISTS (
-					SELECT 1 FROM users WHERE id=$2 AND deleted_at IS NULL
+					SELECT 1 FROM users WHERE id=$2
+						AND deleted_at IS NULL AND deletion_requested_at IS NULL
+						AND suspended_at IS NULL
 				)
 		),
 		target AS (
@@ -337,13 +381,6 @@ func (s *Store) CreateWorkspaceInviteWithResult(ctx context.Context, wsID, ident
 		return nil, false, err
 	}
 
-	// A re-invite invalidates any not-yet-sent email containing the old token.
-	if _, err := tx.Exec(ctx, `DELETE FROM email_outbox
-		WHERE template='workspace-invite'
-			AND status='pending'
-			AND payload->>'inviteId'=$1`, inviteID); err != nil {
-		return nil, false, err
-	}
 	emailPayload, err := json.Marshal(map[string]any{
 		"workspaceName": workspaceName,
 		"role":          role,
@@ -385,8 +422,9 @@ func inviteTokenHash(token string) [sha256.Size]byte {
 }
 
 // ExpireWorkspaceInvites removes unaccepted invitations after their deadline.
-// Associated in-app notifications are deleted by the foreign-key cascade, and
-// pending invite emails are removed before the invite row disappears.
+// Associated in-app notifications are deleted by the foreign-key cascade.
+// Queued email delivery is independent: its link may become invalid before the
+// recipient opens it, and the acceptance path is the authority.
 func (s *Store) ExpireWorkspaceInvites(ctx context.Context) (int64, error) {
 	_, count, err := s.ExpireWorkspaceInvitesWithResult(ctx)
 	return count, err
@@ -421,15 +459,6 @@ func (s *Store) ExpireWorkspaceInvitesWithResult(ctx context.Context) ([]Notific
 	}
 	rows.Close()
 
-	if _, err := tx.Exec(ctx, `DELETE FROM email_outbox
-		WHERE template='workspace-invite'
-			AND status='pending'
-			AND payload->>'inviteId' IN (
-				SELECT id FROM workspace_invites
-				WHERE accepted_at IS NULL AND expires_at<=now()
-			)`); err != nil {
-		return nil, 0, err
-	}
 	ct, err := tx.Exec(ctx, `DELETE FROM workspace_invites
 		WHERE accepted_at IS NULL AND expires_at<=now()`)
 	if err != nil {
@@ -453,14 +482,27 @@ func (s *Store) AcceptWorkspaceInviteWithResult(ctx context.Context, reference, 
 	}
 	defer tx.Rollback(ctx)
 	var invite WorkspaceInvite
-	query := `SELECT id, workspace_id, COALESCE(invited_user_id,''), email, role, invited_by,
-		expires_at, accepted_at, revoked_at, created_at
-		FROM workspace_invites WHERE token_hash=$1 FOR UPDATE`
+	var ownerID string
+	query := `SELECT wi.id, wi.workspace_id, COALESCE(wi.invited_user_id,''), wi.email,
+		wi.role, wi.invited_by, wi.expires_at, wi.accepted_at, wi.revoked_at, wi.created_at,
+		owner.id
+		FROM workspace_invites wi
+		JOIN workspaces w ON w.id=wi.workspace_id
+		JOIN users owner ON owner.id=w.user_id
+		WHERE wi.token_hash=$1
+		  AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
+		FOR UPDATE OF w, wi`
 	var arg any
 	if isInviteID(reference) {
-		query = `SELECT id, workspace_id, COALESCE(invited_user_id,''), email, role, invited_by,
-			expires_at, accepted_at, revoked_at, created_at
-			FROM workspace_invites WHERE id=$1 FOR UPDATE`
+		query = `SELECT wi.id, wi.workspace_id, COALESCE(wi.invited_user_id,''), wi.email,
+			wi.role, wi.invited_by, wi.expires_at, wi.accepted_at, wi.revoked_at, wi.created_at,
+			owner.id
+			FROM workspace_invites wi
+			JOIN workspaces w ON w.id=wi.workspace_id
+			JOIN users owner ON owner.id=w.user_id
+			WHERE wi.id=$1
+			  AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
+			FOR UPDATE OF w, wi`
 		arg = reference
 	} else {
 		tokenHash := inviteTokenHash(reference)
@@ -468,18 +510,26 @@ func (s *Store) AcceptWorkspaceInviteWithResult(ctx context.Context, reference, 
 	}
 	err = tx.QueryRow(ctx, query, arg).
 		Scan(&invite.ID, &invite.WorkspaceID, &invite.InvitedUserID, &invite.Email, &invite.Role,
-			&invite.InvitedBy, &invite.ExpiresAt, &invite.AcceptedAt, &invite.RevokedAt, &invite.CreatedAt)
+			&invite.InvitedBy, &invite.ExpiresAt, &invite.AcceptedAt, &invite.RevokedAt, &invite.CreatedAt,
+			&ownerID)
 	if isNoRows(err) {
 		// A raw token can legally start with "inv_". Only an existing complete
 		// invite id is treated as an id; otherwise always retry token-hash
 		// lookup instead of rejecting a valid token by prefix alone.
 		if isInviteID(reference) {
 			tokenHash := inviteTokenHash(reference)
-			err = tx.QueryRow(ctx, `SELECT id, workspace_id, COALESCE(invited_user_id,''), email, role, invited_by,
-				expires_at, accepted_at, revoked_at, created_at
-				FROM workspace_invites WHERE token_hash=$1 FOR UPDATE`, tokenHash[:]).
+			err = tx.QueryRow(ctx, `SELECT wi.id, wi.workspace_id, COALESCE(wi.invited_user_id,''), wi.email,
+				wi.role, wi.invited_by, wi.expires_at, wi.accepted_at, wi.revoked_at, wi.created_at,
+				owner.id
+				FROM workspace_invites wi
+				JOIN workspaces w ON w.id=wi.workspace_id
+				JOIN users owner ON owner.id=w.user_id
+				WHERE wi.token_hash=$1
+				  AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
+					FOR UPDATE OF w, wi`, tokenHash[:]).
 				Scan(&invite.ID, &invite.WorkspaceID, &invite.InvitedUserID, &invite.Email, &invite.Role,
-					&invite.InvitedBy, &invite.ExpiresAt, &invite.AcceptedAt, &invite.RevokedAt, &invite.CreatedAt)
+					&invite.InvitedBy, &invite.ExpiresAt, &invite.AcceptedAt, &invite.RevokedAt, &invite.CreatedAt,
+					&ownerID)
 		}
 	}
 	if isNoRows(err) {
@@ -487,6 +537,26 @@ func (s *Store) AcceptWorkspaceInviteWithResult(ctx context.Context, reference, 
 	}
 	if err != nil {
 		return WorkspaceMember{}, "", err
+	}
+	// The workspace lock makes ownership immutable while the owner and recipient
+	// account rows are acquired in canonical ID order. Taking both accounts here
+	// prevents reciprocal acceptances from locking the same pair in opposite
+	// orders.
+	if err := s.lockAccountSessionsTx(ctx, tx, ownerID, userID); err != nil {
+		var locked *AccountLockedError
+		if errors.As(err, &locked) && locked.UserID == ownerID {
+			return WorkspaceMember{}, "", ErrNotFound
+		}
+		return WorkspaceMember{}, "", err
+	}
+	ownerStatus, err := s.accountAccess(ctx, tx, ownerID)
+	if err != nil {
+		return WorkspaceMember{}, "", err
+	}
+	if ownerStatus.Err() != nil {
+		// Invitation links use the same unavailable surface for an invalid token,
+		// a closed workspace, and an owner whose lifecycle cannot widen access.
+		return WorkspaceMember{}, "", ErrNotFound
 	}
 	if invite.AcceptedAt != nil || invite.RevokedAt != nil || time.Now().UTC().After(invite.ExpiresAt) {
 		return WorkspaceMember{}, "", ErrNotFound
@@ -521,12 +591,6 @@ func (s *Store) AcceptWorkspaceInviteWithResult(ctx context.Context, reference, 
 	if _, err := tx.Exec(ctx, `DELETE FROM notifications WHERE workspace_invite_id=$1`, invite.ID); err != nil {
 		return WorkspaceMember{}, "", err
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM email_outbox
-		WHERE template='workspace-invite'
-			AND status='pending'
-			AND payload->>'inviteId'=$1`, invite.ID); err != nil {
-		return WorkspaceMember{}, "", err
-	}
 	if err := tx.Commit(ctx); err != nil {
 		return WorkspaceMember{}, "", err
 	}
@@ -555,31 +619,31 @@ func isInviteID(reference string) bool {
 }
 
 func (s *Store) ListMaterialRevisions(ctx context.Context, materialID string) ([]MaterialRevision, error) {
-	free, err := s.PlanLimits(PlanFree)
+	var ownerID string
+	err := s.pool.QueryRow(ctx, `SELECT owner_user_id FROM materials WHERE id=$1`, materialID).
+		Scan(&ownerID)
+	if isNoRows(err) {
+		return []MaterialRevision{}, nil
+	}
 	if err != nil {
 		return nil, err
 	}
-	pro, err := s.PlanLimits(PlanPro)
+	tier, err := s.effectivePlanTierForUser(ctx, s.pool, ownerID)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.pool.Query(ctx, `WITH retention AS (
-		SELECT CASE WHEN u.plan_tier = 'pro'
-			THEN $2::bigint ELSE $3::bigint
-		END AS revision_limit
-		FROM materials m
-		JOIN users u ON u.id=m.owner_user_id
-		WHERE m.id=$1
-	)
-		SELECT material_id, revision, parent_revision, event_type,
+	limits, err := s.PlanLimits(tier)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.pool.Query(ctx, `SELECT material_id, revision, parent_revision, event_type,
 		title, content, event_metadata, created_by, created_at
 		FROM material_revisions
 		WHERE material_id=$1
 		ORDER BY version_date DESC
-		LIMIT COALESCE((SELECT revision_limit FROM retention), $3)`,
+		LIMIT $2`,
 		materialID,
-		pro.MaterialRevisions,
-		free.MaterialRevisions,
+		limits.MaterialRevisions,
 	)
 	if err != nil {
 		return nil, err

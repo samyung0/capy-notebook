@@ -1,0 +1,48 @@
+[
+  { "q": "Flau-BERT", "expect": [["camembert-taln.pdf", 6]], "flag": 1 },
+  {
+    "q": "OSCAR CCNET",
+    "expect": [["camembert-taln.pdf", 12], ["camembert-taln.pdf", 18]],
+    "flag": 1
+  },
+  { "q": "Table 3 OSCAR", "expect": [["camembert-taln.pdf", 18]], "flag": 1 },
+  {
+    "q": "whole word masking",
+    "expect": [["camembert-taln.pdf", 24]],
+    "flag": 1
+  },
+  {
+    "q": "138Go OSCAR",
+    "expect": [
+      ["camembert-taln.pdf", 20],
+      ["camembert-taln.pdf", 21],
+      ["camembert-taln.pdf", 1]
+    ],
+    "flag": 1
+  },
+  { "q": "UDPipe Future", "expect": [["camembert-taln.pdf", 19]], "flag": 1 },
+  {
+    "q": "WikiNER-fr-gold",
+    "expect": [
+      ["wikiner-fr-gold.pdf", 1],
+      ["wikiner-fr-gold.pdf", 20],
+      ["wikiner-fr-gold.pdf", 21]
+    ],
+    "flag": 1
+  },
+  { "q": "WIKI-2", "expect": [["wikiner-fr-gold.pdf", 7]], "flag": 1 },
+  { "q": "BIOES format", "expect": [["wikiner-fr-gold.pdf", 9]], "flag": 1 },
+  { "q": "Danrun Cao", "expect": [["wikiner-fr-gold.pdf", 0]], "flag": 1 },
+  { "q": "FENEC corpus", "expect": [["wikiner-fr-gold.pdf", 3]], "flag": 1 },
+  { "q": "BBN corpus", "expect": [["wikiner-fr-gold.pdf", 6]], "flag": 1 },
+  {
+    "q": "Table 1",
+    "expect": [["camembert-taln.pdf", 13], ["wikiner-fr-gold.pdf", 7]],
+    "flag": 1
+  },
+  {
+    "q": "CamemBERT",
+    "expect": [["camembert-taln.pdf", 1], ["camembert-taln.pdf", 9]],
+    "flag": 1
+  }
+]

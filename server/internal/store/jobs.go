@@ -35,11 +35,11 @@ func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, 
 	}
 	defer tx.Rollback(ctx)
 
-	chapterID, err = resolveUploadChapterID(ctx, tx, wsID, chapterID, chapterName)
+	ownerID, err := s.lockWorkspaceEditorMutationTx(ctx, tx, wsID, createdBy)
 	if err != nil {
 		return File{}, "", err
 	}
-	ownerID, err := s.storageOwnerTx(ctx, tx, wsID)
+	chapterID, err = resolveUploadChapterID(ctx, tx, wsID, chapterID, chapterName)
 	if err != nil {
 		return File{}, "", err
 	}
@@ -105,11 +105,11 @@ func (s *Store) CreateSourceReady(ctx context.Context, wsID, createdBy, name, ki
 	}
 	defer tx.Rollback(ctx)
 
-	chapterID, err = resolveUploadChapterID(ctx, tx, wsID, chapterID, chapterName)
+	ownerID, err := s.lockWorkspaceEditorMutationTx(ctx, tx, wsID, createdBy)
 	if err != nil {
 		return File{}, err
 	}
-	ownerID, err := s.storageOwnerTx(ctx, tx, wsID)
+	chapterID, err = resolveUploadChapterID(ctx, tx, wsID, chapterID, chapterName)
 	if err != nil {
 		return File{}, err
 	}
@@ -178,7 +178,7 @@ func (s *Store) FilePreviewBlob(ctx context.Context, id string) (string, error) 
 var ErrIngestUnpinnable = errors.New("ingest cannot be enqueued without an actor and model pins")
 
 // ingestJobPayload is the enqueue-time snapshot for an ingest job: the actor
-// who will be billed, plus the ingest and vision pins resolved now. The worker
+// who will be billed, plus the ingest and captioning pins resolved now. The worker
 // uses exactly those versions even if the live default is retargeted while the
 // job sits in the queue.
 //
@@ -202,7 +202,7 @@ func (s *Store) ingestJobPayload(ctx context.Context, actorUserID string, base m
 	if s.registry == nil {
 		return nil, fmt.Errorf("%w: no model registry", ErrIngestUnpinnable)
 	}
-	ingest, vision, err := s.registry.SnapshotIngest(ctx)
+	ingest, captioning, err := s.registry.SnapshotIngest(ctx)
 	if err != nil {
 		obs.CaptureErr(ctx, err, map[string]string{"stage": "ingest_model_pin"})
 		return nil, fmt.Errorf("%w: %v", ErrIngestUnpinnable, err)
@@ -210,9 +210,9 @@ func (s *Store) ingestJobPayload(ctx context.Context, actorUserID string, base m
 	base["ingestProviderSlug"] = ingest.ProviderSlug
 	base["ingestModelSlug"] = ingest.ModelSlug
 	base["ingestModelVersion"] = ingest.Version
-	base["visionProviderSlug"] = vision.ProviderSlug
-	base["visionModelSlug"] = vision.ModelSlug
-	base["visionModelVersion"] = vision.Version
+	base["captioningProviderSlug"] = captioning.ProviderSlug
+	base["captioningModelSlug"] = captioning.ModelSlug
+	base["captioningModelVersion"] = captioning.Version
 	rates, err := s.ActiveResourceRates(ctx, ingestResourceKeys)
 	if err != nil {
 		obs.CaptureErr(ctx, err, map[string]string{"stage": "ingest_resource_rates"})
@@ -220,44 +220,4 @@ func (s *Store) ingestJobPayload(ctx context.Context, actorUserID string, base m
 	}
 	base["resourceRates"] = rates
 	return json.Marshal(base)
-}
-
-// CompleteAudioTranscriptionWebhook records the provider result and wakes the
-// yielded ingest job. Duplicate webhook deliveries are idempotent.
-func (s *Store) CompleteAudioTranscriptionWebhook(ctx context.Context, internalID, providerID string, result map[string]any) error {
-	if internalID == "" {
-		return errors.New("audio transcription id is required")
-	}
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-	var cleanupRequested bool
-	err = tx.QueryRow(ctx, `
-		UPDATE audio_transcriptions
-		SET provider_transcription_id=COALESCE(NULLIF($2, ''), provider_transcription_id),
-		    status=CASE WHEN cleanup_requested THEN status ELSE 'completed' END,
-		    result=CASE WHEN cleanup_requested THEN NULL ELSE $3::jsonb END,
-		    error=CASE WHEN cleanup_requested THEN error ELSE NULL END,
-		    cleanup_not_before=CASE WHEN cleanup_requested THEN now() ELSE cleanup_not_before END,
-		    completed_at=now(), updated_at=now()
-		WHERE id=$1 AND (status IN ('submitting','pending','completed') OR cleanup_requested)
-		RETURNING cleanup_requested`, internalID, providerID, result).Scan(&cleanupRequested)
-	if err != nil {
-		if isNoRows(err) {
-			return ErrNotFound
-		}
-		return err
-	}
-	if cleanupRequested {
-		return tx.Commit(ctx)
-	}
-	if _, err := tx.Exec(ctx, `
-		UPDATE jobs SET not_before=now(), updated_at=now()
-		WHERE id=(SELECT job_id FROM audio_transcriptions WHERE id=$1)
-		  AND status='pending'`, internalID); err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
 }

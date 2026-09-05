@@ -77,6 +77,30 @@ func TestPurgeUserDeletesLLMCredentials(t *testing.T) {
 	}
 }
 
+func TestSuspendedUserCannotUpsertLLMCredential(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	s.SetLLMCredentialKey(bytes.Repeat([]byte{7}, 32))
+	userID := newCreditsTestUser(t, s)
+	if _, err := s.pool.Exec(ctx, `UPDATE users SET
+		suspended_at=now(), suspended_reason='test' WHERE id=$1`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertLLMCredential(
+		ctx, userID, LLMProviderOpenAI, "sk-test-openai",
+	); err == nil {
+		t.Fatal("suspended user stored a credential")
+	}
+	var count int
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM user_llm_credentials
+		WHERE user_id=$1`, userID).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("credential count = %d, want 0", count)
+	}
+}
+
 func TestDeleteLLMCredentialRequiresCatalogDefaultsBeforeMutation(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()

@@ -10,16 +10,17 @@ import {
 
 function config(
   name: string,
-  surfaces: CatalogConfig['surfaces'],
+  slots: CatalogConfig['slots'],
   defaults: CatalogConfig['isDefaultFor']
 ): CatalogConfig {
   return {
     byokEnabled: false,
+    capabilities: slots.includes('retrieval') ? ['embedding'] : [],
     contextWindowTokens: 128_000,
     createdAt: '2026-08-24T12:00:00Z',
     createdBy: '',
-    defaultThinking: surfaces.includes('embedding') ? '' : 'instant',
-    embeddingDefaultEligible: surfaces.includes('embedding'),
+    defaultThinking: slots.includes('retrieval') ? '' : 'instant',
+    embeddingDefaultEligible: slots.includes('retrieval'),
     embeddingValidationError: '',
     enabled: true,
     isDefaultFor: defaults,
@@ -32,8 +33,8 @@ function config(
     platformEnabled: true,
     providerName: 'Test',
     providerSlug: 'deepseek',
-    surfaces,
-    thinkingLevels: surfaces.includes('embedding')
+    slots,
+    thinkingLevels: slots.includes('retrieval')
       ? []
       : ['instant', 'low', 'mid', 'high', 'max'],
     updatedAt: '2026-08-24T12:00:00Z',
@@ -45,9 +46,10 @@ function config(
 function registry(): Registry {
   return {
     aliasesAllowed: false,
+    capabilities: ['vision', 'pdf', 'embedding'],
     configs: [
-      config('alpha', ['chat', 'embedding'], ['chat', 'embedding']),
-      config('beta', ['chat', 'embedding'], []),
+      config('alpha', ['chat', 'retrieval'], ['chat', 'retrieval']),
+      config('beta', ['chat', 'retrieval'], []),
     ],
     embeddingWorkspaceCounts: [
       {
@@ -66,7 +68,7 @@ function registry(): Registry {
       },
     ],
     revision: 7,
-    surfaces: ['chat', 'embedding'],
+    slots: ['chat', 'retrieval'],
   };
 }
 
@@ -77,7 +79,7 @@ describe('registry reducer', () => {
     const beta = modelRefId(registry().configs[1]);
     const changed = registryReducer(initial, {
       rowId: beta,
-      surface: 'chat',
+      slot: 'chat',
       type: 'set-default',
     });
 
@@ -98,7 +100,7 @@ describe('registry request assembly', () => {
       cell: {
         isDefault: true,
         rowId: alpha,
-        surface: 'chat',
+        slot: 'chat',
         target: { draftId: draft.id, kind: 'draft' },
       },
       type: 'set-cell',
@@ -107,7 +109,7 @@ describe('registry request assembly', () => {
       cell: {
         isDefault: true,
         rowId: alpha,
-        surface: 'embedding',
+        slot: 'retrieval',
         target: { draftId: draft.id, kind: 'draft' },
       },
       type: 'set-cell',
@@ -126,17 +128,17 @@ describe('registry request assembly', () => {
       acknowledgeEmbeddingRetarget: true,
       active: [
         {
-          defaultFor: ['chat', 'embedding'],
+          defaultFor: ['chat', 'retrieval'],
           modelSlug: 'test/alpha',
           platformEnabled: true,
           providerSlug: 'deepseek',
-          surfaces: ['chat', 'embedding'],
+          slots: ['chat', 'retrieval'],
         },
         {
           defaultFor: [],
           modelSlug: 'test/beta',
           providerSlug: 'deepseek',
-          surfaces: ['chat', 'embedding'],
+          slots: ['chat', 'retrieval'],
         },
       ],
       revision: 7,
@@ -150,12 +152,12 @@ describe('registry request assembly', () => {
     let state = createRegistryState(snapshot);
     state = registryReducer(state, {
       rowId: alpha,
-      surface: 'chat',
+      slot: 'chat',
       type: 'clear-cell',
     });
     state = registryReducer(state, {
       rowId: beta,
-      surface: 'chat',
+      slot: 'chat',
       type: 'set-default',
     });
     const assembled = assembleRegistryRequest(snapshot, state);
@@ -165,8 +167,8 @@ describe('registry request assembly', () => {
         assembled.request.active.find(
           (row) =>
             row.providerSlug === 'deepseek' && row.modelSlug === 'test/alpha'
-        )?.surfaces
-      ).toEqual(['embedding']);
+        )?.slots
+      ).toEqual(['retrieval']);
     }
   });
 
@@ -176,7 +178,7 @@ describe('registry request assembly', () => {
     let state = createRegistryState(snapshot);
     state = registryReducer(state, {
       rowId: beta,
-      surface: 'embedding',
+      slot: 'retrieval',
       type: 'set-default',
     });
 

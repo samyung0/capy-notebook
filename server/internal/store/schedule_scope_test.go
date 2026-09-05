@@ -155,3 +155,50 @@ func TestOwnerEditsAndDeletesScheduleRows(t *testing.T) {
 		t.Fatalf("task survived its own delete: %#v", tasks)
 	}
 }
+
+func TestScheduleMutationsRecheckAccountLifecycle(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := newBlobTestUser(t, s, "schedule-locked")
+	labelID := uid("lb")
+	taskID := uid("tk")
+	eventID := uid("ev")
+	if _, err := s.pool.Exec(ctx, `INSERT INTO labels (id, user_id, name, color)
+		VALUES ($1,$2,'Biology','green')`, labelID, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO tasks (id, user_id, title, done, due_date)
+		VALUES ($1,$2,'Read',false,now())`, taskID, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO events (id, user_id, title, start_at, end_at)
+		VALUES ($1,$2,'Lab',now(),now()+interval '1 hour')`, eventID, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE users SET suspended_at=now(),
+		suspended_reason='test suspension' WHERE id=$1`,
+		userID); err != nil {
+		t.Fatal(err)
+	}
+	name := "Blocked"
+	assertLocked := func(err error) {
+		t.Helper()
+		var locked *AccountLockedError
+		if !errors.As(err, &locked) || locked.State != AccountSuspended {
+			t.Fatalf("mutation error = %v, want suspended account", err)
+		}
+	}
+	_, err := s.UpdateLabel(ctx, userID, labelID, LabelPatch{Name: &name})
+	assertLocked(err)
+	_, err = s.UpdateTask(ctx, userID, taskID, TaskPatch{Title: &name})
+	assertLocked(err)
+	_, err = s.UpdateEvent(ctx, userID, eventID, EventPatch{Title: &name})
+	assertLocked(err)
+	assertLocked(s.DeleteLabel(ctx, userID, labelID))
+	assertLocked(s.DeleteTask(ctx, userID, taskID))
+	assertLocked(s.DeleteEvent(ctx, userID, eventID))
+	_, err = s.CreateEvent(ctx, userID, Event{
+		Title: "Blocked", Start: time.Now(), End: time.Now().Add(time.Hour),
+	})
+	assertLocked(err)
+}

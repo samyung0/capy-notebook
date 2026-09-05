@@ -19,9 +19,8 @@ case "$mode" in
     review_require_command uv
     ;;
   source)
-    review_require_command strix
-    review_require_value STRIX_LLM
-    review_require_value LLM_API_KEY
+    review_require_command codex
+    review_require_command gh
     ;;
   uat)
     review_require_command curl
@@ -29,6 +28,7 @@ case "$mode" in
     ;;
   uat-security)
     review_require_command curl
+    review_require_command gh
     review_require_command strix
     review_require_value STRIX_LLM
     review_require_value LLM_API_KEY

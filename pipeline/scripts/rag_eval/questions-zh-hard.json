@@ -1,0 +1,21 @@
+[
+  {
+    "q": "学了新类别就把旧的忘了，论文管这个问题叫什么",
+    "expect": [["zh-CN.pdf", 6], ["zh-CN.pdf", 7], ["zh-CN.pdf", 1]]
+  },
+  { "q": "2010年广州哪个地铁站有人上街撑粤语", "expect": [["zh_HK.pdf", 2]] },
+  {
+    "q": "博士论文里AI和人类评审怎么配合才最好",
+    "expect": [["mixed_zh_en.pdf", 4], ["mixed_zh_en.pdf", 9]]
+  },
+  { "q": "实验是在哪张显卡上跑的", "expect": [["zh-CN.pdf", 40]] },
+  {
+    "q": "王晓宇是哪个学校的",
+    "expect": [
+      ["zh-CN.pdf", 0],
+      ["zh-CN.pdf", 1],
+      ["zh-CN.pdf", 60],
+      ["zh-CN.pdf", 64]
+    ]
+  }
+]

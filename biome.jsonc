@@ -19,7 +19,8 @@
       "!!**/src/api/gen",
       "!!**/public/mockServiceWorker.js",
       "!!**/src/styles/tailwind.css",
-      "!!**/litellm_catalog.json"
+      "!!**/litellm_catalog.json",
+      "!!artifacts/architecture"
     ]
   },
   "linter": {

@@ -108,6 +108,143 @@ def test_tables_equations_and_captioned_images_are_indexed():
     assert "blank.png" not in text
 
 
+def test_tables_are_flattened_to_pipe_rows():
+    """The parser's table HTML is a fifth of a textbook's indexed characters
+    once every cell carries rowspan/colspan attributes. Cells keep their text
+    and order; the markup goes."""
+    chunks = chunk_content_list(
+        [
+            {
+                "type": "table",
+                "table_caption": ["Table 2"],
+                "table_body": (
+                    "<html><body><table><tr><td rowspan=1 colspan=1>Trial</td>"
+                    "<td rowspan=1 colspan=1>Rate<br>(s<sup>-1</sup>)</td></tr>"
+                    "<tr><td rowspan=1 colspan=1>1</td>"
+                    "<td rowspan=1 colspan=1><img src='x.png'/>0.5</td></tr>"
+                    "</table></body></html>"
+                ),
+                "page_idx": 0,
+            }
+        ]
+    )
+
+    assert chunks[0].text == "Table 2\nTrial | Rate (s-1)\n1 | 0.5"
+
+
+def test_sub_sup_tags_are_stripped_and_inline_latex_is_compacted():
+    chunks = chunk_content_list(
+        [
+            _block(
+                "Water is H<sub>2</sub>O and area is 3 m<sup>2</sup>, "
+                "i.e. $\\mathsf { m } ^ { 2 }$ per $\\mathrm { s }$.",
+                0,
+            )
+        ]
+    )
+
+    assert chunks[0].text == (
+        "Water is H2O and area is 3 m2, i.e. $\\mathsf{m}^{2}$ per $\\mathrm{s}$."
+    )
+
+
+def test_affiliation_markers_are_dropped_but_exponents_stay():
+    """'Mayor-Rocher<sup>1</sup>' indexed as 'rocher1', which no query types.
+    A digits-only superscript after a word, a CJK name or at a line start is a
+    marker; after a unit, a number or a variable it is an exponent."""
+    chunks = chunk_content_list(
+        [
+            _block(
+                "Marina Mayor-Rocher<sup>1</sup>, Louis Martin∗<sup>1,2,3</sup>, "
+                "LI Xin<sup>1,2+</sup>, 王晓宇<sup>1</sup>\n"
+                "<sup>1</sup>Universidad Autónoma de Madrid\n"
+                "1 petaFLOP is 10<sup>15</sup> FLOPS at 3 mmol dm<sup>-3</sup> "
+                "over 2 m<sup>2</sup>, Ca<sup>2+</sup>",
+                0,
+            )
+        ]
+    )
+
+    assert chunks[0].text == (
+        "Marina Mayor-Rocher, Louis Martin, LI Xin, 王晓宇\n"
+        "Universidad Autónoma de Madrid\n"
+        "1 petaFLOP is 1015 FLOPS at 3 mmol dm-3 over 2 m2, Ca2+"
+    )
+
+
+def test_text_repeated_on_three_pages_is_furniture_whatever_its_label():
+    """A journal's running title arrived as ``header`` on 22 of 25 pages and
+    opened 28 of 75 chunks; a deck's licence line arrived as ``text`` on 40.
+    Two pages is a real repeat (a heading restated after a figure); three is
+    furniture. Headings are exempt: they set the section path, not the body."""
+    title = "El Sesgo Lingüístico Digital en la IA: implicaciones"
+    licence = "Licensed under CC BY 4.0"
+    blocks = []
+    for page in range(3):
+        blocks.append({"type": "header", "text": title, "page_idx": page})
+        blocks.append({"type": "text", "text": licence, "page_idx": page})
+        blocks.append(_block("Methods", page, level=2))
+        blocks.append(_block(f"Body of page {page}. " * 20, page))
+    blocks.append({"type": "text", "text": "Twice only", "page_idx": 0})
+    blocks.append({"type": "text", "text": "Twice only", "page_idx": 2})
+
+    chunks = chunk_content_list(blocks)
+    text = "\n".join(c.text for c in chunks)
+
+    assert title not in text and licence not in text
+    assert text.count("Twice only") == 2
+    assert "Body of page 2" in text
+    assert {c.section_path for c in chunks} == {"Methods"}
+
+
+def test_reference_list_is_marked_but_a_citing_body_list_is_not():
+    """A bibliography is one ``list`` block of citation-shaped items; it stays
+    embedded and readable but is flagged so indexing leaves it out of the
+    lexical leg. A body list that cites one paper is content."""
+    refs = [
+        f"[{i}] Author {i}, et al. Title of paper {i}. Journal, 2019." for i in range(6)
+    ]
+    body = [
+        "Collect samples",
+        "See Smith et al. (2020)",
+        "Weigh them",
+        "Plot",
+        "Report",
+    ]
+    blocks = [
+        _block("References", 0, level=2),
+        {"type": "list", "list_items": refs, "page_idx": 0},
+        _block("Method", 1, level=2),
+        {"type": "list", "list_items": body, "page_idx": 1},
+        _block("A paragraph of the method section that runs on. " * 4, 1),
+    ]
+
+    chunks = chunk_content_list(blocks)
+    by_section = {c.section_path: c for c in chunks}
+    assert by_section["References"].reference is True
+    assert by_section["Method"].reference is False
+
+
+def test_packing_is_bounded_by_estimated_tokens_not_characters():
+    """A CJK character is roughly a token, so by characters a Chinese chunk
+    carried four times the tokens of an English one and five hits alone filled
+    the tool-output cap."""
+    from pipeline.config import cfg
+
+    latin_block = "Chlorophyll absorbs red and blue light. Yes"
+    cjk_block = "叶绿素吸收红光和蓝光。"
+    assert estimate_tokens(latin_block) == estimate_tokens(cjk_block) == 11
+
+    latin = chunk_content_list([_block(latin_block, 0)] * 60)
+    cjk = chunk_content_list([_block(cjk_block, 0)] * 60)
+
+    assert len(latin) > 1
+    # The bound is on block text; the "\n\n" joiners add a token per ~2 blocks.
+    assert all(estimate_tokens(c.text) <= cfg.chunk_tokens + 20 for c in latin + cjk)
+    # Same tokens per block, so the same packing: the CJK text is not 4x denser.
+    assert len(latin) == len(cjk)
+
+
 def test_chart_blocks_are_indexed_like_images():
     """A ``chart`` is a picture block under a different label.
 
@@ -261,16 +398,42 @@ def test_latin_text_passes_through_untouched():
 def test_mixed_script_keeps_latin_words_whole():
     tokens = tokenize_for_search("ATP 合成酶").split()
 
-    assert "ATP" in "".join(tokens)
+    assert "ATP" in tokens
     assert "合成" in tokens and "成酶" in tokens
+
+
+def test_a_stray_cjk_character_does_not_shatter_the_latin_text():
+    """OCR reads a table dash as '一'. That one character used to turn every
+    other word of the chunk into single letters in the lexical index."""
+    tokens = tokenize_for_search(
+        "coral off the island of Hoga.\n15 | 11 | 一\n"
+    ).split()
+
+    assert "Hoga." in tokens and "coral" in tokens and "一" in tokens
+    assert "H" not in tokens
 
 
 def test_query_terms_are_or_joined_for_websearch_tsquery():
     terms = search_query_terms("光合作用")
 
-    assert terms == "光合 or 合作 or 作用"
+    assert terms.any_of == "光合 or 合作 or 作用"
+    assert terms.all_of == "光合 合作 作用"
     # Same tokenizer on both sides, or the index and the query never meet.
-    assert set(terms.split(" or ")) == set(tokenize_for_search("光合作用").split())
+    assert set(terms.any_of.split(" or ")) == set(
+        tokenize_for_search("光合作用").split()
+    )
+
+
+def test_query_terms_count_a_cjk_run_once_and_keep_latin_apart():
+    """The exact tier counts words as typed. '标准差' is one term however many
+    bigrams it becomes; the Latin words are handed to Postgres separately so
+    it can tell whether any of them is a function word of the chunk's
+    language."""
+    terms = search_query_terms("the 标准差 of Hoga 计算")
+
+    assert terms.cjk_runs == 2
+    assert terms.latin == "the of Hoga"
+    assert terms.terms == 5
 
 
 def test_estimate_tokens_counts_cjk_per_character():

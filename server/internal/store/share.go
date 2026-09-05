@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"sort"
 	"time"
 
 	"github.com/evonotes/server/internal/materialdoc"
@@ -12,20 +14,25 @@ import (
 
 /* -------------------------------------------------------------- access checks
 
-Sharing model: `privacy` on workspaces and materials is enforced at read time.
+Sharing model: workspace privacy is inherited by everything inside it, while
+standalone materials keep their own privacy.
   - owner / member → read (and write per role capabilities)
   - link/public    → any caller may read; signed-in workspace nonmembers receive
     share_role for material collaboration, while anonymous callers view only
   - private        → owner/members only (404 for everyone else)
-A material is readable when the material itself OR its parent workspace is
-link/public — publishing a workspace implicitly publishes everything inside. */
+A material is readable when its parent workspace is link/public, or when it is
+standalone and its own policy is link/public. */
 
 // WorkspaceAccess reports whether userID may read wsID. isOwner is true for
 // the owner; (false, nil) means shared read access (privacy link/public).
 func (s *Store) WorkspaceAccess(ctx context.Context, userID, wsID string) (isOwner bool, err error) {
 	var owner *string
 	var privacy Privacy
-	e := s.pool.QueryRow(ctx, `SELECT user_id, privacy FROM workspaces WHERE id=$1`, wsID).Scan(&owner, &privacy)
+	e := s.pool.QueryRow(ctx, `SELECT w.user_id, w.privacy
+		FROM workspaces w
+		JOIN users owner ON owner.id=w.user_id
+		WHERE w.id=$1 AND owner.deleted_at IS NULL
+			AND owner.deletion_requested_at IS NULL`, wsID).Scan(&owner, &privacy)
 	if isNoRows(e) {
 		return false, ErrNotFound
 	}
@@ -56,8 +63,10 @@ func (s *Store) WorkspaceRole(ctx context.Context, userID, wsID string) (Workspa
 	err := s.pool.QueryRow(ctx, `
 		SELECT CASE WHEN w.user_id=$2 THEN 'owner' ELSE COALESCE(wm.role,'') END
 		FROM workspaces w
+		JOIN users owner ON owner.id=w.user_id
 		LEFT JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.user_id=$2
-		WHERE w.id=$1`, wsID, userID).Scan(&role)
+		WHERE w.id=$1 AND owner.deleted_at IS NULL
+			AND owner.deletion_requested_at IS NULL`, wsID, userID).Scan(&role)
 	if isNoRows(err) {
 		return "", ErrNotFound
 	}
@@ -77,8 +86,10 @@ func (s *Store) WorkspaceEffectiveRole(ctx context.Context, userID, wsID string)
 	err := s.pool.QueryRow(ctx, `
 		SELECT w.user_id, w.privacy, w.share_role, COALESCE(wm.role,'')
 		FROM workspaces w
+		JOIN users owner ON owner.id=w.user_id
 		LEFT JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.user_id=$2
-		WHERE w.id=$1`, wsID, userID).Scan(&owner, &privacy, &shareRole, &memberRole)
+		WHERE w.id=$1 AND owner.deleted_at IS NULL
+			AND owner.deletion_requested_at IS NULL`, wsID, userID).Scan(&owner, &privacy, &shareRole, &memberRole)
 	if isNoRows(err) {
 		return "", ErrNotFound
 	}
@@ -169,7 +180,11 @@ func CapabilitiesForRole(role WorkspaceRole, canView bool) AccessCapabilities {
 // MaterialEffectiveAccess for request-scoped shared material capabilities.
 func (s *Store) MaterialRole(ctx context.Context, userID, matID string) (WorkspaceRole, error) {
 	var owner, wsID *string
-	err := s.pool.QueryRow(ctx, `SELECT owner_user_id, workspace_id FROM materials WHERE id=$1`, matID).
+	err := s.pool.QueryRow(ctx, `SELECT m.owner_user_id, m.workspace_id
+		FROM materials m
+		JOIN users owner ON owner.id=m.owner_user_id
+		WHERE m.id=$1 AND owner.deleted_at IS NULL
+			AND owner.deletion_requested_at IS NULL`, matID).
 		Scan(&owner, &wsID)
 	if isNoRows(err) {
 		return "", ErrNotFound
@@ -209,21 +224,27 @@ type MaterialAccessInfo struct {
 //     workspace is shared more permissively
 //   - signed-in nonmember of a link/public workspace: workspace share_role
 //   - anonymous shared reader: viewer
-//   - material-level sharing without a shared workspace: viewer
-func (s *Store) MaterialEffectiveAccess(ctx context.Context, userID, matID string) (MaterialAccessInfo, error) {
+//   - standalone material-level sharing: viewer
+func materialEffectiveAccess(
+	ctx context.Context,
+	q rowQueryer,
+	userID, matID string,
+) (MaterialAccessInfo, error) {
 	var materialOwner, wsID, workspaceOwner *string
 	var materialPrivacy Privacy
 	var workspacePrivacy *Privacy
 	var shareRole *ShareRole
 	var memberRole WorkspaceRole
-	err := s.pool.QueryRow(ctx, `
+	err := q.QueryRow(ctx, `
 		SELECT m.owner_user_id, m.privacy, m.workspace_id, w.user_id, w.privacy, w.share_role,
 			COALESCE(wm.role, '')
 		FROM materials m
+		JOIN users material_owner ON material_owner.id=m.owner_user_id
 		LEFT JOIN workspaces w ON w.id=m.workspace_id
 		LEFT JOIN workspace_members wm
 			ON wm.workspace_id=w.id AND wm.user_id=$2
-		WHERE m.id=$1`, matID, userID).Scan(
+		WHERE m.id=$1 AND material_owner.deleted_at IS NULL
+			AND material_owner.deletion_requested_at IS NULL`, matID, userID).Scan(
 		&materialOwner,
 		&materialPrivacy,
 		&wsID,
@@ -247,7 +268,7 @@ func (s *Store) MaterialEffectiveAccess(ctx context.Context, userID, matID strin
 
 	workspaceShared := wsID != nil && workspacePrivacy != nil &&
 		(*workspacePrivacy == PrivacyLink || *workspacePrivacy == PrivacyPublic)
-	materialShared := materialPrivacy == PrivacyLink || materialPrivacy == PrivacyPublic
+	materialShared := wsID == nil && (materialPrivacy == PrivacyLink || materialPrivacy == PrivacyPublic)
 	var sharedRole WorkspaceRole
 	switch {
 	case workspaceShared && userID != "" && shareRole != nil:
@@ -257,8 +278,7 @@ func (s *Store) MaterialEffectiveAccess(ctx context.Context, userID, matID strin
 		// every write route requires a session.
 		sharedRole = RoleViewer
 	case materialShared:
-		// Material-only links are intentionally view-only, including when the
-		// material still belongs to a private workspace.
+		// Standalone material links are intentionally view-only.
 		sharedRole = RoleViewer
 	}
 
@@ -272,6 +292,31 @@ func (s *Store) MaterialEffectiveAccess(ctx context.Context, userID, matID strin
 		return MaterialAccessInfo{Role: sharedRole}, nil
 	}
 	return MaterialAccessInfo{}, ErrNotFound
+}
+
+func (s *Store) MaterialEffectiveAccess(ctx context.Context, userID, matID string) (MaterialAccessInfo, error) {
+	return materialEffectiveAccess(ctx, s.pool, userID, matID)
+}
+
+// UpdateStandaloneMaterialPrivacy is the only material-sharing write. It
+// rejects workspace materials and resource-kind mismatches before delegating
+// to the ordinary lifecycle-fenced material update.
+func (s *Store) UpdateStandaloneMaterialPrivacy(
+	ctx context.Context,
+	userID, materialID, expectedKind string,
+	privacy Privacy,
+) (Material, error) {
+	material, err := s.GetMaterial(ctx, materialID)
+	if err != nil {
+		return Material{}, err
+	}
+	if material.OwnerUserID != userID || material.WorkspaceID != "" ||
+		(expectedKind != "" && string(material.Kind) != expectedKind) {
+		return Material{}, ErrNotFound
+	}
+	return s.UpdateMaterial(ctx, materialID, MaterialPatch{
+		Privacy: &privacy, UpdatedBy: userID,
+	})
 }
 
 func (s *Store) MaterialEffectiveRole(ctx context.Context, userID, matID string) (WorkspaceRole, error) {
@@ -340,7 +385,7 @@ func (s *Store) FileWorkspaceID(ctx context.Context, fileID string) (string, err
 	return wsID, err
 }
 
-// CardMaterialID resolves the deck (flashcards material) owning a card.
+// CardMaterialID resolves the flashcardSet (flashcards material) owning a card.
 func (s *Store) CardMaterialID(ctx context.Context, cardID string) (string, error) {
 	var matID string
 	err := s.pool.QueryRow(ctx, `SELECT material_id FROM card_stats WHERE card_id=$1`, cardID).Scan(&matID)
@@ -376,9 +421,12 @@ Explore reads live rows: everything with privacy='public' plus its author name
 and clone counter. The seeded public_* snapshot tables are no longer used. */
 
 func (s *Store) ListPublicWorkspaces(ctx context.Context) ([]PublicWorkspace, error) {
-	rows, err := s.pool.Query(ctx, `SELECT `+wsCols+`, COALESCE(u.name,'Unknown'), w.clone_count
+	rows, err := s.pool.Query(ctx, `SELECT `+wsCols+`, COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0)
 		FROM workspaces w LEFT JOIN users u ON u.id=w.user_id
-		WHERE w.privacy='public' ORDER BY w.clone_count DESC, w.created_at DESC`)
+		LEFT JOIN workspace_clone_counts cc ON cc.workspace_id=w.id
+		WHERE w.privacy='public'
+		  AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL
+		ORDER BY COALESCE(cc.clone_count,0) DESC, w.created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -404,10 +452,13 @@ func (s *Store) ListPublicWorkspaces(ctx context.Context) ([]PublicWorkspace, er
 
 func (s *Store) ListPublicQuizzes(ctx context.Context) ([]PublicQuiz, error) {
 	rows, err := s.pool.Query(ctx, `SELECT m.id, COALESCE(m.workspace_id,''), m.workspace_name, m.kind, m.title, m.content, m.chapter_id, m.scope_chapters, m.scope_file_names, m.privacy, m.color, m.created_at,
-			COALESCE(u.name,'Unknown'), m.clone_count
+			COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0)
 		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=m.owner_user_id
-		WHERE m.kind='quiz' AND (m.privacy='public' OR w.privacy='public')
-		ORDER BY m.clone_count DESC, m.created_at DESC`)
+		LEFT JOIN material_clone_counts cc ON cc.material_id=m.id
+		WHERE m.kind='quiz'
+		  AND ((m.workspace_id IS NULL AND m.privacy='public') OR w.privacy='public')
+		  AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL
+		ORDER BY COALESCE(cc.clone_count,0) DESC, m.created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -429,19 +480,22 @@ func (s *Store) ListPublicQuizzes(ctx context.Context) ([]PublicQuiz, error) {
 	return out, rows.Err()
 }
 
-func (s *Store) ListPublicDecks(ctx context.Context) ([]PublicDeck, error) {
-	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, COALESCE(m.workspace_id,''), m.workspace_name, m.color, m.privacy,`+deckStatsExpr+`,
-			COALESCE(u.name,'Unknown'), m.clone_count
+func (s *Store) ListPublicFlashcardSets(ctx context.Context) ([]PublicFlashcardSet, error) {
+	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, COALESCE(m.workspace_id,''), m.workspace_name, m.color, m.privacy,`+flashcardSetStatsExpr+`,
+			COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0)
 		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=m.owner_user_id
-		WHERE m.kind='flashcards' AND (m.privacy='public' OR w.privacy='public')
-		ORDER BY m.clone_count DESC, m.created_at DESC`)
+		LEFT JOIN material_clone_counts cc ON cc.material_id=m.id
+		WHERE m.kind='flashcards'
+		  AND ((m.workspace_id IS NULL AND m.privacy='public') OR w.privacy='public')
+		  AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL
+		ORDER BY COALESCE(cc.clone_count,0) DESC, m.created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := []PublicDeck{}
+	out := []PublicFlashcardSet{}
 	for rows.Next() {
-		var d PublicDeck
+		var d PublicFlashcardSet
 		if err := rows.Scan(&d.ID, &d.Name, &d.WorkspaceID, &d.WorkspaceName, &d.Color, &d.Privacy, &d.CardCount, &d.KnownPct, &d.DueCount, &d.Author, &d.Clones); err != nil {
 			return nil, err
 		}
@@ -453,7 +507,7 @@ func (s *Store) ListPublicDecks(ctx context.Context) ([]PublicDeck, error) {
 /* -------------------------------------------------------------------- cloning */
 
 // rewriteCardIDs re-keys every card in a flashcards document. card_stats.card_id
-// is a global primary key, so a cloned deck must mint fresh card ids before
+// is a global primary key, so a cloned flashcardSet must mint fresh card ids before
 // fresh (reset) SRS rows can be inserted for them.
 func rewriteCardIDs(_ string, content string) (newContent string, newIDs []string, err error) {
 	return rewriteCardIDsWithMap(content, map[string]string{})
@@ -463,17 +517,27 @@ func rewriteCardIDsWithMap(content string, idMap map[string]string) (newContent 
 	return materialdoc.RewriteFlashcardIDs(content, idMap, func() string { return uid("c") })
 }
 
-func (s *Store) cloneMaterialRelations(
+func (s *Store) materialCloneHistory(
 	ctx context.Context,
 	tx pgx.Tx,
-	sourceID, targetID string,
-	rewriteContent func(string) (string, error),
-) error {
+	sourceID, targetUserID string,
+) ([]MaterialRevision, error) {
+	tier, err := s.effectivePlanTierForUser(ctx, tx, targetUserID)
+	if err != nil {
+		return nil, err
+	}
+	limits, err := s.PlanLimits(tier)
+	if err != nil {
+		return nil, err
+	}
 	revisions, err := tx.Query(ctx, `SELECT revision, parent_revision, event_type, title, content,
 		event_metadata, created_by, created_at
-		FROM material_revisions WHERE material_id=$1 ORDER BY version_date`, sourceID)
+		FROM (
+			SELECT * FROM material_revisions WHERE material_id=$1
+			ORDER BY version_date DESC LIMIT $2
+		) retained ORDER BY version_date`, sourceID, limits.MaterialRevisions)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var history []MaterialRevision
 	for revisions.Next() {
@@ -489,14 +553,24 @@ func (s *Store) cloneMaterialRelations(
 			&row.CreatedAt,
 		); err != nil {
 			revisions.Close()
-			return err
+			return nil, err
 		}
 		history = append(history, row)
 	}
 	revisions.Close()
 	if err := revisions.Err(); err != nil {
-		return err
+		return nil, err
 	}
+	return history, nil
+}
+
+func (s *Store) cloneMaterialRelations(
+	ctx context.Context,
+	tx pgx.Tx,
+	targetID string,
+	history []MaterialRevision,
+	rewriteContent func(string) (string, error),
+) error {
 	for _, row := range history {
 		content, err := rewriteContent(row.Content)
 		if err != nil {
@@ -511,6 +585,63 @@ func (s *Store) cloneMaterialRelations(
 	// Comment threads are intentionally not copied. A clone receives only the
 	// retained daily material history.
 	return nil
+}
+
+func snapshotStandaloneCloneAssets(
+	ctx context.Context,
+	tx pgx.Tx,
+	source Material,
+	contents []string,
+) ([]workspaceCloneAsset, map[string]string, int64, error) {
+	referenced := map[string]struct{}{}
+	for _, content := range contents {
+		ids, err := materialdoc.EditorAssetIDs(content)
+		if err != nil {
+			return nil, nil, 0, err
+		}
+		for _, id := range ids {
+			referenced[id] = struct{}{}
+		}
+	}
+	ids := make([]string, 0, len(referenced))
+	for id := range referenced {
+		ids = append(ids, id)
+	}
+	assetMap := make(map[string]string, len(ids))
+	if len(ids) == 0 {
+		return nil, assetMap, 0, nil
+	}
+	rows, err := tx.Query(ctx, `SELECT id, name, purpose, object_path, content_type,
+		size_bytes, status, COALESCE(etag,''), created_at, completed_at
+		FROM editor_assets
+		WHERE id=ANY($1) AND status='ready' AND (
+			($2 <> '' AND workspace_id=$2) OR
+			($2 = '' AND material_id=$3)
+		)`, ids, source.WorkspaceID, source.ID)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	defer rows.Close()
+	var assets []workspaceCloneAsset
+	var bytes int64
+	for rows.Next() {
+		var asset workspaceCloneAsset
+		if err := rows.Scan(
+			&asset.oldID, &asset.name, &asset.purpose, &asset.objectPath,
+			&asset.contentType, &asset.sizeBytes, &asset.status, &asset.etag,
+			&asset.createdAt, &asset.completedAt,
+		); err != nil {
+			return nil, nil, 0, err
+		}
+		asset.newID = uid("asset")
+		assetMap[asset.oldID] = asset.newID
+		bytes += asset.sizeBytes
+		assets = append(assets, asset)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, 0, err
+	}
+	return assets, assetMap, bytes, nil
 }
 
 type workspaceCloneChapter struct {
@@ -546,10 +677,10 @@ type workspaceCloneAsset struct {
 type workspaceCloneMaterial struct {
 	material  Material
 	content   string
+	history   []MaterialRevision
 	metrics   materialdoc.DocumentMetrics
 	sizeBytes int64
 	cardIDs   []string
-	cardIDMap map[string]string
 }
 
 type workspaceCloneSnapshot struct {
@@ -560,27 +691,66 @@ type workspaceCloneSnapshot struct {
 	bytes     int64
 }
 
+func lockCloneBlobPathsTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	paths []string,
+) error {
+	unique := make(map[string]struct{}, len(paths))
+	for _, path := range paths {
+		if path != "" {
+			unique[path] = struct{}{}
+		}
+	}
+	if len(unique) == 0 {
+		return nil
+	}
+	ordered := make([]string, 0, len(unique))
+	for path := range unique {
+		ordered = append(ordered, path)
+	}
+	sort.Strings(ordered)
+	rows, err := tx.Query(ctx, `SELECT object_path FROM blobs
+		WHERE object_path=ANY($1::text[])
+		ORDER BY object_path FOR UPDATE`, ordered)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	locked := 0
+	for rows.Next() {
+		locked++
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if locked != len(ordered) {
+		return ErrConflict
+	}
+	return nil
+}
+
+func workspaceCloneBlobPaths(snapshot workspaceCloneSnapshot) []string {
+	paths := make([]string, 0, len(snapshot.files)*2+len(snapshot.assets))
+	for _, file := range snapshot.files {
+		if file.blobPath != nil {
+			paths = append(paths, *file.blobPath)
+		}
+		if file.previewBlobPath != nil {
+			paths = append(paths, *file.previewBlobPath)
+		}
+	}
+	for _, asset := range snapshot.assets {
+		paths = append(paths, asset.objectPath)
+	}
+	return paths
+}
+
 func (s *Store) snapshotWorkspaceForClone(
 	ctx context.Context,
-	workspaceID string,
+	tx pgx.Tx,
+	workspaceID, targetUserID string,
 ) (workspaceCloneSnapshot, error) {
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
-	if err != nil {
-		return workspaceCloneSnapshot{}, err
-	}
-	defer tx.Rollback(ctx)
-
-	var exists bool
-	if err := tx.QueryRow(ctx,
-		`SELECT EXISTS(SELECT 1 FROM workspaces WHERE id=$1)`,
-		workspaceID,
-	).Scan(&exists); err != nil {
-		return workspaceCloneSnapshot{}, err
-	}
-	if !exists {
-		return workspaceCloneSnapshot{}, ErrNotFound
-	}
-
 	var snapshot workspaceCloneSnapshot
 	rows, err := tx.Query(ctx,
 		`SELECT id, name, position FROM chapters
@@ -643,11 +813,18 @@ func (s *Store) snapshotWorkspaceForClone(
 	rows.Close()
 
 	rows, err = tx.Query(ctx,
-		`SELECT id, chapter_id, position, name, kind, size_bytes, status, indexed,
+		`SELECT id, chapter_id, position, name, kind, size_bytes, status,
+			(indexed AND EXISTS (
+				SELECT 1 FROM rag_file_contents fc
+				JOIN rag_contents rc ON rc.id=fc.content_id
+				WHERE fc.file_id=files.id AND rc.status='ready'
+			)),
 			parser, engine, blob_path, preview_blob_path, url, content,
 			parsed_fingerprint, parsed_parser_version, source_etag,
 			content_hash, source_sha256, parse_mode, caption_images
-		 FROM files WHERE workspace_id=$1 ORDER BY added_at`,
+		 FROM files
+		 WHERE workspace_id=$1 AND status='ready'
+		 ORDER BY added_at`,
 		workspaceID,
 	)
 	if err != nil {
@@ -708,38 +885,9 @@ func (s *Store) snapshotWorkspaceForClone(
 			rows.Close()
 			return workspaceCloneSnapshot{}, err
 		}
-		content := material.Content
-		cardIDMap := map[string]string{}
-		var cardIDs []string
-		if material.Kind == "flashcards" {
-			content, cardIDs, err = rewriteCardIDsWithMap(content, cardIDMap)
-			if err != nil {
-				rows.Close()
-				return workspaceCloneSnapshot{}, err
-			}
-		}
-		if len(assetIDs) > 0 {
-			content, err = materialdoc.RewriteEditorAssetIDs(content, assetIDs)
-			if err != nil {
-				rows.Close()
-				return workspaceCloneSnapshot{}, err
-			}
-		}
-		metrics, err := materialdoc.Metrics(content)
-		if err != nil {
-			rows.Close()
-			return workspaceCloneSnapshot{}, err
-		}
-		if err := metrics.LimitError(); err != nil {
-			rows.Close()
-			return workspaceCloneSnapshot{}, err
-		}
 		snapshot.materials = append(snapshot.materials, workspaceCloneMaterial{
-			material:  material,
-			content:   content,
-			metrics:   metrics,
-			cardIDs:   cardIDs,
-			cardIDMap: cardIDMap,
+			material: material,
+			content:  material.Content,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -749,51 +897,165 @@ func (s *Store) snapshotWorkspaceForClone(
 	rows.Close()
 
 	for i := range snapshot.materials {
-		sizeBytes, err := storageJSONSizeTx(
-			ctx, tx, snapshot.materials[i].content,
+		materialSnapshot := &snapshot.materials[i]
+		history, err := s.materialCloneHistory(
+			ctx, tx, materialSnapshot.material.ID, targetUserID,
 		)
 		if err != nil {
 			return workspaceCloneSnapshot{}, err
 		}
-		snapshot.materials[i].sizeBytes = sizeBytes
+		cardIDMap := map[string]string{}
+		if materialSnapshot.material.Kind == "flashcards" {
+			materialSnapshot.content, materialSnapshot.cardIDs, err = rewriteCardIDsWithMap(
+				materialSnapshot.content, cardIDMap,
+			)
+			if err != nil {
+				return workspaceCloneSnapshot{}, err
+			}
+		}
+		materialSnapshot.content, err = materialdoc.RewriteClonedEditorAssetIDs(
+			materialSnapshot.content, assetIDs,
+		)
+		if err != nil {
+			return workspaceCloneSnapshot{}, err
+		}
+		for j := range history {
+			if materialSnapshot.material.Kind == "flashcards" {
+				history[j].Content, _, err = rewriteCardIDsWithMap(history[j].Content, cardIDMap)
+				if err != nil {
+					return workspaceCloneSnapshot{}, err
+				}
+			}
+			history[j].Content, err = materialdoc.RewriteClonedEditorAssetIDs(
+				history[j].Content, assetIDs,
+			)
+			if err != nil {
+				return workspaceCloneSnapshot{}, err
+			}
+		}
+		materialSnapshot.history = history
+		materialSnapshot.metrics, err = materialdoc.Metrics(materialSnapshot.content)
+		if err != nil {
+			return workspaceCloneSnapshot{}, err
+		}
+		if err := materialSnapshot.metrics.LimitError(); err != nil {
+			return workspaceCloneSnapshot{}, err
+		}
+		sizeBytes, err := storageJSONSizeTx(
+			ctx, tx, materialSnapshot.content,
+		)
+		if err != nil {
+			return workspaceCloneSnapshot{}, err
+		}
+		materialSnapshot.sizeBytes = sizeBytes
 		snapshot.bytes += sizeBytes
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return workspaceCloneSnapshot{}, err
-	}
 	return snapshot, nil
 }
 
 // CloneWorkspace deep-copies a shared workspace (chapters, files, materials,
 // fresh card stats, retrieval index) into a new workspace owned by userID. Blob
 // objects are shared rather than duplicated: the clone copies blob_path and
-// editor asset object paths, and the refcount triggers make that safe — the
+// editor asset object paths, and locks their refcount rows through commit. The
 // object survives until its last holder is gone, so deleting either workspace no
 // longer leaks or destroys the other's bytes. The clone lands private regardless
 // of the source's visibility.
 func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Workspace, error) {
-	isOwner, err := s.WorkspaceAccess(ctx, userID, srcID)
+	// A workspace snapshot owns the hierarchy fence so contained material
+	// deletion cannot race its counter and blob-reference copy.
+	conn, unlock, err := s.lockWorkspaceCloneSource(ctx, srcID, false)
 	if err != nil {
 		return Workspace{}, err
 	}
+	defer unlock()
+	for attempt := 0; ; attempt++ {
+		workspace, err := s.cloneWorkspaceOnce(ctx, conn, userID, srcID)
+		if !isRetryableTransactionError(err) {
+			return workspace, err
+		}
+		if err := waitCloneRetry(ctx, attempt); err != nil {
+			return Workspace{}, err
+		}
+	}
+}
 
-	src, err := s.GetWorkspaceShared(ctx, srcID)
-	if err != nil {
-		return Workspace{}, err
-	}
-	snapshot, err := s.snapshotWorkspaceForClone(ctx, srcID)
-	if err != nil {
-		return Workspace{}, err
-	}
+type cloneTxStarter interface {
+	BeginTx(context.Context, pgx.TxOptions) (pgx.Tx, error)
+}
 
-	tx, err := s.pool.Begin(ctx)
+func waitCloneRetry(ctx context.Context, attempt int) error {
+	delay := 5 * time.Millisecond * time.Duration(1<<min(attempt, 5))
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func (s *Store) cloneWorkspaceOnce(
+	ctx context.Context,
+	starter cloneTxStarter,
+	userID, srcID string,
+) (Workspace, error) {
+	tx, err := starter.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
 	if err != nil {
 		return Workspace{}, err
 	}
 	defer tx.Rollback(ctx)
+
+	// Repeatable read gives the clone one self-consistent source snapshot without
+	// locking live workspace/material rows. A clone deliberately accepts a stale
+	// SQL projection and must never wait for Yjs persistence or projection.
+	src, err := s.scanWorkspace(tx.QueryRow(ctx, `SELECT `+wsCols+`
+		FROM workspaces w
+		JOIN users source_owner ON source_owner.id=w.user_id
+		WHERE w.id=$1
+		  AND source_owner.deleted_at IS NULL
+		  AND source_owner.deletion_requested_at IS NULL`, srcID))
+	if isNoRows(err) {
+		return Workspace{}, ErrNotFound
+	}
+	if err != nil {
+		return Workspace{}, err
+	}
+	if err := lockCloneAccountsTx(ctx, tx, src.OwnerUserID, userID); err != nil {
+		var locked *AccountLockedError
+		if errors.As(err, &locked) && locked.UserID == src.OwnerUserID {
+			return Workspace{}, ErrNotFound
+		}
+		return Workspace{}, err
+	}
+	isOwner := src.OwnerUserID == userID
+	if !isOwner {
+		var member bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM workspace_members
+			WHERE workspace_id=$1 AND user_id=$2)`, srcID, userID).Scan(&member); err != nil {
+			return Workspace{}, err
+		}
+		if !member && src.Privacy != PrivacyLink && src.Privacy != PrivacyPublic {
+			return Workspace{}, ErrNotFound
+		}
+	}
 	limits, err := s.gateOwnedWorkspacesTx(ctx, tx, userID, 1)
 	if err != nil {
+		return Workspace{}, err
+	}
+	// The target account lock above freezes both its current plan and its
+	// history-retention limit before we select any source revisions. Otherwise a
+	// concurrent downgrade could prune old history and the clone could restore
+	// the larger pre-downgrade snapshot afterward.
+	snapshot, err := s.snapshotWorkspaceForClone(ctx, tx, srcID, userID)
+	if err != nil {
+		return Workspace{}, err
+	}
+	// Physical paths are shared, so keep the refcount rows locked until the clone
+	// references commit. A concurrent last-reference delete then happens either
+	// before this repeatable-read snapshot or after the clone is durable.
+	if err := lockCloneBlobPathsTx(ctx, tx, workspaceCloneBlobPaths(snapshot)); err != nil {
 		return Workspace{}, err
 	}
 	if len(snapshot.files) > limits.FilesPerWorkspace {
@@ -910,7 +1172,8 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 		}
 	}
 
-	// Materials (clone lands private; flashcards get fresh card ids + stats).
+	// Materials (clone lands private; retained history shares the same fresh
+	// asset/card ID maps as current content, while comments are not copied).
 	{
 		for _, materialSnapshot := range snapshot.materials {
 			mt := materialSnapshot.material
@@ -923,23 +1186,20 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 			}
 			content := materialSnapshot.content
 			metrics := materialSnapshot.metrics
+			createdAt := time.Now().UTC()
 			if _, err := tx.Exec(ctx, `INSERT INTO materials
 				(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
-				 chapter_id, position, scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_at, revision, updated_by)
+					 chapter_id, position, scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_at, revision, updated_by)
 				VALUES ($1,$2,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'private',$12,$13,$14,$15,$16,$2)`,
 				nid, userID, newID, name, mt.Kind, mt.Title, json.RawMessage(content), chapterID,
 				mt.Position, mt.ScopeChapters, mt.ScopeFileNames, mt.Color, metrics.NodeCount,
-				metrics.MaxDepth, mt.UpdatedAt, mt.Revision); err != nil {
+				metrics.MaxDepth, createdAt, mt.Revision); err != nil {
 				return Workspace{}, err
 			}
-			rewrite := func(value string) (string, error) { return value, nil }
-			if mt.Kind == "flashcards" {
-				rewrite = func(value string) (string, error) {
-					rewritten, _, err := rewriteCardIDsWithMap(value, materialSnapshot.cardIDMap)
-					return rewritten, err
-				}
-			}
-			if err := s.cloneMaterialRelations(ctx, tx, mt.ID, nid, rewrite); err != nil {
+			if err := s.cloneMaterialRelations(
+				ctx, tx, nid, materialSnapshot.history,
+				func(value string) (string, error) { return value, nil },
+			); err != nil {
 				return Workspace{}, err
 			}
 			for _, cid := range materialSnapshot.cardIDs {
@@ -951,7 +1211,9 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 		}
 	}
 
-	if _, err := tx.Exec(ctx, `UPDATE workspaces SET clone_count=clone_count+1 WHERE id=$1`, srcID); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO workspace_clone_counts (workspace_id, clone_count)
+		VALUES ($1,1) ON CONFLICT (workspace_id) DO UPDATE
+		SET clone_count=workspace_clone_counts.clone_count+1`, srcID); err != nil {
 		return Workspace{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -960,9 +1222,8 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 	return s.GetWorkspace(ctx, userID, newID, false)
 }
 
-// cloneRetrievalIndex copies a workspace's chunks, file summaries and concept
-// index into the clone, inside the same transaction as the content it
-// describes. Copying the vectors is pure SQL where re-ingesting would mean
+// cloneRetrievalIndex copies a workspace's chunks and file summaries into
+// the clone, inside the same transaction as the content it describes. Copying the vectors is pure SQL where re-ingesting would mean
 // paying for the parse and the embeddings again.
 //
 // The source pin names the vector table on both sides of the copy. An empty
@@ -976,8 +1237,9 @@ func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, newID string, pi
 	if len(oldFiles) > 0 {
 		contentMap := map[string]string{}
 		rows, err := tx.Query(ctx, `
-			SELECT DISTINCT content_id FROM rag_file_contents
-			WHERE file_id = ANY($1::text[])`, oldFiles)
+			SELECT DISTINCT fc.content_id FROM rag_file_contents fc
+			JOIN rag_contents rc ON rc.id=fc.content_id
+			WHERE fc.file_id = ANY($1::text[]) AND rc.status='ready'`, oldFiles)
 		if err != nil {
 			return err
 		}
@@ -1009,7 +1271,8 @@ func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, newID string, pi
 				SELECT c.new_id, $3, rc.content_hash, rc.status,
 				       rc.embedding_provider_slug, rc.embedding_model_slug, rc.embedding_model_version, rc.embedding_dim,
 				       rc.source_sha256, rc.pipeline_identity
-				FROM rag_contents rc JOIN cmap c ON c.old_id = rc.id`,
+				FROM rag_contents rc JOIN cmap c ON c.old_id = rc.id
+				WHERE rc.status='ready'`,
 				oldContents, newContents, newID); err != nil {
 				return err
 			}
@@ -1034,10 +1297,10 @@ func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, newID string, pi
 			WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
 			INSERT INTO rag_chunks
 				(id, workspace_id, content_id, chunk_idx, section_path, text, indexed_text,
-				 token_count, page_start, page_end, regions, search)
+				 token_count, page_start, page_end, regions, lang, search)
 			SELECT `+newChunkID+`,
 			       $3, m.new_id, c.chunk_idx, c.section_path, c.text, c.indexed_text,
-			       c.token_count, c.page_start, c.page_end, c.regions, c.search
+			       c.token_count, c.page_start, c.page_end, c.regions, c.lang, c.search
 			FROM rag_chunks c JOIN cmap m ON m.old_id = c.content_id`,
 				oldContents, newContents, newID); err != nil {
 				return err
@@ -1061,27 +1324,6 @@ func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, newID string, pi
 				oldContents, newContents, newID); err != nil {
 				return err
 			}
-			if _, err := tx.Exec(ctx, `
-			INSERT INTO rag_concepts (id, workspace_id, name, norm)
-			SELECT 'rcp_' || substr(md5(random()::text || clock_timestamp()::text || k.id), 1, 12),
-			       $1, k.name, k.norm
-			FROM rag_concepts k WHERE k.workspace_id = $2`, newID, srcID); err != nil {
-				return err
-			}
-			if _, err := tx.Exec(ctx, `
-			WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
-			INSERT INTO rag_concept_mentions (concept_id, chunk_id)
-			SELECT nk.id, nc.id
-			FROM rag_concept_mentions m
-			JOIN rag_concepts ok ON ok.id = m.concept_id AND ok.workspace_id = $3
-			JOIN rag_chunks    oc ON oc.id = m.chunk_id
-			JOIN cmap c           ON c.old_id = oc.content_id
-			JOIN rag_chunks    nc ON nc.content_id = c.new_id AND nc.chunk_idx = oc.chunk_idx
-			JOIN rag_concepts  nk ON nk.workspace_id = $4 AND nk.norm = ok.norm
-			ON CONFLICT DO NOTHING`,
-				oldContents, newContents, srcID, newID); err != nil {
-				return err
-			}
 		}
 	}
 
@@ -1101,11 +1343,98 @@ func unzipIDs(m map[string]string) (old, fresh []string) {
 // CloneMaterial copies one shared material into the user's standalone library.
 // Flashcards get fresh card ids + reset SRS stats. The clone lands private.
 func (s *Store) CloneMaterial(ctx context.Context, userID, matID string) (Material, error) {
-	if _, err := s.MaterialAccess(ctx, userID, matID); err != nil {
+	return s.CloneMaterialKind(ctx, userID, matID, "")
+}
+
+// CloneMaterialKind applies a typed endpoint's kind before any copy or clone
+// counter side effect. An empty kind is the generic material clone route.
+func (s *Store) CloneMaterialKind(
+	ctx context.Context,
+	userID, matID, expectedKind string,
+) (Material, error) {
+	conn, unlock, err := s.lockMaterialCloneSource(ctx, matID, false)
+	if err != nil {
 		return Material{}, err
 	}
-	src, err := s.GetMaterial(ctx, matID)
+	defer unlock()
+	for attempt := 0; ; attempt++ {
+		material, err := s.cloneMaterialKindOnce(
+			ctx, conn, userID, matID, expectedKind,
+		)
+		if !isRetryableTransactionError(err) {
+			return material, err
+		}
+		if err := waitCloneRetry(ctx, attempt); err != nil {
+			return Material{}, err
+		}
+	}
+}
+
+func (s *Store) cloneMaterialKindOnce(
+	ctx context.Context,
+	starter cloneTxStarter,
+	userID, matID, expectedKind string,
+) (Material, error) {
+	tx, err := starter.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
 	if err != nil {
+		return Material{}, err
+	}
+	defer tx.Rollback(ctx)
+	var sourceWorkspaceID *string
+	var sourceOwnerID string
+	if err := tx.QueryRow(ctx, `SELECT workspace_id, owner_user_id
+		FROM materials WHERE id=$1`, matID).
+		Scan(&sourceWorkspaceID, &sourceOwnerID); isNoRows(err) {
+		return Material{}, ErrNotFound
+	} else if err != nil {
+		return Material{}, err
+	}
+	// Account lifecycle is the only source-side serialization. The material and
+	// workspace remain unlocked so accepted collaboration stores can finish.
+	if err := lockCloneAccountsTx(ctx, tx, sourceOwnerID, userID); err != nil {
+		var locked *AccountLockedError
+		if errors.As(err, &locked) && locked.UserID == sourceOwnerID {
+			return Material{}, ErrNotFound
+		}
+		return Material{}, err
+	}
+	src, err := scanMaterial(tx.QueryRow(ctx, `SELECT `+materialCols+`
+		FROM materials WHERE id=$1`, matID))
+	if err != nil {
+		return Material{}, err
+	}
+	if src.OwnerUserID != sourceOwnerID ||
+		(sourceWorkspaceID == nil) != (src.WorkspaceID == "") ||
+		(sourceWorkspaceID != nil && src.WorkspaceID != *sourceWorkspaceID) {
+		return Material{}, ErrConflict
+	}
+	if _, err := materialEffectiveAccess(ctx, tx, userID, matID); err != nil {
+		return Material{}, err
+	}
+	if expectedKind != "" && string(src.Kind) != expectedKind {
+		return Material{}, ErrNotFound
+	}
+
+	history, err := s.materialCloneHistory(ctx, tx, src.ID, userID)
+	if err != nil {
+		return Material{}, err
+	}
+	assetContents := make([]string, 0, len(history)+1)
+	assetContents = append(assetContents, src.Content)
+	for _, revision := range history {
+		assetContents = append(assetContents, revision.Content)
+	}
+	assets, assetIDMap, assetBytes, err := snapshotStandaloneCloneAssets(
+		ctx, tx, src, assetContents,
+	)
+	if err != nil {
+		return Material{}, err
+	}
+	assetPaths := make([]string, len(assets))
+	for i, asset := range assets {
+		assetPaths[i] = asset.objectPath
+	}
+	if err := lockCloneBlobPathsTx(ctx, tx, assetPaths); err != nil {
 		return Material{}, err
 	}
 
@@ -1117,6 +1446,10 @@ func (s *Store) CloneMaterial(ctx context.Context, userID, matID string) (Materi
 			return Material{}, err
 		}
 	}
+	content, err = materialdoc.RewriteClonedEditorAssetIDs(content, assetIDMap)
+	if err != nil {
+		return Material{}, err
+	}
 	metrics, err := materialdoc.Metrics(content)
 	if err != nil {
 		return Material{}, err
@@ -1125,16 +1458,11 @@ func (s *Store) CloneMaterial(ctx context.Context, userID, matID string) (Materi
 		return Material{}, err
 	}
 
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return Material{}, err
-	}
-	defer tx.Rollback(ctx)
 	storedSize, err := storageJSONSizeTx(ctx, tx, content)
 	if err != nil {
 		return Material{}, err
 	}
-	if err := s.gateStorageTx(ctx, tx, userID, storedSize); err != nil {
+	if err := s.gateStorageTx(ctx, tx, userID, storedSize+assetBytes); err != nil {
 		return Material{}, err
 	}
 
@@ -1147,14 +1475,28 @@ func (s *Store) CloneMaterial(ctx context.Context, userID, matID string) (Materi
 		src.Color, metrics.NodeCount, metrics.MaxDepth, src.UpdatedAt, src.Revision); err != nil {
 		return Material{}, err
 	}
-	rewrite := func(value string) (string, error) { return value, nil }
-	if src.Kind == "flashcards" {
-		rewrite = func(value string) (string, error) {
-			rewritten, _, err := rewriteCardIDsWithMap(value, cardIDMap)
-			return rewritten, err
+	for _, asset := range assets {
+		if _, err := tx.Exec(ctx, `INSERT INTO editor_assets
+			(id, workspace_id, material_id, user_id, created_by, name, purpose,
+			 object_path, content_type, size_bytes, status, etag, created_at, completed_at)
+			VALUES ($1,NULL,$2,$3,$3,$4,$5,$6,$7,$8,'ready',$9,$10,$11)`,
+			asset.newID, nid, userID, asset.name, asset.purpose, asset.objectPath,
+			asset.contentType, asset.sizeBytes, asset.etag, asset.createdAt,
+			asset.completedAt); err != nil {
+			return Material{}, err
 		}
 	}
-	if err := s.cloneMaterialRelations(ctx, tx, src.ID, nid, rewrite); err != nil {
+	rewrite := func(value string) (string, error) {
+		if src.Kind == "flashcards" {
+			var rewriteErr error
+			value, _, rewriteErr = rewriteCardIDsWithMap(value, cardIDMap)
+			if rewriteErr != nil {
+				return "", rewriteErr
+			}
+		}
+		return materialdoc.RewriteClonedEditorAssetIDs(value, assetIDMap)
+	}
+	if err := s.cloneMaterialRelations(ctx, tx, nid, history, rewrite); err != nil {
 		return Material{}, err
 	}
 	for _, cid := range cardIDs {
@@ -1163,7 +1505,9 @@ func (s *Store) CloneMaterial(ctx context.Context, userID, matID string) (Materi
 			return Material{}, err
 		}
 	}
-	if _, err := tx.Exec(ctx, `UPDATE materials SET clone_count=clone_count+1 WHERE id=$1`, matID); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO material_clone_counts (material_id, clone_count)
+		VALUES ($1,1) ON CONFLICT (material_id) DO UPDATE
+		SET clone_count=material_clone_counts.clone_count+1`, matID); err != nil {
 		return Material{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -1172,53 +1516,100 @@ func (s *Store) CloneMaterial(ctx context.Context, userID, matID string) (Materi
 	return s.GetMaterial(ctx, nid)
 }
 
-/* ---------------------------------------------------------------- deck patch */
-
-// DeckPatch carries the mutable deck fields (the deck is a flashcards material).
-type DeckPatch struct {
-	Name    *string
-	Color   *UserColor
-	Privacy *Privacy
+// lockCloneAccountsTx follows the normal ordered account lock
+// discipline, but suspension of a different source owner does not hide content
+// that was already shared. The cloning actor must still have an active session.
+func lockCloneAccountsTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	sourceOwnerID, actorUserID string,
+) error {
+	ids := []string{sourceOwnerID}
+	if actorUserID != sourceOwnerID {
+		ids = append(ids, actorUserID)
+	}
+	rows, err := tx.Query(ctx, `SELECT id, deleted_at, deletion_requested_at,
+			suspended_at, suspended_reason
+		FROM users WHERE id=ANY($1::text[]) ORDER BY id FOR UPDATE`, ids)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	seen := 0
+	for rows.Next() {
+		var id string
+		var deletedAt, deletionRequestedAt, suspendedAt *time.Time
+		var reason *string
+		if err := rows.Scan(
+			&id, &deletedAt, &deletionRequestedAt, &suspendedAt, &reason,
+		); err != nil {
+			return err
+		}
+		seen++
+		state := AccountActive
+		switch {
+		case deletedAt != nil:
+			state = AccountDeleted
+		case deletionRequestedAt != nil:
+			state = AccountDeletionPending
+		case suspendedAt != nil:
+			state = AccountSuspended
+		}
+		if state == AccountActive ||
+			(state == AccountSuspended && id == sourceOwnerID && id != actorUserID) {
+			continue
+		}
+		locked := &AccountLockedError{UserID: id, State: state}
+		if reason != nil {
+			locked.Reason = *reason
+		}
+		return locked
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if seen != len(ids) {
+		return ErrNotFound
+	}
+	return nil
 }
 
-// UpdateDeck renames/recolours a deck and/or changes its visibility. Renames
-// preserve the Plate document while updating the relational title.
-func (s *Store) UpdateDeck(ctx context.Context, id string, p DeckPatch) (Deck, error) {
+/* ---------------------------------------------------------------- flashcardSet patch */
+
+// FlashcardSetPatch carries the mutable flashcardSet fields (the flashcardSet is a flashcards material).
+type FlashcardSetPatch struct {
+	Name      *string
+	Color     *UserColor
+	UpdatedBy string
+}
+
+// UpdateFlashcardSet changes relational metadata only. Flashcard content and
+// standalone sharing use separate paths so a successful Yjs command can never
+// be followed by a failed SQL-only field in the same request.
+func (s *Store) UpdateFlashcardSet(ctx context.Context, id string, p FlashcardSetPatch) (FlashcardSet, error) {
 	mt, err := s.GetMaterial(ctx, id)
 	if err != nil {
-		return Deck{}, err
+		return FlashcardSet{}, err
 	}
 	if mt.Kind != "flashcards" {
-		return Deck{}, ErrNotFound
+		return FlashcardSet{}, ErrNotFound
 	}
-	title, color, privacy := mt.Title, mt.Color, mt.Privacy
-	content := mt.Content
+	title, color := mt.Title, mt.Color
 	if p.Name != nil && *p.Name != mt.Title {
 		title = *p.Name
-		cards, err := materialdoc.ExtractFlashcards(mt.Content)
-		if err != nil {
-			return Deck{}, err
-		}
-		if content, err = materialdoc.ReplaceFlashcards(mt.Content, cards); err != nil {
-			return Deck{}, err
-		}
 	}
 	if p.Color != nil {
 		color = *p.Color
 	}
-	if p.Privacy != nil {
-		privacy = *p.Privacy
-	}
-	materialPatch := MaterialPatch{Privacy: &privacy}
+	materialPatch := MaterialPatch{UpdatedBy: p.UpdatedBy}
 	if p.Name != nil && *p.Name != mt.Title {
 		materialPatch.Title = &title
-		materialPatch.Content = &content
+	}
+	if p.Color != nil {
+		materialPatch.Color = &color
 	}
 	if _, err := s.UpdateMaterial(ctx, id, materialPatch); err != nil {
-		return Deck{}, err
+		return FlashcardSet{}, err
 	}
-	if _, err := s.pool.Exec(ctx, `UPDATE materials SET color=$2 WHERE id=$1`, id, color); err != nil {
-		return Deck{}, err
-	}
-	return s.GetDeck(ctx, id)
+	return s.GetFlashcardSet(ctx, id)
 }

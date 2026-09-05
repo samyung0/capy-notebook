@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -68,6 +69,11 @@ func (s *Store) Me(ctx context.Context, userID string) (User, error) {
 	if isNoRows(err) {
 		return u, ErrNotFound
 	}
+	if err == nil {
+		u.PlanTier, u.SubscriptionStatus, err = s.effectiveSubscriptionStateForUser(
+			ctx, s.pool, userID,
+		)
+	}
 	return u, err
 }
 
@@ -75,11 +81,22 @@ func (s *Store) SetLocale(ctx context.Context, userID, locale string) error {
 	if locale != "en" && locale != "zh" {
 		return ErrForbidden
 	}
-	_, err := s.pool.Exec(ctx, `UPDATE users SET locale=$2, updated_at=now() WHERE id=$1`, userID, locale)
-	return err
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE users SET locale=$2, updated_at=now()
+		WHERE id=$1`, userID, locale); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
-// ModelPrefsPatch updates one or more surface preferences. Nil fields stay.
+// ModelPrefsPatch updates one or more slot preferences. Nil fields stay.
 type ModelPrefsPatch struct {
 	ChatModel        *models.Ref
 	GenerateModel    *models.Ref
@@ -91,22 +108,22 @@ type ModelPrefsPatch struct {
 }
 
 // SetModelPrefs stores the user's chat/generate/editor/quiz preference. Omitted
-// fields are left unchanged so a picker on one surface cannot wipe another.
-// Thinking is stored per (user, model, surface): switching models must
+// fields are left unchanged so a picker on one slot cannot wipe another.
+// Thinking is stored per (user, model, slot): switching models must
 // not reuse another model's level. Empty model refs are rejected: every
 // account always has a concrete provider/model pair, populated from the registry
 // default at insert. Model refs are validated against enabled configs that
-// advertise the surface. BYOK-only rows also need a credential. Quiz
+// advertise the slot. BYOK-only rows also need a credential. Quiz
 // also accepts the browser provider for in-tab GGUFs.
 func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPrefsPatch) error {
 	prefs := []struct {
-		ref     *models.Ref
-		surface string
+		ref  *models.Ref
+		slot string
 	}{
-		{patch.ChatModel, SurfaceChat},
-		{patch.GenerateModel, SurfaceGenerate},
-		{patch.EditorModel, SurfaceEditor},
-		{patch.QuizModel, SurfaceQuiz},
+		{patch.ChatModel, models.SlotChat},
+		{patch.GenerateModel, models.SlotGenerate},
+		{patch.EditorModel, models.SlotEditor},
+		{patch.QuizModel, models.SlotQuiz},
 	}
 	for _, pref := range prefs {
 		if pref.ref == nil {
@@ -116,7 +133,7 @@ func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPre
 			return ErrModelRefRequired
 		}
 		if IsBrowserQuizModel(*pref.ref) {
-			if pref.surface != SurfaceQuiz {
+			if pref.slot != models.SlotQuiz {
 				return ErrNotFound
 			}
 			continue
@@ -127,6 +144,9 @@ func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPre
 		return err
 	}
 	defer tx.Rollback(ctx)
+	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
+		return err
+	}
 
 	var current UserLLMPrefs
 	if err := tx.QueryRow(ctx, `
@@ -149,7 +169,7 @@ func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPre
 		if pref.ref == nil || IsBrowserQuizModel(*pref.ref) {
 			continue
 		}
-		if err := s.assertModelRef(ctx, tx, userID, *pref.ref, pref.surface); err != nil {
+		if err := s.assertModelRef(ctx, tx, userID, *pref.ref, pref.slot); err != nil {
 			return err
 		}
 	}
@@ -188,19 +208,19 @@ func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPre
 	if patch.QuizModel != nil {
 		quizModel = *patch.QuizModel
 	}
-	if err := upsertModelThinking(ctx, tx, userID, chatModel, SurfaceChat, patch.ChatThinking); err != nil {
+	if err := upsertModelThinking(ctx, tx, userID, chatModel, models.SlotChat, patch.ChatThinking); err != nil {
 		return err
 	}
-	if err := upsertModelThinking(ctx, tx, userID, generateModel, SurfaceGenerate, patch.GenerateThinking); err != nil {
+	if err := upsertModelThinking(ctx, tx, userID, generateModel, models.SlotGenerate, patch.GenerateThinking); err != nil {
 		return err
 	}
-	if err := upsertModelThinking(ctx, tx, userID, quizModel, SurfaceQuiz, patch.QuizThinking); err != nil {
+	if err := upsertModelThinking(ctx, tx, userID, quizModel, models.SlotQuiz, patch.QuizThinking); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
 }
 
-func upsertModelThinking(ctx context.Context, tx pgx.Tx, userID string, ref models.Ref, surface string, thinking *string) error {
+func upsertModelThinking(ctx context.Context, tx pgx.Tx, userID string, ref models.Ref, slot string, thinking *string) error {
 	if thinking == nil {
 		return nil
 	}
@@ -211,16 +231,16 @@ func upsertModelThinking(ctx context.Context, tx pgx.Tx, userID string, ref mode
 		return ErrNotFound
 	}
 	if *thinking != "" {
-		if err := assertCatalogThinking(ctx, tx, ref, surface, *thinking); err != nil {
+		if err := assertCatalogThinking(ctx, tx, ref, slot, *thinking); err != nil {
 			return err
 		}
 	}
 	_, err := tx.Exec(ctx, `
-		INSERT INTO user_model_reasoning (user_id, provider_slug, model_slug, surface, thinking)
+		INSERT INTO user_model_reasoning (user_id, provider_slug, model_slug, slot, thinking)
 		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (user_id, provider_slug, model_slug, surface) DO UPDATE SET
+		ON CONFLICT (user_id, provider_slug, model_slug, slot) DO UPDATE SET
 			thinking = EXCLUDED.thinking`,
-		userID, ref.ProviderSlug, ref.ModelSlug, surface, *thinking)
+		userID, ref.ProviderSlug, ref.ModelSlug, slot, *thinking)
 	return err
 }
 
@@ -231,12 +251,12 @@ func validateThinkingPatch(thinking string) error {
 	return ErrNotFound
 }
 
-func assertCatalogThinking(ctx context.Context, tx pgx.Tx, ref models.Ref, surface, thinking string) error {
+func assertCatalogThinking(ctx context.Context, tx pgx.Tx, ref models.Ref, slot, thinking string) error {
 	var levels []string
 	err := tx.QueryRow(ctx, `
 		SELECT thinking_levels FROM model_configs
-		 WHERE provider_slug=$1 AND model_slug=$2 AND enabled AND $3 = ANY(surfaces)
-		 ORDER BY version DESC LIMIT 1`, ref.ProviderSlug, ref.ModelSlug, surface).Scan(&levels)
+		 WHERE provider_slug=$1 AND model_slug=$2 AND enabled AND $3 = ANY(slots)
+		 ORDER BY version DESC LIMIT 1`, ref.ProviderSlug, ref.ModelSlug, slot).Scan(&levels)
 	if isNoRows(err) {
 		return ErrNotFound
 	}
@@ -251,13 +271,13 @@ func assertCatalogThinking(ctx context.Context, tx pgx.Tx, ref models.Ref, surfa
 	return ErrNotFound
 }
 
-func (s *Store) assertModelRef(ctx context.Context, q rowQueryer, userID string, ref models.Ref, surface string) error {
+func (s *Store) assertModelRef(ctx context.Context, q rowQueryer, userID string, ref models.Ref, slot string) error {
 	var platformEnabled, byokEnabled bool
 	var provider string
 	err := q.QueryRow(ctx, `
 		SELECT platform_enabled, byok_enabled, provider_slug FROM model_configs
-		 WHERE provider_slug=$1 AND model_slug=$2 AND enabled AND $3 = ANY(surfaces)
-		 ORDER BY version DESC LIMIT 1`, ref.ProviderSlug, ref.ModelSlug, surface).Scan(&platformEnabled, &byokEnabled, &provider)
+		 WHERE provider_slug=$1 AND model_slug=$2 AND enabled AND $3 = ANY(slots)
+		 ORDER BY version DESC LIMIT 1`, ref.ProviderSlug, ref.ModelSlug, slot).Scan(&platformEnabled, &byokEnabled, &provider)
 	if isNoRows(err) {
 		return ErrNotFound
 	}
@@ -286,7 +306,7 @@ type UserLLMPrefs struct {
 
 type modelThinkingRef struct {
 	models.Ref
-	Surface string
+	Slot string
 }
 
 func (s *Store) UserLLMPrefs(ctx context.Context, userID string) (UserLLMPrefs, error) {
@@ -309,7 +329,7 @@ func (s *Store) UserLLMPrefs(ctx context.Context, userID string) (UserLLMPrefs, 
 		return p, err
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT provider_slug, model_slug, surface, thinking
+		SELECT provider_slug, model_slug, slot, thinking
 		  FROM user_model_reasoning WHERE user_id=$1`, userID)
 	if err != nil {
 		return p, err
@@ -318,46 +338,46 @@ func (s *Store) UserLLMPrefs(ctx context.Context, userID string) (UserLLMPrefs, 
 	p.thinking = map[modelThinkingRef]string{}
 	for rows.Next() {
 		var ref models.Ref
-		var surface, thinking string
-		if err := rows.Scan(&ref.ProviderSlug, &ref.ModelSlug, &surface, &thinking); err != nil {
+		var slot, thinking string
+		if err := rows.Scan(&ref.ProviderSlug, &ref.ModelSlug, &slot, &thinking); err != nil {
 			return p, err
 		}
-		p.thinking[modelThinkingRef{Ref: ref, Surface: surface}] = thinking
+		p.thinking[modelThinkingRef{Ref: ref, Slot: slot}] = thinking
 	}
 	return p, rows.Err()
 }
 
-func (p UserLLMPrefs) Model(surface string) models.Ref {
-	switch surface {
-	case SurfaceChat:
+func (p UserLLMPrefs) Model(slot string) models.Ref {
+	switch slot {
+	case models.SlotChat:
 		return p.ChatModel
-	case SurfaceGenerate:
+	case models.SlotGenerate:
 		return p.GenerateModel
-	case SurfaceEditor:
+	case models.SlotEditor:
 		return p.EditorModel
-	case SurfaceQuiz:
+	case models.SlotQuiz:
 		return p.QuizModel
 	}
 	return models.Ref{}
 }
 
-func (p UserLLMPrefs) Thinking(surface string) string {
-	ref := p.Model(surface)
+func (p UserLLMPrefs) Thinking(slot string) string {
+	ref := p.Model(slot)
 	if ref.Zero() || p.thinking == nil {
 		return ""
 	}
-	return p.thinking[modelThinkingRef{Ref: ref, Surface: surface}]
+	return p.thinking[modelThinkingRef{Ref: ref, Slot: slot}]
 }
 
 // accountModelPrefs is the set written onto a brand-new user row. The registry
-// surface default is the only source of truth.
+// slot default is the only source of truth.
 func (s *Store) accountModelPrefs(ctx context.Context) (chat, generate, editor, quiz models.Ref, err error) {
 	if s.registry == nil {
 		return models.Ref{}, models.Ref{}, models.Ref{}, models.Ref{}, ErrModelUnavailable
 	}
 	refs := make([]models.Ref, 0, 4)
-	for _, surface := range []string{models.SurfaceChat, models.SurfaceGenerate, models.SurfaceEditor, models.SurfaceQuiz} {
-		pin, err := s.registry.DefaultPin(surface)
+	for _, slot := range []string{models.SlotChat, models.SlotGenerate, models.SlotEditor, models.SlotQuiz} {
+		pin, err := s.registry.DefaultPin(slot)
 		if err != nil {
 			return models.Ref{}, models.Ref{}, models.Ref{}, models.Ref{}, err
 		}
@@ -369,15 +389,15 @@ func (s *Store) accountModelPrefs(ctx context.Context) (chat, generate, editor, 
 	return refs[0], refs[1], refs[2], refs[3], nil
 }
 
-// UpsertUserFromClerk inserts or updates a user. The returned bool is true only
-// when a new row was inserted (first sign-in), so callers can run one-time
-// provisioning such as CreateDefaultWorkspace. Detection uses xmax=0, which is
-// 0 for freshly inserted tuples and non-zero for rows touched by ON CONFLICT.
+// UpsertUserFromClerk inserts or updates a user. The returned bool reports
+// whether the account still needs its one-time starter workspace. Keeping that
+// state on the user row lets a later request retry a failed first provision.
 //
-// The profile sync deliberately skips purged rows. This runs on every
-// authenticated request, so without the guard a scrubbed tombstone would be
-// repopulated with the name and email the purge just erased, the moment a
-// still-valid Clerk identity made one more call.
+// The profile sync deliberately skips locked rows. This runs before the auth
+// middleware's lifecycle check on every authenticated request, so without the
+// guard a stale Clerk token could refresh PII after deletion was requested or
+// while an operator suspension was in force. Purged tombstones must never be
+// repopulated either.
 func (s *Store) UpsertUserFromClerk(ctx context.Context, id, name, email, avatarURL string) (bool, error) {
 	if name == "" {
 		name = email
@@ -387,7 +407,36 @@ func (s *Store) UpsertUserFromClerk(ctx context.Context, id, name, email, avatar
 		_ = s.pool.QueryRow(ctx, `SELECT locale FROM users WHERE id=$1`, id).Scan(&locale)
 		name = copytext.T(locale, copytext.User)
 	}
-	var created bool
+	// Most calls are profile refreshes for an existing account. Handle those
+	// without consulting the model registry: changing or temporarily disabling
+	// the signup defaults must not make an existing session fail. Locked rows
+	// intentionally do not match this update.
+	var needsDefaultWorkspace bool
+	err := s.pool.QueryRow(ctx, `UPDATE users SET
+			name=$2,
+			email=COALESCE(NULLIF($3,''), email),
+			avatar_url=COALESCE(NULLIF($4,''), avatar_url),
+			updated_at=now()
+		WHERE id=$1 AND deleted_at IS NULL
+			AND deletion_requested_at IS NULL
+			AND suspended_at IS NULL
+		RETURNING starter_workspace_provisioned_at IS NULL`, id, name, email, avatarURL).
+		Scan(&needsDefaultWorkspace)
+	if err == nil {
+		return needsDefaultWorkspace, nil
+	}
+	if !isNoRows(err) {
+		return false, err
+	}
+	var exists bool
+	if err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id=$1)`, id).
+		Scan(&exists); err != nil {
+		return false, err
+	}
+	if exists {
+		return false, nil
+	}
+
 	chatModel, genModel, editorModel, quizModel, err := s.accountModelPrefs(ctx)
 	if err != nil {
 		return false, err
@@ -401,22 +450,24 @@ func (s *Store) UpsertUserFromClerk(ctx context.Context, id, name, email, avatar
 			VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),$5,$6,$7,$8,$9,$10,$11,$12)
 		ON CONFLICT (id) DO UPDATE SET
 			name=EXCLUDED.name,
-			email=EXCLUDED.email,
+			email=COALESCE(EXCLUDED.email, users.email),
 			avatar_url=COALESCE(NULLIF(EXCLUDED.avatar_url,''), users.avatar_url),
 			updated_at=now()
 		WHERE users.deleted_at IS NULL
-		RETURNING (xmax = 0)`,
+			AND users.deletion_requested_at IS NULL
+			AND users.suspended_at IS NULL
+		RETURNING starter_workspace_provisioned_at IS NULL`,
 		id, name, email, avatarURL,
 		chatModel.ProviderSlug, chatModel.ModelSlug,
 		genModel.ProviderSlug, genModel.ModelSlug,
 		editorModel.ProviderSlug, editorModel.ModelSlug,
-		quizModel.ProviderSlug, quizModel.ModelSlug).Scan(&created)
+		quizModel.ProviderSlug, quizModel.ModelSlug).Scan(&needsDefaultWorkspace)
 	// The WHERE clause suppresses the RETURNING row for a tombstone, which is
 	// not an error: the account exists and stays scrubbed.
 	if isNoRows(err) {
 		return false, nil
 	}
-	return created, err
+	return needsDefaultWorkspace, err
 }
 
 func (s *Store) UpsertUserFromWebhook(ctx context.Context, id, name, email, avatarURL string) error {
@@ -424,35 +475,74 @@ func (s *Store) UpsertUserFromWebhook(ctx context.Context, id, name, email, avat
 	return err
 }
 
-// CreateDefaultWorkspace provisions a starter workspace on first sign-in. Both
-// the Clerk webhook and the JWT middleware can invoke this concurrently for the
-// same brand-new user, so a session-level advisory lock serializes the
-// check-then-create critical section to prevent duplicate default workspaces.
+// CreateDefaultWorkspace provisions a starter workspace once. It uses the same
+// user-row lock as every owned-workspace insert, then makes the empty check,
+// insert, and completion marker one transaction. The durable marker lets a
+// failed first attempt retry without recreating a workspace the user deletes.
 func (s *Store) CreateDefaultWorkspace(ctx context.Context, userID string) error {
-	lockKey := "ws_default:" + userID
-	conn, err := s.pool.Acquire(ctx)
+	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.Release()
+	defer tx.Rollback(ctx)
 
-	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock(hashtext($1))`, lockKey); err != nil {
+	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
+		var locked *AccountLockedError
+		if errors.As(err, &locked) {
+			// A late identity event must not recreate content after the local
+			// account crossed a terminal boundary.
+			return nil
+		}
 		return err
 	}
-	// Unlock on a detached context so release still runs if ctx is cancelled.
-	defer func() {
-		_, _ = conn.Exec(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock(hashtext($1))`, lockKey)
-	}()
+	status, err := s.accountAccess(ctx, tx, userID)
+	if err != nil {
+		return err
+	}
+	if err := status.CreateErr(); err != nil {
+		var locked *AccountLockedError
+		if errors.As(err, &locked) {
+			return nil
+		}
+		return err
+	}
+
+	var provisioned bool
+	if err := tx.QueryRow(ctx, `SELECT starter_workspace_provisioned_at IS NOT NULL
+		FROM users WHERE id=$1`, userID).Scan(&provisioned); err != nil {
+		if isNoRows(err) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if provisioned {
+		return tx.Commit(ctx)
+	}
 
 	var n int
-	if err := conn.QueryRow(ctx, `SELECT count(*) FROM workspaces WHERE user_id=$1`, userID).Scan(&n); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM workspaces WHERE user_id=$1`, userID).Scan(&n); err != nil {
 		return err
 	}
-	if n > 0 {
-		return nil
+	if n == 0 {
+		if _, err := s.gateOwnedWorkspacesTx(ctx, tx, userID, 1); err != nil {
+			return err
+		}
+		embed, err := s.newWorkspaceEmbedding(ctx)
+		if err != nil {
+			return err
+		}
+		if err := s.insertWorkspaceTx(
+			ctx, tx, uid("ws"), userID, "My workspace", ColorGreen, nil, embed,
+		); err != nil {
+			return err
+		}
 	}
-	_, err = s.CreateWorkspace(ctx, userID, "My workspace", ColorGreen, []TagRef{})
-	return err
+	if _, err := tx.Exec(ctx, `UPDATE users SET
+		starter_workspace_provisioned_at=COALESCE(starter_workspace_provisioned_at,now()),
+		updated_at=now() WHERE id=$1`, userID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (s *Store) AssertWorkspaceOwner(ctx context.Context, userID, wsID string) error {
@@ -472,37 +562,116 @@ func (s *Store) AssertWorkspaceOwner(ctx context.Context, userID, wsID string) e
 
 /* --------------------------------------------------------- webhooks */
 
-func (s *Store) WebhookProcessed(ctx context.Context, id string) (bool, error) {
-	var exists bool
-	err := s.pool.QueryRow(ctx, `SELECT exists(SELECT 1 FROM webhook_events WHERE id=$1 AND processed_at IS NOT NULL)`, id).Scan(&exists)
-	return exists, err
+var ErrWebhookInProgress = errors.New("webhook event is already being processed")
+var ErrWebhookClaimLost = errors.New("webhook event claim was lost")
+
+// ClaimWebhookEvent atomically records and leases an event. A failed handler
+// clears its lease in MarkWebhookProcessed so delivery can retry immediately;
+// the timeout recovers a process that died before it could mark the row.
+func (s *Store) ClaimWebhookEvent(
+	ctx context.Context,
+	id, source, eventType, userID string,
+	payload json.RawMessage,
+) (string, bool, error) {
+	token := uid("webhook")
+	var claimed string
+	err := s.pool.QueryRow(ctx, `INSERT INTO webhook_events
+			(id, source, event_type, user_id, payload, processing_token, processing_started_at)
+		SELECT $1,$2,$3,(SELECT id FROM users WHERE id=$4),
+			CASE WHEN EXISTS (SELECT 1 FROM users u
+				WHERE u.id=$4 AND (u.deleted_at IS NOT NULL OR u.identity_deleted_at IS NOT NULL))
+			THEN '{}'::jsonb ELSE $5::jsonb END,
+			$6,now()
+		ON CONFLICT (source,id) DO UPDATE SET
+			event_type=EXCLUDED.event_type,
+			user_id=COALESCE(EXCLUDED.user_id, webhook_events.user_id),
+			payload=CASE WHEN EXISTS (SELECT 1 FROM users u
+				WHERE u.id=COALESCE(EXCLUDED.user_id, webhook_events.user_id)
+					AND (u.deleted_at IS NOT NULL OR u.identity_deleted_at IS NOT NULL))
+				THEN '{}'::jsonb ELSE EXCLUDED.payload END,
+			processing_token=EXCLUDED.processing_token,
+			processing_started_at=now(), error=NULL
+		WHERE webhook_events.processed_at IS NULL
+		  AND (webhook_events.processing_token IS NULL
+		       OR webhook_events.processing_started_at < now()-interval '5 minutes')
+		RETURNING processing_token`, id, source, eventType, nullStr(userID), payload, token).Scan(&claimed)
+	if err == nil {
+		return claimed, false, nil
+	}
+	if !isNoRows(err) {
+		return "", false, err
+	}
+	var processed bool
+	if err := s.pool.QueryRow(ctx, `SELECT processed_at IS NOT NULL AND error IS NULL
+		FROM webhook_events WHERE source=$1 AND id=$2`, source, id).Scan(&processed); err != nil {
+		return "", false, err
+	}
+	if processed {
+		return "", true, nil
+	}
+	return "", false, ErrWebhookInProgress
 }
 
-func (s *Store) RecordWebhookEvent(ctx context.Context, id, source, eventType string, payload json.RawMessage) error {
-	_, err := s.pool.Exec(ctx, `INSERT INTO webhook_events (id, source, event_type, payload)
-		VALUES ($1,$2,$3,$4) ON CONFLICT (id) DO NOTHING`, id, source, eventType, payload)
-	return err
+// RedactWebhookEvent removes a terminal event body that cannot be associated
+// with a live local user. The delivery identity and outcome remain available
+// for idempotency and diagnostics without retaining provider PII indefinitely.
+func (s *Store) RedactWebhookEvent(ctx context.Context, source, id, token string) error {
+	tag, err := s.pool.Exec(ctx, `UPDATE webhook_events SET payload='{}'::jsonb
+		WHERE source=$1 AND id=$2 AND processing_token=$3`, source, id, token)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrWebhookClaimLost
+	}
+	return nil
 }
 
-func (s *Store) MarkWebhookProcessed(ctx context.Context, id string, procErr error) error {
+func (s *Store) AssociateWebhookEvent(ctx context.Context, source, id, token, userID string) error {
+	if userID == "" {
+		return nil
+	}
+	tag, err := s.pool.Exec(ctx, `UPDATE webhook_events SET user_id=$4,
+		payload=CASE WHEN EXISTS (SELECT 1 FROM users u
+			WHERE u.id=$4 AND (u.deleted_at IS NOT NULL OR u.identity_deleted_at IS NOT NULL))
+			THEN '{}'::jsonb ELSE payload END
+		WHERE source=$1 AND id=$2 AND processing_token=$3`, source, id, token, userID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrWebhookClaimLost
+	}
+	return nil
+}
+
+func (s *Store) MarkWebhookProcessed(ctx context.Context, source, id, token string, procErr error) error {
 	var errStr *string
 	if procErr != nil {
 		s := procErr.Error()
 		errStr = &s
 	}
-	_, err := s.pool.Exec(ctx, `UPDATE webhook_events SET processed_at=now(), error=$2 WHERE id=$1`, id, errStr)
-	return err
+	tag, err := s.pool.Exec(ctx, `UPDATE webhook_events SET
+		processed_at=CASE WHEN $3::text IS NULL THEN now() ELSE NULL END,
+		error=$3, processing_token=NULL, processing_started_at=NULL
+		WHERE source=$1 AND id=$2 AND processing_token=$4`, source, id, errStr, token)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrWebhookClaimLost
+	}
+	return nil
 }
 
 /* --------------------------------------------------------- billing */
 
 func (s *Store) GetBilling(ctx context.Context, userID string) (BillingInfo, error) {
 	var b BillingInfo
-	err := s.pool.QueryRow(ctx, `SELECT plan_tier, subscription_status FROM users WHERE id=$1`, userID).
-		Scan(&b.PlanTier, &b.SubscriptionStatus)
-	if isNoRows(err) {
-		return b, ErrNotFound
-	}
+	var err error
+	b.PlanTier, b.SubscriptionStatus, err = s.effectiveSubscriptionStateForUser(
+		ctx, s.pool, userID,
+	)
 	if err != nil {
 		return b, err
 	}
@@ -546,11 +715,6 @@ func (s *Store) GetStripeCustomerID(ctx context.Context, userID string) (string,
 	return *id, err
 }
 
-func (s *Store) SetStripeCustomerID(ctx context.Context, userID, customerID string) error {
-	_, err := s.pool.Exec(ctx, `UPDATE users SET stripe_customer_id=$2, updated_at=now() WHERE id=$1`, userID, customerID)
-	return err
-}
-
 func (s *Store) UserIDByStripeCustomer(ctx context.Context, customerID string) (string, error) {
 	var id string
 	err := s.pool.QueryRow(ctx, `SELECT id FROM users WHERE stripe_customer_id=$1`, customerID).Scan(&id)
@@ -560,32 +724,43 @@ func (s *Store) UserIDByStripeCustomer(ctx context.Context, customerID string) (
 	return id, err
 }
 
-func (s *Store) ListStripeCustomers(ctx context.Context) ([]struct {
-	UserID     string
-	CustomerID string
-	PlanTier   string
-	Status     string
-}, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id, stripe_customer_id, plan_tier, subscription_status
-		FROM users WHERE stripe_customer_id IS NOT NULL`)
+type StripeCustomer struct {
+	UserID          string
+	CustomerID      string
+	PlanTier        string
+	Status          string
+	LifecycleClosed bool
+}
+
+func (s *Store) ListStripeCustomers(ctx context.Context) ([]StripeCustomer, error) {
+	rows, err := s.pool.Query(ctx, `SELECT u.id, u.stripe_customer_id,
+		CASE WHEN NOT EXISTS(SELECT 1 FROM user_subscriptions any_sub
+				WHERE any_sub.user_id=u.id) THEN u.plan_tier
+			ELSE COALESCE((SELECT live.plan_tier FROM user_subscriptions live
+				WHERE live.user_id=u.id AND live.status IN `+entitlingStatuses+`
+				  AND (live.current_period_end IS NULL OR live.current_period_end > now())
+				ORDER BY (live.plan_tier='pro') DESC,
+				  live.current_period_end DESC NULLS FIRST LIMIT 1), 'free') END,
+		CASE WHEN NOT EXISTS(SELECT 1 FROM user_subscriptions any_sub
+				WHERE any_sub.user_id=u.id) THEN u.subscription_status
+			ELSE COALESCE((SELECT live.status FROM user_subscriptions live
+				WHERE live.user_id=u.id AND live.status IN `+entitlingStatuses+`
+				  AND (live.current_period_end IS NULL OR live.current_period_end > now())
+				ORDER BY (live.plan_tier='pro') DESC,
+				  live.current_period_end DESC NULLS FIRST LIMIT 1), 'canceled') END,
+		(u.deletion_requested_at IS NOT NULL OR u.deleted_at IS NOT NULL OR
+		 u.suspended_at IS NOT NULL)
+		FROM users u WHERE u.stripe_customer_id IS NOT NULL`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := []struct {
-		UserID     string
-		CustomerID string
-		PlanTier   string
-		Status     string
-	}{}
+	out := []StripeCustomer{}
 	for rows.Next() {
-		var row struct {
-			UserID     string
-			CustomerID string
-			PlanTier   string
-			Status     string
-		}
-		if err := rows.Scan(&row.UserID, &row.CustomerID, &row.PlanTier, &row.Status); err != nil {
+		var row StripeCustomer
+		if err := rows.Scan(
+			&row.UserID, &row.CustomerID, &row.PlanTier, &row.Status, &row.LifecycleClosed,
+		); err != nil {
 			return nil, err
 		}
 		out = append(out, row)

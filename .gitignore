@@ -17,7 +17,7 @@ Thumbs.db
 .env.*
 !.env.example
 !deploy/.env.prod.example
-!review/.env.uat.example
+!deploy/.env.uat.example
 
 # --- Node / Vite frontend ---
 node_modules/
@@ -73,7 +73,6 @@ data/
 # fixtures). These are only transient debug/probe artifacts.
 pipeline/tests/_match_debug.txt
 pipeline/tests/_probe.py
-.evo-cert-continuity.json
 
 # --- Playwright ---
 playwright-report/
@@ -91,3 +90,4 @@ review-results/
 strix_runs/
 
 plate-playground-template
+.cursor-export/

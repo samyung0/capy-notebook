@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/evonotes/server/internal/materialdoc"
 )
@@ -17,6 +19,58 @@ func equalJSONDocuments(a, b string) bool {
 		return false
 	}
 	return reflect.DeepEqual(left, right)
+}
+
+func TestWorkspaceDeletionReleasesProviderSessionsButKeepsLateReceipts(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	ownerID := newBlobTestUser(t, s, "u_delete_workspace_session")
+	workspace, err := s.CreateWorkspace(
+		ctx, ownerID, "Provider session workspace", ColorGreen, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reservationID := uid("cr")
+	callID := uid("call")
+	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits (user_id,reserved_micros)
+		VALUES ($1,123)
+		ON CONFLICT (user_id) DO UPDATE SET reserved_micros=EXCLUDED.reserved_micros`,
+		ownerID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO provider_sessions
+		(id,actor_user_id,workspace_id,surface,reserved_micros,expires_at)
+		VALUES ($1,$2,$3,'editor',123,now()+interval '1 hour')`,
+		reservationID, ownerID, workspace.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO provider_calls
+		(id,reservation_id,actor_user_id,kind)
+		VALUES ($1,$2,$3,'audio')`, callID, reservationID, ownerID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteWorkspace(ctx, ownerID, workspace.ID); err != nil {
+		t.Fatal(err)
+	}
+	var sessionStatus string
+	var workspaceID *string
+	var reserved int64
+	if err := s.pool.QueryRow(ctx, `SELECT ps.status,ps.workspace_id,uc.reserved_micros
+		FROM provider_sessions ps JOIN user_credits uc ON uc.user_id=ps.actor_user_id
+		WHERE ps.id=$1`, reservationID).Scan(&sessionStatus, &workspaceID, &reserved); err != nil {
+		t.Fatal(err)
+	}
+	if sessionStatus != "released" || workspaceID != nil || reserved != 0 {
+		t.Fatalf("deleted workspace session status=%q workspace=%v reserved=%d",
+			sessionStatus, workspaceID, reserved)
+	}
+	if _, err := s.SettleProviderCall(ctx, reservationID, ProviderCallUsage{
+		CallID: callID, Kind: KindAudio, Provider: "elevenlabs",
+		Model: "scribe_v2", Units: 1, Unit: "seconds",
+	}); err != nil {
+		t.Fatalf("settle late workspace receipt: %v", err)
+	}
 }
 
 func createSharingTestWorkspace(t *testing.T, s *Store, shareRole ShareRole) (context.Context, Workspace) {
@@ -124,7 +178,7 @@ func TestEffectiveMaterialAccessUnionsMembershipAndShareRole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = s.DeleteMaterial(ctx, standalone.ID) })
+	t.Cleanup(func() { _ = s.DeleteMaterial(ctx, "u_owner", standalone.ID) })
 	access, err = s.MaterialEffectiveAccess(ctx, "u_other", standalone.ID)
 	if err != nil || access.Role != RoleViewer || access.MemberRole != "" {
 		t.Fatalf("standalone sharing must remain view-only: %#v, %v", access, err)
@@ -233,6 +287,87 @@ func TestWorkspaceInviteAcceptanceGrantsRoleCapabilities(t *testing.T) {
 	}
 }
 
+func TestReciprocalWorkspaceInviteAcceptanceUsesCanonicalAccountLockOrder(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	firstUserID := newBlobTestUser(t, s, "a_reciprocal_invite")
+	secondUserID := newBlobTestUser(t, s, "z_reciprocal_invite")
+	firstWorkspace, err := s.CreateWorkspace(
+		ctx, firstUserID, "First reciprocal invite", ColorGreen, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondWorkspace, err := s.CreateWorkspace(
+		ctx, secondUserID, "Second reciprocal invite", ColorBlue, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateWorkspaceInvite(
+		ctx, firstWorkspace.ID, secondUserID, RoleViewer, firstUserID,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateWorkspaceInvite(
+		ctx, secondWorkspace.ID, firstUserID, RoleViewer, secondUserID,
+	); err != nil {
+		t.Fatal(err)
+	}
+	inviteTokenFor := func(workspaceID, invitedUserID string) string {
+		var path string
+		if err := s.pool.QueryRow(ctx, `SELECT o.payload->>'invitePath'
+			FROM workspace_invites wi
+			JOIN email_outbox o ON o.template='workspace-invite'
+			 AND o.payload->>'inviteId'=wi.id
+			WHERE wi.workspace_id=$1 AND wi.invited_user_id=$2`,
+			workspaceID, invitedUserID).Scan(&path); err != nil {
+			t.Fatal(err)
+		}
+		return strings.TrimPrefix(path, "/workspace-invites/")
+	}
+	firstToken := inviteTokenFor(firstWorkspace.ID, secondUserID)
+	secondToken := inviteTokenFor(secondWorkspace.ID, firstUserID)
+
+	// Hold the lexically first user so both acceptances reach their account-lock
+	// boundary together. With owner-first locking, the second acceptance holds
+	// the other owner and the two transactions deadlock when this lock releases.
+	blocker, err := s.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer blocker.Rollback(context.Background())
+	var locked string
+	if err := blocker.QueryRow(ctx, `SELECT id FROM users WHERE id=$1 FOR UPDATE`, firstUserID).
+		Scan(&locked); err != nil {
+		t.Fatal(err)
+	}
+
+	firstResult := make(chan error, 1)
+	go func() {
+		_, err := s.AcceptWorkspaceInvite(ctx, firstToken, secondUserID)
+		firstResult <- err
+	}()
+	time.Sleep(50 * time.Millisecond)
+	secondResult := make(chan error, 1)
+	go func() {
+		_, err := s.AcceptWorkspaceInvite(ctx, secondToken, firstUserID)
+		secondResult <- err
+	}()
+	time.Sleep(50 * time.Millisecond)
+	if err := blocker.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := <-firstResult; err != nil {
+		t.Fatalf("first reciprocal acceptance: %v", err)
+	}
+	if err := <-secondResult; err != nil {
+		t.Fatalf("second reciprocal acceptance: %v", err)
+	}
+}
+
 func TestWorkspaceMembershipNotificationsAndNoOpRoleChange(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -248,7 +383,7 @@ func TestWorkspaceMembershipNotificationsAndNoOpRoleChange(t *testing.T) {
 	}
 
 	roleNotification, created, err := s.SetWorkspaceMemberRoleWithResult(
-		ctx, ws.ID, "u_other", RoleEditor,
+		ctx, "u_owner", ws.ID, "u_other", RoleEditor,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -258,7 +393,7 @@ func TestWorkspaceMembershipNotificationsAndNoOpRoleChange(t *testing.T) {
 	}
 
 	unchanged, created, err := s.SetWorkspaceMemberRoleWithResult(
-		ctx, ws.ID, "u_other", RoleEditor,
+		ctx, "u_owner", ws.ID, "u_other", RoleEditor,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -267,13 +402,85 @@ func TestWorkspaceMembershipNotificationsAndNoOpRoleChange(t *testing.T) {
 		t.Fatalf("unchanged role emitted an event: %#v, created=%v", unchanged, created)
 	}
 
-	removed, created, err := s.RemoveWorkspaceMemberWithResult(ctx, ws.ID, "u_other")
+	removed, created, err := s.RemoveWorkspaceMemberWithResult(
+		ctx, "u_owner", ws.ID, "u_other",
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !created || removed == nil || removed.Href != "/workspaces" {
 		t.Fatalf("removal notification = %#v, created=%v", removed, created)
 	}
+}
+
+func TestEmailLessInviteeGetsInAppMembershipEventsWithoutEmail(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	inviteeID := newBlobTestUser(t, s, "u_email_less_invitee")
+	if _, err := s.pool.Exec(ctx, `UPDATE users SET email=NULL WHERE id=$1`, inviteeID); err != nil {
+		t.Fatal(err)
+	}
+	ws, err := s.CreateWorkspace(
+		ctx, "u_owner", "Email-less membership "+uid("name"), ColorGraphite, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.DeleteWorkspace(ctx, "u_owner", ws.ID) })
+
+	invite, created, err := s.CreateWorkspaceInviteWithResult(
+		ctx, ws.ID, inviteeID, RoleViewer, "u_owner",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created || invite == nil || invite.WorkspaceInviteID == "" {
+		t.Fatalf("invite notification = %#v, created=%v", invite, created)
+	}
+	assertNoEmail := func(stage string) {
+		t.Helper()
+		var count int
+		if err := s.pool.QueryRow(ctx,
+			`SELECT count(*) FROM email_outbox WHERE user_id=$1`, inviteeID,
+		).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 0 {
+			t.Fatalf("%s created %d email outbox row(s)", stage, count)
+		}
+	}
+	assertNoEmail("invite")
+
+	if _, err := s.pool.Exec(ctx,
+		`DELETE FROM workspace_invites WHERE id=$1`, invite.WorkspaceInviteID,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO workspace_members
+		(workspace_id,user_id,role) VALUES ($1,$2,'viewer')`, ws.ID, inviteeID); err != nil {
+		t.Fatal(err)
+	}
+	roleNotification, created, err := s.SetWorkspaceMemberRoleWithResult(
+		ctx, "u_owner", ws.ID, inviteeID, RoleEditor,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created || roleNotification == nil {
+		t.Fatalf("role notification = %#v, created=%v", roleNotification, created)
+	}
+	assertNoEmail("role change")
+
+	removed, created, err := s.RemoveWorkspaceMemberWithResult(
+		ctx, "u_owner", ws.ID, inviteeID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created || removed == nil {
+		t.Fatalf("removal notification = %#v, created=%v", removed, created)
+	}
+	assertNoEmail("member removal")
 }
 
 func TestWorkspaceInvitePrivacyAndAutomaticExpiry(t *testing.T) {
@@ -352,9 +559,218 @@ func TestWorkspaceInvitePrivacyAndAutomaticExpiry(t *testing.T) {
 	}
 }
 
+func TestQueuedInviteEmailMaySendButDeletingWorkspaceOwnerMakesLinkUnavailable(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	ownerID := newBlobTestUser(t, s, "u_invite_deleting_owner")
+	ws, err := s.CreateWorkspace(ctx, ownerID, "Deleting invite owner", ColorGraphite, []TagRef{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = s.CancelAccountDeletion(ctx, ownerID)
+		_ = s.DeleteWorkspace(ctx, ownerID, ws.ID)
+	})
+
+	if err := s.CreateWorkspaceInvite(ctx, ws.ID, "u_other", RoleViewer, ownerID); err != nil {
+		t.Fatal(err)
+	}
+	var inviteID, invitePath, mailID string
+	if err := s.pool.QueryRow(ctx, `SELECT wi.id, o.payload->>'invitePath', o.id
+		FROM workspace_invites wi
+		JOIN email_outbox o ON o.template='workspace-invite'
+			AND o.payload->>'inviteId'=wi.id
+		WHERE wi.workspace_id=$1 AND wi.invited_user_id='u_other'`, ws.ID).
+		Scan(&inviteID, &invitePath, &mailID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RequestAccountDeletion(ctx, ownerID, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE email_outbox
+		SET next_attempt_at=now()+interval '1 day'
+		WHERE status='pending' AND id<>$1`, mailID); err != nil {
+		t.Fatal(err)
+	}
+	items, err := s.ClaimEmails(ctx, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].ID != mailID {
+		t.Fatalf("claimed invite mail=%#v, want %s", items, mailID)
+	}
+	active, err := s.EmailClaimActive(ctx, items[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !active {
+		t.Fatal("queued invite email was retracted after workspace owner requested deletion")
+	}
+	if err := s.CancelEmailClaim(ctx, items[0]); err != nil {
+		t.Fatal(err)
+	}
+	token := strings.TrimPrefix(invitePath, "/workspace-invites/")
+	if token == invitePath || token == "" {
+		t.Fatalf("invalid invite path %q for %s", invitePath, inviteID)
+	}
+	if _, err := s.AcceptWorkspaceInvite(ctx, token, "u_other"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deletion-pending owner invite acceptance=%v, want not found", err)
+	}
+}
+
+func TestQueuedInviteEmailMaySendAfterWorkspaceDeletion(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	ownerID := newBlobTestUser(t, s, "u_invite_deleted_workspace_owner")
+	ws, err := s.CreateWorkspace(ctx, ownerID, "Deleted invitation workspace", ColorGraphite, []TagRef{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = s.pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, ownerID)
+	})
+
+	if err := s.CreateWorkspaceInvite(ctx, ws.ID, "u_other", RoleViewer, ownerID); err != nil {
+		t.Fatal(err)
+	}
+	var inviteID, invitePath, mailID string
+	if err := s.pool.QueryRow(ctx, `SELECT wi.id, o.payload->>'invitePath', o.id
+		FROM workspace_invites wi
+		JOIN email_outbox o ON o.template='workspace-invite'
+			AND o.payload->>'inviteId'=wi.id
+		WHERE wi.workspace_id=$1 AND wi.invited_user_id='u_other'`, ws.ID).
+		Scan(&inviteID, &invitePath, &mailID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteWorkspace(ctx, ownerID, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE email_outbox
+		SET next_attempt_at=now()+interval '1 day'
+		WHERE status='pending' AND id<>$1`, mailID); err != nil {
+		t.Fatal(err)
+	}
+	items, err := s.ClaimEmails(ctx, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].ID != mailID {
+		t.Fatalf("claimed invite mail=%#v, want %s", items, mailID)
+	}
+	active, err := s.EmailClaimActive(ctx, items[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !active {
+		t.Fatal("queued invite email was retracted after workspace deletion")
+	}
+	if err := s.CancelEmailClaim(ctx, items[0]); err != nil {
+		t.Fatal(err)
+	}
+	token := strings.TrimPrefix(invitePath, "/workspace-invites/")
+	if token == invitePath || token == "" {
+		t.Fatalf("invalid invite path %q for %s", invitePath, inviteID)
+	}
+	if _, err := s.AcceptWorkspaceInvite(ctx, token, "u_other"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deleted workspace invite acceptance=%v, want not found", err)
+	}
+}
+
+func TestOverQuotaOwnerCannotInviteOrPromoteButCanDemote(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	ownerID := newBlobTestUser(t, s, "u_over_quota_members_owner")
+	viewerID := newBlobTestUser(t, s, "u_over_quota_members_viewer")
+	editorID := newBlobTestUser(t, s, "u_over_quota_members_editor")
+	inviteeID := newBlobTestUser(t, s, "u_over_quota_members_invitee")
+	ws, err := s.CreateWorkspace(ctx, ownerID, "Over quota membership", ColorGreen, []TagRef{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO workspace_members
+		(workspace_id,user_id,role) VALUES ($1,$2,'viewer'),($1,$3,'editor')`,
+		ws.ID, viewerID, editorID); err != nil {
+		t.Fatal(err)
+	}
+	pushOverQuota(t, s, ownerID, ws.ID)
+
+	if err := s.CreateWorkspaceInvite(ctx, ws.ID, inviteeID, RoleViewer, ownerID); err == nil {
+		t.Fatal("over-quota owner created an invitation")
+	} else {
+		var locked *AccountLockedError
+		if !errors.As(err, &locked) || locked.Code() != "account_over_quota" {
+			t.Fatalf("invite error=%v, want over-quota account error", err)
+		}
+	}
+	if err := s.SetWorkspaceMemberRole(ctx, ownerID, ws.ID, viewerID, RoleCommenter); err == nil {
+		t.Fatal("over-quota owner promoted a viewer")
+	} else {
+		var locked *AccountLockedError
+		if !errors.As(err, &locked) || locked.Code() != "account_over_quota" {
+			t.Fatalf("promotion error=%v, want over-quota account error", err)
+		}
+	}
+	if err := s.SetWorkspaceMemberRole(ctx, ownerID, ws.ID, editorID, RoleViewer); err != nil {
+		t.Fatalf("over-quota demotion failed: %v", err)
+	}
+}
+
+func TestOwnerLifecycleBlocksAcceptanceOfPreviouslyIssuedInvite(t *testing.T) {
+	for _, lifecycle := range []string{"over_quota", "suspended"} {
+		t.Run(lifecycle, func(t *testing.T) {
+			s := openAccessTestStore(t)
+			ctx := context.Background()
+			ownerID := newBlobTestUser(t, s, "u_invite_owner_"+lifecycle)
+			inviteeID := newBlobTestUser(t, s, "u_invite_target_"+lifecycle)
+			ws, err := s.CreateWorkspace(ctx, ownerID, "Lifecycle invite", ColorGreen, []TagRef{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := s.CreateWorkspaceInvite(ctx, ws.ID, inviteeID, RoleViewer, ownerID); err != nil {
+				t.Fatal(err)
+			}
+			var invitePath string
+			if err := s.pool.QueryRow(ctx, `SELECT o.payload->>'invitePath'
+				FROM workspace_invites wi
+				JOIN email_outbox o ON o.template='workspace-invite'
+				 AND o.payload->>'inviteId'=wi.id
+				WHERE wi.workspace_id=$1 AND wi.invited_user_id=$2`, ws.ID, inviteeID).
+				Scan(&invitePath); err != nil {
+				t.Fatal(err)
+			}
+			switch lifecycle {
+			case "over_quota":
+				pushOverQuota(t, s, ownerID, ws.ID)
+			case "suspended":
+				if _, err := s.pool.Exec(ctx, `UPDATE users SET suspended_at=now(),
+					suspended_reason='operator hold' WHERE id=$1`, ownerID); err != nil {
+					t.Fatal(err)
+				}
+			}
+			token := strings.TrimPrefix(invitePath, "/workspace-invites/")
+			if _, err := s.AcceptWorkspaceInvite(ctx, token, inviteeID); !errors.Is(err, ErrNotFound) {
+				t.Fatalf("%s owner invite acceptance=%v, want not found", lifecycle, err)
+			}
+			var memberCount int
+			if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM workspace_members
+				WHERE workspace_id=$1 AND user_id=$2`, ws.ID, inviteeID).Scan(&memberCount); err != nil {
+				t.Fatal(err)
+			}
+			if memberCount != 0 {
+				t.Fatalf("%s owner invite created membership", lifecycle)
+			}
+		})
+	}
+}
+
 func TestCommentsAllowExactlyOneReplyLevel(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx, ws := createSharingTestWorkspace(t, s, ShareViewer)
+	if _, err := s.pool.Exec(ctx, `INSERT INTO workspace_members
+		(workspace_id, user_id, role) VALUES
+		($1,'u_commenter','commenter'),($1,'u_editor','editor')`, ws.ID); err != nil {
+		t.Fatal(err)
+	}
 	content, _ := materialdoc.Marshal(materialdoc.Empty())
 	material, err := s.CreateMaterial(ctx, Material{
 		WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note",
@@ -392,5 +808,77 @@ func TestCommentsAllowExactlyOneReplyLevel(t *testing.T) {
 		listed[0].Comments[0].Replies[0].ID != reply.ID ||
 		len(listed[0].Comments[0].Replies[0].Replies) != 0 {
 		t.Fatalf("reply tree is not one level: %#v", listed)
+	}
+}
+
+func TestCommentMutationsRecheckLifecycleAndCurrentRole(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	ownerID := newBlobTestUser(t, s, "u_comment_owner")
+	commenterID := newBlobTestUser(t, s, "u_comment_actor")
+	ws, err := s.CreateWorkspace(ctx, ownerID, "Comment lifecycle", ColorGreen, []TagRef{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO workspace_members
+		(workspace_id, user_id, role) VALUES ($1,$2,'commenter')`, ws.ID, commenterID); err != nil {
+		t.Fatal(err)
+	}
+	content, err := materialdoc.Marshal(materialdoc.Empty())
+	if err != nil {
+		t.Fatal(err)
+	}
+	material, err := s.CreateMaterial(ctx, Material{
+		CreatedBy: ownerID, WorkspaceID: ws.ID, WorkspaceName: ws.Name,
+		Kind: "note", Title: "Comment lifecycle", Content: content,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rich := json.RawMessage(`[{"type":"p","children":[{"text":"root"}]}]`)
+	discussion, err := s.CreateCommentDiscussion(
+		ctx, material.ID, commenterID, nil, nil, nil, 1, "", rich,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE users SET suspended_at=now(),
+		suspended_reason='test suspension'
+		WHERE id=$1`, commenterID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddNestedComment(ctx, discussion.ID, commenterID, nil, rich); err == nil {
+		t.Fatal("suspended commenter added a comment")
+	} else {
+		var locked *AccountLockedError
+		if !errors.As(err, &locked) || locked.State != AccountSuspended {
+			t.Fatalf("suspended commenter error = %v", err)
+		}
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE users SET suspended_at=NULL,
+		suspended_reason=NULL WHERE id=$1`,
+		commenterID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE workspace_members SET role='viewer'
+		WHERE workspace_id=$1 AND user_id=$2`, ws.ID, commenterID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetCollaborationDiscussionResolved(
+		ctx, discussion.ID, commenterID, true,
+	); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("viewer resolve error = %v, want forbidden", err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE workspace_members SET role='commenter'
+		WHERE workspace_id=$1 AND user_id=$2`, ws.ID, commenterID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE users
+		SET deletion_requested_at=now(), purge_after=now()+interval '30 days'
+		WHERE id=$1`, ownerID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddNestedComment(ctx, discussion.ID, commenterID, nil, rich); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deleting-owner comment error = %v, want not found", err)
 	}
 }

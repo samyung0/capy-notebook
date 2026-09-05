@@ -36,7 +36,6 @@ from ..jobs import (
     CONTENT_CLAIM_WAIT_S,
     POLICIES,
     CapacityWait,
-    ExternalWait,
     RetryableError,
     TerminalError,
     backoff_s,
@@ -52,7 +51,7 @@ from ..retrieval.chunking import (
     chunk_markdown,
 )
 from ..store import blobstore, db
-from . import capacity, source_text, telemetry
+from . import capacity, import_stage, source_text, telemetry
 from . import plan as ingest_plan
 
 log = logging.getLogger("evo.worker")
@@ -90,12 +89,12 @@ _REQUIRED_INGEST_STRINGS = (
     "reservationId",
     "ingestProviderSlug",
     "ingestModelSlug",
-    "visionProviderSlug",
-    "visionModelSlug",
+    "captioningProviderSlug",
+    "captioningModelSlug",
 )
 _REQUIRED_INGEST_INTS = (
     "ingestModelVersion",
-    "visionModelVersion",
+    "captioningModelVersion",
     "sourceRevision",
 )
 _REQUIRED_INGEST_KEYS = ("sourceETag",)
@@ -122,6 +121,20 @@ def _rate(resource_key: str) -> dict:
     return {**rate, "version": version, "creditMicrosPerUnit": micros}
 
 
+def _job_timeout(job: dict, default: int) -> int:
+    payload = job.get("payload") or {}
+    processing_plan = payload.get("processingPlan") or {}
+    if (
+        job.get("type") == "ingest"
+        and processing_plan.get("route") == ingest_plan.AUDIO_TRANSCRIPTION
+    ):
+        # Preserve the ordinary ingest budget for download, validation, and
+        # admission before giving the synchronous provider its full receipt
+        # window.
+        return default + cfg.elevenlabs_sync_timeout_s + 300
+    return default
+
+
 # ----------------------------------------------------------- sync DB helpers
 # (run via asyncio.to_thread so the event loop is never blocked)
 
@@ -131,24 +144,22 @@ def _announce_reclaimed(row: dict) -> None:
     if row.get("outcome") != "failed" or not payload.get("fileId"):
         return
     _cleanup_payload_source(payload)
-    try:
-        _notify_ingest_terminal(
-            payload.get("fileId"),
-            payload.get("workspaceId"),
-            row["id"],
-            f"{row.get('type') or 'pipeline'} worker died before the job completed",
-            payload=payload,
+    if not row.get("file_failed"):
+        return
+    error = f"{row.get('type') or 'pipeline'} worker died before the job completed"
+    workspace_id = str(payload.get("workspaceId") or "")
+    file_id = str(payload.get("fileId") or "")
+    if workspace_id:
+        progress.publish(
+            workspace_id,
+            file_id,
+            "failed",
+            100,
+            status="failed",
+            message=error[:200],
+            indexed=False,
         )
-    except db.SourceSupersededError:
-        # A replacement may have skipped the running row while its old worker
-        # held the job lock. If that worker then dies on its final attempt, the
-        # reaper owns terminal cleanup and must release A's reservation without
-        # writing a failed state onto replacement B.
-        _finish_superseded(
-            row["id"],
-            int(row.get("attempts") or 1),
-            _reservation_id(payload),
-        )
+    log.info("ingest %s failed terminally: %s", file_id, error)
 
 
 def _claim_one(job_type: str) -> dict | None:
@@ -212,50 +223,32 @@ def _claim_one_with_capacity(
     return job, lease, False
 
 
-def _claim_audio_cleanup() -> dict | None:
-    with db.connect() as conn, conn.cursor() as cur:
-        candidate = db.claim_audio_cleanup(cur)
-        conn.commit()
-        return candidate
-
-
-def _finish_audio_cleanup(candidate: dict, error: str = "") -> None:
-    with db.connect() as conn, conn.cursor() as cur:
-        if error:
-            db.fail_audio_cleanup(cur, candidate["id"], error)
-        else:
-            db.complete_audio_cleanup(
-                cur, candidate["id"], str(candidate.get("provider_call_id") or "")
-            )
-        conn.commit()
-
-
-async def _run_audio_cleanup_once() -> bool:
-    candidate = await asyncio.to_thread(_claim_audio_cleanup)
-    if candidate is None:
-        return False
-    provider_id = str(candidate.get("provider_transcription_id") or "")
-    deleted = await asyncio.to_thread(source_text.delete_provider_audio, provider_id)
-    error = "" if deleted else "provider transcript deletion failed"
-    await asyncio.to_thread(_finish_audio_cleanup, candidate, error)
-    if deleted:
-        log.info("deleted provider transcript %s", provider_id)
-    return True
-
-
 def _heartbeat_loop(
-    job_id: str, lease_s: int, attempt: int, stop: threading.Event
+    job_id: str,
+    lease_s: int,
+    attempt: int,
+    stop: threading.Event,
+    cancel_job: Callable[[], None] | None = None,
 ) -> None:
     while not stop.wait(min(30, max(lease_s // 3, 5))):
         try:
             with db.connect() as conn, conn.cursor() as cur:
-                db.heartbeat_job(cur, job_id, lease_s, attempt)
+                claim_is_live = db.heartbeat_job(cur, job_id, lease_s, attempt)
                 conn.commit()
+            if not claim_is_live:
+                if cancel_job is not None:
+                    cancel_job()
+                return
         except Exception:
             log.warning("job heartbeat failed", exc_info=True)
 
 
-def _lost_claim(cur, job_id: str, attempt: int | None) -> bool:
+def _lost_claim(
+    cur,
+    job_id: str,
+    attempt: int | None,
+    payload: dict | None = None,
+) -> bool:
     """True when another worker has taken over, so this run must not write.
 
     ``attempt`` is None for the lease reaper, which is acting on a row it has
@@ -263,8 +256,21 @@ def _lost_claim(cur, job_id: str, attempt: int | None) -> bool:
     """
     if attempt is None:
         return False
-    if db.claim_is_current(cur, job_id, attempt):
+    if payload is not None:
+        boundary = db.lock_pipeline_claim_boundary(
+            cur,
+            job_id=job_id,
+            attempt=attempt,
+            payload=payload,
+        )
+    else:
+        boundary = "current" if db.claim_is_current(cur, job_id, attempt) else "lost"
+    if boundary == "current":
         return False
+    if boundary == "cancelled":
+        # Finalization returns immediately on a closed boundary. Commit the
+        # cancellation now so stopping the heartbeat cannot leave it retryable.
+        cur.connection.commit()
     log.warning(
         "job %s lost its claim (attempt %s); discarding outcome", job_id, attempt
     )
@@ -293,11 +299,23 @@ def _finish_ok(
     try:
         with db.connect() as conn:
             with conn.cursor() as cur:
-                if _lost_claim(cur, job_id, attempt):
-                    return False
+                boundary_payload = None
                 if source_revision is not None:
-                    db.require_current_file_source(
-                        cur, file_id, source_revision, source_etag
+                    boundary_payload = {
+                        "actorUserId": actor_user_id,
+                        "fileId": file_id,
+                        "reservationId": reservation_id,
+                        "sourceETag": source_etag,
+                        "sourceRevision": source_revision,
+                        "workspaceId": workspace_id,
+                    }
+                if _lost_claim(cur, job_id, attempt, boundary_payload):
+                    return False
+                if boundary_payload is None and not db.ingest_accounts_active(
+                    cur, file_id, actor_user_id
+                ):
+                    raise TerminalError(
+                        "ingest stopped because workspace access is no longer writable"
                     )
                 _record_parse_usage_tx(
                     cur,
@@ -381,22 +399,33 @@ def _finish_fail(
     reservation_id: str = "",
     source_revision: int | None = None,
     source_etag: str = "",
+    actor_user_id: str = "",
+    workspace_id: str = "",
     error_category: str = "",
     error_code: str = "",
 ) -> bool:
     with db.connect() as conn:
         with conn.cursor() as cur:
-            if _lost_claim(cur, job_id, attempt):
+            boundary_payload = None
+            if file_id and source_revision is not None:
+                boundary_payload = {
+                    "actorUserId": actor_user_id,
+                    "fileId": file_id,
+                    "reservationId": reservation_id,
+                    "sourceETag": source_etag,
+                    "sourceRevision": source_revision,
+                    "workspaceId": workspace_id,
+                }
+            if _lost_claim(cur, job_id, attempt, boundary_payload):
                 return False
             if file_id:
-                if source_revision is not None:
+                if source_revision is not None and boundary_payload is None:
                     db.require_current_file_source(
                         cur, file_id, source_revision, source_etag
                     )
                 db.set_file_status(cur, file_id, "failed")
                 db.set_file_indexed(cur, file_id, False)
                 db.set_file_preview_blob(cur, file_id, None)
-            db.fail_audio_transcription_for_job(cur, job_id, error)
             db.set_job(cur, job_id, "failed", error[:500])
             db.close_credit_reservation(cur, reservation_id)
             db.finish_job_attempt(
@@ -435,14 +464,17 @@ def _finish_superseded(
     with db.connect() as conn, conn.cursor() as cur:
         if not _lost_claim(cur, job_id, attempt):
             db.set_job(cur, job_id, "failed", "superseded by file replacement")
-            db.finish_job_attempt(
-                cur,
-                attempt_id=telemetry.current_attempt_id(),
-                outcome="superseded",
-                snapshot=telemetry.snapshot(),
-                error_category="superseded",
-                error_code="source_superseded",
-            )
+        # Replacement may already have made the job terminal. The generated
+        # attempt id still identifies this exact run and must be closed rather
+        # than left permanently visible as running.
+        db.finish_job_attempt(
+            cur,
+            attempt_id=telemetry.current_attempt_id(),
+            outcome="superseded",
+            snapshot=telemetry.snapshot(),
+            error_category="superseded",
+            error_code="source_superseded",
+        )
         # Replacement normally closes this while canceling the old job. This
         # also covers the SKIP LOCKED race where the worker held the job row.
         db.close_credit_reservation(cur, reservation_id)
@@ -456,16 +488,12 @@ def _requeue(
     policy = policy_for(job_type)
     payload = job.get("payload") or {}
     attempt = int(job.get("attempts") or 1)
+    # Only parse/ingest payloads carry a source boundary to lock; an import
+    # fences on the bare claim.
+    boundary_payload = payload if job_type in {"parse", "ingest"} else None
     with db.connect() as conn, conn.cursor() as cur:
-        if _lost_claim(cur, job["id"], attempt):
+        if _lost_claim(cur, job["id"], attempt, boundary_payload):
             return "stale"
-        if job_type in {"parse", "ingest"} and payload.get("fileId"):
-            db.require_current_file_source(
-                cur,
-                str(payload["fileId"]),
-                int(payload["sourceRevision"]),
-                str(payload.get("sourceETag") or ""),
-            )
         outcome = db.requeue_job(
             cur,
             job_id=job["id"],
@@ -524,15 +552,17 @@ def _notify_ingest_terminal(
     name = _read_name(file_id)
     source_revision = payload.get("sourceRevision") if payload else None
     committed = _finish_fail(
-        file_id,
-        job_id,
-        error,
-        attempt,
-        reservation_id,
-        int(source_revision) if source_revision is not None else None,
-        str((payload or {}).get("sourceETag") or ""),
-        error_category,
-        error_code,
+        file_id=file_id,
+        job_id=job_id,
+        error=error,
+        attempt=attempt,
+        reservation_id=reservation_id,
+        source_revision=(int(source_revision) if source_revision is not None else None),
+        source_etag=str((payload or {}).get("sourceETag") or ""),
+        actor_user_id=str((payload or {}).get("actorUserId") or ""),
+        workspace_id=str((payload or {}).get("workspaceId") or ws or ""),
+        error_category=error_category,
+        error_code=error_code,
     )
     if not committed:
         return
@@ -555,10 +585,7 @@ def _read_name(file_id: str) -> str:
 
 
 def _account_allows_ingest(file_id: str, payload: dict) -> bool:
-    """Claim-time gate: owner lifecycle/storage, actor credits. Separate lookups.
-
-    Actor lifecycle is not checked. Refusing a deletion_pending uploader would
-    leave the owner holding an unindexed file whose bytes they already paid for.
+    """Claim-time gate: owner lifecycle/storage, actor lifecycle/credits.
 
     A missing actor is refused rather than waved through. It used to mean "no
     actor, nothing to check", which let a job parse, caption and embed
@@ -570,8 +597,12 @@ def _account_allows_ingest(file_id: str, payload: dict) -> bool:
     if not actor:
         return False
     with db.connect() as conn, conn.cursor() as cur:
+        if not db.ingest_accounts_active(cur, file_id, actor):
+            return False
         owner = db.file_owner_user_id(cur, file_id)
-        if not owner or not db.account_allows_ingest(cur, owner):
+        if not owner or not db.account_allows_ingest(
+            cur, owner, allow_over_quota=bool(payload.get("quotaRecovery"))
+        ):
             return False
         return db.actor_has_credits(cur, actor)
 
@@ -588,36 +619,109 @@ def _record_parse_artifact(
     version: str,
     source_revision: int,
     source_etag: str,
+    actor_user_id: str,
 ) -> None:
     with db.connect() as conn, conn.cursor() as cur:
+        if not db.ingest_accounts_active(cur, file_id, actor_user_id):
+            raise TerminalError(
+                "ingest stopped because an account is suspended or deleting"
+            )
         db.require_current_file_source(cur, file_id, source_revision, source_etag)
         db.set_file_parse_artifact(cur, file_id, key, fingerprint, version)
         conn.commit()
 
 
 def _record_caption_blob(
-    file_id: str, key: str, source_revision: int, source_etag: str
+    file_id: str,
+    key: str,
+    source_revision: int,
+    source_etag: str,
+    actor_user_id: str,
 ) -> None:
     with db.connect() as conn, conn.cursor() as cur:
+        if not db.ingest_accounts_active(cur, file_id, actor_user_id):
+            raise TerminalError(
+                "ingest stopped because an account is suspended or deleting"
+            )
         db.require_current_file_source(cur, file_id, source_revision, source_etag)
         db.set_file_caption_blob(cur, file_id, key)
         conn.commit()
 
 
+def _record_caption_blob_best_effort(
+    file_id: str,
+    key: str,
+    source_revision: int,
+    source_etag: str,
+    actor_user_id: str,
+) -> None:
+    """Record optional cache identity without making ingest depend on it."""
+    try:
+        _record_caption_blob(
+            file_id,
+            key,
+            source_revision,
+            source_etag,
+            actor_user_id,
+        )
+    except Exception:
+        log.warning(
+            "could not record optional caption cache identity for file %s",
+            file_id,
+            exc_info=True,
+        )
+
+
 def _record_preview_blob(
-    file_id: str, key: str, source_revision: int, source_etag: str
+    file_id: str,
+    key: str,
+    source_revision: int,
+    source_etag: str,
+    actor_user_id: str,
 ) -> None:
     with db.connect() as conn, conn.cursor() as cur:
+        if not db.ingest_accounts_active(cur, file_id, actor_user_id):
+            raise TerminalError(
+                "ingest stopped because an account is suspended or deleting"
+            )
         db.require_current_file_source(cur, file_id, source_revision, source_etag)
         db.set_file_preview_blob(cur, file_id, key)
         conn.commit()
 
 
-def _clear_preview_blob(file_id: str, source_revision: int, source_etag: str) -> None:
+def _clear_preview_blob(
+    file_id: str,
+    source_revision: int,
+    source_etag: str,
+    actor_user_id: str,
+    *,
+    job_id: str,
+    attempt: int,
+    workspace_id: str,
+    reservation_id: str,
+) -> bool:
+    """Clear a preview only while the installing attempt still owns the job."""
+    payload = {
+        "actorUserId": actor_user_id,
+        "fileId": file_id,
+        "reservationId": reservation_id,
+        "sourceETag": source_etag,
+        "sourceRevision": source_revision,
+        "workspaceId": workspace_id,
+    }
     with db.connect() as conn, conn.cursor() as cur:
-        db.require_current_file_source(cur, file_id, source_revision, source_etag)
+        boundary = db.lock_pipeline_claim_boundary(
+            cur,
+            job_id=job_id,
+            attempt=attempt,
+            payload=payload,
+        )
+        if boundary != "current":
+            conn.commit()
+            return False
         db.set_file_preview_blob(cur, file_id, None)
         conn.commit()
+    return True
 
 
 def _record_source_sha(
@@ -625,8 +729,13 @@ def _record_source_sha(
     source_sha256: str,
     source_revision: int,
     source_etag: str,
+    actor_user_id: str,
 ) -> None:
     with db.connect() as conn, conn.cursor() as cur:
+        if not db.ingest_accounts_active(cur, file_id, actor_user_id):
+            raise TerminalError(
+                "ingest stopped because an account is suspended or deleting"
+            )
         db.require_current_file_source(cur, file_id, source_revision, source_etag)
         db.set_file_source_sha256(cur, file_id, source_sha256)
         conn.commit()
@@ -696,16 +805,54 @@ def _touch_or_upsert_artifact(
     kind: str,
     source_sha256: str,
     size_bytes: int = 0,
-) -> None:
-    with db.connect() as conn, conn.cursor() as cur:
-        db.upsert_artifact_cache(
-            cur,
-            object_path=object_path,
-            kind=kind,
-            source_sha256=source_sha256,
-            size_bytes=size_bytes,
+    strict: bool = False,
+) -> bool:
+    """Register a cache object and reject a row whose object was reaped."""
+    try:
+        with db.connect() as conn, conn.cursor() as cur:
+            db.upsert_artifact_cache(
+                cur,
+                object_path=object_path,
+                kind=kind,
+                source_sha256=source_sha256,
+                size_bytes=size_bytes,
+            )
+            conn.commit()
+    except Exception:
+        if strict:
+            raise
+        log.warning(
+            "could not register optional cache object %s; current ingest will continue",
+            object_path,
+            exc_info=True,
         )
-        conn.commit()
+        return False
+    try:
+        info = blobstore.object_info(object_path)
+        if info is not None:
+            return True
+    except Exception:
+        if strict:
+            raise
+        log.warning(
+            "could not verify optional cache object %s; dropping its cache row",
+            object_path,
+            exc_info=True,
+        )
+    try:
+        with db.connect() as conn, conn.cursor() as cur:
+            db.drop_artifact_cache(cur, object_path)
+            conn.commit()
+    except Exception:
+        if strict:
+            raise
+        log.warning(
+            "could not drop unverified cache row %s", object_path, exc_info=True
+        )
+    if strict:
+        raise RetryableError(f"required cache object {object_path} is missing")
+    log.warning("cache object %s vanished before registration completed", object_path)
+    return False
 
 
 def _clear_parse_artifact_reference(
@@ -741,6 +888,20 @@ def _office_preview_size(info: dict | None) -> int | None:
     return size_bytes
 
 
+def _existing_office_preview_bytes(key: str, info: dict | None) -> bytes | None:
+    """Return a bounded, validated PDF object instead of trusting HEAD size."""
+    size_bytes = _office_preview_size(info)
+    if size_bytes is None:
+        return None
+    content_type = str((info or {}).get("content_type") or "").split(";", 1)[0]
+    if content_type.strip().lower() != "application/pdf":
+        return None
+    data = blobstore.read_bytes(key, cfg.office_preview_max_bytes)
+    if data is None or len(data) != size_bytes or not data.startswith(b"%PDF-"):
+        return None
+    return data
+
+
 def _cache_office_preview(
     *,
     raw_dir: Path,
@@ -750,6 +911,7 @@ def _cache_office_preview(
     fingerprint: str,
     source_revision: int,
     source_etag: str,
+    actor_user_id: str,
 ) -> str | None:
     preview = raw_dir / "preview.pdf"
     if not preview.is_file():
@@ -763,30 +925,31 @@ def _cache_office_preview(
             cfg.office_preview_max_bytes,
         )
         return None
+    with preview.open("rb") as handle:
+        data = handle.read(cfg.office_preview_max_bytes + 1)
+    if (
+        len(data) != local_size
+        or len(data) > cfg.office_preview_max_bytes
+        or not data.startswith(b"%PDF-")
+    ):
+        log.warning("refusing invalid Office preview for %s", file_id)
+        return None
     key = _office_preview_key(source_sha256, parser_version, fingerprint)
     info = blobstore.object_info(key)
-    if info is None:
-        with preview.open("rb") as handle:
-            data = handle.read(cfg.office_preview_max_bytes + 1)
-        if len(data) != local_size or len(data) > cfg.office_preview_max_bytes:
-            log.warning(
-                "refusing Office preview for %s: size changed while reading", file_id
-            )
-            return None
+    existing = _existing_office_preview_bytes(key, info) if info is not None else None
+    if existing != data:
+        if info is not None:
+            log.warning("replacing invalid cached Office preview %s", key)
         blobstore.write_bytes(key, data, "application/pdf")
-        size_bytes = len(data)
-    else:
-        size_bytes = _office_preview_size(info)
-        if size_bytes is None:
-            log.warning("refusing oversized or empty cached Office preview %s", key)
-            return None
+    size_bytes = len(data)
     _touch_or_upsert_artifact(
         object_path=key,
         kind="office_preview",
         source_sha256=source_sha256,
         size_bytes=size_bytes,
+        strict=True,
     )
-    _record_preview_blob(file_id, key, source_revision, source_etag)
+    _record_preview_blob(file_id, key, source_revision, source_etag, actor_user_id)
     return key
 
 
@@ -797,20 +960,28 @@ def _reuse_office_preview(
     preview_blob_path: str,
     source_revision: int,
     source_etag: str,
+    actor_user_id: str,
 ) -> bool:
     if not preview_blob_path:
         return False
-    info = blobstore.object_info(preview_blob_path)
-    size_bytes = _office_preview_size(info)
-    if size_bytes is None:
+    try:
+        info = blobstore.object_info(preview_blob_path)
+        data = _existing_office_preview_bytes(preview_blob_path, info)
+    except Exception:
+        log.warning("could not validate donor Office preview", exc_info=True)
+        return False
+    if data is None:
         return False
     _touch_or_upsert_artifact(
         object_path=preview_blob_path,
         kind="office_preview",
         source_sha256=source_sha256,
-        size_bytes=size_bytes,
+        size_bytes=len(data),
+        strict=True,
     )
-    _record_preview_blob(file_id, preview_blob_path, source_revision, source_etag)
+    _record_preview_blob(
+        file_id, preview_blob_path, source_revision, source_etag, actor_user_id
+    )
     return True
 
 
@@ -819,10 +990,15 @@ def _donor_office_preview(name: str, donor: dict) -> str | None:
     if Path(name).suffix.lower() not in parser_client.OFFICE_SUFFIXES:
         return ""
     preview_blob_path = str(donor.get("preview_blob_path") or "")
-    if (
-        not preview_blob_path
-        or _office_preview_size(blobstore.object_info(preview_blob_path)) is None
-    ):
+    if not preview_blob_path:
+        return None
+    try:
+        info = blobstore.object_info(preview_blob_path)
+        data = _existing_office_preview_bytes(preview_blob_path, info)
+    except Exception:
+        log.warning("could not validate donor Office preview", exc_info=True)
+        return None
+    if data is None:
         return None
     return preview_blob_path
 
@@ -832,8 +1008,13 @@ def _set_file_status(
     status: str,
     source_revision: int,
     source_etag: str,
+    actor_user_id: str,
 ) -> None:
     with db.connect() as conn, conn.cursor() as cur:
+        if not db.ingest_accounts_active(cur, file_id, actor_user_id):
+            raise TerminalError(
+                "ingest stopped because an account is suspended or deleting"
+            )
         db.require_current_file_source(cur, file_id, source_revision, source_etag)
         db.set_file_status(cur, file_id, status)
         conn.commit()
@@ -846,16 +1027,17 @@ def _yield_for_capacity(
     name: str,
     source_revision: int,
     source_etag: str,
+    actor_user_id: str,
     message: str = "waiting for a parser slot",
     backoff_s: int = slots.YIELD_BACKOFF_S,
     outcome: str = "capacity_wait",
 ) -> None:
     """Give the parse slot back to the queue. File stays pending; attempt is undone."""
     attempt = int(job.get("attempts") or 1)
+    payload = job.get("payload") or {}
     with db.connect() as conn, conn.cursor() as cur:
-        if _lost_claim(cur, job["id"], attempt):
+        if _lost_claim(cur, job["id"], attempt, payload):
             return
-        db.require_current_file_source(cur, file_id, source_revision, source_etag)
         db.release_job_for_capacity(cur, job["id"], attempt, backoff_s=backoff_s)
         db.set_file_status(cur, file_id, "pending")
         cur.execute("SELECT not_before FROM jobs WHERE id=%s", (job["id"],))
@@ -996,6 +1178,7 @@ def _record_parse_attempt(
     job_id: str,
     attempt: int,
     outcome: str,
+    payload: dict,
 ) -> None:
     """Persist one page-priced parse attempt before changing the job state."""
     usage = obs.take_parse_usage()
@@ -1003,6 +1186,8 @@ def _record_parse_attempt(
         return
     try:
         with db.connect() as conn, conn.cursor() as cur:
+            if _lost_claim(cur, job_id, attempt, payload):
+                return
             _record_parse_usage_tx(
                 cur,
                 usage=usage,
@@ -1049,18 +1234,28 @@ def _handoff_parsed_artifact(
 ) -> bool:
     """Finish the parse claim and enqueue its ingest continuation atomically."""
     attempt = int(job.get("attempts") or 1)
-    source_revision = int(payload["sourceRevision"])
-    source_etag = str(payload.get("sourceETag") or "")
+    continuation_artifact = dict(artifact)
+    durable_key = str(continuation_artifact.get("durableKey") or "")
+    local_source = payload.get("localSource")
+    source_sha256 = (
+        str(local_source.get("sha256") or "") if isinstance(local_source, dict) else ""
+    )
+    if durable_key and not _touch_or_upsert_artifact(
+        object_path=durable_key,
+        kind="parse_bundle",
+        source_sha256=source_sha256,
+        size_bytes=max(0, int(continuation_artifact.get("size") or 0)),
+    ):
+        continuation_artifact.pop("durableKey", None)
     continuation_payload = dict(payload)
-    continuation_payload["parseArtifact"] = dict(artifact)
+    continuation_payload["parseArtifact"] = continuation_artifact
     continuation_payload["parseJobId"] = job["id"]
     continuation_id = f"{job['id']}_ingest"
     usage = obs.take_parse_usage()
     try:
         with db.connect() as conn, conn.cursor() as cur:
-            if _lost_claim(cur, job["id"], attempt):
+            if _lost_claim(cur, job["id"], attempt, payload):
                 return False
-            db.require_current_file_source(cur, file_id, source_revision, source_etag)
             _record_parse_usage_tx(
                 cur,
                 usage=usage,
@@ -1112,17 +1307,14 @@ def _handoff_for_artifact_repair(
 ) -> bool:
     """Return one invalid post-parse artifact to parsing exactly once."""
     attempt = int(job.get("attempts") or 1)
-    source_revision = int(payload["sourceRevision"])
-    source_etag = str(payload.get("sourceETag") or "")
     repair_payload = dict(payload)
     repair_payload.pop("parseArtifact", None)
     repair_payload["artifactRepairAttempts"] = 1
     repair_payload["repairingIngestJobId"] = job["id"]
     repair_id = f"{job['id']}_parse"
     with db.connect() as conn, conn.cursor() as cur:
-        if _lost_claim(cur, job["id"], attempt):
+        if _lost_claim(cur, job["id"], attempt, payload):
             return False
-        db.require_current_file_source(cur, file_id, source_revision, source_etag)
         db.clear_file_parse_artifact(cur, file_id)
         db.enqueue_job(cur, repair_id, "parse", repair_payload)
         db.set_job(cur, job["id"], "done")
@@ -1166,6 +1358,7 @@ async def _ensure_document_artifact(
             "processing",
             int(payload["sourceRevision"]),
             str(payload.get("sourceETag") or ""),
+            str(payload.get("actorUserId") or ""),
         )
         progress.publish(workspace_id, file_id, "parsing", 15, status="processing")
         try:
@@ -1191,6 +1384,14 @@ async def _ensure_document_artifact(
     version = str(artifact.get("version") or "")
     if not artifact_key or not fingerprint or not version:
         raise RetryableError("parser returned an incomplete artifact descriptor")
+    durable_key = await asyncio.to_thread(
+        parser_client.publish_durable_artifact,
+        artifact,
+        route=route,
+        require_office_preview=processing_plan.office_preview,
+    )
+    if durable_key:
+        artifact["durableKey"] = durable_key
     telemetry.record(artifact_bytes=max(0, int(artifact.get("size") or 0)))
     _set_stage("parse_handoff")
     await asyncio.to_thread(
@@ -1201,6 +1402,7 @@ async def _ensure_document_artifact(
         version,
         int(payload["sourceRevision"]),
         str(payload.get("sourceETag") or ""),
+        str(payload.get("actorUserId") or ""),
     )
     return artifact
 
@@ -1235,6 +1437,7 @@ async def _chunks_for(
                 "processing",
                 source_revision,
                 source_etag,
+                str(payload.get("actorUserId") or ""),
             )
         _set_stage("text_normalization")
         text = await asyncio.to_thread(_read_text, local_path)
@@ -1254,6 +1457,7 @@ async def _chunks_for(
                 "processing",
                 source_revision,
                 source_etag,
+                str(payload.get("actorUserId") or ""),
             )
         progress.publish(
             ws,
@@ -1298,8 +1502,6 @@ async def _chunks_for(
                 local_path=local_path,
                 source_sha256=source_sha256,
                 blob_path=str(blob_path),
-                file_id=file_id,
-                job_id=str(job_id or ""),
                 audio_rate=_rate(_RESOURCE_AUDIO_SECOND),
             )
         else:
@@ -1308,20 +1510,22 @@ async def _chunks_for(
             _set_stage("tabular_normalization")
             text = await asyncio.to_thread(source_text.tabular_text, local_path, name)
         if derived_key:
-            await asyncio.to_thread(
+            registered = await asyncio.to_thread(
                 _touch_or_upsert_artifact,
                 object_path=derived_key,
                 kind="derived_text",
                 source_sha256=source_sha256,
                 size_bytes=derived_size,
             )
-            await asyncio.to_thread(
-                _record_caption_blob,
-                file_id,
-                derived_key,
-                source_revision,
-                source_etag,
-            )
+            if registered:
+                await asyncio.to_thread(
+                    _record_caption_blob_best_effort,
+                    file_id,
+                    derived_key,
+                    source_revision,
+                    source_etag,
+                    str(payload.get("actorUserId") or ""),
+                )
         progress.publish(ws, file_id, "indexing", 50, status="processing")
         return chunk_markdown(text), None, None, None
 
@@ -1353,10 +1557,12 @@ async def _chunks_for(
                 artifact_version,
                 source_revision,
                 source_etag,
+                str(payload.get("actorUserId") or ""),
             )
         preview_path = raw_dir / "preview.pdf"
+        published_preview = None
         if preview_path.is_file():
-            await asyncio.to_thread(
+            published_preview = await asyncio.to_thread(
                 _cache_office_preview,
                 raw_dir=raw_dir,
                 file_id=file_id,
@@ -1365,7 +1571,10 @@ async def _chunks_for(
                 fingerprint=fingerprint,
                 source_revision=source_revision,
                 source_etag=source_etag,
+                actor_user_id=str(payload.get("actorUserId") or ""),
             )
+        if processing_plan.office_preview and not published_preview:
+            raise RetryableError("required Office preview could not be published")
         progress.publish(
             ws,
             file_id,
@@ -1374,8 +1583,8 @@ async def _chunks_for(
         )
         if processing_plan.caption_embedded_images:
             # Before chunking on purpose: a caption has to be inside the passage
-            # it belongs to before that passage is embedded, summarized and
-            # concept-extracted, or the figure stays invisible to all three.
+            # it belongs to before that passage is embedded and summarized, or
+            # the figure stays invisible to both.
             _set_stage("figure_captioning")
             counts = await figures.caption_figures(
                 content_list=content_list,
@@ -1396,19 +1605,21 @@ async def _chunks_for(
                 figures_failed=max(0, selected - cached - captioned),
             )
             if counts.get("key"):
-                await asyncio.to_thread(
+                registered = await asyncio.to_thread(
                     _touch_or_upsert_artifact,
                     object_path=str(counts["key"]),
                     kind="captions",
                     source_sha256=source_sha256,
                 )
-                await asyncio.to_thread(
-                    _record_caption_blob,
-                    file_id,
-                    str(counts["key"]),
-                    source_revision,
-                    source_etag,
-                )
+                if registered:
+                    await asyncio.to_thread(
+                        _record_caption_blob_best_effort,
+                        file_id,
+                        str(counts["key"]),
+                        source_revision,
+                        source_etag,
+                        str(payload.get("actorUserId") or ""),
+                    )
         _set_stage("chunking")
         progress.publish(ws, file_id, "indexing", 55)
         return (
@@ -1443,6 +1654,9 @@ def _require_ingest_payload(payload: dict) -> None:
 async def process_job(job: dict) -> None:
     job_type = (job.get("type") or "").strip()
     policy_for(job_type)
+    if job_type == "import":
+        await import_stage.process(job)
+        return
     if job_type not in {"parse", "ingest"}:
         raise TerminalError(f"unknown job type {job_type!r}")
     await process_ingest_job(job)
@@ -1492,9 +1706,8 @@ async def process_ingest_job(job: dict) -> None:
             job_stage=telemetry.current_stage(),
         )
         await _process_ingest_job(job, payload, file_id, ws, kind, processing_plan)
-    except (CapacityWait, ExternalWait) as exc:
+    except CapacityWait:
         name = await asyncio.to_thread(_read_name, file_id)
-        external = isinstance(exc, ExternalWait)
         await asyncio.to_thread(
             _yield_for_capacity,
             job,
@@ -1503,11 +1716,12 @@ async def process_ingest_job(job: dict) -> None:
             name,
             int(payload["sourceRevision"]),
             str(payload.get("sourceETag") or ""),
-            "waiting for audio transcription"
-            if external
+            str(payload.get("actorUserId") or ""),
+            "waiting for provider capacity"
+            if processing_plan.route == ingest_plan.AUDIO_TRANSCRIPTION
             else "waiting for a parser slot",
-            30 if external else slots.YIELD_BACKOFF_S,
-            "external_wait" if external else "capacity_wait",
+            slots.YIELD_BACKOFF_S,
+            "capacity_wait",
         )
         raise
     finally:
@@ -1529,7 +1743,7 @@ async def _workspace_embedding_spec(workspace_id: str) -> registry.ModelConfig:
         pin["embedding_provider_slug"],
         pin["embedding_model_slug"],
         pin["embedding_model_version"],
-        registry.Surface.EMBEDDING,
+        registry.Slot.RETRIEVAL,
     )
 
 
@@ -1616,23 +1830,33 @@ async def _reuse_donor(
     }.get(route)
     if direct in {"image", "audio"}:
         derived_key = source_text.artifact_key(source_sha256, direct)
-        info = await asyncio.to_thread(blobstore.object_info, derived_key)
+        try:
+            info = await asyncio.to_thread(blobstore.object_info, derived_key)
+        except Exception:
+            # Donor reuse is optional. A failed cache HEAD falls through to the
+            # normal transformation instead of consuming a whole job attempt.
+            log.warning(
+                "could not inspect derived-text cache %s", derived_key, exc_info=True
+            )
+            return False
         if info is None:
             return False
-        await asyncio.to_thread(
+        registered = await asyncio.to_thread(
             _touch_or_upsert_artifact,
             object_path=derived_key,
             kind="derived_text",
             source_sha256=source_sha256,
             size_bytes=int(info.get("size") or 0),
         )
-        await asyncio.to_thread(
-            _record_caption_blob,
-            file_id,
-            derived_key,
-            source_revision,
-            source_etag,
-        )
+        if registered:
+            await asyncio.to_thread(
+                _record_caption_blob_best_effort,
+                file_id,
+                derived_key,
+                source_revision,
+                source_etag,
+                str(payload.get("actorUserId") or ""),
+            )
     association = await store.attach_file_content(
         workspace_id=ws,
         file_id=file_id,
@@ -1662,6 +1886,7 @@ async def _reuse_donor(
             preview_blob_path=preview_blob_path,
             source_revision=source_revision,
             source_etag=source_etag,
+            actor_user_id=str(payload.get("actorUserId") or ""),
         ):
             return False
         note = f"{name}: identical content already indexed; reusing its index."
@@ -1726,6 +1951,7 @@ async def _reuse_donor(
             preview_blob_path=preview_blob_path,
             source_revision=source_revision,
             source_etag=source_etag,
+            actor_user_id=str(payload.get("actorUserId") or ""),
         ):
             await store.abandon_content(association["content_id"])
             await store.attach_file_content(
@@ -1749,6 +1975,11 @@ async def _reuse_donor(
                 file_id,
                 source_revision,
                 source_etag,
+                str(payload.get("actorUserId") or ""),
+                job_id=str(job["id"]),
+                attempt=attempt,
+                workspace_id=ws,
+                reservation_id=_reservation_id(payload),
             )
         await store.abandon_content(association["content_id"])
         raise
@@ -1805,28 +2036,22 @@ async def _process_ingest_job(
     await asyncio.to_thread(
         _require_current_source, file_id, source_revision, source_etag
     )
-    parsed_document_continuation = (
-        job_type == "ingest"
-        and processing_plan.route == ingest_plan.DOCUMENT_PARSE
-        and isinstance(payload.get("parseArtifact"), dict)
-        and bool(str(payload.get("parseJobId") or "").strip())
-    )
     _set_stage("admission_check")
-    if not parsed_document_continuation and not await asyncio.to_thread(
-        _account_allows_ingest, file_id, payload
-    ):
+    if not await asyncio.to_thread(_account_allows_ingest, file_id, payload):
         note = f"{name}: ingest refused because the account is locked or over quota."
         committed = await asyncio.to_thread(
             _finish_fail,
-            file_id,
-            job["id"],
-            note,
-            attempt,
-            _reservation_id(payload),
-            source_revision,
-            source_etag,
-            "accounting",
-            "ingest_admission_refused",
+            file_id=file_id,
+            job_id=job["id"],
+            error=note,
+            attempt=attempt,
+            reservation_id=_reservation_id(payload),
+            source_revision=source_revision,
+            source_etag=source_etag,
+            actor_user_id=str(payload.get("actorUserId") or ""),
+            workspace_id=ws,
+            error_category="accounting",
+            error_code="ingest_admission_refused",
         )
         if not committed:
             return
@@ -1863,30 +2088,16 @@ async def _process_ingest_job(
     blob_path = payload.get("blobPath")
     if not blob_path:
         raise TerminalError("source blob is missing")
-    audio_state = None
-    if processing_plan.route == ingest_plan.AUDIO_TRANSCRIPTION:
-        audio_state = await asyncio.to_thread(source_text.audio_state, job["id"])
-    if audio_state is not None:
-        local_path = None
-        source_key = ""
-        source_sha256 = str(audio_state.get("source_sha256") or "")
-        if not source_sha256:
-            raise TerminalError("audio transcription state has no source checksum")
-        await asyncio.to_thread(_cleanup_payload_source, payload)
-        cleanup_source: Callable[[], None] = lambda: None
-    else:
-        try:
-            _set_stage("source_download")
-            (
-                local_path,
-                source_key,
-                source_sha256,
-                cleanup_source,
-            ) = await asyncio.to_thread(
-                _acquire_local_source, job, payload, str(blob_path)
-            )
-        except FileNotFoundError as exc:
-            raise TerminalError("source blob is missing") from exc
+    try:
+        _set_stage("source_download")
+        (
+            local_path,
+            source_key,
+            source_sha256,
+            cleanup_source,
+        ) = await asyncio.to_thread(_acquire_local_source, job, payload, str(blob_path))
+    except FileNotFoundError as exc:
+        raise TerminalError("source blob is missing") from exc
     if local_path:
         try:
             telemetry.record(source_bytes=max(0, Path(local_path).stat().st_size))
@@ -1898,20 +2109,20 @@ async def _process_ingest_job(
         source_sha256,
         source_revision,
         source_etag,
+        str(payload.get("actorUserId") or ""),
     )
     identity = _pipeline_identity(processing_plan)
     _set_stage("donor_lookup")
     pin = await store.workspace_embedding_pin(ws)
     donor = None
-    if audio_state is None:
-        donor = await store.find_ready_donor(
-            source_sha256=source_sha256,
-            pipeline_identity=identity,
-            embedding_provider_slug=pin["embedding_provider_slug"],
-            embedding_model_slug=pin["embedding_model_slug"],
-            embedding_model_version=pin["embedding_model_version"],
-            embedding_dim=pin["embedding_dim"],
-        )
+    donor = await store.find_ready_donor(
+        source_sha256=source_sha256,
+        pipeline_identity=identity,
+        embedding_provider_slug=pin["embedding_provider_slug"],
+        embedding_model_slug=pin["embedding_model_slug"],
+        embedding_model_version=pin["embedding_model_version"],
+        embedding_dim=pin["embedding_dim"],
+    )
     if job_type == "parse" and donor:
         # A parse coordinator may take the exact-vector donor fast path, which
         # is only database copying. A donor in another vector space needs an
@@ -1947,6 +2158,10 @@ async def _process_ingest_job(
                 return
 
     if job_type == "parse":
+        if not await asyncio.to_thread(_account_allows_ingest, file_id, payload):
+            raise TerminalError(
+                "ingest stopped because an account is suspended or deleting"
+            )
         if not local_path or not source_key:
             raise RetryableError("local document source is missing")
         artifact = await _ensure_document_artifact(
@@ -1979,6 +2194,10 @@ async def _process_ingest_job(
         return
 
     _set_stage("content_prepare")
+    if not await asyncio.to_thread(_account_allows_ingest, file_id, payload):
+        raise TerminalError(
+            "ingest stopped because an account is suspended or deleting"
+        )
     try:
         chunks, artifact_key, fingerprint, artifact_version = await _chunks_for(
             payload=payload,
@@ -2022,6 +2241,10 @@ async def _process_ingest_job(
     telemetry.record(chunks_created=len(chunks))
 
     digest = indexing.content_hash(chunks)
+    if not await asyncio.to_thread(_account_allows_ingest, file_id, payload):
+        raise TerminalError(
+            "ingest stopped because an account is suspended or deleting"
+        )
     association = await store.attach_file_content(
         workspace_id=ws,
         file_id=file_id,
@@ -2082,6 +2305,10 @@ async def _process_ingest_job(
         return
 
     _set_stage("indexing")
+    if not await asyncio.to_thread(_account_allows_ingest, file_id, payload):
+        raise TerminalError(
+            "ingest stopped because an account is suspended or deleting"
+        )
     try:
         result = await indexing.index_file(
             workspace_id=ws,
@@ -2097,7 +2324,6 @@ async def _process_ingest_job(
         raise
     telemetry.record(
         chunks_created=max(0, int(result.get("chunks") or 0)),
-        concepts_created=max(0, int(result.get("concepts") or 0)),
     )
     _set_stage("finalizing")
     committed = await asyncio.to_thread(
@@ -2153,17 +2379,10 @@ async def main_async(job_type: str = "ingest") -> None:
     )
 
     last_sweep = 0.0
-    last_audio_cleanup = 0.0
     sweep_every = 300.0
     try:
         while True:
             now = time.monotonic()
-            if worker_role == "ingest" and now - last_audio_cleanup >= 30:
-                try:
-                    await _run_audio_cleanup_once()
-                except Exception:
-                    log.warning("audio provider cleanup failed", exc_info=True)
-                last_audio_cleanup = now
             try:
                 job, capacity_lease, capacity_busy = await asyncio.to_thread(
                     _claim_one_with_capacity, worker_role
@@ -2186,9 +2405,11 @@ async def main_async(job_type: str = "ingest") -> None:
                                 cur,
                                 caption_ttl_days=cfg.caption_cache_ttl_days,
                             )
+                            protected_spool_keys = db.active_local_spool_keys(cur)
                             conn.commit()
                         removed = await asyncio.to_thread(
-                            parser_client.sweep_local_spool
+                            parser_client.sweep_local_spool,
+                            protected_spool_keys,
                         )
                         if any(removed.values()):
                             log.info("swept local parse spool: %s", removed)
@@ -2223,6 +2444,18 @@ async def main_async(job_type: str = "ingest") -> None:
                         telemetry.reset_job(job_telemetry_token)
                     continue
                 stop = threading.Event()
+                claim_lost = threading.Event()
+                loop = asyncio.get_running_loop()
+                job_task = asyncio.create_task(process_job(job))
+
+                def cancel_lost_claim(
+                    claim_lost: threading.Event = claim_lost,
+                    loop: asyncio.AbstractEventLoop = loop,
+                    job_task: asyncio.Task[None] = job_task,
+                ) -> None:
+                    claim_lost.set()
+                    loop.call_soon_threadsafe(job_task.cancel)
+
                 heartbeat = threading.Thread(
                     target=_heartbeat_loop,
                     args=(
@@ -2230,6 +2463,7 @@ async def main_async(job_type: str = "ingest") -> None:
                         policy.lease_s,
                         int(job.get("attempts") or 1),
                         stop,
+                        cancel_lost_claim,
                     ),
                     name=f"job-lease-{job['id']}",
                     daemon=True,
@@ -2237,16 +2471,23 @@ async def main_async(job_type: str = "ingest") -> None:
                 heartbeat.start()
                 restart_after_failure = False
                 try:
-                    async with asyncio.timeout(policy.timeout_s):
-                        await process_job(job)
-                    log.info("job %s done", job["id"])
-                except (CapacityWait, ExternalWait) as exc:
-                    wait_target = (
-                        "an external provider"
-                        if isinstance(exc, ExternalWait)
-                        else "a parser slot"
-                    )
-                    log.info("job %s waiting for %s", job["id"], wait_target)
+                    async with asyncio.timeout(_job_timeout(job, policy.timeout_s)):
+                        await job_task
+                    if claim_lost.is_set():
+                        log.info("job %s stopped after losing its claim", job["id"])
+                    else:
+                        log.info("job %s done", job["id"])
+                except asyncio.CancelledError:
+                    if not claim_lost.is_set():
+                        raise
+                    # The durable lifecycle transition already closed this job.
+                    # Cancelling its task closes an uncertain async provider
+                    # request. A response that won the race still crosses the
+                    # provider boundary's shielded settlement path.
+                    log.info("job %s cancelled after losing its claim", job["id"])
+                    restart_after_failure = True
+                except CapacityWait:
+                    log.info("job %s waiting for capacity", job["id"])
                 except Exception as exc:  # noqa: BLE001 - retry policy lives below
                     restart_after_failure = isinstance(exc, TimeoutError)
                     try:
@@ -2264,9 +2505,9 @@ async def main_async(job_type: str = "ingest") -> None:
                 capacity_lease.release()
             if restart_after_failure:
                 # Work delegated through asyncio.to_thread cannot be killed by
-                # cancellation. Exit this one-job worker process after durable
-                # retry bookkeeping so no timed-out thread overlaps a successor.
-                log.error("job %s timed out; restarting this worker", job["id"])
+                # cancellation. Exit this one-job worker process after timeout or
+                # claim loss so no stale blocking thread overlaps a successor.
+                log.error("job %s stopped; restarting this worker", job["id"])
                 os._exit(1)
     finally:
         runtime_reporter.stop()
@@ -2302,7 +2543,12 @@ async def _handle_job_failure(job: dict, exc: BaseException) -> None:
             # the logical file points at B.
             exc = superseded
             error_category, error_code, _provider_status = telemetry.classify_error(exc)
-    retry = policy is not None and is_retryable(exc) and attempts < policy.max_attempts
+    retry = (
+        policy is not None
+        and not isinstance(exc, accounting.SettlementError)
+        and is_retryable(exc)
+        and attempts < policy.max_attempts
+    )
     if job_type == "parse":
         await asyncio.to_thread(
             _record_parse_attempt,
@@ -2312,8 +2558,13 @@ async def _handle_job_failure(job: dict, exc: BaseException) -> None:
             _reservation_id(payload),
             job["id"],
             attempts,
-            "retrying" if retry else "failed",
+            outcome="retrying" if retry else "failed",
+            payload=payload,
         )
+    if job_type == "import":
+        # Release or close the gateway attempt before the queue row moves, so
+        # a retry acquires at once and a terminal failure frees the reservation.
+        await asyncio.to_thread(import_stage.report, job, exc, retry)
     if isinstance(exc, db.SourceSupersededError):
         log.info("ingest job %s was superseded", job["id"])
         await asyncio.to_thread(_cleanup_payload_source, payload)

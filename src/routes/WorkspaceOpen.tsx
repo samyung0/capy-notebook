@@ -84,7 +84,7 @@ const GENERATING_MATERIAL: Record<
   { type: MaterialRefType; title: () => string }
 > = {
   diagram: { title: m.generating_diagram, type: 'diagram' },
-  flashcards: { title: m.generating_flashcards, type: 'deck' },
+  flashcards: { title: m.generating_flashcards, type: 'flashcards' },
   mindmap: { title: m.generating_mindmap, type: 'mindmap' },
   quiz: { title: m.generating_quiz, type: 'quiz' },
 };

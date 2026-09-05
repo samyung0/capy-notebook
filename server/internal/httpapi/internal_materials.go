@@ -69,6 +69,15 @@ func (a *api) internalCreateMaterial(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	actorStatus, err := a.s.AccountAccess(ctx, req.UserID)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	if !actorStatus.CanAuthenticate() {
+		a.fail(w, actorStatus.Err())
+		return
+	}
 	if err := a.s.AssertWorkspaceEditor(ctx, req.UserID, req.WorkspaceID); err != nil {
 		a.fail(w, err)
 		return
@@ -176,13 +185,13 @@ func (a *api) insertInternalMaterial(ctx context.Context, req internalMaterialRe
 		for _, c := range req.Cards {
 			cards = append(cards, [2]string{c.Front, c.Back})
 		}
-		deck, err := a.s.CreateDeckWithCards(
+		flashcardSet, err := a.s.CreateFlashcardSetWithCards(
 			ctx, req.UserID, title, "green", req.WorkspaceID, cards, req.ID, req.Chapters, req.FileNames,
 		)
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"kind": "flashcards", "materialId": deck.ID, "title": title, "count": len(cards)}, nil
+		return map[string]any{"kind": "flashcards", "materialId": flashcardSet.ID, "title": title, "count": len(cards)}, nil
 	case "mindmap", "diagram", "note":
 		mt, err := a.s.CreateMaterial(ctx, store.Material{
 			ID: req.ID, CreatedBy: req.UserID, WorkspaceID: req.WorkspaceID, WorkspaceName: wsName,
@@ -222,6 +231,15 @@ func (a *api) internalGetMaterial(w http.ResponseWriter, r *http.Request) {
 	userID := strings.TrimSpace(r.URL.Query().Get("userId"))
 	if workspaceID == "" || userID == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "workspaceId and userId are required"})
+		return
+	}
+	actorStatus, err := a.s.AccountAccess(r.Context(), userID)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	if !actorStatus.CanAuthenticate() {
+		a.fail(w, actorStatus.Err())
 		return
 	}
 	if err := a.s.AssertWorkspaceEditor(r.Context(), userID, workspaceID); err != nil {

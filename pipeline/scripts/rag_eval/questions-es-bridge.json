@@ -1,0 +1,17 @@
+[
+  {
+    "q": "En el artículo sobre si los LLMs distinguen las variedades del español se menciona un proyecto cuyos modelos RoBERTa y GPT-2 se entrenaron con el archivo web de la Biblioteca Nacional. Según el otro documento, ¿qué centro lanzó ese proyecto y en qué año?",
+    "expect": [
+      ["sesgo-linguistico-digital.pdf", 26],
+      ["sesgo-linguistico-digital.pdf", 27]
+    ]
+  },
+  {
+    "q": "El análisis de la variedad chilena clasifica los chilenismos según el diccionario de una academia. ¿Qué plan, según el otro documento, integró el diccionario de esa academia en las búsquedas de Google y en el teclado de Android?",
+    "expect": [["sesgo-linguistico-digital.pdf", 17]]
+  },
+  {
+    "q": "El artículo sobre el Sesgo Lingüístico Digital dice que los modelos de MarIA favorecen el español peninsular. ¿Qué modelo, según el estudio empírico sobre variedades, es el único que reconoce la variabilidad del español?",
+    "expect": [["variedades-espanol.pdf", 12], ["variedades-espanol.pdf", 0]]
+  }
+]

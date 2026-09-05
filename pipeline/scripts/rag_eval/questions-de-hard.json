@@ -1,0 +1,29 @@
+[
+  {
+    "q": "Das Gedankenexperiment mit dem Kraken der das Seekabel anzapft",
+    "expect": [
+      ["grosse-sprachmodelle.pdf", 62],
+      ["grosse-sprachmodelle.pdf", 63],
+      ["grosse-sprachmodelle.pdf", 64]
+    ]
+  },
+  {
+    "q": "Die vier Zutaten Daten Rechenleistung Algorithmen und was noch",
+    "expect": [["grosse-sprachmodelle.pdf", 10]]
+  },
+  {
+    "q": "Der Kollege in Harvard der den logischen Empirismus mitgeprägt hat",
+    "expect": [["putnam-einleitung.pdf", 7], ["putnam-einleitung.pdf", 6]]
+  },
+  {
+    "q": "Wenn das Modell Quellen erfindet obwohl die Datenbasis nicht reicht",
+    "expect": [["grosse-sprachmodelle.pdf", 26]]
+  },
+  {
+    "q": "Münchner Zentrum und Deutsches Forschungszentrum für KI zusammen",
+    "expect": [
+      ["grosse-sprachmodelle.pdf", 42],
+      ["grosse-sprachmodelle.pdf", 41]
+    ]
+  }
+]

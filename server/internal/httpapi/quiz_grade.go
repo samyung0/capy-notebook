@@ -46,7 +46,7 @@ func (a *api) gradeQuizAnswer(ctx context.Context, in *quizGradeInput) (*quizGra
 		}
 	}
 
-	llm, err := a.resolveLLM(ctx, actor, models.SurfaceQuiz)
+	llm, err := a.resolveLLM(ctx, actor, models.SlotQuiz)
 	if err != nil {
 		return nil, hErr(err)
 	}

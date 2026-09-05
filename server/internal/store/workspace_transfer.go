@@ -8,9 +8,10 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// Ownership transfer is a prerequisite for account deletion: a workspace with
-// collaborators cannot be destroyed just because its owner leaves, so the owner
-// has to be able to hand it over first.
+// Ownership transfer lets an owner hand a workspace and its storage charges to
+// another member. It is independent of account deletion: deleting an account
+// hides every owned workspace during the grace window and destroys it at purge,
+// even when collaborators remain.
 //
 // The workspace's storage owner is denormalized onto four tables (files.user_id,
 // materials.owner_user_id, upload_sessions.user_id, editor_assets.user_id). Those
@@ -52,23 +53,6 @@ func (s *Store) TransferWorkspace(
 		return Workspace{}, err
 	}
 	defer tx.Rollback(ctx)
-	recipientLimits, err := s.gateOwnedWorkspacesTx(ctx, tx, recipientID, 1)
-	if err != nil {
-		return Workspace{}, err
-	}
-
-	// Both counter rows are locked up front, in a fixed order. Two transfers
-	// crossing between the same pair of users would otherwise deadlock.
-	first, second := actorID, recipientID
-	if second < first {
-		first, second = second, first
-	}
-	if err := s.lockStorageRowTx(ctx, tx, first); err != nil {
-		return Workspace{}, err
-	}
-	if err := s.lockStorageRowTx(ctx, tx, second); err != nil {
-		return Workspace{}, err
-	}
 
 	var currentOwner string
 	err = tx.QueryRow(ctx, `SELECT user_id FROM workspaces WHERE id=$1 FOR UPDATE`,
@@ -82,6 +66,29 @@ func (s *Store) TransferWorkspace(
 	// Re-checked under the lock: the owner may have changed since the assertion.
 	if currentOwner != actorID {
 		return Workspace{}, ErrForbidden
+	}
+	// Workspace-scoped writes take the workspace lock before lifecycle and
+	// storage locks. Transfer uses the same order so it cannot deadlock with an
+	// upload/material insert while also making the owner immutable for this tx.
+	if err := s.lockAccountSessionsTx(ctx, tx, actorID, recipientID); err != nil {
+		return Workspace{}, err
+	}
+	recipientLimits, err := s.gateOwnedWorkspacesTx(ctx, tx, recipientID, 1)
+	if err != nil {
+		return Workspace{}, err
+	}
+
+	// Both counter rows are locked in a fixed order. Two transfers crossing
+	// between the same pair of users would otherwise deadlock.
+	first, second := actorID, recipientID
+	if second < first {
+		first, second = second, first
+	}
+	if err := s.lockStorageRowTx(ctx, tx, first); err != nil {
+		return Workspace{}, err
+	}
+	if err := s.lockStorageRowTx(ctx, tx, second); err != nil {
+		return Workspace{}, err
 	}
 
 	// The recipient has to be a live member. Handing a workspace to a stranger
@@ -186,47 +193,33 @@ func (s *Store) workspaceChargedBytesTx(
 	return out, err
 }
 
-// WorkspacesDestroyedByDeletion lists workspaces the user owns alone, which the
-// purge will therefore destroy outright. It is the counterpart of
-// WorkspacesBlockingDeletion: together the two cover every workspace the user
-// owns, which is what the deletion confirmation has to enumerate.
+// WorkspacesDestroyedByDeletion lists every workspace the user owns. Ownership
+// controls lifecycle: collaborators lose access while deletion is pending and
+// the workspace is destroyed with the owner after the grace window.
 func (s *Store) WorkspacesDestroyedByDeletion(
 	ctx context.Context,
 	userID string,
 ) ([]Workspace, error) {
-	return s.ownedWorkspaces(ctx, userID, false)
+	return s.ownedWorkspaces(ctx, userID)
 }
 
-// WorkspacesBlockingDeletion lists workspaces the user owns that have other live
-// members. Account deletion has to stop for these: silently destroying a shared
-// workspace takes other people's work with it, so the owner must transfer or
-// explicitly confirm each one.
+// WorkspacesBlockingDeletion remains for API compatibility. Collaborators do
+// not block deletion because the owner is the workspace lifecycle authority.
 func (s *Store) WorkspacesBlockingDeletion(
-	ctx context.Context,
-	userID string,
+	context.Context,
+	string,
 ) ([]Workspace, error) {
-	return s.ownedWorkspaces(ctx, userID, true)
+	return []Workspace{}, nil
 }
 
-// ownedWorkspaces lists workspaces owned by the user, either those with other
-// live members or those without.
+// ownedWorkspaces lists every workspace owned by the user.
 func (s *Store) ownedWorkspaces(
 	ctx context.Context,
 	userID string,
-	shared bool,
 ) ([]Workspace, error) {
-	exists := "EXISTS"
-	if !shared {
-		exists = "NOT EXISTS"
-	}
 	rows, err := s.pool.Query(ctx, `SELECT `+wsCols+`
 		FROM workspaces w
-		WHERE w.user_id=$1 AND `+exists+` (
-			SELECT 1 FROM workspace_members wm
-			JOIN users u ON u.id = wm.user_id
-			WHERE wm.workspace_id = w.id AND wm.user_id <> $1
-			  AND u.deleted_at IS NULL
-		)
+		WHERE w.user_id=$1
 		ORDER BY w.name`, userID)
 	if err != nil {
 		return nil, err

@@ -33,20 +33,22 @@ _SOURCE_SHA = "ab" * 32
 async def test_caption_call_forces_zai_low_reasoning(monkeypatch: pytest.MonkeyPatch):
     seen: dict[str, Any] = {}
     settled: dict[str, Any] = {}
+    # Same shape as the seeded vision-only row: no thinking levels at all. The
+    # context measurement must not resolve the request's thinking against it.
     spec = ModelConfig(
         version=1,
         provider_name="Z.ai",
         model_name="GLM-5.3-Flash",
         provider_slug="zai",
         model_slug="glm-5.3-flash",
-        surfaces=("chat", "vision"),
-        thinking_levels=("low", "high", "max"),
-        default_thinking="max",
+        slots=("captioning",),
+        context_window_tokens=128_000,
     )
 
     @asynccontextmanager
     async def tracked_call(**kwargs):
         seen["opened_thinking"] = kwargs.get("thinking")
+        seen["context"] = kwargs.get("context")
         yield "call-1"
 
     async def complete(_spec, _messages, **kwargs):
@@ -56,8 +58,7 @@ async def test_caption_call_forces_zai_low_reasoning(monkeypatch: pytest.MonkeyP
     async def settle(**kwargs):
         settled.update(kwargs)
 
-    monkeypatch.setattr(models.registry, "vision_spec", lambda: spec)
-    monkeypatch.setattr(models, "measure_request_context", lambda *_a, **_k: None)
+    monkeypatch.setattr(models.registry, "captioning_spec", lambda: spec)
     monkeypatch.setattr(models, "_tracked_call", tracked_call)
     monkeypatch.setattr(models.elitellm, "complete", complete)
     monkeypatch.setattr(
@@ -73,7 +74,49 @@ async def test_caption_call_forces_zai_low_reasoning(monkeypatch: pytest.MonkeyP
     )
     assert seen["reasoning"] is False
     assert seen["opened_thinking"] == "low"
+    assert seen["context"] is not None
     assert settled["thinking"] == "low"
+
+
+@pytest.mark.asyncio
+async def test_caption_settlement_failure_never_starts_another_provider_call(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    calls = 0
+    spec = ModelConfig(
+        version=1,
+        provider_name="Z.ai",
+        model_name="GLM-5.3-Flash",
+        provider_slug="zai",
+        model_slug="glm-5.3-flash",
+        slots=("captioning",),
+        thinking_levels=("low",),
+        default_thinking="low",
+    )
+
+    @asynccontextmanager
+    async def tracked_call(**_kwargs):
+        yield "call-1"
+
+    async def complete(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        return object()
+
+    async def settle(**_kwargs):
+        raise models.accounting.SettlementError("receipt rejected")
+
+    monkeypatch.setattr(models.registry, "captioning_spec", lambda: spec)
+    monkeypatch.setattr(models, "measure_request_context", lambda *_a, **_k: None)
+    monkeypatch.setattr(models, "_tracked_call", tracked_call)
+    monkeypatch.setattr(models.elitellm, "complete", complete)
+    monkeypatch.setattr(models.obs, "record_completion", lambda *_a, **_k: None)
+    monkeypatch.setattr(models.accounting, "settle", settle)
+
+    with pytest.raises(models.accounting.SettlementError, match="receipt rejected"):
+        await models.caption_image("data:image/png;base64,eA==", "caption")
+
+    assert calls == 1
 
 
 def _caption_key() -> str:
@@ -331,6 +374,84 @@ async def _caption_all(tmp_path: Path, content_list: list[dict[str, Any]]) -> di
     )
 
 
+@pytest.mark.asyncio
+async def test_caption_lock_releases_late_acquisition_after_cancellation(
+    monkeypatch,
+) -> None:
+    started = threading.Event()
+    finish = threading.Event()
+    released = threading.Event()
+    connection = object()
+
+    def try_lock(_identity: str):
+        started.set()
+        assert finish.wait(timeout=2)
+        return connection
+
+    def release_lock(actual: object, _identity: str) -> None:
+        assert actual is connection
+        released.set()
+
+    monkeypatch.setattr(figures.db, "try_source_artifact_lock", try_lock)
+    monkeypatch.setattr(figures.db, "release_source_artifact_lock", release_lock)
+
+    async def hold_lock() -> None:
+        async with figures._CaptionCacheLock("source"):
+            pytest.fail("cancelled acquisition entered the lock")
+
+    task = asyncio.create_task(hold_lock())
+    assert await asyncio.to_thread(started.wait, 2)
+    task.cancel()
+    finish.set()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert released.is_set()
+
+
+async def test_caption_failure_cancels_siblings_before_releasing_cache_lock(
+    tmp_path: Path,
+    captioning,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write(tmp_path / "images" / "fail.png", _diagram(seed=1))
+    _write(tmp_path / "images" / "block.png", _diagram(seed=2))
+    content_list = [
+        _image_block("images/fail.png", 0),
+        _image_block("images/block.png", 1),
+    ]
+    blocker_started = asyncio.Event()
+    blocker_finished = asyncio.Event()
+    lock_released = asyncio.Event()
+
+    class Lock:
+        async def __aenter__(self) -> None:
+            return None
+
+        async def __aexit__(self, *_args: object) -> None:
+            assert blocker_finished.is_set()
+            lock_released.set()
+
+    async def caption(_data_url: str, prompt: str) -> str:
+        if "Page: 1" in prompt:
+            await blocker_started.wait()
+            raise RuntimeError("caption failed")
+        blocker_started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            blocker_finished.set()
+
+    monkeypatch.setattr(figures, "_CaptionCacheLock", lambda _identity: Lock())
+    monkeypatch.setattr(figures.models, "caption_image", caption)
+
+    with pytest.raises(RuntimeError, match="caption failed"):
+        await _caption_all(tmp_path, content_list)
+
+    assert blocker_finished.is_set()
+    assert lock_released.is_set()
+
+
 async def test_captions_are_written_onto_the_blocks_before_chunking(
     tmp_path: Path, captioning
 ):
@@ -475,6 +596,19 @@ async def test_an_unreadable_cache_is_not_a_failed_ingest(
         raise RuntimeError("B2 is down")
 
     monkeypatch.setattr(figures.blobstore, "write_bytes", _explode)
+    _write(tmp_path / "images" / "a.png", _diagram(seed=1))
+    content_list = [_image_block("images/a.png", 0)]
+
+    stats = await _caption_all(tmp_path, content_list)
+
+    assert stats["captioned"] == 1
+    assert content_list[0]["description"] == "description 1"
+
+
+async def test_invalid_utf8_caption_cache_is_a_miss(
+    tmp_path: Path, captioning, monkeypatch
+):
+    monkeypatch.setattr(figures.blobstore, "read_bytes", lambda _k: b"\xff\xfe")
     _write(tmp_path / "images" / "a.png", _diagram(seed=1))
     content_list = [_image_block("images/a.png", 0)]
 

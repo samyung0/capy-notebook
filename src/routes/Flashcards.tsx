@@ -1,12 +1,12 @@
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import {
-  useCloneDeck,
-  useCreateDeck,
-  useDecks,
-  useUpdateDeck,
+  useCloneFlashcardSet,
+  useCreateFlashcardSet,
+  useFlashcardSets,
+  useUpdateFlashcardSetSharing,
 } from '@/api/hooks';
-import type { Deck } from '@/api/types';
+import type { FlashcardSet } from '@/api/types';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Badge } from '@/components/ui/Badge';
@@ -21,21 +21,26 @@ import { m } from '@/i18n';
 import { userColorPair } from '@/lib/userColor';
 
 export default function Flashcards() {
-  const { data, fetchStatus, isLoading } = useDecks();
-  const { isPending: createDeckIsPending, mutate: createDeck } =
-    useCreateDeck();
-  const { mutate: cloneDeck } = useCloneDeck();
-  const { isPending: updateDeckIsPending, mutateAsync: updateDeck } =
-    useUpdateDeck();
+  const { data, fetchStatus, isLoading } = useFlashcardSets();
+  const { isPending: createFlashcardSetIsPending, mutate: createFlashcardSet } =
+    useCreateFlashcardSet();
+  const { mutate: cloneFlashcardSet } = useCloneFlashcardSet();
+  const {
+    isPending: updateFlashcardSetIsPending,
+    mutateAsync: updateFlashcardSet,
+  } = useUpdateFlashcardSetSharing();
   const navigate = useNavigate();
-  const [sharing, setSharing] = useState<Deck | null>(null);
+  const [sharing, setSharing] = useState<FlashcardSet | null>(null);
 
-  function newDeck() {
-    createDeck(
-      { color: 'purple', name: m.flashcards_new_deck() },
+  function newFlashcardSet() {
+    createFlashcardSet(
+      { color: 'purple', name: m.flashcards_new_flashcards() },
       {
-        onSuccess: (deck) =>
-          navigate({ params: { deckId: deck.id }, to: '/flashcards/$deckId' }),
+        onSuccess: (flashcardSet) =>
+          navigate({
+            params: { flashcardSetId: flashcardSet.id },
+            to: '/flashcards/$flashcardSetId',
+          }),
       }
     );
   }
@@ -45,10 +50,10 @@ export default function Flashcards() {
       <PageHeader
         actions={
           <IconButton
-            disabled={createDeckIsPending}
+            disabled={createFlashcardSetIsPending}
             icon="plus"
-            label={m.flashcards_new_deck()}
-            onClick={newDeck}
+            label={m.flashcards_new_flashcards()}
+            onClick={newFlashcardSet}
             variant="dark"
           />
         }
@@ -66,9 +71,9 @@ export default function Flashcards() {
               return (
                 <div className="relative" key={d.id}>
                   <Link
-                    params={{ deckId: d.id }}
+                    params={{ flashcardSetId: d.id }}
                     preload="intent"
-                    to="/flashcards/$deckId"
+                    to="/flashcards/$flashcardSetId"
                   >
                     <Card className="h-full p-5.5" interactive radius="card-lg">
                       <div className="flex items-start justify-between">
@@ -104,15 +109,19 @@ export default function Flashcards() {
                   <div className="absolute top-3 right-3 z-10">
                     <Menu
                       items={[
-                        {
-                          icon: 'link',
-                          label: m.action_share(),
-                          onClick: () => setSharing(d),
-                        },
+                        ...(d.workspaceId
+                          ? []
+                          : [
+                              {
+                                icon: 'link' as const,
+                                label: m.action_share(),
+                                onClick: () => setSharing(d),
+                              },
+                            ]),
                         {
                           icon: 'plus',
                           label: m.action_clone(),
-                          onClick: () => cloneDeck(d.id),
+                          onClick: () => cloneFlashcardSet(d.id),
                         },
                       ]}
                     />
@@ -123,20 +132,20 @@ export default function Flashcards() {
           </div>
         )}
       </div>
-      {sharing && (
+      {sharing && !sharing.workspaceId && (
         <ShareDialog
-          link={`/share/decks/${sharing.id}`}
+          link={`/share/flashcards/${sharing.id}`}
           onClose={() => setSharing(null)}
           onPrivacyChange={async (privacy) => {
-            const deck = await updateDeck({
+            const flashcardSet = await updateFlashcardSet({
               id: sharing.id,
               privacy,
             });
-            setSharing(deck);
+            setSharing(flashcardSet);
           }}
           open
           privacy={sharing.privacy ?? 'private'}
-          saving={updateDeckIsPending}
+          saving={updateFlashcardSetIsPending}
           title={m.flashcards_share_title({ name: sharing.name })}
         />
       )}

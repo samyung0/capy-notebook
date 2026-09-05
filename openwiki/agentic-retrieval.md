@@ -24,7 +24,7 @@ The Python services share one Postgres schema owned by Go migrations
 | Process | Entry | Role |
 | --- | --- | --- |
 | Parse coordinator | `python -m pipeline.ingest.parse_worker` | Supervises four isolated one-job coordinator processes. They validate and hash document sources, reuse an exact donor when possible, wait for MinerU, then atomically enqueue an immutable artifact handoff |
-| Ingest worker | `python -m pipeline.ingest.worker` | Claims only post-parse and direct-route jobs, then chunks, captions/transcribes, embeds, writes a two-tier file summary, and extracts concepts. Each replica runs one job at a time |
+| Ingest worker | `python -m pipeline.ingest.worker` | Claims only post-parse and direct-route jobs, then chunks, captions/transcribes, embeds, and writes a two-tier file summary. Each replica runs one job at a time |
 | Retrieval service | `uvicorn pipeline.retrieve.service:app` | `/chat/stream`, `/generate`, `/quiz-grade`, `/plate-ai/*` over the same index |
 | Parser service | `uvicorn parser/app.py` | Persistent MinerU 3.4.5 pipeline service on the ingest host; independently slices large PDFs and normalizes Office through LibreOffice |
 | Host sampler | `python -m pipeline.ingest.host_sampler` | Persists compact whole-host and parser admission/resource samples without document identity |
@@ -45,19 +45,20 @@ flowchart LR
   Coordinator --> Download[One B2 download + trusted SHA]
   Download --> Parse[Netcup MinerU pipeline]
   Parse --> Artifact[Immutable local artifact]
+  Artifact -. verified best-effort cache .-> ParseCache[(B2 parse bundle)]
   Artifact --> IngestJob[(ingest continuation)]
   Route -->|direct route| IngestJob
   IngestJob --> Worker[Ingest worker]
   Worker -->|image| ImageCaption[ZAI GLM via DeepInfra]
-  Worker -->|audio| AudioTranscript[Async ElevenLabs Scribe v2]
+  Worker -->|audio| AudioTranscript[Synchronous ElevenLabs Scribe v2]
   Worker -->|CSV / TSV / text| DirectText[Direct normalization]
   Worker -->|parsed document| Caption[130×130 selection + caption / DECORATIVE]
   Caption --> Chunk[Heading-aware chunker]
   ImageCaption --> Chunk
   AudioTranscript --> Chunk
   DirectText --> Chunk
-  Chunk --> Index[Embed + file summary + concepts]
-  Index --> Store[(rag_chunks / summaries / concepts)]
+  Chunk --> Index[Embed + file summary]
+  Index --> Store[(rag_chunks / summaries)]
   Store --> Search[Hybrid search RRF]
   Search --> Agent[Chat agent loop]
   Search --> Workflows[Generate workflows]
@@ -78,8 +79,6 @@ The retrieval index is application schema, not pipeline-owned:
 | `rag_file_contents` | Logical file → canonical content aliases |
 | `rag_chunks` | Canonical passages: text, heading path, pages/regions, `tsvector`, `halfvec(2560)` |
 | `rag_content_summaries` | Two-tier prose (`descriptor` + `summary`) plus `summary_version`; shared by files with identical content |
-| `rag_concepts` | Normalized concept names per workspace |
-| `rag_concept_mentions` | Concept → chunk (and file) links |
 
 All of these FK-cascade from `workspaces` / `files` / `chapters`. Deleting a
 logical file removes its alias; a trigger removes canonical content only after
@@ -187,7 +186,7 @@ the user just did. Until a reindex job exists:
 | Type | Enqueued by | Does |
 | --- | --- | --- |
 | Parse | Go upload/replacement finalization for `document_parse` plans | Validate → download/hash once → exact-vector donor reuse or MinerU artifact publication → atomic ingest handoff |
-| Ingest | Go for direct routes; parse coordinator for documents | Extract a completed document artifact or normalize a direct source → chunk/caption/transcribe → embed → two-tier file summary → concepts |
+| Ingest | Go for direct routes; parse coordinator for documents | Extract a completed document artifact or normalize a direct source → chunk/caption/transcribe → embed → two-tier file summary |
 
 Both stages get one retry (two total attempts), exponential backoff
 (`not_before`), a per-type wall-clock timeout, and a heartbeat lease so a dead
@@ -201,9 +200,14 @@ written only by a claim — and every heartbeat, requeue and terminal transition
 requires the attempt it claimed (`db.claim_is_current`). A run whose claim moved
 on logs and discards its outcome rather than overwriting its successor's row.
 
+An attempt is live only while its lease is non-null and later than database
+time. Heartbeats and final-write fences reject an expired lease even if the
+reaper has not changed the job from `running` yet. An expired worker cannot
+renew that row or commit its outcome.
+
 Enqueue snapshots `{actorUserId, ingestProviderSlug, ingestModelSlug,
-visionProviderSlug, visionModelSlug}` (and versions)
-onto the job: the actor who will be billed, and the two model surfaces whose
+captioningProviderSlug, captioningModelSlug}` (and versions)
+onto the job: the actor who will be billed, and the two model slots whose
 defaults are hot-reloadable and could move while the job is queued. Embedding is
 not among them — the worker reads it from the workspace, as above.
 
@@ -233,7 +237,7 @@ silently taking a nearby route.
 | txt / md / json and other accepted text/code formats | Raw text | original text | No |
 | CSV / TSV | Delimiter/header normalization | explicit row/field text, including formulas | No |
 | supported image | Pinned ZAI GLM-5.3-Flash call through DeepInfra | faithful searchable caption | No |
-| supported audio | Presigned B2 source URL + asynchronous ElevenLabs Scribe v2 | transcript | No |
+| supported audio | Presigned B2 source URL + synchronous ElevenLabs Scribe v2 | transcript | No |
 | unknown or legacy DOC/XLS/PPT | Store-only | none | No |
 
 HTML, RTF, XML, and source-code extensions have no dedicated handlers. They use
@@ -319,18 +323,31 @@ The parse coordinator downloads the raw B2 object once while calculating its
 trusted SHA-256, writing a job-scoped source file into the shared volume.
 The parser reads that local key and atomically writes
 `artifacts/{parse_fingerprint}.zip` to the same volume. The worker extracts that
-file directly. There is no parser GET of the raw object, parser PUT of the zip,
-or worker GET of the zip.
+file directly. That local atomic ZIP is the required parser-to-ingest handoff.
+A failed B2 cache write must never fail the current parse or ingest.
 
-Parse bundles are ephemeral local cache entries, not durable B2 artifacts and
-not `artifact_cache` rows. The worker clears the file's diagnostic parse-bundle
-reference after successful ingest. A job stores its checksum-verified local
-source descriptor in its payload and retains that file across parser-capacity,
-external-provider, and retry requeues. This prevents another B2 download for
-the same job. It is deleted only after committed success or terminal cleanup;
-an idle sweep removes abandoned sources after two hours and fingerprint bundles
-after six hours. A later caption/index failure can reuse both the source and
-bundle during that window.
+After the coordinator verifies the local ZIP's size, checksum, archive bounds,
+manifest identity, content list, and required Office preview, it tries to copy
+the ZIP to `parse-bundles/{parse_fingerprint}.zip` in B2. The write gets exactly
+three total attempts and is best effort. Cache-row registration is best effort
+too. Only a confirmed write whose object still exists after registration stays
+in `artifact_cache`; otherwise the continuation drops `durableKey` and uses the
+required local ZIP. If the local fingerprint bundle is
+absent for a later identical source, the coordinator may download that B2 copy,
+verify the same contract, and atomically install it in the shared volume. A
+missing, unavailable, or invalid B2 copy falls through to MinerU. It does not
+fail parsing.
+
+The worker clears the file's diagnostic local parse-bundle reference after
+successful ingest. A job stores its checksum-verified local source descriptor
+in its payload and retains that file across parser-capacity, external-provider,
+and retry requeues. This prevents another source-object download for the same
+job. It is deleted only after committed success or terminal cleanup. An idle
+sweep removes abandoned sources after two hours and local fingerprint bundles
+after six hours. Durable parse-bundle reuse copies use the same last-use B2
+cache TTL and deletion outbox as derived-text and caption artifacts. If all
+three upload attempts fail, another upload of the same source cannot reuse that
+parse once the local bundle is gone and must run MinerU again.
 
 `files.indexed` is true only after retrieval chunks are written, or reused from
 identical canonical content. Direct image/audio/CSV/TSV routes get an ingest job
@@ -339,6 +356,34 @@ even though they do not use MinerU. Unknown and legacy store-only uploads finish
 chat/generate cannot search it. A failed ingest keeps the original blob and
 lands `failed`/unindexed; the UI shows a banner rather than replacing the
 viewer.
+
+### Provider source imports
+
+Google Drive and OneDrive imports keep one durable request row per actor and
+client request id. The gateway establishes that row before reading provider
+metadata, while no job exists. The accepted/rejected response then commits in
+the same transaction as its upload sessions, byte reservations, import rows,
+and pipeline `import` queue jobs. A committed request always replays that stored response
+without querying provider metadata again. Replay still checks current
+actor/workspace mutation authorization and the request fingerprint, but it does
+not rerun mutable admission checks for import-worker availability, file room,
+chapter membership, provider access, or credits. A failed response write rolls back
+every job and reservation it would have named.
+
+The same transaction enqueues an `import` job on the pipeline queue. The
+ingest host's import worker acquires an attempt from the gateway, streams the
+provider file into that attempt's incoming key with its own B2 credentials, and
+completes through the gateway, which promotes the object to the stable source
+key, finalizes the file, and enqueues the parse or ingest job. Concurrent
+completion of the same attempt may lose that promotion race; the loser accepts
+the winner only when the stable object has the expected size and a non-empty
+matching content type. Provider 408/425/429/5xx, TLS/connect/timeouts, and
+interrupted bodies retry against the import attempt budget; 401/403/404/410,
+an oversize body, or a refused download host are terminal and fail the import.
+A `too_many_ingest_leases` answer at completion returns the queue claim without
+spending an attempt (the gateway lease is released and the row waits out
+`Retry-After`), import upload sessions expire after one hour, and one request
+carries at most 20 files.
 
 Browser Office saves replace the full source file under the same logical
 `files.id`. Completion uses an expected `files.revision` compare-and-swap,
@@ -355,7 +400,22 @@ that pair in the same transaction. Replacement also terminally supersedes older
 pending/running parse or ingest rows and releases their credit reservations, so
 an old parse cannot publish content, geometry, previews, status, or citations for the
 new blob. A stale worker that merely lost its lease exits without closing the
-shared reservation used by its successor attempt.
+shared reservation used by its successor attempt. Provider-call admission also
+uses the durable ingest-attempt id to lock and verify the current source plus
+the exact live claim before a request may leave the worker. This closes the
+interval where deletion or replacement committed after skipping a locked job
+but before the heartbeat thread delivered cancellation to the coroutine.
+Lifecycle and authorization cancellation fail a file only when that same
+revision and ETag remain current. On the final attempt, lease reaping fails the
+exact file revision, removes the processing retrieval claim, closes the credit
+reservation, and marks the job and attempt terminal in one database transaction.
+A delayed reaper cannot overwrite a newer replacement. Its post-commit progress
+event and local-spool cleanup are best effort. Neither is a correctness step.
+
+The legacy multipart upload route has no provider ETag. It stores and carries
+the empty string as its source fence. Heartbeat cancellation, final lease
+reaping, and account-deletion cancellation compare that normalized value rather
+than treating a missing SQL value as an unfenced wildcard.
 
 Nothing calls a third-party parsing API. The former service could not return
 bounding boxes or images, needed polling, and capped files at 10 MB / 20 pages.
@@ -372,9 +432,12 @@ performs the planned work:
   prompt asks for every visible label, table cell, number, unit, formula,
   diagram relationship, and uncertainty rather than a short visual summary;
 - audio duration is measured with `ffprobe`, capped at 10 hours, and submitted
-  to asynchronous ElevenLabs Scribe v2 by presigned B2 URL. A signed webhook
-  wakes the yielded job; transcript GET reconciles a missing webhook. Once
-  provider state exists, polling claims skip the local-source/B2 acquisition;
+  to ElevenLabs Scribe v2 as multipart form fields containing the presigned B2
+  URL and model, without webhook fields. The same
+  ingest attempt waits under one absolute wall-clock provider timeout, settles
+  measured seconds, writes the reusable derived-text artifact, and continues
+  indexing. HTTP 408, 425, 429, and 5xx responses use the bounded ingest retry;
+  other 4xx responses fail the ingest as provider refusals;
 - CSV/TSV is decoded as text, detects a likely header, and emits deterministic
   row text with explicit field names. Formulas remain literal source values.
 
@@ -384,13 +447,67 @@ Image and audio derived text is stored under
 version ensures concurrent uploads perform at most one provider call. Deleting
 the last logical file drops its association, not the shared artifact; the same
 last-use TTL/reaper policy as figure captions handles eventual cleanup.
+Cancellation during advisory-lock acquisition waits for the thread result and
+returns any late session lock before propagating cancellation.
 
-Provider transcript deletion is a durable cleanup workflow, not best effort.
-Terminal ingest failure, file deletion (including workspace/account cascades),
-and source replacement mark the transcription row for cleanup before its file
-or job foreign keys are cleared. The worker retries provider DELETE with
-backoff; a late webhook attaches the provider id to the retained cleanup row
-without waking the deleted job, so it can still be removed.
+These B2 objects are reuse caches, not ingest success conditions. Each cache
+write makes three `put_object` attempts. If all three fail, the worker logs the
+failure and continues indexing from the provider result already in memory. It
+does not register an artifact key. Database registration has the same
+best-effort rule. After registration the worker verifies the deterministic B2
+key still exists, which closes the race with a cache deletion already in
+progress. A vanished object loses its cache row and the current ingest keeps its
+in-memory result. Updating `files.caption_blob_path` is diagnostic and follows
+the same best-effort rule; a failed pointer write cannot fail chunking or
+indexing. A later upload cannot use direct image/audio
+donor reuse without that object and must run the transformation again. The
+document parse ZIP follows the same best-effort B2 reuse rule after verification,
+but its required parser-to-ingest handoff remains the atomic local file.
+Derived-cache reads and donor `HEAD` checks are optional too: a B2 read failure
+is a cache miss and the worker runs the transformation from the required source
+instead. Source-object downloads and required Office previews remain strict.
+For DOCX, PPTX, and XLSX, the worker reads an existing deterministic preview
+object and verifies its bounded length, `application/pdf` content type, PDF
+header, and equality with the parser bundle's validated `preview.pdf`. It
+replaces a bad object from that local preview. The file cannot become ready if
+the required preview publication fails. This strict preview write is separate
+from the three-attempt best-effort policy for optional reuse caches.
+If full validation rejects a fingerprint-addressed local parse bundle before
+handoff, only that exact bundle is discarded; the existing second parse attempt
+then asks MinerU to rebuild it instead of failing on the same sticky cache file.
+
+An ordinary ingest actor must remain the owner or an explicit workspace editor
+through claim, heartbeat, provider admission, handoff, and final writes. Those
+checks lock workspace, ordered account rows, membership, file, job, then the
+exact attempt when one exists. Go file, workspace, ownership, and membership
+mutations take the same prefix. Claim transitions lock job before attempt.
+Revocation, provider admission, and lease reclamation therefore serialize
+without a job-to-workspace, file-to-user, or job-to-attempt deadlock. Cleanup
+of a donor-installed Office preview uses the same exact job-attempt fence, so
+an expired worker cannot clear a successor's preview for an unchanged source.
+
+Audio has no special provider-state machine. There is no transcription row,
+polling loop, webhook route, provider transcript id, or provider DELETE worker.
+`provider_capacity_leases` only enforces ElevenLabs' weighted Starter
+concurrency across workers. A live request renews its five-minute lease every
+minute. If renewal cannot be confirmed before the locally tracked expiry, the
+worker cancels and closes the active HTTP request before releasing capacity; a
+killed worker still releases capacity within five minutes. On a completed
+request, the lease is released before receipt settlement or cache persistence;
+even an unusable successful response settles the already-known audio seconds.
+Capacity shutdown, exact settlement, and successful artifact persistence form
+one cancellation-shielded post-response continuation. Cancellation while the
+provider request is still uncertain continues to close the request, release the
+lease, and leave the call open for its receipt deadline. The worker's exact-claim
+heartbeat triggers that cancellation when deletion, replacement, or another
+terminal transition closes the durable job; a zero-row heartbeat does not leave
+the provider coroutine running.
+The audio job timer
+adds the ordinary ingest budget, the full 12-hour provider window, and the
+five-minute receipt grace rather than spending the provider window on download
+or indexing. Attempts, calls, credit sessions, reusable artifacts, and
+cancellation otherwise follow the same synchronous ingest bookkeeping used by
+other provider-backed steps.
 
 The Plate live-dictation feature and its temporary-audio route have been removed.
 
@@ -404,7 +521,7 @@ job's snapshotted rate remain authoritative for settlement.
 Chosen per file at upload time and resolved into `processingPlan.captionMode`.
 `pipeline/parse/figures.py` describes each surviving figure with the
 vision model and writes it onto the image block **before chunking**, so the
-caption is embedded, summarized, concept-extracted and cited as part of the
+caption is embedded, summarized and cited as part of the
 passage it belongs to. That ordering is the point of the feature: a slide deck
 whose substance is in its diagrams is otherwise nearly invisible to search.
 
@@ -436,28 +553,68 @@ Ownership lives on `artifact_cache` (TTL since last use), not on
 An advisory lock on source SHA plus caption version encloses cache reload,
 provider calls, merge, and save. Concurrent uploads of identical bytes therefore
 make one set of vision calls and cannot overwrite each other's cache entries.
+If one caption task fails or the attempt is cancelled, the worker cancels and
+awaits every unfinished sibling before releasing that lock. No detached paid
+caption call can overlap a retry for the same source.
+Cancellation during acquisition uses the same late-result cleanup as direct
+image and audio artifacts, so a pooled connection cannot retain the session lock.
 
 The caption prompt is built from the figure and its surrounding content only —
 no file name. Everything a globally cached or donor-copied output is generated
 from has to be inside its key, or the same bytes produce different text
 depending on who uploaded them first, and one uploader's file name reaches
-another workspace. The same rule applies to file summaries and concepts, which
-are copied verbatim from donors.
+another workspace. The same rule applies to file summaries, which are copied
+verbatim from donors.
 
 Caption calls never inherit a user's chat reasoning level. The pinned catalog
 identity is `zai/glm-5.3-flash`, routed by EliteLLM to DeepInfra's
 `zai-org/GLM-5.3-Flash`. Captioning always sends `reasoning_effort: low` on the
-DeepInfra wire request. The catalog default is `max` for chat and every other
-reasoning-enabled use. Do not let captioning inherit that default or a user's
-chat choice.
+DeepInfra wire request. The catalog default is `low` for chat, and users may
+raise it to `high` or `max`. Do not let captioning inherit a user's chat
+choice.
 
 ### Chunking
 
 `pipeline/retrieval/chunking.py`:
 
 - Groups blocks under the heading hierarchy (`text_level` or markdown `#`).
-- Packs by character budget (`EVO_CHUNK_CHARS`, overlap, min size) without
-  splitting a block unless one block alone exceeds the target.
+- Packs by estimated-token budget (`EVO_CHUNK_TOKENS` 400, overlap 50, min 40;
+  `estimate_tokens` counts ~4 Latin characters or 1 CJK character per token)
+  without splitting a block unless one block alone exceeds the target. Packing
+  by characters made a Chinese chunk carry ~4x the tokens of an English one,
+  so five CJK hits alone filled the tool-output cap.
+- Flattens parser table HTML to one pipe-separated line per row
+  (`flatten_table`): cell text and order survive, `rowspan`/`colspan`
+  attributes and embedded `<img>` tags do not. On the lab corpus that markup
+  was a fifth of a textbook chapter's indexed characters.
+- Strips `<sub>`/`<sup>` tags but keeps their content (`H<sub>2</sub>O` →
+  `H2O`, which is also how a student types it) and collapses the parser's
+  spacing inside inline LaTeX (`clean_inline`). Formulas are otherwise left as
+  written. The exception is a numeric superscript glued to a word of three or
+  more letters or to a CJK run (`Mayor-Rocher<sup>1</sup>`, the affiliation
+  and footnote markers of a paper's author line): that marker is dropped,
+  because kept it indexes `rocher1`, a token no query contains. Units and
+  variables are one or two letters, so `m<sup>2</sup>` and `10<sup>15</sup>`
+  keep their exponent.
+- Drops running page furniture (`_repeated_across_pages`): a non-heading text
+  block whose text recurs on three or more pages is a running header, footer
+  or licence line whatever label the layout model gave it, and every copy is
+  dropped. The real title is a heading (`text_level`) and lives on in the
+  section path. Measured motivation: a journal's title-and-authors line
+  opened 28 of that paper's 75 chunks, so every question near its topic came
+  back as copies of it. Keeping the first copy was tried and measured
+  neutral on the lab sets.
+- Marks a reference list (`Chunk.reference`): a `list` block in which at
+  least 80% of five or more items are citation-shaped (`_CITATION_RE`: a
+  `[n]` marker, a year, "et al.", pages, a DOI or arXiv id). On the lab
+  corpus real bibliographies arrive as one such block (14/14, 22/21, 18/18
+  items) and body lists that cite something do not (10/3). A reference chunk
+  is embedded, cited and readable like any other, but indexing gives it an
+  empty lexical vector, and the donor re-embed path keeps it empty. Citation
+  titles repeat a topic's exact vocabulary, so on a Chinese paper an English
+  question lexically matched the English-tagged bibliography ahead of the
+  Chinese body that answers it; with the list out of the lexical leg the
+  English-on-Chinese set went 5 to 7 of 9 and no other set moved.
 - Carries every source block's page + bbox into `regions`, with
   `space: page-1000-topleft` so a future highlight overlay does not guess the
   coordinate system.
@@ -467,10 +624,27 @@ chat choice.
 - Includes page and region geometry in `content_hash` when present. Documents
   with the same text but different layouts cannot share citation coordinates.
 
-CJK runs are bigrammed in the application and indexed with Postgres `simple`
-config. The same tokenizer must run on queries (`search_query_terms`), or the
-lexical half of hybrid search silently returns nothing for Chinese/Japanese/
-Korean.
+Each chunk carries a language tag (`rag_chunks.lang`, one of
+`en fr de es zh ja ko und`) from `lang.detect_lang`: script counts pick the
+CJK language (kana share → `ja`, hangul → `ko`, else `zh`), a function-word
+tally picks the Latin one, and a chunk with neither signal (a table, a
+formula block, a language outside the list) is `und`. The tag selects the
+Postgres text-search configuration the chunk's `search` tsvector is built with
+(`lang.TS_CONFIG`: `english`/`french`/`german`/`spanish`, `simple` for CJK and
+`und`). Detection is per chunk, not per file, because a bilingual textbook
+switches language between passages and the stemmer has to follow. The
+`english` configuration on French text was measured actively harmful: `les`,
+`des`, `du` became index terms and `plante` never matched `plantes`.
+
+CJK runs are bigrammed in the application (`tokenize_for_search`) and indexed
+under `simple`, which keeps every bigram as written. Non-CJK text is carried
+through as whole segments: an earlier version emitted it character by
+character whenever the chunk held any CJK, so one OCR'd table dash read as
+`一` removed every English word of that chunk from the lexical index. The same
+tokenizer must run on queries (`search_query_terms`), or the lexical half of
+hybrid search silently returns nothing for Chinese/Japanese/Korean. Changing
+a configuration or the detector is a `CHUNKER_VERSION` bump: rows indexed
+under another config do not match stemmed queries.
 
 ### Donor reuse
 
@@ -479,15 +653,15 @@ streaming the object and digesting it. The object's stored
 `x-amz-checksum-sha256` is deliberately not trusted, however convenient: the
 browser PUTs through a presigned URL that signs only host and content-type, so
 that header is uploader-controlled, and a hash the uploader chooses would let
-anyone claim the hash of a document they do not have and be handed its chunks,
-summary and concepts. One GET per ingest is the price. It then looks for a
+anyone claim the hash of a document they do not have and be handed its chunks
+and summary. One GET per ingest is the price. It then looks for a
 **ready** `rag_contents` row with the same
 `(source_sha256, pipeline_identity)`. `pipeline_identity` covers parse method,
 route, parser version, caption version, and chunker version — anything that
 feeds chunk text.
 
 A hit copies that donor's `rag_chunks` (and, when the embedding pin matches,
-its vectors), plus summary and concepts, into a new per-workspace
+its vectors), plus its summary, into a new per-workspace
 `rag_contents` row. Isolation stays `workspace_id` on the chunks; user B is
 not billed for user A's original ingest. If the pins differ, chunk text is
 copied and re-embedded into the target workspace's space.
@@ -498,9 +672,9 @@ in blob storage, copies or re-embeds the donor, attaches the preview, and only
 then marks the destination ready. A missing preview forces a normal parse.
 
 `pipeline_identity` covers only what feeds chunk *text*, so it is not an
-invalidation lever for model prose: changing the ingest or vision default leaves
-existing summaries, concepts and captions in place, and a later upload of
-already-seen bytes is served the older model's output. Neither surface is user
+invalidation lever for model prose: changing the ingest or captioning default leaves
+existing summaries and captions in place, and a later upload of
+already-seen bytes is served the older model's output. Neither slot is user
 selectable (the job snapshot exists to pin billing and to survive a hot reload
 mid-queue), so nobody's choice is being overridden — but an operator who swaps
 either model and wants the prose regenerated has only the blunt lever below.
@@ -528,14 +702,23 @@ its short TTL remains; after that it re-parses if there is no donor row.
   donors, and never refilled. `summary_version` is **not** part of
   `pipeline_identity` — a prompt change must not invalidate a parse; it exists
   so a later backfill can find stale prose, including donor copies.
-  Concept extraction stays best-effort per group, since a partial miss degrades
-  recall instead of hiding the file from `list_sources`.
-5. Concept extraction in groups of chunks (not per chunk) → upsert concepts and
-   mentions. Relation-free by design: co-mention across files is recovered at
-   query time. Group size is a mention-granularity knob (~12 chunks / 20k chars),
-   not a context budget.
-6. Stop. There is no chapter/workspace summary tree and no rollup job.
-   Cross-document reasoning happens at query time, conditioned on the question.
+  A final receipt settlement rejection is not an ordinary provider failure: the
+  summary helper propagates `SettlementError` unchanged so the ingest worker
+  closes the attempt without retrying a provider response that was already
+  charged.
+5. Stop. There is no concept or entity index, no chapter/workspace summary
+   tree and no rollup job. Cross-document reasoning happens at query time,
+   conditioned on the question: the agent reads the first hits and searches
+   again for the names it finds there. Concept extraction (one LLM call per
+   ~12 chunks, names only, rendered as a footer on every search result) was
+   removed on 2026-09-04: on the lab corpus 910 of 1,663 concepts were named
+   in a single chunk and could only point back at the passage already shown,
+   and no chat trace showed the model following a footer name into another
+   document. A 13-question two-document set (`scripts/rag_eval/questions-*-bridge.json`)
+   run twice against each build reached and cited the target passage in 24
+   of 26 turns with the footer and 23 of 26 without, with every turn on both
+   builds answering across the documents. See `human/agentic-retrieval.md`
+   for the decision and the telemetry that would reopen it.
 
 Concurrent duplicate jobs coordinate on the canonical content row. The creator
 indexes it; other workers wait for its ready marker. A failed creator removes
@@ -574,19 +757,77 @@ always point at document passages.
    unprefixed query. Other embedding pins get the query unchanged.
 2. One SQL statement runs vector (cosine / HNSW) and lexical (`tsvector`)
    candidates, fused with reciprocal rank fusion (RRF). Ranks are fused rather
-   than scores because cosine distance and `ts_rank_cd` share no unit.
+   than scores because cosine distance and `ts_rank_cd` share no unit. The
+   lexical query is parsed once per language configuration
+   (`unnest` over `lang.TS_CONFIG`) and each parse is matched only against
+   chunks of that language, so nothing guesses the language of a three-word
+   query; a French question against English chunks is parsed by the English
+   stemmer and misses, and the vector leg carries the cross-language case.
+   Lexical ranks carry half the weight of vector ranks (`store._LEX_WEIGHT`):
+   on the lab corpus equal weights let stopword-dense passages outvote the
+   embedding's clear first choice; at 0.5 hybrid matched vector-only recall
+   while keeping exact-term matches for names and identifiers. Lexical
+   candidates match any query term, but those matching **every** term rank
+   first, then by `ts_rank_cd`: for `Figure 3.20`, frequency alone ranked each
+   passage that repeats "figure" above the one that says "3.20". At half
+   weight a lexical-only candidate can never enter the top five (0.5/61 is
+   below any vector candidate's 1/(60+n)), so an all-terms match of a two- or
+   three-term query counts at full weight: those are lookups, and the passage
+   that contains "Figure" and "3.20" is the answer. Terms are counted as
+   typed, before any stopword list and independent of language, with each
+   CJK run counting once however many bigrams it became (`光合作用` is one
+   term, not three; `标准差 计算` is two; `图1 CIL` is two), and the query
+   must carry no function word of the chunk's language (the configuration
+   leaves as many lexemes as `simple` does). A lookup is content only;
+   a question has function words. Counting after stopword removal instead
+   let `What is CamemBERT trained on?` shrink to two terms under the
+   `english` configuration and promote English bibliography rows on a
+   French corpus. Longer all-terms matches stay at
+   half weight — a passage that repeats every word of a question is echoing
+   its phrasing (measured: "What is convergent evolution? Give an example" at
+   full weight pulled up a cladogram passage over the definition). On the lab
+   identifier set this took answerable questions from 13 to 14 of 14 with no
+   change on the semantic set. Rows come back with per-leg evidence
+   (`vec_rank`, `vec_dist`, `lex_rank`) and `flat_score`, the fusion with no
+   exact tier, so `search()` can flag hits the tier alone put in the result
+   (`Passage.tier_only`) for telemetry.
 3. Optional `file_ids` filter is applied **in SQL** and intersected with the
    request scope. The agent cannot widen a scope the user narrowed.
-4. `_rerank` is a seam that currently returns identity. Contextual prefixes,
-   per-file diversity cap, and neighbour expansion are the v1 quality levers;
-   a hosted or local cross-encoder plugs in here later without changing callers.
-5. Cap how many passages any one file may contribute (`EVO_SEARCH_PER_FILE_CAP`),
-   then expand each survivor with ±1 neighbouring chunk so arguments that cross
-   a packing boundary stay readable. Citations still point at the hit, not the
-   neighbour.
+4. `_rerank` is a seam that currently returns identity. Heading prefixes and
+   the per-file diversity cap are the v1 quality levers; a hosted or local
+   cross-encoder plugs in here later without changing callers.
+5. Cap how many passages any one file may contribute (`EVO_SEARCH_PER_FILE_CAP`,
+   default 4 of `EVO_SEARCH_TOP_K` 5). A tighter cap measured worse: with 3 the
+   file holding the answer lost correct passages to other files' noise.
+   The hit chunk is what the model sees. A packing cut is a `read_document`
+   follow-up, not automatic neighbour expansion.
 
-`related_concepts` is a self-join on co-mentioned chunks: the relation-free
-substitute for a knowledge-graph edge.
+When at least half of a search's hits were already shown earlier in the same
+turn (any prior search or read), the result also carries an overlap line
+(`tools._overlap_footer`): how many were repeats, and that the workspace has
+nothing closer for this wording, so the model should say what the sources do
+not cover rather than search again. Measured motivation: a plausible topic the
+corpus never mentions (Hardy-Weinberg in a workspace without it) drew three or
+four rewordings per turn, each returning the same passages, before the model
+gave up on its own.
+
+### Search telemetry
+
+Every `search_workspace` call records one `rag_search_events` row when the turn
+reaches `done` (`agent._record_searches` → `store.record_search_events`).
+Features and ids only — no query text, no passage text: the majority language
+of the hits (`hits_lang` — detected from the question instead, 30 of 42 short
+French/German/Spanish questions came back `und`, blind exactly where language
+support was added), term counts, scope size, embed and SQL latency, and
+position-aligned arrays over the
+hits for chunk/file ids, chunk language, vector rank/distance, lexical rank,
+`tier_only`, `prior_overlap`, and `cited` (whether the final answer referenced
+the hit's `[n]`). The `cited` column is the label that makes ranking changes
+measurable without a graded set: the cited rate of tier-only hits says whether
+the exact tier surfaces answers or noise, and `lex_ranks` all null for a
+language says the lexical leg is dead there. Rows are pruned after 90 days by
+the writer itself; a failed write is logged and never fails the turn. Turns
+that error out or lose their client are not recorded.
 
 ## Chat agent workflow
 
@@ -598,7 +839,7 @@ and are not sent back as LLM history.
 
 1. Go authenticates, reads `users.locale` and the
    `users.chat_model_provider_slug` / `users.chat_model_slug` pair, resolves
-   that key to a `model_configs` row (`ratesForSurface`), opens one turn-scoped
+   that key to a `model_configs` row (`ratesForSlot`), opens one turn-scoped
    spend session, stamps `{providerSlug, modelSlug, modelVersion}` on the assistant message, and
    loads the checkpoint plus all completed history after it **before** inserting the current user
    row. Python receives `query` once, plus `assistantMessageId` and the optional
@@ -606,16 +847,17 @@ and are not sent back as LLM history.
    or unresolvable pin fails the turn as `model_unavailable`. Go rejects the
    query before persistence when it exceeds 8,192 estimated tokens or 65,536
    UTF-8 bytes. The current query is never clipped or summarized.
-2. The agent **primes** with one retrieval before the model is asked anything.
-   That search is emitted as `tool_start` / `tool_end` (`callId=prime`) and the
-   first versioned citation list.
+2. The first model call has no retrieval yet. The agent searches with
+   `search_workspace` when the question needs sources. At most one
+   `search_workspace` per model response; a later response in the same turn may
+   search again. Other independent reads in that response still run concurrently.
 3. Every tool-capable model response is streamed. Text that arrives with tool
    calls is a narration block. The first completed response with text and no
    tools is the persisted answer. There is no unconditional second answer
    completion. Workload caps are 12 planning responses, 4 tools per response,
    and 12 tools per turn. Completion, compaction, query-embedding, and cumulative
    input counts remain telemetry. They do not stop a turn.
-4. Independent reads in one response run concurrently (max 4, at most 2
+4. Independent reads in one response run concurrently (max 4, at most 1
    `search_workspace`). Any mutating call keeps that whole response serial.
    Citation numbers are assigned after the batch, in original call order, and
    are answer-local. A versioned `citations` event follows each batch.
@@ -634,7 +876,7 @@ and are not sent back as LLM history.
 
    Before every agent model call, live admission measures the provider-shaped
    request against the selected model's input budget. The system prompt, tool
-   schemas, current query, priming result, tool arguments and results, and
+   schemas, current query, tool arguments and results, and
    provider continuity items remain exact. Compaction starts only when the
    request would exceed the smaller of the selected model's input budget and the
    200,000-token effective-context cap, after the output reserve and safety
@@ -687,11 +929,10 @@ a valid scope with no indexed content.
 
 | Tool | Side effects | Notes |
 | --- | --- | --- |
-| `search_workspace` | none | Hybrid search; omitted `file_ids` uses the chat scope; any invalid supplied id rejects the call |
+| `search_workspace` | none | Hybrid search; one call per assistant message; omitted `file_ids` uses the chat scope; any invalid supplied id rejects the call |
 | `list_sources` | none | Chapters, file names, passage counts, and the short descriptor |
 | `describe_documents` | none | Detailed summaries for one to eight required file ids; atomic scope validation |
 | `read_document` | none | Sequential chunks by required file id; workspace and chat scope checked before reading |
-| `related_concepts` | none | Co-mention bridge constrained to the chat scope |
 | `generate_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic id |
 
 Read tools hit Postgres directly. Anything that creates a material goes through
@@ -714,7 +955,7 @@ is fixed, and the gateway must persist a parseable artifact.
    the request, and a valid scope with no indexed content fails before a model
    call. `gather_context` samples chunks evenly across every document in scope (equal
    share per file, not proportional to length). The gateway resolves the user's
-   **Settings → LLM** generate preference (`ratesForSurface`) and forwards that
+   **Settings → LLM** generate preference (`ratesForSlot`) and forwards that
    exact pin; the browser `model` field is ignored. An unresolvable preference
    fails as `model_unavailable`.
 2. One `produce` call receives the bounded, evenly sampled context. There is no
@@ -726,7 +967,7 @@ is fixed, and the gateway must persist a parseable artifact.
    persistence layer already expects: flashcards, quiz questions, mindmap /
    diagram mermaid, notes. An empty or unparseable reply is
    `generate_empty` (502), not a canned stub. Go refuses to persist an
-   empty quiz, deck, or mermaid document for the same reason.
+   empty quiz, flashcards, or mermaid document for the same reason.
 
 Response shapes are part of the contract with Go — do not change them lightly.
 
@@ -762,19 +1003,34 @@ an overlay instead of requesting a nonexistent derived PDF.
 ## Clone and teardown
 
 `CloneWorkspace` copies the retrieval index **in the same transaction** as the
-content: canonical content, aliases, chunks, vectors, summaries, concepts, and
-mentions, remapping file, content and chapter ids. Duplicate files remain
+content: canonical content, aliases, chunks, vectors, and summaries,
+remapping file, content and chapter ids. Duplicate files remain
 aliases of one content item inside the clone. There is no best-effort follow-up
 call and no `ragCloned` flag — either the clone includes the index or the
 transaction rolls back.
+
+That transaction uses one repeatable-read source snapshot. Only ready source
+files are copied; pending, processing, and failed rows are omitted. Ready editor
+assets are copied with new logical ids, and material nodes that reference any
+uncopied editor asset are removed rather than becoming dangling references.
+Retained daily material revisions are copied from that same snapshot, capped by
+the cloner's plan and rewritten with the same fresh editor-asset/card IDs as the
+current material. The clone locks the target account and freezes its effective
+plan before selecting those revisions; a concurrent downgrade therefore
+serializes or causes the repeatable-read clone attempt to retry, rather than
+restoring history beyond the committed plan. Relational comment threads are
+not copied.
 
 The clone inherits the source's embedding pin rather than taking the current
 default, because the vectors are copied rather than recomputed. New chunk ids
 are derived from `md5(newWorkspaceID || oldChunkID)` rather than `random()`, so
 the vector copy can recompute each id and pair it with its passage.
 
-Teardown is the foreign key. Workspace delete cascades; the old `rag_teardown`
-job and pipeline `/workspace/delete` endpoint are gone.
+Teardown is the foreign key. Workspace delete first releases every open
+provider session scoped to that workspace and returns its reserved credits,
+while leaving already-open provider calls eligible for their exact late
+receipt. The delete then cascades; the old `rag_teardown` job and pipeline
+`/workspace/delete` endpoint are gone.
 
 ## Configuration surface
 
@@ -785,14 +1041,14 @@ job and pipeline `/workspace/delete` endpoint are gone.
 | Parse | `PARSER_URL`, `PARSER_TOKEN`, `EVO_PARSE_METHOD`, `EVO_PARSE_SLOTS`, `EVO_PARSE_COORDINATOR_CONCURRENCY`, `EVO_PARSE_CONCURRENCY`, `EVO_MINERU_SLICE_PAGES`, `EVO_PARSE_JOB_TIMEOUT`, `EVO_OFFICE_PREVIEW_MAX_BYTES`, `RELEASE_SHA` | Persistent Netcup MinerU pipeline service. Production defaults to four coordinator processes, 26 pages per slice, four admitted documents, and four active slices. Method, schema, and exact release-derived parser version participate in the artifact fingerprint. |
 | Post-parse ingest | `WORKER_REPLICAS`, `EVO_INGEST_TIMEOUT`, `EVO_CAPTION_CONCURRENCY` | Dedicated-host defaults are four isolated one-job containers, 20 minutes per attempt, and at most four concurrent embedded-figure captions per worker. Other model stages are sequential within each job. |
 | Shared nonproduction capacity | `EVO_SHARED_CAPACITY_LOCK_DIR` | Unset in production. The shared local/UAT Compose project sets one spool directory for both environments. A queue consumer takes the `parse` or `ingest` file lock before claiming a row, which leaves the other environment's job pending and caps active work at one job per role. |
-| Chunk size | `EVO_CHUNK_*` | Character budgets, not tokens |
+| Chunk size | `EVO_CHUNK_*` | Estimated-token budgets (`estimate_tokens`), not a real tokenizer |
 | Embedding | `EMBEDDING_DIM` | The shipped width, matching `halfvec(N)`. The *model* is never env: it is a `model_configs` row pinned per workspace |
 | Search | `EVO_SEARCH_CANDIDATES`, `EVO_SEARCH_TOP_K`, `EVO_SEARCH_PER_FILE_CAP` | |
 | Agent | `EVO_AGENT_MAX_STEPS` | Default 12. Cap is the design, not a safety valve |
 | LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `EVO_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 200k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |
-| Captions | `EVO_CAPTION_CONCURRENCY`, `EVO_CAPTION_MAX_EDGE`, `EVO_CAPTION_VERSION` | Caption mode is resolved per file in the processing plan. The ZAI GLM-5.3-Flash catalog row routes through DeepInfra. Captions always use `reasoning_effort: low`; its default on other reasoning-enabled uses is `max`. |
+| Captions | `EVO_CAPTION_CONCURRENCY`, `EVO_CAPTION_MAX_EDGE`, `EVO_CAPTION_VERSION` | Caption mode is resolved per file in the processing plan. The ZAI GLM-5.3-Flash catalog row routes through DeepInfra. Captions always use `reasoning_effort: low`, which is also the catalog default for chat. |
 | Caption safety valve | `EVO_CAPTION_MAX_PER_FILE` | `0` (uncapped); the filters bound the cost |
-| Direct media | `EVO_IMAGE_MAX_PIXELS`, `ELEVENLABS_API_KEY`, `ELEVENLABS_BASE_URL`, `ELEVENLABS_WEBHOOK_ID`, `EVO_ELEVENLABS_TRANSCRIPT_VERSION`, `EVO_ELEVENLABS_CONCURRENCY_UNITS`, `EVO_AUDIO_MAX_DURATION_SECONDS`, `EVO_TABULAR_TEXT_VERSION` | Image decoding is capped at 100M pixels. Scribe v2 defaults to 12 weighted Starter units, with each file consuming `min(4, ceil(duration_seconds / 480))`; audio is capped at 10 hours. |
+| Direct media | `EVO_IMAGE_MAX_PIXELS`, `ELEVENLABS_API_KEY`, `ELEVENLABS_BASE_URL`, `EVO_ELEVENLABS_TRANSCRIPT_VERSION`, `EVO_ELEVENLABS_CONCURRENCY_UNITS`, `EVO_ELEVENLABS_SYNC_TIMEOUT_S`, `EVO_AUDIO_MAX_DURATION_SECONDS`, `EVO_TABULAR_TEXT_VERSION` | Image decoding is capped at 100M pixels. Scribe v2 is synchronous, has an absolute 12-hour request timeout, and defaults to 12 weighted Starter units, with each file consuming `min(4, ceil(duration_seconds / 480))`; audio is capped at 10 hours. |
 
 Windows note: psycopg's async driver refuses the Proactor event loop.
 `pipeline.use_compatible_event_loop()` is called by both entrypoints and by the
@@ -812,5 +1068,9 @@ test suite.
   material JSON unreliable and chat latency unpredictable.
 - **Materials persist in Go.** The retrieval service holds DB credentials but
   deliberately does not hold quota/authz rules.
+- **Chat searches on purpose.** There is no prime retrieval before the first
+  model call. At most one `search_workspace` per response; a later step may
+  search again. The hit chunk is the context, packing overlap plus
+  `read_document` cover a cut.
 - **Reranker is a seam, not a dependency.** Measure quality on real workspaces
   before adding a vendor or a GPU to the retrieval container.

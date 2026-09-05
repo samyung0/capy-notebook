@@ -2,8 +2,8 @@ import { zipSync } from 'fflate';
 import { delay, HttpResponse, http } from 'msw';
 import type {
   Chapter,
-  Deck,
   Flashcard,
+  FlashcardSet,
   GenerateOptions,
   Material,
   MaterialDiscussion,
@@ -43,9 +43,8 @@ import * as db from './db';
 import { uid } from './db';
 import { sourceUploadPolicy } from './sourceUploadPolicy';
 
-/** Map a material's storage kind to the legacy left-panel ref type. */
-const refType = (kind: Material['kind']): MaterialRefType =>
-  kind === 'flashcards' ? 'deck' : kind;
+/** Map a material's storage kind to the left-panel ref type. */
+const refType = (kind: Material['kind']): MaterialRefType => kind;
 
 const latency = () => delay(1000 + Math.random() * 220);
 const GENERATE_KINDS: GenerateOptions['kind'][] = [
@@ -123,10 +122,10 @@ interface MockWorkspaceInvite {
 }
 function copyText(
   locale: string,
-  key: 'new_deck' | 'untitled_note' | 'untitled_quiz'
+  key: 'new_flashcards' | 'untitled_note' | 'untitled_quiz'
 ): string {
   const table = {
-    new_deck: { en: 'New deck', zh: '新建卡组' },
+    new_flashcards: { en: 'New flashcards', zh: '新建卡组' },
     untitled_note: { en: 'Untitled note', zh: '未命名笔记' },
     untitled_quiz: { en: 'Untitled quiz', zh: '未命名测验' },
   } as const;
@@ -347,28 +346,24 @@ export const handlers = [
     })
   ),
   http.get('/api/account/deletion', async () => {
-    const needingTransfer = db.workspaces.filter(
-      (ws) =>
-        ws.role === 'owner' &&
-        mockWorkspaceMembers.some((member) => member.workspaceId === ws.id)
-    );
-    const toDestroy = db.workspaces.filter(
-      (ws) =>
-        ws.role === 'owner' &&
-        !mockWorkspaceMembers.some((member) => member.workspaceId === ws.id)
-    );
+    const toDestroy = db.workspaces.filter((ws) => ws.role === 'owner');
     return HttpResponse.json({
-      canDelete: needingTransfer.length === 0,
+      canDelete: true,
       graceDays: 30,
+      lifecycleGeneration: 0,
       storageUsedBytes: db.accountStatus.storageUsedBytes,
-      workspacesNeedingTransfer: needingTransfer,
+      workspacesNeedingTransfer: [],
       workspacesToDestroy: toDestroy,
     });
   }),
   http.post('/api/account/deletion', async ({ request }) => {
-    const body = (await request.json()) as { confirmEmail?: string };
+    const body = (await request.json()) as {
+      confirmEmail?: string;
+      lifecycleGeneration?: number;
+    };
     if (
       !body.confirmEmail ||
+      body.lifecycleGeneration !== 0 ||
       body.confirmEmail.toLowerCase() !== db.user.email.toLowerCase()
     ) {
       return HttpResponse.json(
@@ -391,12 +386,12 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 });
   }),
   http.get('/api/models', async ({ request }) => {
-    const surface = new URL(request.url).searchParams.get('surface');
+    const slot = new URL(request.url).searchParams.get('slot');
     const fallback = {
       modelSlug: 'deepseek-v4-flash-vision-exp',
       providerSlug: 'deepseek',
     };
-    if (!surface) {
+    if (!slot) {
       return HttpResponse.json({
         defaultModel: { modelSlug: '', providerSlug: '' },
         models: [],
@@ -410,9 +405,9 @@ export const handlers = [
       generate: db.user.generateModel,
       quiz: db.user.quizModel,
     };
-    const selected = prefs[surface] ?? fallback;
+    const selected = prefs[slot] ?? fallback;
     const models = mockCatalogModels();
-    const stored = db.userThinking[modelRefValue(selected)]?.[surface] ?? '';
+    const stored = db.userThinking[modelRefValue(selected)]?.[slot] ?? '';
     const selectedOption = models.find((item) =>
       sameModel(optionRef(item), selected)
     );
@@ -474,7 +469,7 @@ export const handlers = [
       ['generate', db.user.generateModel, body.generateThinking],
       ['quiz', db.user.quizModel, body.quizThinking],
     ] as const;
-    for (const [surface, model, value] of thinking) {
+    for (const [slot, model, value] of thinking) {
       if (value === undefined) continue;
       const spec = mockCatalogModels().find((item) =>
         sameModel(optionRef(item), model)
@@ -484,7 +479,7 @@ export const handlers = [
       }
       const identity = modelRefValue(model);
       if (!db.userThinking[identity]) db.userThinking[identity] = {};
-      db.userThinking[identity][surface] = value;
+      db.userThinking[identity][slot] = value;
     }
     return new HttpResponse(null, { status: 204 });
   }),
@@ -615,7 +610,7 @@ export const handlers = [
           subtitle: e.location,
           title: e.title,
         });
-    for (const mt of db.deckMaterials())
+    for (const mt of db.flashcardSetMaterials())
       if (mt.title.toLowerCase().includes(q))
         results.push({
           color: mt.color,
@@ -1013,6 +1008,8 @@ export const handlers = [
         !item.acceptedAt
     );
     if (!invite) return new HttpResponse(null, { status: 404 });
+    if (!db.workspaces.some((workspace) => workspace.id === invite.workspaceId))
+      return new HttpResponse(null, { status: 404 });
     if (invite.invitedUserId !== db.user.id) {
       return new HttpResponse(null, { status: 403 });
     }
@@ -1084,18 +1081,39 @@ export const handlers = [
     db.materials
       .filter((material) => material.workspaceId === source.id)
       .forEach((material) => {
-        db.materials.push({
+        const materialId = uid('mat');
+        const clonedCards =
+          material.kind === 'flashcards'
+            ? materialCards(material).map((card) => ({
+                ...card,
+                id: uid('c'),
+              }))
+            : [];
+        const cloned = {
           ...material,
           chapterId: material.chapterId
             ? (chapterMap.get(material.chapterId) ?? null)
             : null,
+          content:
+            material.kind === 'flashcards'
+              ? flashcardsDocument(clonedCards, materialId)
+              : structuredClone(material.content),
           createdAt: new Date().toISOString(),
-          id: uid('mat'),
+          id: materialId,
           privacy: 'private',
           scopeFileNames: material.scopeFileNames,
           workspaceId: newId,
           workspaceName: workspace.name,
-        });
+        } satisfies Material;
+        db.refreshMaterialContentBytes(cloned);
+        db.materials.push(cloned);
+        for (const card of clonedCards) {
+          db.cardStats[card.id] = {
+            known: false,
+            materialId,
+            srs: newSrsState(),
+          };
+        }
       });
     return HttpResponse.json({ workspace }, { status: 201 });
   }),
@@ -1318,7 +1336,7 @@ export const handlers = [
       { status: 201 }
     );
   }),
-  http.patch('/api/materials/:id', async ({ params, request }) => {
+  http.patch('/api/materials/:id/metadata', async ({ params, request }) => {
     const mt = db.materials.find((x) => x.id === params.id);
     if (!mt) return new HttpResponse(null, { status: 404 });
     const body = (await request.json().catch(() => ({}))) as {
@@ -1353,6 +1371,15 @@ export const handlers = [
       revision: mt.revision,
       updatedAt: mt.updatedAt,
     });
+  }),
+  http.patch('/api/materials/:id/sharing', async ({ params, request }) => {
+    const material = db.materials.find(
+      (item) => item.id === params.id && !item.workspaceId
+    );
+    if (!material) return new HttpResponse(null, { status: 404 });
+    const body = (await request.json()) as Pick<Material, 'privacy'>;
+    material.privacy = body.privacy;
+    return HttpResponse.json(material);
   }),
   http.delete('/api/materials/:id', async ({ params }) => {
     const i = db.materials.findIndex((x) => x.id === params.id);
@@ -1905,11 +1932,6 @@ export const handlers = [
     const scopeFileNames = [...selectedFileIds]
       .map((fid) => db.files.find((f) => f.id === fid)?.name)
       .filter(Boolean) as string[];
-    const scopeLabel =
-      scopeChapterNames.length || scopeFileNames.length
-        ? [...scopeChapterNames, ...scopeFileNames].join(', ')
-        : 'the whole workspace';
-
     const title = opts.title?.trim() ?? '';
     if (!title) {
       return HttpResponse.json(
@@ -1971,8 +1993,8 @@ export const handlers = [
         };
       return HttpResponse.json({
         cards: db.cardsFromMaterial(material),
-        deck: db.deckFromMaterial(material),
         kind: 'flashcards',
+        material: db.flashcardSetFromMaterial(material),
       });
     }
 
@@ -1981,11 +2003,6 @@ export const handlers = [
         ...ownerMaterialAccess,
         chapterId: null,
         content: createMaterialDocument([
-          { children: [{ text: `${wsName} ${opts.kind}` }], type: 'h1' },
-          {
-            children: [{ text: `Generated from ${scopeLabel}.` }],
-            type: 'p',
-          },
           mermaidNode(
             opts.kind === 'mindmap'
               ? 'mindmap\n  root((Topic))\n    Key idea A\n      Detail 1\n      Detail 2\n    Key idea B\n      Detail 3'
@@ -2143,6 +2160,7 @@ export const handlers = [
   /** Ad-hoc quiz built from the recently-missed question pool. */
   http.get('/api/mistakes', async () => {
     const quiz: Quiz = {
+      canEdit: true,
       chapters: [],
       createdAt: new Date().toISOString(),
       id: 'review_mistakes',
@@ -2158,6 +2176,7 @@ export const handlers = [
   http.get('/api/quizzes/:id', async ({ params }) => {
     if (params.id === 'review_mistakes') {
       return HttpResponse.json({
+        canEdit: true,
         chapters: [],
         createdAt: new Date().toISOString(),
         id: 'review_mistakes',
@@ -2176,23 +2195,38 @@ export const handlers = [
       ? HttpResponse.json(db.quizFromMaterial(mt))
       : new HttpResponse(null, { status: 404 });
   }),
-  http.patch('/api/quizzes/:id', async ({ params, request }) => {
+  http.patch('/api/quizzes/:id/content', async ({ params, request }) => {
     const mt = db.materials.find(
       (x) => x.id === params.id && x.kind === 'quiz'
     );
     if (!mt) return new HttpResponse(null, { status: 404 });
     const body = (await request.json()) as Partial<Quiz>;
     const cur = db.quizFromMaterial(mt);
-    const name = body.name ?? cur.name;
-    const chapters = body.chapters ?? cur.chapters;
     const questions = body.questions ?? cur.questions;
     const timeLimitMin = body.timeLimitMin ?? cur.timeLimitMin;
-    if (body.privacy !== undefined) mt.privacy = body.privacy;
-    mt.title = name;
-    mt.scopeChapters = chapters;
     mt.content = quizDocument(questions, timeLimitMin, mt.id);
     db.refreshMaterialContentBytes(mt);
     return HttpResponse.json(db.quizFromMaterial(mt));
+  }),
+  http.patch('/api/quizzes/:id/metadata', async ({ params, request }) => {
+    const material = db.materials.find(
+      (item) => item.id === params.id && item.kind === 'quiz'
+    );
+    if (!material) return new HttpResponse(null, { status: 404 });
+    const body = (await request.json()) as Partial<Quiz>;
+    if (body.name !== undefined) material.title = body.name;
+    if (body.chapters !== undefined) material.scopeChapters = body.chapters;
+    return HttpResponse.json(db.quizFromMaterial(material));
+  }),
+  http.patch('/api/quizzes/:id/sharing', async ({ params, request }) => {
+    const material = db.materials.find(
+      (item) =>
+        item.id === params.id && item.kind === 'quiz' && !item.workspaceId
+    );
+    if (!material) return new HttpResponse(null, { status: 404 });
+    const body = (await request.json()) as Pick<Quiz, 'privacy'>;
+    material.privacy = body.privacy;
+    return HttpResponse.json(db.quizFromMaterial(material));
   }),
   http.delete('/api/quizzes/:id', async ({ params }) => {
     const i = db.materials.findIndex(
@@ -2290,13 +2324,15 @@ export const handlers = [
     return HttpResponse.json(at, { status: 201 });
   }),
   /* ---------------- flashcards ---------------- */
-  http.get('/api/decks', async () =>
-    HttpResponse.json(db.deckMaterials().map(db.deckFromMaterial))
+  http.get('/api/flashcards', async () =>
+    HttpResponse.json(
+      db.flashcardSetMaterials().map(db.flashcardSetFromMaterial)
+    )
   ),
-  http.post('/api/decks', async ({ request }) => {
-    const body = (await request.json()) as Partial<Deck>;
+  http.post('/api/flashcards', async ({ request }) => {
+    const body = (await request.json()) as Partial<FlashcardSet>;
     const ws = db.workspaces.find((w) => w.id === body.workspaceId);
-    const name = body.name || copyText(db.user.locale, 'new_deck');
+    const name = body.name || copyText(db.user.locale, 'new_flashcards');
     const id = uid('dk');
     const material = db.makeMaterial({
       ...ownerMaterialAccess,
@@ -2314,34 +2350,47 @@ export const handlers = [
       workspaceName: ws?.name ?? body.workspaceName ?? '',
     });
     db.materials.unshift(material);
-    return HttpResponse.json(db.deckFromMaterial(material), { status: 201 });
+    return HttpResponse.json(db.flashcardSetFromMaterial(material), {
+      status: 201,
+    });
   }),
-  http.get('/api/decks/:id', async ({ params }) => {
+  http.get('/api/flashcards/:id', async ({ params }) => {
     const mt = db.materials.find(
       (x) => x.id === params.id && x.kind === 'flashcards'
     );
     return mt
-      ? HttpResponse.json(db.deckFromMaterial(mt))
+      ? HttpResponse.json(db.flashcardSetFromMaterial(mt))
       : new HttpResponse(null, { status: 404 });
   }),
-  http.patch('/api/decks/:id', async ({ params, request }) => {
+  http.patch('/api/flashcards/:id/metadata', async ({ params, request }) => {
     const material = db.materials.find(
       (item) => item.id === params.id && item.kind === 'flashcards'
     );
     if (!material) return new HttpResponse(null, { status: 404 });
-    const body = (await request.json()) as Partial<Deck>;
+    const body = (await request.json()) as Partial<FlashcardSet>;
     if (body.name !== undefined) material.title = body.name;
     if (body.color !== undefined) material.color = body.color;
-    if (body.privacy !== undefined) material.privacy = body.privacy;
-    return HttpResponse.json(db.deckFromMaterial(material));
+    return HttpResponse.json(db.flashcardSetFromMaterial(material));
   }),
-  http.post('/api/decks/:id/clone', async ({ params }) => {
+  http.patch('/api/flashcards/:id/sharing', async ({ params, request }) => {
+    const material = db.materials.find(
+      (item) =>
+        item.id === params.id && item.kind === 'flashcards' && !item.workspaceId
+    );
+    if (!material) return new HttpResponse(null, { status: 404 });
+    const body = (await request.json()) as Pick<FlashcardSet, 'privacy'>;
+    material.privacy = body.privacy;
+    return HttpResponse.json(db.flashcardSetFromMaterial(material));
+  }),
+  http.post('/api/flashcards/:id/clone', async ({ params }) => {
     let source = db.materials.find(
       (material) => material.id === params.id && material.kind === 'flashcards'
     );
     if (!source) {
-      const index = db.publicDecks.findIndex((deck) => deck.id === params.id);
-      source = index >= 0 ? db.deckMaterials()[index] : undefined;
+      const index = db.publicFlashcardSets.findIndex(
+        (flashcardSet) => flashcardSet.id === params.id
+      );
+      source = index >= 0 ? db.flashcardSetMaterials()[index] : undefined;
     }
     if (!source) return new HttpResponse(null, { status: 404 });
     const cards = materialCards(source).map((card) => ({
@@ -2372,9 +2421,11 @@ export const handlers = [
         srs: newSrsState(),
       };
     });
-    return HttpResponse.json(db.deckFromMaterial(material), { status: 201 });
+    return HttpResponse.json(db.flashcardSetFromMaterial(material), {
+      status: 201,
+    });
   }),
-  http.get('/api/decks/:id/cards', async ({ params }) => {
+  http.get('/api/flashcards/:id/cards', async ({ params }) => {
     const mt = db.materials.find(
       (x) => x.id === params.id && x.kind === 'flashcards'
     );
@@ -2382,7 +2433,7 @@ export const handlers = [
       ? HttpResponse.json(db.cardsFromMaterial(mt))
       : new HttpResponse(null, { status: 404 });
   }),
-  http.post('/api/decks/:id/cards', async ({ params, request }) => {
+  http.post('/api/flashcards/:id/cards', async ({ params, request }) => {
     const mt = db.materials.find(
       (x) => x.id === params.id && x.kind === 'flashcards'
     );
@@ -2399,36 +2450,59 @@ export const handlers = [
       { status: 201 }
     );
   }),
-  http.patch('/api/cards/:id', async ({ params, request }) => {
-    const stat = db.cardStats[String(params.id)];
-    if (!stat) return new HttpResponse(null, { status: 404 });
-    const mt = db.materials.find(
-      (x) => x.id === stat.materialId && x.kind === 'flashcards'
-    );
-    if (!mt) return new HttpResponse(null, { status: 404 });
-    const body = (await request.json()) as Partial<
-      Pick<Flashcard, 'front' | 'back' | 'known' | 'srs'>
-    >;
-    if (body.front !== undefined || body.back !== undefined) {
-      const cards = materialCards(mt);
-      const card = cards.find((c) => c.id === params.id);
-      if (card) {
-        if (body.front !== undefined) card.front = body.front;
-        if (body.back !== undefined) card.back = body.back;
-        mt.content = flashcardsDocument(cards, mt.id);
-        db.refreshMaterialContentBytes(mt);
+  http.patch(
+    '/api/flashcards/cards/:id/content',
+    async ({ params, request }) => {
+      const stat = db.cardStats[String(params.id)];
+      if (!stat) return new HttpResponse(null, { status: 404 });
+      const mt = db.materials.find(
+        (x) => x.id === stat.materialId && x.kind === 'flashcards'
+      );
+      if (!mt) return new HttpResponse(null, { status: 404 });
+      const body = (await request.json()) as Partial<
+        Pick<Flashcard, 'front' | 'back'>
+      >;
+      if (body.front !== undefined || body.back !== undefined) {
+        const cards = materialCards(mt);
+        const card = cards.find((c) => c.id === params.id);
+        if (card) {
+          if (body.front !== undefined) card.front = body.front;
+          if (body.back !== undefined) card.back = body.back;
+          mt.content = flashcardsDocument(cards, mt.id);
+          db.refreshMaterialContentBytes(mt);
+        }
       }
+      const cards = db.cardsFromMaterial(mt);
+      const out = cards.find((c) => c.id === params.id);
+      return out
+        ? HttpResponse.json(out)
+        : new HttpResponse(null, { status: 404 });
     }
-    if (body.srs !== undefined) stat.srs = body.srs;
-    if (body.known !== undefined) stat.known = body.known;
-    else if (body.srs !== undefined) stat.known = isKnown(body.srs);
-    const cards = db.cardsFromMaterial(mt);
-    const out = cards.find((c) => c.id === params.id);
-    return out
-      ? HttpResponse.json(out)
-      : new HttpResponse(null, { status: 404 });
-  }),
-  http.delete('/api/cards/:id', async ({ params }) => {
+  ),
+  http.patch(
+    '/api/flashcards/cards/:id/study-state',
+    async ({ params, request }) => {
+      const stat = db.cardStats[String(params.id)];
+      if (!stat) return new HttpResponse(null, { status: 404 });
+      const material = db.materials.find(
+        (item) => item.id === stat.materialId && item.kind === 'flashcards'
+      );
+      if (!material) return new HttpResponse(null, { status: 404 });
+      const body = (await request.json()) as Partial<
+        Pick<Flashcard, 'known' | 'srs'>
+      >;
+      if (body.srs !== undefined) stat.srs = body.srs;
+      if (body.known !== undefined) stat.known = body.known;
+      else if (body.srs !== undefined) stat.known = isKnown(body.srs);
+      const card = db
+        .cardsFromMaterial(material)
+        .find((item) => item.id === params.id);
+      return card
+        ? HttpResponse.json(card)
+        : new HttpResponse(null, { status: 404 });
+    }
+  ),
+  http.delete('/api/flashcards/cards/:id', async ({ params }) => {
     const stat = db.cardStats[String(params.id)];
     if (!stat) return new HttpResponse(null, { status: 404 });
     const mt = db.materials.find(
@@ -2536,7 +2610,9 @@ export const handlers = [
   http.get('/api/explore/quizzes', async () =>
     HttpResponse.json(db.publicQuizzes)
   ),
-  http.get('/api/explore/decks', async () => HttpResponse.json(db.publicDecks)),
+  http.get('/api/explore/flashcards', async () =>
+    HttpResponse.json(db.publicFlashcardSets)
+  ),
 
   /* ---------------- billing ---------------- */
   http.get('/api/billing', async () =>

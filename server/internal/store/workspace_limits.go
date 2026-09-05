@@ -46,31 +46,21 @@ func (s *Store) gateOwnedWorkspacesTx(
 	if requested < 0 {
 		return planlimits.Limits{}, fmt.Errorf("negative workspace request: %d", requested)
 	}
-	var tier PlanTier
-	if err := tx.QueryRow(ctx, `SELECT plan_tier FROM users WHERE id=$1`, userID).
-		Scan(&tier); err != nil {
-		if isNoRows(err) {
-			return planlimits.Limits{}, ErrNotFound
-		}
+	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
 		return planlimits.Limits{}, err
 	}
-	limits, err := s.PlanLimits(tier)
+	status, err := s.accountAccess(ctx, tx, userID)
 	if err != nil {
 		return planlimits.Limits{}, err
 	}
-	if limits.OwnedWorkspaces == 0 {
-		return limits, nil
-	}
-	// Re-read the tier under the serialization lock. A concurrent plan change
-	// must not leave us enforcing the stale tier selected above.
-	if err := tx.QueryRow(ctx, `SELECT plan_tier FROM users WHERE id=$1 FOR UPDATE`, userID).
-		Scan(&tier); err != nil {
-		if isNoRows(err) {
-			return planlimits.Limits{}, ErrNotFound
-		}
+	if err := status.CreateErr(); err != nil {
 		return planlimits.Limits{}, err
 	}
-	limits, err = s.PlanLimits(tier)
+	tier, err := s.effectivePlanTierForUser(ctx, tx, userID)
+	if err != nil {
+		return planlimits.Limits{}, err
+	}
+	limits, err := s.PlanLimits(tier)
 	if err != nil {
 		return planlimits.Limits{}, err
 	}

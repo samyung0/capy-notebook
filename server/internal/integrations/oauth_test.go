@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/netip"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -15,6 +17,11 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
+
+type importErrorBody struct{ err error }
+
+func (b importErrorBody) Read([]byte) (int, error) { return 0, b.err }
+func (importErrorBody) Close() error               { return nil }
 
 func TestMicrosoftItemURL(t *testing.T) {
 	t.Parallel()
@@ -326,6 +333,163 @@ func TestMicrosoftMetadataRejectsPrivateDNSResolution(t *testing.T) {
 		context.Background(), "token", "item", "",
 	); !errors.Is(err, ErrImportFileUnavailable) {
 		t.Fatalf("error = %v, want ErrImportFileUnavailable", err)
+	}
+}
+
+func TestMicrosoftMetadataKeepsDNSFailureRetryable(t *testing.T) {
+	previousHTTP := providerHTTP
+	previousResolver := importHostResolver
+	t.Cleanup(func() {
+		providerHTTP = previousHTTP
+		importHostResolver = previousResolver
+	})
+	providerHTTP = &http.Client{Transport: roundTripFunc(
+		func(*http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(strings.NewReader(
+					`{"name":"file.pdf","size":12,"file":{"mimeType":"application/pdf"},"@microsoft.graph.downloadUrl":"https://download.example/file"}`,
+				)),
+			}, nil
+		},
+	)}
+	importHostResolver = func(context.Context, string) ([]netip.Addr, error) {
+		return nil, &net.DNSError{Err: "temporary resolver failure", IsTemporary: true}
+	}
+
+	_, err := GetMicrosoftFileMetadata(
+		context.Background(), "token", "item", "",
+	)
+	if err == nil || !IsRetryableImportProviderError(err) {
+		t.Fatalf("error = %v, want retryable provider error", err)
+	}
+	if errors.Is(err, ErrImportFileUnavailable) {
+		t.Fatalf("DNS failure was classified terminal: %v", err)
+	}
+}
+
+func TestImportDialFailuresAreRetryableUnlessRequestCanceled(t *testing.T) {
+	for _, dialErr := range []error{
+		&net.OpError{Op: "dial", Net: "tcp", Err: context.DeadlineExceeded},
+		&net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNRESET},
+	} {
+		err := classifyImportDialError(context.Background(), dialErr)
+		if !IsRetryableImportProviderError(err) {
+			t.Fatalf("dial error %v classified non-retryable: %v", dialErr, err)
+		}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := classifyImportDialError(ctx, &net.OpError{
+		Op: "dial", Net: "tcp", Err: syscall.ECONNRESET,
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled dial error = %v, want context.Canceled", err)
+	}
+	if IsRetryableImportProviderError(err) {
+		t.Fatalf("request cancellation classified as provider retry: %v", err)
+	}
+}
+
+func TestProviderRequestTransportAndBodyFailuresAreRetryable(t *testing.T) {
+	previousHTTP := providerHTTP
+	t.Cleanup(func() { providerHTTP = previousHTTP })
+
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{name: "connect reset", err: &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNRESET}},
+		{name: "TLS handshake", err: &net.OpError{Op: "remote error: tls", Net: "tcp", Err: errors.New("handshake failed")}},
+		{name: "client timeout", err: &net.OpError{Op: "read", Net: "tcp", Err: context.DeadlineExceeded}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			providerHTTP = &http.Client{Transport: roundTripFunc(
+				func(*http.Request) (*http.Response, error) { return nil, tc.err },
+			)}
+			_, err := GetGoogleFileMetadata(
+				context.Background(), "token", "file_1",
+			)
+			if !IsRetryableImportProviderError(err) {
+				t.Fatalf("error=%v, want retryable provider error", err)
+			}
+		})
+	}
+
+	providerHTTP = &http.Client{Transport: roundTripFunc(
+		func(*http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       importErrorBody{err: syscall.ECONNRESET},
+			}, nil
+		},
+	)}
+	_, err := GetGoogleFileMetadata(context.Background(), "token", "file_1")
+	if !IsRetryableImportProviderError(err) {
+		t.Fatalf("metadata body reset=%v, want retryable provider error", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	providerHTTP = &http.Client{Transport: roundTripFunc(
+		func(*http.Request) (*http.Response, error) {
+			return nil, &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNRESET}
+		},
+	)}
+	_, err = GetGoogleFileMetadata(ctx, "token", "file_1")
+	if !errors.Is(err, context.Canceled) || IsRetryableImportProviderError(err) {
+		t.Fatalf("canceled metadata error=%v, want context.Canceled", err)
+	}
+}
+
+func TestDownloadRequestAndBodyFailuresAreRetryable(t *testing.T) {
+	previousHTTP := providerHTTP
+	t.Cleanup(func() { providerHTTP = previousHTTP })
+	usePublicImportHostResolver(t)
+
+	for _, tc := range []struct {
+		name string
+		body io.ReadCloser
+		err  error
+	}{
+		{name: "request reset", err: &net.OpError{Op: "read", Net: "tcp", Err: syscall.ECONNRESET}},
+		{name: "response body reset", body: importErrorBody{err: syscall.ECONNRESET}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			providerHTTP = &http.Client{Transport: roundTripFunc(
+				func(*http.Request) (*http.Response, error) {
+					calls++
+					if calls == 1 {
+						return &http.Response{
+							StatusCode: http.StatusOK,
+							Header:     make(http.Header),
+							Body: io.NopCloser(strings.NewReader(
+								`{"name":"file.txt","mimeType":"text/plain","size":"4","capabilities":{"canDownload":true}}`,
+							)),
+						}, nil
+					}
+					if tc.err != nil {
+						return nil, tc.err
+					}
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Header:     make(http.Header),
+						Body:       tc.body,
+					}, nil
+				},
+			)}
+			_, _, err := DownloadImportFile(
+				context.Background(), ProviderGoogle, "token",
+				ImportRef{ID: "file_1"}, 4,
+			)
+			if !IsRetryableImportProviderError(err) {
+				t.Fatalf("error=%v, want retryable provider error", err)
+			}
+		})
 	}
 }
 

@@ -117,8 +117,10 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	userID := uid(r)
+	ctx, cancelLiveAuthorization := a.liveWorkspaceContext(ctx, userID, wsID)
+	defer cancelLiveAuthorization()
 
-	llm, err := a.resolveLLM(ctx, userID, models.SurfaceChat)
+	llm, err := a.resolveLLM(ctx, userID, models.SlotChat)
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -161,7 +163,7 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := a.s.AddUserMessage(ctx, conv.ID, req.Text); err != nil {
+	if _, err := a.s.AddUserMessage(ctx, userID, conv.ID, req.Text); err != nil {
 		a.fail(w, err)
 		return
 	}
@@ -169,7 +171,7 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		_ = a.s.RenameConversation(ctx, userID, conv.ID, titleFrom(req.Text))
 	}
 
-	assistant, err := a.s.StartAssistantMessage(ctx, conv.ID, cfg)
+	assistant, err := a.s.StartAssistantMessage(ctx, userID, conv.ID, cfg)
 	if err != nil {
 		a.fail(w, err)
 		return

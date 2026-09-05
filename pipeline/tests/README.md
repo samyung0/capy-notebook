@@ -15,9 +15,9 @@ The retrieval index is owned by the numbered Go migrations
 rename in a migration surfaces here rather than in production.
 
 The SQL tier writes synthetic one-hot embeddings, so it exercises every
-statement in `retrieval/store.py` (hybrid search, scoping, the concept
-self-join, two-tier content summaries, cascade deletes) without a single model
-call. The cassette tier drives the real chunk → embed → summarize → extract →
+statement in `retrieval/store.py` (hybrid search, scoping, two-tier
+content summaries, cascade deletes) without a single model
+call. The cassette tier drives the real chunk → embed → summarize →
 search → answer path with model traffic replayed from
 [VCR](https://vcrpy.readthedocs.io) cassettes in `cassettes/`. Postgres and
 Redis are raw TCP, so VCR never touches them.
@@ -56,7 +56,7 @@ real services and costs tokens.
 
 ```bash
 export DEEPINFRA_API_KEY="..." # seeded Qwen embedding and routed ZAI GLM
-export DEEPSEEK_API_KEY="..."   # summaries, concepts, answers
+export DEEPSEEK_API_KEY="..."   # summaries, answers
 export ANTHROPIC_API_KEY="..."  # first-party Anthropic if you certify a Claude slug
 
 export EVO_TEST_RECORD=once       # record only interactions not already saved
@@ -88,8 +88,10 @@ pnpm model:certify --provider zai --model glm-5.3-flash
 ```
 
 The command reads the provider API key from its environment variable or asks
-for it without echoing. If the provider model-list request fails, the command
-warns and falls back to an exact free-text model prompt. It then records two
+for it without echoing. If the provider rejects that key, the command exits.
+If the model-list request fails for another reason, the command warns and
+falls back to an exact free-text model prompt. The interactive catalog is
+left-aligned, with a check on the selected slug. It then records two
 live streaming calls. The first must return a tool call and one of the adapter's
 recognized continuity fields. The test appends a tool result, and the second
 request must preserve that state. The command then disables record mode and
@@ -139,7 +141,5 @@ those are made deterministic so a recording keeps matching:
 
 - `workspace` — a throwaway workspace with `add_chapter` / `add_file` / `scalar`.
 - `sample.txt` — photosynthesis, the primary ingest input.
-- `sample_cells.txt` — a second document sharing the concept "ATP", for the
-  cross-document co-mention test.
 - `sample.pdf` — small real PDF (unused by the current suite; the parser client
   is covered offline).

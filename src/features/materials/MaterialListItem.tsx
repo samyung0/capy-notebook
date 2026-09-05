@@ -14,8 +14,8 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 
 const MATERIAL_ICON: Record<MaterialRefType, IconName> = {
-  deck: 'flashcards',
   diagram: 'diagram',
+  flashcards: 'flashcards',
   mindmap: 'mindmap',
   note: 'write',
   quiz: 'quiz',

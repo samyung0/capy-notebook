@@ -4,7 +4,7 @@ Workspace pins resolve a specific (provider slug, model slug, version) for life.
 different space and a different table, so another 2560-d model is a new
 row, not an UPDATE of an old one. Chat versions can still be disabled, but
 their provider/model/version identity cannot be retargeted. Two rows cannot
-claim the same is_default_for surface.
+claim the same is_default_for slot.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ _CHAT_PARAMS = '{"temperature":0.3}'
 _LLM_COLS = """
                 version, provider_name, model_name, provider_slug, model_slug,
                 platform_enabled, byok_enabled, context_window_tokens,
-                thinking_levels, default_thinking, params, surfaces,
+                thinking_levels, default_thinking, params, slots,
                 micros_per_input_token, micros_per_output_token,
                 micros_per_cached_input_token, enabled, is_default_for
 """
@@ -64,7 +64,7 @@ def test_embedding_rows_are_frozen(_test_infra):
         with pytest.raises(psycopg.Error):
             conn.execute(
                 """
-                UPDATE model_configs SET surfaces=ARRAY['chat']
+                UPDATE model_configs SET slots=ARRAY['chat']
                  WHERE provider_slug='deepinfra' AND model_slug='Qwen/Qwen3-Embedding-4B' AND version=1
                 """
             )
@@ -94,7 +94,7 @@ def test_embedding_rows_are_frozen(_test_infra):
                     1, 'Ghost', 'Ghost', 'deepinfra', 'ghost',
                     true, false, 0, ARRAY[]::text[], '',
                     '{{"dimensions": 2560, "vector_table": "rag_chunk_vectors_2560"}}'::jsonb,
-                    ARRAY['embedding'],
+                    ARRAY['retrieval'],
                     50, 50, 0, false, ARRAY[]::text[])
                 """
             )
@@ -113,7 +113,7 @@ def test_embedding_rows_are_frozen(_test_infra):
             conn.execute(
                 """
                 UPDATE model_configs
-                   SET surfaces=ARRAY['chat','embedding'],
+                   SET slots=ARRAY['chat','retrieval'],
                        params='{"dimensions": 2560}'::jsonb
                  WHERE provider_slug='deepseek' AND model_slug=%s
                 """,
@@ -140,7 +140,7 @@ def test_embedding_rows_are_frozen(_test_infra):
                 1, 'Lock', 'Embed', 'embedtest', %s,
                 true, false, 0, ARRAY[]::text[], '',
                 '{{"dimensions": 2560, "vector_table": "rag_chunk_vectors_other_1"}}'::jsonb,
-                ARRAY['embedding'],
+                ARRAY['retrieval'],
                 50, 50, 0, true, ARRAY[]::text[])
             """,
             (embed_slug,),
@@ -158,7 +158,7 @@ def test_embedding_rows_are_frozen(_test_infra):
             conn.execute(
                 """
                 UPDATE model_configs
-                   SET is_default_for = ARRAY['embedding']
+                   SET is_default_for = ARRAY['retrieval']
                  WHERE provider_slug='embedtest' AND model_slug=%s
                 """,
                 (embed_slug,),
@@ -211,9 +211,9 @@ def test_credit_rates_zero_only_for_byok(_test_infra):
             conn.execute(
                 f"""
                 INSERT INTO model_configs ({_LLM_COLS}) VALUES (
-                    1, 'Zero', 'Vision', 'gemini', %s,
+                    1, 'Zero', 'Vision', 'zai', %s,
                     true, false, 100000, ARRAY[]::text[], '',
-                    '{{}}'::jsonb, ARRAY['vision'],
+                    '{{}}'::jsonb, ARRAY['captioning'],
                     0, 0, 0, true, ARRAY[]::text[])
                 """,
                 (vision,),
@@ -226,7 +226,7 @@ def test_credit_rates_zero_only_for_byok(_test_infra):
                     1, 'Embed', 'In0', 'deepinfra', %s,
                     true, false, 0, ARRAY[]::text[], '',
                     '{{"dimensions": 2560, "vector_table": "rag_chunk_vectors_in0"}}'::jsonb,
-                    ARRAY['embedding'],
+                    ARRAY['retrieval'],
                     0, 0, 0, true, ARRAY[]::text[])
                 """,
                 (embed_in0,),
@@ -238,7 +238,7 @@ def test_credit_rates_zero_only_for_byok(_test_infra):
                 1, 'Embed', 'Out0', 'embedtest', %s,
                 true, false, 0, ARRAY[]::text[], '',
                 '{{"dimensions": 2560, "vector_table": "rag_chunk_vectors_out0"}}'::jsonb,
-                ARRAY['embedding'],
+                ARRAY['retrieval'],
                 50, 0, 0, true, ARRAY[]::text[])
             """,
             (embed,),
@@ -286,7 +286,7 @@ def test_llm_rows_require_thinking(_test_infra):
                     1, 'Embed', 'Think', 'deepinfra', %s,
                     true, false, 0, ARRAY['instant']::text[], 'instant',
                     '{{"dimensions": 2560, "vector_table": "rag_chunk_vectors_think"}}'::jsonb,
-                    ARRAY['embedding'],
+                    ARRAY['retrieval'],
                     50, 50, 0, true, ARRAY[]::text[])
                 """,
                 (embed_think,),

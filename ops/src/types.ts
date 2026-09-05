@@ -1,4 +1,5 @@
 export type {
+  Capability,
   CatalogConfig,
   CostGroup,
   CostReport,
@@ -15,7 +16,7 @@ export type {
   Registry,
   RegistrySaveRequest,
   Session,
-  Surface,
+  Slot,
   ThinkingLevel,
   UserDetail,
   UserSearchResult,

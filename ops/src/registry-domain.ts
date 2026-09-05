@@ -3,7 +3,7 @@ import type {
   DraftConfig,
   Registry,
   RegistrySaveRequest,
-  Surface,
+  Slot,
 } from './api';
 
 export type CellTarget =
@@ -17,14 +17,14 @@ export type CellTarget =
 
 export type RegistryCell = {
   rowId: string;
-  surface: Surface;
+  slot: Slot;
   target: CellTarget;
   isDefault: boolean;
 };
 
 export type RegistryState = {
   expectedVersion: number;
-  surfaces: Surface[];
+  slots: Slot[];
   rows: string[];
   cells: Map<string, RegistryCell>;
   originalCells: Map<string, RegistryCell>;
@@ -35,8 +35,8 @@ export type RegistryState = {
 
 export type RegistryAction =
   | { type: 'set-cell'; cell: RegistryCell }
-  | { type: 'clear-cell'; rowId: string; surface: Surface }
-  | { type: 'set-default'; rowId: string; surface: Surface }
+  | { type: 'clear-cell'; rowId: string; slot: Slot }
+  | { type: 'set-default'; rowId: string; slot: Slot }
   | { type: 'upsert-draft'; draft: DraftConfig }
   | { type: 'acknowledge-embedding'; checked: boolean }
   | { type: 'reset'; registry: Registry };
@@ -49,7 +49,7 @@ export type RegistryIssue = {
     | 'draft-not-used';
   message: string;
   rowId?: string;
-  surface?: Surface;
+  slot?: Slot;
 };
 
 export type RequestAssembly =
@@ -70,8 +70,8 @@ export function modelRefLabel(ref: {
   return `${ref.providerSlug} / ${ref.modelSlug}`;
 }
 
-export function cellId(rowId: string, surface: Surface): string {
-  return `${rowId}\u0000${surface}`;
+export function cellId(rowId: string, slot: Slot): string {
+  return `${rowId}\u0000${slot}`;
 }
 
 function copyCell(cell: RegistryCell): RegistryCell {
@@ -85,11 +85,11 @@ function initialCells(registry: Registry): Map<string, RegistryCell> {
     .sort((left, right) => left.version - right.version);
 
   for (const config of enabled) {
-    for (const surface of config.surfaces) {
+    for (const slot of config.slots) {
       const cell: RegistryCell = {
-        isDefault: config.isDefaultFor.includes(surface),
+        isDefault: config.isDefaultFor.includes(slot),
         rowId: modelRefId(config),
-        surface,
+        slot,
         target: {
           kind: 'catalog',
           modelSlug: config.modelSlug,
@@ -97,7 +97,7 @@ function initialCells(registry: Registry): Map<string, RegistryCell> {
           version: config.version,
         },
       };
-      cells.set(cellId(cell.rowId, surface), cell);
+      cells.set(cellId(cell.rowId, slot), cell);
     }
   }
   return cells;
@@ -115,7 +115,7 @@ export function createRegistryState(registry: Registry): RegistryState {
       [...cells].map(([id, cell]) => [id, copyCell(cell)])
     ),
     rows: [...new Set(registry.configs.map(modelRefId))].sort(),
-    surfaces: registry.surfaces,
+    slots: registry.slots,
   };
 }
 
@@ -149,7 +149,7 @@ export function registryReducer(
 
   const cells = new Map(state.cells);
   if (action.type === 'clear-cell') {
-    const id = cellId(action.rowId, action.surface);
+    const id = cellId(action.rowId, action.slot);
     if (!cells.has(id)) {
       return state;
     }
@@ -158,19 +158,19 @@ export function registryReducer(
   }
   if (action.type === 'set-cell') {
     cells.set(
-      cellId(action.cell.rowId, action.cell.surface),
+      cellId(action.cell.rowId, action.cell.slot),
       copyCell(action.cell)
     );
     return { ...state, cells, dirty: true };
   }
 
-  const selectedId = cellId(action.rowId, action.surface);
+  const selectedId = cellId(action.rowId, action.slot);
   const selected = cells.get(selectedId);
   if (!selected) {
     return state;
   }
   for (const [id, cell] of cells) {
-    if (cell.surface === action.surface && cell.isDefault) {
+    if (cell.slot === action.slot && cell.isDefault) {
       cells.set(id, { ...cell, isDefault: false });
     }
   }
@@ -195,16 +195,16 @@ function sameTarget(left: CellTarget, right: CellTarget): boolean {
 
 export function embeddingChanged(state: RegistryState): boolean {
   const original = [...state.originalCells.values()].filter(
-    (cell) => cell.surface === 'embedding'
+    (cell) => cell.slot === 'retrieval'
   );
   const current = [...state.cells.values()].filter(
-    (cell) => cell.surface === 'embedding'
+    (cell) => cell.slot === 'retrieval'
   );
   if (original.length !== current.length) {
     return true;
   }
   return original.some((cell) => {
-    const desired = state.cells.get(cellId(cell.rowId, cell.surface));
+    const desired = state.cells.get(cellId(cell.rowId, cell.slot));
     return (
       !desired ||
       desired.isDefault !== cell.isDefault ||
@@ -243,6 +243,7 @@ export function cloneCatalogToDraft(
 ): DraftConfig {
   return {
     byokEnabled: config.byokEnabled,
+    capabilities: [...config.capabilities],
     contextWindowTokens: config.contextWindowTokens,
     defaultThinking: config.defaultThinking,
     id,
@@ -262,6 +263,7 @@ export function cloneCatalogToDraft(
 export function emptyDraft(id: string): DraftConfig {
   return {
     byokEnabled: false,
+    capabilities: [],
     contextWindowTokens: 0,
     defaultThinking: 'instant',
     id,
@@ -290,15 +292,15 @@ export function assembleRegistryRequest(
     });
   }
 
-  for (const surface of state.surfaces) {
+  for (const slot of state.slots) {
     const cells = [...state.cells.values()].filter(
-      (cell) => cell.surface === surface
+      (cell) => cell.slot === slot
     );
     if (cells.filter((cell) => cell.isDefault).length !== 1) {
       issues.push({
         code: 'missing-default',
-        message: `${surface} needs exactly one default.`,
-        surface,
+        message: `${slot} needs exactly one default.`,
+        slot,
       });
     }
   }
@@ -312,7 +314,7 @@ export function assembleRegistryRequest(
     if (!usedDraftIds.has(draft.id)) {
       issues.push({
         code: 'draft-not-used',
-        message: `${modelRefLabel(draft)} draft is not assigned to a surface.`,
+        message: `${modelRefLabel(draft)} draft is not assigned to a slot.`,
         rowId: modelRefId(draft),
       });
     }
@@ -322,8 +324,8 @@ export function assembleRegistryRequest(
   if (changedEmbedding && !state.embeddingAcknowledged) {
     issues.push({
       code: 'embedding-acknowledgement',
-      message: 'Acknowledge the embedding re-indexing impact before saving.',
-      surface: 'embedding',
+      message: 'Acknowledge the retrieval re-indexing impact before saving.',
+      slot: 'retrieval',
     });
   }
   if (issues.length > 0) {
@@ -342,7 +344,7 @@ export function assembleRegistryRequest(
     if (!target || rowCells.some((cell) => !sameTarget(cell.target, target))) {
       issues.push({
         code: 'draft-not-used',
-        message: `${rowId} must use one configuration across all surfaces.`,
+        message: `${rowId} must use one configuration across all slots.`,
         rowId,
       });
       continue;
@@ -366,10 +368,11 @@ export function assembleRegistryRequest(
     }
     active.push({
       byokEnabled: source.byokEnabled,
+      capabilities: [...source.capabilities],
       contextWindowTokens: source.contextWindowTokens,
       defaultFor: rowCells
         .filter((cell) => cell.isDefault)
-        .map((cell) => cell.surface),
+        .map((cell) => cell.slot),
       defaultThinking: source.defaultThinking,
       modelName: source.modelName,
       modelSlug: source.modelSlug,
@@ -382,7 +385,7 @@ export function assembleRegistryRequest(
         inputMicros: source.microsPerInputToken,
         outputMicros: source.microsPerOutputToken,
       },
-      surfaces: rowCells.map((cell) => cell.surface),
+      slots: rowCells.map((cell) => cell.slot),
       thinkingLevels: [...source.thinkingLevels],
     });
   }

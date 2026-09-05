@@ -28,14 +28,14 @@ class CapacityLease:
 
 
 def try_acquire(job_type: str) -> CapacityLease | None:
-    """Acquire one shared parse or ingest slot without waiting.
+    """Acquire one shared import, parse or ingest slot without waiting.
 
     An unset lock directory preserves the per-process production behavior.
     Non-production queue consumers mount the same directory, so their locks
     apply across Compose services and release automatically when a process dies.
     """
 
-    if job_type not in {"parse", "ingest"}:
+    if job_type not in {"import", "parse", "ingest"}:
         raise ValueError(f"unsupported capacity role {job_type!r}")
     if not cfg.shared_capacity_lock_dir:
         return CapacityLease(None)

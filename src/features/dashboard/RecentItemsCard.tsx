@@ -9,8 +9,8 @@ import { getLocale, m } from '@/i18n';
 import { mergeRecentItems } from './recentItems';
 
 const MATERIAL_ICON: Record<MaterialRefType, IconName> = {
-  deck: 'flashcards',
   diagram: 'diagram',
+  flashcards: 'flashcards',
   mindmap: 'mindmap',
   note: 'write',
   quiz: 'quiz',

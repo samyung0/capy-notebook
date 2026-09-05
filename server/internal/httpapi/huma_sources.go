@@ -16,6 +16,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/evonotes/server/internal/blob"
 	"github.com/evonotes/server/internal/httpapi/apimodel"
 	"github.com/evonotes/server/internal/integrations"
 	"github.com/evonotes/server/internal/obs"
@@ -300,7 +301,8 @@ func (a *api) completeSourceUpload(ctx context.Context, in *completeSourceUpload
 		return nil, huma.Error400BadRequest("uploaded content type does not match the reservation")
 	}
 	if finalErr != nil {
-		if err := a.blob.Promote(ctx, session.ObjectPath, session.FinalPath); err != nil {
+		info, err = promoteUploadObject(ctx, a.blob, session, info)
+		if err != nil {
 			return nil, hErr(err)
 		}
 	}
@@ -432,7 +434,8 @@ func (a *api) completeFileReplacementUpload(
 		return nil, huma.Error400BadRequest("uploaded content type does not match the reservation")
 	}
 	if finalErr != nil {
-		if err := a.blob.Promote(ctx, session.ObjectPath, session.FinalPath); err != nil {
+		info, err = promoteUploadObject(ctx, a.blob, session, info)
+		if err != nil {
 			return nil, hErr(err)
 		}
 	}
@@ -452,14 +455,44 @@ func (a *api) completeFileReplacementUpload(
 	return &sourceFileOutput{Status: http.StatusOK, Body: res}, nil
 }
 
+// promoteUploadObject treats a matching stable object as success when another
+// completion request wins the incoming-object promotion race.
+func promoteUploadObject(
+	ctx context.Context,
+	objects blob.Store,
+	session store.UploadSession,
+	incoming blob.ObjectInfo,
+) (blob.ObjectInfo, error) {
+	return promoteMatchingObject(
+		ctx, objects, session.ObjectPath, session.FinalPath,
+		session.DeclaredSize, session.ContentType, incoming,
+	)
+}
+
+func promoteMatchingObject(
+	ctx context.Context,
+	objects blob.Store,
+	incomingPath, stablePath string,
+	expectedSize int64,
+	expectedContentType string,
+	incoming blob.ObjectInfo,
+) (blob.ObjectInfo, error) {
+	if err := objects.Promote(ctx, incomingPath, stablePath); err != nil {
+		stable, headErr := objects.Head(ctx, stablePath)
+		if headErr != nil || stable.Size != expectedSize ||
+			stable.ContentType == "" || stable.ContentType != expectedContentType {
+			return blob.ObjectInfo{}, err
+		}
+		return stable, nil
+	}
+	return incoming, nil
+}
+
 func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourceImportOutput, error) {
 	actor := userID(ctx)
 	wsID := in.ID
 	if err := a.assertWorkspaceEditor(ctx, wsID); err != nil {
 		return nil, hErr(err)
-	}
-	if a.cfg.ImportRelayEnqueueURL == "" || a.cfg.ImportRelaySecret == "" {
-		return nil, huma.Error503ServiceUnavailable("source import relay is not configured")
 	}
 	if len(in.Body.FileIds) == 0 {
 		return nil, huma.Error400BadRequest("provider and fileIds required")
@@ -477,18 +510,17 @@ func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourc
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
-	if err := a.s.AssertWorkspaceFileRoom(ctx, wsID, len(refs)); err != nil {
-		return nil, hErr(err)
-	}
-	if in.Body.ChapterID != nil {
-		chapterWorkspace, err := a.s.ChapterWorkspaceID(ctx, *in.Body.ChapterID)
-		if err != nil || chapterWorkspace != wsID {
-			return nil, huma.Error400BadRequest("chapter does not belong to this workspace")
-		}
-	}
 	if in.Body.Provider != integrations.ProviderGoogle &&
 		in.Body.Provider != integrations.ProviderMicrosoft {
 		return nil, huma.Error400BadRequest("unknown provider")
+	}
+	for _, ref := range refs {
+		if strings.TrimSpace(ref.ID) == "" {
+			return nil, huma.Error400BadRequest("fileIds cannot contain empty ids")
+		}
+	}
+	if in.Body.ChapterID != nil && strings.TrimSpace(*in.Body.ChapterID) == "" {
+		return nil, huma.Error400BadRequest("chapterId cannot be empty")
 	}
 	fingerprintBody, err := json.Marshal(struct {
 		CaptionImages bool
@@ -524,6 +556,18 @@ func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourc
 			return nil, hErr(err)
 		}
 		return &sourceImportOutput{Body: response}, nil
+	}
+	if a.cfg.PipelineSecret == "" {
+		return nil, huma.Error503ServiceUnavailable("source import worker is not configured")
+	}
+	if err := a.s.AssertWorkspaceFileRoom(ctx, wsID, len(refs)); err != nil {
+		return nil, hErr(err)
+	}
+	if in.Body.ChapterID != nil {
+		chapterWorkspace, err := a.s.ChapterWorkspaceID(ctx, *in.Body.ChapterID)
+		if err != nil || chapterWorkspace != wsID {
+			return nil, huma.Error400BadRequest("chapter does not belong to this workspace")
+		}
 	}
 	tok, err := integrations.ClerkAccessToken(ctx, actor, in.Body.Provider)
 	if errors.Is(err, integrations.ErrNotConnected) {
@@ -664,7 +708,10 @@ func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourc
 				FinalPath:  sourceObjectKey(blobID + ext),
 				Name:       meta.Name, Kind: kind, ContentType: contentType,
 				DeclaredSize: reservedSize, ParseMode: mode, CaptionImages: captionImages,
-				ExpiresAt: time.Now().UTC().Add(24 * time.Hour),
+				// Four import attempts of EVO_IMPORT_JOB_TIMEOUT fit inside an
+				// hour; the upload sweeper then frees a reservation whose worker
+				// died with its budget spent.
+				ExpiresAt: time.Now().UTC().Add(time.Hour),
 			},
 			Provider: in.Body.Provider, ProviderFileID: ref.ID,
 			ProviderDriveID: ref.DriveID, MaxBytes: maxBytes,
@@ -677,15 +724,10 @@ func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourc
 			return nil, hErr(err)
 		}
 	}
-	created, err := a.s.CreateSourceImports(ctx, pending)
-	if err != nil {
-		return nil, hErr(err)
-	}
-
-	jobs := make([]apimodel.SourceImportAccepted, 0, len(created))
-	for _, job := range created {
+	jobs := make([]apimodel.SourceImportAccepted, 0, len(pending))
+	for _, job := range pending {
 		jobs = append(jobs, apimodel.SourceImportAccepted{
-			JobID: job.ID, UploadID: job.UploadSessionID, Name: job.Name,
+			JobID: job.JobID, UploadID: job.Upload.ID, Name: job.Upload.Name,
 		})
 	}
 	response := apimodel.ImportSourcesAccepted{
@@ -695,8 +737,8 @@ func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourc
 	if err != nil {
 		return nil, hErr(err)
 	}
-	stored, err := a.s.CompleteSourceImportRequest(
-		ctx, actor, requestID, fingerprint, encoded,
+	stored, err := a.s.CreateSourceImportsAndCompleteRequest(
+		ctx, actor, wsID, requestID, fingerprint, pending, encoded,
 	)
 	if errors.Is(err, store.ErrImportIdempotencyConflict) {
 		return nil, huma.Error409Conflict("source import request id was reused")

@@ -1,0 +1,15 @@
+[
+  {
+    "corsRuleName": "evo-spa-prod",
+    "allowedOrigins": ["https://capynotebook.com"],
+    "allowedHeaders": ["content-type", "range"],
+    "allowedOperations": ["s3_put", "s3_get", "s3_head"],
+    "exposeHeaders": [
+      "etag",
+      "content-length",
+      "content-range",
+      "accept-ranges"
+    ],
+    "maxAgeSeconds": 3600
+  }
+]

@@ -1,3 +1,5 @@
+import { MATERIAL_DOCUMENT_DEPTH_CEILING } from './materialDocument.js';
+
 // IMPORTANT: KEEP IN SYNC WITH src/lib/const.ts and
 // server/internal/materialdoc/document.go
 export const MATERIAL_DOCUMENT_LIMITS = {
@@ -5,10 +7,6 @@ export const MATERIAL_DOCUMENT_LIMITS = {
   maxDepth: 16,
   maxNodes: 10_000,
 } as const;
-
-// Bounds our own recursion on an already-invalid document; the walk stops
-// descending but still reports a depth above the limit so it is rejected.
-const DEPTH_CEILING = 256;
 
 export interface MaterialDocumentMetrics {
   contentBytes: number;
@@ -33,12 +31,32 @@ export class MaterialDocumentLimitError extends Error {
   }
 }
 
+function stripRuntimeCommentMarks(value: unknown[]): unknown[] {
+  return value.map((node) => {
+    if (!node || typeof node !== 'object' || Array.isArray(node)) return node;
+    const normalized: Record<string, unknown> = {};
+    const record = node as Record<string, unknown>;
+    const isTextLeaf = record.text !== null && record.text !== undefined;
+    for (const [key, child] of Object.entries(record)) {
+      if (isTextLeaf && (key === 'comment' || key.startsWith('comment_'))) {
+        continue;
+      }
+      normalized[key] =
+        key === 'children' && Array.isArray(child)
+          ? stripRuntimeCommentMarks(child)
+          : child;
+    }
+    return normalized;
+  });
+}
+
 export function measureMaterialValue(
   value: unknown[]
 ): MaterialDocumentMetrics {
+  const normalized = stripRuntimeCommentMarks(value);
   const metrics: MaterialDocumentMetrics = {
     contentBytes: Buffer.byteLength(
-      JSON.stringify({ schemaVersion: 1, value }),
+      JSON.stringify({ schemaVersion: 1, value: normalized }),
       'utf8'
     ),
     maxDepth: 0,
@@ -47,13 +65,16 @@ export function measureMaterialValue(
   const visit = (node: unknown, depth: number) => {
     metrics.nodeCount += 1;
     if (depth > metrics.maxDepth) metrics.maxDepth = depth;
-    if (depth >= DEPTH_CEILING) return;
+    // Structural validation rejects children beyond this point. Walking every
+    // structurally valid level keeps shrink-only comparisons exact even when a
+    // legacy document already exceeds the product depth cap.
+    if (depth >= MATERIAL_DOCUMENT_DEPTH_CEILING) return;
     if (!node || typeof node !== 'object' || Array.isArray(node)) return;
     const children = (node as { children?: unknown }).children;
     if (!Array.isArray(children)) return;
     for (const child of children) visit(child, depth + 1);
   };
-  for (const node of value) visit(node, 0);
+  for (const node of normalized) visit(node, 0);
   return metrics;
 }
 

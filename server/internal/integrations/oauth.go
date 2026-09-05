@@ -22,6 +22,8 @@ var (
 	ErrImportFileUnavailable = errors.New("provider file is unavailable")
 	ErrImportFileTooLarge    = errors.New("provider file exceeds the source upload limit")
 	ErrUnsupportedImportFile = errors.New("provider file type is not supported")
+	errImportProviderDNS     = errors.New("provider download host lookup failed")
+	errImportProviderNetwork = errors.New("provider download connection failed")
 )
 
 type providerHTTPError struct {
@@ -35,7 +37,8 @@ func (e *providerHTTPError) Error() string {
 
 func IsRetryableImportProviderError(err error) bool {
 	var providerErr *providerHTTPError
-	return errors.As(err, &providerErr)
+	return errors.As(err, &providerErr) || errors.Is(err, errImportProviderDNS) ||
+		errors.Is(err, errImportProviderNetwork)
 }
 
 func providerMetadataStatusError(
@@ -138,13 +141,28 @@ func validateImportDownloadURL(ctx context.Context, rawURL string) error {
 		}
 	}
 	addresses, err := resolveImportHost(ctx, host)
-	if err != nil || len(addresses) == 0 {
+	if err != nil {
+		return classifyImportDNSError(ctx, err)
+	}
+	if len(addresses) == 0 {
 		return ErrImportFileUnavailable
 	}
 	if err := validateImportAddresses(addresses); err != nil {
 		return err
 	}
 	return nil
+}
+
+func classifyImportDNSError(ctx context.Context, err error) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	var dnsErr *net.DNSError
+	if errors.Is(err, context.DeadlineExceeded) ||
+		(errors.As(err, &dnsErr) && (dnsErr.IsTimeout || dnsErr.IsTemporary)) {
+		return fmt.Errorf("%w: %v", errImportProviderDNS, err)
+	}
+	return ErrImportFileUnavailable
 }
 
 func resolveImportHost(ctx context.Context, host string) ([]netip.Addr, error) {
@@ -255,7 +273,7 @@ func importDialContext(ctx context.Context, network, address string) (net.Conn, 
 	}
 	addresses, err := resolveImportHost(ctx, host)
 	if err != nil {
-		return nil, ErrImportFileUnavailable
+		return nil, classifyImportDNSError(ctx, err)
 	}
 	if err := validateImportAddresses(addresses); err != nil {
 		return nil, err
@@ -280,7 +298,30 @@ func importDialContext(ctx context.Context, network, address string) (net.Conn, 
 	if lastErr == nil {
 		return nil, ErrImportFileUnavailable
 	}
-	return nil, lastErr
+	return nil, classifyImportDialError(ctx, lastErr)
+}
+
+func classifyImportDialError(ctx context.Context, err error) error {
+	return classifyImportRequestError(ctx, err)
+}
+
+func classifyImportRequestError(ctx context.Context, err error) error {
+	if err == nil {
+		return nil
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	var providerErr *providerHTTPError
+	if errors.As(err, &providerErr) ||
+		errors.Is(err, ErrImportFileUnavailable) ||
+		errors.Is(err, ErrImportFileTooLarge) ||
+		errors.Is(err, ErrUnsupportedImportFile) ||
+		errors.Is(err, errImportProviderDNS) ||
+		errors.Is(err, errImportProviderNetwork) {
+		return err
+	}
+	return fmt.Errorf("%w: %v", errImportProviderNetwork, err)
 }
 
 type ImportFileMetadata struct {
@@ -335,11 +376,14 @@ func DownloadImportFile(
 	}
 	resp, err := importDownloadClient().Do(req)
 	if err != nil {
-		return nil, "", err
+		return nil, "", classifyImportRequestError(ctx, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+		if err != nil {
+			return nil, "", classifyImportRequestError(ctx, err)
+		}
 		return nil, "", providerMetadataStatusError(
 			provider,
 			resp.StatusCode,
@@ -349,7 +393,7 @@ func DownloadImportFile(
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
 	if err != nil {
-		return nil, "", err
+		return nil, "", classifyImportRequestError(ctx, err)
 	}
 	if int64(len(data)) > maxBytes {
 		return nil, "", ErrImportFileTooLarge
@@ -380,7 +424,7 @@ func GetGoogleFileMetadata(
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	resp, err := providerHTTP.Do(req)
 	if err != nil {
-		return ImportFileMetadata{}, err
+		return ImportFileMetadata{}, classifyImportRequestError(ctx, err)
 	}
 	defer resp.Body.Close()
 	var body struct {
@@ -392,7 +436,10 @@ func GetGoogleFileMetadata(
 		} `json:"capabilities"`
 	}
 	if resp.StatusCode >= 400 {
-		errorBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+		errorBody, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+		if err != nil {
+			return ImportFileMetadata{}, classifyImportRequestError(ctx, err)
+		}
 		return ImportFileMetadata{}, providerMetadataStatusError(
 			"google",
 			resp.StatusCode,
@@ -401,7 +448,7 @@ func GetGoogleFileMetadata(
 		)
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 256<<10)).Decode(&body); err != nil {
-		return ImportFileMetadata{}, err
+		return ImportFileMetadata{}, classifyImportRequestError(ctx, err)
 	}
 	if strings.TrimSpace(body.Name) == "" || !body.Capabilities.CanDownload {
 		return ImportFileMetadata{}, ErrImportFileUnavailable
@@ -470,11 +517,13 @@ func GetMicrosoftFileMetadata(
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	resp, err := providerHTTP.Do(req)
 	if err != nil {
-		return ImportFileMetadata{}, err
+		return ImportFileMetadata{}, classifyImportRequestError(ctx, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+		if _, err := io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10)); err != nil {
+			return ImportFileMetadata{}, classifyImportRequestError(ctx, err)
+		}
 		return ImportFileMetadata{}, providerMetadataStatusError(
 			"microsoft", resp.StatusCode, false,
 		)
@@ -488,7 +537,7 @@ func GetMicrosoftFileMetadata(
 		} `json:"file"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 256<<10)).Decode(&body); err != nil {
-		return ImportFileMetadata{}, err
+		return ImportFileMetadata{}, classifyImportRequestError(ctx, err)
 	}
 	if strings.TrimSpace(body.Name) == "" || body.File == nil ||
 		body.Size == nil || *body.Size < 0 || body.DownloadURL == "" {
@@ -510,7 +559,6 @@ func GetMicrosoftFileMetadata(
 const (
 	ProviderGoogle    = "google"
 	ProviderMicrosoft = "microsoft"
-	ProviderNotion    = "notion"
 )
 
 func DownloadGoogleFile(accessToken, fileID string) ([]byte, string, error) {

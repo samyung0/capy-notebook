@@ -1,15 +1,15 @@
 import { z } from 'zod';
-import {
-  type Surface as GeneratedSurface,
-  Surface as SurfaceValues,
-} from './api-gen/surface';
+import { type Slot as GeneratedSlot, Slot as SlotValues } from './api-gen/slot';
 
 const dateTimeSchema = z.iso.datetime({ offset: true });
 const daySchema = z.iso.date();
 const countSchema = z.number().int().nonnegative();
 const jsonObjectSchema = z.record(z.string(), z.unknown());
 
-export const surfaceSchema = z.enum(SurfaceValues);
+export const slotSchema = z.enum(SlotValues);
+// Operator-settable capabilities come from the registry snapshot so a new
+// capability in Go reaches the dashboard without a release here.
+export const capabilitySchema = z.string().min(1);
 export const thinkingLevelSchema = z.enum([
   'instant',
   'low',
@@ -154,8 +154,6 @@ export const ingestHostMetricsSchema = z.object({
         averageQueueMilliseconds: countSchema,
         capacityWaits: countSchema,
         chunksCreated: countSchema,
-        conceptsCreated: countSchema,
-        externalWaits: countSchema,
         failed: countSchema,
         figuresCached: countSchema,
         figuresCaptioned: countSchema,
@@ -186,6 +184,9 @@ export const ingestHostMetricsSchema = z.object({
       lastJobActivityAt: dateTimeSchema.nullable(),
       queue: z.object({
         expiredLeases: countSchema,
+        importDelayed: countSchema,
+        importReady: countSchema,
+        importRunning: countSchema,
         ingestDelayed: countSchema,
         ingestReady: countSchema,
         ingestRunning: countSchema,
@@ -425,6 +426,10 @@ export const userDetailSchema = z.object({
       traceId: z.string(),
     })
   ),
+  sessionRevocationAttempts: countSchema,
+  sessionRevocationDueAt: dateTimeSchema.optional(),
+  sessionRevocationError: z.string(),
+  sessionRevocationPending: z.boolean(),
   storage: z.object({
     limitBytes: countSchema,
     reservedBytes: countSchema,
@@ -486,6 +491,7 @@ export const costReportSchema = z.object({
 
 export const catalogConfigSchema = z.object({
   byokEnabled: z.boolean(),
+  capabilities: z.array(capabilitySchema),
   contextWindowTokens: countSchema,
   createdAt: dateTimeSchema,
   createdBy: z.string(),
@@ -493,7 +499,7 @@ export const catalogConfigSchema = z.object({
   embeddingDefaultEligible: z.boolean(),
   embeddingValidationError: z.string(),
   enabled: z.boolean(),
-  isDefaultFor: z.array(surfaceSchema),
+  isDefaultFor: z.array(slotSchema),
   microsPerCachedInputToken: countSchema,
   microsPerInputToken: countSchema,
   microsPerOutputToken: countSchema,
@@ -503,7 +509,7 @@ export const catalogConfigSchema = z.object({
   platformEnabled: z.boolean(),
   providerName: z.string().min(1),
   providerSlug: z.string().min(1),
-  surfaces: z.array(surfaceSchema),
+  slots: z.array(slotSchema),
   thinkingLevels: z.array(thinkingLevelSchema),
   updatedAt: dateTimeSchema,
   updatedBy: z.string(),
@@ -512,6 +518,7 @@ export const catalogConfigSchema = z.object({
 
 export const registrySchema = z.object({
   aliasesAllowed: z.boolean(),
+  capabilities: z.array(capabilitySchema),
   configs: z.array(catalogConfigSchema),
   embeddingWorkspaceCounts: z.array(
     z.object({
@@ -530,11 +537,12 @@ export const registrySchema = z.object({
     })
   ),
   revision: countSchema,
-  surfaces: z.array(surfaceSchema),
+  slots: z.array(slotSchema),
 });
 
 export const draftConfigSchema = z.object({
   byokEnabled: z.boolean(),
+  capabilities: z.array(capabilitySchema),
   contextWindowTokens: countSchema,
   defaultThinking: z.string(),
   id: z.string().min(1),
@@ -553,13 +561,13 @@ export const draftConfigSchema = z.object({
 const activeConfigSchema = draftConfigSchema
   .omit({ id: true })
   .extend({
-    defaultFor: z.array(surfaceSchema),
+    defaultFor: z.array(slotSchema),
     rates: z.object({
       cachedInputMicros: countSchema,
       inputMicros: countSchema,
       outputMicros: countSchema,
     }),
-    surfaces: z.array(surfaceSchema).min(1),
+    slots: z.array(slotSchema).min(1),
   })
   .omit({
     microsPerCachedInputToken: true,
@@ -578,12 +586,11 @@ const apiErrorSchema = z.object({
   message: z.string().optional(),
   modelSlug: z.string().optional(),
   reason: z.string().optional(),
-  surface: z.string().optional(),
+  slot: z.string().optional(),
 });
 
 export const eliteLLMProviderSchema = z.object({
   byok: z.boolean(),
-  modes: z.array(z.string()),
   name: z.string(),
   platformEnv: z.string(),
   slug: z.string(),
@@ -607,7 +614,8 @@ export type UserDetail = z.infer<typeof userDetailSchema>;
 export type CostGroup = z.infer<typeof costGroupSchema>;
 export type CostReport = z.infer<typeof costReportSchema>;
 export type CostRow = z.infer<typeof costRowSchema>;
-export type Surface = GeneratedSurface;
+export type Slot = GeneratedSlot;
+export type Capability = z.infer<typeof capabilitySchema>;
 export type CatalogConfig = z.infer<typeof catalogConfigSchema>;
 export type Registry = z.infer<typeof registrySchema>;
 export type DraftConfig = z.infer<typeof draftConfigSchema>;

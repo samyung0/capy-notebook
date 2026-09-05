@@ -1,7 +1,7 @@
 """Model clients. Every provider call goes through elitellm.
 
 Routing is owned by the model registry: a pinned provider/model/version resolves
-to an exact provider + model slug. Nothing here resolves a surface default —
+to an exact provider + model slug. Nothing here resolves a slot default —
 every entry point takes the pin its caller was priced for.
 
 Every provider call in the system passes through this module. That makes it
@@ -87,8 +87,16 @@ async def _tracked_call(
     )
     try:
         yield call_id
+    except asyncio.CancelledError:
+        # Cancellation stops this request locally but does not prove that the
+        # provider stopped before spending. Keep the exact call id open for a
+        # late receipt or the receipt-deadline sweeper.
+        raise
     except BaseException as exc:
-        await accounting.abandon_call(call_id, exc)
+        if not isinstance(exc, accounting.SettlementError) and (
+            accounting.definitive_provider_failure(exc)
+        ):
+            await accounting.abandon_call(call_id, exc)
         raise
 
 
@@ -127,16 +135,16 @@ def resolve_query_model(
     version: int | None = None,
     *,
     requested: str | None = None,
-    surface: registry.Surface = registry.Surface.CHAT,
+    slot: registry.Slot = registry.Slot.CHAT,
 ) -> ModelConfig:
     """Resolve the exact pinned chat/generate/editor/quiz model.
 
     ``requested`` is accepted for API compatibility and ignored: a client-
     supplied model string must never override the pin. An empty pin is an
-    error for these surfaces, not a cue to use the live default.
+    error for these slots, not a cue to use the live default.
     """
     del requested
-    return registry.resolve_pinned(provider_slug, model_slug, version, surface)
+    return registry.resolve_pinned(provider_slug, model_slug, version, slot)
 
 
 _QWEN3_EMBED_MARKER = "qwen3-embedding"
@@ -624,7 +632,7 @@ async def caption_image(data_url: str, prompt: str) -> str:
     condition rather than an outage, and one dropped caption is one figure
     permanently missing from the index.
     """
-    spec = registry.vision_spec()
+    spec = registry.captioning_spec()
     caption_thinking = elitellm.resolve_thinking(spec, reasoning=False)
     messages = [
         {
@@ -637,7 +645,7 @@ async def caption_image(data_url: str, prompt: str) -> str:
     ]
     for attempt in range(_CAPTION_ATTEMPTS):
         try:
-            context = measure_request_context(messages, model=spec)
+            context = measure_request_context(messages, model=spec, reasoning=False)
             async with _tracked_call(
                 kind=accounting.KIND_LLM,
                 purpose="image_caption",
@@ -661,6 +669,10 @@ async def caption_image(data_url: str, prompt: str) -> str:
                 message = elitellm.message_from_response(resp)
                 return (getattr(message, "content", "") or "").strip()
         except asyncio.CancelledError:
+            raise
+        except accounting.SettlementError:
+            # The provider already returned. Settlement has already retried the
+            # exact receipt through its deadline, so a new call can only add cost.
             raise
         except Exception:
             if attempt == _CAPTION_ATTEMPTS - 1:

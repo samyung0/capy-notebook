@@ -1,0 +1,94 @@
+[
+  {
+    "q": "Was versteht man unter Prompt Engineering?",
+    "expect": [
+      ["grosse-sprachmodelle.pdf", 34],
+      ["grosse-sprachmodelle.pdf", 35]
+    ],
+    "flag": 2
+  },
+  {
+    "q": "Was ist Fine Tuning bei Sprachmodellen?",
+    "expect": [
+      ["grosse-sprachmodelle.pdf", 35],
+      ["grosse-sprachmodelle.pdf", 34]
+    ],
+    "flag": 2
+  },
+  {
+    "q": "Welche vier Komponenten braucht man um große Sprachmodelle zu erstellen?",
+    "expect": [["grosse-sprachmodelle.pdf", 10]],
+    "flag": 2
+  },
+  {
+    "q": "Was soll der Oktopus-Test von Bender und Koller zeigen?",
+    "expect": [
+      ["grosse-sprachmodelle.pdf", 62],
+      ["grosse-sprachmodelle.pdf", 63],
+      ["grosse-sprachmodelle.pdf", 64]
+    ],
+    "flag": 2
+  },
+  {
+    "q": "Warum fehlt aktuellen Sprachmodellen das Grounding?",
+    "expect": [["grosse-sprachmodelle.pdf", 60]],
+    "flag": 2
+  },
+  {
+    "q": "Welche Modelle sind multilingual trainiert wie BLOOM?",
+    "expect": [["grosse-sprachmodelle.pdf", 48]],
+    "flag": 2
+  },
+  {
+    "q": "Was kann ChatGPT nicht und wo halluziniert es?",
+    "expect": [["grosse-sprachmodelle.pdf", 26]],
+    "flag": 2
+  },
+  {
+    "q": "Warum nutzen Transformer die Rechenleistung besser als LSTM?",
+    "expect": [["grosse-sprachmodelle.pdf", 17]],
+    "flag": 2
+  },
+  {
+    "q": "Welche deutschen Institute forschen an großen Sprachmodellen?",
+    "expect": [
+      ["grosse-sprachmodelle.pdf", 42],
+      ["grosse-sprachmodelle.pdf", 41]
+    ],
+    "flag": 2
+  },
+  {
+    "q": "Wo traf Putnam Rudolf Carnap?",
+    "expect": [["putnam-einleitung.pdf", 3]],
+    "flag": 2
+  },
+  {
+    "q": "Welchen Einfluss hatte Quine auf Putnam in Harvard?",
+    "expect": [["putnam-einleitung.pdf", 6], ["putnam-einleitung.pdf", 7]],
+    "flag": 2
+  },
+  {
+    "q": "What is Prompt Engineering?",
+    "expect": [
+      ["grosse-sprachmodelle.pdf", 34],
+      ["grosse-sprachmodelle.pdf", 35]
+    ],
+    "flag": 2
+  },
+  {
+    "q": "Werden große Sprachmodelle Anwendungen in Wirtschaft und Wissenschaft verändern?",
+    "expect": [
+      ["grosse-sprachmodelle.pdf", 7],
+      ["grosse-sprachmodelle.pdf", 3]
+    ],
+    "flag": 2
+  },
+  {
+    "q": "Wie erklärt die Distributional Hypothesis die Bedeutung von Wörtern?",
+    "expect": [
+      ["grosse-sprachmodelle.pdf", 15],
+      ["grosse-sprachmodelle.pdf", 14]
+    ],
+    "flag": 2
+  }
+]

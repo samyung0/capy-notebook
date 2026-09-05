@@ -8,7 +8,7 @@ from pipeline.registry import (
     JobPins,
     ModelConfig,
     RegistryError,
-    Surface,
+    Slot,
     credits_for_tokens,
     embedding_spec,
     registry,
@@ -26,7 +26,7 @@ def _spec(**overrides) -> ModelConfig:
         "model_name": "Flash",
         "provider_slug": "deepseek",
         "model_slug": "flash",
-        "surfaces": ("chat", "generate", "editor", "quiz", "ingest"),
+        "slots": ("chat", "generate", "editor", "quiz", "ingest"),
         "micros_per_input_token": 250,
         "micros_per_output_token": 1000,
     }
@@ -40,7 +40,7 @@ def test_credits_for_tokens_keeps_zeros():
     embed = _spec(
         provider_slug="deepinfra",
         model_slug="Qwen/Qwen3-Embedding-4B",
-        surfaces=("embedding",),
+        slots=("retrieval",),
         micros_per_input_token=0,
         micros_per_output_token=0,
     )
@@ -51,7 +51,7 @@ def test_embedding_credits_ignore_cached_rate():
     embed = _spec(
         provider_slug="deepinfra",
         model_slug="Qwen/Qwen3-Embedding-4B",
-        surfaces=("embedding",),
+        slots=("retrieval",),
         micros_per_input_token=10,
         micros_per_cached_input_token=1,
     )
@@ -93,10 +93,10 @@ def test_get_never_falls_back_to_default(monkeypatch):
 def test_chat_pin_does_not_fall_back(monkeypatch):
     monkeypatch.setattr(
         "pipeline.registry.registry.default",
-        lambda _surface: (_ for _ in ()).throw(AssertionError("default used")),
+        lambda _slot: (_ for _ in ()).throw(AssertionError("default used")),
     )
     with pytest.raises(RegistryError, match="missing pin"):
-        resolve_pinned(None, None, None, Surface.CHAT)
+        resolve_pinned(None, None, None, Slot.CHAT)
 
 
 def test_model_string_does_not_create_a_bootstrap_config():
@@ -104,24 +104,24 @@ def test_model_string_does_not_create_a_bootstrap_config():
         retrieval_models._as_spec("deepseek-v4-flash")  # type: ignore[arg-type]
 
 
-@pytest.mark.parametrize("surface", [Surface.INGEST, Surface.EMBEDDING, Surface.VISION])
-def test_no_surface_resolves_its_own_default(monkeypatch, surface):
-    """Ingest, embedding and vision used to fall back to the live default
+@pytest.mark.parametrize("slot", [Slot.INGEST, Slot.RETRIEVAL, Slot.CAPTIONING])
+def test_no_slot_resolves_its_own_default(monkeypatch, slot):
+    """Ingest, retrieval and captioning used to fall back to the live default
     when handed no pin, which is how an ingest job could run on a model nobody
     had priced and write vectors into a space nobody had chosen. Strictness here
     is what forces the choice back onto the caller that pays for it."""
     monkeypatch.setattr(
         "pipeline.registry.registry.default",
-        lambda _surface: (_ for _ in ()).throw(AssertionError("default used")),
+        lambda _slot: (_ for _ in ()).throw(AssertionError("default used")),
     )
     with pytest.raises(RegistryError, match="missing pin"):
-        resolve_pinned(None, None, None, surface)
+        resolve_pinned(None, None, None, slot)
 
 
 def test_job_pins_keep_embedding_after_default_would_move():
     pinned = _spec(
         provider_slug="deepinfra",
-        surfaces=("embedding",),
+        slots=("retrieval",),
         model_slug="old-embed-id",
     )
     set_job_pins(JobPins(embedding=pinned))
@@ -148,14 +148,23 @@ class _Conn:
 
 
 def test_claim_gating_matrix(monkeypatch):
-    state = {"owner_ok": True, "actor_ok": True, "owner": "u_owner"}
+    state = {
+        "owner_ok": True,
+        "actor_ok": True,
+        "owner": "u_owner",
+        "allow_over_quota": False,
+    }
 
     monkeypatch.setattr(db, "connect", lambda: _Conn())
+    monkeypatch.setattr(db, "ingest_accounts_active", lambda *_args: True)
     monkeypatch.setattr(db, "file_owner_user_id", lambda _cur, _fid: state["owner"])
     monkeypatch.setattr(
         db,
         "account_allows_ingest",
-        lambda _cur, uid: state["owner_ok"] if uid == "u_owner" else False,
+        lambda _cur, uid, *, allow_over_quota=False: (
+            state.update(allow_over_quota=allow_over_quota)
+            or (state["owner_ok"] if uid == "u_owner" else False)
+        ),
     )
     monkeypatch.setattr(
         db,
@@ -175,8 +184,40 @@ def test_claim_gating_matrix(monkeypatch):
     assert worker._account_allows_ingest("f_1", payload) is False
 
     state["actor_ok"] = True
-    # Actor lifecycle is not consulted; a deletion_pending actor still proceeds.
     assert worker._account_allows_ingest("f_1", payload) is True
+
+    payload["quotaRecovery"] = True
+    assert worker._account_allows_ingest("f_1", payload) is True
+    assert state["allow_over_quota"] is True
+
+
+def test_superseded_worker_closes_exact_attempt_after_job_is_terminal(monkeypatch):
+    finished: list[dict] = []
+    closed: list[str] = []
+    monkeypatch.setattr(db, "connect", lambda: _Conn())
+    monkeypatch.setattr(worker, "_lost_claim", lambda *_a, **_k: True)
+    monkeypatch.setattr(
+        db,
+        "finish_job_attempt",
+        lambda _cur, **values: finished.append(values),
+    )
+    monkeypatch.setattr(
+        db,
+        "close_credit_reservation",
+        lambda _cur, reservation_id: closed.append(reservation_id),
+    )
+
+    token = worker.telemetry.begin_job(
+        {"id": "job_superseded", "attemptId": 42, "attempts": 1}
+    )
+    try:
+        worker._finish_superseded("job_superseded", 1, "cr_superseded")
+    finally:
+        worker.telemetry.reset_job(token)
+
+    assert finished[0]["attempt_id"] == 42
+    assert finished[0]["outcome"] == "superseded"
+    assert closed == ["cr_superseded"]
 
 
 def test_plan_limit_catalog_uses_seeded_product_values():
@@ -205,7 +246,7 @@ def test_ingest_closes_the_actor_reservation_after_page_billing(monkeypatch):
     monkeypatch.setattr(db, "set_file_status", lambda *_a, **_k: None)
     monkeypatch.setattr(db, "set_file_indexed", lambda *_a, **_k: None)
     monkeypatch.setattr(db, "set_job", lambda *_a, **_k: None)
-    monkeypatch.setattr(db, "fail_audio_transcription_for_job", lambda *_a, **_k: None)
+    monkeypatch.setattr(db, "ingest_accounts_active", lambda *_a, **_k: True)
     monkeypatch.setattr(db, "add_notification", lambda *_a, **_k: None)
 
     worker.obs.start_usage()
@@ -227,16 +268,16 @@ def test_ingest_closes_the_actor_reservation_after_page_billing(monkeypatch):
         lambda: _spec(
             provider_slug="deepinfra",
             model_slug="Qwen/Qwen3-Embedding-4B",
-            surfaces=("embedding",),
+            slots=("retrieval",),
         ),
     )
     monkeypatch.setattr(
         worker.registry,
-        "vision_spec",
+        "captioning_spec",
         lambda: _spec(
-            provider_slug="gemini",
-            model_slug="gemini-flash-lite",
-            surfaces=("vision",),
+            provider_slug="zai",
+            model_slug="glm-5.3-flash",
+            slots=("captioning",),
         ),
     )
 
@@ -329,7 +370,6 @@ def test_finish_fail_closes_reservation_from_recorded_spend(monkeypatch):
         lambda _cur, file_id, path: previews.append((file_id, path)),
     )
     monkeypatch.setattr(db, "set_job", lambda *_a, **_k: None)
-    monkeypatch.setattr(db, "fail_audio_transcription_for_job", lambda *_a, **_k: None)
     monkeypatch.setattr(
         db, "close_credit_reservation", lambda _cur, rid: closed.append(rid)
     )

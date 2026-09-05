@@ -1,9 +1,14 @@
 """Normalize provider usage into inclusive cache-read counters.
 
-Discount only proven inclusive shapes: DeepSeek prompt_cache_hit_tokens and
-OpenAI cached_tokens nested under input/prompt token details. Missing or
-invalid detail is recorded and charged as ordinary input. It does not fail
-the request.
+Discount only proven inclusive shapes: DeepSeek prompt_cache_hit_tokens,
+and OpenAI and DeepInfra cached_tokens nested under input/prompt token
+details. Missing or invalid detail is recorded and charged as ordinary
+input. It does not fail the request.
+
+Routed GLM is proven under its `zai` catalog slug because the hop is a
+billing route, not a fan-out: DeepInfra serves the model on its own hardware
+and charges us directly, so the split it reports is the one the row's cached
+rate is priced against.
 """
 
 from __future__ import annotations
@@ -111,7 +116,7 @@ def extract_usage(block: Any, *, provider: str = "") -> NormalizedUsage:
         if cached and not anthropic_cached:
             out.anomaly = "unproven_cache_shape"
         return out
-    proven = slug in ("deepseek", "openai")
+    proven = slug in ("deepseek", "openai", "zai")
     if not proven:
         if cached:
             out.anomaly = "unproven_cache_shape"

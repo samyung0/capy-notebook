@@ -536,6 +536,95 @@ func TestSweepThenLateProviderCallChargesOnce(t *testing.T) {
 	if n := eventCount(t, s, userID, sessionID); n != 1 {
 		t.Fatalf("ledger rows = %d, want 1", n)
 	}
+	var sessionStatus string
+	if err := s.pool.QueryRow(ctx, `SELECT status FROM provider_sessions WHERE id=$1`,
+		sessionID).Scan(&sessionStatus); err != nil {
+		t.Fatal(err)
+	}
+	if sessionStatus != "settled" {
+		t.Fatalf("late receipt session=%q, want settled", sessionStatus)
+	}
+}
+
+func TestSweepAbandonsOnlyProviderCallsPastReceiptDeadline(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := newCreditsTestUser(t, s)
+	sessionID, err := s.BeginIngestSpend(ctx, userID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pastID := "pc_receipt_expired"
+	futureID := "pc_receipt_waiting"
+	for _, callID := range []string{pastID, futureID} {
+		if _, err := s.pool.Exec(ctx, `INSERT INTO provider_calls
+			(id, reservation_id, actor_user_id, kind)
+			VALUES ($1,$2,$3,'audio')`, callID, sessionID, userID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE provider_calls
+		SET opened_at=now()-interval '1 hour',
+		    receipt_deadline_at=now()-interval '1 second'
+		WHERE id=$1`, pastID); err != nil {
+		t.Fatal(err)
+	}
+	abandoned, err := s.SweepExpiredProviderCalls(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if abandoned != 1 {
+		t.Fatalf("abandoned calls=%d, want 1", abandoned)
+	}
+	var pastStatus, futureStatus string
+	if err := s.pool.QueryRow(ctx, `SELECT status FROM provider_calls WHERE id=$1`, pastID).
+		Scan(&pastStatus); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.pool.QueryRow(ctx, `SELECT status FROM provider_calls WHERE id=$1`, futureID).
+		Scan(&futureStatus); err != nil {
+		t.Fatal(err)
+	}
+	if pastStatus != "abandoned" || futureStatus != "open" {
+		t.Fatalf("provider call states past=%q future=%q", pastStatus, futureStatus)
+	}
+}
+
+func TestProviderReceiptCannotSettleAfterDeadlineBeforeSweep(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := newCreditsTestUser(t, s)
+	sessionID, err := s.BeginIngestSpend(ctx, userID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := ProviderCallUsage{
+		CallID: "pc_expired_direct", Kind: KindAudio, Purpose: "transcription",
+		Provider: "elevenlabs", Model: "scribe_v2", Units: 10, Unit: "seconds",
+	}
+	mustInsertProviderCall(t, s, sessionID, call)
+	if _, err := s.pool.Exec(ctx, `UPDATE provider_calls
+		SET opened_at=now()-interval '1 hour',
+			receipt_deadline_at=now()-interval '1 second'
+		WHERE id=$1`, call.CallID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SettleProviderCall(ctx, sessionID, call); !errors.Is(
+		err, ErrProviderReceiptExpired,
+	) {
+		t.Fatalf("expired settlement error=%v, want receipt expired", err)
+	}
+	var status, errorCode string
+	if err := s.pool.QueryRow(ctx, `SELECT status,COALESCE(error_code,'')
+		FROM provider_calls WHERE id=$1`, call.CallID).Scan(&status, &errorCode); err != nil {
+		t.Fatal(err)
+	}
+	if status != "abandoned" || errorCode != "receipt_timeout" {
+		t.Fatalf("expired call status=%q code=%q", status, errorCode)
+	}
+	if n := eventCount(t, s, userID, sessionID); n != 0 {
+		t.Fatalf("expired receipt ledger rows=%d, want 0", n)
+	}
 }
 
 func TestStalePeriodDoesNotBlockTheNewMonth(t *testing.T) {
@@ -563,6 +652,62 @@ func TestStalePeriodDoesNotBlockTheNewMonth(t *testing.T) {
 	}
 	if err := s.ReleaseCredits(ctx, id); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRecordUsageRollsStaleCounterBeforeIncrement(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := newCreditsTestUser(t, s)
+	oldUsage := mustPlanLimits(t, s, PlanFree).CreditMicros
+	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits
+		(user_id, period_start, used_micros)
+		VALUES ($1, date_trunc('month', now())::date - interval '1 month', $2)`,
+		userID, oldUsage); err != nil {
+		t.Fatal(err)
+	}
+
+	const currentUsage = int64(2_500_000)
+	if err := s.RecordUsage(ctx, UsageEvent{
+		ActorUserID: userID, Kind: KindLLM, Surface: SurfaceChat,
+		CreditMicros: currentUsage,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	balance := mustBalance(t, s, userID)
+	if balance.UsedMicros != currentUsage {
+		t.Fatalf("used=%d, want only current-month %d", balance.UsedMicros, currentUsage)
+	}
+}
+
+func TestRecordUsageIdempotencyKeyIsChargedOnce(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := newCreditsTestUser(t, s)
+	event := UsageEvent{
+		ActorUserID:    userID,
+		Kind:           KindLLM,
+		Surface:        SurfaceIngest,
+		CreditMicros:   2_500_000,
+		IdempotencyKey: uid("usage"),
+	}
+	if err := s.RecordUsage(ctx, event); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordUsage(ctx, event); err != nil {
+		t.Fatal(err)
+	}
+	balance := mustBalance(t, s, userID)
+	if balance.UsedMicros != event.CreditMicros {
+		t.Fatalf("used=%d, want one charge of %d", balance.UsedMicros, event.CreditMicros)
+	}
+	var events int
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM usage_events
+		WHERE idempotency_key=$1`, event.IdempotencyKey).Scan(&events); err != nil {
+		t.Fatal(err)
+	}
+	if events != 1 {
+		t.Fatalf("usage rows=%d, want 1", events)
 	}
 }
 
@@ -822,6 +967,16 @@ func TestCreateSourceWithJobTakesIngestLease(t *testing.T) {
 	}
 	if processingRoute != "raw_text" {
 		t.Fatalf("processing route = %q, want raw_text", processingRoute)
+	}
+	var fileETag, payloadETag string
+	if err := s.pool.QueryRow(ctx, `SELECT f.source_etag, j.payload->>'sourceETag'
+		FROM files f JOIN jobs j ON j.payload->>'fileId'=f.id WHERE f.id=$1`, f.ID).
+		Scan(&fileETag, &payloadETag); err != nil {
+		t.Fatal(err)
+	}
+	if fileETag != "" || payloadETag != "" {
+		t.Fatalf("legacy multipart ETag fence = file %q payload %q, want empty strings",
+			fileETag, payloadETag)
 	}
 
 	if _, err := s.CreateSourceReady(ctx, ws.ID, owner, "clip.mp3", "audio",

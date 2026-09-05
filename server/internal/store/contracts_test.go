@@ -108,7 +108,7 @@ func TestCommentRelativeAnchorBounds(t *testing.T) {
 }
 
 func TestMaterialJSONEmbedsPlateEnvelope(t *testing.T) {
-	content, err := materialdoc.FlashcardsDocument("Deck", []materialdoc.Card{
+	content, err := materialdoc.FlashcardsDocument([]materialdoc.Card{
 		{ID: "c_1", Front: "front", Back: "back"},
 	})
 	if err != nil {
@@ -132,13 +132,13 @@ func TestMaterialJSONEmbedsPlateEnvelope(t *testing.T) {
 }
 
 func TestRewriteCardIDsUsesStableMapAcrossRevisions(t *testing.T) {
-	first, err := materialdoc.FlashcardsDocument("Deck", []materialdoc.Card{
+	first, err := materialdoc.FlashcardsDocument([]materialdoc.Card{
 		{ID: "c_old", Front: "one", Back: "answer"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := materialdoc.FlashcardsDocument("Deck", []materialdoc.Card{
+	second, err := materialdoc.FlashcardsDocument([]materialdoc.Card{
 		{ID: "c_old", Front: "two", Back: "answer"},
 	})
 	if err != nil {

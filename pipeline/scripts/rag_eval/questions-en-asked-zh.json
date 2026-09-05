@@ -1,0 +1,94 @@
+[
+  {
+    "q": "正态分布中有百分之多少的数值落在平均值的一个标准差范围内？",
+    "expect": [["biology-ib-chapter-1.pdf", 5], ["biology-ib-chapter-1.pdf", 6]]
+  },
+  {
+    "q": "t检验的自由度应该怎么计算？",
+    "expect": [
+      ["biology-ib-chapter-1.pdf", 17],
+      ["biology-ib-chapter-1.pdf", 16],
+      ["biology-ib-chapter-1.pdf", 13],
+      ["biology-ib-chapter-1.pdf", 14]
+    ]
+  },
+  {
+    "q": "图表上的误差棒表示什么？",
+    "expect": [["biology-ib-chapter-1.pdf", 10]]
+  },
+  {
+    "q": "两个变量之间存在相关性能否证明其中一个导致另一个？",
+    "expect": [
+      ["biology-ib-chapter-1.pdf", 21],
+      ["biology-ib-chapter-1.pdf", 22]
+    ]
+  },
+  {
+    "q": "百分之五的显著性水平是什么意思？",
+    "expect": [
+      ["biology-ib-chapter-1.pdf", 12],
+      ["biology-ib-chapter-1.pdf", 14],
+      ["biology-ib-chapter-1.pdf", 13]
+    ]
+  },
+  {
+    "q": "在大豆施肥实验中，生长的差异显著吗？",
+    "expect": [
+      ["biology-ib-chapter-1.pdf", 16],
+      ["biology-ib-chapter-1.pdf", 17]
+    ]
+  },
+  {
+    "q": "流感疫苗接种与流感死亡人数的图表",
+    "expect": [
+      ["biology-ib-chapter-1.pdf", 23],
+      ["biology-ib-chapter-1.pdf", 22]
+    ]
+  },
+  { "q": "蜣螂 掩埋型和滚球型", "expect": [["biology-ib-chapter-1.pdf", 26]] },
+  {
+    "q": "纳姆森河里鲑鱼产卵数量的平均值",
+    "expect": [
+      ["biology-ib-chapter-1.pdf", 26],
+      ["biology-ib-chapter-1.pdf", 25]
+    ]
+  },
+  {
+    "q": "什么是趋同进化？请举一个例子。",
+    "expect": [
+      ["biology-ib-convergent-targets.pdf", 0],
+      ["biology-ib-convergent-targets.pdf", 2]
+    ]
+  },
+  {
+    "q": "人类与其他生物的细胞色素c之间有多少个氨基酸差异？",
+    "expect": [["biology-ib-convergent-targets.pdf", 4]]
+  },
+  {
+    "q": "渐变论与间断平衡论的比较",
+    "expect": [
+      ["biology-ib-convergent-targets.pdf", 3],
+      ["biology-ib-convergent-targets.pdf", 4]
+    ]
+  },
+  {
+    "q": "水为什么是极性分子？",
+    "expect": [["biology-ib-sample-16-pages.pdf", 15]]
+  },
+  {
+    "q": "是什么键维持着蛋白质的三级结构？",
+    "expect": [["biology-ib-sample-16-pages.pdf", 27]]
+  },
+  {
+    "q": "哪一种古人类最早开始使用火？",
+    "expect": [["biology-ib-sample-16-pages.pdf", 39]]
+  },
+  {
+    "q": "动物细胞进行无氧呼吸会产生什么？",
+    "expect": [["biology-ib-sample-16-pages.pdf", 17]]
+  },
+  {
+    "q": "市议会的港口投票发生了什么事？",
+    "expect": [["newspaper_scan.pdf", 5], ["newspaper_scan.pdf", 4]]
+  }
+]

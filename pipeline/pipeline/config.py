@@ -70,8 +70,8 @@ class Config:
     )
     db_sync_pool_max_size: int = int(_env("EVO_DB_SYNC_POOL_MAX_SIZE", "4"))
     db_async_pool_max_size: int = int(_env("EVO_DB_ASYNC_POOL_MAX_SIZE", "8"))
-    # Durable caption artifacts are swept from B2 when unused. Parse bundles
-    # live only in the VM's shared spool and have a much shorter local TTL.
+    # Durable derived artifacts and parse-bundle reuse copies are swept from B2
+    # when unused. Required local parse handoffs have a shorter spool TTL.
     caption_cache_ttl_days: int = int(_env("EVO_CAPTION_CACHE_TTL_DAYS", "90"))
     parse_zip_ttl_hours: int = int(_env("EVO_PARSE_ZIP_TTL_HOURS", "6"))
     parse_source_ttl_hours: int = int(_env("EVO_PARSE_SOURCE_TTL_HOURS", "2"))
@@ -82,6 +82,24 @@ class Config:
     )
     ingest_provider_timeout_s: float = float(
         _env("EVO_INGEST_PROVIDER_TIMEOUT_S", "120")
+    )
+
+    # ---- provider imports (Drive / OneDrive) -----------------------------
+    # The import worker streams one provider file into B2 per claim and needs
+    # GATEWAY_URL + PIPELINE_SECRET for the download grant and completion.
+    # Hosts are suffix-matched against the download URL and every redirect.
+    # Providers move their download tiers without notice (OneDrive personal
+    # answers on microsoftpersonalcontent.com today), so extend this list in
+    # the environment rather than in code.
+    import_job_timeout: int = int(_env("EVO_IMPORT_JOB_TIMEOUT", "600"))
+    import_download_hosts: tuple[str, ...] = tuple(
+        host.strip().lower()
+        for host in _env(
+            "EVO_IMPORT_DOWNLOAD_HOSTS",
+            "googleapis.com,googleusercontent.com,drive.usercontent.google.com,"
+            "1drv.com,sharepoint.com,microsoftpersonalcontent.com",
+        ).split(",")
+        if host.strip()
     )
 
     # ---- persistent parse service ----------------------------------------
@@ -139,12 +157,15 @@ class Config:
     )
 
     # ---- chunking ---------------------------------------------------------
-    # Target size in characters, not tokens: the boundary decisions here are
-    # structural (headings, blocks) and a tokenizer would only add a dependency
-    # and a per-model failure mode for a bound that is already approximate.
-    chunk_chars: int = int(_env("EVO_CHUNK_CHARS", "1600"))
-    chunk_overlap_chars: int = int(_env("EVO_CHUNK_OVERLAP_CHARS", "200"))
-    chunk_min_chars: int = int(_env("EVO_CHUNK_MIN_CHARS", "160"))
+    # Target size in estimated tokens (chunking.estimate_tokens: ~4 Latin
+    # characters or 1 CJK character per token), not a real tokenizer: the
+    # boundary decisions are structural (headings, blocks) and the bound is
+    # approximate anyway. Counting tokens rather than characters is what keeps
+    # a Chinese chunk the same size as an English one; by characters a CJK
+    # chunk carried ~4x the tokens and five hits filled the tool-output cap.
+    chunk_tokens: int = int(_env("EVO_CHUNK_TOKENS", "400"))
+    chunk_overlap_tokens: int = int(_env("EVO_CHUNK_OVERLAP_TOKENS", "50"))
+    chunk_min_tokens: int = int(_env("EVO_CHUNK_MIN_TOKENS", "40"))
 
     # Width the seeded qwen-embed row emits. Fixtures use this for synthetic
     # vectors. A new model is a new rag_chunk_vectors_* table, not an env edit.
@@ -153,11 +174,13 @@ class Config:
 
     # ---- retrieval --------------------------------------------------------
     search_candidates: int = int(_env("EVO_SEARCH_CANDIDATES", "40"))
-    search_top_k: int = int(_env("EVO_SEARCH_TOP_K", "8"))
-    # Cap on chunks one file may contribute to a result set. A textbook whose
-    # every page mentions the query term would otherwise crowd out the four
-    # other sources that answer it.
-    search_per_file_cap: int = int(_env("EVO_SEARCH_PER_FILE_CAP", "3"))
+    search_top_k: int = int(_env("EVO_SEARCH_TOP_K", "5"))
+    # Cap on chunks one file may contribute to a result set, so a textbook
+    # whose every page mentions the query term cannot fill every slot. Kept one
+    # below top_k: at 3 of 5 the lab corpus lost correct passages from the one
+    # file that held the answer to fill slots with other files' noise
+    # (hits@5 24 -> 26 of 28 going from 3 to 4; 5 was no better than 4).
+    search_per_file_cap: int = int(_env("EVO_SEARCH_PER_FILE_CAP", "4"))
     # Tool-calling rounds per chat turn. The loop is capped rather than
     # open-ended: the cost of a wrong plan is bounded. Each round re-sends the
     # whole transcript, so this is the main lever on chat spend.
@@ -186,11 +209,11 @@ class Config:
     # upload bytes.
     image_max_pixels: int = int(_env("EVO_IMAGE_MAX_PIXELS", "100000000"))
 
-    # Uploaded audio uses asynchronous ElevenLabs Scribe v2. Starter admits 12
-    # weighted units; an audio job costs min(4, ceil(duration / 480 seconds)).
+    # Uploaded audio awaits ElevenLabs Scribe v2 in the ingest attempt. Starter
+    # admits 12 weighted units; a call costs min(4, ceil(duration / 480 seconds)).
     elevenlabs_api_key: str = _env("ELEVENLABS_API_KEY", "")
     elevenlabs_base_url: str = _env("ELEVENLABS_BASE_URL", "https://api.elevenlabs.io")
-    elevenlabs_webhook_id: str = _env("ELEVENLABS_WEBHOOK_ID", "")
+    elevenlabs_sync_timeout_s: int = int(_env("EVO_ELEVENLABS_SYNC_TIMEOUT_S", "43200"))
     elevenlabs_transcript_version: str = _env(
         "EVO_ELEVENLABS_TRANSCRIPT_VERSION", "scribe-v2-1"
     )
@@ -232,6 +255,7 @@ for key, value in (
     ("EVO_INTERACTIVE_PROVIDER_TIMEOUT_S", cfg.interactive_provider_timeout_s),
     ("EVO_INGEST_PROVIDER_TIMEOUT_S", cfg.ingest_provider_timeout_s),
     ("EVO_ELEVENLABS_CONCURRENCY_UNITS", cfg.elevenlabs_concurrency_units),
+    ("EVO_ELEVENLABS_SYNC_TIMEOUT_S", cfg.elevenlabs_sync_timeout_s),
     ("EVO_AUDIO_MAX_DURATION_SECONDS", cfg.audio_max_duration_seconds),
 ):
     if value <= 0:
@@ -239,6 +263,9 @@ for key, value in (
 
 if cfg.parse_zip_ttl_hours <= 0 or cfg.parse_source_ttl_hours <= 0:
     raise ValueError("local parse spool TTLs must be positive")
+
+if cfg.caption_cache_ttl_days <= 0:
+    raise ValueError("EVO_CAPTION_CACHE_TTL_DAYS must be positive")
 
 if not cfg.parse_shared_dir.strip():
     raise ValueError("EVO_PARSE_SHARED_DIR must not be empty")
@@ -257,6 +284,14 @@ if not (
 
 if cfg.ingest_timeout <= 0:
     raise ValueError("EVO_INGEST_TIMEOUT must be positive")
+
+# The gateway fences each import attempt with a twelve-minute lease; a longer
+# transfer would finish only to lose its completion.
+if not 0 < cfg.import_job_timeout < 720:
+    raise ValueError("EVO_IMPORT_JOB_TIMEOUT must be between 1 and 719 seconds")
+
+if not cfg.import_download_hosts:
+    raise ValueError("EVO_IMPORT_DOWNLOAD_HOSTS must name at least one host")
 
 if not 1 <= cfg.parse_coordinator_concurrency <= 4:
     raise ValueError("EVO_PARSE_COORDINATOR_CONCURRENCY must be between 1 and 4")

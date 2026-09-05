@@ -78,18 +78,61 @@ type StorageUsage struct {
 	PlanTier      PlanTier `json:"planTier"`
 }
 
+func (s *Store) effectivePlanTierForUser(
+	ctx context.Context,
+	q rowQueryer,
+	userID string,
+) (PlanTier, error) {
+	tier, _, err := s.effectiveSubscriptionStateForUser(ctx, q, userID)
+	return tier, err
+}
+
+func (s *Store) effectiveSubscriptionStateForUser(
+	ctx context.Context,
+	q rowQueryer,
+	userID string,
+) (PlanTier, SubscriptionStatus, error) {
+	var tier PlanTier
+	var status SubscriptionStatus
+	err := q.QueryRow(ctx, `SELECT CASE
+		WHEN NOT EXISTS(SELECT 1 FROM user_subscriptions any_sub
+			WHERE any_sub.user_id=u.id) THEN u.plan_tier
+		ELSE COALESCE((SELECT live.plan_tier FROM user_subscriptions live
+			WHERE live.user_id=u.id AND live.status IN `+entitlingStatuses+`
+				AND (live.current_period_end IS NULL OR live.current_period_end > now())
+			ORDER BY (live.plan_tier='pro') DESC,
+				live.current_period_end DESC NULLS FIRST LIMIT 1), 'free')
+		END,
+		CASE
+		WHEN NOT EXISTS(SELECT 1 FROM user_subscriptions any_sub
+			WHERE any_sub.user_id=u.id) THEN u.subscription_status
+		ELSE COALESCE((SELECT live.status FROM user_subscriptions live
+			WHERE live.user_id=u.id AND live.status IN `+entitlingStatuses+`
+				AND (live.current_period_end IS NULL OR live.current_period_end > now())
+			ORDER BY (live.plan_tier='pro') DESC,
+				live.current_period_end DESC NULLS FIRST LIMIT 1), 'canceled')
+		END
+		FROM users u
+		WHERE u.id=$1`, userID).Scan(&tier, &status)
+	if isNoRows(err) {
+		return "", "", ErrNotFound
+	}
+	return tier, status, err
+}
+
 // WorkspaceOwnerPlan is the plan of the account that pays for the workspace.
 // Per-file upload caps follow this, not the editor who is uploading.
 func (s *Store) WorkspaceOwnerPlan(ctx context.Context, workspaceID string) (PlanTier, error) {
-	var tier PlanTier
+	var ownerID string
 	err := s.pool.QueryRow(ctx, `
-		SELECT u.plan_tier FROM workspaces w
-		JOIN users u ON u.id = w.user_id
-		WHERE w.id=$1`, workspaceID).Scan(&tier)
+		SELECT w.user_id FROM workspaces w WHERE w.id=$1`, workspaceID).Scan(&ownerID)
 	if isNoRows(err) {
 		return "", ErrNotFound
 	}
-	return tier, err
+	if err != nil {
+		return "", err
+	}
+	return s.effectivePlanTierForUser(ctx, s.pool, ownerID)
 }
 
 func storageJSONSizeTx(ctx context.Context, tx pgx.Tx, content string) (int64, error) {
@@ -104,11 +147,70 @@ func storageJSONSizeTx(ctx context.Context, tx pgx.Tx, content string) (int64, e
 
 func (s *Store) storageOwnerTx(ctx context.Context, tx pgx.Tx, workspaceID string) (string, error) {
 	var ownerID string
-	err := tx.QueryRow(ctx, `SELECT user_id FROM workspaces WHERE id=$1`, workspaceID).Scan(&ownerID)
+	// Workspace-scoped writes, ownership transfer and deletion all take this
+	// row first. Besides making the storage owner immutable for the transaction,
+	// the exclusive lock lets file-count gates reuse the row without a lock
+	// upgrade that can deadlock against transfer.
+	err := tx.QueryRow(ctx, `SELECT user_id FROM workspaces WHERE id=$1 FOR UPDATE`, workspaceID).Scan(&ownerID)
 	if isNoRows(err) {
 		return "", ErrNotFound
 	}
 	return ownerID, err
+}
+
+// lockWorkspaceMutationTx is the common final-admission boundary for an
+// authenticated workspace mutation. It makes ownership immutable, then locks
+// the actor and storage owner in stable ID order so suspension/deletion cannot
+// commit while the mutation is still in flight.
+func (s *Store) lockWorkspaceMutationTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	workspaceID, actorID string,
+) (string, error) {
+	ownerID, err := s.storageOwnerTx(ctx, tx, workspaceID)
+	if err != nil {
+		return "", err
+	}
+	if actorID == "" {
+		actorID = ownerID
+	}
+	if err := s.lockAccountSessionsTx(ctx, tx, ownerID, actorID); err != nil {
+		return "", err
+	}
+	return ownerID, nil
+}
+
+// lockWorkspaceEditorMutationTx adds the structural permission check required
+// by workspace content mutations. The workspace row is already locked before
+// the membership read, so a concurrent demotion/removal either happens before
+// this check and is observed, or waits until this transaction commits.
+func (s *Store) lockWorkspaceEditorMutationTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	workspaceID, actorID string,
+) (string, error) {
+	if actorID == "" {
+		return "", ErrNotFound
+	}
+	ownerID, err := s.lockWorkspaceMutationTx(ctx, tx, workspaceID, actorID)
+	if err != nil {
+		return "", err
+	}
+	if actorID == ownerID {
+		return ownerID, nil
+	}
+	var role WorkspaceRole
+	if err := tx.QueryRow(ctx, `SELECT role FROM workspace_members
+		WHERE workspace_id=$1 AND user_id=$2`, workspaceID, actorID).Scan(&role); err != nil {
+		if isNoRows(err) {
+			return "", ErrNotFound
+		}
+		return "", err
+	}
+	if !RoleCanEdit(role) {
+		return "", ErrForbidden
+	}
+	return ownerID, nil
 }
 
 func (s *Store) ensureStorageRowTx(ctx context.Context, tx pgx.Tx, userID string) error {
@@ -144,10 +246,8 @@ func (s *Store) lockedStorageUsageTx(
 	if err = s.ensureStorageRowTx(ctx, tx, userID); err != nil {
 		return
 	}
-	if err = tx.QueryRow(ctx, `SELECT plan_tier FROM users WHERE id=$1`, userID).Scan(&tier); err != nil {
-		if isNoRows(err) {
-			err = ErrNotFound
-		}
+	tier, err = s.effectivePlanTierForUser(ctx, tx, userID)
+	if err != nil {
 		return
 	}
 	var baseUsed, reserved, pending int64
@@ -187,16 +287,18 @@ func (s *Store) unlockedStorageUsage(
 	q rowQueryer,
 	userID string,
 ) (usage StorageUsage, err error) {
-	var tier PlanTier
+	tier, err := s.effectivePlanTierForUser(ctx, q, userID)
+	if err != nil {
+		return usage, err
+	}
 	var baseUsed, reserved, pending int64
-	err = q.QueryRow(ctx, `SELECT u.plan_tier,
-			COALESCE(st.used_bytes, 0),
+	err = q.QueryRow(ctx, `SELECT COALESCE(st.used_bytes, 0),
 			COALESCE(st.reserved_bytes, 0),
 			COALESCE((SELECT sum(delta_bytes) FROM user_storage_deltas d
 				WHERE d.user_id = u.id), 0)
 		FROM users u
 		LEFT JOIN user_storage st ON st.user_id = u.id
-		WHERE u.id=$1`, userID).Scan(&tier, &baseUsed, &reserved, &pending)
+		WHERE u.id=$1`, userID).Scan(&baseUsed, &reserved, &pending)
 	if isNoRows(err) {
 		return usage, ErrNotFound
 	}
@@ -223,9 +325,12 @@ func (s *Store) gateStorageTx(ctx context.Context, tx pgx.Tx, userID string, req
 	if requested < 0 {
 		return fmt.Errorf("negative storage request: %d", requested)
 	}
-	// Lifecycle first: an over-quota or locked account must not create even
-	// when the byte counter would still fit. The counter lock below also
-	// serializes this check against concurrent creates.
+	// Lock the account before lifecycle and quota reads. Account deletion and
+	// subscription projection take the same row lock, so neither transition can
+	// commit between admission and the resource write.
+	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
+		return err
+	}
 	status, err := s.accountAccess(ctx, tx, userID)
 	if err != nil {
 		return err
@@ -265,14 +370,16 @@ func (s *Store) lockWorkspaceOwnerPlanTx(
 	tx pgx.Tx,
 	workspaceID string,
 ) (PlanTier, error) {
-	var tier PlanTier
-	err := tx.QueryRow(ctx, `SELECT u.plan_tier
-		FROM workspaces w JOIN users u ON u.id=w.user_id
-		WHERE w.id=$1 FOR UPDATE OF w`, workspaceID).Scan(&tier)
+	var ownerID string
+	err := tx.QueryRow(ctx, `SELECT w.user_id
+		FROM workspaces w WHERE w.id=$1 FOR UPDATE OF w`, workspaceID).Scan(&ownerID)
 	if isNoRows(err) {
 		return "", ErrNotFound
 	}
-	return tier, err
+	if err != nil {
+		return "", err
+	}
+	return s.effectivePlanTierForUser(ctx, tx, ownerID)
 }
 
 func (s *Store) workspaceFileUsageTx(ctx context.Context, tx pgx.Tx, workspaceID string) (files, reserved int, err error) {

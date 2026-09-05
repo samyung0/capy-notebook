@@ -2,7 +2,7 @@
 #
 # Local and UAT keep separate databases, Redis instances, B2 buckets, and
 # provider credentials. Their queue consumers run in this one Compose project
-# and use locks on the shared spool to allow one active parse job and one active
+# and use locks on the shared spool to allow one active import, parse, and
 # ingest job across both environments. Production uses a separate project and
 # never mounts the non-production spool.
 
@@ -59,6 +59,7 @@ x-worker-env: &worker-env
   EVO_IMAGE_MAX_PIXELS: ${EVO_IMAGE_MAX_PIXELS:-100000000}
   EVO_ELEVENLABS_TRANSCRIPT_VERSION: ${EVO_ELEVENLABS_TRANSCRIPT_VERSION:-scribe-v2-1}
   EVO_ELEVENLABS_CONCURRENCY_UNITS: ${EVO_ELEVENLABS_CONCURRENCY_UNITS:-2}
+  EVO_ELEVENLABS_SYNC_TIMEOUT_S: ${EVO_ELEVENLABS_SYNC_TIMEOUT_S:-43200}
   EVO_AUDIO_MAX_DURATION_SECONDS: ${EVO_AUDIO_MAX_DURATION_SECONDS:-36000}
   EVO_TABULAR_TEXT_VERSION: ${EVO_TABULAR_TEXT_VERSION:-v1}
   EVO_CAPTION_CACHE_TTL_DAYS: ${EVO_CAPTION_CACHE_TTL_DAYS:-90}
@@ -216,6 +217,40 @@ services:
       APP_ENV: production
       EVO_INGEST_ENVIRONMENT: uat
     command: ["python", "-m", "pipeline.ingest.worker"]
+    depends_on:
+      parse-spool-init:
+        condition: service_completed_successfully
+
+  # Drive/OneDrive imports. GATEWAY_URL and PIPELINE_SECRET come from each
+  # environment's queue env file.
+  import-worker-local:
+    <<: [*pipeline-service, *coordinator-resources]
+    profiles: [local]
+    env_file:
+      - ${EVO_INGEST_LOCAL_ENV_FILE:-/opt/evo-ingest/local.queue.env}
+    environment:
+      <<: *worker-env
+      APP_ENV: development
+      EVO_INGEST_ENVIRONMENT: local
+      EVO_DB_SYNC_POOL_MAX_SIZE: "2"
+      EVO_DB_ASYNC_POOL_MAX_SIZE: "2"
+    command: ["python", "-m", "pipeline.ingest.import_worker"]
+    depends_on:
+      parse-spool-init:
+        condition: service_completed_successfully
+
+  import-worker-uat:
+    <<: [*pipeline-service, *coordinator-resources]
+    profiles: [uat]
+    env_file:
+      - ${EVO_INGEST_UAT_ENV_FILE:-/opt/evo-ingest/uat.queue.env}
+    environment:
+      <<: *worker-env
+      APP_ENV: production
+      EVO_INGEST_ENVIRONMENT: uat
+      EVO_DB_SYNC_POOL_MAX_SIZE: "2"
+      EVO_DB_ASYNC_POOL_MAX_SIZE: "2"
+    command: ["python", "-m", "pipeline.ingest.import_worker"]
     depends_on:
       parse-spool-init:
         condition: service_completed_successfully

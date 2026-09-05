@@ -23,6 +23,7 @@ def test_unknown_errors_are_retryable():
 
 
 def test_backoff_grows_with_attempts():
+    assert policy_for("import").max_attempts == 4
     policy = policy_for("ingest")
     assert policy.max_attempts == 2
     assert backoff_s(policy, 1) == policy.backoff_base_s

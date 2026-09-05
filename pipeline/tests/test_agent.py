@@ -26,7 +26,7 @@ def _model() -> ModelConfig:
         thinking_levels=("instant", "low", "mid", "high", "max"),
         default_thinking="instant",
         context_window_tokens=100_000,
-        surfaces=("chat",),
+        slots=("chat",),
     )
 
 
@@ -98,18 +98,6 @@ def _script_stream(responses: list[AssembledResponse]):
     return _stream, seen
 
 
-def test_priming_message_with_no_hits_points_at_list_sources():
-    assert "list_sources" in agent._priming_message([])
-
-
-def test_priming_message_numbers_passages():
-    message = agent._priming_message([(1, _passage())])
-
-    assert message.startswith("Passages retrieved for this question:")
-    assert "[1]" in message
-    assert "Chlorophyll absorbs" in message
-
-
 async def test_search_embedding_count_is_telemetry_not_a_cap(monkeypatch):
     async def _search(**_kwargs):
         return [_passage()]
@@ -125,6 +113,90 @@ async def test_search_embedding_count_is_telemetry_not_a_cap(monkeypatch):
 
     assert not result.refused
     assert budget.embedding_calls == 9
+    assert result.text() == ""
+
+
+async def test_a_repeat_search_is_told_it_found_nothing_new(monkeypatch):
+    """A reworded search that mostly re-finds passages the model already holds
+    gets a stop signal in the result; a search that finds new ground does not."""
+
+    async def _search(**_kwargs):
+        return [
+            _passage(chunk_id="c1"),
+            _passage(chunk_id="c2"),
+            _passage(chunk_id="c3"),
+        ]
+
+    monkeypatch.setattr(tools, "search", _search)
+    ctx = ToolContext(workspace_id="ws_1", budget=agent.TurnBudget())
+    ctx._scope_outline = {
+        "chapters": [],
+        "files": [{"id": "f_1", "name": "bio.pdf", "chapter_id": None, "chunks": 1}],
+    }
+
+    first = await tools._search_workspace({"query": "Hardy-Weinberg"}, ctx)
+    assert first.text() == ""
+    tools.assign_citations(ctx, first.passages)
+
+    second = await tools._search_workspace(
+        {"query": "allele frequency equilibrium"}, ctx
+    )
+    assert "3 of these 3 passages were already returned" in second.text()
+    assert "rather than searching again" in second.text()
+
+    assert [e["search_index"] for e in ctx.search_events] == [1, 2]
+    assert [e["prior_overlap"] for e in ctx.search_events] == [0, 3]
+    assert ctx.search_events[1]["chunk_ids"] == ["c1", "c2", "c3"]
+    assert ctx.search_events[1]["hits"] == 3
+
+
+async def test_turn_end_marks_which_hits_the_answer_cited(monkeypatch):
+    """Citation numbers are answer-local; the telemetry row has to translate
+    them back to the hit positions of the search that produced them."""
+    written: list[list[dict]] = []
+
+    async def _record(events):
+        written.append(events)
+
+    monkeypatch.setattr(agent.store, "record_search_events", _record)
+    ctx = ToolContext(workspace_id="ws_1", user_id="u_1", assistant_message_id="m_1")
+    hits = [_passage(chunk_id="c1"), _passage(chunk_id="c2"), _passage(chunk_id="c3")]
+    tools.assign_citations(ctx, hits)
+    ctx.search_events.append(
+        tools._search_event(
+            index=1,
+            stats=tools.SearchStats(hits_lang="en", query_terms=2),
+            scope_files=1,
+            passages=hits,
+            overlap=0,
+        )
+    )
+
+    await agent._record_searches(ctx, "Red light is absorbed [1] and used [3]. [9]")
+
+    (events,) = written
+    (event,) = events
+    assert event["cited"] == [True, False, True]
+    assert (event["workspace_id"], event["actor_user_id"], event["message_id"]) == (
+        "ws_1",
+        "u_1",
+        "m_1",
+    )
+    assert event["hits_lang"] == "en"
+
+
+async def test_telemetry_failure_does_not_fail_the_turn(monkeypatch):
+    async def _boom(_events):
+        raise RuntimeError("db away")
+
+    monkeypatch.setattr(agent.store, "record_search_events", _boom)
+    ctx = ToolContext(workspace_id="ws_1")
+    ctx.search_events.append(
+        tools._search_event(
+            index=1, stats=tools.SearchStats(), scope_files=0, passages=[], overlap=0
+        )
+    )
+    await agent._record_searches(ctx, "")
 
 
 async def test_search_rejects_one_invalid_file_without_running_search(monkeypatch):
@@ -227,9 +299,6 @@ async def test_generate_material_rejects_scope_without_indexed_content(monkeypat
 async def test_block_deltas_emit_while_provider_stream_is_open(monkeypatch):
     released = asyncio.Event()
 
-    async def _search(**_k):
-        return [_passage()]
-
     async def _stream(
         messages, *, model, tools=None, on_event=None, call_purpose="agent"
     ):
@@ -240,7 +309,6 @@ async def test_block_deltas_emit_while_provider_stream_is_open(monkeypatch):
         await released.wait()
         return _assembled("Hello")
 
-    monkeypatch.setattr(agent, "search", _search)
     monkeypatch.setattr(agent.models, "stream_agent_response", _stream)
 
     events: list[dict] = []
@@ -260,12 +328,8 @@ async def test_block_deltas_emit_while_provider_stream_is_open(monkeypatch):
     assert [e["text"] for e in events if e["type"] == "block_delta"] == ["Hel", "lo"]
 
 
-async def test_run_agent_primes_then_emits_answer_block(monkeypatch):
-    async def _search(**_k):
-        return [_passage()]
-
+async def test_run_agent_answers_without_a_prime_search(monkeypatch):
     stream, seen = _script_stream([_assembled("Chlorophyll absorbs red [1].")])
-    monkeypatch.setattr(agent, "search", _search)
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     monkeypatch.setattr(agent.tools.cfg, "gateway_url", "")
 
@@ -273,7 +337,8 @@ async def test_run_agent_primes_then_emits_answer_block(monkeypatch):
         "What does chlorophyll absorb?", ToolContext(workspace_id="ws_1")
     )
     kinds = [e["type"] for e in events]
-    assert kinds[:4] == ["tool_start", "tool_end", "citations", "phase"]
+    assert kinds[0] == "phase"
+    assert "tool_start" not in kinds
     assert "block_start" in kinds
     assert "block_delta" in kinds
     assert {"type": "block_end", "blockId": "b1", "kind": "answer"} in events
@@ -283,12 +348,38 @@ async def test_run_agent_primes_then_emits_answer_block(monkeypatch):
     assert "generate_material" not in [s["function"]["name"] for s in seen[0]["tools"]]
 
 
-async def test_the_last_planning_round_drops_tools(monkeypatch):
-    async def _search(**_k):
-        return [_passage()]
+async def test_second_search_in_the_same_response_is_refused(monkeypatch):
+    stream, _seen = _script_stream(
+        [
+            _assembled(
+                "",
+                [
+                    _call("search_workspace", '{"query":"a"}', "s1"),
+                    _call("search_workspace", '{"query":"b"}', "s2"),
+                ],
+            ),
+            _assembled("done"),
+        ]
+    )
+    ran: list[str] = []
 
+    async def _run(name, args, ctx):
+        del args, ctx
+        ran.append(name)
+        return ToolResult(passages=[_passage(chunk_id=f"c_{len(ran)}")])
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.tools, "run", _run)
+
+    events = await _collect("q", ToolContext(workspace_id="ws_1"))
+    assert ran == ["search_workspace"]
+    ends = {e["callId"]: e["status"] for e in events if e["type"] == "tool_end"}
+    assert ends["s1"] == "success"
+    assert ends["s2"] == "refused"
+
+
+async def test_the_last_planning_round_drops_tools(monkeypatch):
     stream, seen = _script_stream([_assembled("ok")])
-    monkeypatch.setattr(agent, "search", _search)
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     monkeypatch.setattr(agent.cfg, "agent_max_steps", 1)
 
@@ -297,9 +388,6 @@ async def test_the_last_planning_round_drops_tools(monkeypatch):
 
 
 async def test_planning_text_with_tools_is_narration_then_answer(monkeypatch):
-    async def _search(**_k):
-        return [_passage()]
-
     stream, seen = _script_stream(
         [
             _assembled("Looking that up.", [_call("list_sources")]),
@@ -311,7 +399,6 @@ async def test_planning_text_with_tools_is_narration_then_answer(monkeypatch):
         del args, ctx
         return ToolResult(text_parts=[f"ran {name}"])
 
-    monkeypatch.setattr(agent, "search", _search)
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     monkeypatch.setattr(agent.tools, "run", _run)
 
@@ -345,9 +432,6 @@ async def test_overlapping_passages_keep_stable_numbers(monkeypatch):
 async def test_citation_sse_matches_numbers_shown_to_the_model(monkeypatch):
     extra = _passage(chunk_id="c2", text="Calvin cycle fixes carbon.")
 
-    async def _search(**_k):
-        return [_passage()]
-
     stream, _seen = _script_stream(
         [
             _assembled("", [_call("read_document", '{"file_id":"f_1"}')]),
@@ -359,22 +443,18 @@ async def test_citation_sse_matches_numbers_shown_to_the_model(monkeypatch):
         del name, args
         return ToolResult(passages=[_passage(), extra])
 
-    monkeypatch.setattr(agent, "search", _search)
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     monkeypatch.setattr(agent.tools, "run", _run)
 
     events = await _collect("q", ToolContext(workspace_id="ws_1"))
     cite_events = [e for e in events if e["type"] == "citations"]
+    assert len(cite_events) == 1
     assert cite_events[0]["version"] == 1
-    assert cite_events[-1]["version"] == 2
-    assert [c["chunkId"] for c in cite_events[-1]["citations"]] == ["c1", "c2"]
+    assert [c["chunkId"] for c in cite_events[0]["citations"]] == ["c1", "c2"]
 
 
 async def test_read_batch_runs_concurrently_in_call_order(monkeypatch):
     overlap = {"active": 0, "peak": 0}
-
-    async def _search(**_k):
-        return [_passage()]
 
     stream, _seen = _script_stream(
         [
@@ -397,25 +477,17 @@ async def test_read_batch_runs_concurrently_in_call_order(monkeypatch):
         overlap["active"] -= 1
         return ToolResult(text_parts=[f"ran {name}"])
 
-    monkeypatch.setattr(agent, "search", _search)
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     monkeypatch.setattr(agent.tools, "run", _run)
 
     events = await _collect("q", ToolContext(workspace_id="ws_1"))
     assert overlap["peak"] == 2
-    ends = [
-        e["callId"]
-        for e in events
-        if e["type"] == "tool_end" and e["callId"] != "prime"
-    ]
+    ends = [e["callId"] for e in events if e["type"] == "tool_end"]
     assert ends == ["c1", "c2"]
 
 
 async def test_mixed_mutation_stays_serial(monkeypatch):
     overlap = {"active": 0, "peak": 0}
-
-    async def _search(**_k):
-        return [_passage()]
 
     stream, _seen = _script_stream(
         [
@@ -438,7 +510,6 @@ async def test_mixed_mutation_stays_serial(monkeypatch):
         overlap["active"] -= 1
         return ToolResult(text_parts=[f"ran {name}"])
 
-    monkeypatch.setattr(agent, "search", _search)
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     monkeypatch.setattr(agent.tools, "run", _run)
     monkeypatch.setattr(agent.tools.cfg, "gateway_url", "http://gw")
@@ -449,9 +520,6 @@ async def test_mixed_mutation_stays_serial(monkeypatch):
 
 
 async def test_per_response_and_turn_caps_return_one_result_per_id(monkeypatch):
-    async def _search(**_k):
-        return [_passage()]
-
     calls = [_call("list_sources", "{}", f"c{i}") for i in range(5)]
     stream, seen = _script_stream([_assembled("", calls), _assembled("ok")])
     ran: list[str] = []
@@ -461,7 +529,6 @@ async def test_per_response_and_turn_caps_return_one_result_per_id(monkeypatch):
         ran.append(name)
         return ToolResult(text_parts=[f"ran {name}"])
 
-    monkeypatch.setattr(agent, "search", _search)
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     monkeypatch.setattr(agent.tools, "run", _run)
 
@@ -473,9 +540,6 @@ async def test_per_response_and_turn_caps_return_one_result_per_id(monkeypatch):
 
 
 async def test_cumulative_input_measurement_does_not_strip_tools(monkeypatch):
-    async def _search(**_k):
-        return [_passage()]
-
     stream, seen = _script_stream(
         [
             _assembled(
@@ -491,7 +555,6 @@ async def test_cumulative_input_measurement_does_not_strip_tools(monkeypatch):
         del args, ctx
         return ToolResult(text_parts=[f"ran {name}"])
 
-    monkeypatch.setattr(agent, "search", _search)
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     monkeypatch.setattr(agent.tools, "run", _run)
 
@@ -504,9 +567,6 @@ async def test_cumulative_input_measurement_does_not_strip_tools(monkeypatch):
 async def test_exhausting_tool_response_runs_tools_then_one_terminal_call(
     monkeypatch,
 ):
-    async def _search(**_k):
-        return [_passage()]
-
     state = accounting.RequestAccounting(session_id="cr_1")
     token = accounting._accounting.set(state)
     calls = []
@@ -531,7 +591,6 @@ async def test_exhausting_tool_response_runs_tools_then_one_terminal_call(
         calls.append(name)
         return ToolResult(text_parts=["paid result"])
 
-    monkeypatch.setattr(agent, "search", _search)
     monkeypatch.setattr(agent.models, "stream_agent_response", _stream)
     monkeypatch.setattr(agent.tools, "run", _run)
     try:
@@ -545,9 +604,6 @@ async def test_exhausting_tool_response_runs_tools_then_one_terminal_call(
 
 
 async def test_estimated_tokens_accumulate_across_rounds(monkeypatch):
-    async def _search(**_k):
-        return [_passage()]
-
     stream, _seen = _script_stream(
         [
             _assembled("more", [_call("list_sources")]),
@@ -559,7 +615,6 @@ async def test_estimated_tokens_accumulate_across_rounds(monkeypatch):
         del args, ctx
         return ToolResult(text_parts=[f"ran {name}"])
 
-    monkeypatch.setattr(agent, "search", _search)
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     monkeypatch.setattr(agent.tools, "run", _run)
     monkeypatch.setattr(agent.compact, "needs_compact", lambda *_a, **_k: False)
@@ -574,9 +629,6 @@ async def test_estimated_tokens_accumulate_across_rounds(monkeypatch):
 
 
 async def test_compaction_completion_count_does_not_stop_the_turn(monkeypatch):
-    async def _search(**_k):
-        return [_passage()]
-
     stream, _seen = _script_stream([_assembled("final")])
 
     async def _compact(messages, _spec, *, on_compact=None, **_kwargs):
@@ -585,7 +637,6 @@ async def test_compaction_completion_count_does_not_stop_the_turn(monkeypatch):
                 on_compact()
         return messages
 
-    monkeypatch.setattr(agent, "search", _search)
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     monkeypatch.setattr(agent.compact, "compact_messages", _compact)
 
@@ -596,11 +647,7 @@ async def test_compaction_completion_count_does_not_stop_the_turn(monkeypatch):
 
 
 async def test_empty_response_does_not_resend(monkeypatch):
-    async def _search(**_k):
-        return [_passage()]
-
     stream, seen = _script_stream([_assembled(""), _assembled("should not run")])
-    monkeypatch.setattr(agent, "search", _search)
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
 
     events = await _collect("q", ToolContext(workspace_id="ws_1"))
@@ -609,13 +656,9 @@ async def test_empty_response_does_not_resend(monkeypatch):
 
 
 async def test_internal_error_is_sanitized_and_carries_usage(monkeypatch):
-    async def _search(**_k):
-        return [_passage()]
-
     async def _boom(*_a, **_k):
         raise RuntimeError("psycopg connection to postgres.internal failed")
 
-    monkeypatch.setattr(agent, "search", _search)
     monkeypatch.setattr(agent.models, "stream_agent_response", _boom)
 
     usage = obs.start_usage()
@@ -642,7 +685,6 @@ async def test_admit_checkpoint_folds_all_completed_history(monkeypatch):
         messages=[
             {"role": "system", "content": "sys"},
             {"role": "user", "content": "q", "_kind": "query"},
-            {"role": "user", "content": "prime", "_kind": "prime"},
         ],
         history=[
             {"id": "u1", "role": "user", "content": "old"},
@@ -657,7 +699,6 @@ async def test_admit_checkpoint_folds_all_completed_history(monkeypatch):
         schemas=[],
         budget=agent.TurnBudget(),
         query_msg={"role": "user", "content": "q", "_kind": "query"},
-        prime_msg={"role": "user", "content": "prime", "_kind": "prime"},
     )
     assert replacement is not None
     assert replacement["throughMessageId"] == "u5"
@@ -672,16 +713,11 @@ async def test_admit_checkpoint_folds_all_completed_history(monkeypatch):
         "sys",
         "Earlier conversation:\nall prior messages",
         "q",
-        "prime",
     ]
 
 
 async def test_missing_provider_usage_falls_back_to_estimates(monkeypatch):
-    async def _search(**_k):
-        return [_passage()]
-
     stream, _seen = _script_stream([_assembled("short answer")])
-    monkeypatch.setattr(agent, "search", _search)
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
 
     events = await _collect("q", ToolContext(workspace_id="ws_1"))
@@ -691,11 +727,7 @@ async def test_missing_provider_usage_falls_back_to_estimates(monkeypatch):
 
 
 async def test_done_carries_usage_when_the_meter_is_set(monkeypatch):
-    async def _search(**_k):
-        return [_passage()]
-
     stream, _seen = _script_stream([_assembled("ok")])
-    monkeypatch.setattr(agent, "search", _search)
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
 
     usage = obs.start_usage()
@@ -707,9 +739,6 @@ async def test_done_carries_usage_when_the_meter_is_set(monkeypatch):
 
 
 async def test_checkpoint_rewrite_does_not_duplicate_the_question(monkeypatch):
-    async def _search(**_k):
-        return [_passage()]
-
     stream, seen = _script_stream([_assembled("ok")])
 
     folded = {}
@@ -718,7 +747,6 @@ async def test_checkpoint_rewrite_does_not_duplicate_the_question(monkeypatch):
         folded.update(kwargs)
         return "prior facts"
 
-    monkeypatch.setattr(agent, "search", _search)
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     seen_needs = {"n": 0}
 
@@ -764,7 +792,6 @@ async def test_checkpoint_folds_trailing_user_message_from_failed_turn(monkeypat
 
     monkeypatch.setattr(agent.compact, "summarize_checkpoint", _fold)
     query = {"role": "user", "content": "current", "_kind": "query"}
-    prime = {"role": "user", "content": "prime", "_kind": "prime"}
     rebuilt, replacement = await agent._admit_checkpoint(
         messages=[
             {"role": "system", "content": "system"},
@@ -772,7 +799,6 @@ async def test_checkpoint_folds_trailing_user_message_from_failed_turn(monkeypat
             {"role": "assistant", "content": "old answer"},
             {"role": "user", "content": "failed question"},
             query,
-            prime,
         ],
         history=[
             {"id": "m1", "role": "user", "content": "old question"},
@@ -784,7 +810,6 @@ async def test_checkpoint_folds_trailing_user_message_from_failed_turn(monkeypat
         schemas=[],
         budget=agent.TurnBudget(),
         query_msg=query,
-        prime_msg=prime,
     )
 
     assert replacement is not None
@@ -794,7 +819,6 @@ async def test_checkpoint_folds_trailing_user_message_from_failed_turn(monkeypat
         "system",
         "Earlier conversation:\nfolded memory",
         "current",
-        "prime",
     ]
 
 
@@ -904,9 +928,6 @@ async def test_repeated_material_post_returns_original(monkeypatch):
 
 
 async def test_client_drop_after_stream_skips_tools_and_next_call(monkeypatch):
-    async def _search(**_k):
-        return [_passage()]
-
     client = agent.ClientDrop()
     calls = {"n": 0}
 
@@ -924,7 +945,6 @@ async def test_client_drop_after_stream_skips_tools_and_next_call(monkeypatch):
         client.mark()
         return assembled
 
-    monkeypatch.setattr(agent, "search", _search)
     monkeypatch.setattr(agent.models, "stream_agent_response", _stream)
 
     events = []
@@ -937,16 +957,11 @@ async def test_client_drop_after_stream_skips_tools_and_next_call(monkeypatch):
     ):
         events.append(event)
     assert calls["n"] == 1
-    assert not any(
-        e.get("type") == "tool_start" and e.get("callId") != "prime" for e in events
-    )
+    assert not any(e.get("type") == "tool_start" for e in events)
     assert events[-1]["type"] != "error"
 
 
 async def test_client_drop_before_stream_skips_provider_call(monkeypatch):
-    async def _search(**_k):
-        return [_passage()]
-
     calls = {"n": 0}
 
     async def _stream(
@@ -956,7 +971,6 @@ async def test_client_drop_before_stream_skips_provider_call(monkeypatch):
         calls["n"] += 1
         return _assembled("late")
 
-    monkeypatch.setattr(agent, "search", _search)
     monkeypatch.setattr(agent.models, "stream_agent_response", _stream)
 
     client = agent.ClientDrop()
@@ -976,9 +990,6 @@ async def test_client_drop_before_stream_skips_provider_call(monkeypatch):
 
 
 async def test_client_drop_does_not_cancel_in_flight_provider_call(monkeypatch):
-    async def _search(**_k):
-        return [_passage()]
-
     started = asyncio.Event()
     release = asyncio.Event()
     finished = {"n": 0}
@@ -994,7 +1005,6 @@ async def test_client_drop_does_not_cancel_in_flight_provider_call(monkeypatch):
         finished["n"] += 1
         return _assembled("partial extra")
 
-    monkeypatch.setattr(agent, "search", _search)
     monkeypatch.setattr(agent.models, "stream_agent_response", _stream)
 
     client = agent.ClientDrop()

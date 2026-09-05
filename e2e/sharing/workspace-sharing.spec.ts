@@ -262,7 +262,7 @@ test.describe('workspace sharing', () => {
     });
 
     const commenterEdit = await otherApi.patch(
-      `/api/materials/${commenterFixture.id}`,
+      `/api/materials/${commenterFixture.id}/metadata`,
       {
         data: {
           expectedRevision: commenterBody.revision,
@@ -296,7 +296,7 @@ test.describe('workspace sharing', () => {
     expect(await collaborationToken.json()).toMatchObject({ access: 'write' });
 
     const metadataEdit = await otherApi.patch(
-      `/api/materials/${editorFixture.id}`,
+      `/api/materials/${editorFixture.id}/metadata`,
       {
         data: {
           expectedRevision: editorBody.revision,
@@ -346,12 +346,15 @@ test.describe('workspace sharing', () => {
 
     // The raise covers document collaboration only. Metadata and workspace
     // structure still answer to the persisted viewer membership.
-    const metadataEdit = await viewerApi.patch(`/api/materials/${fixture.id}`, {
-      data: {
-        expectedRevision: body.revision,
-        title: 'A raised viewer must not rename',
-      },
-    });
+    const metadataEdit = await viewerApi.patch(
+      `/api/materials/${fixture.id}/metadata`,
+      {
+        data: {
+          expectedRevision: body.revision,
+          title: 'A raised viewer must not rename',
+        },
+      }
+    );
     expect(metadataEdit.status()).toBe(403);
 
     const chapter = await viewerApi.post(

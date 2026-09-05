@@ -42,7 +42,7 @@ func TestTransferMovesOwnershipAndTheStorageBill(t *testing.T) {
 		nil, "", 4096, "sources/"+uid("blob")); err != nil {
 		t.Fatal(err)
 	}
-	content, err := materialdoc.FlashcardsDocument("Deck", []materialdoc.Card{{
+	content, err := materialdoc.FlashcardsDocument([]materialdoc.Card{{
 		ID: uid("c"), Front: "front", Back: "back",
 	}})
 	if err != nil {
@@ -50,7 +50,7 @@ func TestTransferMovesOwnershipAndTheStorageBill(t *testing.T) {
 	}
 	material, err := s.CreateMaterial(ctx, Material{
 		CreatedBy: senderID, WorkspaceID: ws.ID, Kind: "flashcards",
-		Title: "Deck", Content: content,
+		Title: "FlashcardSet", Content: content,
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -195,7 +195,7 @@ async def test_live_compaction_preserves_current_query_and_active_chain(monkeypa
         {"role": "user", "content": "old " * 15_000},
         {"role": "assistant", "content": "old answer"},
         {"role": "user", "content": "current exact question", "_kind": "query"},
-        {"role": "user", "content": "prime passages", "_kind": "prime"},
+        {"role": "tool", "tool_call_id": "c0", "content": "search passages"},
         {
             "role": "assistant",
             "content": "working",
@@ -213,7 +213,7 @@ async def test_live_compaction_preserves_current_query_and_active_chain(monkeypa
     out = await compact.compact_messages(messages, _spec(context_window_tokens=30_000))
 
     assert any(message.get("content") == "current exact question" for message in out)
-    assert any(message.get("content") == "prime passages" for message in out)
+    assert any(message.get("content") == "search passages" for message in out)
     assert any(
         item.get("encrypted_content") == "enc"
         for message in out

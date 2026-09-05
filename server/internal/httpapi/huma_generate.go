@@ -26,7 +26,7 @@ type generateOutput struct {
 }
 
 func (a *api) registerGenerate(api huma.API) {
-	reg(api, http.MethodPost, "/api/workspaces/{id}/generate", "generate", "Generate", "Generate a quiz, deck, mindmap, or diagram", http.StatusOK, a.generate)
+	reg(api, http.MethodPost, "/api/workspaces/{id}/generate", "generate", "Generate", "Generate a quiz, flashcards, mindmap, or diagram", http.StatusOK, a.generate)
 }
 
 func (a *api) generate(ctx context.Context, in *generateInput) (*generateOutput, error) {
@@ -35,7 +35,9 @@ func (a *api) generate(ctx context.Context, in *generateInput) (*generateOutput,
 	}
 	actor := userID(ctx)
 	wsID := in.ID
-	llm, err := a.resolveLLM(ctx, actor, models.SurfaceGenerate)
+	ctx, cancelLiveAuthorization := a.liveWorkspaceContext(ctx, actor, wsID)
+	defer cancelLiveAuthorization()
+	llm, err := a.resolveLLM(ctx, actor, models.SlotGenerate)
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -293,7 +295,7 @@ func (a *api) generateViaPipe(
 		for _, c := range fp.Cards {
 			fronts = append(fronts, [2]string{c.Front, c.Back})
 		}
-		res, err := a.persistDeck(ctx, userID, wsID, opts.Title, fronts, chapterNames, fileNames)
+		res, err := a.persistFlashcardSet(ctx, userID, wsID, opts.Title, fronts, chapterNames, fileNames)
 		if err != nil {
 			return nil, usage, err
 		}
@@ -317,7 +319,7 @@ func (a *api) generateViaPipe(
 	return m, usage, nil
 }
 
-func (a *api) persistDeck(
+func (a *api) persistFlashcardSet(
 	ctx context.Context,
 	userID, wsID, title string,
 	cards [][2]string,
@@ -326,18 +328,18 @@ func (a *api) persistDeck(
 	if len(cards) == 0 {
 		return nil, errGenerateEmpty
 	}
-	deck, err := a.s.CreateDeckWithCards(
+	flashcardSet, err := a.s.CreateFlashcardSetWithCards(
 		ctx, userID, title, "green", wsID, cards, "", chapterNames, fileNames,
 	)
 	if err != nil {
 		return nil, err
 	}
-	out, err := a.s.ListCards(ctx, deck.ID)
+	out, err := a.s.ListCards(ctx, flashcardSet.ID)
 	if err != nil {
 		return nil, err
 	}
-	deck, _ = a.s.GetDeck(ctx, deck.ID)
-	return map[string]any{"kind": "flashcards", "deck": deck, "cards": out}, nil
+	flashcardSet, _ = a.s.GetFlashcardSet(ctx, flashcardSet.ID)
+	return map[string]any{"kind": "flashcards", "material": flashcardSet, "cards": out}, nil
 }
 
 func (a *api) persistMaterial(ctx context.Context, userID, wsID, wsName string, kind store.MaterialKind, title, content string, chapterNames, fileNames []string) (any, error) {

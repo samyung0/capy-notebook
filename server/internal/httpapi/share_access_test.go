@@ -139,8 +139,8 @@ func TestShareHTTPReads(t *testing.T) {
 		{"anon public ws", "", "/api/workspaces/ws_e2e_public", 200},
 		{"anon private quiz", "", "/api/quizzes/qz_e2e_private", 404},
 		{"anon link quiz", "", "/api/quizzes/qz_e2e_link", 200},
-		{"anon link deck", "", "/api/decks/dk_e2e_link", 200},
-		{"anon link cards", "", "/api/decks/dk_e2e_link/cards", 200},
+		{"anon link flashcards", "", "/api/flashcards/dk_e2e_link", 200},
+		{"anon link cards", "", "/api/flashcards/dk_e2e_link/cards", 200},
 		{"anon link chapters", "", "/api/workspaces/ws_e2e_link/chapters", 200},
 	}
 	for _, tc := range cases {
@@ -399,6 +399,105 @@ func TestShareHTTPExploreAndAttempts(t *testing.T) {
 	})
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("non-quiz attempt = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestQuizAndFlashcardCapabilitiesSeparateEditorsFromOwners(t *testing.T) {
+	h := openShareHTTP(t)
+	for _, tc := range []struct {
+		path    string
+		userID  string
+		canEdit bool
+		isOwner bool
+	}{
+		{path: "/api/quizzes/qz_e2e_private", userID: "u_owner", canEdit: true, isOwner: true},
+		{path: "/api/quizzes/qz_e2e_private", userID: "u_editor", canEdit: true},
+		{path: "/api/quizzes/qz_e2e_private", userID: "u_viewer"},
+		{path: "/api/flashcards/dk_e2e_private", userID: "u_editor", canEdit: true},
+		{path: "/api/flashcards/dk_e2e_private", userID: "u_commenter"},
+		{path: "/api/flashcards/dk_e2e_link"},
+	} {
+		rec := doReq(t, h, http.MethodGet, tc.path, tc.userID, nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s as %q = %d body=%s", tc.path, tc.userID, rec.Code, rec.Body.String())
+		}
+		var body map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if body["canEdit"] != tc.canEdit || body["isOwner"] != tc.isOwner {
+			t.Errorf("GET %s as %q capabilities=%#v, want canEdit=%v isOwner=%v",
+				tc.path, tc.userID, body, tc.canEdit, tc.isOwner)
+		}
+	}
+}
+
+func TestStudyToolMutationPathsSeparateContentMetadataSharingAndStudyState(t *testing.T) {
+	h := openShareHTTP(t)
+
+	quizQuestions := []map[string]any{{
+		"id": "q_mut_2", "type": "boolean", "level": "recall",
+		"prompt": "Updated workspace question?", "correct": true,
+	}}
+	rec := doReq(t, h, http.MethodPatch, "/api/quizzes/qz_e2e_private/content", "u_editor", map[string]any{
+		"questions": quizQuestions, "timeLimitMin": 20,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("workspace quiz content update = %d body=%s", rec.Code, rec.Body.String())
+	}
+	rec = doReq(t, h, http.MethodPatch, "/api/quizzes/qz_e2e_private/content", "u_editor", map[string]any{
+		"questions": quizQuestions, "privacy": "public",
+	})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("privacy on quiz content path = %d body=%s", rec.Code, rec.Body.String())
+	}
+	rec = doReq(t, h, http.MethodPatch, "/api/quizzes/qz_e2e_private/sharing", "u_owner", map[string]any{
+		"privacy": "public",
+	})
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("workspace quiz sharing update = %d body=%s", rec.Code, rec.Body.String())
+	}
+	rec = doReq(t, h, http.MethodPatch, "/api/quizzes/qz_e2e_mutate/sharing", "u_owner", map[string]any{
+		"privacy": "link",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("standalone quiz sharing update = %d body=%s", rec.Code, rec.Body.String())
+	}
+	t.Cleanup(func() {
+		_ = doReq(t, h, http.MethodPatch, "/api/quizzes/qz_e2e_mutate/sharing", "u_owner", map[string]any{
+			"privacy": "private",
+		})
+	})
+
+	rec = doReq(t, h, http.MethodPatch, "/api/flashcards/dk_e2e_private/metadata", "u_editor", map[string]any{
+		"name": "Updated workspace flashcards", "privacy": "public",
+	})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("privacy on flashcard metadata path = %d body=%s", rec.Code, rec.Body.String())
+	}
+	rec = doReq(t, h, http.MethodPatch, "/api/flashcards/dk_e2e_private/sharing", "u_owner", map[string]any{
+		"privacy": "public",
+	})
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("workspace flashcard sharing update = %d body=%s", rec.Code, rec.Body.String())
+	}
+	rec = doReq(t, h, http.MethodPatch, "/api/flashcards/cards/c_e2e_priv_1/content", "u_editor", map[string]any{
+		"front": "Updated front", "back": "Updated back", "known": true,
+	})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("study state on card authoring path = %d body=%s", rec.Code, rec.Body.String())
+	}
+	rec = doReq(t, h, http.MethodPatch, "/api/flashcards/cards/c_e2e_priv_1/study-state", "u_editor", map[string]any{
+		"known": true, "front": "must not be accepted",
+	})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("card content on study-state path = %d body=%s", rec.Code, rec.Body.String())
+	}
+	rec = doReq(t, h, http.MethodPatch, "/api/flashcards/cards/c_e2e_priv_1/study-state", "u_editor", map[string]any{
+		"known": true,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("card study-state update = %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

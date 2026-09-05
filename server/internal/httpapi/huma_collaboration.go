@@ -183,7 +183,7 @@ func (a *api) projectMaterialYjsDocument(
 		subtle.ConstantTimeCompare([]byte(in.Secret), []byte(a.cfg.CollaborationSecret)) != 1 {
 		return nil, huma.Error401Unauthorized("invalid collaboration service secret")
 	}
-	raw, err := materialdoc.Marshal(in.Body.Content)
+	raw, err := materialdoc.MarshalProjection(in.Body.Content)
 	if err != nil {
 		return nil, collaborationError(err)
 	}
@@ -239,7 +239,9 @@ func (a *api) updateMaterialDiscussion(ctx context.Context, in *updateDiscussion
 	if err := a.s.AssertMaterialCommenter(ctx, userID(ctx), resource.MaterialID); err != nil {
 		return nil, collaborationError(err)
 	}
-	if err := a.s.SetCollaborationDiscussionResolved(ctx, in.ID, in.Body.IsResolved); err != nil {
+	if err := a.s.SetCollaborationDiscussionResolved(
+		ctx, in.ID, userID(ctx), in.Body.IsResolved,
+	); err != nil {
 		return nil, collaborationError(err)
 	}
 	a.publishCommentInvalidation(ctx, resource.MaterialID)
@@ -337,29 +339,4 @@ func (a *api) publishCommentInvalidation(ctx context.Context, materialID string)
 	}
 	payload, _ := json.Marshal(event)
 	_ = a.rdb.Publish(ctx, "evo:collaboration:comments", payload).Err()
-}
-
-func (a *api) publishMaterialEviction(ctx context.Context, materialID string) {
-	if a.rdb == nil {
-		return
-	}
-	event := map[string]any{
-		"type": "access-changed", "materialId": materialID,
-		"at": time.Now().UTC().UnixMilli(),
-	}
-	if room, err := a.s.MaterialRoom(ctx, materialID); err == nil {
-		event["room"] = room
-	}
-	payload, _ := json.Marshal(event)
-	_ = a.rdb.Publish(ctx, "evo:collaboration:evict", payload).Err()
-}
-
-func (a *api) publishWorkspaceEvictions(ctx context.Context, workspaceID string) {
-	ids, err := a.s.WorkspaceMaterialIDs(ctx, workspaceID)
-	if err != nil {
-		return
-	}
-	for _, id := range ids {
-		a.publishMaterialEviction(ctx, id)
-	}
 }

@@ -1,10 +1,10 @@
 import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import {
-  useCloneDeck,
+  useCloneFlashcardSet,
   useCloneQuiz,
   useCloneWorkspace,
-  useExploreDecks,
+  useExploreFlashcardSets,
   useExploreQuizzes,
   useExploreWorkspaces,
 } from '@/api/hooks';
@@ -33,14 +33,15 @@ export default function Explore() {
     isLoading: quizzesIsLoading,
   } = useExploreQuizzes();
   const {
-    data: decks,
-    fetchStatus: decksFetchStatus,
-    isLoading: decksIsLoading,
-  } = useExploreDecks();
+    data: flashcardSets,
+    fetchStatus: flashcardSetsFetchStatus,
+    isLoading: flashcardSetsIsLoading,
+  } = useExploreFlashcardSets();
   const { isPending: cloneWorkspaceIsPending, mutate: cloneWorkspace } =
     useCloneWorkspace();
   const { isPending: cloneQuizIsPending, mutate: cloneQuiz } = useCloneQuiz();
-  const { isPending: cloneDeckIsPending, mutate: cloneDeck } = useCloneDeck();
+  const { isPending: cloneFlashcardSetIsPending, mutate: cloneFlashcardSet } =
+    useCloneFlashcardSet();
   const navigate = useNavigate();
 
   return (
@@ -52,7 +53,7 @@ export default function Explore() {
           tabs={[
             { label: m.explore_tab_workspaces(), value: 'workspaces' },
             { label: m.explore_tab_quizzes(), value: 'quizzes' },
-            { label: m.explore_tab_flashcards(), value: 'decks' },
+            { label: m.explore_tab_flashcards(), value: 'flashcardSets' },
           ]}
           value={tab}
         />
@@ -144,34 +145,37 @@ export default function Explore() {
               </Card>
             ))}
           </div>
-        ) : decksFetchStatus === 'paused' ? (
+        ) : flashcardSetsFetchStatus === 'paused' ? (
           <QueryPausedState />
-        ) : decksIsLoading ? (
+        ) : flashcardSetsIsLoading ? (
           <SkeletonCardGrid cardHeight={190} count={6} />
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {decks?.map((deck) => (
-              <Card className="p-5.5" key={deck.id} radius="card-lg">
+            {flashcardSets?.map((flashcardSet) => (
+              <Card className="p-5.5" key={flashcardSet.id} radius="card-lg">
                 <span className="flex h-11 w-11 items-center justify-center rounded-card bg-tint-accent-2 text-tint-accent-2-fg">
                   <Icon name="flashcards" size={20} />
                 </span>
-                <p className="t-card-title mt-3 truncate">{deck.name}</p>
+                <p className="t-card-title mt-3 truncate">
+                  {flashcardSet.name}
+                </p>
                 <p className="t-meta mt-1 text-fg-muted">
-                  by {deck.author} · {deck.clones.toLocaleString()} clones
+                  by {flashcardSet.author} ·{' '}
+                  {flashcardSet.clones.toLocaleString()} clones
                 </p>
                 <div className="mt-2">
-                  <Badge size="sm">{deck.cardCount} cards</Badge>
+                  <Badge size="sm">{flashcardSet.cardCount} cards</Badge>
                 </div>
                 <Button
                   className="mt-3"
-                  disabled={cloneDeckIsPending}
+                  disabled={cloneFlashcardSetIsPending}
                   iconLeft="plus"
                   onClick={() =>
-                    cloneDeck(deck.id, {
+                    cloneFlashcardSet(flashcardSet.id, {
                       onSuccess: (copy) => {
                         navigate({
-                          params: { deckId: copy.id },
-                          to: '/flashcards/$deckId',
+                          params: { flashcardSetId: copy.id },
+                          to: '/flashcards/$flashcardSetId',
                         });
                       },
                     })
@@ -179,7 +183,7 @@ export default function Explore() {
                   size="sm"
                   variant="outline"
                 >
-                  Clone deck
+                  {m.action_clone_flashcards()}
                 </Button>
               </Card>
             ))}

@@ -93,10 +93,10 @@ jobs:
       # skip if someone bypasses it.
       - run: go run ./cmd/testdb
         working-directory: server
-      - run: go run ./cmd/openapi -o /tmp/openapi.yaml -python-surfaces /tmp/surface.py
+      - run: go run ./cmd/openapi -o /tmp/openapi.yaml -python-slots /tmp/slot.py
         working-directory: server
       - run: diff -u openapi.yaml /tmp/openapi.yaml
-      - run: diff -u pipeline/pipeline/generated/surface.py /tmp/surface.py
+      - run: diff -u pipeline/pipeline/generated/slot.py /tmp/slot.py
 
   pipeline_check:
     runs-on: ubuntu-latest

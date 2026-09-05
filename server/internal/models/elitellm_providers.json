@@ -3,35 +3,24 @@
   "providers": {
     "anthropic": {
       "name": "Anthropic",
-      "modes": ["chat"],
       "byok": true,
       "platformEnv": "ANTHROPIC_API_KEY",
       "thinking": ["instant", "low", "mid", "high", "max"]
     },
     "openai": {
       "name": "OpenAI",
-      "modes": ["chat"],
       "byok": true,
       "platformEnv": "OPENAI_API_KEY",
       "thinking": ["instant", "low", "mid", "high", "max"]
     },
     "deepseek": {
       "name": "DeepSeek",
-      "modes": ["chat", "vision"],
       "byok": true,
       "platformEnv": "DEEPSEEK_API_KEY",
       "thinking": ["instant", "low", "mid", "high", "max"]
     },
-    "gemini": {
-      "name": "Gemini",
-      "modes": ["vision"],
-      "byok": true,
-      "platformEnv": "GEMINI_API_KEY",
-      "thinking": ["instant", "low", "mid", "high", "max"]
-    },
     "zai": {
       "name": "Z.ai",
-      "modes": ["chat", "vision"],
       "byok": false,
       "platformEnv": "DEEPINFRA_API_KEY",
       "allowedModelSlugs": ["glm-5.3-flash"],
@@ -39,7 +28,6 @@
     },
     "deepinfra": {
       "name": "DeepInfra",
-      "modes": ["embedding"],
       "byok": false,
       "platformEnv": "DEEPINFRA_API_KEY",
       "allowedModelSlugs": ["Qwen/Qwen3-Embedding-4B"],

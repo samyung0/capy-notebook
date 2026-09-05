@@ -1,7 +1,7 @@
 """Cassette-backed integration tests for the in-house retrieval stack.
 
 Each test drives the real code — chunking, batched embedding, summarization,
-concept extraction, hybrid search and the grounded answer — against a live
+hybrid search and the grounded answer — against a live
 Postgres carrying the gateway's own schema, while every model HTTP call is
 served from a recorded cassette.
 
@@ -15,7 +15,7 @@ import pytest
 
 from pipeline import registry
 from pipeline.retrieval import indexing, models, store, tools
-from pipeline.retrieval.agent import _priming_message, system_prompt
+from pipeline.retrieval.agent import system_prompt
 from pipeline.retrieval.chunking import chunk_markdown
 from pipeline.retrieval.search import search
 from pipeline.retrieval.tools import ToolContext
@@ -41,9 +41,7 @@ async def _index(ws, name: str, text: str, chapter_id: str | None = None) -> str
     return file_id
 
 
-async def test_index_file_writes_chunks_summary_and_concepts(
-    cassette, workspace, sample_txt
-):
+async def test_index_file_writes_chunks_and_summary(cassette, workspace, sample_txt):
     file_id = await _index(workspace, "photosynthesis.txt", sample_txt)
 
     assert (
@@ -96,12 +94,6 @@ async def test_index_file_writes_chunks_summary_and_concepts(
     assert descriptor
     # Two-tier JSON, not the prose fallback that copies the same blob into both.
     assert descriptor != summary
-    assert (
-        workspace.scalar(
-            "SELECT count(*) FROM rag_concepts WHERE workspace_id = %s", (workspace.id,)
-        )
-        >= 1
-    )
 
 
 async def test_reindexing_replaces_rather_than_duplicates(
@@ -151,7 +143,7 @@ async def test_hybrid_search_returns_a_citable_passage(cassette, workspace, samp
 
 
 async def test_answer_is_grounded_and_cited(cassette, workspace, sample_txt):
-    """Prime + one completion, not the tool loop: lock that retrieved passages
+    """Search + one completion, not the tool loop: lock that retrieved passages
     are what the model is asked to answer from, and that the reply cites them.
 
     ``run_agent`` is covered offline — its extra round trips are not
@@ -161,13 +153,17 @@ async def test_answer_is_grounded_and_cited(cassette, workspace, sample_txt):
     query = "What does chlorophyll absorb?"
     ctx = ToolContext(workspace_id=workspace.id)
     numbered = tools.remember(ctx, await search(workspace_id=workspace.id, query=query))
-    assert numbered, "prime search must retrieve the photosynthesis passage"
+    assert numbered, "search must retrieve the photosynthesis passage"
+    passages = "\n\n".join(passage.as_context(n) for n, passage in numbered)
 
     raw = await models.complete_text(
         [
             {"role": "system", "content": system_prompt(None)},
             {"role": "user", "content": query},
-            {"role": "user", "content": _priming_message(numbered)},
+            {
+                "role": "user",
+                "content": f"Passages retrieved for this question:\n\n{passages}",
+            },
         ],
         model=registry.ingest_spec(),
         temperature=0.0,
@@ -200,24 +196,6 @@ async def test_search_is_confined_to_the_requested_files(
     assert {p.file_id for p in passages} == {cells_id}
 
 
-async def test_related_concepts_bridges_two_documents(cassette, workspace, sample_txt):
-    """The relation-free substitute for a graph edge: two documents that never
-    reference each other are connected by a concept they both mention."""
-    from pathlib import Path
-
-    cells = (Path(__file__).parent / "fixtures" / "sample_cells.txt").read_text(
-        encoding="utf-8"
-    )
-    await _index(workspace, "photosynthesis.txt", sample_txt)
-    await _index(workspace, "cells.txt", cells)
-
-    rows = await store.related_concepts(workspace_id=workspace.id, name="ATP")
-
-    assert rows, "ATP should be indexed as a concept in both documents"
-    files = {name for row in rows for name in row["files"]}
-    assert {"photosynthesis.txt", "cells.txt"} & files
-
-
 async def test_workspace_outline_reports_the_tree(cassette, workspace, sample_txt):
     chapter_id = workspace.add_chapter("Biology")
     file_id = await _index(workspace, "photosynthesis.txt", sample_txt, chapter_id)
@@ -242,7 +220,7 @@ async def test_deleting_a_workspace_takes_the_index_with_it(
         "DELETE FROM workspaces WHERE id = %s RETURNING id", (workspace.id,)
     )
 
-    for table in ("rag_chunks", "rag_content_summaries", "rag_concepts"):
+    for table in ("rag_chunks", "rag_content_summaries"):
         assert (
             workspace.scalar(
                 f"SELECT count(*) FROM {table} WHERE workspace_id = %s", (workspace.id,)

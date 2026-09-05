@@ -1,0 +1,3 @@
+- Developer Epo decided the editor perf delta table compares the candidate against the median of the last five green snapshots and against the best retained green snapshot instead of only the last green run, so drift cannot creep one checkpoint at a time; deltas stay warn-only. `e2e/perf/snapshot.ts`, `.github/workflows/perf.yml`
+- Developer Epo decided the absolute `BUDGET` ceilings are the only perf gate and sit near 1.3x the current GitHub Actions median; a human lowers them when a real improvement lands. `e2e/perf/editor.perf.ts`
+- Developer Epo decided editor perf runs on the exact candidate SHA as part of production promotion. `.github/workflows/promote-production.yml`

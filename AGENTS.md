@@ -16,7 +16,6 @@ Here is what I want Evo Notes to be:
 - a foundation for a future platform catering for an entire school's operations: teachers and students study in the platform together, move mundane tasks like sending notices, grading assignments, posting scores etc. into the platform. The current application should provide the capabilities to achieving that: Rag pipelines, storage, AI capabilities, file managements, orchestrations, etc.
 
 IMPORTANT:
-Current project does not have a persistent DB or any existing data yet, if you need to make any code or schema changes, make it destructively. Do not start a new 0002 sql file, make the changes to 0001 sql destructively.
 The Netcup ingest host runs parser and ingest workloads for production, UAT,
 and local development. We plan to separate those environments when the budget
 allows it.
@@ -34,13 +33,14 @@ Understand the following terms so we can communicate on the same page:
 - **user** means the person using the application
 - **we, us, developers** means the persons developing the application
 - **operators, IT support** means persons who can make use of the ops dashboard (this includes the persons developing application)
-- **provider, llm provider** means the company or platform which are providing llm services through proprietary hardware computes (they own the compute/hardware AND the training process), e.g. OpenAI, Anthropic, Deepseek, Google Gemini
-- **llm routers, llm hops** means the companies or platform which redirects the request for llm services to different providers (they do not own the hardware/compute), e.g. OpenRouter, DeepInfra
+- **provider, llm provider** means the company or platform which are providing llm services through proprietary hardware computes (they own the compute/hardware AND the training process), e.g. OpenAI, Anthropic, Deepseek
+- **llm routers, llm hops** means the companies or platform which they serve models across providers or redirects to platforms that do that (usually with a different request/response shape than the original provider due to unification across endpoints), e.g. OpenRouter, DeepInfra
 - **compute providers, cloud providers** means companies or platform which mainly sells compute services and may or may not provide llm services as well, e.g. Digital Ocean, Nebius, Modal
 
 
 ## Coding Rules
 
+- Read `human` skill for coding tasks. Read `ponytail` skill for coding styles. Read `unslop` skill for user-facing response.
 - Keep things simple. Do not preserve existing complexity just because it already exists.
 - Do not introduce machinery because it looks architectually impressive. Understand the real constraint and push for the smallest model that solves the issue.
 - Tests are good, but endless smoke tests, "regression tests" for feature deletion, etc are not good. Make tests focused.
@@ -62,11 +62,12 @@ Mandatory to read when the task touches that domain. Prefer the listed file over
 | Frontend error surfaces, query/mutation defaults, boundaries, offline/streaming behavior, and error test tooling                                                      | `[frontend/error-handling.md](openwiki/frontend/error-handling.md)`                           |
 | Trace ids, structured logging, Sentry/PostHog wiring, LLM + parse metering (`usage_events`, credits reserve/settle), rate limiting, operator access                   | `[observability-metering.md](openwiki/observability-metering.md)`                             |
 | Manual setup outside this repo: DNS, Cloudflare rules (including Coolify tunnels), origin lockdown, B2 bucket/CORS/lifecycle, Sentry, PostHog, ingest host, operator grants | `[deployment-runbook.md](openwiki/deployment-runbook.md)`                                     |
+| What to verify after a UAT deploy: stack health, Clerk/Stripe webhooks, the per-developer dev hostname, quota and bucket sanity                                        | `[uat-activation-checklist.md](openwiki/uat-activation-checklist.md)`                          |
 | Editor Playwright budgets, the manual `Editor perf` workflow, snapshot compare vs last successful run                                                                 | `[editor-perf.md](openwiki/editor-perf.md)`                                                   |
 | Inventory of Vitest / Go / Python / Playwright / Cloudflare tests with one-line descriptions                                                                          | `[test-catalog.md](openwiki/test-catalog.md)`                                                 |
 | Repository-wide adversarial review, source/UAT workflows, gates, artifacts, Strix, and the `$review-repository` skill                                                  | `[review-automation.md](openwiki/review-automation.md)`                                       |
 
-Cross-links: plate-editor defers structural ACL to authorization and editor perf checkpoints to editor-perf; authorization defers accounting internals to storage-quota; agentic-retrieval defers material quota/authz to authorization and test inventory to test-catalog; observability-metering owns the second budget (inference/GPU) and defers byte accounting to storage-quota. editor-perf defers file inventory to test-catalog and save-cycle render rules to plate-editor.
+Cross-links: plate-editor defers structural ACL to authorization and editor perf checkpoints to editor-perf; authorization defers accounting internals to storage-quota; agentic-retrieval defers material quota/authz to authorization and test inventory to test-catalog; observability-metering owns the second budget (inference/GPU) and defers byte accounting to storage-quota. editor-perf defers file inventory to test-catalog and save-cycle render rules to plate-editor. uat-activation-checklist only verifies; every step it checks is set up in deployment-runbook.
 
 ## Verification and Cleanup
 

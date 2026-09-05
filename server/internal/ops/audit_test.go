@@ -42,7 +42,8 @@ func registryRequestFromSnapshot(snapshot RegistrySnapshot) RegistrySaveRequest 
 			ThinkingLevels:      append([]string(nil), config.ThinkingLevels...),
 			DefaultThinking:     config.DefaultThinking,
 			Params:              append([]byte(nil), config.Params...),
-			Surfaces:            append([]string(nil), config.Surfaces...),
+			Slots:               append([]string(nil), config.Slots...),
+			Capabilities:        append([]string(nil), config.Capabilities...),
 			DefaultFor:          append([]string(nil), config.IsDefaultFor...),
 			Rates: CreditRates{
 				InputMicros:       config.MicrosPerInputToken,

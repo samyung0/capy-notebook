@@ -619,24 +619,6 @@ components:
           maxLength: 200
           type: string
       type: object
-    CreateDeckReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/CreateDeckReq.json
-          format: uri
-          readOnly: true
-          type: string
-        color:
-          $ref: "#/components/schemas/UserColor"
-          default: green
-        name:
-          maxLength: 200
-          type: string
-        workspaceId:
-          type: string
-      type: object
     CreateDiscussionReq:
       additionalProperties: false
       properties:
@@ -731,6 +713,24 @@ components:
       required:
         - expectedRevision
         - sizeBytes
+      type: object
+    CreateFlashcardSetReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/CreateFlashcardSetReq.json
+          format: uri
+          readOnly: true
+          type: string
+        color:
+          $ref: "#/components/schemas/UserColor"
+          default: green
+        name:
+          maxLength: 200
+          type: string
+        workspaceId:
+          type: string
       type: object
     CreateMaterialReq:
       additionalProperties: false
@@ -875,50 +875,6 @@ components:
       required:
         - name
       type: object
-    Deck:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/Deck.json
-          format: uri
-          readOnly: true
-          type: string
-        cardCount:
-          format: int64
-          type: integer
-        color:
-          $ref: "#/components/schemas/UserColor"
-        dueCount:
-          format: int64
-          type: integer
-        id:
-          type: string
-        isOwner:
-          type: boolean
-        knownPct:
-          format: int64
-          type: integer
-        name:
-          type: string
-        privacy:
-          $ref: "#/components/schemas/Privacy"
-        workspaceId:
-          type: string
-        workspaceName:
-          type: string
-      required:
-        - id
-        - name
-        - workspaceId
-        - workspaceName
-        - color
-        - privacy
-        - cardCount
-        - knownPct
-        - dueCount
-        - isOwner
-      type: object
     DeletionPreflight:
       additionalProperties: false
       properties:
@@ -931,6 +887,9 @@ components:
         canDelete:
           type: boolean
         graceDays:
+          format: int64
+          type: integer
+        lifecycleGeneration:
           format: int64
           type: integer
         storageUsedBytes:
@@ -950,6 +909,7 @@ components:
           type: array
       required:
         - canDelete
+        - lifecycleGeneration
         - workspacesNeedingTransfer
         - workspacesToDestroy
         - storageUsedBytes
@@ -1201,23 +1161,70 @@ components:
           type: string
         back:
           type: string
-        deckId:
-          type: string
         front:
           type: string
         id:
           type: string
         known:
           type: boolean
+        materialId:
+          type: string
         srs:
           $ref: "#/components/schemas/SrsState"
       required:
         - id
-        - deckId
+        - materialId
         - front
         - back
         - known
         - srs
+      type: object
+    FlashcardSet:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/FlashcardSet.json
+          format: uri
+          readOnly: true
+          type: string
+        canEdit:
+          type: boolean
+        cardCount:
+          format: int64
+          type: integer
+        color:
+          $ref: "#/components/schemas/UserColor"
+        dueCount:
+          format: int64
+          type: integer
+        id:
+          type: string
+        isOwner:
+          type: boolean
+        knownPct:
+          format: int64
+          type: integer
+        name:
+          type: string
+        privacy:
+          $ref: "#/components/schemas/Privacy"
+        workspaceId:
+          type: string
+        workspaceName:
+          type: string
+      required:
+        - id
+        - name
+        - workspaceId
+        - workspaceName
+        - color
+        - privacy
+        - cardCount
+        - knownPct
+        - dueCount
+        - isOwner
+        - canEdit
       type: object
     GenerateDetail:
       enum:
@@ -1358,6 +1365,7 @@ components:
         fileIds:
           items:
             type: string
+          maxItems: 20
           minItems: 1
           type: array
         parseMode:
@@ -1735,7 +1743,7 @@ components:
         - mindmap
         - diagram
         - quiz
-        - deck
+        - flashcards
         - note
       type: string
     MaterialRevision:
@@ -1903,21 +1911,21 @@ components:
         - usesUserKey
         - providerSlug
       type: object
-    ModelSurfacesOutputBody:
+    ModelSlotsOutputBody:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/ModelSurfacesOutputBody.json
+          example: https://example.com/schemas/ModelSlotsOutputBody.json
           format: uri
           readOnly: true
           type: string
-        surfaces:
+        slots:
           items:
-            $ref: "#/components/schemas/Surface"
+            $ref: "#/components/schemas/Slot"
           type: array
       required:
-        - surfaces
+        - slots
       type: object
     ModelThinking:
       additionalProperties: false
@@ -2071,11 +2079,13 @@ components:
         - content
         - yjsVersion
       type: object
-    PublicDeck:
+    PublicFlashcardSet:
       additionalProperties: false
       properties:
         author:
           type: string
+        canEdit:
+          type: boolean
         cardCount:
           format: int64
           type: integer
@@ -2115,12 +2125,15 @@ components:
         - knownPct
         - dueCount
         - isOwner
+        - canEdit
       type: object
     PublicQuiz:
       additionalProperties: false
       properties:
         author:
           type: string
+        canEdit:
+          type: boolean
         chapters:
           items:
             type: string
@@ -2163,6 +2176,7 @@ components:
         - createdAt
         - privacy
         - isOwner
+        - canEdit
       type: object
     PublicWorkspace:
       additionalProperties: false
@@ -2238,6 +2252,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        canEdit:
+          type: boolean
         chapters:
           items:
             type: string
@@ -2275,6 +2291,7 @@ components:
         - createdAt
         - privacy
         - isOwner
+        - canEdit
       type: object
     QuizGradeReq:
       additionalProperties: false
@@ -2412,8 +2429,13 @@ components:
           maxLength: 320
           minLength: 1
           type: string
+        lifecycleGeneration:
+          format: int64
+          minimum: 0
+          type: integer
       required:
         - confirmEmail
+        - lifecycleGeneration
       type: object
     SaveCanvasReq:
       additionalProperties: false
@@ -2486,6 +2508,16 @@ components:
         - editor
         - commenter
         - viewer
+      type: string
+    Slot:
+      enum:
+        - chat
+        - generate
+        - editor
+        - quiz
+        - ingest
+        - retrieval
+        - captioning
       type: string
     SourceImportAccepted:
       additionalProperties: false
@@ -2722,16 +2754,6 @@ components:
         - canceled
         - trialing
       type: string
-    Surface:
-      enum:
-        - chat
-        - generate
-        - editor
-        - quiz
-        - ingest
-        - embedding
-        - vision
-      type: string
     Tag:
       additionalProperties: false
       properties:
@@ -2829,6 +2851,16 @@ components:
           maxLength: 4000
           minLength: 1
           type: string
+      type: object
+    UpdateCardStudyStateReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/UpdateCardStudyStateReq.json
+          format: uri
+          readOnly: true
+          type: string
         known:
           type: boolean
         srs:
@@ -2869,25 +2901,6 @@ components:
           type: array
       required:
         - contentRich
-      type: object
-    UpdateDeckReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/UpdateDeckReq.json
-          format: uri
-          readOnly: true
-          type: string
-        color:
-          $ref: "#/components/schemas/UserColor"
-        name:
-          maxLength: 200
-          minLength: 1
-          type: string
-        privacy:
-          $ref: "#/components/schemas/Privacy"
-          description: Visibility (share standalone)
       type: object
     UpdateDiscussionReq:
       additionalProperties: false
@@ -2949,6 +2962,22 @@ components:
           minLength: 1
           type: string
       type: object
+    UpdateFlashcardSetReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/UpdateFlashcardSetReq.json
+          format: uri
+          readOnly: true
+          type: string
+        color:
+          $ref: "#/components/schemas/UserColor"
+        name:
+          maxLength: 200
+          minLength: 1
+          type: string
+      type: object
     UpdateLabelReq:
       additionalProperties: false
       properties:
@@ -2982,9 +3011,6 @@ components:
           format: int64
           minimum: 1
           type: integer
-        privacy:
-          $ref: "#/components/schemas/Privacy"
-          description: Visibility (share standalone)
         scopeChapters:
           items:
             type: string
@@ -2998,12 +3024,32 @@ components:
           minLength: 1
           type: string
       type: object
-    UpdateQuizReq:
+    UpdateQuizContentReq:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/UpdateQuizReq.json
+          example: https://example.com/schemas/UpdateQuizContentReq.json
+          format: uri
+          readOnly: true
+          type: string
+        questions:
+          items:
+            additionalProperties: {}
+            type: object
+          type: array
+        timeLimitMin:
+          format: int64
+          maximum: 180
+          minimum: 1
+          type: integer
+      type: object
+    UpdateQuizMetadataReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/UpdateQuizMetadataReq.json
           format: uri
           readOnly: true
           type: string
@@ -3015,18 +3061,21 @@ components:
           maxLength: 200
           minLength: 1
           type: string
+      type: object
+    UpdateStandaloneSharingReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/UpdateStandaloneSharingReq.json
+          format: uri
+          readOnly: true
+          type: string
         privacy:
           $ref: "#/components/schemas/Privacy"
-        questions:
-          items:
-            additionalProperties: {}
-            type: object
-          type: array
-        timeLimitMin:
-          format: int64
-          maximum: 180
-          minimum: 1
-          type: integer
+          description: Visibility for a standalone material
+      required:
+        - privacy
       type: object
     UpdateTaskReq:
       additionalProperties: false
@@ -3255,7 +3304,7 @@ components:
         - graphite
         - transparent
       type: string
-    UserModelSurface:
+    UserModelSlot:
       enum:
         - chat
         - generate
@@ -3585,57 +3634,6 @@ paths:
       summary: Open billing portal
       tags:
         - Billing & integrations
-  /api/cards/{id}:
-    delete:
-      operationId: deleteCard
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "204":
-          description: No Content
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Delete a card
-      tags:
-        - Flashcards
-    patch:
-      operationId: updateCard
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateCardReq"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Flashcard"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Update a card
-      tags:
-        - Flashcards
   /api/chapters/{id}:
     delete:
       operationId: deleteChapter
@@ -3790,188 +3788,6 @@ paths:
       summary: Load a conversation's message history
       tags:
         - Chat
-  /api/decks:
-    get:
-      operationId: listDecks
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                items:
-                  $ref: "#/components/schemas/Deck"
-                type: array
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: List decks
-      tags:
-        - Flashcards
-    post:
-      operationId: createDeck
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateDeckReq"
-        required: true
-      responses:
-        "201":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Deck"
-          description: Created
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Create a deck
-      tags:
-        - Flashcards
-  /api/decks/{id}:
-    get:
-      operationId: getDeck
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Deck"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Get a deck
-      tags:
-        - Flashcards
-    patch:
-      operationId: updateDeck
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateDeckReq"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Deck"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Update a deck (rename / recolor / share)
-      tags:
-        - Sharing
-  /api/decks/{id}/cards:
-    get:
-      operationId: listCards
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                items:
-                  $ref: "#/components/schemas/Flashcard"
-                type: array
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: List cards in a deck
-      tags:
-        - Flashcards
-    post:
-      operationId: createCard
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateCardReq"
-        required: true
-      responses:
-        "201":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Flashcard"
-          description: Created
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Create a card
-      tags:
-        - Flashcards
-  /api/decks/{id}/clone:
-    post:
-      operationId: cloneDeck
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "201":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Deck"
-          description: Created
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Clone a shared deck
-      tags:
-        - Sharing
   /api/discussions/{id}:
     delete:
       operationId: deleteMaterialDiscussion
@@ -4146,16 +3962,16 @@ paths:
       summary: Update an event
       tags:
         - Schedule
-  /api/explore/decks:
+  /api/explore/flashcards:
     get:
-      operationId: exploreDecks
+      operationId: exploreFlashcardSets
       responses:
         "200":
           content:
             application/json:
               schema:
                 items:
-                  $ref: "#/components/schemas/PublicDeck"
+                  $ref: "#/components/schemas/PublicFlashcardSet"
                 type: array
           description: OK
         default:
@@ -4164,7 +3980,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Public flashcard decks
+      summary: Public flashcards
       tags:
         - Explore
   /api/explore/quizzes:
@@ -4366,6 +4182,303 @@ paths:
       summary: Complete a direct file replacement
       tags:
         - Content
+  /api/flashcards:
+    get:
+      operationId: listFlashcardSets
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/FlashcardSet"
+                type: array
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List flashcard sets
+      tags:
+        - Flashcards
+    post:
+      operationId: createFlashcardSet
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateFlashcardSetReq"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlashcardSet"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Create flashcards
+      tags:
+        - Flashcards
+  /api/flashcards/cards/{id}:
+    delete:
+      operationId: deleteCard
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete a card
+      tags:
+        - Flashcards
+  /api/flashcards/cards/{id}/content:
+    patch:
+      operationId: updateCard
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCardReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Flashcard"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Update card content
+      tags:
+        - Flashcards
+  /api/flashcards/cards/{id}/study-state:
+    patch:
+      operationId: updateCardStudyState
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCardStudyStateReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Flashcard"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Update card study state
+      tags:
+        - Flashcards
+  /api/flashcards/{id}:
+    get:
+      operationId: getFlashcardSet
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlashcardSet"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get flashcards
+      tags:
+        - Flashcards
+  /api/flashcards/{id}/cards:
+    get:
+      operationId: listCards
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/Flashcard"
+                type: array
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List cards
+      tags:
+        - Flashcards
+    post:
+      operationId: createCard
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCardReq"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Flashcard"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Create a card
+      tags:
+        - Flashcards
+  /api/flashcards/{id}/clone:
+    post:
+      operationId: cloneFlashcardSet
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlashcardSet"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Clone shared flashcards
+      tags:
+        - Sharing
+  /api/flashcards/{id}/metadata:
+    patch:
+      operationId: updateFlashcardSet
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateFlashcardSetReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlashcardSet"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Update flashcard metadata
+      tags:
+        - Flashcards
+  /api/flashcards/{id}/sharing:
+    patch:
+      operationId: updateFlashcardSetSharing
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateStandaloneSharingReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlashcardSet"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Update standalone flashcard sharing
+      tags:
+        - Flashcards
   /api/integrations:
     get:
       operationId: getIntegrations
@@ -4561,36 +4674,6 @@ paths:
       summary: Get a material
       tags:
         - Materials
-    patch:
-      operationId: updateMaterial
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateMaterialReq"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MaterialUpdateResult"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Update a material
-      tags:
-        - Materials
   /api/materials/{id}/clone:
     post:
       operationId: cloneMaterial
@@ -4698,6 +4781,37 @@ paths:
       summary: Create a comment discussion
       tags:
         - Material collaboration
+  /api/materials/{id}/metadata:
+    patch:
+      operationId: updateMaterial
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMaterialReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaterialUpdateResult"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Update material metadata
+      tags:
+        - Materials
   /api/materials/{id}/revisions:
     get:
       operationId: listMaterialRevisions
@@ -4725,6 +4839,37 @@ paths:
       summary: List material revisions
       tags:
         - Material collaboration
+  /api/materials/{id}/sharing:
+    patch:
+      operationId: updateMaterialSharing
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateStandaloneSharingReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Material"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Update standalone material sharing
+      tags:
+        - Materials
   /api/me:
     get:
       operationId: getMe
@@ -4884,15 +5029,15 @@ paths:
       summary: Review-mistakes quiz
       tags:
         - Quizzes
-  /api/model-surfaces:
+  /api/model-slots:
     get:
-      operationId: listModelSurfaces
+      operationId: listModelSlots
       responses:
         "200":
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ModelSurfacesOutputBody"
+                $ref: "#/components/schemas/ModelSlotsOutputBody"
           description: OK
         default:
           content:
@@ -4900,7 +5045,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Known model surfaces
+      summary: Known model slots
       tags:
         - Account
   /api/models:
@@ -4909,9 +5054,9 @@ paths:
       parameters:
         - explode: false
           in: query
-          name: surface
+          name: slot
           schema:
-            $ref: "#/components/schemas/UserModelSurface"
+            $ref: "#/components/schemas/UserModelSlot"
       responses:
         "200":
           content:
@@ -4925,7 +5070,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Enabled models for a surface
+      summary: Enabled models for a slot
       tags:
         - Account
   /api/notification-prefs:
@@ -5175,36 +5320,6 @@ paths:
       summary: Get a quiz
       tags:
         - Quizzes
-    patch:
-      operationId: updateQuiz
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateQuizReq"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Quiz"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Update a quiz
-      tags:
-        - Quizzes
   /api/quizzes/{id}/attempts:
     post:
       operationId: createAttempt
@@ -5261,6 +5376,99 @@ paths:
       summary: Clone a shared quiz
       tags:
         - Sharing
+  /api/quizzes/{id}/content:
+    patch:
+      operationId: updateQuizContent
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateQuizContentReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Quiz"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Update quiz content
+      tags:
+        - Quizzes
+  /api/quizzes/{id}/metadata:
+    patch:
+      operationId: updateQuizMetadata
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateQuizMetadataReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Quiz"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Update quiz metadata
+      tags:
+        - Quizzes
+  /api/quizzes/{id}/sharing:
+    patch:
+      operationId: updateQuizSharing
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateStandaloneSharingReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Quiz"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Update standalone quiz sharing
+      tags:
+        - Quizzes
   /api/search:
     get:
       operationId: search
@@ -5983,7 +6191,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Generate a quiz, deck, mindmap, or diagram
+      summary: Generate a quiz, flashcards, mindmap, or diagram
       tags:
         - Generate
   /api/workspaces/{id}/invites:

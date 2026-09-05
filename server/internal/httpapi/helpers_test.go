@@ -71,9 +71,9 @@ func TestFailMapsCreditsExhaustedForbidden(t *testing.T) {
 	}
 }
 
-func TestWriteRelayCapacityRetryCredits(t *testing.T) {
+func TestWriteImportCapacityRetryCredits(t *testing.T) {
 	rec := httptest.NewRecorder()
-	writeRelayCapacityRetry(rec, &store.CreditsExhaustedError{
+	writeImportCapacityRetry(rec, &store.CreditsExhaustedError{
 		UsedMicros: 1, LimitMicros: 1, PlanTier: store.PlanFree,
 	})
 	if rec.Code != http.StatusTooManyRequests {

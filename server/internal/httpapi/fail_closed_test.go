@@ -91,7 +91,7 @@ func TestGenerateRejectsUnknownScopeIDs(t *testing.T) {
 	}
 }
 
-func TestMissingTagKindAndModelsSurfaceReturnEmpty(t *testing.T) {
+func TestMissingTagKindAndModelsSlotReturnEmpty(t *testing.T) {
 	h := openShareHTTP(t)
 
 	tags := doReq(t, h, http.MethodGet, "/api/tags", "u_owner", nil)
@@ -120,13 +120,13 @@ func TestMissingTagKindAndModelsSurfaceReturnEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(body.Models) != 0 || body.SelectedKey != "" || body.DefaultKey != "" {
-		t.Fatalf("missing surface leaked a chat selection: %+v", body)
+		t.Fatalf("missing slot leaked a chat selection: %+v", body)
 	}
 }
 
 func TestListModelsResolvesEmptyReasoningPrefs(t *testing.T) {
 	h := openShareHTTP(t)
-	rec := doReq(t, h, http.MethodGet, "/api/models?surface=chat", "u_owner", nil)
+	rec := doReq(t, h, http.MethodGet, "/api/models?slot=chat", "u_owner", nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}

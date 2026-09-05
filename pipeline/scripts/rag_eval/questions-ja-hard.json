@@ -1,0 +1,22 @@
+[
+  {
+    "q": "GPUのSRAMに計算を閉じ込めてHBMへのアクセスを減らす手法は何と呼ばれている",
+    "expect": [["jp_llm2.pptx", 56], ["jp_llm2.pptx", 55]]
+  },
+  {
+    "q": "千サンプルだけでinstruction tuningできるという論文はどれか",
+    "expect": [["jp_llm2.pptx", 16], ["jp_llm2.pptx", 17]]
+  },
+  {
+    "q": "1.6兆パラメータのモデルで事前学習が何倍速くなったか",
+    "expect": [["jp_llm2.pptx", 88], ["jp_llm2.pptx", 58]]
+  },
+  {
+    "q": "1足す1は2という関係は文脈に依存せず成立するのか",
+    "expect": [["jp_llm.pdf", 50]]
+  },
+  {
+    "q": "存在しない分野の論文書誌情報をモデルは生成するか",
+    "expect": [["jp_llm.pdf", 77], ["jp_llm.pdf", 74]]
+  }
+]

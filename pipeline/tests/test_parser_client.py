@@ -163,6 +163,72 @@ def test_a_local_cache_hit_never_calls_parser(tmp_path: Path, monkeypatch, parse
     assert artifact["cached"] is True
 
 
+def test_a_missing_local_bundle_restores_and_verifies_the_durable_cache(
+    tmp_path: Path, monkeypatch, parser_url
+):
+    monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
+    monkeypatch.setattr(parser_client.cfg, "b2_bucket", "cache")
+    key, fingerprint = parser_client.artifact_identity(_descriptor())
+    source = tmp_path / "durable-source.zip"
+    blob = _artifact_zip(source, fingerprint=fingerprint)
+    source.unlink()
+    downloads: list[str] = []
+
+    def _download(durable_key: str, destination: str, _limit: int):
+        downloads.append(durable_key)
+        Path(destination).write_bytes(blob)
+        return len(blob), hashlib.sha256(blob).hexdigest()
+
+    monkeypatch.setattr(parser_client.blobstore, "download_file", _download)
+    monkeypatch.setattr(
+        parser_client.requests,
+        "post",
+        lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("parser called on durable cache hit")
+        ),
+    )
+
+    artifact = parser_client._request_artifact(_descriptor(), "doc.pdf", "job-2")
+
+    assert downloads == [parser_client.durable_artifact_key(fingerprint)]
+    assert parser_client._shared_path(key).read_bytes() == blob
+    assert artifact["durableKey"] == downloads[0]
+    assert artifact["sha256"] == hashlib.sha256(blob).hexdigest()
+
+
+def test_an_invalid_durable_bundle_is_ignored_and_parser_runs(
+    tmp_path: Path, monkeypatch, parser_url
+):
+    monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
+    monkeypatch.setattr(parser_client.cfg, "b2_bucket", "cache")
+    key, _ = parser_client.artifact_identity(_descriptor())
+
+    def _download(_key: str, destination: str, _limit: int):
+        Path(destination).write_bytes(b"not a zip")
+        return 9, hashlib.sha256(b"not a zip").hexdigest()
+
+    monkeypatch.setattr(parser_client.blobstore, "download_file", _download)
+    calls = _stub_request(
+        monkeypatch,
+        _Resp(
+            200,
+            {
+                "artifact": {
+                    "key": key,
+                    "size": 9,
+                    "sha256": hashlib.sha256(b"local zip").hexdigest(),
+                }
+            },
+        ),
+    )
+
+    artifact = parser_client._request_artifact(_descriptor(), "doc.pdf", "job-2")
+
+    assert len(calls) == 1
+    assert artifact["key"] == key
+    assert not parser_client._shared_path(key).exists()
+
+
 def test_local_cache_replays_a_lost_receipt_only_to_its_creating_job(
     tmp_path: Path, monkeypatch, parser_url
 ):
@@ -457,6 +523,105 @@ def _install_artifact(monkeypatch, tmp_path: Path, **zip_kwargs) -> dict:
     }
 
 
+def test_verified_bundle_upload_is_best_effort(tmp_path: Path, monkeypatch):
+    fingerprint = "a" * 64
+    artifact = {
+        **_install_artifact(monkeypatch, tmp_path, fingerprint=fingerprint),
+        "version": FAST_VERSION,
+    }
+    monkeypatch.setattr(parser_client.cfg, "b2_bucket", "cache")
+    uploads: list[tuple[str, bytes, str]] = []
+
+    class Client:
+        def put_object(self, **values) -> None:
+            uploads.append(
+                (values["Key"], values["Body"].read(), values["ContentType"])
+            )
+            raise OSError("B2 unavailable")
+
+    monkeypatch.setattr(parser_client.blobstore, "_client", Client())
+    monkeypatch.setattr(parser_client.blobstore.time, "sleep", lambda _seconds: None)
+
+    assert (
+        parser_client.publish_durable_artifact(
+            artifact,
+            route=parser_client.ROUTE_FAST,
+            require_office_preview=False,
+        )
+        is None
+    )
+    assert len(uploads) == 3
+    assert uploads[0][0] == parser_client.durable_artifact_key(fingerprint)
+    assert all(
+        upload[1] == parser_client._shared_path(artifact["key"]).read_bytes()
+        for upload in uploads
+    )
+
+
+def test_bundle_is_verified_before_durable_upload(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
+    monkeypatch.setattr(parser_client.cfg, "b2_bucket", "cache")
+    fingerprint = "b" * 64
+    path = parser_client._shared_path(f"artifacts/{fingerprint}.zip")
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"not a zip")
+    artifact = {
+        "key": f"artifacts/{fingerprint}.zip",
+        "fingerprint": fingerprint,
+        "version": FAST_VERSION,
+        "size": path.stat().st_size,
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+    }
+    monkeypatch.setattr(
+        parser_client.blobstore,
+        "write_file",
+        lambda *_a: (_ for _ in ()).throw(
+            AssertionError("unverified bundle was uploaded")
+        ),
+    )
+
+    with pytest.raises(zipfile.BadZipFile):
+        parser_client.publish_durable_artifact(
+            artifact,
+            route=parser_client.ROUTE_FAST,
+            require_office_preview=False,
+        )
+    assert not path.exists()
+
+
+def test_invalid_local_bundle_is_removed_before_the_next_parse_attempt(
+    tmp_path: Path, monkeypatch, parser_url
+):
+    monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
+    monkeypatch.setattr(parser_client.cfg, "b2_bucket", "")
+    key, fingerprint = parser_client.artifact_identity(_descriptor())
+    path = parser_client._shared_path(key)
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"not a zip")
+
+    artifact = parser_client.ensure_artifact(_descriptor(), "doc.pdf", "job-1")
+    with pytest.raises(zipfile.BadZipFile):
+        parser_client.publish_durable_artifact(
+            artifact,
+            route=parser_client.ROUTE_FAST,
+            require_office_preview=False,
+        )
+    assert not path.exists()
+
+    calls: list[str] = []
+
+    def post(url, **_kwargs):
+        calls.append(url)
+        return _Resp(503, {"detail": "parser unavailable"})
+
+    monkeypatch.setattr(parser_client.requests, "post", post)
+    with pytest.raises(parser_client.ParserClientError, match="remote parse 503"):
+        parser_client.ensure_artifact(_descriptor(), "doc.pdf", "job-2")
+
+    assert calls == [parser_client.cfg.parser_url]
+    assert fingerprint in key
+
+
 def test_extract_writes_and_validates_the_bundle(tmp_path: Path, monkeypatch):
     artifact = _install_artifact(
         monkeypatch, tmp_path, extra={"images/fig1.png": "not-really-a-png"}
@@ -657,6 +822,31 @@ def test_local_spool_sweep_uses_separate_source_and_artifact_ttls(
     os.utime(artifact, (old, old))
 
     assert parser_client.sweep_local_spool() == {"sources": 1, "artifacts": 1}
+
+
+def test_local_spool_sweep_keeps_keys_referenced_by_active_jobs(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
+    monkeypatch.setattr(parser_client.cfg, "parse_source_ttl_hours", 2)
+    monkeypatch.setattr(parser_client.cfg, "parse_zip_ttl_hours", 6)
+    source = tmp_path / "sources" / "source-active"
+    artifact = tmp_path / "artifacts" / "artifact-active.zip"
+    source.parent.mkdir(parents=True)
+    artifact.parent.mkdir(parents=True)
+    source.write_bytes(b"source")
+    artifact.write_bytes(b"artifact")
+    old = time.time() - 7 * 60 * 60
+    os.utime(source, (old, old))
+    os.utime(artifact, (old, old))
+
+    removed = parser_client.sweep_local_spool(
+        {"sources/source-active", "artifacts/artifact-active.zip"}
+    )
+
+    assert removed == {"sources": 0, "artifacts": 0}
+    assert source.exists()
+    assert artifact.exists()
 
 
 def test_empty_env_is_treated_as_unset(monkeypatch):

@@ -57,6 +57,7 @@ func (a *api) internalSettleProviderCall(w http.ResponseWriter, r *http.Request)
 	}
 	if errors.Is(err, store.ErrProviderSessionClosed) ||
 		errors.Is(err, store.ErrProviderCallConflict) ||
+		errors.Is(err, store.ErrProviderReceiptExpired) ||
 		errors.Is(err, store.ErrTerminalCallNotAllowed) {
 		writeJSON(w, http.StatusConflict, map[string]string{"message": err.Error()})
 		return

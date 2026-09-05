@@ -4,6 +4,7 @@ import { createEditor, Editor, Element, Transforms } from 'slate';
 import * as Y from 'yjs';
 
 export interface ReplaceBlockCommand {
+  actorUserId: string;
   expectedBlock: Record<string, unknown>;
   materialId: string;
   replacementBlock: Record<string, unknown>;
@@ -84,6 +85,8 @@ export function isCollaborationCommand(
   const command = value as Partial<CollaborationCommand>;
   return (
     command.type === 'replace-block' &&
+    typeof command.actorUserId === 'string' &&
+    command.actorUserId.length > 0 &&
     typeof command.materialId === 'string' &&
     typeof command.room === 'string' &&
     !!command.expectedBlock &&

@@ -14,10 +14,12 @@ low priority:
 12. check how the router should be implemented, manually typing routes dont seemt to be recommened (and lazyRouteComponent is not in the docs?), also sometimes when navigating in dev with msw, it seems to take a bit to render the component (but shouldnt be the case if the loader is non blocking? there is a 1 second delay simulated in msw handler but is data is loaded async and non blocked, this delay shouldnt occur?) and if the component takes a bit to render, then switching between open workspace and other pages causes significant layout shifts because in openworkspace the sidenav is not rendered. With the delay, when navigating away from openworkspace, the sidebar renders instantly but the route component is still stuck on openworkspace, or when navigating to openworkspace, the sidebar disappears first before the content renders
 13. manage feature flags better than just env, likely in posthog?
 14. Gemma-4-E2B
+15. add suspend/unsuspend account controls to the Ops dashboard (separate feature; current suspension is database/operator-only)
+16. stripe local mode + secret
 
 high PRIORITIES:
-
-account downgrade/deletion/lock/plan expiration, workspace cloning and deletion, and lifecycles of files/artifacts
+google drive import in dev
+workspace ownership transfer
 does headings/bullet point from image/audio captioning effect embedding/vector search? actually does html tags impact quality of vector search? if so -> clean html tags (which also solves the superscript/subscript issue) but preserve tables,formulaes,etc
 enrich agentic loop tools. Add edit files (both uploaded/imported files -> need a list of editable files (ppt, office, text, json, md), and materials)
 , then make categories like: list, read, create, edit (for how we display them in the UI). I dont think we need to set tool permissions yet or set available services for the tools (only chat right now).

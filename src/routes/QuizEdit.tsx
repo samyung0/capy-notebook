@@ -1,6 +1,10 @@
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
-import { useQuiz, useUpdateQuiz } from '@/api/hooks';
+import {
+  useQuiz,
+  useUpdateQuizContent,
+  useUpdateQuizMetadata,
+} from '@/api/hooks';
 import type { Question } from '@/api/types';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
@@ -14,7 +18,11 @@ export default function QuizEdit() {
   const quizId = (params as { quizId: string }).quizId;
   const navigate = useNavigate();
   const { data: quiz, fetchStatus, isLoading } = useQuiz(quizId);
-  const { isPending: updateIsPending, mutateAsync: update } = useUpdateQuiz();
+  const { isPending: contentIsPending, mutateAsync: updateContent } =
+    useUpdateQuizContent();
+  const { isPending: metadataIsPending, mutateAsync: updateMetadata } =
+    useUpdateQuizMetadata();
+  const updateIsPending = contentIsPending || metadataIsPending;
 
   const [name, setName] = useState('');
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -35,7 +43,8 @@ export default function QuizEdit() {
 
   async function save() {
     try {
-      await update({ id: quizId, name, questions });
+      await updateContent({ id: quizId, questions });
+      await updateMetadata({ id: quizId, name });
       back();
     } catch {
       // The global mutation handler shows the normalized failure.
@@ -71,7 +80,7 @@ export default function QuizEdit() {
           <QueryPausedState />
         ) : isLoading || !seeded.current ? (
           <Skeleton className="h-64 w-full" />
-        ) : quiz ? (
+        ) : quiz?.canEdit ? (
           <div className="mx-auto max-w-2xl">
             <QuizForm
               name={name}

@@ -38,17 +38,17 @@ import type {
   CreateAttemptReq,
   CreateCardReq,
   CreateCommentReq,
-  CreateDeckReq,
   CreateDiscussionReq,
   CreateEventReq,
+  CreateFlashcardSetReq,
   CreateMaterialReq,
   CreateQuizReq,
   CreateWorkspaceInviteReq,
   CreateWorkspaceReq,
-  Deck,
   DeletionPreflight,
   FileStatus,
   Flashcard,
+  FlashcardSet,
   GenerateOptions,
   IngestSlots,
   InspectSourceImportsReq,
@@ -63,15 +63,16 @@ import type {
   MaterialRef,
   MaterialRevision,
   MaterialUpdateResult,
-  ModelSurface,
+  ModelSlot,
   ModelsResponse,
   NotificationCount,
   NotificationPage,
   NotificationPrefs,
-  PublicDeck,
+  PublicFlashcardSet,
   PublicQuiz,
   PublicWorkspace,
   Quiz,
+  RequestAccountDeletionReq,
   SaveCanvasReq,
   SearchResult,
   SetModelPrefsReq,
@@ -81,15 +82,18 @@ import type {
   Task,
   ThinkingCanvas,
   UpdateCardReq,
+  UpdateCardStudyStateReq,
   UpdateChapterReq,
   UpdateCommentReq,
-  UpdateDeckReq,
   UpdateDiscussionReq,
   UpdateEventReq,
   UpdateFileReq,
+  UpdateFlashcardSetReq,
   UpdateLabelReq,
   UpdateMaterialReq,
-  UpdateQuizReq,
+  UpdateQuizContentReq,
+  UpdateQuizMetadataReq,
+  UpdateStandaloneSharingReq,
   UpdateTaskReq,
   UpdateWorkspaceMemberReq,
   UpdateWorkspaceReq,
@@ -141,14 +145,14 @@ export const ingestSlotsQuery = () =>
 export const useIngestSlots = (options?: QueryUiOptions) =>
   useQuery({ ...ingestSlotsQuery(), meta: queryMeta(options) });
 
-export const modelsQuery = (surface: ModelSurface) =>
+export const modelsQuery = (slot: ModelSlot) =>
   queryOptions({
     queryFn: () =>
-      api.get<ModelsResponse>(`/models?surface=${encodeURIComponent(surface)}`),
-    queryKey: qk.models(surface),
+      api.get<ModelsResponse>(`/models?slot=${encodeURIComponent(slot)}`),
+    queryKey: qk.models(slot),
   });
-export const useModels = (surface: ModelSurface, options?: QueryUiOptions) =>
-  useQuery({ ...modelsQuery(surface), meta: queryMeta(options) });
+export const useModels = (slot: ModelSlot, options?: QueryUiOptions) =>
+  useQuery({ ...modelsQuery(slot), meta: queryMeta(options) });
 
 export function useSetModelPrefs() {
   const qc = useQueryClient();
@@ -215,8 +219,11 @@ export const useDeletionPreflight = (enabled = true) =>
 export function useRequestAccountDeletion() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (confirmEmail: string) =>
-      api.post<AccountStatus>('/account/deletion', { confirmEmail }),
+    mutationFn: (request: RequestAccountDeletionReq) =>
+      api.post<AccountStatus>('/account/deletion', request),
+    onError: () => {
+      void qc.invalidateQueries({ queryKey: qk.deletionPreflight });
+    },
     onSuccess: (status) => {
       qc.setQueryData(qk.accountStatus, status);
       void qc.invalidateQueries({ queryKey: qk.deletionPreflight });
@@ -1303,7 +1310,7 @@ export function useGenerate(wsId: string) {
       track('material_generated', { kind: opts.kind, workspaceId: wsId });
       await Promise.all([
         qc.invalidateQueries({ queryKey: qk.quizzes }),
-        qc.invalidateQueries({ queryKey: qk.decks }),
+        qc.invalidateQueries({ queryKey: qk.flashcardSets }),
         qc.invalidateQueries({ queryKey: qk.materials(wsId) }),
       ]);
     },
@@ -1312,7 +1319,7 @@ export function useGenerate(wsId: string) {
 
 /* ---------------- study materials ---------------- */
 /** Unified, workspace-scoped list of study materials (mindmaps, diagrams,
- * quizzes, decks) for the left panel. Not chapter-scoped. */
+ * quizzes, flashcardSets) for the left panel. Not chapter-scoped. */
 export const materialsQuery = (wsId: string) =>
   queryOptions({
     enabled: !!wsId,
@@ -1338,7 +1345,7 @@ export function useDeleteMaterial(wsId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.materials(wsId) });
       qc.invalidateQueries({ queryKey: qk.quizzes });
-      qc.invalidateQueries({ queryKey: qk.decks });
+      qc.invalidateQueries({ queryKey: qk.flashcardSets });
     },
   });
 }
@@ -1366,7 +1373,7 @@ export function useUpdateMaterial(wsId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, patch }: { id: string; patch: UpdateMaterialReq }) =>
-      api.patch<MaterialUpdateResult>(`/materials/${id}`, patch),
+      api.patch<MaterialUpdateResult>(`/materials/${id}/metadata`, patch),
     onSuccess: (result, { id, patch }) => {
       qc.setQueryData<Material>(qk.material(id), (current) =>
         current
@@ -1453,6 +1460,7 @@ export function useCreateWorkspaceInvite(workspaceId: string) {
 export function useAcceptWorkspaceInvite() {
   const qc = useQueryClient();
   return useMutation({
+    meta: { errorToast: false },
     mutationFn: (token: string) =>
       api.post<WorkspaceMember>(
         `/workspace-invites/${encodeURIComponent(token)}/accept`
@@ -1631,7 +1639,7 @@ export function useMoveMaterial(wsId: string) {
   >({
     meta: { errorToast: false },
     mutationFn: ({ id, chapterId }: { id: string; chapterId: string | null }) =>
-      api.patch<MaterialUpdateResult>(`/materials/${id}`, {
+      api.patch<MaterialUpdateResult>(`/materials/${id}/metadata`, {
         chapterId: chapterId ?? '',
       }),
     onError: (_e, { id }, ctx) => {
@@ -1700,7 +1708,7 @@ export const mistakesQuery = () =>
 export const useMistakes = (options?: QueryUiOptions) =>
   useQuery({ ...mistakesQuery(), meta: queryMeta(options) });
 
-/** Invalidate every workspace's materials list (quiz/deck edits change titles
+/** Invalidate every workspace's materials list (quiz/flashcardSet edits change titles
  * shown in the left panel but don't carry a workspace id). */
 function invalidateAllMaterials(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({
@@ -1721,16 +1729,39 @@ export function useCreateQuiz() {
     },
   });
 }
-export function useUpdateQuiz() {
+function invalidateQuiz(qc: ReturnType<typeof useQueryClient>, id: string) {
+  qc.invalidateQueries({ queryKey: qk.quizzes });
+  qc.invalidateQueries({ queryKey: qk.quiz(id) });
+  invalidateAllMaterials(qc);
+}
+
+export function useUpdateQuizContent() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...body }: UpdateQuizReq & { id: string }) =>
-      api.patch<Quiz>(`/quizzes/${id}`, body),
+    mutationFn: ({ id, ...body }: UpdateQuizContentReq & { id: string }) =>
+      api.patch<Quiz>(`/quizzes/${id}/content`, body),
     onSuccess: (_d, v) => {
-      qc.invalidateQueries({ queryKey: qk.quizzes });
-      qc.invalidateQueries({ queryKey: qk.quiz(v.id) });
-      invalidateAllMaterials(qc);
+      invalidateQuiz(qc, v.id);
     },
+  });
+}
+export function useUpdateQuizMetadata() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: UpdateQuizMetadataReq & { id: string }) =>
+      api.patch<Quiz>(`/quizzes/${id}/metadata`, body),
+    onSuccess: (_d, v) => invalidateQuiz(qc, v.id),
+  });
+}
+export function useUpdateQuizSharing() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      ...body
+    }: UpdateStandaloneSharingReq & { id: string }) =>
+      api.patch<Quiz>(`/quizzes/${id}/sharing`, body),
+    onSuccess: (_d, v) => invalidateQuiz(qc, v.id),
   });
 }
 export function useDeleteQuiz() {
@@ -1757,86 +1788,90 @@ export function useSubmitAttempt(options?: MutationUiOptions) {
 }
 
 /* ---------------- flashcards ---------------- */
-export const decksQuery = () =>
+export const flashcardSetsQuery = () =>
   queryOptions({
-    queryFn: () => api.get<Deck[]>('/decks'),
-    queryKey: qk.decks,
+    queryFn: () => api.get<FlashcardSet[]>('/flashcards'),
+    queryKey: qk.flashcardSets,
   });
-export const useDecks = () => useQuery(decksQuery());
+export const useFlashcardSets = () => useQuery(flashcardSetsQuery());
 
-export function useCreateDeck() {
+export function useCreateFlashcardSet() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: CreateDeckReq) => api.post<Deck>('/decks', body),
+    mutationFn: (body: CreateFlashcardSetReq) =>
+      api.post<FlashcardSet>('/flashcards', body),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.decks });
+      qc.invalidateQueries({ queryKey: qk.flashcardSets });
       invalidateAllMaterials(qc);
     },
   });
 }
-export function useCreateCard(deckId: string) {
+export function useCreateCard(flashcardSetId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: CreateCardReq) =>
-      api.post<Flashcard>(`/decks/${deckId}/cards`, body),
+      api.post<Flashcard>(`/flashcards/${flashcardSetId}/cards`, body),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.cards(deckId) });
-      qc.invalidateQueries({ queryKey: qk.deck(deckId) });
-      qc.invalidateQueries({ queryKey: qk.decks });
+      qc.invalidateQueries({ queryKey: qk.cards(flashcardSetId) });
+      qc.invalidateQueries({ queryKey: qk.flashcardSet(flashcardSetId) });
+      qc.invalidateQueries({ queryKey: qk.flashcardSets });
     },
   });
 }
-export function useDeleteCard(deckId: string) {
+export function useDeleteCard(flashcardSetId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.del<void>(`/cards/${id}`),
+    mutationFn: (id: string) => api.del<void>(`/flashcards/cards/${id}`),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.cards(deckId) });
-      qc.invalidateQueries({ queryKey: qk.deck(deckId) });
-      qc.invalidateQueries({ queryKey: qk.decks });
+      qc.invalidateQueries({ queryKey: qk.cards(flashcardSetId) });
+      qc.invalidateQueries({ queryKey: qk.flashcardSet(flashcardSetId) });
+      qc.invalidateQueries({ queryKey: qk.flashcardSets });
     },
   });
 }
 
-export const deckQuery = (id: string) =>
+export const flashcardSetQuery = (id: string) =>
   queryOptions({
     enabled: !!id,
-    queryFn: () => api.get<Deck>(`/decks/${id}`),
-    queryKey: qk.deck(id),
+    queryFn: () => api.get<FlashcardSet>(`/flashcards/${id}`),
+    queryKey: qk.flashcardSet(id),
   });
-export const useDeck = (id: string, options?: QueryUiOptions) =>
-  useQuery({ ...deckQuery(id), meta: queryMeta(options) });
+export const useFlashcardSet = (id: string, options?: QueryUiOptions) =>
+  useQuery({ ...flashcardSetQuery(id), meta: queryMeta(options) });
 
-export const cardsQuery = (deckId: string) =>
+export const cardsQuery = (flashcardSetId: string) =>
   queryOptions({
-    enabled: !!deckId,
-    queryFn: () => api.get<Flashcard[]>(`/decks/${deckId}/cards`),
-    queryKey: qk.cards(deckId),
+    enabled: !!flashcardSetId,
+    queryFn: () => api.get<Flashcard[]>(`/flashcards/${flashcardSetId}/cards`),
+    queryKey: qk.cards(flashcardSetId),
   });
-export const useCards = (deckId: string, options?: QueryUiOptions) =>
-  useQuery({ ...cardsQuery(deckId), meta: queryMeta(options) });
-export function useUpdateCard(deckId: string) {
+export const useCards = (flashcardSetId: string, options?: QueryUiOptions) =>
+  useQuery({ ...cardsQuery(flashcardSetId), meta: queryMeta(options) });
+export function useUpdateCard(flashcardSetId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, ...body }: UpdateCardReq & { id: string }) =>
-      api.patch<Flashcard>(`/cards/${id}`, body),
+      api.patch<Flashcard>(`/flashcards/cards/${id}/content`, body),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.cards(deckId) });
-      qc.invalidateQueries({ queryKey: qk.deck(deckId) });
-      qc.invalidateQueries({ queryKey: qk.decks });
+      qc.invalidateQueries({ queryKey: qk.cards(flashcardSetId) });
+      qc.invalidateQueries({ queryKey: qk.flashcardSet(flashcardSetId) });
+      qc.invalidateQueries({ queryKey: qk.flashcardSets });
     },
   });
 }
 /** Persist an SRS review result for a card (updates scheduling + known flag). */
-export function useReviewCard(deckId: string) {
+export function useReviewCard(flashcardSetId: string) {
   const qc = useQueryClient();
   return useMutation({
     meta: { errorToast: false },
     mutationFn: ({ id, srs, known }: Pick<Flashcard, 'id' | 'srs' | 'known'>) =>
-      api.patch<Flashcard>(`/cards/${id}`, { known, srs }),
+      api.patch<Flashcard>(`/flashcards/cards/${id}/study-state`, {
+        known,
+        srs,
+      } satisfies UpdateCardStudyStateReq),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.deck(deckId) });
-      qc.invalidateQueries({ queryKey: qk.decks });
+      qc.invalidateQueries({ queryKey: qk.flashcardSet(flashcardSetId) });
+      qc.invalidateQueries({ queryKey: qk.flashcardSets });
     },
   });
 }
@@ -2029,12 +2064,13 @@ export const exploreQuizzesQuery = () =>
   });
 export const useExploreQuizzes = () => useQuery(exploreQuizzesQuery());
 
-export const exploreDecksQuery = () =>
+export const exploreFlashcardSetsQuery = () =>
   queryOptions({
-    queryFn: () => api.get<PublicDeck[]>('/explore/decks'),
-    queryKey: qk.exploreDecks,
+    queryFn: () => api.get<PublicFlashcardSet[]>('/explore/flashcards'),
+    queryKey: qk.exploreFlashcardSets,
   });
-export const useExploreDecks = () => useQuery(exploreDecksQuery());
+export const useExploreFlashcardSets = () =>
+  useQuery(exploreFlashcardSetsQuery());
 
 /* ---------------- sharing & cloning ---------------- */
 
@@ -2049,7 +2085,7 @@ export function useCloneWorkspace(options?: MutationUiOptions) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['workspaces'] });
       qc.invalidateQueries({ queryKey: qk.quizzes });
-      qc.invalidateQueries({ queryKey: qk.decks });
+      qc.invalidateQueries({ queryKey: qk.flashcardSets });
       qc.invalidateQueries({ queryKey: qk.exploreWorkspaces });
     },
   });
@@ -2070,30 +2106,47 @@ export function useCloneQuiz(options?: MutationUiOptions) {
   });
 }
 
-/** Copy a shared deck (with reset SRS state) into the caller's library. */
-export function useCloneDeck(options?: MutationUiOptions) {
+/** Copy shared flashcards (with reset SRS state) into the caller's library. */
+export function useCloneFlashcardSet(options?: MutationUiOptions) {
   const qc = useQueryClient();
   return useMutation({
     meta: mutationMeta(options),
-    mutationFn: (id: string) => api.post<Deck>(`/decks/${id}/clone`),
+    mutationFn: (id: string) =>
+      api.post<FlashcardSet>(`/flashcards/${id}/clone`),
     onSuccess: () => {
-      trackItemCloned('deck');
-      qc.invalidateQueries({ queryKey: qk.decks });
-      qc.invalidateQueries({ queryKey: qk.exploreDecks });
+      trackItemCloned('flashcards');
+      qc.invalidateQueries({ queryKey: qk.flashcardSets });
+      qc.invalidateQueries({ queryKey: qk.exploreFlashcardSets });
       invalidateAllMaterials(qc);
     },
   });
 }
 
-/** Rename / recolor a deck or change its visibility (share standalone). */
-export function useUpdateDeck() {
+/** Rename or recolor flashcards without touching Plate content. */
+export function useUpdateFlashcardSet() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...body }: UpdateDeckReq & { id: string }) =>
-      api.patch<Deck>(`/decks/${id}`, body),
+    mutationFn: ({ id, ...body }: UpdateFlashcardSetReq & { id: string }) =>
+      api.patch<FlashcardSet>(`/flashcards/${id}/metadata`, body),
     onSuccess: (_d, v) => {
-      qc.invalidateQueries({ queryKey: qk.decks });
-      qc.invalidateQueries({ queryKey: qk.deck(v.id) });
+      qc.invalidateQueries({ queryKey: qk.flashcardSets });
+      qc.invalidateQueries({ queryKey: qk.flashcardSet(v.id) });
+      invalidateAllMaterials(qc);
+    },
+  });
+}
+
+export function useUpdateFlashcardSetSharing() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      ...body
+    }: UpdateStandaloneSharingReq & { id: string }) =>
+      api.patch<FlashcardSet>(`/flashcards/${id}/sharing`, body),
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: qk.flashcardSets });
+      qc.invalidateQueries({ queryKey: qk.flashcardSet(v.id) });
       invalidateAllMaterials(qc);
     },
   });

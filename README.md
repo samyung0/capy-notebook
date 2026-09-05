@@ -20,26 +20,77 @@ Study workspace: notes, sources, quizzes, flashcards, schedule, and AI retrieval
 - **Tests** — Vitest (`src/`, `ops/`, `collaboration/`), Go (`server/`), pytest (`pipeline/`), Playwright (`e2e/`).
 - **Office engines** (`vendor/betteroffice/`) — pinned fork used for lazy XLSX/PPTX viewing, analysis, editing, and save round-trips.
 
-## Local
+## Get Restarted
 
-Initialize the pinned Office-engine fork once after cloning:
+- Clone and initialized Office-engine fork with pinned version (requires Bun and Rust):
 
 ```bash
 git submodule update --init vendor/betteroffice
 ```
 
-Cold Office builds require Bun, Rust, `wasm-pack` 0.15.0, and Binaryen's
-`wasm-opt`. The normal frontend lifecycle scripts build missing WASM artifacts
-and reuse intact outputs. See
-[`openwiki/frontend/office-files.md`](openwiki/frontend/office-files.md).
+See [`openwiki/frontend/office-files.md`](openwiki/frontend/office-files.md).
+
+- Copy `deploy/.env.example` to `deploy/.env`.
+
+### UI/Frontend Only:
+
+Very happy, very demure.
+
+If you don't need UAT data or backend (pure UI):
+- `VITE_USE_MSW=true`
+- `pnpm run dev`
+
+Otherwise:
+
+ - `VITE_USE_MSW=false`
+ - `VITE_API_URL=https://uat-api.capynotebook.com`
+ - `VITE_CLERK_PUBLISHABLE_KEY=pk_live_Y2xlcmsudWF0LmNhcHlub3RlYm9vay5jb20k`
+ - `VITE_DEV_HOST=dev-<yourname>.uat.capynotebook.com` (pick a funny name)
+ - `pnpm dev:tunnel` and `pnpm dev:public` in separate terminal
+
+Ask for your origin to be added to `COLLABORATION_ALLOWED_ORIGINS`, or
+notes will not connect.
+
+**Full Stack**
+
+Everything local, on the Clerk development instance (UAT). 
+
+- Webhook events are sent to your machine via your endpoint in clerk (ask Epo to help create/manage).
+  Deliveries ride your own tunnel, so `pnpm dev:tunnel` has to be up to receive them.
 
 ```bash
-# SPA — MSW on by default; VITE_USE_MSW=false talks to the gateway
-pnpm dev
-
-# Gateway :8080, collab :1234, retrieval 127.0.0.1:8001, ingest worker
 docker compose -f deploy/docker-compose.yml up --build
+pnpm dev
+```
 
+ - `VITE_USE_MSW=false`
+ - `VITE_API_URL=http://localhost:8080`
+ - `VITE_CLERK_PUBLISHABLE_KEY=pk_test_ZGlyZWN0LWdlbGRpbmctMTM1NS5jbGVyay5hY2NvdW50cy5kZXYk`
+ - `CLERK_SECRET_KEY` set to the `sk_test`
+ - `CLERK_WEBHOOK_SECRET` set to your endpoint's `whsec_`, or random value if you dont care about webhook events.
+
+ - **Email**:
+
+  Email only logs when running stack locally. We don't support sending Dev Email right now.
+
+ - **Stripe**
+
+  Local uses the *Stable Studio Dev* sandbox. UAT uses the *Stable Studio UAT* sandbox.
+
+  - `stripe login --new-session` allows you to include both sandboxes.
+  - `stripe switch context` allows you to switch between sandboxes.
+
+  Running locally requires these values:
+
+  - `STRIPE_SECRET_KEY`
+  - `STRIPE_PRICE_PRO=price_1UC8wXFKth3QfmPWxTiKOqC1`
+  - `STRIPE_WEBHOOK_SECRET` from running `stripe listen --forward-to localhost:8080/webhooks/stripe`
+  
+  No tunnel needed like the one for clerk.
+
+### Everything else
+
+```bash
 # Operator dashboard :8082 (opt-in profile)
 docker compose -f deploy/docker-compose.yml --profile ops up --build ops
 
@@ -53,6 +104,5 @@ pnpm email:dev
 pnpm email:build
 ```
 
-Copy `deploy/.env.example` to `deploy/.env` for the compose stack. Ops auth is fail-closed: local owner DSNs or skipped Access/Clerk need `APP_ENV=development`, `OPS_UNSAFE_DEVELOPMENT=true`, and the matching bypass flags. Grant an operator by inserting into `operators` after they already have a product user id.
-
-Hostnames, Access, and Postgres role grants: [`openwiki/deployment-runbook.md`](openwiki/deployment-runbook.md). Operator access model: [`openwiki/observability-metering.md`](openwiki/observability-metering.md) §7.
+The Go binary and the Python worker do not auto-load `deploy/.env`. Export it
+first: `set -a; . deploy/.env; set +a`.

@@ -76,6 +76,7 @@ import type {
 } from './document';
 import { quizQuestionElementToQuestion } from './document';
 import { Katex } from './Katex';
+import { StandaloneMaterialTitle } from './MaterialRenderContext';
 import { type MediaAssetNode, MediaAssetView } from './MediaAssetView';
 import { Mermaid } from './Mermaid';
 import { mermaidBlockLabel } from './MermaidBlockLabel';
@@ -268,7 +269,8 @@ function Toc(props: SlateElementProps) {
 }
 
 function Mention(props: SlateElementProps) {
-  const value = String((props.element as { value?: string }).value ?? '');
+  const mention = props.element as { key?: string; value?: string };
+  const value = String(mention.value ?? mention.key ?? '');
   return (
     <SlateElement {...props} as="span" className={MENTION_CLASS}>
       <span>@{value}</span>
@@ -345,14 +347,17 @@ function YouTubeElement(props: SlateElementProps) {
 function BlockShell({
   props,
   label,
+  title,
   children,
 }: {
   props: SlateElementProps;
   label: string;
+  title?: React.ReactNode;
   children?: React.ReactNode;
 }) {
   return (
     <SlateElement {...props} className={BLOCK_SHELL_CLASS}>
+      {title}
       <div className="mb-1 flex items-center justify-between">
         <span className="t-label text-fg-muted">{label}</span>
       </div>
@@ -365,6 +370,7 @@ function BlockShell({
 function QuizElement(props: SlateElementProps) {
   return (
     <SlateElement {...props} className={STUDY_BLOCK_LIST_CLASS}>
+      <StandaloneMaterialTitle kinds="quiz" />
       {props.children}
     </SlateElement>
   );
@@ -373,6 +379,7 @@ function QuizElement(props: SlateElementProps) {
 function FlashcardsElement(props: SlateElementProps) {
   return (
     <SlateElement {...props} className={cn(STUDY_BLOCK_LIST_CLASS, 'gap-2')}>
+      <StandaloneMaterialTitle kinds="flashcards" />
       {props.children}
     </SlateElement>
   );
@@ -381,7 +388,11 @@ function FlashcardsElement(props: SlateElementProps) {
 function MermaidElement(props: SlateElementProps) {
   const element = props.element as unknown as MermaidNode;
   return (
-    <BlockShell label={mermaidBlockLabel(element.source)} props={props}>
+    <BlockShell
+      label={mermaidBlockLabel(element.source)}
+      props={props}
+      title={<StandaloneMaterialTitle kinds={['mindmap', 'diagram']} />}
+    >
       <Mermaid code={element.source} />
     </BlockShell>
   );

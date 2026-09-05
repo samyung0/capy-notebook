@@ -267,7 +267,7 @@ export default function QuizAttempt() {
           <p className="t-meta text-fg-muted tabular-nums">
             {idx + 1} / {quiz.questions.length}
           </p>
-          {!quiz.isOwner && (
+          {!quiz.canEdit && (
             <Button
               disabled={cloneQuizIsPending}
               iconLeft="plus"

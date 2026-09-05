@@ -1,0 +1,71 @@
+# Data retention and anonymized analytics policy
+
+Status: policy work intentionally deferred. Do not change retention behavior as
+part of the account/workspace lifecycle fixes.
+
+## Current destructive account-deletion behavior
+
+- A self-service deletion request locks the account immediately and schedules
+  purge after 30 days. Support cancellation inside that window clears the
+  lifecycle lock; workspace membership, sharing, listings, editing, and cloning
+  become available again because their structural records were kept dormant.
+- Final purge deletes every workspace owned by the account, including shared
+  workspaces, and therefore deletes their files, materials, revision history,
+  collaboration state, share links, and workspace-scoped ingest/RAG records.
+- Final purge deletes standalone materials owned by the account and the
+  account's personal events, tasks, canvases, labels, conversations, tags,
+  attempts, mistakes, notifications, notification preferences/outbox rows,
+  lifecycle notices, source-import jobs, and stored model credentials/settings.
+- Memberships and invitations involving the deleted account are removed.
+  Authorship references in content owned by another account are set to null;
+  editor mentions must fall back to their stored label or user id.
+- The user row remains as a scrubbed tombstone so foreign-key attribution and
+  external billing correlation remain stable. Name, email, avatar, class label,
+  and streak are cleared. The Stripe customer id is currently retained.
+- Webhook event bodies associated with the user are replaced with an empty JSON
+  object, while event identity, source, type, processing status, and errors stay.
+
+## Records intentionally retained today
+
+- The scrubbed user id/tombstone and Stripe customer id.
+- Stripe subscription rows and billing/reconciliation metadata needed to
+  reconcile or refund provider-side activity. Stripe itself retains invoices,
+  payments, refunds, and customer records under Stripe/account policy.
+- Aggregate or operational telemetry that is not removed by `PurgeUser`, such
+  as usage/provider-call measurements, ingest-attempt diagnostics,
+  reconciliation history/reports, logs, Sentry events, and PostHog events.
+  Some of these may still contain a stable user, workspace, material, file,
+  trace, job, or provider identifier even when direct profile fields are gone.
+- Database backups, object-store versions/lifecycle remnants, logs, analytics,
+  and provider copies can outlive the primary-row purge according to each
+  external system's separate retention settings.
+
+## Policy and implementation decisions still needed
+
+- Define a retention period and legal/business purpose for each retained table,
+  log stream, backup, analytics destination, and external provider.
+- Decide which stable identifiers must be deleted, keyed-hashed, irreversibly
+  aggregated, or rotated after account deletion. Plain replacement of profile
+  fields is not sufficient anonymization when identifiers can be joined to
+  billing, logs, support records, or provider data.
+- Define which billing records must remain for tax, chargeback, refund, and
+  accounting obligations, and separate those from product analytics data.
+- Decide whether operational error payloads, webhook errors, reconciliation
+  metadata, job payloads, and notification payloads require field-level
+  redaction beyond the current purge.
+- Decide how to handle Stripe webhook events that cannot yet be correlated to a
+  user. Their raw payload cannot be scrubbed by user purge until correlation
+  succeeds, so define a bounded retention/redaction rule for unmatched events.
+- Define the external retention and deletion guarantees for synchronous
+  ElevenLabs transcription requests; Evo Notes stores no provider transcript
+  id or webhook correlation row after the response completes.
+- Inventory object storage, cache objects, collaboration persistence, vector/RAG
+  tenants, parse/transcription providers, email delivery, Clerk, Stripe, Sentry,
+  and PostHog. Record deletion APIs, retention guarantees, and retry/alert paths.
+- Specify backup deletion/expiry and restoration handling so a backup restore
+  cannot silently resurrect data whose deletion deadline has passed.
+- Define an analytics schema that collects only approved aggregates at write
+  time where possible, instead of retaining customer-level source data and
+  attempting to anonymize it later.
+- Add operator-visible audit/reporting for purge completion, external deletion
+  failures, retention expiry, and anonymization jobs after the policy is agreed.

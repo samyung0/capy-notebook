@@ -87,7 +87,7 @@ def _spec(provider_slug: str, model_id: str) -> ModelConfig:
         thinking_levels=levels,
         default_thinking=default,
         params={"temperature": 0},
-        surfaces=("chat",),
+        slots=("chat",),
     )
 
 
@@ -311,4 +311,3 @@ def test_continuity_keys_cover_known_providers():
     assert "reasoning_content" in CONTINUITY_KEYS
     assert "thinking_blocks" in CONTINUITY_KEYS
     assert "encrypted_content" in CONTINUITY_KEYS
-    assert "thought_signature" in CONTINUITY_KEYS

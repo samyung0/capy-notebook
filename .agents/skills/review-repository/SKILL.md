@@ -1,93 +1,94 @@
 ---
 name: review-repository
-description: Run an evidence-backed, adversarial review of this repository across security, architecture, correctness, implementation quality, data lifecycles, reliability, performance, accessibility, and operations, including a required Codex Security Deep scan for source and release reviews. Use only when the user explicitly invokes $review-repository and chooses a source, UAT, or release review.
+description: Evidence-backed adversarial review of this repository across security, architecture, correctness, data lifecycles, reliability, performance, accessibility, and operations. Runs the local Codex Security source scan and, for UAT or release, the local Strix UAT scan, and posts their commit statuses. Use only when the user explicitly invokes $review-repository with source, uat, or release.
 disable-model-invocation: true
 ---
 
 # Review Repository
 
-This is a costly, manual-only skill. Never invoke it implicitly from an ordinary
-coding task, scheduled task, heartbeat, CI workflow, or background automation.
-Do not start reviewers, challengers, Codex Security, or Strix unless the user
-explicitly invokes this skill for the current task. Repository-native tests may
-run automatically outside this skill; agent-driven judgment may not.
+Costly and manual. Never start it from an ordinary coding task, schedule, CI
+job, or background automation. Every agent-driven part (reviewer lanes,
+challenger, Codex Security, Strix) runs on the developer's machine; GitHub
+Actions only runs deterministic checks and reads the statuses these scans post.
 
-Orchestrate a review; do not substitute one broad model pass for evidence. Choose one mode:
+Pick one mode (default `source`):
 
-- `source`: inspect code, configuration, tests, migrations, and documentation. Do not contact deployed systems.
-- `uat`: test only the explicitly authorized UAT targets and synthetic accounts.
-- `release`: perform both modes and apply the requested release gate. Never probe production.
+- `source`: code, configuration, tests, migrations, docs. No deployed target.
+- `uat`: the explicitly authorized UAT deployment with synthetic accounts only.
+- `release`: both, on the exact candidate SHA, ending in a release verdict.
 
-If the user does not name a mode, use `source`. Read [SECURITY.md](../../../SECURITY.md) first. Then read only the OpenWiki documents that own the surfaces in scope, using the routing table in [AGENTS.md](../../../AGENTS.md). For execution details, read the corresponding reference:
+Read [SECURITY.md](../../../SECURITY.md) first, then only the OpenWiki files that
+own the surfaces in scope (routing table in [AGENTS.md](../../../AGENTS.md)) and
+the matching `human/` decisions. Rubrics live in
+[references/lanes.md](references/lanes.md); the report shape in
+[references/finding-contract.md](references/finding-contract.md).
 
-- Source review: [references/source-review.md](references/source-review.md)
-- Non-security lanes: [references/non-security-lanes.md](references/non-security-lanes.md)
-- UAT or release review: [references/uat-review.md](references/uat-review.md)
-- Frontend/UI lane: [references/ui-quality-review.md](references/ui-quality-review.md)
-- Findings and final report: [references/finding-contract.md](references/finding-contract.md)
+## Rules
 
-## Review rules
+1. Record the exact revision, dirty state, components in scope, exclusions, and
+   available infrastructure before anything else.
+2. Documentation is intended behavior, not proof.
+3. Trace claims end to end: entry point, authorization, mutation, persistence,
+   cleanup, observable result.
+4. Evidence is a file and line, a command, a response, a test, or a minimal
+   exploit path. Absence of evidence is a coverage gap, not a finding.
+5. Separate pre-existing failures from regressions in the reviewed revision.
+6. Do not edit application code during review. Do not put credentials, tokens,
+   fixture content, or raw sensitive responses in prompts or artifacts.
 
-1. Establish the exact revision, dirty-worktree state, included components, exclusions, and available test infrastructure.
-2. Treat documentation as intended behavior, not proof that the implementation satisfies it.
-3. Trace important claims through entry point, authorization, state mutation, persistence, cleanup, and observable result.
-4. Prefer reproducible evidence: exact file and line, command, response, test, or minimal exploit path.
-5. Label untested or unreachable surfaces as coverage gaps. Do not manufacture findings from absence of evidence.
-6. Separate pre-existing failures from regressions caused by the reviewed revision.
-7. Do not edit application code while reviewing unless the user explicitly requests fixes after reviewing the report.
-8. Do not expose credentials, tokens, private fixture content, or raw sensitive responses in prompts or artifacts.
+## Source mode
 
-## Adversarial orchestration
+1. `scripts/review/preflight.sh local` and `node scripts/review/source-snapshot.mjs`.
+2. Run `scripts/review/codex-security-scan.sh standard` on a clean checkout. It
+   runs the Codex Security Standard scan through the Codex CLI, copies the
+   canonical artifacts under `review-results/`, and posts the
+   `source/codex-security` status on HEAD. Use `deep` only when the user asks
+   for it on a release candidate; Deep repeats independent Standard scans for
+   hours. If `codex` or the plugin is unavailable, record the gap and end with
+   `insufficient evidence`; never call the review clean without a scan.
+3. Split the non-security work into independent lanes when delegation is
+   available: architecture and contracts; correctness, accounting, concurrency,
+   lifecycles, AI/retrieval; reliability, performance, observability,
+   accessibility/UI, test adequacy. Give each lane explicit ownership, tell it
+   others share the tree, and forbid file edits. Do not add lanes to raise the
+   agent count.
+4. Run `scripts/review/run-local-tests.sh fast` (or `full` when the change
+   warrants it) and any targeted tests the lanes need.
+5. Challenge pass: an independent agent tries to falsify every high or critical
+   candidate (reachability, compensating controls, missing threat paths). Use a
+   different model family when one is available; say so either way. The lead
+   adjudicates and owns final severity.
 
-Only after this skill has been explicitly invoked, split a comprehensive review
-into independent lanes when agent delegation is available and the user has
-authorized the requested review:
+## UAT mode
 
-- security, privacy, trust boundaries, and dependency/configuration risk;
-- architecture, implementation seams, maintainability, and API contracts;
-- correctness, accounting, concurrency, data lifecycles, and AI/retrieval accuracy;
-- reliability, performance, observability, deployment, accessibility/UI, and test adequacy.
+Read `review/strix-uat.md` and runbook section 12 first, then
+`scripts/review/preflight.sh uat`. Remote work is allowed only when
+`UAT_TARGET_AUTHORIZED=true`, HTTP targets are `https://`, the collab target is
+`wss://`, every host is listed exactly in `UAT_ALLOWED_HOSTS`, and the target
+holds synthetic data. Never infer authorization from a hostname. Never touch
+production.
 
-Give each reviewer explicit ownership and tell it that other agents share the codebase. Reviewers must not modify files. Do not duplicate lanes merely to increase agent count.
+1. `pnpm review:uat:smoke`, then `pnpm e2e:uat` for the authenticated role
+   matrix, accessibility, and reflow checks.
+2. `scripts/review/strix-scan.sh standard 40` (or `pnpm review:uat:strix`). It
+   scans the authorized targets, validates the run with findings enforced, and
+   posts `uat/strix` on the SHA the UAT gateway reports in `X-Evo-Release`.
+3. No volumetric denial of service, credential attacks, social engineering,
+   persistence, or exfiltration. Stripe sandbox and synthetic Clerk accounts
+   only. Retain viewport, theme, input method, and trace for UI findings.
 
-After collecting candidates, run an independent challenge pass. The challenger tries to falsify each high or critical candidate, checks reachability and compensating controls, and identifies missing threat paths. Use a different model family only when one is genuinely available; otherwise report that the challenge was independent but not cross-model. The lead agent adjudicates disagreements and owns the final severity.
+## Release mode
 
-For `source` and `release` reviews, the lead must invoke
-`$codex-security:deep-security-scan` against the repository root. The explicit
-invocation of this skill authorizes that costly scan; do not wait for a second
-request or silently substitute a Standard scan. Run the Deep scan as the primary
-input to the security lane, then include its validated findings and coverage in
-the shared challenge and adjudication process. The Deep scan does not replace
-manual review of repository-specific policy or the other review lanes.
-
-A running Deep scan is durable work coordinated outside the local `codex exec`
-waiter. If the user asks to stop, cancel, kill, interrupt, or abort a source or
-release review, call `cancel_codex_security_scan` for the active scan and wait
-for a canceled or terminal result before terminating the local waiter. Killing
-the `codex exec` parent, sending Ctrl-C, closing its terminal, or ending the
-current turn only detaches the waiter; none of those actions cancels the scan.
-If the cancellation call is unavailable or cannot be confirmed, warn that the
-scan may still be running and do not report a clean stop. Do not cancel when the
-user asks only to detach and leave the scan running.
-
-Skip the Deep scan only when the user explicitly excludes Codex Security or the
-Deep scan tool is unavailable. If it is unavailable, fails, or does not
-complete, continue any useful independent lanes, mark the required security
-engine incomplete, and end with `insufficient evidence`; do not present the
-review as clean or release-ready. Record an explicit user opt-out in the final
-report. The same manual-only rule applies to Strix, which remains an optional
-additional input. Do not describe any scanner as having run unless there is an
-artifact or tool result.
+Run both modes against the same candidate SHA; stale evidence is rerun. The
+production promotion workflow refuses a SHA whose `source/codex-security` or
+`uat/strix` status is not `success`, and reruns the deterministic UAT gate and
+editor perf itself. Scanner failure, an incomplete run, or missing artifacts is
+`insufficient evidence`, never a pass.
 
 ## Output
 
-Write generated reports beneath ignored `review-results/`. Produce:
-
-- an executive summary and release recommendation;
-- validated findings ordered by severity;
-- rejected or downgraded candidates with the reason;
-- coverage map and explicit gaps;
-- commands and tools actually run;
-- deferred checks that require UAT, credentials, or infrastructure.
-
-Follow the finding contract exactly. A clean report means only that the reviewed evidence produced no validated findings; it is not a guarantee of security or correctness.
+Write under ignored `review-results/`: executive summary and release
+recommendation, validated findings by severity, rejected or downgraded
+candidates with reasons, coverage map and gaps, commands actually run, and
+deferred checks. Follow the finding contract. A clean report means the reviewed
+evidence produced no validated finding, nothing more.

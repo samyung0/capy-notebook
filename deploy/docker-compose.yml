@@ -120,8 +120,6 @@ services:
       EVO_ENGINE: ${EVO_ENGINE:-evo}
       PIPELINE_URL: http://retrieval:8001
       PIPELINE_SECRET: ${PIPELINE_SECRET:-dev-pipeline-secret}
-      IMPORT_RELAY_ENQUEUE_URL: ${IMPORT_RELAY_ENQUEUE_URL:-}
-      IMPORT_RELAY_SECRET: ${IMPORT_RELAY_SECRET:-}
       LLM_CREDENTIALS_KEY: ${LLM_CREDENTIALS_KEY:-}
       APP_URL: ${APP_URL:-http://localhost:5173}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
@@ -136,9 +134,7 @@ services:
       DEV_USER_ID: ${DEV_USER_ID:-u_1}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
-      ELEVENLABS_WEBHOOK_SECRET: ${ELEVENLABS_WEBHOOK_SECRET:-}
       STRIPE_PRICE_PRO: ${STRIPE_PRICE_PRO:-}
-      STRIPE_PRICE_TEAM: ${STRIPE_PRICE_TEAM:-}
       RATE_LIMIT_DISABLED: ${RATE_LIMIT_DISABLED:-}
       RATE_LIMIT_AI_PER_HOUR: ${RATE_LIMIT_AI_PER_HOUR:-}
       # Durable caption/derived artifact cache TTL.
@@ -172,7 +168,9 @@ services:
       OPS_STATIC_DIR: /app/static
       OPS_DATABASE_URL: ${OPS_DATABASE_URL:-}
       OPS_ADMIN_DATABASE_URL: ${OPS_ADMIN_DATABASE_URL:-}
-      OPS_INGEST_PRIMARY_ENVIRONMENT: ${OPS_INGEST_PRIMARY_ENVIRONMENT:-production}
+      # Must match EVO_INGEST_ENVIRONMENT on the workers writing to this
+      # database; the ingest pages filter on it. This stack is `local`.
+      OPS_INGEST_PRIMARY_ENVIRONMENT: ${OPS_INGEST_PRIMARY_ENVIRONMENT:-local}
       OPS_INGEST_UAT_DATABASE_URL: ${OPS_INGEST_UAT_DATABASE_URL:-}
       OPS_INGEST_LOCAL_DATABASE_URL: ${OPS_INGEST_LOCAL_DATABASE_URL:-}
       OPS_CF_ACCESS_ISSUER: ${OPS_CF_ACCESS_ISSUER:-}
@@ -188,7 +186,6 @@ services:
       DEEPINFRA_API_KEY: ${DEEPINFRA_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     expose:
       - "8082"
     ports:
@@ -246,10 +243,8 @@ services:
       DEEPINFRA_API_KEY: ${DEEPINFRA_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
       ELEVENLABS_BASE_URL: ${ELEVENLABS_BASE_URL:-https://api.elevenlabs.io}
-      ELEVENLABS_WEBHOOK_ID: ${ELEVENLABS_WEBHOOK_ID:-}
       EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}
       EVO_CAPTION_CONCURRENCY: ${EVO_CAPTION_CONCURRENCY:-8}
       EVO_CAPTION_MAX_EDGE: ${EVO_CAPTION_MAX_EDGE:-1280}
@@ -257,6 +252,7 @@ services:
       EVO_IMAGE_MAX_PIXELS: ${EVO_IMAGE_MAX_PIXELS:-100000000}
       EVO_ELEVENLABS_TRANSCRIPT_VERSION: ${EVO_ELEVENLABS_TRANSCRIPT_VERSION:-scribe-v2-1}
       EVO_ELEVENLABS_CONCURRENCY_UNITS: ${EVO_ELEVENLABS_CONCURRENCY_UNITS:-12}
+      EVO_ELEVENLABS_SYNC_TIMEOUT_S: ${EVO_ELEVENLABS_SYNC_TIMEOUT_S:-43200}
       EVO_AUDIO_MAX_DURATION_SECONDS: ${EVO_AUDIO_MAX_DURATION_SECONDS:-36000}
       EVO_TABULAR_TEXT_VERSION: ${EVO_TABULAR_TEXT_VERSION:-v1}
       # Must match the gateway: whichever process sweeps first applies its own.
@@ -290,6 +286,24 @@ services:
       redis:
         condition: service_healthy
 
+  import-worker:
+    profiles:
+      - app-host-ingest
+    build:
+      context: ..
+      dockerfile: pipeline/Dockerfile
+    environment:
+      <<: *app-ingest-env
+      GATEWAY_URL: http://server:8080
+      PIPELINE_SECRET: ${PIPELINE_SECRET:-dev-pipeline-secret}
+      EVO_DB_SYNC_POOL_MAX_SIZE: "2"
+      EVO_DB_ASYNC_POOL_MAX_SIZE: "2"
+    command: ["python", "-m", "pipeline.ingest.import_worker"]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
   retrieval:
     build:
       context: ..
@@ -307,7 +321,6 @@ services:
       DEEPINFRA_API_KEY: ${DEEPINFRA_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}
     ports:
       # Bound to localhost: this is a debug port. Do not publish :8001 on a
@@ -334,7 +347,6 @@ services:
       DATABASE_URL: postgres://evo:evo@db:5432/evo?sslmode=disable
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_PRICE_PRO: ${STRIPE_PRICE_PRO:-}
-      STRIPE_PRICE_TEAM: ${STRIPE_PRICE_TEAM:-}
     depends_on:
       db:
         condition: service_healthy

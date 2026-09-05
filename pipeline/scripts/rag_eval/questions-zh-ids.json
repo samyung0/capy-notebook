@@ -1,0 +1,44 @@
+[
+  {
+    "q": "CIL-LLM",
+    "expect": [["zh-CN.pdf", 1], ["zh-CN.pdf", 7], ["zh-CN.pdf", 6]],
+    "flag": 1
+  },
+  { "q": "图1 CIL", "expect": [["zh-CN.pdf", 8]], "flag": 1 },
+  { "q": "THUCNews", "expect": [["zh-CN.pdf", 41]], "flag": 1 },
+  { "q": "GLM-4", "expect": [["zh-CN.pdf", 40]], "flag": 1 },
+  {
+    "q": "表3 THU-Seq",
+    "expect": [["zh-CN.pdf", 51], ["zh-CN.pdf", 53]],
+    "flag": 1
+  },
+  {
+    "q": "灾难性遗忘",
+    "expect": [["zh-CN.pdf", 6], ["zh-CN.pdf", 7], ["zh-CN.pdf", 1]],
+    "flag": 1
+  },
+  {
+    "q": "类别增量学习 CIL",
+    "expect": [["zh-CN.pdf", 6], ["zh-CN.pdf", 7], ["zh-CN.pdf", 8]],
+    "flag": 1
+  },
+  {
+    "q": "AiScholar",
+    "expect": [["mixed_zh_en.pdf", 4], ["mixed_zh_en.pdf", 14]],
+    "flag": 1
+  },
+  { "q": "刘国兴", "expect": [["mixed_zh_en.pdf", 0]], "flag": 1 },
+  { "q": "撑粤语", "expect": [["zh_HK.pdf", 2]], "flag": 1 },
+  { "q": "江南西", "expect": [["zh_HK.pdf", 2]], "flag": 1 },
+  { "q": "Weng Kit CHAN", "expect": [["zh_HK.pdf", 0]], "flag": 1 },
+  {
+    "q": "表1",
+    "expect": [["mixed_zh_en.pdf", 31], ["zh_HK.pdf", 16]],
+    "flag": 1
+  },
+  {
+    "q": "lixin@ppsuc.edu.cn",
+    "expect": [["zh-CN.pdf", 0], ["zh-CN.pdf", 1]],
+    "flag": 1
+  }
+]

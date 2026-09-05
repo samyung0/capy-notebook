@@ -4,7 +4,6 @@
  * Evo Notes API
  * OpenAPI spec version: 0.1.0
  */
-import type { SrsState } from './srsState.ts';
 
 export interface UpdateCardReq {
   /** A URL to the JSON Schema for this object. */
@@ -19,6 +18,4 @@ export interface UpdateCardReq {
      * @maxLength 4000
      */
   front?: string;
-  known?: boolean;
-  srs?: SrsState;
 }

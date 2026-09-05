@@ -1,0 +1,62 @@
+[
+  { "q": "Mayor-Rocher", "expect": [["variedades-espanol.pdf", 0]], "flag": 1 },
+  {
+    "q": "GPT-4o",
+    "expect": [["variedades-espanol.pdf", 12], ["variedades-espanol.pdf", 0]],
+    "flag": 1
+  },
+  {
+    "q": "Tabla 3",
+    "expect": [["variedades-espanol.pdf", 12], ["variedades-espanol.pdf", 13]],
+    "flag": 1
+  },
+  {
+    "q": "español andino",
+    "expect": [["variedades-espanol.pdf", 12], ["variedades-espanol.pdf", 13]],
+    "flag": 1
+  },
+  {
+    "q": "ILENIA",
+    "expect": [
+      ["sesgo-linguistico-digital.pdf", 18],
+      ["sesgo-linguistico-digital.pdf", 19]
+    ],
+    "flag": 1
+  },
+  {
+    "q": "NEL-NÓS",
+    "expect": [
+      ["sesgo-linguistico-digital.pdf", 24],
+      ["sesgo-linguistico-digital.pdf", 23]
+    ],
+    "flag": 1
+  },
+  { "q": "LEIA", "expect": [["sesgo-linguistico-digital.pdf", 20]], "flag": 1 },
+  { "q": "ILIA", "expect": [["sesgo-linguistico-digital.pdf", 9]], "flag": 1 },
+  {
+    "q": "SLD",
+    "expect": [
+      ["sesgo-linguistico-digital.pdf", 1],
+      ["sesgo-linguistico-digital.pdf", 10],
+      ["sesgo-linguistico-digital.pdf", 11]
+    ],
+    "flag": 1
+  },
+  {
+    "q": "Águila 7B",
+    "expect": [["sesgo-linguistico-digital.pdf", 30]],
+    "flag": 1
+  },
+  {
+    "q": "Javier Muñoz",
+    "expect": [
+      ["sesgo-linguistico-digital.pdf", 0],
+      ["sesgo-linguistico-digital.pdf", 10],
+      ["sesgo-linguistico-digital.pdf", 11]
+    ],
+    "flag": 1
+  },
+  { "q": "Figura 1", "expect": [["variedades-espanol.pdf", 22]], "flag": 1 },
+  { "q": "Llama-3.2", "expect": [["variedades-espanol.pdf", 18]], "flag": 1 },
+  { "q": "MLM", "expect": [["sesgo-linguistico-digital.pdf", 1]], "flag": 1 }
+]

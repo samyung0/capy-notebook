@@ -278,6 +278,15 @@ func TestMaterialVersionRetentionUsesOwnerTier(t *testing.T) {
 func TestMaterialVersionDowngradeIsCappedThenPhysicallyPruned(t *testing.T) {
 	s := openRevisionTestStore(t)
 	ctx, userID, material := createRevisionTestMaterial(t, s, PlanPro)
+	periodEnd := time.Now().UTC().Add(24 * time.Hour)
+	subscription := Subscription{
+		StripeSubscriptionID: uid("sub"), UserID: userID,
+		Status: "active", PriceID: "price_pro", PlanTier: PlanPro,
+		CurrentPeriodEnd: &periodEnd, StripeEventCreated: 1,
+	}
+	if err := s.UpsertSubscription(ctx, subscription); err != nil {
+		t.Fatal(err)
+	}
 	replaceRevisionTestHistory(
 		t,
 		s,
@@ -290,22 +299,210 @@ func TestMaterialVersionDowngradeIsCappedThenPhysicallyPruned(t *testing.T) {
 	if got := physicalRevisionCount(t, s, ctx, material.ID); got != 12 {
 		t.Fatalf("pro history count = %d, want 12", got)
 	}
-	if _, err := s.pool.Exec(ctx, `UPDATE users SET plan_tier='free' WHERE id=$1`, userID); err != nil {
+	periodEnd = time.Now().UTC().Add(-time.Hour)
+	subscription.Status = "canceled"
+	subscription.CurrentPeriodEnd = &periodEnd
+	subscription.StripeEventCreated = 2
+	if err := s.UpsertSubscription(ctx, subscription); err != nil {
 		t.Fatal(err)
+	}
+	freeLimit := mustPlanLimits(t, s, PlanFree).MaterialRevisions
+	if got := physicalRevisionCount(t, s, ctx, material.ID); got != freeLimit {
+		t.Fatalf("downgrade retained %d physical versions, want %d", got, freeLimit)
 	}
 	listed, err := s.ListMaterialRevisions(ctx, material.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	freeLimit := mustPlanLimits(t, s, PlanFree).MaterialRevisions
 	if len(listed) != freeLimit {
 		t.Fatalf("downgraded history exposed %d versions, want %d", len(listed), freeLimit)
 	}
-	deleted, err := s.PruneMaterialRevisions(ctx)
+}
+
+func TestRevisionRetentionUsesLiveSubscriptionBeforePlanProjection(t *testing.T) {
+	s := openRevisionTestStore(t)
+	ctx, userID, material := createRevisionTestMaterial(t, s, PlanFree)
+	periodEnd := time.Now().UTC().Add(24 * time.Hour)
+	if _, err := s.pool.Exec(ctx, `INSERT INTO user_subscriptions
+		(stripe_subscription_id, user_id, status, plan_tier,
+		 current_period_end, stripe_event_created)
+		VALUES ($1,$2,'active','pro',$3,1)`, uid("sub"), userID, periodEnd); err != nil {
+		t.Fatal(err)
+	}
+	const history = 12
+	replaceRevisionTestHistory(
+		t, s, ctx, material, userID, history,
+		time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC),
+	)
+	if got := physicalRevisionCount(t, s, ctx, material.ID); got != history {
+		t.Fatalf("live Pro subscription retained %d revisions, want %d", got, history)
+	}
+	if _, err := s.PruneMaterialRevisions(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := physicalRevisionCount(t, s, ctx, material.ID); got != history {
+		t.Fatalf("daily prune retained %d live Pro revisions, want %d", got, history)
+	}
+	listed, err := s.ListMaterialRevisions(ctx, material.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if deleted < 5 || physicalRevisionCount(t, s, ctx, material.ID) != freeLimit {
-		t.Fatalf("downgrade prune deleted %d rows", deleted)
+	if len(listed) != history {
+		t.Fatalf("live Pro listing returned %d revisions, want %d", len(listed), history)
+	}
+}
+
+func TestClosedLifecycleProviderRefreshPreservesPaidRevisionHistory(t *testing.T) {
+	s := openRevisionTestStore(t)
+	ctx, userID, material := createRevisionTestMaterial(t, s, PlanFree)
+	periodEnd := time.Now().UTC().Add(24 * time.Hour)
+	subscription := Subscription{
+		StripeSubscriptionID: uid("sub"),
+		UserID:               userID,
+		Status:               "active",
+		PriceID:              "price_pro",
+		PlanTier:             PlanPro,
+		CurrentPeriodEnd:     &periodEnd,
+		StripeEventCreated:   1,
+	}
+	if err := s.UpsertSubscription(ctx, subscription); err != nil {
+		t.Fatal(err)
+	}
+	const history = 12
+	replaceRevisionTestHistory(
+		t, s, ctx, material, userID, history,
+		time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC),
+	)
+	if _, err := s.RequestAccountDeletion(ctx, userID, false); err != nil {
+		t.Fatal(err)
+	}
+
+	subscription.StripeEventCreated = 2
+	if err := s.UpsertSubscription(ctx, subscription); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MarkSubscriptionPastDue(ctx, subscription.StripeSubscriptionID, 3); err != nil {
+		t.Fatal(err)
+	}
+	version, err := s.SubscriptionVersion(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	subscription.Status = "past_due"
+	if _, err := s.SyncSubscriptionsFromStripe(
+		ctx, userID, []Subscription{subscription}, version, 4, nil,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if got := physicalRevisionCount(t, s, ctx, material.ID); got != history {
+		t.Fatalf("closed provider refresh retained %d revisions, want %d", got, history)
+	}
+	if _, err := s.PruneMaterialRevisions(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := physicalRevisionCount(t, s, ctx, material.ID); got != history {
+		t.Fatalf("daily prune retained %d closed Pro revisions, want %d", got, history)
+	}
+	if _, err := s.CancelAccountDeletion(ctx, userID); err != nil {
+		t.Fatal(err)
+	}
+	if got := physicalRevisionCount(t, s, ctx, material.ID); got != history {
+		t.Fatalf("restored account retained %d revisions, want %d", got, history)
+	}
+}
+
+func TestClosedLifecyclePreservesNoRowStoredProRevisionHistory(t *testing.T) {
+	s := openRevisionTestStore(t)
+	ctx, userID, material := createRevisionTestMaterial(t, s, PlanPro)
+	const history = 12
+	replaceRevisionTestHistory(
+		t, s, ctx, material, userID, history,
+		time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC),
+	)
+	version, err := s.SubscriptionVersion(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RequestAccountDeletion(ctx, userID, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SyncSubscriptionsFromStripe(ctx, userID, nil, version, 2_000, nil); err != nil {
+		t.Fatal(err)
+	}
+	if tier, _ := projectedPlan(t, s, userID); tier != PlanPro {
+		t.Fatalf("closed no-row projection tier=%s, want stored pro", tier)
+	}
+	if got := physicalRevisionCount(t, s, ctx, material.ID); got != history {
+		t.Fatalf("closed no-row Pro retained %d revisions, want %d", got, history)
+	}
+	if _, err := s.PruneMaterialRevisions(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := physicalRevisionCount(t, s, ctx, material.ID); got != history {
+		t.Fatalf("daily prune retained %d closed no-row Pro revisions, want %d", got, history)
+	}
+	if _, err := s.CancelAccountDeletion(ctx, userID); err != nil {
+		t.Fatal(err)
+	}
+	if tier, status := projectedPlan(t, s, userID); tier != PlanPro || status != "active" {
+		t.Fatalf("restored no-row projection=%s/%s, want pro/active", tier, status)
+	}
+	if got := physicalRevisionCount(t, s, ctx, material.ID); got != history {
+		t.Fatalf("restored no-row Pro retained %d revisions, want %d", got, history)
+	}
+	version, err = s.SubscriptionVersion(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SyncSubscriptionsFromStripe(ctx, userID, nil, version, 3_000, nil); err != nil {
+		t.Fatal(err)
+	}
+	freeLimit := mustPlanLimits(t, s, PlanFree).MaterialRevisions
+	if tier, status := projectedPlan(t, s, userID); tier != PlanFree || status != SubNone {
+		t.Fatalf("empty provider snapshot projected %s/%s, want free/none", tier, status)
+	}
+	if got := physicalRevisionCount(t, s, ctx, material.ID); got != freeLimit {
+		t.Fatalf("empty provider snapshot retained %d revisions, want %d", got, freeLimit)
+	}
+}
+
+func TestClosedLifecycleLiveFreeDoesNotRetainExpiredProRevisionHistory(t *testing.T) {
+	s := openRevisionTestStore(t)
+	ctx, userID, material := createRevisionTestMaterial(t, s, PlanPro)
+	const history = 12
+	replaceRevisionTestHistory(
+		t, s, ctx, material, userID, history,
+		time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC),
+	)
+	now := time.Now().UTC()
+	liveFreeID := uid("sub_live_free")
+	if _, err := s.pool.Exec(ctx, `INSERT INTO user_subscriptions
+		(stripe_subscription_id,user_id,status,plan_tier,current_period_end,stripe_event_created)
+		VALUES ($1,$2,'canceled','pro',$3,1),
+		       ($4,$2,'active','free',$5,1)`,
+		uid("sub_expired_pro"), userID, now.Add(-time.Hour),
+		liveFreeID, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	version, err := s.SubscriptionVersion(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RequestAccountDeletion(ctx, userID, false); err != nil {
+		t.Fatal(err)
+	}
+	periodEnd := now.Add(time.Hour)
+	live := []Subscription{{
+		StripeSubscriptionID: liveFreeID,
+		Status:               "active",
+		PlanTier:             PlanFree,
+		CurrentPeriodEnd:     &periodEnd,
+	}}
+	if _, err := s.SyncSubscriptionsFromStripe(ctx, userID, live, version, 2_000, nil); err != nil {
+		t.Fatal(err)
+	}
+	freeLimit := mustPlanLimits(t, s, PlanFree).MaterialRevisions
+	if got := physicalRevisionCount(t, s, ctx, material.ID); got != freeLimit {
+		t.Fatalf("closed effective Free retained %d revisions, want %d", got, freeLimit)
 	}
 }

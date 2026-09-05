@@ -1,0 +1,39 @@
+[
+  {
+    "q": "What did Experiment II test on the AiScholar platform?",
+    "expect": [["mixed_zh_en.pdf", 4], ["mixed_zh_en.pdf", 14]]
+  },
+  {
+    "q": "How were ethics, privacy and data security handled in this study?",
+    "expect": [
+      ["mixed_zh_en.pdf", 7],
+      ["mixed_zh_en.pdf", 8],
+      ["mixed_zh_en.pdf", 17],
+      ["mixed_zh_en.pdf", 20]
+    ]
+  },
+  {
+    "q": "What did the study find about reviewers' cognitive load?",
+    "expect": [
+      ["mixed_zh_en.pdf", 3],
+      ["mixed_zh_en.pdf", 6],
+      ["mixed_zh_en.pdf", 16]
+    ]
+  },
+  {
+    "q": "What are the theoretical contributions of this thesis?",
+    "expect": [["mixed_zh_en.pdf", 9], ["mixed_zh_en.pdf", 21]]
+  },
+  {
+    "q": "Why is the traditional manual peer review system under strain?",
+    "expect": [["mixed_zh_en.pdf", 1], ["mixed_zh_en.pdf", 11]]
+  },
+  {
+    "q": "Who does the author thank for their unconditional love and support?",
+    "expect": [["mixed_zh_en.pdf", 26]]
+  },
+  {
+    "q": "Which university's business school provided the academic environment and research resources?",
+    "expect": [["mixed_zh_en.pdf", 25]]
+  }
+]

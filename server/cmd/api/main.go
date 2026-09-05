@@ -102,6 +102,31 @@ func strongEmailSecret(value string) bool {
 	return count >= 3
 }
 
+func validateAuthConfiguration(
+	appEnv string,
+	authDisabled, e2eAuth bool,
+	clerkSecret, clerkWebhookSecret string,
+) error {
+	if authDisabled && appEnv != "development" && !e2eAuth {
+		return errors.New("AUTH_DISABLED=true is only allowed when APP_ENV=development")
+	}
+	if !authDisabled && !e2eAuth && strings.TrimSpace(clerkSecret) == "" {
+		return errors.New("CLERK_SECRET_KEY is required unless AUTH_DISABLED or E2E_AUTH is enabled")
+	}
+	if !authDisabled && !e2eAuth && strings.TrimSpace(clerkWebhookSecret) == "" {
+		return errors.New("CLERK_WEBHOOK_SECRET is required unless AUTH_DISABLED or E2E_AUTH is enabled")
+	}
+	return nil
+}
+
+func validateStripeConfiguration(secretKey, webhookSecret, pricePro string) error {
+	billingEnabled := strings.TrimSpace(webhookSecret) != "" || strings.TrimSpace(pricePro) != ""
+	if billingEnabled && strings.TrimSpace(secretKey) == "" {
+		return errors.New("STRIPE_SECRET_KEY is required when Stripe billing is configured")
+	}
+	return nil
+}
+
 func openBlobStore(appEnv string) (blob.Store, error) {
 	switch env("BLOB_BACKEND", "b2") {
 	case "memory":
@@ -151,6 +176,12 @@ func main() {
 	engine := env("EVO_ENGINE", "evo")
 	appURL := env("APP_URL", "http://localhost:5173")
 	appEnv := env("APP_ENV", "development")
+	authDisabled := envBool("AUTH_DISABLED")
+	clerkSecret := env("CLERK_SECRET_KEY", "")
+	clerkWebhookSecret := env("CLERK_WEBHOOK_SECRET", "")
+	stripeSecretKey := env("STRIPE_SECRET_KEY", "")
+	stripeWebhookSecret := env("STRIPE_WEBHOOK_SECRET", "")
+	stripePricePro := env("STRIPE_PRICE_PRO", "")
 
 	// Before anything else logs: this redirects the stdlib logger used
 	// throughout the process into structured output.
@@ -185,6 +216,16 @@ func main() {
 	}
 	if e2eAuth && (len(e2eUserIDs) == 0 || strings.TrimSpace(e2eUserIDs[0]) == "") {
 		log.Fatal("E2E_AUTH=true requires E2E_AUTH_USER_IDS")
+	}
+	if err := validateAuthConfiguration(
+		appEnv, authDisabled, e2eAuth, clerkSecret, clerkWebhookSecret,
+	); err != nil {
+		log.Fatal(err)
+	}
+	if err := validateStripeConfiguration(
+		stripeSecretKey, stripeWebhookSecret, stripePricePro,
+	); err != nil {
+		log.Fatal(err)
 	}
 	for i := range e2eUserIDs {
 		e2eUserIDs[i] = strings.TrimSpace(e2eUserIDs[i])
@@ -337,10 +378,6 @@ func main() {
 			if _, err := st.SweepExpiredUploads(ctx, 100); err != nil && ctx.Err() == nil {
 				log.Printf("sweep expired uploads: %v", err)
 			}
-			if _, err := st.RecoverStalledSourceImports(ctx, 100); err != nil &&
-				ctx.Err() == nil {
-				log.Printf("recover expired source imports: %v", err)
-			}
 			if err := st.PruneUploadSessions(ctx); err != nil && ctx.Err() == nil {
 				log.Printf("prune upload sessions: %v", err)
 			}
@@ -362,46 +399,30 @@ func main() {
 		CaptionDays: envInt("EVO_CAPTION_CACHE_TTL_DAYS", 90),
 	})
 	go runBlobSweep(ctx, st, blobStore)
-	go runAccountPurgeWorker(ctx, st, env("CLERK_SECRET_KEY", "") != "")
+	go runAccountPurgeWorker(ctx, st, clerkSecret != "")
 	go runOverQuotaNoticeWorker(ctx, st)
-
-	importRelaySecret := env("IMPORT_RELAY_SECRET", "")
-	importRelayEnqueueURL := env("IMPORT_RELAY_ENQUEUE_URL", "")
-	if (importRelaySecret == "") != (importRelayEnqueueURL == "") {
-		log.Fatal("IMPORT_RELAY_SECRET and IMPORT_RELAY_ENQUEUE_URL must be configured together")
-	}
-	if importRelaySecret != "" && len(importRelaySecret) < 32 {
-		log.Fatal("IMPORT_RELAY_SECRET must be at least 32 characters")
-	}
-	if importRelayEnqueueURL != "" {
-		go runSourceImportDispatcher(
-			ctx, st, importRelayEnqueueURL, importRelaySecret,
-		)
-	}
+	go runCollaborationEvictionWorker(ctx, st, rdb)
 
 	cfg := httpapi.Config{
-		ReleaseSHA:              env("RELEASE_SHA", ""),
-		ClerkSecretKey:          env("CLERK_SECRET_KEY", ""),
-		ClerkWebhookSecret:      env("CLERK_WEBHOOK_SECRET", ""),
-		AuthDisabled:            envBool("AUTH_DISABLED"),
-		DevUserID:               env("DEV_USER_ID", "u_1"),
-		E2EAuth:                 e2eAuth,
-		E2ESecret:               e2eSecret,
-		E2EUserIDs:              e2eUserIDs,
-		StripeSecretKey:         env("STRIPE_SECRET_KEY", ""),
-		StripeWebhookSecret:     env("STRIPE_WEBHOOK_SECRET", ""),
-		ElevenLabsWebhookSecret: env("ELEVENLABS_WEBHOOK_SECRET", ""),
-		StripePricePro:          env("STRIPE_PRICE_PRO", ""),
-		AppURL:                  appURL,
-		EmailUnsubscribeSecret:  emailUnsubscribeSecret,
-		CollaborationSecret:     env("COLLABORATION_SECRET", "dev-collaboration-secret"),
-		CollaborationURL:        env("COLLABORATION_URL", "ws://localhost:1234"),
-		PipelineSecret:          pipeSecret,
-		ImportRelaySecret:       importRelaySecret,
-		ImportRelayEnqueueURL:   importRelayEnqueueURL,
-		AllowedOrigins:          envList("CORS_ALLOWED_ORIGINS"),
-		RateLimit:               rateLimitConfig(appEnv),
-		ModelRegistry:           modelReg,
+		ReleaseSHA:             env("RELEASE_SHA", ""),
+		ClerkSecretKey:         clerkSecret,
+		ClerkWebhookSecret:     clerkWebhookSecret,
+		AuthDisabled:           authDisabled,
+		DevUserID:              env("DEV_USER_ID", "u_1"),
+		E2EAuth:                e2eAuth,
+		E2ESecret:              e2eSecret,
+		E2EUserIDs:             e2eUserIDs,
+		StripeSecretKey:        stripeSecretKey,
+		StripeWebhookSecret:    stripeWebhookSecret,
+		StripePricePro:         stripePricePro,
+		AppURL:                 appURL,
+		EmailUnsubscribeSecret: emailUnsubscribeSecret,
+		CollaborationSecret:    env("COLLABORATION_SECRET", "dev-collaboration-secret"),
+		CollaborationURL:       env("COLLABORATION_URL", "ws://localhost:1234"),
+		PipelineSecret:         pipeSecret,
+		AllowedOrigins:         envList("CORS_ALLOWED_ORIGINS"),
+		RateLimit:              rateLimitConfig(appEnv),
+		ModelRegistry:          modelReg,
 	}
 	if mailRecorder != nil {
 		cfg.MailRecorder = mailRecorder

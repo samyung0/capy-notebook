@@ -68,8 +68,8 @@ export function cloneSourceFromPath(pathname: string): CloneSource | null {
   return null;
 }
 
-export function deckStudySource(pathname: string): 'app' | 'share' {
-  return pathname.includes('/share/decks') ? 'share' : 'app';
+export function flashcardsStudySource(pathname: string): 'app' | 'share' {
+  return pathname.includes('/share/flashcards') ? 'share' : 'app';
 }
 
 const STAGE_CODE = /^[a-z][a-z0-9_]{0,40}$/;

@@ -18,12 +18,21 @@ export type RelativeMetric = {
   direction: 'lower-better';
 };
 
-export type ComparisonRow = RelativeMetric & {
-  absoluteDelta: number | null;
-  baseline: number | null;
-  current: number | null;
-  percentDelta: number | null;
+export type Delta = {
+  absoluteMs: number;
+  percent: number | null;
 };
+
+export type ComparisonRow = RelativeMetric & {
+  best: number | null;
+  current: number | null;
+  median: number | null;
+  vsBest: Delta | null;
+  vsMedian: Delta | null;
+};
+
+/** How many of the newest green snapshots feed the median column. */
+export const MEDIAN_WINDOW = 5;
 
 export const RELATIVE_METRICS: RelativeMetric[] = [
   {
@@ -133,37 +142,64 @@ function formatNumber(value: number | null): string {
   }).format(value);
 }
 
-function formatDelta(row: ComparisonRow): string {
-  if (row.absoluteDelta === null) return 'n/a';
-  const absolutePrefix = row.absoluteDelta > 0 ? '+' : '';
-  const absolute = `${absolutePrefix}${formatNumber(row.absoluteDelta)} ms`;
-  if (row.percentDelta === null) return absolute;
-  const percentPrefix = row.percentDelta > 0 ? '+' : '';
-  return `${absolute} (${percentPrefix}${row.percentDelta.toFixed(1)}%)`;
+function formatDelta(delta: Delta | null): string {
+  if (delta === null) return 'n/a';
+  const absolutePrefix = delta.absoluteMs > 0 ? '+' : '';
+  const absolute = `${absolutePrefix}${formatNumber(delta.absoluteMs)} ms`;
+  if (delta.percent === null) return absolute;
+  const percentPrefix = delta.percent > 0 ? '+' : '';
+  return `${absolute} (${percentPrefix}${delta.percent.toFixed(1)}%)`;
 }
 
+function delta(current: number | null, reference: number | null): Delta | null {
+  if (current === null || reference === null) return null;
+  const absoluteMs = current - reference;
+  return {
+    absoluteMs,
+    percent: reference === 0 ? null : (absoluteMs / reference) * 100,
+  };
+}
+
+function median(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1
+    ? sorted[middle]
+    : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+/**
+ * Compare the current snapshot with every retained green snapshot. The median
+ * of the newest `MEDIAN_WINDOW` answers "are we drifting"; the best value over
+ * all of them is a floor that cannot creep upward one checkpoint at a time.
+ */
 export function compareSnapshots(
   current: PerfSnapshot,
-  baseline: PerfSnapshot | null
+  baselines: PerfSnapshot[]
 ): { markdown: string; rows: ComparisonRow[] } {
+  const newestFirst = [...baselines].sort((a, b) =>
+    b.createdAt.localeCompare(a.createdAt)
+  );
+  const window = newestFirst.slice(0, MEDIAN_WINDOW);
+
   const rows = RELATIVE_METRICS.map((metric) => {
     const currentValue = readMetric(current.cases, metric);
-    const baselineValue = baseline ? readMetric(baseline.cases, metric) : null;
-    const absoluteDelta =
-      currentValue === null || baselineValue === null
-        ? null
-        : currentValue - baselineValue;
-    const percentDelta =
-      absoluteDelta === null || baselineValue === 0
-        ? null
-        : (absoluteDelta / baselineValue) * 100;
+    const read = (snapshots: PerfSnapshot[]) =>
+      snapshots
+        .map((snapshot) => readMetric(snapshot.cases, metric))
+        .filter((value): value is number => value !== null);
+    const all = read(newestFirst);
+    const medianValue = median(read(window));
+    const bestValue = all.length ? Math.min(...all) : null;
 
     return {
       ...metric,
-      absoluteDelta,
-      baseline: baselineValue,
+      best: bestValue,
       current: currentValue,
-      percentDelta,
+      median: medianValue,
+      vsBest: delta(currentValue, bestValue),
+      vsMedian: delta(currentValue, medianValue),
     };
   });
 
@@ -174,14 +210,18 @@ export function compareSnapshots(
     '',
   ];
 
-  if (baseline) {
+  if (newestFirst.length) {
+    const oldest = newestFirst.at(-1)!;
     lines.push(
-      `Baseline snapshot: \`${baseline.commit}\` from ${baseline.createdAt}.`,
+      `Baselines: ${newestFirst.length} green snapshot(s), newest \`${newestFirst[0].commit}\` (${newestFirst[0].createdAt}), oldest \`${oldest.commit}\` (${oldest.createdAt}). Median uses the newest ${window.length}.`,
       ''
     );
-    if (current.cpuModel !== baseline.cpuModel) {
+    const otherCpus = [
+      ...new Set(newestFirst.map((snapshot) => snapshot.cpuModel)),
+    ].filter((model) => model !== current.cpuModel);
+    if (otherCpus.length) {
       lines.push(
-        `> Warning: CPU model changed from \`${baseline.cpuModel}\` to \`${current.cpuModel}\`. The deltas may reflect runner hardware.`,
+        `> Warning: baselines include other CPU models (${otherCpus.map((model) => `\`${model}\``).join(', ')}); current is \`${current.cpuModel}\`. The deltas may reflect runner hardware.`,
         ''
       );
     }
@@ -195,11 +235,11 @@ export function compareSnapshots(
   lines.push(
     'Relative deltas are warn-only. The Playwright absolute budgets remain the only performance failure gate.',
     '',
-    '| Metric, lower is better | Current (ms) | Baseline (ms) | Delta |',
-    '| --- | ---: | ---: | ---: |',
+    '| Metric, lower is better | Current (ms) | Median (ms) | vs median | Best (ms) | vs best |',
+    '| --- | ---: | ---: | ---: | ---: | ---: |',
     ...rows.map(
       (row) =>
-        `| ${row.label} | ${formatNumber(row.current)} | ${formatNumber(row.baseline)} | ${formatDelta(row)} |`
+        `| ${row.label} | ${formatNumber(row.current)} | ${formatNumber(row.median)} | ${formatDelta(row.vsMedian)} | ${formatNumber(row.best)} | ${formatDelta(row.vsBest)} |`
     ),
     '',
     '### Current case payloads, context only',

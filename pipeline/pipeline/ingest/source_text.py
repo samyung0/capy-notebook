@@ -20,7 +20,6 @@ import subprocess
 import warnings
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
 from itertools import islice
 from pathlib import Path
 from typing import Any
@@ -28,11 +27,14 @@ from typing import Any
 import httpx
 
 from ..config import cfg
-from ..jobs import ExternalWait, RetryableError, TerminalError
+from ..jobs import CapacityWait, RetryableError, TerminalError
 from ..retrieval import accounting, models
 from ..store import blobstore, db
 
 log = logging.getLogger("evo.worker.source_text")
+
+_AUDIO_CAPACITY_LEASE_SECONDS = 300
+_AUDIO_CAPACITY_RENEW_SECONDS = 60
 
 # A compressed object-size limit is not a useful allocation bound for CSV: a
 # delimiter-heavy row becomes one Python object per cell, and repeating long
@@ -50,9 +52,23 @@ Include all readable text. Transcribe every title, label, legend, annotation, ta
 class ElevenLabsNotCalledError(TerminalError):
     """Configuration prevented the request before ElevenLabs could receive it."""
 
+    provider_not_called = True
 
-class ElevenLabsSubmissionUncertain(Exception):
-    """The request may have been accepted; wait for its correlation webhook."""
+
+class ElevenLabsRetryableResponseError(RetryableError):
+    def __init__(self, status_code: int):
+        super().__init__(f"ElevenLabs transcription failed temporarily ({status_code})")
+        self.status_code = status_code
+
+
+class ElevenLabsTerminalResponseError(TerminalError):
+    def __init__(self, status_code: int):
+        super().__init__(f"ElevenLabs transcription was refused ({status_code})")
+        self.status_code = status_code
+
+
+class ElevenLabsInvalidResponseError(RetryableError):
+    """ElevenLabs answered successfully, but no usable transcript was returned."""
 
 
 def extension(name: str) -> str:
@@ -73,7 +89,13 @@ def artifact_key(source_sha256: str, direct: str) -> str:
 def _load_artifact(key: str) -> dict[str, Any] | None:
     if not key:
         return None
-    raw = blobstore.read_bytes(key)
+    try:
+        raw = blobstore.read_bytes(key)
+    except Exception:
+        # This object is only a reuse cache. The local source is still enough
+        # to run the transformation, so a cache outage must behave like a miss.
+        log.warning("could not read derived-text cache %s", key, exc_info=True)
+        return None
     if not raw:
         return None
     try:
@@ -85,9 +107,15 @@ def _load_artifact(key: str) -> dict[str, Any] | None:
     return value
 
 
-def _save_artifact(key: str, payload: dict[str, Any]) -> int:
+def _save_artifact(key: str, payload: dict[str, Any]) -> int | None:
     data = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
-    blobstore.write_bytes(key, data, "application/json")
+    try:
+        blobstore.write_bytes(key, data, "application/json")
+    except Exception:
+        # Provider output remains usable by this ingest. Missing the cache only
+        # means a later upload may need to pay for the transformation again.
+        log.warning("could not write derived-text cache %s", key, exc_info=True)
+        return None
     return len(data)
 
 
@@ -96,7 +124,7 @@ async def _source_lock(identity: str) -> AsyncIterator[None]:
     connection = None
     try:
         while connection is None:
-            connection = await asyncio.to_thread(db.try_source_artifact_lock, identity)
+            connection = await db.try_source_artifact_lock_async(identity)
             if connection is None:
                 await asyncio.sleep(max(0.1, cfg.poll_interval))
         yield
@@ -229,7 +257,7 @@ async def caption_image_source(
             "version": cfg.caption_version,
         }
         size = await asyncio.to_thread(_save_artifact, key, payload)
-        return text, key, size, False
+        return text, key if size is not None else "", size or 0, False
 
 
 def audio_duration_seconds(path: Path) -> float:
@@ -265,70 +293,79 @@ def audio_concurrency_units(duration_seconds: float) -> int:
     return min(4, math.ceil(duration_seconds / 480))
 
 
-def _audio_state(job_id: str) -> dict[str, Any] | None:
+def _reserve_audio_capacity(lease_id: str, units: int) -> bool:
     with db.connect() as conn, conn.cursor() as cur:
-        return db.audio_transcription(cur, job_id)
-
-
-def audio_state(job_id: str) -> dict[str, Any] | None:
-    """Return durable provider state before the worker decides to fetch B2."""
-    return _audio_state(job_id)
-
-
-def _reserve_audio_state(**fields: Any) -> bool:
-    with db.connect() as conn, conn.cursor() as cur:
-        reserved = db.create_audio_transcription(cur, **fields)
+        reserved = db.acquire_provider_capacity(
+            cur,
+            lease_id=lease_id,
+            provider="elevenlabs:scribe_v2",
+            units=units,
+            capacity=cfg.elevenlabs_concurrency_units,
+            lease_seconds=_AUDIO_CAPACITY_LEASE_SECONDS,
+        )
         conn.commit()
         return reserved
 
 
-def _mark_audio_submitting(transcription_id: str) -> None:
+def _release_audio_capacity(lease_id: str) -> None:
     with db.connect() as conn, conn.cursor() as cur:
-        db.mark_audio_submitting(cur, transcription_id)
+        db.release_provider_capacity(cur, lease_id)
         conn.commit()
 
 
-def _mark_audio_pending(transcription_id: str, provider_id: str) -> None:
+def _renew_audio_capacity(lease_id: str) -> bool:
     with db.connect() as conn, conn.cursor() as cur:
-        db.mark_audio_pending(cur, transcription_id, provider_id)
-        conn.commit()
-
-
-def _complete_audio(transcription_id: str, result: dict[str, Any]) -> None:
-    with db.connect() as conn, conn.cursor() as cur:
-        db.complete_audio_transcription(cur, transcription_id, result)
-        conn.commit()
-
-
-def _fail_audio(
-    transcription_id: str, error: str, *, cleanup_requested: bool = False
-) -> None:
-    with db.connect() as conn, conn.cursor() as cur:
-        db.fail_audio_transcription(
-            cur,
-            transcription_id,
-            error,
-            cleanup_requested=cleanup_requested,
+        renewed = db.renew_provider_capacity(
+            cur, lease_id, _AUDIO_CAPACITY_LEASE_SECONDS
         )
         conn.commit()
+        return renewed
 
 
-def _discard_audio(transcription_id: str) -> None:
-    with db.connect() as conn, conn.cursor() as cur:
-        db.delete_audio_transcription(cur, transcription_id)
-        conn.commit()
+async def _maintain_audio_capacity(lease_id: str) -> None:
+    """Keep a long request's short crash-reclaimable lease live or fail closed."""
+    loop = asyncio.get_running_loop()
+    expires_at = loop.time() + _AUDIO_CAPACITY_LEASE_SECONDS
+    while True:
+        await asyncio.sleep(_AUDIO_CAPACITY_RENEW_SECONDS)
+        try:
+            remaining = expires_at - loop.time()
+            if remaining <= 0:
+                raise TimeoutError
+            renewed = await asyncio.wait_for(
+                asyncio.to_thread(_renew_audio_capacity, lease_id),
+                timeout=remaining,
+            )
+        except TimeoutError as exc:
+            raise RetryableError(
+                "ElevenLabs capacity lease expired while request was active"
+            ) from exc
+        except Exception:
+            log.warning("could not renew ElevenLabs capacity lease", exc_info=True)
+            if loop.time() >= expires_at:
+                raise RetryableError(
+                    "ElevenLabs capacity lease expired while request was active"
+                )
+            continue
+        if not renewed:
+            raise RetryableError(
+                "ElevenLabs capacity lease expired while request was active"
+            )
+        expires_at = loop.time() + _AUDIO_CAPACITY_LEASE_SECONDS
 
 
-def _finalize_audio(transcription_id: str) -> None:
-    with db.connect() as conn, conn.cursor() as cur:
-        db.finalize_audio_transcription(cur, transcription_id)
-        conn.commit()
-
-
-def _request_audio_cleanup(transcription_id: str, error: str) -> None:
-    with db.connect() as conn, conn.cursor() as cur:
-        db.request_audio_cleanup(cur, transcription_id, error)
-        conn.commit()
+async def _stop_audio_capacity(
+    lease_id: str, capacity_heartbeat: asyncio.Task[None]
+) -> None:
+    capacity_heartbeat.cancel()
+    await asyncio.gather(capacity_heartbeat, return_exceptions=True)
+    try:
+        await asyncio.to_thread(_release_audio_capacity, lease_id)
+    except Exception:
+        # The lease cannot remain live for more than five minutes. Provider
+        # receipt settlement and ingest output must not be lost because eager
+        # cleanup was unavailable after the HTTP request had already closed.
+        log.warning("could not release ElevenLabs capacity lease", exc_info=True)
 
 
 def _elevenlabs_headers() -> dict[str, str]:
@@ -337,125 +374,98 @@ def _elevenlabs_headers() -> dict[str, str]:
     return {"xi-api-key": cfg.elevenlabs_api_key}
 
 
-def _submit_audio(transcription_id: str, source_url: str) -> str:
-    data = {
-        "model_id": "scribe_v2",
-        "source_url": source_url,
-        "webhook": "true",
-        "webhook_metadata": json.dumps(
-            {"audioTranscriptionId": transcription_id}, separators=(",", ":")
-        ),
+async def _transcribe_audio(source_url: str) -> dict[str, Any]:
+    # ElevenLabs requires multipart form fields even when the source is a URL.
+    # A plain ``data=`` mapping sends application/x-www-form-urlencoded.
+    fields = {
+        "model_id": (None, "scribe_v2"),
+        "source_url": (None, source_url),
     }
-    if cfg.elevenlabs_webhook_id:
-        data["webhook_id"] = cfg.elevenlabs_webhook_id
-    response = httpx.post(
-        cfg.elevenlabs_base_url.rstrip("/") + "/v1/speech-to-text",
-        headers=_elevenlabs_headers(),
-        data=data,
-        timeout=cfg.ingest_provider_timeout_s,
-    )
-    if response.status_code == 429 or response.status_code >= 500:
-        raise RetryableError(
-            f"ElevenLabs transcription failed temporarily ({response.status_code})"
-        )
+    async with asyncio.timeout(cfg.elevenlabs_sync_timeout_s):
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(cfg.elevenlabs_sync_timeout_s)
+        ) as client:
+            response = await client.post(
+                cfg.elevenlabs_base_url.rstrip("/") + "/v1/speech-to-text",
+                headers=_elevenlabs_headers(),
+                files=fields,
+            )
+    if response.status_code in (408, 425, 429) or response.status_code >= 500:
+        raise ElevenLabsRetryableResponseError(response.status_code)
     if response.status_code >= 400:
-        raise TerminalError(
-            f"ElevenLabs transcription was refused ({response.status_code})"
-        )
+        raise ElevenLabsTerminalResponseError(response.status_code)
     try:
         payload = response.json()
     except ValueError as exc:
-        raise ElevenLabsSubmissionUncertain from exc
-    request_id = str(payload.get("request_id") or payload.get("transcription_id") or "")
-    if not request_id:
-        raise ElevenLabsSubmissionUncertain
-    return request_id
-
-
-def _retrieve_audio(provider_id: str) -> dict[str, Any] | None:
-    try:
-        response = httpx.get(
-            cfg.elevenlabs_base_url.rstrip("/")
-            + "/v1/speech-to-text/transcripts/"
-            + provider_id,
-            headers=_elevenlabs_headers(),
-            timeout=cfg.ingest_provider_timeout_s,
-        )
-    except (httpx.TimeoutException, httpx.NetworkError):
-        return None
-    if response.status_code in {404, 409, 422, 429} or response.status_code >= 500:
-        return None
-    if response.status_code >= 400:
-        raise TerminalError(
-            f"ElevenLabs transcript retrieval was refused ({response.status_code})"
-        )
-    try:
-        payload = response.json()
-    except ValueError:
-        return None
+        raise ElevenLabsInvalidResponseError(
+            "ElevenLabs returned an invalid transcription"
+        ) from exc
     if not isinstance(payload, dict) or not str(payload.get("text") or "").strip():
-        return None
+        raise ElevenLabsInvalidResponseError(
+            "ElevenLabs returned an empty transcription"
+        )
     return payload
 
 
-def delete_provider_audio(provider_id: str) -> bool:
-    if not provider_id:
-        return True
+async def _transcribe_while_capacity_is_live(
+    source_url: str,
+    capacity_heartbeat: asyncio.Task[None],
+) -> tuple[
+    dict[str, Any] | None,
+    ElevenLabsInvalidResponseError | None,
+    bool,
+]:
+    provider = asyncio.create_task(_transcribe_audio(source_url))
+
+    def completed_outcome(cancelled: bool):
+        try:
+            return provider.result(), None, cancelled
+        except ElevenLabsInvalidResponseError as exc:
+            return None, exc, cancelled
+
     try:
-        response = httpx.delete(
-            cfg.elevenlabs_base_url.rstrip("/")
-            + "/v1/speech-to-text/transcripts/"
-            + provider_id,
-            headers=_elevenlabs_headers(),
-            timeout=cfg.ingest_provider_timeout_s,
-        )
-        if response.status_code not in {200, 204, 404}:
-            log.warning(
-                "could not delete ElevenLabs transcript %s: status %s",
-                provider_id,
-                response.status_code,
+        try:
+            done, _ = await asyncio.wait(
+                {provider, capacity_heartbeat},
+                return_when=asyncio.FIRST_COMPLETED,
             )
-            return False
-        return True
-    except Exception:
-        log.warning(
-            "could not delete ElevenLabs transcript %s", provider_id, exc_info=True
+        except asyncio.CancelledError:
+            # asyncio.wait can be cancelled after the provider task has already
+            # produced its response but before it hands the done set back. The
+            # exact receipt is known at that point and must cross the same
+            # settlement/cache boundary as any other completed response.
+            if provider.done() and not provider.cancelled():
+                return completed_outcome(True)
+            raise
+        if provider in done:
+            return completed_outcome(False)
+        # Capacity admission is no longer valid. Close the active HTTP request
+        # before releasing the lease so a successor cannot overlap it locally.
+        provider.cancel()
+        await asyncio.gather(provider, return_exceptions=True)
+        error = capacity_heartbeat.exception()
+        if error is not None:
+            raise error
+        raise RetryableError(
+            "ElevenLabs capacity lease expired while request was active"
         )
-        return False
-
-
-async def _delete_or_queue_provider_audio(
-    provider_id: str, transcription_id: str
-) -> bool:
-    """Delete provider state, retaining a durable retry row on failure."""
-    deleted = await asyncio.to_thread(delete_provider_audio, provider_id)
-    if not transcription_id:
-        return deleted
-    if deleted:
-        await asyncio.to_thread(_finalize_audio, transcription_id)
-    else:
-        await asyncio.to_thread(
-            _request_audio_cleanup,
-            transcription_id,
-            "provider transcript deletion failed after successful ingest",
-        )
-    return deleted
+    finally:
+        if not provider.done():
+            provider.cancel()
+            await asyncio.gather(provider, return_exceptions=True)
 
 
 def _audio_artifact_payload(
     response: dict[str, Any],
     *,
-    provider_call_id: str,
+    duration_seconds: float,
     billable_seconds: int,
-    accounting_status: str,
 ) -> dict[str, Any]:
     return {
-        "accountingStatus": accounting_status,
         "billableSeconds": billable_seconds,
-        "duration": response.get("duration"),
+        "duration": duration_seconds,
         "kind": "audio_transcript",
         "languageCode": response.get("language_code"),
-        "providerCallId": provider_call_id,
         "words": response.get("words")
         if isinstance(response.get("words"), list)
         else [],
@@ -464,194 +474,120 @@ def _audio_artifact_payload(
     }
 
 
-async def _settle_pending_audio_artifact(
-    key: str, payload: dict[str, Any]
-) -> tuple[dict[str, Any], int]:
-    if payload.get("accountingStatus") != "pending":
-        return payload, len(
-            json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
-        )
-    call_id = str(payload.get("providerCallId") or "")
-    try:
-        seconds = int(payload.get("billableSeconds") or 0)
-    except (TypeError, ValueError) as exc:
-        raise TerminalError("cached audio transcript has invalid accounting") from exc
-    if not call_id or seconds <= 0:
-        raise TerminalError("cached audio transcript has invalid accounting")
-    if "creditMicrosPerSecond" not in payload:
-        raise TerminalError("cached audio transcript has no rate snapshot")
-    try:
-        rate = int(payload["creditMicrosPerSecond"])
-    except (TypeError, ValueError) as exc:
-        raise TerminalError(
-            "cached audio transcript has invalid rate snapshot"
-        ) from exc
-    if rate < 0:
-        raise TerminalError("cached audio transcript has invalid rate snapshot")
-    await accounting.settle_units(
-        call_id=call_id,
-        kind=accounting.KIND_AUDIO,
-        purpose="transcription",
-        provider="elevenlabs",
-        model="scribe_v2",
-        units=seconds,
-        unit="seconds",
-        credit_micros=seconds * rate,
-    )
-    payload["accountingStatus"] = "settled"
-    return payload, await asyncio.to_thread(_save_artifact, key, payload)
-
-
 async def transcribe_audio_source(
     *,
-    local_path: str | None,
+    local_path: str,
     source_sha256: str,
     blob_path: str,
-    file_id: str,
-    job_id: str,
     audio_rate: dict[str, Any],
 ) -> tuple[str, str, int]:
-    """Return transcript text, artifact path, and serialized byte size."""
+    """Synchronously transcribe, settle usage, then cache the result."""
     key = artifact_key(source_sha256, "audio")
     identity = f"elevenlabs:{source_sha256}:{cfg.elevenlabs_transcript_version}"
     async with _source_lock(identity):
         cached = await asyncio.to_thread(_load_artifact, key)
         if cached:
-            cached, size = await _settle_pending_audio_artifact(key, cached)
-            await _delete_or_queue_provider_audio(
-                str(cached.get("providerTranscriptionId") or ""),
-                str(cached.get("audioTranscriptionId") or ""),
+            size = len(
+                json.dumps(cached, ensure_ascii=False, separators=(",", ":")).encode()
             )
-            return (
-                str(cached["text"]),
-                key,
-                size,
+            return str(cached["text"]), key, size
+
+        duration = await asyncio.to_thread(audio_duration_seconds, Path(local_path))
+        if duration > cfg.audio_max_duration_seconds:
+            raise TerminalError("audio exceeds the 10-hour duration limit")
+        billable_seconds = math.ceil(duration)
+        concurrency_units = audio_concurrency_units(duration)
+        lease_id = db.uid("pcl")
+        reserved = await asyncio.to_thread(
+            _reserve_audio_capacity, lease_id, concurrency_units
+        )
+        if not reserved:
+            raise CapacityWait("ElevenLabs Starter concurrency is full")
+        capacity_heartbeat = asyncio.create_task(_maintain_audio_capacity(lease_id))
+        capacity_stopped = False
+
+        call_id = accounting.new_call_id()
+        try:
+            # Resolve the signed source URL before the accounting stub. From
+            # the stub onward, failure is either a sent provider attempt, a
+            # definitive response, or the explicit not-configured case.
+            source_url = await asyncio.to_thread(
+                blobstore.presign_get,
+                blob_path,
+                cfg.elevenlabs_sync_timeout_s,
             )
-        state = await asyncio.to_thread(_audio_state, job_id)
-        if state is None:
-            if not local_path:
-                raise RetryableError("audio source is missing before submission")
-            duration = await asyncio.to_thread(audio_duration_seconds, Path(local_path))
-            if duration > cfg.audio_max_duration_seconds:
-                raise TerminalError("audio exceeds the 10-hour duration limit")
-            billable_seconds = math.ceil(duration)
-            concurrency_units = audio_concurrency_units(duration)
-            call_id = accounting.new_call_id()
             await accounting.open_call(
                 call_id, kind=accounting.KIND_AUDIO, purpose="transcription"
             )
-            transcription_id = db.uid("at")
-            reserved = await asyncio.to_thread(
-                _reserve_audio_state,
-                transcription_id=transcription_id,
-                job_id=job_id,
-                file_id=file_id,
-                source_sha256=source_sha256,
-                duration_seconds=duration,
-                billable_seconds=billable_seconds,
-                concurrency_units=concurrency_units,
-                rate_version=int(audio_rate["version"]),
-                credit_micros_per_second=int(audio_rate["creditMicrosPerUnit"]),
-                provider_call_id=call_id,
-                capacity=cfg.elevenlabs_concurrency_units,
-            )
-            if not reserved:
-                await accounting.abandon_call(call_id)
-                raise ExternalWait("ElevenLabs Starter concurrency is full")
-            state = await asyncio.to_thread(_audio_state, job_id)
-        if state is None:
-            raise RetryableError("audio transcription state was not persisted")
-        if state["status"] == "failed":
-            raise TerminalError(str(state.get("error") or "audio transcription failed"))
-        if state["status"] == "submitting":
-            submitted_at = state.get("submitted_at")
-            if submitted_at is not None:
-                age = datetime.now(timezone.utc) - submitted_at
-                if age.total_seconds() < 12 * 60 * 60:
-                    raise ExternalWait("waiting for the ElevenLabs webhook")
-                await asyncio.to_thread(
-                    _fail_audio,
-                    state["id"],
-                    "ElevenLabs submission could not be reconciled",
-                    cleanup_requested=True,
-                )
-                raise TerminalError("ElevenLabs submission could not be reconciled")
-            await asyncio.to_thread(_mark_audio_submitting, state["id"])
+            response: dict[str, Any] | None = None
+            completed_error: ElevenLabsInvalidResponseError | None = None
+            cancelled_after_response = False
             try:
-                source_url = await asyncio.to_thread(
-                    blobstore.presign_get, blob_path, 60 * 60
+                (
+                    response,
+                    completed_error,
+                    cancelled_after_response,
+                ) = await _transcribe_while_capacity_is_live(
+                    source_url, capacity_heartbeat
                 )
-                provider_id = await asyncio.to_thread(
-                    _submit_audio, state["id"], source_url
-                )
-            except ElevenLabsNotCalledError:
-                await accounting.abandon_call(state["provider_call_id"])
-                await asyncio.to_thread(_discard_audio, state["id"])
-                raise
-            except RetryableError:
-                await asyncio.to_thread(_discard_audio, state["id"])
-                await accounting.abandon_call(state["provider_call_id"])
-                raise
-            except ElevenLabsSubmissionUncertain:
-                raise ExternalWait("waiting for the ElevenLabs webhook") from None
-            except TerminalError as exc:
-                await asyncio.to_thread(_fail_audio, state["id"], str(exc))
-                await accounting.abandon_call(state["provider_call_id"])
-                raise
-            except (httpx.ConnectTimeout, httpx.ConnectError) as exc:
-                await asyncio.to_thread(_discard_audio, state["id"])
-                await accounting.abandon_call(state["provider_call_id"])
+            except (TimeoutError, httpx.TimeoutException, httpx.NetworkError) as exc:
                 raise RetryableError(
                     "ElevenLabs transcription is temporarily unavailable"
                 ) from exc
-            except (httpx.ReadTimeout, httpx.ReadError):
-                raise ExternalWait("waiting for the ElevenLabs webhook") from None
-            await asyncio.to_thread(_mark_audio_pending, state["id"], provider_id)
-            raise ExternalWait("ElevenLabs is transcribing the audio")
-        if state["status"] == "pending":
-            provider_id = str(state.get("provider_transcription_id") or "")
-            if provider_id:
-                result = await asyncio.to_thread(_retrieve_audio, provider_id)
-                if result is not None:
-                    await asyncio.to_thread(_complete_audio, state["id"], result)
-                    state = await asyncio.to_thread(_audio_state, job_id)
-            if state is None or state["status"] != "completed":
-                raise ExternalWait("ElevenLabs is transcribing the audio")
-        response = state.get("result")
-        if (
-            not isinstance(response, dict)
-            or not str(response.get("text") or "").strip()
-        ):
-            raise RetryableError("ElevenLabs returned an empty transcription")
-        payload = _audio_artifact_payload(
-            response,
-            provider_call_id=state["provider_call_id"],
-            billable_seconds=state["billable_seconds"],
-            accounting_status="pending",
-        )
-        payload["duration"] = state["duration_seconds"]
-        payload["creditMicrosPerSecond"] = state["credit_micros_per_second"]
-        payload["providerTranscriptionId"] = state.get("provider_transcription_id")
-        payload["audioTranscriptionId"] = state["id"]
-        await asyncio.to_thread(_save_artifact, key, payload)
-        await accounting.settle_units(
-            call_id=state["provider_call_id"],
-            kind=accounting.KIND_AUDIO,
-            purpose="transcription",
-            provider="elevenlabs",
-            model="scribe_v2",
-            units=state["billable_seconds"],
-            unit="seconds",
-            credit_micros=(
-                state["billable_seconds"] * state["credit_micros_per_second"]
-            ),
-        )
-        payload["accountingStatus"] = "settled"
-        size = await asyncio.to_thread(_save_artifact, key, payload)
-        await _delete_or_queue_provider_audio(
-            str(state.get("provider_transcription_id") or ""), state["id"]
-        )
-        return str(payload["text"]), key, size
+
+            async def finish_completed_response() -> tuple[str, str, int] | None:
+                nonlocal capacity_stopped
+                try:
+                    await _stop_audio_capacity(lease_id, capacity_heartbeat)
+                finally:
+                    capacity_stopped = True
+                await accounting.settle_units(
+                    call_id=call_id,
+                    kind=accounting.KIND_AUDIO,
+                    purpose="transcription",
+                    provider="elevenlabs",
+                    model="scribe_v2",
+                    units=billable_seconds,
+                    unit="seconds",
+                    credit_micros=(
+                        billable_seconds * int(audio_rate["creditMicrosPerUnit"])
+                    ),
+                )
+                if completed_error is not None:
+                    return None
+                assert response is not None
+                payload = _audio_artifact_payload(
+                    response,
+                    duration_seconds=duration,
+                    billable_seconds=billable_seconds,
+                )
+                size = await asyncio.to_thread(_save_artifact, key, payload)
+                return (
+                    str(payload["text"]),
+                    key if size is not None else "",
+                    size or 0,
+                )
+
+            # Once the provider response is known, cancellation may stop neither
+            # its exact receipt nor persistence of a reusable successful result.
+            result = await accounting._finish_known_receipt(finish_completed_response())
+            if cancelled_after_response:
+                raise asyncio.CancelledError
+            if completed_error is not None:
+                raise completed_error
+            assert result is not None
+            return result
+        except asyncio.CancelledError:
+            raise
+        except BaseException as exc:
+            if not isinstance(exc, accounting.SettlementError) and (
+                accounting.definitive_provider_failure(exc)
+            ):
+                await accounting.abandon_call(call_id, exc)
+            raise
+        finally:
+            if not capacity_stopped:
+                await _stop_audio_capacity(lease_id, capacity_heartbeat)
 
 
 def tabular_text(path: str, name: str) -> str:

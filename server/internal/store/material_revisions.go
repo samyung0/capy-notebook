@@ -58,34 +58,65 @@ func (s *Store) upsertMaterialRevisionTx(
 }
 
 func (s *Store) pruneMaterialRevisionsTx(ctx context.Context, tx pgx.Tx, materialID string) error {
-	free, err := s.PlanLimits(PlanFree)
+	var ownerID string
+	if err := tx.QueryRow(ctx, `SELECT owner_user_id FROM materials WHERE id=$1`, materialID).
+		Scan(&ownerID); err != nil {
+		if isNoRows(err) {
+			return ErrNotFound
+		}
+		return err
+	}
+	tier, err := s.effectivePlanTierForUser(ctx, tx, ownerID)
 	if err != nil {
 		return err
 	}
-	pro, err := s.PlanLimits(PlanPro)
+	limits, err := s.PlanLimits(tier)
 	if err != nil {
 		return err
 	}
 	_, err = tx.Exec(ctx, `WITH ranked AS (
 		SELECT mr.version_date,
-			row_number() OVER (ORDER BY mr.version_date DESC) AS position,
-			CASE WHEN u.plan_tier = 'pro'
-				THEN $2::bigint ELSE $3::bigint
-			END AS retention_limit
+			row_number() OVER (ORDER BY mr.version_date DESC) AS position
 		FROM material_revisions mr
-		JOIN materials m ON m.id=mr.material_id
-		JOIN users u ON u.id=m.owner_user_id
 		WHERE mr.material_id=$1
 	)
 	DELETE FROM material_revisions mr
 	USING ranked
 	WHERE mr.material_id=$1
 	  AND mr.version_date=ranked.version_date
-	  AND ranked.position>ranked.retention_limit`,
+	  AND ranked.position>$2`,
 		materialID,
-		pro.MaterialRevisions,
-		free.MaterialRevisions,
+		limits.MaterialRevisions,
 	)
+	return err
+}
+
+// pruneUserMaterialRevisionsTx makes a subscription downgrade irreversible in
+// the same transaction that projects the user's Free tier. The startup and
+// daily sweep remain backstops for a missed Stripe webhook.
+func (s *Store) pruneUserMaterialRevisionsTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	userID string,
+) error {
+	freeLimits, err := s.PlanLimits(PlanFree)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `WITH ranked AS (
+		SELECT mr.material_id, mr.version_date,
+			row_number() OVER (
+				PARTITION BY mr.material_id ORDER BY mr.version_date DESC
+			) AS position
+		FROM material_revisions mr
+		JOIN materials m ON m.id=mr.material_id
+		WHERE m.owner_user_id=$1
+	)
+	DELETE FROM material_revisions mr
+	USING ranked r
+	WHERE mr.material_id=r.material_id
+	  AND mr.version_date=r.version_date
+	  AND r.position>$2`, userID, freeLimits.MaterialRevisions)
 	return err
 }
 
@@ -100,17 +131,28 @@ func (s *Store) PruneMaterialRevisions(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	result, err := s.pool.Exec(ctx, `WITH ranked AS (
+	result, err := s.pool.Exec(ctx, `WITH owner_tiers AS (
+		SELECT u.id, CASE
+			WHEN NOT EXISTS(SELECT 1 FROM user_subscriptions any_sub
+				WHERE any_sub.user_id=u.id) THEN u.plan_tier
+			ELSE COALESCE((SELECT live.plan_tier FROM user_subscriptions live
+				WHERE live.user_id=u.id AND live.status IN `+entitlingStatuses+`
+					AND (live.current_period_end IS NULL OR live.current_period_end > now())
+				ORDER BY (live.plan_tier='pro') DESC,
+					live.current_period_end DESC NULLS FIRST LIMIT 1), 'free')
+		END AS plan_tier
+		FROM users u
+	), ranked AS (
 		SELECT mr.material_id, mr.version_date,
 			row_number() OVER (
 				PARTITION BY mr.material_id ORDER BY mr.version_date DESC
 			) AS position,
-			CASE WHEN u.plan_tier = 'pro'
+			CASE WHEN owner_tiers.plan_tier = 'pro'
 				THEN $1::bigint ELSE $2::bigint
 			END AS retention_limit
 		FROM material_revisions mr
 		JOIN materials m ON m.id=mr.material_id
-		JOIN users u ON u.id=m.owner_user_id
+		JOIN owner_tiers ON owner_tiers.id=m.owner_user_id
 	)
 	DELETE FROM material_revisions mr
 	USING ranked

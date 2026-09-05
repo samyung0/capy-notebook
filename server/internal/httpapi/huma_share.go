@@ -21,22 +21,17 @@ is queryable the moment it exists. */
 type cloneWorkspaceOutput struct {
 	Body apimodel.CloneWorkspaceResp
 }
-type publicDecksOutput struct {
-	Body []apimodel.PublicDeck `nullable:"false"`
-}
-type updateDeckInput struct {
-	ID   string `path:"id"`
-	Body apimodel.UpdateDeckReq
+type publicFlashcardSetsOutput struct {
+	Body []apimodel.PublicFlashcardSet `nullable:"false"`
 }
 
 func (a *api) registerShare(api huma.API) {
 	const tag = "Sharing"
 	reg(api, http.MethodPost, "/api/workspaces/{id}/clone", "cloneWorkspace", tag, "Clone a shared workspace", http.StatusCreated, a.cloneWorkspace)
 	reg(api, http.MethodPost, "/api/quizzes/{id}/clone", "cloneQuiz", tag, "Clone a shared quiz", http.StatusCreated, a.cloneQuiz)
-	reg(api, http.MethodPost, "/api/decks/{id}/clone", "cloneDeck", tag, "Clone a shared deck", http.StatusCreated, a.cloneDeck)
+	reg(api, http.MethodPost, "/api/flashcards/{id}/clone", "cloneFlashcardSet", tag, "Clone shared flashcards", http.StatusCreated, a.cloneFlashcardSet)
 	reg(api, http.MethodPost, "/api/materials/{id}/clone", "cloneMaterial", tag, "Clone a shared material", http.StatusCreated, a.cloneMaterial)
-	reg(api, http.MethodPatch, "/api/decks/{id}", "updateDeck", tag, "Update a deck (rename / recolor / share)", http.StatusOK, a.updateDeck)
-	reg(api, http.MethodGet, "/api/explore/decks", "exploreDecks", "Explore", "Public flashcard decks", http.StatusOK, a.exploreDecks)
+	reg(api, http.MethodGet, "/api/explore/flashcards", "exploreFlashcardSets", "Explore", "Public flashcards", http.StatusOK, a.exploreFlashcardSets)
 }
 
 /* ----------------------------------------------------------- access helpers */
@@ -103,7 +98,7 @@ func (a *api) cloneWorkspace(ctx context.Context, in *workspaceIDInput) (*cloneW
 }
 
 func (a *api) cloneQuiz(ctx context.Context, in *quizIDInput) (*quizOutput, error) {
-	mt, err := a.s.CloneMaterial(ctx, userID(ctx), in.ID)
+	mt, err := a.s.CloneMaterialKind(ctx, userID(ctx), in.ID, "quiz")
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -111,20 +106,23 @@ func (a *api) cloneQuiz(ctx context.Context, in *quizIDInput) (*quizOutput, erro
 	if err != nil {
 		return nil, hErr(err)
 	}
+	q.IsOwner = true
+	q.CanEdit = true
 	return &quizOutput{Body: apimodel.FromQuiz(q)}, nil
 }
 
-func (a *api) cloneDeck(ctx context.Context, in *deckIDInput) (*deckOutput, error) {
-	mt, err := a.s.CloneMaterial(ctx, userID(ctx), in.ID)
+func (a *api) cloneFlashcardSet(ctx context.Context, in *flashcardSetIDInput) (*flashcardSetOutput, error) {
+	mt, err := a.s.CloneMaterialKind(ctx, userID(ctx), in.ID, "flashcards")
 	if err != nil {
 		return nil, hErr(err)
 	}
-	d, err := a.s.GetDeck(ctx, mt.ID)
+	d, err := a.s.GetFlashcardSet(ctx, mt.ID)
 	if err != nil {
 		return nil, hErr(err)
 	}
 	d.IsOwner = true
-	return &deckOutput{Body: d}, nil
+	d.CanEdit = true
+	return &flashcardSetOutput{Body: d}, nil
 }
 
 func (a *api) cloneMaterial(ctx context.Context, in *materialIDInput) (*materialOutput, error) {
@@ -135,26 +133,12 @@ func (a *api) cloneMaterial(ctx context.Context, in *materialIDInput) (*material
 	return materialResponse(mt, store.RoleOwner)
 }
 
-/* -------------------------------------------------------------------- decks */
-
-func (a *api) updateDeck(ctx context.Context, in *updateDeckInput) (*deckOutput, error) {
-	if err := a.assertMaterialOwner(ctx, in.ID); err != nil {
-		return nil, hErr(err)
-	}
-	d, err := a.s.UpdateDeck(ctx, in.ID, store.DeckPatch{Name: in.Body.Name, Color: in.Body.Color, Privacy: in.Body.Privacy})
-	if err != nil {
-		return nil, hErr(err)
-	}
-	d.IsOwner = true
-	return &deckOutput{Body: d}, nil
-}
-
 /* ------------------------------------------------------------------ explore */
 
-func (a *api) exploreDecks(ctx context.Context, _ *struct{}) (*publicDecksOutput, error) {
-	res, err := a.s.ListPublicDecks(ctx)
+func (a *api) exploreFlashcardSets(ctx context.Context, _ *struct{}) (*publicFlashcardSetsOutput, error) {
+	res, err := a.s.ListPublicFlashcardSets(ctx)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return &publicDecksOutput{Body: apimodel.FromPublicDecks(res)}, nil
+	return &publicFlashcardSetsOutput{Body: apimodel.FromPublicFlashcardSets(res)}, nil
 }

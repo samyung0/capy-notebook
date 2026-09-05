@@ -88,8 +88,6 @@ services:
       EVO_ENGINE: ${EVO_ENGINE:-evo}
       PIPELINE_URL: http://retrieval:8001
       PIPELINE_SECRET: ${PIPELINE_SECRET:?set PIPELINE_SECRET}
-      IMPORT_RELAY_ENQUEUE_URL: ${IMPORT_RELAY_ENQUEUE_URL:-}
-      IMPORT_RELAY_SECRET: ${IMPORT_RELAY_SECRET:-}
       LLM_CREDENTIALS_KEY: ${LLM_CREDENTIALS_KEY:?set LLM_CREDENTIALS_KEY}
       APP_URL: ${APP_URL:?set APP_URL}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?set CORS_ALLOWED_ORIGINS}
@@ -103,14 +101,16 @@ services:
       AUTH_DISABLED: "false"
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
-      ELEVENLABS_WEBHOOK_SECRET: ${ELEVENLABS_WEBHOOK_SECRET:-}
       STRIPE_PRICE_PRO: ${STRIPE_PRICE_PRO:-}
-      STRIPE_PRICE_TEAM: ${STRIPE_PRICE_TEAM:-}
       RATE_LIMIT_DISABLED: "false"
       RATE_LIMIT_AI_PER_HOUR: ${RATE_LIMIT_AI_PER_HOUR:-}
       EVO_CAPTION_CACHE_TTL_DAYS: ${EVO_CAPTION_CACHE_TTL_DAYS:-90}
     expose:
       - "8080"
+    # The ingest host's import worker calls /api/internal/import/* over
+    # WireGuard, the same private address Postgres and Redis publish on.
+    ports:
+      - "${EVO_PRIVATE_BIND_ADDRESS:-127.0.0.1}:8080:8080"
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/healthz"]
       interval: 5s
@@ -169,7 +169,6 @@ services:
       DEEPINFRA_API_KEY: ${DEEPINFRA_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}
     expose:
       - "8001"
@@ -207,6 +206,9 @@ services:
       # the profile is off, so these cannot use :? on first deploy.
       OPS_DATABASE_URL: ${OPS_DATABASE_URL:-}
       OPS_ADMIN_DATABASE_URL: ${OPS_ADMIN_DATABASE_URL:-}
+      # Must match EVO_INGEST_ENVIRONMENT on the workers writing to this
+      # database; the ingest pages filter on it. UAT deploys this same file and
+      # must override it to `uat`, or its ingest dashboard reads empty.
       OPS_INGEST_PRIMARY_ENVIRONMENT: ${OPS_INGEST_PRIMARY_ENVIRONMENT:-production}
       OPS_INGEST_UAT_DATABASE_URL: ${OPS_INGEST_UAT_DATABASE_URL:-}
       OPS_INGEST_LOCAL_DATABASE_URL: ${OPS_INGEST_LOCAL_DATABASE_URL:-}
@@ -222,7 +224,6 @@ services:
       DEEPINFRA_API_KEY: ${DEEPINFRA_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     expose:
       - "8082"
     healthcheck:
@@ -247,7 +248,6 @@ services:
       DATABASE_URL: *database-url
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_PRICE_PRO: ${STRIPE_PRICE_PRO:-}
-      STRIPE_PRICE_TEAM: ${STRIPE_PRICE_TEAM:-}
     depends_on:
       db:
         condition: service_healthy

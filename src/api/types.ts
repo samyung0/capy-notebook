@@ -31,7 +31,7 @@ import type {
   CreateQuizReq as GenCreateQuizReq,
   CreateWorkspaceInviteReq as GenCreateWorkspaceInviteReq,
   Discussion as GenDiscussion,
-  UserModelSurface as GeneratedModelSurface,
+  UserModelSlot as GeneratedModelSlot,
   File as GenFile,
   Material as GenMaterial,
   MaterialRevision as GenMaterialRevision,
@@ -40,7 +40,7 @@ import type {
   Quiz as GenQuiz,
   SearchResult as GenSearchResult,
   UpdateCommentReq as GenUpdateCommentReq,
-  UpdateQuizReq as GenUpdateQuizReq,
+  UpdateQuizContentReq as GenUpdateQuizContentReq,
   UpdateWorkspaceMemberReq as GenUpdateWorkspaceMemberReq,
   MaterialKind,
   UserColor,
@@ -53,12 +53,12 @@ import type {
    them bind to the wire contract instead of restating it. Contracts whose UI
    shape is richer than the wire (rich text, the Question union,
    non-transferable roles) are overridden further down. */
-/** The surfaces a user may pick a model for. Ingest, embedding and vision
+/** The slots a user may pick a model for. Ingest, retrieval and captioning
  * are operator-only: they are chosen from the registry and never stored per
  * user, so they are absent from the query enum the server accepts. Quiz is
  * user-selectable and includes in-tab `browser:` keys that never live in
  * model_configs. */
-export type ModelSurface = GeneratedModelSurface;
+export type ModelSlot = GeneratedModelSlot;
 export type {
   AccessCapabilities,
   AccountStatus,
@@ -73,13 +73,13 @@ export type {
   ContentOrderItem,
   CreateCanvasReq,
   CreateConversationReq,
-  CreateDeckReq,
   CreateEventReq,
+  CreateFlashcardSetReq,
   CreateWorkspaceReq,
-  Deck,
   DeletionPreflight,
   Event as CalendarEvent,
   Flashcard,
+  FlashcardSet,
   ImportSourcesAccepted as SourceImportAcceptedResponse,
   InspectedSourceImport,
   InspectSourceImportRejected,
@@ -101,7 +101,7 @@ export type {
   NotificationCountOutputBody as NotificationCount,
   NotificationPage,
   NotificationPrefs,
-  PublicDeck,
+  PublicFlashcardSet,
   PublicWorkspace,
   Ref as ModelRef,
   Region,
@@ -119,13 +119,16 @@ export type {
   Task,
   TransferWorkspaceReq,
   UpdateCardReq,
+  UpdateCardStudyStateReq,
   UpdateChapterReq,
-  UpdateDeckReq,
   UpdateDiscussionReq,
   UpdateEventReq,
   UpdateFileReq,
+  UpdateFlashcardSetReq,
   UpdateLabelReq,
   UpdateMaterialReq,
+  UpdateQuizMetadataReq,
+  UpdateStandaloneSharingReq,
   UpdateTaskReq,
   UpdateWorkspaceReq,
   UpdateWorkspaceSharingReq,
@@ -151,8 +154,8 @@ export {
   Privacy,
   SearchKind,
   ShareRole,
+  Slot,
   SubscriptionStatus,
-  Surface,
   UserColor,
   WorkspaceRole,
 } from './gen/model';
@@ -185,7 +188,7 @@ export type AttemptDetail = Omit<GenAttemptDetail, 'questions'> & {
 /** `ingestPct` is transient upload progress, never persisted. */
 export type SourceFile = GenFile & { ingestPct?: number };
 
-/** `color` is a client-side tint derived from the owning workspace/label/deck. */
+/** `color` is a client-side tint derived from the owning workspace/label/flashcardSet. */
 export type SearchResult = GenSearchResult & { color?: UserColor };
 
 /** `questions` is the rich discriminated union; the wire keeps it opaque. */
@@ -200,7 +203,10 @@ export type PublicQuiz = Omit<GenPublicQuiz, 'questions'> & {
 export type CreateQuizReq = Omit<GenCreateQuizReq, 'questions'> & {
   questions?: Question[];
 };
-export type UpdateQuizReq = Omit<GenUpdateQuizReq, 'questions'> & {
+export type UpdateQuizContentReq = Omit<
+  GenUpdateQuizContentReq,
+  'questions'
+> & {
   questions?: Question[];
 };
 export type CreateAttemptReq = Omit<
@@ -412,7 +418,7 @@ export type GenerateOptions =
 /* ---------------- Study materials ----------------
    Persisted, workspace-scoped (not chapter-scoped) study artifacts rendered
    in-pane. Mindmaps and diagrams are markdown documents (mermaid fences);
-   quizzes and decks are referenced by the unified materials index. */
+   quizzes and flashcardSets are referenced by the unified materials index. */
 /** `content` is the rich Plate document; the wire keeps its nodes opaque. */
 export type Material = Omit<GenMaterial, 'content'> & {
   content: import('@/features/materials/document').MaterialDocument;

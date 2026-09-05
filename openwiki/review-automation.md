@@ -1,152 +1,124 @@
 ---
 type: Guide
 title: "Repository review automation"
-description: "Source, UAT, and release review orchestration, safety boundaries, workflows, gates, and evidence."
-tags: [security, review, uat, strix, playwright, ci]
+description: "Where deterministic checks and agent-driven scans run, how local scan results reach GitHub, and what production promotion requires."
+tags: [security, review, uat, strix, codex, playwright, ci]
 ---
 
 # Repository review automation
 
-The review system separates deterministic engineering checks from agent-driven
-judgment. Deterministic tests run in CI, after a UAT deployment, or by manual
-dispatch; there are no nightly or weekly review schedules. The
-`$review-repository` skill, delegated reviewers, challenger agents, Codex
-Security, and Strix are costly and manual-only; they start only after an
-explicit user invocation or GitHub workflow dispatch.
+Deterministic checks run in GitHub Actions. Agent-driven work runs on the
+developer's machine and reports back through commit statuses. Nothing has a
+schedule.
 
-Source review inspects the repository without contacting a deployment. UAT
-validation probes only an isolated, explicitly authorized deployment with
-synthetic identities. Release review combines fresh evidence from both.
-Production is never a penetration-test target.
+| Runs in Actions                                                                   | Runs locally                                                                                              |
+| --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `ci.yml`: lint, types, unit, Go/Postgres, pipeline, Playwright, boundary contract | `$review-repository` skill: reviewer lanes, challenger, report                                            |
+| `uat-quality.yml`: smoke, release SHA, 5-role authz matrix, axe, 320px reflow     | Codex Security source scan, `scripts/review/codex-security-scan.sh`, posts `source/codex-security`        |
+| `perf.yml`: editor budgets plus warn-only delta table                             | Strix dynamic UAT scan, `scripts/review/strix-scan.sh`, posts `uat/strix`                                 |
+| `promote-production.yml`: reruns both gates, requires the two statuses, deploys   | Ingest capacity benchmarks in `bench/parsers` against the ingest host (UAT is capped at one slice/worker) |
 
-Manual account and infrastructure setup is centralized in
+GitHub holds no LLM key and no scanner instructions. Strix is
+`uv tool install strix-agent==1.5.3` plus Docker on the developer machine;
+Codex Security is the `codex-security` plugin of the Codex CLI.
+
+Manual account and infrastructure setup is in
 [`deployment-runbook.md`](deployment-runbook.md#12-uat-review-environment-and-external-service-sandboxes).
-The repository threat model and review invariants are in
-[`SECURITY.md`](../SECURITY.md).
+The threat model is [`SECURITY.md`](../SECURITY.md).
 
-## Coverage model
+## Promotion gate
 
-| Category                        | Deterministic source/CI evidence                                                      | Isolated UAT evidence                                     | Manual repository review                                                          |
-| ------------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| Architecture and implementation | Type/lint checks, generated OpenAPI/client drift, package tests                       | Deployment topology and route behavior                    | Boundaries, dependency direction, policy duplication, maintainability             |
-| Correctness and data lifecycles | Vitest, Go/Postgres, Python, collaboration, Worker, and Playwright suites             | Authenticated role and tenant assertions                  | End-to-end invariant tracing, concurrency, cleanup, accounting                    |
-| Reliability and resilience      | Failure, retry, idempotency, offline, queue, cancellation, and integration tests      | Service smoke and authenticated browser flows             | Retry storms, recovery assumptions, partial failure, resource bounds              |
-| API and schema contracts        | Server-generated OpenAPI diff and generated client diff                               | Browser/API status and response assertions                | Semantic compatibility and versioning review                                      |
-| AI accuracy and retrieval       | Offline/cassette pipeline tests, grounding/citation tests, model replay certification | Synthetic golden journeys once their UAT fixtures exist   | Prompt/data-flow review, evaluation adequacy, hallucination and citation analysis |
-| Performance                     | Editor latency/FPS/open/save budgets and snapshots                                    | No stable live budget yet; retain traces for release      | Bottleneck tracing, bundle/query/resource review                                  |
-| Accessibility and UI quality    | Playwright + axe on representative dashboard, workspace, share, and dialog surfaces   | Axe plus 320 CSS-pixel reflow on the Clerk-backed fixture | Keyboard/focus, zoom, themes, forced colors, forms, motion, and visual hierarchy  |
-| Observability and operations    | Ops, logging, metering, reconciliation, and configuration tests                       | Health endpoints and operator-edge reachability           | Alertability, runbooks, recovery, dashboards, and telemetry gaps                  |
-| Security and privacy            | Repository-native authz/webhook/input tests                                           | Fixed authz matrix                                        | Explicit-only Codex Security, Strix, threat tracing, and adversarial challenge    |
+`promote-production.yml` refuses a candidate SHA unless all of these hold on
+that exact SHA:
 
-Automated accessibility checks and performance budgets are evidence, not a
-complete usability or performance review. The frontend lane in the skill adds
-the manual checks adapted from the local Modern Web Guidance material.
+1. `uat-quality.yml` is green after re-staging UAT to the SHA.
+2. `perf.yml` is green (absolute `BUDGET` ceilings; deltas are warn-only, see
+   [editor-perf.md](editor-perf.md)).
+3. Commit statuses `source/codex-security` and `uat/strix` are `success`.
+   `scripts/review/require-statuses.sh` reads the combined status endpoint,
+   which returns only the latest state per context.
 
-## Local commands
+Then the protected `production` environment approval is the release action.
 
-| Command                                           | Purpose                                                                                 |
-| ------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `scripts/review/preflight.sh local`               | Check local review prerequisites.                                                       |
-| `scripts/review/preflight.sh source`              | Check prerequisites before a manually requested Strix source scan.                      |
-| `scripts/review/preflight.sh uat`                 | Validate exact UAT authorization and allowed hosts.                                     |
-| `scripts/review/run-local-tests.sh --list`        | Print the local deterministic matrix.                                                   |
-| `pnpm review:local`                               | Run the fast static/unit/offline matrix.                                                |
-| `pnpm review:local:full`                          | Add Go/Postgres, full pipeline, browser, editor, accessibility, and performance suites. |
-| `pnpm e2e:quality`                                | Run representative local accessibility checks in the disposable E2E stack.              |
-| `pnpm perf`                                       | Run deterministic editor performance budgets.                                           |
-| `node scripts/review/source-snapshot.mjs`         | Capture revision and source-tree metadata under `review-results/`.                      |
-| `pnpm review:uat:smoke`                           | Probe the authorized UAT SPA, gateway, collab, and optional ops edge.                   |
-| `pnpm e2e:uat`                                    | Exercise Clerk-backed authz, accessibility, and narrow-viewport checks.                 |
-| `scripts/review/strix-scan.sh source standard 40` | Manually run a source-only Strix scan.                                                  |
-| `scripts/review/strix-scan.sh uat standard 40`    | Manually run a source-aware, authorized UAT Strix scan.                                 |
-| `pnpm review:validate-boundaries`                 | Prove agent workflows are dispatch-only and the skill is explicit-only.                 |
-| `pnpm review:validate-strix`                      | Test the scan-result parser and release-gate contract.                                  |
+## Local scans and how they reach GitHub
 
-`review/.env.uat.example` documents local values. Copy it to the ignored
-`review/.env.uat`, or run `scripts/review/setup-uat.sh`. Remote scripts refuse
-to run unless `UAT_TARGET_AUTHORIZED` is exactly `true`, required URLs use
-secure schemes, and every hostname matches `UAT_ALLOWED_HOSTS`.
+`scripts/review/report-status.sh <context> <success|failure> <description> <sha>`
+posts one commit status through `gh api`. It needs `gh auth login` and a
+token that can write statuses. Each scan script calls it after validation,
+so a failed or incomplete scan posts `failure`, never silence. The one-line
+description (140 characters) is the only evidence GitHub keeps; the full
+bundle stays under the ignored `review-results/`.
 
-Strix is pinned in CI. Its UAT instruction file is materialized as a mode-0600
-temporary file and deleted at exit. Generated `review-results/` and
-`strix_runs/` directories are ignored; CI uploads sanitized evidence with a
-bounded retention period. SARIF upload is best-effort because repositories
-without GitHub Code Security may reject it; the retained Strix artifact and
-validation gate remain authoritative.
+`pnpm review:source:codex [standard|deep]` refuses a dirty worktree, runs the
+Codex Security skill through `codex exec`, copies `scan-manifest.json`,
+`findings.json`, `coverage.json`, and `report.md` into `review-results/`, and
+validates with `scripts/review/validate-codex-scan.mjs`: manifest sealed as
+`completed`, findings present, zero high or critical. Status lands on HEAD.
+`deep` repeats independent Standard scans for hours; use it only when a
+release review asks for it.
 
-## Manual Codex skill
+`pnpm review:uat:strix [quick|standard|deep] [budget-usd]` reads
+`deploy/.env.uat`, requires `UAT_TARGET_AUTHORIZED=true`, secure schemes, and
+hosts listed in `UAT_ALLOWED_HOSTS`, then scans the UAT SPA, gateway, and
+`openapi.yaml` with `review/strix-uat.md` as rules of engagement.
+`STRIX_UAT_AUTH_INSTRUCTIONS`, if set, is appended to a mode-0600 temp file
+deleted at exit. Validation always enforces findings: high or critical fails,
+an incomplete run fails, and spend at 95% of the budget fails because coverage
+may have stopped at the cap. The status lands on the SHA the UAT gateway
+reports in `X-Evo-Release`, not on the local checkout.
 
-The skill metadata sets `allow_implicit_invocation: false`. Invoke
-`$review-repository` with `source`, `uat`, or `release`. Only that explicit
-invocation authorizes reviewer agents or an independent challenge pass. No CI,
-heartbeat, scheduled task, or ordinary implementation request should invoke the
-skill or spawn its review lanes.
+Other local commands:
 
-Codex Security, when installed and callable, is one input to the manually
-requested source-security lane. It does not replace repository-native tests,
-data-flow tracing, the threat model, authenticated UAT checks, or adversarial
-adjudication. A report must say when it was unavailable or not run.
+| Command                                    | Purpose                                                                   |
+| ------------------------------------------ | ------------------------------------------------------------------------- |
+| `scripts/review/preflight.sh local`        | Check local review prerequisites.                                         |
+| `scripts/review/preflight.sh source`       | Check `codex` and `gh` before a source scan.                              |
+| `scripts/review/preflight.sh uat`          | Validate exact UAT authorization and allowed hosts.                       |
+| `scripts/review/preflight.sh uat-security` | Also require `strix`, `STRIX_LLM`, `LLM_API_KEY`.                         |
+| `scripts/review/run-local-tests.sh --list` | Print the local deterministic matrix.                                     |
+| `pnpm review:local` / `review:local:full`  | Fast static/unit/offline matrix; `full` adds Go, pipeline, browser, perf. |
+| `node scripts/review/source-snapshot.mjs`  | Record revision and source-tree metadata under `review-results/`.         |
+| `pnpm review:uat:smoke`                    | Probe the authorized UAT SPA, gateway, collab, and optional ops edge.     |
+| `pnpm e2e:uat`                             | Clerk-backed authz matrix, accessibility, and reflow checks against UAT.  |
+| `pnpm review:validate-boundaries`          | Prove no workflow is scheduled or runs a scanner, and promote gates.      |
+| `pnpm review:validate-scanners`            | Test the Strix and Codex result validators.                               |
 
-The Codex Security Deep scan coordinator may run for up to 96 hours. Its
-`codex exec` parent is only a waiter once the scan starts. Killing that process,
-sending Ctrl-C, closing the terminal, or reaching a host timeout detaches the
-waiter but does not stop the scan. A stop request must call
-`cancel_codex_security_scan` for the active scan and confirm a canceled or
-terminal result before terminating the waiter. If cancellation cannot be
-confirmed, report that the scan may still be active instead of claiming a clean
-shutdown. A later task can rejoin an intentionally detached scan.
+`deploy/.env.uat.example` documents the values; copy it to the ignored
+`deploy/.env.uat` or run `scripts/review/setup-uat.sh`.
 
-## GitHub workflows
+## The skill
 
-- `ci.yml` runs deterministic source and disposable-stack checks on push and
-  pull request and supports manual dispatch. It includes the automation-boundary
-  contract; the root Playwright suite includes the accessibility checks.
-- `perf.yml` runs deterministic editor performance budgets only when manually
-  dispatched.
-- `deploy-environment.yml` is a reusable, non-dispatchable deployment adapter.
-  It checks out an exact SHA, builds and deploys the SPA, pins Coolify to that
-  SHA, waits for completion, and verifies the public release markers.
-- `deploy-uat.yml` runs after a successful `CI` run on `main` when
-  `UAT_DEPLOYMENT_ENABLED=true`, or by manual dispatch. It calls the reusable
-  deployment adapter and then `uat-quality.yml`.
-- `uat-quality.yml` is the single deterministic UAT gate. It runs bounded
-  smoke, revision, authorization, accessibility, and reflow checks when called
-  by a deployment flow or when manually dispatched. It has no schedule.
-- `promote-production.yml` is dispatch-only. It pins the requested main-branch
-  SHA back onto UAT, calls the same UAT gate, then deploys that SHA through the
-  protected `production` environment.
-- `repository-review.yml` is dispatch-only and runs the pinned Strix source
-  scanner. It can never be scheduled without failing the boundary contract.
-- `uat-review.yml` is dispatch-only because it contains Strix. It calls the
-  same reusable deterministic UAT gate so a manual security assessment retains
-  one evidence bundle.
+`.agents/skills/review-repository/SKILL.md` has `disable-model-invocation:
+true`. Invoke `$review-repository` with `source`, `uat`, or `release`; nothing
+else may start reviewer lanes, the challenger, or a scan. Rubrics are in
+`references/lanes.md`, the report shape in `references/finding-contract.md`.
+Codex Security is one input to the source security lane; a report must say
+when it was unavailable or not run, and a clean report without a scan is
+`insufficient evidence`.
 
-Both Strix workflows default to report-only. A release operator opts into
-`enforce_findings`, which fails on validated high or critical findings. Scanner
-failure, absent results, or a non-completed run always fails validation. An
-enforced run also fails when reported LLM spend reaches 95% of the configured
-hard budget because coverage may have stopped at the cap.
+## Boundary contract
 
-## Remaining coverage gaps
+`scripts/review/validate-review-boundaries.mjs` runs in `ci.yml` and fails
+when any workflow declares `schedule` or contains a scanner invocation
+(`strix-scan.sh`, `strix-agent`, `codex-security-scan.sh`, `codex exec`), when
+`uat-quality.yml` or `perf.yml` stops being both dispatchable and callable,
+when `deploy-uat.yml` runs on `push`, or when `promote-production.yml` drops
+the UAT gate, the perf call, `require-statuses.sh`, either status context, or
+the `production` environment.
 
-The deterministic UAT suite proves its fixed role matrix and representative UI
-surfaces. It does not yet automate live Stripe lifecycle and webhook ordering,
-over-quota/suspension transitions, ingest/index/search golden journeys, B2
-cleanup, reconciliation repair, long-lived collaboration revocation, or restore
-drills. These require purpose-built synthetic fixtures and deterministic cleanup
-before they become unattended jobs. Until then, the deployment runbook keeps
-them as explicit manual release checks rather than pretending they are covered.
+## Coverage gaps
+
+The deterministic UAT gate proves the fixed role matrix and representative UI
+surfaces. It does not yet cover live Stripe lifecycle and webhook ordering,
+over-quota/suspension transitions, B2 cleanup, reconciliation repair,
+collaboration revocation, restore drills, collaboration load, gateway latency,
+or an ingest/index/search/chat journey. The last three are the agreed next
+`uat-quality.yml` jobs, each needing a synthetic fixture built once in UAT.
+Until then the runbook keeps them as manual release checks.
 
 ## Evidence and release decision
 
-Reports follow
-`.agents/skills/review-repository/references/finding-contract.md`. A scanner
-label is a candidate, not a validated finding. Serious claims need a reachable
-path, violated invariant, concrete impact, reproducible evidence, and challenge
-verdict.
-
-For release, generate evidence from the exact candidate revision. The deployed
-SPA exposes that SHA in an `evo-release` meta tag and the gateway exposes it in
-`X-Evo-Release`; a mismatch fails the gate. A clean source scan with missing
-UAT remains `insufficient evidence`. Production deploy verification is bounded;
-do not point Strix or the UAT Playwright suite at production.
+Reports follow `references/finding-contract.md`. A scanner label is a
+candidate, not a validated finding. For release, every piece of evidence comes
+from the exact candidate revision; the SPA exposes it in an `evo-release` meta
+tag and the gateway in `X-Evo-Release`. Production is never a scan target.

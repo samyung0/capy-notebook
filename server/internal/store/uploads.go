@@ -93,7 +93,9 @@ func (s *Store) CreateUploadSession(ctx context.Context, in NewUploadSession) (U
 		return UploadSession{}, err
 	}
 	defer tx.Rollback(ctx)
-	ownerID, err := s.storageOwnerTx(ctx, tx, in.WorkspaceID)
+	ownerID, err := s.lockWorkspaceEditorMutationTx(
+		ctx, tx, in.WorkspaceID, in.CreatedBy,
+	)
 	if err != nil {
 		return UploadSession{}, err
 	}
@@ -131,14 +133,28 @@ func (s *Store) CreateReplacementUploadSession(
 	}
 	defer tx.Rollback(ctx)
 
-	var workspaceID, ownerID, name, kind, parseMode, status string
+	var workspaceID string
+	if err := tx.QueryRow(ctx, `SELECT workspace_id FROM files WHERE id=$1`, in.FileID).
+		Scan(&workspaceID); err != nil {
+		if isNoRows(err) {
+			return UploadSession{}, ErrNotFound
+		}
+		return UploadSession{}, err
+	}
+	ownerID, err := s.lockWorkspaceEditorMutationTx(
+		ctx, tx, workspaceID, in.CreatedBy,
+	)
+	if err != nil {
+		return UploadSession{}, err
+	}
+	var storedOwnerID, name, kind, parseMode, status string
 	var chapterID *string
 	var oldSize, revision int64
 	var captionImages bool
 	err = tx.QueryRow(ctx, `SELECT workspace_id, user_id, chapter_id, name, kind,
 		size_bytes, revision, parse_mode, caption_images, status
 		FROM files WHERE id=$1 FOR UPDATE`, in.FileID).Scan(
-		&workspaceID, &ownerID, &chapterID, &name, &kind, &oldSize, &revision,
+		&workspaceID, &storedOwnerID, &chapterID, &name, &kind, &oldSize, &revision,
 		&parseMode, &captionImages, &status,
 	)
 	if isNoRows(err) {
@@ -147,6 +163,9 @@ func (s *Store) CreateReplacementUploadSession(
 	if err != nil {
 		return UploadSession{}, err
 	}
+	if storedOwnerID != ownerID {
+		return UploadSession{}, ErrUploadState
+	}
 	if revision != in.ExpectedRevision {
 		return UploadSession{}, ErrFileRevisionConflict
 	}
@@ -154,8 +173,21 @@ func (s *Store) CreateReplacementUploadSession(
 		return UploadSession{}, ErrFileNotReady
 	}
 	reservedSize := max(in.DeclaredSize-oldSize, 0)
-	if err := s.reserveStorageTx(ctx, tx, ownerID, reservedSize); err != nil {
-		return UploadSession{}, err
+	if reservedSize > 0 {
+		if err := s.reserveStorageTx(ctx, tx, ownerID, reservedSize); err != nil {
+			return UploadSession{}, err
+		}
+	} else {
+		// A non-growing replacement is how an over-quota owner can recover while
+		// continuing to edit an Office file. Other locked owner states still
+		// reject writes made by collaborators.
+		ownerStatus, err := s.accountAccess(ctx, tx, ownerID)
+		if err != nil {
+			return UploadSession{}, err
+		}
+		if err := ownerStatus.MutateErr(); err != nil {
+			return UploadSession{}, err
+		}
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO upload_sessions
 		(id, target, workspace_id, user_id, created_by, chapter_id, object_path,
@@ -217,12 +249,36 @@ func (s *Store) FinalizeUploadSession(ctx context.Context, uploadID, sourceETag,
 	}
 	defer tx.Rollback(ctx)
 
-	var ownerID string
-	if err := tx.QueryRow(ctx, `SELECT user_id`+uploadSessionFrom+`id=$1`, uploadID).
-		Scan(&ownerID); err != nil {
+	var workspaceID string
+	if err := tx.QueryRow(ctx, `SELECT workspace_id`+uploadSessionFrom+`id=$1`, uploadID).
+		Scan(&workspaceID); err != nil {
 		if isNoRows(err) {
 			return File{}, ErrNotFound
 		}
+		return File{}, err
+	}
+	ownerID, err := s.storageOwnerTx(ctx, tx, workspaceID)
+	if err != nil {
+		return File{}, err
+	}
+	var createdBy *string
+	var storedOwnerID string
+	if err := tx.QueryRow(ctx, `SELECT user_id, created_by`+uploadSessionFrom+`id=$1`, uploadID).
+		Scan(&storedOwnerID, &createdBy); err != nil {
+		if isNoRows(err) {
+			return File{}, ErrNotFound
+		}
+		return File{}, err
+	}
+	if storedOwnerID != ownerID {
+		return File{}, ErrUploadState
+	}
+	actorID := ""
+	if createdBy != nil {
+		actorID = *createdBy
+	}
+	ownerID, err = s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, actorID)
+	if err != nil {
 		return File{}, err
 	}
 	if err := s.lockStorageRowTx(ctx, tx, ownerID); err != nil {
@@ -353,6 +409,34 @@ func (s *Store) FinalizeReplacementUploadSession(
 	}
 	defer tx.Rollback(ctx)
 
+	var workspaceID string
+	if err := tx.QueryRow(ctx, `SELECT workspace_id FROM upload_sessions
+		WHERE target='source_replace' AND id=$1`, uploadID).Scan(&workspaceID); err != nil {
+		if isNoRows(err) {
+			return File{}, ErrNotFound
+		}
+		return File{}, err
+	}
+	ownerID, err := s.storageOwnerTx(ctx, tx, workspaceID)
+	if err != nil {
+		return File{}, err
+	}
+	var createdBy *string
+	if err := tx.QueryRow(ctx, `SELECT created_by FROM upload_sessions
+		WHERE target='source_replace' AND id=$1`, uploadID).Scan(&createdBy); err != nil {
+		return File{}, err
+	}
+	actorID := ""
+	if createdBy != nil {
+		actorID = *createdBy
+	}
+	ownerID, err = s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, actorID)
+	if err != nil {
+		return File{}, err
+	}
+	if err := s.lockStorageRowTx(ctx, tx, ownerID); err != nil {
+		return File{}, err
+	}
 	u, err := scanUploadSession(tx.QueryRow(ctx,
 		`SELECT `+uploadSessionCols+` FROM upload_sessions
 		WHERE target='source_replace' AND id=$1 FOR UPDATE`, uploadID))
@@ -365,8 +449,8 @@ func (s *Store) FinalizeReplacementUploadSession(
 	if u.FileID == nil || u.ExpectedRevision == nil {
 		return File{}, ErrUploadState
 	}
-	if err := s.lockStorageRowTx(ctx, tx, u.UserID); err != nil {
-		return File{}, err
+	if u.UserID != ownerID {
+		return File{}, ErrUploadState
 	}
 	if u.Status == "completed" {
 		file, err := scanFile(tx.QueryRow(ctx,
@@ -444,6 +528,7 @@ func (s *Store) FinalizeReplacementUploadSession(
 			"captionImages": u.CaptionImages, "sourceETag": sourceETag,
 			"processingPlan": processingPlan,
 			"sourceRevision": file.Revision, "reservationId": reservationID,
+			"quotaRecovery": u.ReservedSize == 0,
 		})
 		if err != nil {
 			return File{}, err
@@ -477,7 +562,7 @@ func supersedeOlderPipelineJobsTx(
 	currentRevision int64,
 ) error {
 	var superseded int64
-	return tx.QueryRow(ctx, `WITH candidates AS (
+	return tx.QueryRow(ctx, `WITH candidates AS MATERIALIZED (
 		SELECT id FROM jobs
 		WHERE type IN ('parse','ingest') AND payload->>'fileId'=$1
 		  AND status IN ('pending','running')
@@ -487,38 +572,12 @@ func supersedeOlderPipelineJobsTx(
 		    ELSE 0
 		  END < $2
 		FOR UPDATE SKIP LOCKED
-	), superseded_jobs AS (
-		UPDATE jobs j SET status='failed', error='superseded by file replacement',
-			lease_expires_at=NULL, updated_at=now()
-		FROM candidates c WHERE j.id=c.id
-		RETURNING j.id, j.payload->>'reservationId' AS reservation_id
-	), audio_cleanup AS (
-		UPDATE audio_transcriptions a SET
-			cleanup_requested=true, status='failed',
-			error='superseded by file replacement',
-			completed_at=COALESCE(a.completed_at, now()),
-			cleanup_not_before=now(), updated_at=now()
-		FROM superseded_jobs sj WHERE a.job_id=sj.id
-	), closed AS (
-		UPDATE provider_sessions ps SET
-			status=CASE WHEN EXISTS (
-				SELECT 1 FROM usage_events ue WHERE ue.reservation_id=ps.id
-			) THEN 'settled' ELSE 'released' END,
-			settled_at=now()
-		FROM superseded_jobs sj
-		WHERE ps.id=sj.reservation_id AND ps.status='open'
-		RETURNING ps.actor_user_id, ps.reserved_micros
-	), totals AS (
-		SELECT actor_user_id, sum(reserved_micros) AS reserved_micros
-		FROM closed GROUP BY actor_user_id
-	), counters AS (
-		UPDATE user_credits c SET
-			reserved_micros=GREATEST(0, c.reserved_micros-t.reserved_micros),
-			updated_at=now()
-		FROM totals t WHERE c.user_id=t.actor_user_id
-		RETURNING c.user_id
 	)
-	SELECT count(*) FROM superseded_jobs`, fileID, currentRevision).Scan(&superseded)
+	SELECT cancel_pipeline_jobs(
+		COALESCE(array_agg(id), ARRAY[]::text[]),
+		'superseded', 'superseded', 'source_superseded',
+		'superseded by file replacement'
+	) FROM candidates`, fileID, currentRevision).Scan(&superseded)
 }
 
 // SweepExpiredUploads writes off reservations whose presigned window closed

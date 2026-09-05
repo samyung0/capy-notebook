@@ -26,12 +26,13 @@ func TestEmailUnsubscribeGETDoesNotMutate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	userID := "u_1"
+	userID := "u_email_unsubscribe_get"
+	if _, err := st.Pool().Exec(ctx, `INSERT INTO users (id,name,email)
+		VALUES ($1,'Email Unsubscribe Test',$2)`, userID, userID+"@example.test"); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() {
-		_, _ = st.SetNotificationPrefs(ctx, userID, store.NotificationPrefs{
-			EmailMembership:      true,
-			EmailWorkspaceInvite: true,
-		})
+		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID)
 	})
 	secret := "aVeryLongRandomSecretValue-123456"
 	token := mail.UnsubscribeToken(secret, userID, "workspace_invite")

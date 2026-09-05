@@ -21,6 +21,9 @@ const (
 	// blobReapInterval is short because the queue is normally empty; a run that
 	// finds nothing is a single indexed query.
 	blobReapInterval = time.Minute
+	// Must stay well below the database claim lease. Once this context ends, no
+	// stale DeleteObjects call may still be running when a lease is reclaimed.
+	blobDeleteTimeout = 30 * time.Second
 )
 
 // artifactTTL is how long an unused durable B2 cache entry survives.
@@ -53,27 +56,37 @@ func reapBlobs(ctx context.Context, st *store.Store, bs blob.Store, ttl artifact
 		log.Printf("swept %d artifact cache row(s)", n)
 	}
 	for {
-		paths, err := st.ClaimBlobDeletions(ctx, blobReapBatch)
+		claims, err := st.ClaimBlobDeletions(ctx, blobReapBatch)
 		if err != nil {
 			if ctx.Err() == nil {
 				log.Printf("claim blob deletions: %v", err)
 			}
 			return
 		}
-		if len(paths) == 0 {
+		if len(claims) == 0 {
 			return
 		}
-		failed, err := bs.DeleteObjects(ctx, paths)
+		paths := make([]string, len(claims))
+		claimsByPath := make(map[string]store.BlobDeletionClaim, len(claims))
+		for i, claim := range claims {
+			paths[i] = claim.ObjectPath
+			claimsByPath[claim.ObjectPath] = claim
+		}
+		deleteCtx, cancelDelete := context.WithTimeout(ctx, blobDeleteTimeout)
+		failed, err := bs.DeleteObjects(deleteCtx, paths)
+		cancelDelete()
 		if err != nil {
-			// The whole request failed, so nothing was deleted. The claim already
-			// advanced the backoff, so these come back around on a later run.
+			// A request-level error cannot tell us whether the remote delete
+			// committed before the response was lost. Preserve the claim fence and
+			// retry idempotently after its lease expires.
 			if ctx.Err() == nil {
 				log.Printf("delete blobs: %v", err)
 			}
-			_ = st.FailBlobDeletions(ctx, paths, err.Error())
+			_ = st.RecordBlobDeletionUncertain(ctx, claims, err.Error())
 			return
 		}
-		deleted := paths
+		deleted := claims
+		var failedClaims []store.BlobDeletionClaim
 		if len(failed) > 0 {
 			// Only the keys the bucket rejected stay queued. Distinguishing them
 			// from a whole-request failure is what stops one bad key wedging the
@@ -82,18 +95,24 @@ func reapBlobs(ctx context.Context, st *store.Store, bs blob.Store, ttl artifact
 			for _, key := range failed {
 				rejected[key] = true
 			}
-			deleted = make([]string, 0, len(paths)-len(failed))
-			for _, key := range paths {
+			deleted = make([]store.BlobDeletionClaim, 0, len(paths)-len(failed))
+			failedClaims = make([]store.BlobDeletionClaim, 0, len(failed))
+			for _, key := range failed {
+				failedClaims = append(failedClaims, claimsByPath[key])
+			}
+			for _, claim := range claims {
+				key := claim.ObjectPath
 				if !rejected[key] {
-					deleted = append(deleted, key)
+					deleted = append(deleted, claim)
 				}
 			}
-			_ = st.FailBlobDeletions(ctx, failed, "bucket rejected the key")
 			log.Printf("reaper: bucket rejected %d key(s)", len(failed))
 		}
-		if err := st.FinishBlobDeletions(ctx, deleted); err != nil {
+		if err := st.ResolveBlobDeletions(
+			ctx, claims, deleted, failedClaims, "bucket rejected the key",
+		); err != nil {
 			if ctx.Err() == nil {
-				log.Printf("finish blob deletions: %v", err)
+				log.Printf("settle blob deletions: %v", err)
 			}
 			return
 		}
@@ -101,7 +120,7 @@ func reapBlobs(ctx context.Context, st *store.Store, bs blob.Store, ttl artifact
 			log.Printf("reaped %d blob(s)", len(deleted))
 		}
 		// A short batch means the queue is drained for now.
-		if len(paths) < blobReapBatch {
+		if len(claims) < blobReapBatch {
 			return
 		}
 	}
@@ -138,6 +157,8 @@ const (
 var sweptPrefixes = []string{
 	"sources/",
 	"captions/",
+	"derived-text/",
+	"parse-bundles/",
 	"previews/",
 	"editor-assets/",
 }

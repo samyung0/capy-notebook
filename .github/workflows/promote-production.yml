@@ -16,7 +16,9 @@ on:
           - DEPLOY
 
 permissions:
+  actions: read
   contents: read
+  statuses: read
 
 concurrency:
   group: uat-promotion-flow
@@ -67,10 +69,40 @@ jobs:
     with:
       revision: ${{ needs.validate_candidate.outputs.revision }}
 
+  editor_perf:
+    needs: validate_candidate
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/perf.yml
+    with:
+      revision: ${{ needs.validate_candidate.outputs.revision }}
+
+  # Agent-driven scans run locally and report through commit statuses on the
+  # exact SHA (scripts/review/report-status.sh). Promotion refuses a candidate
+  # that does not carry every required success status.
+  local_review_evidence:
+    needs: validate_candidate
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      statuses: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.validate_candidate.outputs.revision }}
+      - name: Require local scanner statuses on the candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_REVISION: ${{ needs.validate_candidate.outputs.revision }}
+        run: scripts/review/require-statuses.sh "$CANDIDATE_REVISION" source/codex-security uat/strix
+
   deploy_production:
     needs:
       - validate_candidate
       - uat_quality_gate
+      - editor_perf
+      - local_review_evidence
     uses: ./.github/workflows/deploy-environment.yml
     with:
       environment_name: production

@@ -7,10 +7,21 @@ import { llmRuntimePlugin } from './vite-llm-runtime';
 
 const BETTEROFFICE_DOCX_SUBPATH = /^@betteroffice\/docx\/(.+)$/;
 
+// Every component reads deploy/.env; see deploy/.env.example.
+const ENV_DIR = path.resolve(import.meta.dirname, 'deploy');
+
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '');
+  const env = loadEnv(mode, ENV_DIR, '');
   // Match src/main.tsx: MSW is on unless explicitly disabled.
   const useMsw = env.VITE_USE_MSW !== 'false' && mode === 'development';
+  // Public hostname when the dev server is served through a tunnel. A Clerk
+  // production instance refuses to authenticate on localhost, so hitting a
+  // deployed gateway from `pnpm dev` needs a real origin. Vite blocks unknown
+  // Host headers, so the name is always allowed when set; only `pnpm
+  // dev:public` repoints HMR at the tunnel's 443, because that override breaks
+  // HMR for an ordinary localhost session.
+  const devHost = env.VITE_DEV_HOST;
+  const servePublic = devHost !== undefined && env.VITE_DEV_PUBLIC === 'true';
   return {
     assetsInclude: ['**/*.wasm'],
     build: {
@@ -25,6 +36,7 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
+    envDir: ENV_DIR,
     optimizeDeps: {
       exclude: [
         '@betteroffice/docx',
@@ -176,8 +188,12 @@ export default defineConfig(({ mode }) => {
       ],
     },
     server: {
+      allowedHosts: devHost ? [devHost] : undefined,
+      hmr: servePublic
+        ? { clientPort: 443, host: devHost, protocol: 'wss' }
+        : undefined,
       host: true,
-      open: true,
+      open: !servePublic,
       port: Number.parseInt(env.VITE_PORT, 10) || 5173,
       // Only proxy when hitting the real Go gateway. With MSW on, the service
       // worker normally intercepts /api in the browser — but during HMR / SW

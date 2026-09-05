@@ -4,7 +4,12 @@ No explict roadmap items or planning. Current application is unfinished and not 
 
 ## Undecided Items
 
-**Paid-plan downgrade buffer.** `.todo` wants a grace period after Pro expires so people can pull files out, and no grace if the account is already deleted (keep the user row, flag it). Parked because there are no paid users and no production bytes. Build it before the first real Stripe customer, not before the two friends. Storage limits jump on Pro; without a buffer, downgrade is “we delete your corpus.”
+**Ops suspend / unsuspend controls.** Add explicit suspend and unsuspend user
+actions to the Ops dashboard, including an audit entry and immediate session,
+stream, and collaboration eviction. Account-state enforcement already treats a
+manually suspended database user as unable to authenticate; this item is only
+the operator workflow and is deliberately out of scope for the current
+lifecycle work.
 
 **Reindex in case of embedding model deprecation.** A workspace pins `embedding_model_key` for life. There is no job that re-embeds a corpus, and there must not be a per-file re-embed path either: once one upload can rewrite vectors in place, every later change inherits that cost. Parked on purpose. Retargeting the default only affects new workspaces. An embedding `model_configs` row can never be disabled, deleted, or rewritten onto a different model (Postgres refuses). Same width is a new row and a new vector table. If you ever build a cutover, it needs progress, credit reservation, and a rewrite of that pin's vector table + `rag_contents` + workspace pins per content, while search is blocked or stale.
 
@@ -24,7 +29,7 @@ No explict roadmap items or planning. Current application is unfinished and not 
 
 **Calendar and tasks as a product.** Built, in the sidebar and dashboard, not flagged. You think nobody will use them and they are over-engineered. Parked as a product: first build hides them. Do not keep polishing due dates. If you ever need a personal calendar, do not put it back in this app until the notebook loop has weekly humans.
 
-**Adaptive study engine.** Frequencies, weak topics, coverage while the workspace keeps changing. Generate already has types and cognitive levels; decks already have FSRS. The missing piece is a scheduler. Parked: you have not named Tuesday, and you will launch without it if it eats the calendar.
+**Adaptive study engine.** Frequencies, weak topics, coverage while the workspace keeps changing. Generate already has types and cognitive levels; flashcards already have FSRS. The missing piece is a scheduler. Parked: you have not named Tuesday, and you will launch without it if it eats the calendar.
 
 **Website MCP / extra tool surfaces.** Workspace chat vs site-wide chat, extra tools. Parked: two friends do not need a second agent. Curate tools after they actually ask questions the current chat cannot answer.
 

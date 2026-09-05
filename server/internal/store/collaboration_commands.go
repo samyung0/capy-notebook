@@ -15,6 +15,7 @@ import (
 
 type replaceBlockCommand struct {
 	Type             string         `json:"type"`
+	ActorUserID      string         `json:"actorUserId"`
 	MaterialID       string         `json:"materialId"`
 	Room             string         `json:"room"`
 	ExpectedBlock    map[string]any `json:"expectedBlock"`
@@ -64,18 +65,24 @@ func changedStableBlock(current, desired materialdoc.Envelope) (map[string]any, 
 }
 
 // applyAuthoritativeContentCommand replaces one stable top-level custom block
-// in an initialized Y.Doc. It returns false when the room has not been
-// initialized yet, allowing creation/bootstrap paths to keep using SQL.
+// in the authoritative Y.Doc. When collaboration is configured, opening the
+// direct command connection also bootstraps a missing Y.Doc from the current
+// SQL projection before applying the command.
 func (s *Store) applyAuthoritativeContentCommand(
 	ctx context.Context,
-	materialID, currentRaw, desiredRaw string,
+	materialID, actorUserID, currentRaw, desiredRaw string,
 ) (bool, error) {
 	initialized, err := s.materialYjsInitialized(ctx, materialID)
-	if err != nil || !initialized {
-		return initialized, err
+	if err != nil {
+		return false, err
 	}
 	if s.collaborationURL == "" || s.collaborationSecret == "" {
-		return true, ErrAuthorityUnavailable
+		if initialized {
+			return true, ErrAuthorityUnavailable
+		}
+		// Tests and explicitly collaboration-free deployments retain the SQL
+		// bootstrap path. Production commands go through the configured sidecar.
+		return false, nil
 	}
 	current, err := materialdoc.Parse(currentRaw)
 	if err != nil {
@@ -92,12 +99,22 @@ func (s *Store) applyAuthoritativeContentCommand(
 	if expectedBlock == nil {
 		return true, nil
 	}
+	if actorUserID == "" {
+		if err := s.pool.QueryRow(ctx, `SELECT owner_user_id FROM materials WHERE id=$1`,
+			materialID).Scan(&actorUserID); err != nil {
+			if isNoRows(err) {
+				return true, ErrNotFound
+			}
+			return true, err
+		}
+	}
 	roomForCommand, err := s.MaterialRoom(ctx, materialID)
 	if err != nil {
 		return true, err
 	}
 	body, err := json.Marshal(replaceBlockCommand{
 		Type: "replace-block", MaterialID: materialID,
+		ActorUserID:   actorUserID,
 		Room:          roomForCommand,
 		ExpectedBlock: expectedBlock, ReplacementBlock: replacementBlock,
 	})

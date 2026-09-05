@@ -75,49 +75,49 @@ INSERT INTO materials (
   (
     'qz_e2e_private', 'u_owner', 'ws_e2e_private', 'E2E Private Workspace', 'quiz',
     'E2E Private Quiz',
-    '{"schemaVersion":1,"value":[{"type":"h1","id":"qz_e2e_private:title","children":[{"text":"E2E Private Quiz"}]},{"type":"quiz","id":"qz_e2e_private:quiz","timeLimitMin":15,"children":[{"type":"quiz_question","id":"q_priv_1","questionType":"boolean","level":"recall","correctBoolean":true,"children":[{"type":"quiz_prompt","children":[{"text":"Private quiz prompt?"}]}]}]}]}'::jsonb,
+    '{"schemaVersion":1,"value":[{"type":"quiz","id":"qz_e2e_private:quiz","timeLimitMin":15,"children":[{"type":"quiz_question","id":"q_priv_1","questionType":"boolean","level":"recall","correctBoolean":true,"children":[{"type":"quiz_prompt","children":[{"text":"Private quiz prompt?"}]}]}]}]}'::jsonb,
     'ch_e2e_private', '{Private chapter}', '{}', 'private', 'green', now(), now(), 1, 'u_owner'
   ),
   (
     'qz_e2e_link', 'u_owner', NULL, '', 'quiz',
     'E2E Link Quiz',
-    '{"schemaVersion":1,"value":[{"type":"h1","id":"qz_e2e_link:title","children":[{"text":"E2E Link Quiz"}]},{"type":"quiz","id":"qz_e2e_link:quiz","children":[{"type":"quiz_question","id":"q_link_1","questionType":"boolean","level":"recall","correctBoolean":true,"children":[{"type":"quiz_prompt","children":[{"text":"Link quiz prompt?"}]}]}]}]}'::jsonb,
+    '{"schemaVersion":1,"value":[{"type":"quiz","id":"qz_e2e_link:quiz","children":[{"type":"quiz_question","id":"q_link_1","questionType":"boolean","level":"recall","correctBoolean":true,"children":[{"type":"quiz_prompt","children":[{"text":"Link quiz prompt?"}]}]}]}]}'::jsonb,
     NULL, '{}', '{}', 'link', 'purple', now(), now(), 1, 'u_owner'
   ),
   (
     'qz_e2e_public', 'u_owner', NULL, '', 'quiz',
     'E2E Public Quiz',
-    '{"schemaVersion":1,"value":[{"type":"h1","id":"qz_e2e_public:title","children":[{"text":"E2E Public Quiz"}]},{"type":"quiz","id":"qz_e2e_public:quiz","children":[{"type":"quiz_question","id":"q_pub_1","questionType":"boolean","level":"recall","correctBoolean":false,"children":[{"type":"quiz_prompt","children":[{"text":"Public quiz prompt?"}]}]}]}]}'::jsonb,
+    '{"schemaVersion":1,"value":[{"type":"quiz","id":"qz_e2e_public:quiz","children":[{"type":"quiz_question","id":"q_pub_1","questionType":"boolean","level":"recall","correctBoolean":false,"children":[{"type":"quiz_prompt","children":[{"text":"Public quiz prompt?"}]}]}]}]}'::jsonb,
     NULL, '{}', '{}', 'public', 'blue', now(), now(), 1, 'u_owner'
   ),
   (
     'qz_e2e_mutate', 'u_owner', NULL, '', 'quiz',
     'E2E Mutate Quiz',
-    '{"schemaVersion":1,"value":[{"type":"h1","id":"qz_e2e_mutate:title","children":[{"text":"E2E Mutate Quiz"}]},{"type":"quiz","id":"qz_e2e_mutate:quiz","children":[{"type":"quiz_question","id":"q_mut_1","questionType":"boolean","level":"recall","correctBoolean":true,"children":[{"type":"quiz_prompt","children":[{"text":"Mutate quiz prompt?"}]}]}]}]}'::jsonb,
+    '{"schemaVersion":1,"value":[{"type":"quiz","id":"qz_e2e_mutate:quiz","children":[{"type":"quiz_question","id":"q_mut_1","questionType":"boolean","level":"recall","correctBoolean":true,"children":[{"type":"quiz_prompt","children":[{"text":"Mutate quiz prompt?"}]}]}]}]}'::jsonb,
     NULL, '{}', '{}', 'private', 'amber', now(), now(), 1, 'u_owner'
   ),
   (
     'dk_e2e_private', 'u_owner', 'ws_e2e_private', 'E2E Private Workspace', 'flashcards',
-    'E2E Private Deck',
-    '{"schemaVersion":1,"value":[{"type":"h1","id":"dk_e2e_private:title","children":[{"text":"E2E Private Deck"}]},{"type":"flashcards","id":"dk_e2e_private:flashcards","children":[{"type":"flashcard","id":"c_e2e_priv_1","children":[{"type":"flashcard_front","children":[{"text":"Private front"}]},{"type":"flashcard_back","children":[{"text":"Private back"}]}]}]}]}'::jsonb,
+    'E2E Private Flashcards',
+    '{"schemaVersion":1,"value":[{"type":"flashcards","id":"dk_e2e_private:flashcards","children":[{"type":"flashcard","id":"c_e2e_priv_1","children":[{"type":"flashcard_front","children":[{"text":"Private front"}]},{"type":"flashcard_back","children":[{"text":"Private back"}]}]}]}]}'::jsonb,
     'ch_e2e_private', '{}', '{}', 'private', 'green', now(), now(), 1, 'u_owner'
   ),
   (
     'dk_e2e_link', 'u_owner', NULL, '', 'flashcards',
-    'E2E Link Deck',
-    '{"schemaVersion":1,"value":[{"type":"h1","id":"dk_e2e_link:title","children":[{"text":"E2E Link Deck"}]},{"type":"flashcards","id":"dk_e2e_link:flashcards","children":[{"type":"flashcard","id":"c_e2e_link_1","children":[{"type":"flashcard_front","children":[{"text":"Link front"}]},{"type":"flashcard_back","children":[{"text":"Link back"}]}]}]}]}'::jsonb,
+    'E2E Link Flashcards',
+    '{"schemaVersion":1,"value":[{"type":"flashcards","id":"dk_e2e_link:flashcards","children":[{"type":"flashcard","id":"c_e2e_link_1","children":[{"type":"flashcard_front","children":[{"text":"Link front"}]},{"type":"flashcard_back","children":[{"text":"Link back"}]}]}]}]}'::jsonb,
     NULL, '{}', '{}', 'link', 'purple', now(), now(), 1, 'u_owner'
   ),
   (
     'dk_e2e_public', 'u_owner', NULL, '', 'flashcards',
-    'E2E Public Deck',
-    '{"schemaVersion":1,"value":[{"type":"h1","id":"dk_e2e_public:title","children":[{"text":"E2E Public Deck"}]},{"type":"flashcards","id":"dk_e2e_public:flashcards","children":[{"type":"flashcard","id":"c_e2e_pub_1","children":[{"type":"flashcard_front","children":[{"text":"Public front"}]},{"type":"flashcard_back","children":[{"text":"Public back"}]}]}]}]}'::jsonb,
+    'E2E Public Flashcards',
+    '{"schemaVersion":1,"value":[{"type":"flashcards","id":"dk_e2e_public:flashcards","children":[{"type":"flashcard","id":"c_e2e_pub_1","children":[{"type":"flashcard_front","children":[{"text":"Public front"}]},{"type":"flashcard_back","children":[{"text":"Public back"}]}]}]}]}'::jsonb,
     NULL, '{}', '{}', 'public', 'blue', now(), now(), 1, 'u_owner'
   ),
   (
     'dk_e2e_mutate', 'u_owner', NULL, '', 'flashcards',
-    'E2E Mutate Deck',
-    '{"schemaVersion":1,"value":[{"type":"h1","id":"dk_e2e_mutate:title","children":[{"text":"E2E Mutate Deck"}]},{"type":"flashcards","id":"dk_e2e_mutate:flashcards","children":[{"type":"flashcard","id":"c_e2e_mut_1","children":[{"type":"flashcard_front","children":[{"text":"Mutate front"}]},{"type":"flashcard_back","children":[{"text":"Mutate back"}]}]}]}]}'::jsonb,
+    'E2E Mutate Flashcards',
+    '{"schemaVersion":1,"value":[{"type":"flashcards","id":"dk_e2e_mutate:flashcards","children":[{"type":"flashcard","id":"c_e2e_mut_1","children":[{"type":"flashcard_front","children":[{"text":"Mutate front"}]},{"type":"flashcard_back","children":[{"text":"Mutate back"}]}]}]}]}'::jsonb,
     NULL, '{}', '{}', 'private', 'amber', now(), now(), 1, 'u_owner'
   ),
   (

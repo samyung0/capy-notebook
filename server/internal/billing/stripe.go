@@ -1,12 +1,16 @@
 package billing
 
 import (
+	"errors"
+	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/stripe/stripe-go/v82"
 	bportalsession "github.com/stripe/stripe-go/v82/billingportal/session"
 	"github.com/stripe/stripe-go/v82/checkout/session"
 	"github.com/stripe/stripe-go/v82/customer"
+	"github.com/stripe/stripe-go/v82/refund"
 	"github.com/stripe/stripe-go/v82/subscription"
 
 	"github.com/evonotes/server/internal/store"
@@ -35,12 +39,13 @@ func PriceForTier(tier, pricePro string) string {
 	}
 }
 
-func CreateCustomer(email, name, userID string) (string, error) {
+func CreateCustomer(email, name, userID, idempotencyKey string) (string, error) {
 	params := &stripe.CustomerParams{
 		Email: stripe.String(email),
 		Name:  stripe.String(name),
 	}
 	params.AddMetadata("user_id", userID)
+	params.SetIdempotencyKey(idempotencyKey)
 	c, err := customer.New(params)
 	if err != nil {
 		return "", err
@@ -48,22 +53,143 @@ func CreateCustomer(email, name, userID string) (string, error) {
 	return c.ID, nil
 }
 
-func CreateCheckoutSession(customerID, priceID, userID, successURL, cancelURL string) (string, error) {
+type CheckoutSession struct {
+	ID  string
+	URL string
+}
+
+func CreateCheckoutSession(
+	customerID, priceID, userID, successURL, cancelURL, reservationID, idempotencyKey string,
+) (CheckoutSession, error) {
 	params := &stripe.CheckoutSessionParams{
 		Customer: stripe.String(customerID),
 		Mode:     stripe.String(string(stripe.CheckoutSessionModeSubscription)),
 		LineItems: []*stripe.CheckoutSessionLineItemParams{
 			{Price: stripe.String(priceID), Quantity: stripe.Int64(1)},
 		},
-		SuccessURL: stripe.String(successURL),
-		CancelURL:  stripe.String(cancelURL),
+		SuccessURL:       stripe.String(successURL),
+		CancelURL:        stripe.String(cancelURL),
+		SubscriptionData: &stripe.CheckoutSessionSubscriptionDataParams{},
 	}
 	params.AddMetadata("user_id", userID)
+	params.AddMetadata("checkout_reservation_id", reservationID)
+	// Stripe does not copy Checkout Session metadata to the subscription. Store
+	// the same stable owner there so an early subscription webhook can resolve
+	// the user before the local customer binding commits.
+	params.SubscriptionData.AddMetadata("user_id", userID)
+	params.SetIdempotencyKey(idempotencyKey)
 	s, err := session.New(params)
 	if err != nil {
-		return "", err
+		return CheckoutSession{}, err
 	}
-	return s.URL, nil
+	return CheckoutSession{ID: s.ID, URL: s.URL}, nil
+}
+
+func stripeNotFound(err error) bool {
+	var stripeErr *stripe.Error
+	return errors.As(err, &stripeErr) && stripeErr.HTTPStatusCode == http.StatusNotFound
+}
+
+func ExpireCheckoutSession(sessionID string) error {
+	remote, err := session.Get(sessionID, nil)
+	if stripeNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if remote.Status != stripe.CheckoutSessionStatusOpen {
+		return nil
+	}
+	_, err = session.Expire(sessionID, nil)
+	return err
+}
+
+// SubscriptionRefundTarget returns the first paid object on the subscription's
+// latest invoice. For a Checkout race this is the initial subscription charge.
+// The target is persisted before cancellation so a process crash cannot lose
+// the refund obligation after the subscription is already gone. The booleans
+// report a fully canceled subscription and an end-of-period cancellation,
+// respectively. They are independent because Stripe may retain the period-end
+// flag after the subscription reaches canceled.
+func SubscriptionRefundTarget(
+	subscriptionID string,
+) (store.StripeCompensationAction, string, bool, bool, error) {
+	params := &stripe.SubscriptionParams{}
+	params.AddExpand("latest_invoice.payments.data.payment.payment_intent")
+	params.AddExpand("latest_invoice.payments.data.payment.charge")
+	sub, err := subscription.Get(subscriptionID, params)
+	if stripeNotFound(err) {
+		return "", "", true, false, nil
+	}
+	if err != nil {
+		return "", "", false, false, err
+	}
+	action, objectID := store.StripeCompensationAction(""), ""
+	if sub.LatestInvoice != nil && sub.LatestInvoice.Payments != nil {
+		for _, payment := range sub.LatestInvoice.Payments.Data {
+			if payment == nil || payment.Status != "paid" || payment.AmountPaid <= 0 || payment.Payment == nil {
+				continue
+			}
+			if payment.Payment.PaymentIntent != nil {
+				action, objectID = store.StripeRefundPayment, payment.Payment.PaymentIntent.ID
+			} else if payment.Payment.Charge != nil {
+				action, objectID = store.StripeRefundCharge, payment.Payment.Charge.ID
+			}
+			if objectID != "" {
+				break
+			}
+		}
+	}
+	return action, objectID, sub.Status == stripe.SubscriptionStatusCanceled,
+		sub.CancelAtPeriodEnd, nil
+}
+
+func CancelSubscription(subscriptionID string) error {
+	_, err := subscription.Cancel(subscriptionID, nil)
+	if stripeNotFound(err) {
+		return nil
+	}
+	return err
+}
+
+func RetrieveSubscription(subscriptionID string) (*stripe.Subscription, error) {
+	return subscription.Get(subscriptionID, nil)
+}
+
+type RefundResult struct {
+	ID     string
+	Status stripe.RefundStatus
+}
+
+func CreateRefund(
+	action store.StripeCompensationAction,
+	objectID string,
+	generation int,
+) (RefundResult, error) {
+	params := &stripe.RefundParams{Reason: stripe.String(string(stripe.RefundReasonRequestedByCustomer))}
+	switch action {
+	case store.StripeRefundPayment:
+		params.PaymentIntent = stripe.String(objectID)
+	case store.StripeRefundCharge:
+		params.Charge = stripe.String(objectID)
+	default:
+		return RefundResult{}, errors.New("unsupported Stripe refund target")
+	}
+	params.SetIdempotencyKey("account-deletion-" + string(action) + "-" + objectID + "-" + strconv.Itoa(generation))
+	created, err := refund.New(params)
+	if err != nil {
+		return RefundResult{}, err
+	}
+	return RefundResult{ID: created.ID, Status: created.Status}, nil
+}
+
+func GetRefund(refundID string) (RefundResult, error) {
+	current, err := refund.Get(refundID, nil)
+	if err != nil {
+		return RefundResult{}, err
+	}
+	return RefundResult{ID: current.ID, Status: current.Status}, nil
 }
 
 func CreatePortalSession(customerID, returnURL string) (string, error) {
@@ -138,7 +264,7 @@ func SubscriptionRecord(
 		CancelAtPeriodEnd:    sub.CancelAtPeriodEnd,
 		StripeEventCreated:   eventCreated,
 	}
-	if len(sub.Items.Data) > 0 {
+	if sub.Items != nil && len(sub.Items.Data) > 0 {
 		item := sub.Items.Data[0]
 		if item.Price != nil {
 			out.PriceID = item.Price.ID

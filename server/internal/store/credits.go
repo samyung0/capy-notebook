@@ -40,6 +40,7 @@ var ErrTooManyIngestLeases = errors.New("too many ingest leases")
 
 var ErrProviderSessionClosed = errors.New("provider session closed")
 var ErrProviderCallConflict = errors.New("provider call id reused with different usage")
+var ErrProviderReceiptExpired = errors.New("provider call receipt deadline elapsed")
 var ErrTerminalCallNotAllowed = errors.New("terminal provider call not allowed")
 
 // ConcurrentLLMLeases caps unsettled platform-paid model calls per actor.
@@ -179,11 +180,11 @@ const (
 )
 
 const (
-	SurfaceChat     = models.SurfaceChat
-	SurfaceGenerate = models.SurfaceGenerate
-	SurfaceEditor   = models.SurfaceEditor
-	SurfaceQuiz     = models.SurfaceQuiz
-	SurfaceIngest   = models.SurfaceIngest
+	SurfaceChat     = "chat"
+	SurfaceGenerate = "generate"
+	SurfaceEditor   = "editor"
+	SurfaceQuiz     = "quiz"
+	SurfaceIngest   = "ingest"
 	SurfaceSystem   = "system"
 )
 
@@ -211,21 +212,18 @@ func (s *Store) lockedCreditUsageTx(
 	if err := s.ensureCreditsRowTx(ctx, tx, userID); err != nil {
 		return usage, err
 	}
-	var tier PlanTier
-	if err := tx.QueryRow(ctx, `SELECT plan_tier FROM users WHERE id=$1`, userID).Scan(&tier); err != nil {
-		if isNoRows(err) {
-			return usage, ErrNotFound
-		}
+	tier, err := s.effectivePlanTierForUser(ctx, tx, userID)
+	if err != nil {
 		return usage, err
 	}
 	// The UPDATE both takes the lock and resets a stale period in one
 	// statement, so two concurrent first-requests of a month cannot both
 	// observe the previous period's balance.
-	err := tx.QueryRow(ctx, `
+	err = tx.QueryRow(ctx, `
 		UPDATE user_credits
-		SET period_start = date_trunc('month', now())::date,
+		SET period_start = date_trunc('month', now() AT TIME ZONE 'UTC')::date,
 		    used_micros = CASE
-		      WHEN period_start < date_trunc('month', now())::date THEN 0
+		      WHEN period_start < date_trunc('month', now() AT TIME ZONE 'UTC')::date THEN 0
 		      ELSE used_micros END,
 		    updated_at = now()
 		WHERE user_id = $1
@@ -248,16 +246,19 @@ func (s *Store) lockedCreditUsageTx(
 // dashboard. The gate must not use this.
 func (s *Store) CreditBalance(ctx context.Context, userID string) (CreditUsage, error) {
 	var usage CreditUsage
-	var tier PlanTier
+	tier, err := s.effectivePlanTierForUser(ctx, s.pool, userID)
+	if err != nil {
+		return usage, err
+	}
 	var periodStart *time.Time
-	err := s.pool.QueryRow(ctx, `
-		SELECT u.plan_tier,
-		       COALESCE(c.used_micros, 0),
+	err = s.pool.QueryRow(ctx, `
+		SELECT COALESCE(c.used_micros, 0),
 		       COALESCE(c.reserved_micros, 0),
 		       c.period_start
 		FROM users u
 		LEFT JOIN user_credits c ON c.user_id = u.id
-		WHERE u.id = $1`, userID).Scan(&tier, &usage.UsedMicros, &usage.ReservedMicros, &periodStart)
+		WHERE u.id = $1`, userID).
+		Scan(&usage.UsedMicros, &usage.ReservedMicros, &periodStart)
 	if isNoRows(err) {
 		return usage, ErrNotFound
 	}
@@ -271,6 +272,7 @@ func (s *Store) CreditBalance(ctx context.Context, userID string) (CreditUsage, 
 		usage.PeriodStart = *periodStart
 		if periodStart.Before(monthStart()) {
 			usage.UsedMicros = 0
+			usage.PeriodStart = monthStart()
 		}
 	} else {
 		usage.PeriodStart = monthStart()
@@ -338,6 +340,9 @@ func (s *Store) BeginProviderSession(
 		return "", err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if err := s.lockAccountSessionsTx(ctx, tx, actorUserID); err != nil {
+		return "", err
+	}
 
 	if paidBy == models.PaidByPlatform {
 		usage, err := s.lockedCreditUsageTx(ctx, tx, actorUserID)
@@ -491,10 +496,13 @@ func (s *Store) settleProviderCallAtomic(
 	}
 
 	var stubSession, stubActor, stubKind, stubPurpose, stubThinking, stubStatus string
+	var stubExpired bool
 	err = tx.QueryRow(ctx, `
-		SELECT reservation_id, actor_user_id, kind, purpose, thinking, status
+		SELECT reservation_id, actor_user_id, kind, purpose, thinking, status,
+		       receipt_deadline_at <= now()
 		  FROM provider_calls WHERE id=$1 FOR UPDATE`, call.CallID).
-		Scan(&stubSession, &stubActor, &stubKind, &stubPurpose, &stubThinking, &stubStatus)
+		Scan(&stubSession, &stubActor, &stubKind, &stubPurpose, &stubThinking, &stubStatus,
+			&stubExpired)
 	if isNoRows(err) {
 		return settlement, ErrProviderCallConflict
 	}
@@ -548,6 +556,25 @@ func (s *Store) settleProviderCallAtomic(
 			return ProviderCallSettlement{}, err
 		}
 		return settlement, nil
+	}
+	if stubStatus == "open" && stubExpired {
+		if _, err := tx.Exec(ctx, `UPDATE provider_calls SET
+			status='abandoned', abandoned_at=now(),
+			error_category='provider', error_code='receipt_timeout'
+			WHERE id=$1 AND status='open'`, call.CallID); err != nil {
+			return settlement, err
+		}
+		if stubPurpose == "terminal" {
+			if _, err := tx.Exec(ctx, `UPDATE provider_sessions
+				SET terminal_call_id=NULL
+				WHERE id=$1 AND terminal_call_id=$2`, sessionID, call.CallID); err != nil {
+				return settlement, err
+			}
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return ProviderCallSettlement{}, err
+		}
+		return settlement, ErrProviderReceiptExpired
 	}
 	if out.status != "open" && out.status != "settled" && out.status != "released" {
 		return settlement, ErrProviderSessionClosed
@@ -648,8 +675,12 @@ func (s *Store) settleProviderCallAtomic(
 		ProviderCallID: call.CallID,
 		Metadata:       meta,
 	}
-	if err := insertUsageEventTx(ctx, tx, event); err != nil {
+	inserted, err := insertUsageEventTx(ctx, tx, event)
+	if err != nil {
 		return settlement, err
+	}
+	if !inserted {
+		return settlement, ErrProviderCallConflict
 	}
 	tag, err := tx.Exec(ctx, `
 		UPDATE provider_calls SET
@@ -680,6 +711,12 @@ func (s *Store) settleProviderCallAtomic(
 	}
 	if tag.RowsAffected() != 1 {
 		return settlement, ErrProviderCallConflict
+	}
+	if out.status == "released" {
+		if _, err := tx.Exec(ctx, `UPDATE provider_sessions
+			SET status='settled' WHERE id=$1 AND status='released'`, sessionID); err != nil {
+			return settlement, err
+		}
 	}
 	if out.credits > 0 && out.paidBy == models.PaidByPlatform {
 		used := balance.UsedMicros + out.credits
@@ -764,6 +801,9 @@ func (s *Store) beginIngestSpendTx(
 	tx pgx.Tx,
 	actorUserID, workspaceID string,
 ) (string, error) {
+	if err := s.lockAccountSessionsTx(ctx, tx, actorUserID); err != nil {
+		return "", err
+	}
 	usage, err := s.lockedCreditUsageTx(ctx, tx, actorUserID)
 	if err != nil {
 		return "", err
@@ -887,16 +927,19 @@ func (s *Store) RecordUsage(ctx context.Context, events ...UsageEvent) error {
 		if ev.ActorUserID == "" {
 			continue
 		}
-		if err := insertUsageEventTx(ctx, tx, ev); err != nil {
+		inserted, err := insertUsageEventTx(ctx, tx, ev)
+		if err != nil {
 			return err
 		}
-		byUser[ev.ActorUserID] += ev.CreditMicros
+		if inserted {
+			byUser[ev.ActorUserID] += ev.CreditMicros
+		}
 	}
 	for userID, micros := range byUser {
 		if micros == 0 {
 			continue
 		}
-		if err := s.ensureCreditsRowTx(ctx, tx, userID); err != nil {
+		if _, err := s.lockedCreditUsageTx(ctx, tx, userID); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE user_credits
@@ -991,9 +1034,9 @@ func scanUsageBuckets(rows pgx.Rows) ([]UsageBucket, error) {
 	return out, rows.Err()
 }
 
-func insertUsageEventTx(ctx context.Context, tx pgx.Tx, ev UsageEvent) error {
+func insertUsageEventTx(ctx context.Context, tx pgx.Tx, ev UsageEvent) (bool, error) {
 	if ev.ActorUserID == "" {
-		return nil
+		return false, nil
 	}
 	if ev.Surface == "" {
 		ev.Surface = SurfaceSystem
@@ -1008,14 +1051,17 @@ func insertUsageEventTx(ctx context.Context, tx pgx.Tx, ev UsageEvent) error {
 	if ev.WorkspaceID != "" {
 		wsID = &ev.WorkspaceID
 	}
-	_, err := tx.Exec(ctx, `
+	var inserted bool
+	err := tx.QueryRow(ctx, `
 		INSERT INTO usage_events
 			(trace_id, actor_user_id, workspace_id, kind, surface, provider, model,
 			 thinking, catalog_provider_slug, catalog_model_slug, model_version,
 			 input_tokens, output_tokens, units, unit, parse_pages, parse_ocr_pages,
 			 parse_cpu_milliseconds, parse_elapsed_milliseconds, credit_micros,
 			 reservation_id, provider_call_id, idempotency_key, metadata)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
+		ON CONFLICT DO NOTHING
+		RETURNING true`,
 		nullString(ev.TraceID), ev.ActorUserID, wsID, ev.Kind, ev.Surface,
 		ev.Provider, ev.Model, ev.Thinking,
 		ev.CatalogModel.ProviderSlug, ev.CatalogModel.ModelSlug, ev.ModelVersion,
@@ -1024,8 +1070,11 @@ func insertUsageEventTx(ctx context.Context, tx pgx.Tx, ev UsageEvent) error {
 		ev.ParseElapsedMilliseconds, ev.CreditMicros,
 		nullString(ev.ReservationID), nullString(ev.ProviderCallID),
 		nullString(ev.IdempotencyKey), ev.Metadata,
-	)
-	return err
+	).Scan(&inserted)
+	if isNoRows(err) {
+		return false, nil
+	}
+	return inserted, err
 }
 
 func nullString(v string) *string {
@@ -1036,6 +1085,43 @@ func nullString(v string) *string {
 }
 
 /* --------------------------------------------------------- maintenance */
+
+// SweepExpiredProviderCalls closes attempts whose provider response and
+// settlement grace have elapsed. Session closure stops new calls but leaves
+// an already-open call settleable until this deadline.
+func (s *Store) SweepExpiredProviderCalls(ctx context.Context) (int64, error) {
+	var abandoned int64
+	err := s.pool.QueryRow(ctx, `
+		WITH locked_terminal_sessions AS MATERIALIZED (
+		  SELECT s.id
+		    FROM provider_sessions s
+		   WHERE EXISTS (
+		     SELECT 1 FROM provider_calls pc
+		      WHERE pc.reservation_id=s.id AND pc.purpose='terminal'
+		        AND pc.status='open' AND pc.receipt_deadline_at<now()
+		   )
+		   ORDER BY s.id
+		   FOR UPDATE
+		), abandoned AS (
+		  UPDATE provider_calls pc
+		     SET status = 'abandoned', abandoned_at = now(),
+		         error_category = 'provider', error_code = 'receipt_timeout'
+		   WHERE pc.status = 'open' AND pc.receipt_deadline_at < now()
+		     AND (pc.purpose <> 'terminal' OR EXISTS (
+		       SELECT 1 FROM locked_terminal_sessions s
+		        WHERE s.id=pc.reservation_id
+		     ))
+		   RETURNING id, reservation_id, purpose
+		), cleared_terminal AS (
+		  UPDATE provider_sessions s SET terminal_call_id=NULL
+		    FROM abandoned a
+		   WHERE a.purpose='terminal' AND s.id=a.reservation_id
+		     AND s.terminal_call_id=a.id
+		   RETURNING s.id
+		)
+		SELECT count(*) FROM abandoned`).Scan(&abandoned)
+	return abandoned, err
+}
 
 // SweepExpiredReservations releases holds whose request died without settling
 // — a killed replica, a panic, a context deadline. Without this a crash

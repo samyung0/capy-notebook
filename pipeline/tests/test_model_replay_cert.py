@@ -9,6 +9,7 @@ import pytest
 
 from pipeline.elitellm import observed_continuity
 from pipeline.model_replay_cert import (
+    ModelListAuthError,
     ModelListError,
     cassette_relpath,
     certification_entry,
@@ -59,23 +60,20 @@ def test_two_turn_cassette_requires_streaming_requests_and_sse(tmp_path: Path):
     assert not two_turn_cassette_ok(legacy)
 
 
-def test_chat_provider_entries_only_include_chat_providers():
+def test_chat_provider_entries_only_include_providers_with_a_model_list():
     catalog = {
         "providers": {
             "openai": {
                 "name": "OpenAI",
-                "modes": ["chat"],
                 "platformEnv": "OPENAI_API_KEY",
             },
             "anthropic": {
                 "name": "Anthropic",
-                "modes": ["chat"],
                 "platformEnv": "ANTHROPIC_API_KEY",
             },
-            "gemini": {
-                "name": "Gemini",
-                "modes": ["vision"],
-                "platformEnv": "GEMINI_API_KEY",
+            "deepinfra": {
+                "name": "DeepInfra",
+                "platformEnv": "DEEPINFRA_API_KEY",
             },
         }
     }
@@ -97,7 +95,7 @@ def test_require_chat_provider_rejects_non_chat_provider():
     assert require_chat_provider(" openai ") == "openai"
     assert require_chat_provider("zai") == "zai"
     with pytest.raises(ValueError, match="not a supported chat provider"):
-        require_chat_provider("gemini")
+        require_chat_provider("deepinfra")
 
 
 def test_certified_model_slugs_are_sorted_and_provider_scoped(tmp_path: Path):
@@ -164,12 +162,36 @@ def test_fetch_available_model_slugs_uses_provider_endpoint(
     assert captured["timeout"] == 30.0
 
 
-def test_fetch_available_model_slugs_rejects_provider_error():
+@pytest.mark.parametrize("status", [401, 403])
+def test_fetch_available_model_slugs_rejects_unauthorized_key(status: int):
+    def get(url: str, **_kwargs):
+        return httpx.Response(status, request=httpx.Request("GET", url))
+
+    with pytest.raises(
+        ModelListAuthError,
+        match=rf"OPENAI_API_KEY was rejected by openai \({status}\)",
+    ):
+        fetch_available_model_slugs("openai", "bad-key", get=get)
+
+
+def test_fetch_available_model_slugs_names_deepinfra_key_when_zai_rejects():
     def get(url: str, **_kwargs):
         return httpx.Response(401, request=httpx.Request("GET", url))
 
-    with pytest.raises(ModelListError, match="401 Unauthorized"):
-        fetch_available_model_slugs("openai", "bad-key", get=get)
+    with pytest.raises(
+        ModelListAuthError,
+        match=r"DEEPINFRA_API_KEY was rejected by zai \(401\)",
+    ):
+        fetch_available_model_slugs("zai", "bad-key", get=get)
+
+
+def test_fetch_available_model_slugs_rejects_provider_error():
+    def get(url: str, **_kwargs):
+        return httpx.Response(500, request=httpx.Request("GET", url))
+
+    with pytest.raises(ModelListError, match="500") as error:
+        fetch_available_model_slugs("openai", "sk-test", get=get)
+    assert not isinstance(error.value, ModelListAuthError)
 
 
 def test_zai_model_list_maps_deepinfra_wire_slug_to_catalog_slug():
@@ -200,8 +222,8 @@ def test_certify_rejects_invalid_identity_before_running(tmp_path: Path):
 
     with pytest.raises(ValueError, match="not a supported chat provider"):
         certify_model(
-            "gemini",
-            "gemini-3",
+            "deepinfra",
+            "Qwen/Qwen3-Embedding-4B",
             "sk-test",
             repo=tmp_path,
             manifest_path=tmp_path / "certs.json",
@@ -257,8 +279,8 @@ def test_observed_continuity_reads_whatever_the_provider_returned():
         "encrypted_content"
     ]
     assert observed_continuity(
-        {"thinking_blocks": [{"type": "thinking"}], "thought_signature": "sig"}
-    ) == ["thinking_blocks", "thought_signature"]
+        {"thinking_blocks": [{"type": "thinking"}], "reasoning": "why"}
+    ) == ["thinking_blocks", "reasoning"]
     assert observed_continuity({"content": "hi"}) == []
 
 

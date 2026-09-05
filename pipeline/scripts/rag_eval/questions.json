@@ -1,0 +1,109 @@
+[
+  {
+    "q": "What percentage of values fall within one standard deviation of the mean in a normal distribution?",
+    "expect": [["biology-ib-chapter-1.pdf", 5], ["biology-ib-chapter-1.pdf", 6]]
+  },
+  {
+    "q": "How do you work out the degrees of freedom for a t-test?",
+    "expect": [
+      ["biology-ib-chapter-1.pdf", 17],
+      ["biology-ib-chapter-1.pdf", 16],
+      ["biology-ib-chapter-1.pdf", 13],
+      ["biology-ib-chapter-1.pdf", 14]
+    ]
+  },
+  {
+    "q": "What does an error bar on a graph show?",
+    "expect": [["biology-ib-chapter-1.pdf", 10]]
+  },
+  {
+    "q": "Does a correlation between two variables prove that one causes the other?",
+    "expect": [
+      ["biology-ib-chapter-1.pdf", 21],
+      ["biology-ib-chapter-1.pdf", 22]
+    ]
+  },
+  {
+    "q": "What does 5% significance mean?",
+    "expect": [
+      ["biology-ib-chapter-1.pdf", 12],
+      ["biology-ib-chapter-1.pdf", 14],
+      ["biology-ib-chapter-1.pdf", 13]
+    ]
+  },
+  {
+    "q": "In the soybean fertiliser experiment, was the difference in growth significant?",
+    "expect": [
+      ["biology-ib-chapter-1.pdf", 16],
+      ["biology-ib-chapter-1.pdf", 17]
+    ]
+  },
+  {
+    "q": "flu vaccinations and influenza deaths graph",
+    "expect": [
+      ["biology-ib-chapter-1.pdf", 23],
+      ["biology-ib-chapter-1.pdf", 22]
+    ]
+  },
+  {
+    "q": "dung beetles buriers and rollers",
+    "expect": [["biology-ib-chapter-1.pdf", 26]]
+  },
+  {
+    "q": "mean number of eggs laid by salmon in the River Namsen",
+    "expect": [
+      ["biology-ib-chapter-1.pdf", 26],
+      ["biology-ib-chapter-1.pdf", 25]
+    ]
+  },
+  {
+    "q": "What is convergent evolution? Give an example.",
+    "expect": [
+      ["biology-ib-convergent-targets.pdf", 0],
+      ["biology-ib-convergent-targets.pdf", 2]
+    ]
+  },
+  {
+    "q": "How many amino acid differences in cytochrome c between humans and other organisms?",
+    "expect": [["biology-ib-convergent-targets.pdf", 4]]
+  },
+  {
+    "q": "gradualism versus punctuated equilibrium",
+    "expect": [
+      ["biology-ib-convergent-targets.pdf", 3],
+      ["biology-ib-convergent-targets.pdf", 4]
+    ]
+  },
+  {
+    "q": "Why is water a polar molecule?",
+    "expect": [["biology-ib-sample-16-pages.pdf", 15]]
+  },
+  {
+    "q": "What bonds hold the tertiary structure of a protein together?",
+    "expect": [["biology-ib-sample-16-pages.pdf", 27]]
+  },
+  {
+    "q": "Which hominid species was the first to use fire?",
+    "expect": [["biology-ib-sample-16-pages.pdf", 39]]
+  },
+  {
+    "q": "What is produced by anaerobic respiration in animal cells?",
+    "expect": [["biology-ib-sample-16-pages.pdf", 17]]
+  },
+  {
+    "q": "标准差是什么，它如何描述数据的分布？",
+    "expect": [
+      ["biology-ib-chapter-1.pdf", 5],
+      ["biology-ib-chapter-1.pdf", 6],
+      ["biology-ib-chapter-1.pdf", 7]
+    ]
+  },
+  {
+    "q": "哪个城市的议会对港口计划进行了投票？",
+    "expect": [["newspaper_scan.pdf", 5], ["newspaper_scan.pdf", 4]]
+  },
+  {
+    "q": "What happened at the city council harbour vote?",
+    "expect": [["newspaper_scan.pdf", 5], ["newspaper_scan.pdf", 4]]
+  }
+]

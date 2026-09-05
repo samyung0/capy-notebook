@@ -3,7 +3,12 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import type { DraftConfig, EliteLLMProvider, ThinkingLevel } from './api';
+import type {
+  Capability,
+  DraftConfig,
+  EliteLLMProvider,
+  ThinkingLevel,
+} from './api';
 
 export const THINKING_LEVELS: ThinkingLevel[] = [
   'instant',
@@ -52,6 +57,7 @@ export function applyProvider(
 }
 
 export function DraftFields({
+  capabilities,
   draft,
   embedding,
   idPrefix,
@@ -60,6 +66,7 @@ export function DraftFields({
   setDraft,
   setParamsText,
 }: {
+  capabilities: Capability[];
   draft: DraftConfig;
   embedding: boolean;
   idPrefix: string;
@@ -73,6 +80,17 @@ export function DraftFields({
 
   function numberField(key: DraftNumberKey, value: string) {
     setDraft((current) => ({ ...current, [key]: Number(value) }));
+  }
+
+  function toggleCapability(capability: Capability, checked: boolean) {
+    setDraft((current) => ({
+      ...current,
+      capabilities: checked
+        ? capabilities.filter(
+            (item) => item === capability || current.capabilities.includes(item)
+          )
+        : current.capabilities.filter((item) => item !== capability),
+    }));
   }
 
   function toggleThinking(level: ThinkingLevel, checked: boolean) {
@@ -226,6 +244,33 @@ export function DraftFields({
           type="number"
           value={draft.contextWindowTokens}
         />
+      </div>
+      <div className="space-y-2 sm:col-span-2">
+        <span className="font-medium text-sm">Capabilities</span>
+        <p className="text-muted-foreground text-xs">
+          What the model can do. Retrieval needs embedding, captioning needs
+          vision; chat needs an agentic-loop certificate, which comes from
+          model:certify and cannot be ticked here.
+        </p>
+        <div className="flex flex-wrap gap-3">
+          {capabilities.map((capability) => (
+            <Label
+              className="flex items-center gap-2 text-sm"
+              htmlFor={`${idPrefix}-capability-${capability}`}
+              key={capability}
+            >
+              <Checkbox
+                checked={draft.capabilities.includes(capability)}
+                disabled={embedding}
+                id={`${idPrefix}-capability-${capability}`}
+                onCheckedChange={(checked) =>
+                  toggleCapability(capability, checked === true)
+                }
+              />
+              {capability}
+            </Label>
+          ))}
+        </div>
       </div>
       <div className="space-y-2 sm:col-span-2">
         <span className="font-medium text-sm">Thinking levels</span>

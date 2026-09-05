@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import type { Question } from '@/api/types';
+import type { MaterialKind, Question } from '@/api/types';
 import {
   createMaterialDocument,
   flashcardsNode,
@@ -10,13 +10,33 @@ import {
 } from './document';
 import { MaterialPreview } from './MaterialPreview';
 
-function renderMaterial(value: MaterialValue): string {
+function renderMaterial(
+  value: MaterialValue,
+  metadata?: { isStandalone: boolean; kind: MaterialKind; title: string }
+): string {
   return renderToStaticMarkup(
-    <MaterialPreview content={createMaterialDocument(value)} />
+    <MaterialPreview
+      content={createMaterialDocument(value)}
+      isStandalone={metadata?.isStandalone}
+      kind={metadata?.kind}
+      title={metadata?.title}
+    />
   );
 }
 
 describe('static study-block renderers', () => {
+  it('falls back to a deleted mention author identifier', () => {
+    const html = renderMaterial([
+      {
+        children: [{ text: '' }],
+        key: 'user_deleted_1',
+        type: 'mention',
+      },
+    ]);
+
+    expect(html).toContain('@user_deleted_1');
+  });
+
   it('renders task lists with read-only checked state', () => {
     const html = renderMaterial([
       {
@@ -80,6 +100,41 @@ describe('static study-block renderers', () => {
 
     expect(html).toContain('>Mindmap</span>');
     expect(html).toContain('Topic map');
+  });
+
+  it('renders the metadata title only for a standalone custom material', () => {
+    const value = [
+      flashcardsNode(
+        [{ back: 'Back', front: 'Front', id: 'card-1' }],
+        'flashcards'
+      ),
+    ];
+    const standalone = renderMaterial(value, {
+      isStandalone: true,
+      kind: 'flashcards',
+      title: 'Renamed set',
+    });
+    const workspaceMaterial = renderMaterial(value, {
+      isStandalone: false,
+      kind: 'flashcards',
+      title: 'Workspace set',
+    });
+    const embeddedInNote = renderMaterial(value, {
+      isStandalone: false,
+      kind: 'note',
+      title: 'Note title',
+    });
+
+    expect(standalone).toContain('data-testid="standalone-material-title"');
+    expect(standalone).toContain('>Renamed set</h1>');
+    expect(workspaceMaterial).not.toContain(
+      'data-testid="standalone-material-title"'
+    );
+    expect(workspaceMaterial).not.toContain('Workspace set');
+    expect(embeddedInNote).not.toContain(
+      'data-testid="standalone-material-title"'
+    );
+    expect(embeddedInNote).not.toContain('Note title');
   });
 
   it('renders semantic callout variants and code language labels in previews', () => {
@@ -237,7 +292,7 @@ describe('static study-block renderers', () => {
           { back: 'Back one', front: 'Front one', id: 'card-1' },
           { back: 'Back two', front: 'Front two', id: 'card-2' },
         ],
-        'deck'
+        'flashcards'
       ),
     ]);
 

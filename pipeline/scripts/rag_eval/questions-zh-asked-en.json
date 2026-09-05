@@ -1,0 +1,38 @@
+[
+  {
+    "q": "How does the CIL-LLM framework avoid catastrophic forgetting?",
+    "expect": [["zh-CN.pdf", 1], ["zh-CN.pdf", 9]]
+  },
+  {
+    "q": "What is class-incremental learning?",
+    "expect": [["zh-CN.pdf", 6], ["zh-CN.pdf", 7]]
+  },
+  {
+    "q": "What roles do example compression and keyword matching play?",
+    "expect": [["zh-CN.pdf", 8], ["zh-CN.pdf", 15]]
+  },
+  {
+    "q": "How many categories are in the THUCNews dataset?",
+    "expect": [["zh-CN.pdf", 41]]
+  },
+  {
+    "q": "How much did each component contribute in the ablation study?",
+    "expect": [["zh-CN.pdf", 54], ["zh-CN.pdf", 55]]
+  },
+  {
+    "q": "When and where did the movement to defend Cantonese take place?",
+    "expect": [["zh_HK.pdf", 2]]
+  },
+  {
+    "q": "What are the two time targets of the Mandarin promotion policy?",
+    "expect": [["zh_HK.pdf", 10]]
+  },
+  {
+    "q": "How do the language policies of Hong Kong and Macau differ from those of the Pearl River Delta?",
+    "expect": [["zh_HK.pdf", 14], ["zh_HK.pdf", 15], ["zh_HK.pdf", 18]]
+  },
+  {
+    "q": "Will the next generation in Guangzhou still speak Cantonese?",
+    "expect": [["zh_HK.pdf", 29]]
+  }
+]

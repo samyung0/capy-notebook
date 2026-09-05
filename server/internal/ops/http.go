@@ -312,8 +312,8 @@ func respond(w http.ResponseWriter, value any, err error) {
 			if invalid.ModelSlug != "" {
 				payload["modelSlug"] = invalid.ModelSlug
 			}
-			if invalid.Surface != "" {
-				payload["surface"] = invalid.Surface
+			if invalid.Slot != "" {
+				payload["slot"] = invalid.Slot
 			}
 			if invalid.Reason != "" {
 				payload["reason"] = invalid.Reason

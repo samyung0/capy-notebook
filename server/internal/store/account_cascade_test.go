@@ -43,7 +43,7 @@ func TestUserDeleteCascadeSplitsOwnershipFromAuthorship(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ownFile, err := s.AddSource(ctx, ownWS.ID, "own.md", "md", nil, 10)
+	ownFile, err := s.AddSource(ctx, ownWS.ID, leaverID, "own.md", "md", nil, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,8 @@ func TestUserDeleteCascadeSplitsOwnershipFromAuthorship(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	guestContent, err := materialdoc.FlashcardsDocument("Guest deck", []materialdoc.Card{{
+	addWorkspaceEditor(t, s, hostWS.ID, leaverID)
+	guestContent, err := materialdoc.FlashcardsDocument([]materialdoc.Card{{
 		ID: uid("c"), Front: "front", Back: "back",
 	}})
 	if err != nil {
@@ -68,7 +69,7 @@ func TestUserDeleteCascadeSplitsOwnershipFromAuthorship(t *testing.T) {
 	}
 	guestMaterial, err := s.CreateMaterial(ctx, Material{
 		CreatedBy: leaverID, WorkspaceID: hostWS.ID, Kind: "flashcards",
-		Title: "Guest deck", Content: guestContent,
+		Title: "Guest flashcardSet", Content: guestContent,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -149,7 +150,7 @@ func TestChapterReferencesCannotCrossWorkspaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	foreignChapter, err := s.AddChapter(ctx, second.ID, "Elsewhere")
+	foreignChapter, err := s.AddChapter(ctx, second.ID, ownerID, "Elsewhere")
 	if err != nil {
 		t.Fatal(err)
 	}

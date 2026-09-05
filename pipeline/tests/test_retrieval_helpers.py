@@ -9,8 +9,7 @@ from __future__ import annotations
 
 from pipeline.registry import ModelConfig
 from pipeline.retrieval import models, tools, workflows
-from pipeline.retrieval.search import Passage, _cap_per_file, search
-from pipeline.retrieval.store import normalize_concept
+from pipeline.retrieval.search import Passage, _cap_per_file, _mark_tier_only, search
 from pipeline.retrieval.tools import ToolContext
 
 
@@ -156,11 +155,42 @@ def test_per_file_cap_never_drops_results_in_a_single_file_workspace():
     assert len(_cap_per_file(passages, 2)) == 5
 
 
-# ------------------------------------------------------------------ concepts
+def _row(chunk_id: str, score: float, flat: float) -> dict:
+    return {
+        "id": chunk_id,
+        "file_id": "f_1",
+        "file_name": "bio.pdf",
+        "chunk_idx": 0,
+        "text": "body",
+        "score": score,
+        "flat_score": flat,
+    }
 
 
-def test_concept_normalization_is_case_and_space_insensitive():
-    assert normalize_concept("  Calvin   Cycle ") == normalize_concept("calvin cycle")
+def test_tier_only_marks_the_hits_the_exact_tier_added():
+    """The counterfactual for telemetry: rank the same candidates with every
+    lexical row at half weight, and whatever is in the real top-k but not in
+    that one owes its place to the tier."""
+    rows = [
+        _row("exact", 0.030, 0.010),
+        _row("v1", 0.020, 0.020),
+        _row("v2", 0.019, 0.019),
+        _row("v3", 0.012, 0.012),
+    ]
+    top = [Passage.from_row(row) for row in rows[:3]]
+
+    _mark_tier_only(top, rows, top_k=3)
+
+    assert [p.tier_only for p in top] == [True, False, False]
+
+
+def test_tier_only_is_untouched_when_no_tier_fired():
+    rows = [_row("a", 0.02, 0.02), _row("b", 0.01, 0.01)]
+    top = [Passage.from_row(row) for row in rows]
+
+    _mark_tier_only(top, rows, top_k=1)
+
+    assert not any(p.tier_only for p in top)
 
 
 # ----------------------------------------------------------------- workflows
@@ -350,7 +380,7 @@ def _embed_spec(litellm_model_id: str) -> ModelConfig:
         provider_slug="deepinfra",
         model_slug=litellm_model_id,
         params={"dimensions": 2560},
-        surfaces=("embedding",),
+        slots=("retrieval",),
     )
 
 
@@ -404,7 +434,7 @@ async def test_search_prefixes_qwen3_vectors_not_lexical_terms(monkeypatch):
     await search(workspace_id="ws", query="chlorophyll")
 
     assert seen["texts"] == [models.format_query("chlorophyll", spec)]
-    assert seen["terms"] == "chlorophyll"
+    assert seen["terms"].any_of == "chlorophyll"
 
 
 async def test_search_skips_prefix_when_workspace_pin_is_not_qwen3(monkeypatch):
@@ -449,7 +479,7 @@ def _ingest_spec() -> ModelConfig:
         model_name="Flash",
         provider_slug="deepseek",
         model_slug="deepseek-v4-flash-vision-exp",
-        surfaces=("ingest",),
+        slots=("ingest",),
         thinking_levels=("instant",),
         default_thinking="instant",
         context_window_tokens=100_000,
@@ -471,6 +501,22 @@ async def test_a_failed_file_summary_retries_instead_of_storing_a_blank(monkeypa
     monkeypatch.setattr(indexing.models, "complete_text", _explode)
 
     with pytest.raises(RetryableError):
+        await indexing.summarize_file("bio.pdf", [Chunk(text="Chlorophyll absorbs")])
+
+
+async def test_summary_settlement_failure_is_not_rewritten_as_retryable(monkeypatch):
+    import pytest
+
+    from pipeline.retrieval import accounting, indexing
+    from pipeline.retrieval.chunking import Chunk
+
+    async def _reject_receipt(*_a, **_k):
+        raise accounting.SettlementError("receipt rejected")
+
+    monkeypatch.setattr(indexing, "ingest_spec", _ingest_spec)
+    monkeypatch.setattr(indexing.models, "complete_text", _reject_receipt)
+
+    with pytest.raises(accounting.SettlementError, match="receipt rejected"):
         await indexing.summarize_file("bio.pdf", [Chunk(text="Chlorophyll absorbs")])
 
 
@@ -496,29 +542,3 @@ async def test_the_summary_prompt_excludes_the_uploaders_file_name(monkeypatch):
     assert "Chlorophyll absorbs" in seen[0]
     assert "Chlorophyll" in descriptor
     assert summary
-
-
-async def test_the_concept_prompt_excludes_the_uploaders_file_name(monkeypatch):
-    """Concepts are copied to every workspace that uploads the same bytes."""
-    from pipeline.retrieval import indexing
-    from pipeline.retrieval.chunking import Chunk
-
-    seen: list[str] = []
-
-    async def _capture(messages, **_k):
-        seen.extend(m["content"] for m in messages)
-        return '["chlorophyll"]'
-
-    monkeypatch.setattr(indexing, "ingest_spec", lambda: object())
-    monkeypatch.setattr(indexing.models, "complete_text", _capture)
-
-    concepts = await indexing.extract_concepts(
-        "Divorce settlement draft.pdf",
-        [Chunk(text="Chlorophyll absorbs red and blue light.")],
-        [{"id": "chk_1"}],
-    )
-
-    blob = "\n".join(seen)
-    assert "Divorce settlement draft.pdf" not in blob
-    assert "Chlorophyll absorbs red and blue light." in blob
-    assert concepts and concepts[0]["name"] == "chlorophyll"

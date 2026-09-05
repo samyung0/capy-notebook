@@ -24,7 +24,7 @@ from ..config import cfg
 from . import store
 from .chunking import clip_to_tokens, estimate_tokens
 from .limits import TurnBudget
-from .search import Passage, search
+from .search import Passage, SearchStats, search
 
 log = logging.getLogger("evo.retrieval.tools")
 
@@ -56,6 +56,9 @@ class ToolContext:
     citations: list[Passage] = field(default_factory=list)
     assistant_message_id: str = ""
     budget: TurnBudget | None = None
+    # One entry per search_workspace call this turn, written to
+    # rag_search_events when the turn ends (agent.run_agent fills `cited`).
+    search_events: list[dict[str, Any]] = field(default_factory=list)
     _scope_outline: dict[str, Any] | None = field(default=None, repr=False)
 
 
@@ -208,16 +211,79 @@ async def _search_workspace(args: dict[str, Any], ctx: ToolContext) -> ToolResul
         return resolved
     if ctx.budget is not None:
         ctx.budget.embedding_calls += 1
+    stats = SearchStats()
     passages = await search(
         workspace_id=ctx.workspace_id,
         query=query,
         file_ids=resolved.file_ids or None,
+        stats=stats,
+    )
+    shown = {p.chunk_id for p in ctx.citations}
+    overlap = sum(1 for p in passages if p.chunk_id in shown)
+    ctx.search_events.append(
+        _search_event(
+            index=len(ctx.search_events) + 1,
+            stats=stats,
+            scope_files=len(resolved.file_ids),
+            passages=passages,
+            overlap=overlap,
+        )
     )
     if not passages:
         return _result(
             "No passages matched. Try different wording, or list_sources first."
         )
-    return ToolResult(passages=passages)
+    return ToolResult(
+        passages=passages,
+        text_parts=[_overlap_footer(overlap, len(passages))],
+    )
+
+
+def _search_event(
+    *,
+    index: int,
+    stats: SearchStats,
+    scope_files: int,
+    passages: list[Passage],
+    overlap: int,
+) -> dict[str, Any]:
+    return {
+        "search_index": index,
+        "hits_lang": stats.hits_lang,
+        "query_terms": stats.query_terms,
+        "cjk_runs": stats.cjk_runs,
+        "scope_files": scope_files,
+        "embed_ms": stats.embed_ms,
+        "sql_ms": stats.sql_ms,
+        "hits": len(passages),
+        "prior_overlap": overlap,
+        "chunk_ids": [p.chunk_id for p in passages],
+        "file_ids": [p.file_id for p in passages],
+        "chunk_langs": [p.lang for p in passages],
+        "vec_ranks": [p.vec_rank for p in passages],
+        "lex_ranks": [p.lex_rank for p in passages],
+        "vec_dists": [p.vec_dist for p in passages],
+        "tier_only": [p.tier_only for p in passages],
+        "cited": [False] * len(passages),
+    }
+
+
+def _overlap_footer(overlap: int, hits: int) -> str:
+    """Tell the model when a search mostly re-found what it already has.
+
+    On the lab corpus a plausible-but-absent topic (Hardy-Weinberg in a
+    workspace that never mentions it) drew three or four rewordings in one
+    turn, each returning the same passages, before the model gave up. The
+    index does not get closer with rewording; saying so is the stop signal.
+    """
+    if hits < 2 or overlap * 2 < hits:
+        return ""
+    return (
+        f"{overlap} of these {hits} passages were already returned earlier in "
+        "this turn. The workspace has nothing closer on this wording; if these "
+        "do not answer the question, say what the workspace does not cover "
+        "rather than searching again."
+    )
 
 
 async def _list_sources(_args: dict[str, Any], ctx: ToolContext) -> ToolResult:
@@ -305,26 +371,6 @@ async def _read_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         text_parts=[f"(next start = {rows[-1]['chunk_idx'] + 1})"],
         passages=passages,
         paged=True,
-    )
-
-
-async def _related_concepts(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    concept_value = args.get("concept")
-    if not isinstance(concept_value, str) or not concept_value.strip():
-        return _refused("related_concepts needs a concept.")
-    concept = concept_value.strip()
-    rows = await store.related_concepts(
-        workspace_id=ctx.workspace_id,
-        name=concept,
-        file_ids=ctx.file_ids or None,
-    )
-    if not rows:
-        return _result(f"'{concept}' is not indexed as a concept in this workspace.")
-    return _result(
-        "\n".join(
-            f"- {row['name']} ({row['mentions']} passages; in {', '.join(row['files'][:4])})"
-            for row in rows
-        )
     )
 
 
@@ -497,9 +543,9 @@ _register(
         name="search_workspace",
         schema=_schema(
             "search_workspace",
-            "Search the user's sources for passages relevant to a query. Use "
-            "one focused query per call; call again with a different query "
-            "rather than concatenating several questions.",
+            "Search the user's sources for passages relevant to a query. One "
+            "call per assistant message, with one focused query. Search again "
+            "in a later step rather than concatenating several questions.",
             {
                 "type": "object",
                 "properties": {
@@ -584,26 +630,6 @@ _register(
             },
         ),
         handler=_read_document,
-        mutates=False,
-        uses_embedding=False,
-        concurrency_class="read",
-    )
-)
-_register(
-    ToolSpec(
-        name="related_concepts",
-        schema=_schema(
-            "related_concepts",
-            "Find concepts discussed alongside a given concept, and which "
-            "documents discuss them. Use for questions that span documents, "
-            "such as comparing or connecting topics.",
-            {
-                "type": "object",
-                "properties": {"concept": {"type": "string"}},
-                "required": ["concept"],
-            },
-        ),
-        handler=_related_concepts,
         mutates=False,
         uses_embedding=False,
         concurrency_class="read",

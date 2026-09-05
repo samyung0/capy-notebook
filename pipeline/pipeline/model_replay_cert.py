@@ -52,13 +52,15 @@ def two_turn_cassette_ok(path: Path) -> bool:
 def chat_provider_entries(
     catalog: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
+    """Providers the certifier can list models for. The embedding hop has no
+    conversational models and no entry in MODEL_LIST_ENDPOINTS."""
     raw = catalog if catalog is not None else load_providers()
     providers = raw.get("providers") or {}
     if not isinstance(providers, dict):
         return []
     entries: list[dict[str, str]] = []
     for slug, spec in providers.items():
-        if not isinstance(spec, dict) or "chat" not in (spec.get("modes") or []):
+        if not isinstance(spec, dict) or slug not in MODEL_LIST_ENDPOINTS:
             continue
         entries.append(
             {
@@ -103,7 +105,18 @@ class ModelListError(RuntimeError):
     pass
 
 
+class ModelListAuthError(ModelListError):
+    pass
+
+
 GetFn = Callable[..., httpx.Response]
+
+
+def _rejected_api_key_error(provider_slug: str, status_code: int) -> ModelListAuthError:
+    env_name = env_name_for_provider(provider_slug)
+    return ModelListAuthError(
+        f"{env_name} was rejected by {provider_slug} ({status_code})"
+    )
 
 
 def fetch_available_model_slugs(
@@ -132,6 +145,8 @@ def fetch_available_model_slugs(
 
     try:
         response = get(endpoint, headers=headers, params=params, timeout=30.0)
+        if response.status_code in {401, 403}:
+            raise _rejected_api_key_error(provider_slug, response.status_code)
         response.raise_for_status()
         payload = response.json()
     except (httpx.HTTPError, ValueError) as error:

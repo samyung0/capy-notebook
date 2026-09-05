@@ -139,7 +139,7 @@ func (a *api) updateWorkspaceMember(ctx context.Context, in *updateWorkspaceMemb
 		return nil, collaborationError(err)
 	}
 	notification, created, err := a.s.SetWorkspaceMemberRoleWithResult(
-		ctx, in.ID, in.MemberID, in.Body.Role.WorkspaceRole(),
+		ctx, userID(ctx), in.ID, in.MemberID, in.Body.Role.WorkspaceRole(),
 	)
 	if err != nil {
 		return nil, collaborationError(err)
@@ -150,7 +150,6 @@ func (a *api) updateWorkspaceMember(ctx context.Context, in *updateWorkspaceMemb
 			Notification: notification,
 		})
 	}
-	a.publishWorkspaceEvictions(ctx, in.ID)
 	return &Empty{}, nil
 }
 
@@ -173,7 +172,6 @@ func (a *api) transferWorkspace(ctx context.Context, in *transferWorkspaceInput)
 	if err != nil {
 		return nil, collaborationError(err)
 	}
-	a.publishWorkspaceEvictions(ctx, in.ID)
 	return a.ownedWorkspaceOutput(ctx, ws)
 }
 
@@ -181,7 +179,9 @@ func (a *api) removeWorkspaceMember(ctx context.Context, in *workspaceMemberInpu
 	if err := a.s.AssertWorkspaceOwner(ctx, userID(ctx), in.ID); err != nil {
 		return nil, collaborationError(err)
 	}
-	notification, created, err := a.s.RemoveWorkspaceMemberWithResult(ctx, in.ID, in.MemberID)
+	notification, created, err := a.s.RemoveWorkspaceMemberWithResult(
+		ctx, userID(ctx), in.ID, in.MemberID,
+	)
 	if err != nil {
 		return nil, collaborationError(err)
 	}
@@ -191,6 +191,5 @@ func (a *api) removeWorkspaceMember(ctx context.Context, in *workspaceMemberInpu
 			Notification: notification,
 		})
 	}
-	a.publishWorkspaceEvictions(ctx, in.ID)
 	return &Empty{}, nil
 }

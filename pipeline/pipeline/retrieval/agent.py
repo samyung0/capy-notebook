@@ -10,17 +10,17 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 
 from .. import obs
 from ..config import cfg
-from . import accounting, compact, events, models, tools
+from . import accounting, compact, events, models, store, tools
 from .chunking import estimate_tokens
 from .limits import (
     MAX_CONCURRENT,
-    MAX_CONCURRENT_SEARCH,
     PLANNING_RESPONSES,
     STOP_ANSWER,
     STOP_CLIENT_GONE,
@@ -32,7 +32,6 @@ from .limits import (
     TurnBudget,
 )
 from .locale import response_language_rule
-from .search import Passage, search
 from .stream import AssembledResponse, StreamEvent, ToolCall
 from .tools import ToolContext, ToolResult, TurnFailed
 
@@ -43,33 +42,26 @@ SYSTEM_PROMPT = (
     "sources.\n"
     "\n"
     "Rules:\n"
-    "- Ground every claim in retrieved passages. Cite them inline as [1], [2] "
-    "using the numbers shown with each passage.\n"
+    "- Search the sources before answering questions about them. Ground every "
+    "claim in retrieved passages. Cite them inline as [1], [2] using the "
+    "numbers shown with each passage.\n"
     "- If the passages do not answer the question, say so plainly and say what "
     "the sources do cover. Never fill a gap from general knowledge without "
     "labelling it as outside the sources.\n"
-    "- For questions that span documents, retrieve from each relevant document "
-    "before comparing them, and attribute each side of the comparison.\n"
+    "- One search_workspace per assistant message, with one focused query. "
+    "If a comparison spans documents, search once, then search again in the "
+    "next step if a side is missing. Attribute each side.\n"
     "- Prefer listing sources, then describing or searching the few documents "
-    "that matter, over searching the whole workspace blindly.\n"
+    "that matter, over searching the whole workspace blindly. Use "
+    "read_document when a hit is a fragment.\n"
     "- Emit independent reads in one assistant message when you already have "
-    "the ids or queries you need. Do not batch a call that needs another "
-    "call's result. Do not mix generate_material with retrieval calls."
+    "the ids. Do not batch a call that needs another call's result. Do not "
+    "mix generate_material with retrieval calls."
 )
 
 
 def system_prompt(locale: str | None) -> str:
     return SYSTEM_PROMPT + "\n- " + response_language_rule(locale)
-
-
-def _priming_message(numbered: list[tuple[int, Passage]]) -> str:
-    if not numbered:
-        return (
-            "An initial search of the workspace returned nothing. Use list_sources "
-            "to see what is available before answering."
-        )
-    body = "\n\n".join(passage.as_context(n) for n, passage in numbered)
-    return f"Passages retrieved for this question:\n\n{body}"
 
 
 def _parse_args(raw: str | None) -> dict[str, Any]:
@@ -92,8 +84,6 @@ def _describe(name: str, args: dict[str, Any]) -> str:
         return ", ".join(str(i) for i in ids[:8])
     if name == "read_document":
         return str(args.get("file_id") or "")
-    if name == "related_concepts":
-        return str(args.get("concept") or "")
     if name == "generate_material":
         return str(args.get("kind") or "")
     return ""
@@ -154,7 +144,6 @@ async def _admit_checkpoint(
     schemas: list[dict[str, Any]],
     budget: TurnBudget,
     query_msg: dict[str, Any],
-    prime_msg: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     if not compact.needs_compact(messages, spec, schemas=schemas):
         return messages, None
@@ -192,7 +181,6 @@ async def _admit_checkpoint(
         }
     )
     rebuilt.append(query_msg)
-    rebuilt.append(prime_msg)
     budget.checkpoint_rewrites += 1
     return rebuilt, replacement
 
@@ -215,37 +203,11 @@ async def run_agent(
     answer = ""
     block_n = 0
 
-    prime_file_ids: list[str] | None = None
     if ctx.file_ids:
         active_scope = await tools.resolve_current_scope(ctx)
         if isinstance(active_scope, ToolResult):
             yield _with_usage(events.error(active_scope.text(), "invalid_scope"))
             return
-        prime_file_ids = active_scope.file_ids
-    budget.embedding_calls += 1
-    passages = await search(
-        workspace_id=ctx.workspace_id,
-        query=query,
-        file_ids=prime_file_ids,
-    )
-    numbered = tools.assign_citations(ctx, passages)
-    yield events.tool_start("prime", "search_workspace", query)
-    yield events.tool_end("prime", "success")
-    activity.append(
-        {
-            "id": "prime",
-            "kind": "tool",
-            "callId": "prime",
-            "name": "search_workspace",
-            "detail": query,
-            "status": "success",
-        }
-    )
-    if ctx.citations:
-        citation_version += 1
-        yield events.citations(
-            [p.as_citation() for p in ctx.citations], citation_version
-        )
 
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": system_prompt(locale)}
@@ -262,13 +224,7 @@ async def run_agent(
     prior = _history_turns(history)
     messages.extend({"role": t["role"], "content": t["content"]} for t in prior)
     query_msg = {"role": "user", "content": query, "_kind": "query"}
-    prime_msg = {
-        "role": "user",
-        "content": tools.limit_tool_result(_priming_message(numbered)),
-        "_kind": "prime",
-    }
     messages.append(query_msg)
-    messages.append(prime_msg)
 
     schemas = tools.schemas_for(ctx)
     try:
@@ -280,7 +236,6 @@ async def run_agent(
             schemas=schemas,
             budget=budget,
             query_msg=query_msg,
-            prime_msg=prime_msg,
         )
     except models.UserKeyError as exc:
         yield _with_usage(dict(exc.as_event()))
@@ -533,6 +488,7 @@ async def run_agent(
     if not budget.stop_reason:
         budget.stop_reason = STOP_PLANNING_CAP
 
+    await _record_searches(ctx, answer)
     done: dict[str, Any] = events.done(
         None,
         0,
@@ -547,6 +503,35 @@ async def run_agent(
     yield done
 
 
+_CITATION_RE = re.compile(r"\[(\d{1,3})\]")
+
+
+async def _record_searches(ctx: ToolContext, answer: str) -> None:
+    """Write the turn's search events with the hits the answer cited.
+
+    Only turns that reach ``done`` are recorded; a turn that errors out or
+    loses its client has no answer to attribute and is visible in the logs.
+    Telemetry never fails the turn.
+    """
+    if not ctx.search_events:
+        return
+    cited_chunks: set[str] = set()
+    for match in _CITATION_RE.finditer(answer):
+        n = int(match.group(1))
+        if 1 <= n <= len(ctx.citations):
+            cited_chunks.add(ctx.citations[n - 1].chunk_id)
+    for event in ctx.search_events:
+        event["cited"] = [chunk_id in cited_chunks for chunk_id in event["chunk_ids"]]
+        event["trace_id"] = obs.trace_id()
+        event["workspace_id"] = ctx.workspace_id
+        event["actor_user_id"] = ctx.user_id or None
+        event["message_id"] = ctx.assistant_message_id
+    try:
+        await store.record_search_events(ctx.search_events)
+    except Exception:
+        log.warning("search telemetry write failed", exc_info=True)
+
+
 async def _run_tools(
     calls: list[ToolCall],
     ctx: ToolContext,
@@ -558,7 +543,12 @@ async def _run_tools(
     for call in calls:
         args = _parse_args(call.arguments)
         args["_tool_call_id"] = call.id
-        limit_text = _limit_for(call, budget, len(accepted))
+        limit_text = _limit_for(
+            call,
+            budget,
+            len(accepted),
+            search_used=any(name == "search_workspace" for _, _, name in accepted),
+        )
         if limit_text:
             result = tools._refused(limit_text)
             results.append((call, result))
@@ -596,14 +586,10 @@ async def _run_tools(
             peak = min(len(work), MAX_CONCURRENT)
             budget.peak_parallel_tools = max(budget.peak_parallel_tools, peak)
             sem = asyncio.Semaphore(MAX_CONCURRENT)
-            search_sem = asyncio.Semaphore(MAX_CONCURRENT_SEARCH)
 
             async def _one(
                 call: ToolCall, args: dict[str, Any], name: str
             ) -> tuple[str, ToolResult]:
-                if name == "search_workspace":
-                    async with search_sem, sem:
-                        return call.id, await tools.run(name, args, ctx)
                 async with sem:
                     return call.id, await tools.run(name, args, ctx)
 
@@ -653,7 +639,18 @@ async def _run_tools(
         yield events.citations([p.as_citation() for p in ctx.citations], 0)
 
 
-def _limit_for(call: ToolCall, budget: TurnBudget, accepted_here: int) -> str | None:
+def _limit_for(
+    call: ToolCall,
+    budget: TurnBudget,
+    accepted_here: int,
+    *,
+    search_used: bool = False,
+) -> str | None:
+    if call.name == "search_workspace" and search_used:
+        return (
+            "This response already used search_workspace. Use those passages, "
+            "or search again in the next step."
+        )
     if accepted_here >= TOOLS_PER_RESPONSE:
         return (
             f"This response already used its {TOOLS_PER_RESPONSE} tool-call limit. "

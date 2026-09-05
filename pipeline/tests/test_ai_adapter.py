@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -141,6 +142,47 @@ class _Connected:
         return False
 
 
+class _Disconnected:
+    async def is_disconnected(self) -> bool:
+        await asyncio.sleep(0)
+        return True
+
+
+class _ToggleConnection:
+    def __init__(self):
+        self.disconnected = asyncio.Event()
+
+    async def is_disconnected(self) -> bool:
+        return self.disconnected.is_set()
+
+
+async def test_disconnected_completion_waits_for_cancellation_cleanup(monkeypatch):
+    cleanup_started = asyncio.Event()
+    release_cleanup = asyncio.Event()
+
+    async def complete_response(*_args, **_kwargs):
+        try:
+            await asyncio.Future()
+        except asyncio.CancelledError:
+            cleanup_started.set()
+            await release_cleanup.wait()
+            raise
+
+    monkeypatch.setattr(ai_adapter.models, "complete_response", complete_response)
+    monkeypatch.setattr(ai_adapter.registry, "input_budget", lambda _model: 100)
+    waiting = asyncio.create_task(
+        ai_adapter._wait_completion(
+            _Disconnected(), [{"role": "user", "content": "hello"}], model=object()
+        )
+    )
+    await cleanup_started.wait()
+    assert not waiting.done()
+
+    release_cleanup.set()
+    with pytest.raises(asyncio.CancelledError):
+        await waiting
+
+
 async def test_generate_and_comment_omit_output_token_cap(monkeypatch):
     captured: dict[str, int | None] = {}
 
@@ -181,6 +223,35 @@ async def test_generate_and_comment_omit_output_token_cap(monkeypatch):
         pass
 
     assert captured == {"comment": None, "generate": None}
+
+
+async def test_disconnected_text_stream_drains_provider_for_receipt(monkeypatch):
+    allow_provider_finish = asyncio.Event()
+    provider_finished = asyncio.Event()
+
+    async def fake_stream(*_args, **_kwargs):
+        try:
+            yield "first"
+            await allow_provider_finish.wait()
+            yield "after-disconnect"
+        finally:
+            provider_finished.set()
+
+    monkeypatch.setattr(ai_adapter.models, "stream_text", fake_stream)
+    monkeypatch.setattr(ai_adapter.registry, "input_budget", lambda _model: 100)
+    request = _ToggleConnection()
+    events: list[str] = []
+
+    async for event in ai_adapter._text_events(request, "write more", object()):
+        events.append(event)
+        if "text-delta" in event:
+            request.disconnected.set()
+            allow_provider_finish.set()
+
+    await asyncio.wait_for(provider_finished.wait(), timeout=1)
+    assert any("first" in event for event in events)
+    assert all("after-disconnect" not in event for event in events)
+    assert all("text-end" not in event for event in events)
 
 
 def test_require_tool_rejects_missing_and_accepts_named():
@@ -240,7 +311,7 @@ def test_ensure_provider_accepts_a_string_key(monkeypatch):
         model_name="Flash",
         provider_slug="deepseek",
         model_slug="deepseek-v4-flash",
-        surfaces=("editor",),
+        slots=("editor",),
     )
     bind_request_llm()
     monkeypatch.setattr(
@@ -256,7 +327,7 @@ def test_ensure_provider_maps_missing_platform_key(monkeypatch):
         model_name="Flash",
         provider_slug="deepseek",
         model_slug="deepseek-v4-flash",
-        surfaces=("editor",),
+        slots=("editor",),
     )
     bind_request_llm()
 

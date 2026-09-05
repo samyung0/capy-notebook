@@ -13,7 +13,7 @@ func TestEliteLLMProvidersLoad(t *testing.T) {
 	if catalog.SchemaVersion != EliteLLMProvidersSchemaVersion {
 		t.Fatalf("schema %d", catalog.SchemaVersion)
 	}
-	for _, slug := range []string{"anthropic", "openai", "deepseek", "gemini", "zai", "deepinfra"} {
+	for _, slug := range []string{"anthropic", "openai", "deepseek", "zai", "deepinfra"} {
 		if !catalog.Known(slug) {
 			t.Fatalf("missing provider %s", slug)
 		}
@@ -58,30 +58,6 @@ func TestEliteLLMProvidersThinking(t *testing.T) {
 	}
 	if ok, _ := catalog.AllowsThinking("deepinfra", []string{"instant"}); ok {
 		t.Fatal("embed provider has no thinking")
-	}
-}
-
-func TestEliteLLMProvidersEnforceImplementedModesPerSurface(t *testing.T) {
-	catalog := MustEliteLLMProviders()
-	for _, surface := range []string{SurfaceChat, SurfaceGenerate, SurfaceEditor, SurfaceQuiz, SurfaceIngest} {
-		if ok, reason := catalog.AllowsSurface("deepseek", surface); !ok {
-			t.Fatalf("deepseek %s: %s", surface, reason)
-		}
-	}
-	if ok, _ := catalog.AllowsSurface("gemini", SurfaceChat); ok {
-		t.Fatal("gemini chat must stay unavailable until elitellm implements streaming")
-	}
-	if ok, reason := catalog.AllowsSurface("gemini", SurfaceVision); !ok {
-		t.Fatalf("gemini vision: %s", reason)
-	}
-	if ok, reason := catalog.AllowsSurface("zai", SurfaceVision); !ok {
-		t.Fatalf("zai vision: %s", reason)
-	}
-	if ok, reason := catalog.AllowsSurface("zai", SurfaceChat); !ok {
-		t.Fatalf("zai chat: %s", reason)
-	}
-	if ok, reason := catalog.AllowsSurface("deepinfra", SurfaceEmbedding); !ok {
-		t.Fatalf("deepinfra embedding: %s", reason)
 	}
 }
 
@@ -131,7 +107,7 @@ func TestParseEliteLLMProvidersRejectsDuplicatesAndEmpty(t *testing.T) {
 	_, err = parseEliteLLMProviders([]byte(`{
 		"schemaVersion": 1,
 		"providers": {
-			"openai": {"name":"OpenAI","modes":["chat"],"byok":true,"platformEnv":"OPENAI_API_KEY","thinking":["instant"]}
+			"openai": {"name":"OpenAI","byok":true,"platformEnv":"OPENAI_API_KEY","thinking":["instant"]}
 		}
 	}`))
 	if err != nil {
@@ -140,11 +116,11 @@ func TestParseEliteLLMProvidersRejectsDuplicatesAndEmpty(t *testing.T) {
 	_, err = parseEliteLLMProviders([]byte(`{
 		"schemaVersion": 1,
 		"providers": {
-			"openai": {"name":"OpenAI","modes":["chat","chat"],"byok":true,"platformEnv":"OPENAI_API_KEY","thinking":["instant"]}
+			"openai": {"name":"OpenAI","modes":["chat"],"byok":true,"platformEnv":"OPENAI_API_KEY","thinking":["instant"]}
 		}
 	}`))
 	if err == nil {
-		t.Fatal("duplicate provider mode")
+		t.Fatal("retired modes field must be rejected")
 	}
 }
 

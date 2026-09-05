@@ -10,6 +10,7 @@ import type { QuizQuestionsItem } from './quizQuestionsItem.ts';
 export interface Quiz {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  canEdit: boolean;
   chapters: string[];
   createdAt: string;
   id: string;

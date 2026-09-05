@@ -161,7 +161,15 @@ func (s *Store) UpsertLLMCredential(ctx context.Context, userID, providerSlug, a
 	if err != nil {
 		return err
 	}
-	_, err = s.pool.Exec(ctx, `
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `
 		INSERT INTO user_llm_credentials (user_id, provider_slug, key_ciphertext, key_nonce, key_last4)
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (user_id, provider_slug) DO UPDATE SET
@@ -170,7 +178,10 @@ func (s *Store) UpsertLLMCredential(ctx context.Context, userID, providerSlug, a
 			key_last4 = EXCLUDED.key_last4,
 			updated_at = now()`,
 		userID, providerSlug, ct, nonce, secretLast4(apiKey))
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (s *Store) DecryptLLMCredential(ctx context.Context, userID, providerSlug string) (string, error) {
@@ -206,6 +217,9 @@ func (s *Store) DeleteLLMCredential(ctx context.Context, userID, providerSlug st
 		return err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck -- commit decides the outcome
+	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
+		return err
+	}
 	tag, err := tx.Exec(ctx, `
 		DELETE FROM user_llm_credentials WHERE user_id=$1 AND provider_slug=$2`,
 		userID, providerSlug)
@@ -228,24 +242,24 @@ func (s *Store) modelPreferenceDefaults() (map[string]models.Ref, error) {
 		return nil, fmt.Errorf("%w: registry not configured", ErrModelUnavailable)
 	}
 	defaults := make(map[string]models.Ref, 4)
-	for _, surface := range []string{models.SurfaceChat, models.SurfaceGenerate, models.SurfaceEditor, models.SurfaceQuiz} {
-		pin, err := s.registry.DefaultPin(surface)
+	for _, slot := range []string{models.SlotChat, models.SlotGenerate, models.SlotEditor, models.SlotQuiz} {
+		pin, err := s.registry.DefaultPin(slot)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %s default: %v", ErrModelUnavailable, surface, err)
+			return nil, fmt.Errorf("%w: %s default: %v", ErrModelUnavailable, slot, err)
 		}
-		defaults[surface] = pin.Ref
+		defaults[slot] = pin.Ref
 	}
 	return defaults, nil
 }
 
-// remapUserKeyPrefs moves surfaces still pointing at a now-locked user_key
-// model back to the surface default. platform_or_user rows stay put: they
+// remapUserKeyPrefs moves slots still pointing at a now-locked user_key
+// model back to the slot default. platform_or_user rows stay put: they
 // continue using the platform key.
 func remapUserKeyPrefs(ctx context.Context, tx pgx.Tx, userID, providerSlug string, defaults map[string]models.Ref) error {
-	chat := defaults[models.SurfaceChat]
-	generate := defaults[models.SurfaceGenerate]
-	editor := defaults[models.SurfaceEditor]
-	quiz := defaults[models.SurfaceQuiz]
+	chat := defaults[models.SlotChat]
+	generate := defaults[models.SlotGenerate]
+	editor := defaults[models.SlotEditor]
+	quiz := defaults[models.SlotQuiz]
 	_, err := tx.Exec(ctx, `
 		UPDATE users SET
 			chat_model_provider_slug = CASE

@@ -11,6 +11,7 @@ import (
 	"github.com/evonotes/server/internal/billing"
 	"github.com/evonotes/server/internal/httpapi/apimodel"
 	"github.com/evonotes/server/internal/integrations"
+	"github.com/evonotes/server/internal/store"
 )
 
 type meOutput struct {
@@ -246,6 +247,22 @@ func (a *api) getUsage(ctx context.Context, _ *struct{}) (*usageOutput, error) {
 	return &usageOutput{Body: report}, nil
 }
 
+func (a *api) checkoutEntitlementError(customerID string) error {
+	if customerID == "" {
+		return nil
+	}
+	entitlements, err := a.stripeEntitlements(customerID)
+	if err != nil {
+		return huma.Error503ServiceUnavailable(
+			"cannot confirm subscription state with Stripe right now; try again shortly",
+		)
+	}
+	if len(entitlements) > 0 {
+		return huma.Error409Conflict("an active subscription already exists")
+	}
+	return nil
+}
+
 func (a *api) billingCheckout(ctx context.Context, in *billingCheckoutInput) (*urlOutput, error) {
 	uid := userID(ctx)
 	current, err := a.s.SubscriptionForUser(ctx, uid)
@@ -267,22 +284,77 @@ func (a *api) billingCheckout(ctx context.Context, in *billingCheckoutInput) (*u
 	if err != nil {
 		return nil, hErr(err)
 	}
-	if customerID == "" {
-		customerID, err = billing.CreateCustomer(u.Email, u.Name, uid)
-		if err != nil {
-			return nil, hErr(err)
-		}
-		if err := a.s.SetStripeCustomerID(ctx, uid, customerID); err != nil {
-			return nil, hErr(err)
-		}
+	if err := a.checkoutEntitlementError(customerID); err != nil {
+		return nil, err
 	}
 	successURL := a.cfg.AppURL + "/settings?tab=subscription"
 	cancelURL := a.cfg.AppURL + "/settings?tab=subscription"
-	url, err := billing.CreateCheckoutSession(customerID, priceID, uid, successURL, cancelURL)
+	reservationID, status, err := a.s.ReserveStripeCheckout(
+		ctx,
+		uid,
+		customerID,
+		priceID,
+		successURL,
+		cancelURL,
+	)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return &urlOutput{Body: apimodel.URLResp{URL: url}}, nil
+	if reservationID == "" {
+		return nil, hErr(&store.AccountLockedError{
+			UserID: uid,
+			State:  status.State,
+			Reason: status.SuspendedReason,
+		})
+	}
+	if customerID == "" {
+		customerID, err = billing.CreateCustomer(
+			u.Email,
+			u.Name,
+			uid,
+			"checkout-customer-"+reservationID,
+		)
+		if err != nil {
+			return nil, hErr(err)
+		}
+	}
+	session, err := billing.CreateCheckoutSession(
+		customerID,
+		priceID,
+		uid,
+		successURL,
+		cancelURL,
+		reservationID,
+		"checkout-session-"+reservationID,
+	)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	status, err = a.s.RecordStripeCheckoutSession(
+		ctx,
+		reservationID,
+		uid,
+		customerID,
+		session.ID,
+	)
+	if err != nil {
+		// The remote session exists but could not be recorded durably. Expiring it
+		// synchronously is the only safe outcome; never return an untracked URL.
+		if billing.ExpireCheckoutSession(session.ID) == nil {
+			_ = a.s.RecordStripeCheckoutSessionExpired(
+				ctx, reservationID, uid, customerID, session.ID,
+			)
+		}
+		return nil, hErr(err)
+	}
+	if status.State == store.AccountDeletionPending || status.State == store.AccountDeleted || status.State == store.AccountSuspended {
+		return nil, hErr(&store.AccountLockedError{
+			UserID: uid,
+			State:  status.State,
+			Reason: status.SuspendedReason,
+		})
+	}
+	return &urlOutput{Body: apimodel.URLResp{URL: session.URL}}, nil
 }
 
 func (a *api) billingPortal(ctx context.Context, _ *struct{}) (*urlOutput, error) {
@@ -349,7 +421,7 @@ func (a *api) microsoftDrive(ctx context.Context, _ *struct{}) (*microsoftDriveO
 
 func (a *api) deleteIntegrationH(ctx context.Context, in *providerInput) (*Empty, error) {
 	switch in.Provider {
-	case integrations.ProviderGoogle, integrations.ProviderMicrosoft, integrations.ProviderNotion:
+	case integrations.ProviderGoogle, integrations.ProviderMicrosoft:
 	default:
 		return nil, huma.Error400BadRequest("unknown provider")
 	}

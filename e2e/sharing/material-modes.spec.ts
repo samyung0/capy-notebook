@@ -23,7 +23,7 @@ test.describe('shared material modes', () => {
     await openWorkspaceMaterial(
       ownerPage,
       seed.privateWorkspace.id,
-      seed.privateDeck.id
+      seed.privateFlashcardSet.id
     );
     await expect(
       ownerPage.getByRole('toolbar', { name: 'Flashcard actions' })

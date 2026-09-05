@@ -138,15 +138,27 @@ func (s *Store) CreateConversation(ctx context.Context, userID, wsID, title stri
 	if err := s.AssertWorkspaceEditor(ctx, userID, wsID); err != nil {
 		return Conversation{}, err
 	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Conversation{}, err
+	}
+	defer tx.Rollback(ctx)
+	_, err = s.lockWorkspaceEditorMutationTx(ctx, tx, wsID, userID)
+	if err != nil {
+		return Conversation{}, err
+	}
 	id := uid("conv")
 	var c Conversation
-	err := s.pool.QueryRow(ctx,
+	err = tx.QueryRow(ctx,
 		`INSERT INTO conversations (id, user_id, workspace_id, title)
 		   VALUES ($1,$2,$3,NULLIF($4,''))
 		   RETURNING id, workspace_id, COALESCE(title,''), created_at, updated_at`,
 		id, userID, wsID, title).
 		Scan(&c.ID, &c.WorkspaceID, &c.Title, &c.CreatedAt, &c.UpdatedAt)
 	if err != nil {
+		return Conversation{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return Conversation{}, err
 	}
 	return c, nil
@@ -157,8 +169,16 @@ func (s *Store) CreateConversation(ctx context.Context, userID, wsID, title stri
 func (s *Store) GetConversation(ctx context.Context, userID, convID string) (Conversation, error) {
 	var c Conversation
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, workspace_id, COALESCE(title,''), created_at, updated_at
-		   FROM conversations WHERE id=$1 AND user_id=$2`, convID, userID).
+		`SELECT c.id, c.workspace_id, COALESCE(c.title,''), c.created_at, c.updated_at
+		   FROM conversations c
+		   JOIN workspaces w ON w.id=c.workspace_id
+		   JOIN users owner ON owner.id=w.user_id
+		   LEFT JOIN workspace_members wm
+		     ON wm.workspace_id=w.id AND wm.user_id=$2
+		  WHERE c.id=$1 AND c.user_id=$2
+		    AND owner.deleted_at IS NULL
+		    AND owner.deletion_requested_at IS NULL
+		    AND (w.user_id=$2 OR wm.role IN ('owner','editor'))`, convID, userID).
 		Scan(&c.ID, &c.WorkspaceID, &c.Title, &c.CreatedAt, &c.UpdatedAt)
 	if isNoRows(err) {
 		return Conversation{}, ErrNotFound
@@ -171,7 +191,23 @@ func (s *Store) GetConversation(ctx context.Context, userID, convID string) (Con
 
 // DeleteConversation removes a conversation (messages cascade).
 func (s *Store) DeleteConversation(ctx context.Context, userID, convID string) error {
-	tag, err := s.pool.Exec(ctx,
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var workspaceID string
+	if err := tx.QueryRow(ctx, `SELECT workspace_id FROM conversations
+		WHERE id=$1 AND user_id=$2`, convID, userID).Scan(&workspaceID); err != nil {
+		if isNoRows(err) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, userID); err != nil {
+		return err
+	}
+	tag, err := tx.Exec(ctx,
 		`DELETE FROM conversations WHERE id=$1 AND user_id=$2`, convID, userID)
 	if err != nil {
 		return err
@@ -179,13 +215,29 @@ func (s *Store) DeleteConversation(ctx context.Context, userID, convID string) e
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-	return nil
+	return tx.Commit(ctx)
 }
 
 // RenameConversation sets a conversation's title (e.g. auto-titled from the
 // first user message).
 func (s *Store) RenameConversation(ctx context.Context, userID, convID, title string) error {
-	tag, err := s.pool.Exec(ctx,
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var workspaceID string
+	if err := tx.QueryRow(ctx, `SELECT workspace_id FROM conversations
+		WHERE id=$1 AND user_id=$2`, convID, userID).Scan(&workspaceID); err != nil {
+		if isNoRows(err) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, userID); err != nil {
+		return err
+	}
+	tag, err := tx.Exec(ctx,
 		`UPDATE conversations SET title=$3, updated_at=now() WHERE id=$1 AND user_id=$2`,
 		convID, userID, title)
 	if err != nil {
@@ -194,7 +246,7 @@ func (s *Store) RenameConversation(ctx context.Context, userID, convID, title st
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-	return nil
+	return tx.Commit(ctx)
 }
 
 /* ---------------------------------------------------------------- messages */
@@ -239,10 +291,26 @@ func (s *Store) ListMessages(ctx context.Context, userID, convID string) ([]Mess
 
 // AddUserMessage persists an incoming user message and bumps the conversation's
 // updated_at so it sorts to the top of the list.
-func (s *Store) AddUserMessage(ctx context.Context, convID, content string) (Message, error) {
+func (s *Store) AddUserMessage(ctx context.Context, userID, convID, content string) (Message, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Message{}, err
+	}
+	defer tx.Rollback(ctx)
+	var workspaceID string
+	if err := tx.QueryRow(ctx, `SELECT workspace_id FROM conversations
+		WHERE id=$1 AND user_id=$2`, convID, userID).Scan(&workspaceID); err != nil {
+		if isNoRows(err) {
+			return Message{}, ErrNotFound
+		}
+		return Message{}, err
+	}
+	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, userID); err != nil {
+		return Message{}, err
+	}
 	id := uid("m")
 	var m Message
-	err := s.pool.QueryRow(ctx,
+	err = tx.QueryRow(ctx,
 		`INSERT INTO messages (id, conversation_id, role, content, status)
 		   VALUES ($1,$2,'user',$3,'complete')
 		   RETURNING id, conversation_id, role, content, status, created_at`,
@@ -251,7 +319,13 @@ func (s *Store) AddUserMessage(ctx context.Context, convID, content string) (Mes
 	if err != nil {
 		return Message{}, err
 	}
-	_, _ = s.pool.Exec(ctx, `UPDATE conversations SET updated_at=now() WHERE id=$1`, convID)
+	if _, err := tx.Exec(ctx, `UPDATE conversations SET updated_at=now()
+		WHERE id=$1 AND user_id=$2`, convID, userID); err != nil {
+		return Message{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Message{}, err
+	}
 	return m, nil
 }
 
@@ -259,7 +333,23 @@ func (s *Store) AddUserMessage(ctx context.Context, convID, content string) (Mes
 // so an aborted or crashed stream is always tracked and the id is stable for the
 // SSE 'start' event. The resolved config is written now so the UI can name the
 // model even if the stream never reaches done.
-func (s *Store) StartAssistantMessage(ctx context.Context, convID string, cfg models.Config) (Message, error) {
+func (s *Store) StartAssistantMessage(ctx context.Context, userID, convID string, cfg models.Config) (Message, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Message{}, err
+	}
+	defer tx.Rollback(ctx)
+	var workspaceID string
+	if err := tx.QueryRow(ctx, `SELECT workspace_id FROM conversations
+		WHERE id=$1 AND user_id=$2`, convID, userID).Scan(&workspaceID); err != nil {
+		if isNoRows(err) {
+			return Message{}, ErrNotFound
+		}
+		return Message{}, err
+	}
+	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, userID); err != nil {
+		return Message{}, err
+	}
 	id := uid("m")
 	meta, _ := json.Marshal(msgMetadata{
 		ProviderSlug:     cfg.ProviderSlug,
@@ -269,13 +359,16 @@ func (s *Store) StartAssistantMessage(ctx context.Context, convID string, cfg mo
 		TraceID:          obs.TraceID(ctx),
 	})
 	var m Message
-	err := s.pool.QueryRow(ctx,
+	err = tx.QueryRow(ctx,
 		`INSERT INTO messages (id, conversation_id, role, content, status, metadata)
 		   VALUES ($1,$2,'assistant','','streaming',$3)
 		   RETURNING id, conversation_id, role, content, status, created_at`,
 		id, convID, meta).
 		Scan(&m.ID, &m.ConversationID, &m.Role, &m.Content, &m.Status, &m.CreatedAt)
 	if err != nil {
+		return Message{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return Message{}, err
 	}
 	m.ProviderSlug = cfg.ProviderSlug

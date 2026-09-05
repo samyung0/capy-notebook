@@ -7,7 +7,7 @@ only teaches this process the current defaults.
 Two rules keep a resolved model from drifting away from the one that was priced:
 
 * A cache miss never falls back to the current default.
-* :func:`resolve_pinned` requires an exact pin for **every** surface. Nothing
+* :func:`resolve_pinned` requires an exact pin for **every** slot. Nothing
   that can bill, and nothing that writes a vector, is allowed to pick a model
   for itself; the caller that reserved the spend, enqueued the job or created
   the workspace already chose one. ``registry.default`` remains for the
@@ -23,7 +23,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 
-from .generated import Surface
+from .generated import Slot
 from .store import db
 
 log = logging.getLogger("evo.registry")
@@ -55,14 +55,14 @@ class ModelConfig:
     platform_enabled: bool = True
     byok_enabled: bool = False
     params: dict[str, Any] = field(default_factory=dict)
-    surfaces: tuple[Surface, ...] = ()
+    slots: tuple[Slot, ...] = ()
     thinking_levels: tuple[str, ...] = ()
     default_thinking: str = ""
     micros_per_input_token: int = 0
     micros_per_output_token: int = 0
     micros_per_cached_input_token: int = 0
     enabled: bool = True
-    is_default_for: tuple[Surface, ...] = ()
+    is_default_for: tuple[Slot, ...] = ()
     context_window_tokens: int = 0
 
     @property
@@ -96,8 +96,8 @@ class ModelConfig:
     def pin(self) -> tuple[str, str, int]:
         return (self.provider_slug, self.model_slug, self.version)
 
-    def allows(self, surface: Surface) -> bool:
-        return surface in self.surfaces
+    def allows(self, slot: Slot) -> bool:
+        return slot in self.slots
 
     @property
     def embedding_dim(self) -> int:
@@ -138,7 +138,7 @@ class RegistryError(RuntimeError):
 class JobPins:
     ingest: ModelConfig | None = None
     embedding: ModelConfig | None = None
-    vision: ModelConfig | None = None
+    captioning: ModelConfig | None = None
 
 
 _job_pins: ContextVar[JobPins | None] = ContextVar("job_pins", default=None)
@@ -146,7 +146,7 @@ _job_pins: ContextVar[JobPins | None] = ContextVar("job_pins", default=None)
 _select_cols = """
                     SELECT version, provider_name, model_name, provider_slug,
                            model_slug, platform_enabled, byok_enabled,
-                           params, surfaces, thinking_levels, default_thinking,
+                           params, slots, thinking_levels, default_thinking,
                            micros_per_input_token, micros_per_output_token,
                            enabled, is_default_for, context_window_tokens,
                            micros_per_cached_input_token
@@ -203,12 +203,12 @@ class Registry:
         self._started = False
 
     def start(self) -> None:
-        # There is deliberately no process-start snapshot of the embedding or
-        # vision default any more. Freezing them was how this process used to
-        # avoid mixing vector spaces, which made the model a query embedded with
-        # a function of when the container last booted. Embedding now comes from
-        # the workspace embedding pin and vision from the job pin, so there
-        # is nothing left for a poll to corrupt.
+        # There is deliberately no process-start snapshot of the retrieval or
+        # captioning default any more. Freezing them was how this process used
+        # to avoid mixing vector spaces, which made the model a query embedded
+        # with a function of when the container last booted. Embedding now
+        # comes from the workspace embedding pin and captioning from the job
+        # pin, so there is nothing left for a poll to corrupt.
         self.refresh()
         with self._lock:
             self._started = True
@@ -236,10 +236,10 @@ class Registry:
             by_pin[spec.pin] = spec
             if not spec.enabled:
                 continue
-            for surface in spec.is_default_for:
-                prev = current.get(surface)
+            for slot in spec.is_default_for:
+                prev = current.get(slot)
                 if prev is None or spec.version >= prev[2]:
-                    current[surface] = spec.pin
+                    current[slot] = spec.pin
 
         with self._lock:
             self._by_pin.update(by_pin)
@@ -275,26 +275,26 @@ class Registry:
             )
         return _from_row(row)
 
-    def default_pin(self, surface: Surface) -> tuple[str, str, int]:
+    def default_pin(self, slot: Slot) -> tuple[str, str, int]:
         with self._lock:
-            pin = self._current.get(surface)
+            pin = self._current.get(slot)
         if not pin:
-            raise RegistryError(f"no default for {surface}")
+            raise RegistryError(f"no default for {slot}")
         return pin
 
-    def default(self, surface: Surface) -> ModelConfig:
-        provider_slug, model_slug, version = self.default_pin(surface)
+    def default(self, slot: Slot) -> ModelConfig:
+        provider_slug, model_slug, version = self.default_pin(slot)
         return self.get(provider_slug, model_slug, version)
 
     def resolve_user(
-        self, provider_slug: str | None, model_slug: str | None, surface: Surface
+        self, provider_slug: str | None, model_slug: str | None, slot: Slot
     ) -> ModelConfig:
         if not provider_slug or not model_slug:
-            raise RegistryError(f"empty preference for {surface}")
-        return self._latest_enabled(provider_slug, model_slug, surface)
+            raise RegistryError(f"empty preference for {slot}")
+        return self._latest_enabled(provider_slug, model_slug, slot)
 
     def _latest_enabled(
-        self, provider_slug: str, model_slug: str, surface: Surface
+        self, provider_slug: str, model_slug: str, slot: Slot
     ) -> ModelConfig:
         with self._lock:
             best: ModelConfig | None = None
@@ -303,7 +303,7 @@ class Registry:
                     spec.provider_slug == provider_slug
                     and spec.model_slug == model_slug
                     and spec.enabled
-                    and spec.allows(surface)
+                    and spec.allows(slot)
                     and (best is None or spec.version > best.version)
                 ):
                     best = spec
@@ -314,16 +314,14 @@ class Registry:
                 _select_cols
                 + """
                  WHERE provider_slug=%s AND model_slug=%s
-                   AND enabled AND %s = ANY(surfaces)
+                   AND enabled AND %s = ANY(slots)
                  ORDER BY version DESC LIMIT 1
                 """,
-                (provider_slug, model_slug, surface),
+                (provider_slug, model_slug, slot),
             )
             row = cur.fetchone()
         if not row:
-            raise RegistryError(
-                f"no enabled {provider_slug}/{model_slug} for {surface}"
-            )
+            raise RegistryError(f"no enabled {provider_slug}/{model_slug} for {slot}")
         spec = _from_row(row)
         with self._lock:
             self._by_pin[spec.pin] = spec
@@ -344,9 +342,9 @@ def _as_dict(raw: Any) -> dict[str, Any]:
 
 def _from_row(row: tuple[Any, ...]) -> ModelConfig:
     params = _as_dict(row[7])
-    surfaces = tuple(Surface(value) for value in (row[8] or ()))
+    slots = tuple(Slot(value) for value in (row[8] or ()))
     thinking = tuple(row[9] or ())
-    defaults = tuple(Surface(value) for value in (row[14] or ()))
+    defaults = tuple(Slot(value) for value in (row[14] or ()))
     window = int(row[15]) if row[15] is not None else 0
     return ModelConfig(
         version=int(row[0]),
@@ -357,7 +355,7 @@ def _from_row(row: tuple[Any, ...]) -> ModelConfig:
         platform_enabled=bool(row[5]),
         byok_enabled=bool(row[6]),
         params=params,
-        surfaces=surfaces,
+        slots=slots,
         thinking_levels=thinking,
         default_thinking=str(row[10] or ""),
         micros_per_input_token=int(row[11]),
@@ -376,9 +374,9 @@ def resolve_pinned(
     provider_slug: str | None,
     model_slug: str | None,
     version: int | None,
-    surface: Surface,
+    slot: Slot,
 ) -> ModelConfig:
-    """Load an exact pin, for every surface without exception.
+    """Load an exact pin, for every slot without exception.
 
     A missing or unresolvable pin is an error, never the live default. Whoever
     is downstream of this call is about to spend money against a price somebody
@@ -388,7 +386,7 @@ def resolve_pinned(
     nothing would say so.
     """
     if not provider_slug or not model_slug or not version:
-        raise RegistryError(f"missing pin for {surface}")
+        raise RegistryError(f"missing pin for {slot}")
     return registry.get(provider_slug, model_slug, int(version))
 
 
@@ -413,12 +411,12 @@ def embedding_spec() -> ModelConfig:
     return pins.embedding
 
 
-def vision_spec() -> ModelConfig:
-    """The vision model this job was enqueued with."""
+def captioning_spec() -> ModelConfig:
+    """The captioning (vision) model this job was enqueued with."""
     pins = current_job_pins()
-    if pins is None or pins.vision is None:
-        raise RegistryError("no vision pin on this job")
-    return pins.vision
+    if pins is None or pins.captioning is None:
+        raise RegistryError("no captioning pin on this job")
+    return pins.captioning
 
 
 def provider_api_key_for(spec: ModelConfig) -> str:
@@ -515,8 +513,8 @@ def poll_forever() -> None:
 def pins_from_payload(payload: dict[str, Any], *, embedding: ModelConfig) -> JobPins:
     """Resolve the models one ingest job is allowed to use.
 
-    The ingest LLM and the vision model are snapshotted onto the payload at
-    enqueue, because their surface defaults are hot-reloadable and the job may
+    The ingest LLM and the captioning model are snapshotted onto the payload at
+    enqueue, because their slot defaults are hot-reloadable and the job may
     run long after the upload returned. ``embedding`` is not on the payload: it
     belongs to the workspace for the lifetime of that workspace, so the worker
     passes in the pin it read from the workspace row.
@@ -525,16 +523,16 @@ def pins_from_payload(payload: dict[str, Any], *, embedding: ModelConfig) -> Job
     model it was priced for must not run.
     """
 
-    def load(prefix: str, surface: Surface) -> ModelConfig:
+    def load(prefix: str, slot: Slot) -> ModelConfig:
         return resolve_pinned(
             payload.get(f"{prefix}ProviderSlug"),
             payload.get(f"{prefix}ModelSlug"),
             payload.get(f"{prefix}ModelVersion"),
-            surface,
+            slot,
         )
 
     return JobPins(
-        ingest=load("ingest", Surface.INGEST),
+        ingest=load("ingest", Slot.INGEST),
         embedding=embedding,
-        vision=load("vision", Surface.VISION),
+        captioning=load("captioning", Slot.CAPTIONING),
     )

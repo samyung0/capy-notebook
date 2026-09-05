@@ -77,9 +77,6 @@ func main() {
 	readPool := openPool(ctx, cfg.DatabaseURL, "OPS_DATABASE_URL")
 	readApp := store.NewWithPool(readPool)
 	defer readApp.Close()
-	if err := readApp.LoadPlanLimits(ctx); err != nil {
-		log.Fatalf("plan limits: %v", err)
-	}
 	if !cfg.AllowOwnerDSN() {
 		if err := ops.ValidateDatabaseRole(ctx, readPool, ops.ReadDatabaseRole); err != nil {
 			log.Fatalf("OPS_DATABASE_URL: %v", err)
@@ -89,6 +86,9 @@ func main() {
 		); err != nil {
 			log.Fatalf("OPS_ADMIN_DATABASE_URL: %v", err)
 		}
+	}
+	if err := readApp.LoadPlanLimits(ctx); err != nil {
+		log.Fatalf("plan limits: %v", err)
 	}
 	read := ops.NewReadStore(readApp)
 	ingestSources := []ops.IngestReadSource{{

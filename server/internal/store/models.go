@@ -130,6 +130,10 @@ type Quiz struct {
 	CreatedAt      time.Time       `json:"createdAt"`
 	Privacy        Privacy         `json:"privacy"`
 	TimeLimitMin   *int            `json:"timeLimitMin,omitempty"`
+	// IsOwner and CanEdit are request-scoped capabilities, not persisted quiz
+	// attributes. Explicit workspace editors can edit without owning it.
+	IsOwner bool `json:"isOwner"`
+	CanEdit bool `json:"canEdit"`
 }
 
 type Attempt struct {
@@ -156,7 +160,7 @@ type AttemptDetail struct {
 	Questions json.RawMessage
 }
 
-type Deck struct {
+type FlashcardSet struct {
 	ID            string    `json:"id"`
 	Name          string    `json:"name"`
 	WorkspaceID   string    `json:"workspaceId"`
@@ -166,20 +170,21 @@ type Deck struct {
 	CardCount     int       `json:"cardCount"`
 	KnownPct      int       `json:"knownPct"`
 	DueCount      int       `json:"dueCount"`
-	// IsOwner is request-scoped: true when the requester owns the parent
-	// workspace (false for link/public shared reads).
+	// IsOwner and CanEdit are request-scoped capabilities. Explicit workspace
+	// editors can edit without owning it; link/public visitors cannot.
 	IsOwner bool `json:"isOwner"`
+	CanEdit bool `json:"canEdit"`
 }
 
 // Srs is the FSRS scheduling state persisted as jsonb; the shape mirrors
 // SrsState in src/api/types.ts (the frontend owns the algorithm).
 type Flashcard struct {
-	ID     string   `json:"id"`
-	DeckID string   `json:"deckId"`
-	Front  string   `json:"front"`
-	Back   string   `json:"back"`
-	Known  bool     `json:"known"`
-	Srs    SrsState `json:"srs"`
+	ID         string   `json:"id"`
+	MaterialID string   `json:"materialId"`
+	Front      string   `json:"front"`
+	Back       string   `json:"back"`
+	Known      bool     `json:"known"`
+	Srs        SrsState `json:"srs"`
 }
 
 // Material is a persisted versioned Plate document scoped to chapters and/or
@@ -207,7 +212,7 @@ type Material struct {
 	ScopeChapters  []string  `json:"scopeChapters" nullable:"false"`
 	ScopeFileNames []string  `json:"scopeFileNames" nullable:"false"`
 	Privacy        Privacy   `json:"privacy"`
-	Color          UserColor `json:"color,omitempty"` // decks only; presentation tint
+	Color          UserColor `json:"color,omitempty"` // flashcardSets only; presentation tint
 	CreatedAt      time.Time `json:"createdAt"`
 	UpdatedAt      time.Time `json:"updatedAt"`
 	Revision       int64     `json:"revision"`
@@ -332,7 +337,7 @@ type Comment struct {
 }
 
 // MaterialRef is one row in the unified left-panel materials list, aggregating
-// markdown materials plus the workspace's quizzes and decks. ChapterID lets the
+// markdown materials plus the workspace's quizzes and flashcardSets. ChapterID lets the
 // tree group refs under their chapter (null = unfiled).
 type MaterialRef struct {
 	ID        string          `json:"id"`
@@ -427,8 +432,8 @@ type PublicQuiz struct {
 	Clones int    `json:"clones"`
 }
 
-type PublicDeck struct {
-	Deck
+type PublicFlashcardSet struct {
+	FlashcardSet
 	Author string `json:"author"`
 	Clones int    `json:"clones"`
 }

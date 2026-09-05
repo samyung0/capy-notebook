@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
+	"time"
 	"unicode/utf8"
 
 	"github.com/evonotes/server/internal/materialdoc"
@@ -178,6 +180,155 @@ func (s *Store) CommentResource(ctx context.Context, id string) (CollaborationRe
 	return resource, err
 }
 
+// lockCommentAccountsTx is the account half of final comment admission. The
+// actor must be fully active. A different workspace owner may be suspended
+// without making shared content disappear, but deletion-pending/deleted content
+// is unavailable. Rows are locked in ID order to match the other multi-account
+// write paths.
+func (s *Store) lockCommentAccountsTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	ownerID, actorID string,
+) error {
+	if ownerID == "" || actorID == "" {
+		return ErrNotFound
+	}
+	ids := []string{ownerID}
+	if actorID != ownerID {
+		ids = append(ids, actorID)
+	}
+	sort.Strings(ids)
+	rows, err := tx.Query(ctx, `SELECT id, deleted_at, deletion_requested_at,
+			suspended_at, suspended_reason
+		FROM users WHERE id=ANY($1::text[]) ORDER BY id FOR UPDATE`, ids)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	seen := 0
+	for rows.Next() {
+		var id string
+		var deletedAt, deletionRequestedAt, suspendedAt *time.Time
+		var reason *string
+		if err := rows.Scan(
+			&id, &deletedAt, &deletionRequestedAt, &suspendedAt, &reason,
+		); err != nil {
+			return err
+		}
+		seen++
+		if id == ownerID && (deletedAt != nil || deletionRequestedAt != nil) {
+			return ErrNotFound
+		}
+		if id != actorID {
+			continue
+		}
+		state := AccountActive
+		switch {
+		case deletedAt != nil:
+			state = AccountDeleted
+		case deletionRequestedAt != nil:
+			state = AccountDeletionPending
+		case suspendedAt != nil:
+			state = AccountSuspended
+		}
+		if state != AccountActive {
+			locked := &AccountLockedError{UserID: actorID, State: state}
+			if reason != nil {
+				locked.Reason = *reason
+			}
+			return locked
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if seen != len(ids) {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// lockMaterialCommenterTx serializes role/sharing changes with a comment
+// write, then rechecks both lifecycle and effective commenter permission. This
+// closes the gap between the handler's initial access lookup and the INSERT or
+// UPDATE without changing link/public share-role behavior.
+func (s *Store) lockMaterialCommenterTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	materialID, actorID string,
+) (WorkspaceRole, error) {
+	var materialOwner string
+	var workspaceID *string
+	if err := tx.QueryRow(ctx, `SELECT owner_user_id, workspace_id
+		FROM materials WHERE id=$1`, materialID).Scan(&materialOwner, &workspaceID); err != nil {
+		if isNoRows(err) {
+			return "", ErrNotFound
+		}
+		return "", err
+	}
+
+	ownerID := materialOwner
+	var privacy Privacy
+	var shareRole *ShareRole
+	if workspaceID != nil {
+		if err := tx.QueryRow(ctx, `SELECT user_id, privacy, share_role
+			FROM workspaces WHERE id=$1 FOR UPDATE`, *workspaceID).
+			Scan(&ownerID, &privacy, &shareRole); err != nil {
+			if isNoRows(err) {
+				return "", ErrNotFound
+			}
+			return "", err
+		}
+		var exists bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM materials
+			WHERE id=$1 AND workspace_id=$2)`, materialID, *workspaceID).Scan(&exists); err != nil {
+			return "", err
+		}
+		if !exists {
+			return "", ErrNotFound
+		}
+	}
+	if err := s.lockCommentAccountsTx(ctx, tx, ownerID, actorID); err != nil {
+		return "", err
+	}
+	if workspaceID == nil {
+		var currentOwner string
+		if err := tx.QueryRow(ctx, `SELECT owner_user_id FROM materials
+			WHERE id=$1 FOR UPDATE`, materialID).Scan(&currentOwner); err != nil {
+			if isNoRows(err) {
+				return "", ErrNotFound
+			}
+			return "", err
+		}
+		if currentOwner != actorID {
+			return "", ErrNotFound
+		}
+		return RoleOwner, nil
+	}
+	if ownerID == actorID {
+		return RoleOwner, nil
+	}
+
+	var memberRole WorkspaceRole
+	err := tx.QueryRow(ctx, `SELECT role FROM workspace_members
+		WHERE workspace_id=$1 AND user_id=$2`, *workspaceID, actorID).Scan(&memberRole)
+	if err != nil && !isNoRows(err) {
+		return "", err
+	}
+	var sharedRole WorkspaceRole
+	if (privacy == PrivacyLink || privacy == PrivacyPublic) && shareRole != nil {
+		sharedRole = shareRole.WorkspaceRole()
+	}
+	role := MaxRole(memberRole, sharedRole)
+	if role == "" {
+		return "", ErrNotFound
+	}
+	if !RoleCanComment(role) {
+		return "", ErrForbidden
+	}
+	return role, nil
+}
+
 func (s *Store) CreateCommentDiscussion(
 	ctx context.Context,
 	materialID, actorID string,
@@ -199,6 +350,9 @@ func (s *Store) CreateCommentDiscussion(
 		return Discussion{}, err
 	}
 	defer tx.Rollback(ctx)
+	if _, err := s.lockMaterialCommenterTx(ctx, tx, materialID, actorID); err != nil {
+		return Discussion{}, err
+	}
 	if _, err := tx.Exec(ctx, `INSERT INTO material_discussions
 		(id, material_id, block_id, anchor_start, anchor_end, anchor_version,
 		 anchor_quote, created_by)
@@ -234,9 +388,25 @@ func (s *Store) AddNestedComment(
 	if err := validateRichContent(content); err != nil {
 		return Comment{}, err
 	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Comment{}, err
+	}
+	defer tx.Rollback(ctx)
+	var materialID string
+	if err := tx.QueryRow(ctx, `SELECT material_id FROM material_discussions
+		WHERE id=$1 AND deleted_at IS NULL`, discussionID).Scan(&materialID); err != nil {
+		if isNoRows(err) {
+			return Comment{}, ErrNotFound
+		}
+		return Comment{}, err
+	}
+	if _, err := s.lockMaterialCommenterTx(ctx, tx, materialID, actorID); err != nil {
+		return Comment{}, err
+	}
 	if parentCommentID != nil {
 		var parentParent *string
-		err := s.pool.QueryRow(ctx, `SELECT parent_comment_id FROM material_comments
+		err := tx.QueryRow(ctx, `SELECT parent_comment_id FROM material_comments
 			WHERE id=$1 AND discussion_id=$2 AND deleted_at IS NULL`,
 			*parentCommentID, discussionID).Scan(&parentParent)
 		if isNoRows(err) {
@@ -250,7 +420,7 @@ func (s *Store) AddNestedComment(
 		}
 	}
 	id := uid("com")
-	comment, err := scanRevisionComment(s.pool.QueryRow(ctx, `WITH added AS (
+	comment, err := scanRevisionComment(tx.QueryRow(ctx, `WITH added AS (
 			INSERT INTO material_comments
 			(id, discussion_id, parent_comment_id, user_id, content_rich)
 			SELECT $1,$2,$3,$4,$5 FROM material_discussions
@@ -266,7 +436,13 @@ func (s *Store) AddNestedComment(
 	if isNoRows(err) {
 		return Comment{}, ErrNotFound
 	}
-	return comment, err
+	if err != nil {
+		return Comment{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Comment{}, err
+	}
+	return comment, nil
 }
 
 func (s *Store) EditOwnComment(
@@ -277,7 +453,25 @@ func (s *Store) EditOwnComment(
 	if err := validateRichContent(content); err != nil {
 		return Comment{}, err
 	}
-	comment, err := scanRevisionComment(s.pool.QueryRow(ctx, `WITH edited AS (
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Comment{}, err
+	}
+	defer tx.Rollback(ctx)
+	var materialID string
+	if err := tx.QueryRow(ctx, `SELECT d.material_id
+		FROM material_comments c JOIN material_discussions d ON d.id=c.discussion_id
+		WHERE c.id=$1 AND c.deleted_at IS NULL AND d.deleted_at IS NULL`, id).
+		Scan(&materialID); err != nil {
+		if isNoRows(err) {
+			return Comment{}, ErrNotFound
+		}
+		return Comment{}, err
+	}
+	if _, err := s.lockMaterialCommenterTx(ctx, tx, materialID, actorID); err != nil {
+		return Comment{}, err
+	}
+	comment, err := scanRevisionComment(tx.QueryRow(ctx, `WITH edited AS (
 			UPDATE material_comments
 			SET content_rich=$3, is_edited=true, updated_at=now()
 			WHERE id=$1 AND user_id=$2 AND deleted_at IS NULL
@@ -291,11 +485,39 @@ func (s *Store) EditOwnComment(
 	if isNoRows(err) {
 		return Comment{}, ErrNotFound
 	}
-	return comment, err
+	if err != nil {
+		return Comment{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Comment{}, err
+	}
+	return comment, nil
 }
 
 func (s *Store) SoftDeleteComment(ctx context.Context, id, actorID string) error {
-	ct, err := s.pool.Exec(ctx, `UPDATE material_comments
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var materialID, authorID string
+	if err := tx.QueryRow(ctx, `SELECT d.material_id, c.user_id
+		FROM material_comments c JOIN material_discussions d ON d.id=c.discussion_id
+		WHERE c.id=$1 AND c.deleted_at IS NULL AND d.deleted_at IS NULL`, id).
+		Scan(&materialID, &authorID); err != nil {
+		if isNoRows(err) {
+			return ErrNotFound
+		}
+		return err
+	}
+	role, err := s.lockMaterialCommenterTx(ctx, tx, materialID, actorID)
+	if err != nil {
+		return err
+	}
+	if authorID != actorID && !RoleCanEdit(role) {
+		return ErrForbidden
+	}
+	ct, err := tx.Exec(ctx, `UPDATE material_comments
 		SET deleted_at=now(), deleted_by=$2, updated_at=now()
 		WHERE id=$1 AND deleted_at IS NULL`, id, actorID)
 	if err != nil {
@@ -304,11 +526,27 @@ func (s *Store) SoftDeleteComment(ctx context.Context, id, actorID string) error
 	if ct.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-	return nil
+	return tx.Commit(ctx)
 }
 
-func (s *Store) SetCollaborationDiscussionResolved(ctx context.Context, id string, resolved bool) error {
-	ct, err := s.pool.Exec(ctx, `UPDATE material_discussions
+func (s *Store) SetCollaborationDiscussionResolved(ctx context.Context, id, actorID string, resolved bool) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var materialID string
+	if err := tx.QueryRow(ctx, `SELECT material_id FROM material_discussions
+		WHERE id=$1 AND deleted_at IS NULL`, id).Scan(&materialID); err != nil {
+		if isNoRows(err) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if _, err := s.lockMaterialCommenterTx(ctx, tx, materialID, actorID); err != nil {
+		return err
+	}
+	ct, err := tx.Exec(ctx, `UPDATE material_discussions
 		SET is_resolved=$2, updated_at=now()
 		WHERE id=$1 AND deleted_at IS NULL`, id, resolved)
 	if err != nil {
@@ -317,11 +555,31 @@ func (s *Store) SetCollaborationDiscussionResolved(ctx context.Context, id strin
 	if ct.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-	return nil
+	return tx.Commit(ctx)
 }
 
 func (s *Store) SoftDeleteDiscussion(ctx context.Context, id, actorID string) error {
-	ct, err := s.pool.Exec(ctx, `UPDATE material_discussions
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var materialID, authorID string
+	if err := tx.QueryRow(ctx, `SELECT material_id, created_by FROM material_discussions
+		WHERE id=$1 AND deleted_at IS NULL`, id).Scan(&materialID, &authorID); err != nil {
+		if isNoRows(err) {
+			return ErrNotFound
+		}
+		return err
+	}
+	role, err := s.lockMaterialCommenterTx(ctx, tx, materialID, actorID)
+	if err != nil {
+		return err
+	}
+	if authorID != actorID && !RoleCanEdit(role) {
+		return ErrForbidden
+	}
+	ct, err := tx.Exec(ctx, `UPDATE material_discussions
 		SET deleted_at=now(), deleted_by=$2, is_resolved=true, updated_at=now()
 		WHERE id=$1 AND deleted_at IS NULL`, id, actorID)
 	if err != nil {
@@ -330,7 +588,7 @@ func (s *Store) SoftDeleteDiscussion(ctx context.Context, id, actorID string) er
 	if ct.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-	return nil
+	return tx.Commit(ctx)
 }
 
 func (s *Store) findDiscussion(ctx context.Context, materialID, discussionID string) (Discussion, error) {

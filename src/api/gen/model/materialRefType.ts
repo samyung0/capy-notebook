@@ -12,6 +12,6 @@ export const MaterialRefType = {
   mindmap: 'mindmap',
   diagram: 'diagram',
   quiz: 'quiz',
-  deck: 'deck',
+  flashcards: 'flashcards',
   note: 'note',
 } as const;

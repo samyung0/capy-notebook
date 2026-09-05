@@ -135,7 +135,7 @@ func TestMaterialInheritsParentWorkspaceShare(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = s.DeleteMaterial(ctx, mt.ID) })
+	t.Cleanup(func() { _ = s.DeleteMaterial(ctx, "u_owner", mt.ID) })
 
 	if _, err := s.MaterialAccess(ctx, "u_other", mt.ID); err != nil {
 		t.Fatalf("expected parent workspace share to grant read: %v", err)
@@ -145,7 +145,7 @@ func TestMaterialInheritsParentWorkspaceShare(t *testing.T) {
 	}
 }
 
-func TestMaterialLevelShareUnderPrivateWorkspace(t *testing.T) {
+func TestWorkspaceMaterialCannotOverrideWorkspaceVisibility(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 
@@ -158,23 +158,30 @@ func TestMaterialLevelShareUnderPrivateWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = s.DeleteMaterial(ctx, mt.ID) })
+	t.Cleanup(func() { _ = s.DeleteMaterial(ctx, "u_owner", mt.ID) })
 
-	if _, err := s.MaterialAccess(ctx, "u_other", mt.ID); err != nil {
-		t.Fatalf("material-level link should be readable: %v", err)
+	if mt.Privacy != PrivacyPrivate {
+		t.Fatalf("workspace material privacy = %q, want private", mt.Privacy)
+	}
+	public := PrivacyPublic
+	if _, err := s.UpdateMaterial(ctx, mt.ID, MaterialPatch{Privacy: &public}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("workspace material visibility update error = %v, want forbidden", err)
+	}
+	if _, err := s.MaterialAccess(ctx, "u_other", mt.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("private workspace material access error = %v, want not found", err)
 	}
 }
 
 func TestSearchFlashcardsUsesMaterials(t *testing.T) {
 	s := openAccessTestStore(t)
 
-	results, err := s.Search(context.Background(), "u_editor", "E2E Private Deck")
+	results, err := s.Search(context.Background(), "u_editor", "E2E Private Flashcards")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, result := range results {
 		if result.ID == "dk_e2e_private" {
-			if result.Kind != SearchFlashcards || result.Title != "E2E Private Deck" {
+			if result.Kind != SearchFlashcards || result.Title != "E2E Private Flashcards" {
 				t.Fatalf("unexpected flashcard result: %#v", result)
 			}
 			return

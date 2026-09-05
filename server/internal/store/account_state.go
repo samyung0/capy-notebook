@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/jackc/pgx/v5"
 )
 
 // AccountState is the single derived lifecycle state every write gate consults.
@@ -93,7 +94,9 @@ type AccountStatus struct {
 }
 
 // CanAuthenticate reports whether the identity may hold a session at all.
-func (a AccountStatus) CanAuthenticate() bool { return a.State != AccountDeleted }
+func (a AccountStatus) CanAuthenticate() bool {
+	return a.State == AccountActive || a.State == AccountOverQuotaGrace || a.State == AccountOverQuotaFrozen
+}
 
 // CanCreate reports whether new workspaces, files, materials, uploads or clones
 // are permitted.
@@ -193,13 +196,89 @@ func (s *Store) AccountSessionAllowed(
 	if deletedAt != nil {
 		return false, (&AccountLockedError{State: AccountDeleted}).Code(), nil
 	}
-	if suspendedAt != nil {
-		return false, (&AccountLockedError{State: AccountSuspended}).Code(), nil
-	}
 	if deletionRequestedAt != nil {
 		return false, (&AccountLockedError{State: AccountDeletionPending}).Code(), nil
 	}
+	if suspendedAt != nil {
+		return false, (&AccountLockedError{State: AccountSuspended}).Code(), nil
+	}
 	return true, "", nil
+}
+
+// UserProvisioned reports whether Clerk identity provisioning has produced a
+// local row. Tombstones count as provisioned; AccountSessionAllowed applies the
+// lifecycle verdict separately.
+func (s *Store) UserProvisioned(ctx context.Context, userID string) (bool, error) {
+	var provisioned bool
+	err := s.pool.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM users WHERE id=$1)`, userID,
+	).Scan(&provisioned)
+	return provisioned, err
+}
+
+// lockAccountSessionsTx serializes final write admission with deletion,
+// suspension, and plan projection. IDs are locked in database order so a
+// collaborator write can safely lock both the actor and the storage owner.
+func (s *Store) lockAccountSessionsTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	userIDs ...string,
+) error {
+	unique := make(map[string]struct{}, len(userIDs))
+	ids := make([]string, 0, len(userIDs))
+	for _, id := range userIDs {
+		if id == "" {
+			continue
+		}
+		if _, exists := unique[id]; exists {
+			continue
+		}
+		unique[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return ErrNotFound
+	}
+	rows, err := tx.Query(ctx, `SELECT id, deleted_at, deletion_requested_at,
+			suspended_at, suspended_reason
+		FROM users WHERE id=ANY($1::text[]) ORDER BY id FOR UPDATE`, ids)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	seen := 0
+	for rows.Next() {
+		var id string
+		var deletedAt, deletionRequestedAt, suspendedAt *time.Time
+		var reason *string
+		if err := rows.Scan(&id, &deletedAt, &deletionRequestedAt, &suspendedAt, &reason); err != nil {
+			return err
+		}
+		seen++
+		state := AccountActive
+		switch {
+		case deletedAt != nil:
+			state = AccountDeleted
+		case deletionRequestedAt != nil:
+			state = AccountDeletionPending
+		case suspendedAt != nil:
+			state = AccountSuspended
+		}
+		if state != AccountActive {
+			locked := &AccountLockedError{UserID: id, State: state}
+			if reason != nil {
+				locked.Reason = *reason
+			}
+			return locked
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if seen != len(ids) {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (s *Store) accountAccess(
@@ -232,17 +311,18 @@ func (s *Store) accountAccess(
 		status.SuspendedReason = *suspendedReason
 	}
 
-	// Ordered by severity: a purged account is terminal, and an explicit
-	// suspension or deletion request outranks a billing restriction.
+	// Ordered by severity: a purged account is terminal, and a destructive
+	// deletion request must remain visible even when an operator suspension was
+	// already present. Suspension still outranks billing restrictions.
 	switch {
 	case deletedAt != nil:
 		status.State = AccountDeleted
 		return status, nil
-	case suspendedAt != nil:
-		status.State = AccountSuspended
-		return status, nil
 	case deletionRequestedAt != nil:
 		status.State = AccountDeletionPending
+		return status, nil
+	case suspendedAt != nil:
+		status.State = AccountSuspended
 		return status, nil
 	}
 
@@ -254,33 +334,70 @@ func (s *Store) accountAccess(
 }
 
 // applyQuotaState downgrades an otherwise-active account when its paid period
-// has lapsed and its stored bytes exceed the tier limit. Both conditions are
-// required: a lapse alone is harmless if the user fits in the free tier, and
-// being over the limit on a live subscription is a billing question, not a
-// lifecycle one.
+// has lapsed and its stored bytes exceed the tier limit. A live Free row does
+// not erase that paid-lapse boundary: it selects Free limits, while the most
+// recent expired Pro period still determines grace versus frozen.
 func (s *Store) applyQuotaState(
 	ctx context.Context,
 	q rowQueryer,
 	status *AccountStatus,
 ) error {
-	var lapsedAt *time.Time
-	// The most recently ended paid period. A subscription that is still current
-	// (or renews later) reports a future timestamp, which leaves the account
-	// active; a user who never subscribed reports NULL.
-	err := q.QueryRow(ctx, `SELECT max(current_period_end)
-		FROM user_subscriptions
-		WHERE user_id=$1 AND current_period_end IS NOT NULL`, status.UserID).Scan(&lapsedAt)
+	var liveTier *PlanTier
+	var expiredPeriodEnd, closedAt *time.Time
+	var hasPaidSubscription bool
+	err := q.QueryRow(ctx, `SELECT count(*) FILTER (WHERE plan_tier='pro') > 0,
+		(SELECT live.plan_tier FROM user_subscriptions live
+			WHERE live.user_id=$1 AND live.status IN `+entitlingStatuses+`
+				AND (live.current_period_end IS NULL OR live.current_period_end > now())
+			ORDER BY (live.plan_tier='pro') DESC,
+				live.current_period_end DESC NULLS FIRST LIMIT 1),
+		max(current_period_end) FILTER (
+			WHERE plan_tier='pro' AND status IN `+entitlingStatuses+`
+				AND current_period_end <= now()),
+		max(LEAST(
+			COALESCE(current_period_end, ended_at, canceled_at,
+				to_timestamp(NULLIF(stripe_event_created, 0)), updated_at),
+			COALESCE(ended_at, canceled_at,
+				to_timestamp(NULLIF(stripe_event_created, 0)), updated_at)
+		))
+			FILTER (WHERE plan_tier='pro' AND status NOT IN `+entitlingStatuses+`)
+		FROM user_subscriptions WHERE user_id=$1`, status.UserID).
+		Scan(&hasPaidSubscription, &liveTier, &expiredPeriodEnd, &closedAt)
 	if err != nil && !isNoRows(err) {
 		return err
 	}
-	if lapsedAt == nil || lapsedAt.After(time.Now()) {
+	if !hasPaidSubscription {
 		return nil
 	}
+	var lapsedAt *time.Time
+	if liveTier != nil && *liveTier == PlanPro {
+		status.PlanTier = *liveTier
+		return nil
+	}
+	lapsedAt = expiredPeriodEnd
+	if lapsedAt == nil || (closedAt != nil && closedAt.After(*lapsedAt)) {
+		lapsedAt = closedAt
+	}
+	if lapsedAt == nil {
+		// A live Free subscription without an observed paid-period boundary is
+		// an ordinary Free account, not an over-quota lapse.
+		return nil
+	}
+	// A missed Stripe webhook must not leave expired Pro entitlements active.
+	// Keep the stored projection for reconciliation, but apply Free limits to
+	// every request after the latest paid period ends.
+	status.PlanTier = PlanFree
 
 	usage, err := s.unlockedStorageUsage(ctx, q, status.UserID)
 	if err != nil {
 		return err
 	}
+	freeLimits, err := s.PlanLimits(PlanFree)
+	if err != nil {
+		return err
+	}
+	usage.PlanTier = PlanFree
+	usage.LimitBytes = freeLimits.StorageBytes
 	if usage.UsedBytes+usage.ReservedBytes <= usage.LimitBytes {
 		return nil
 	}

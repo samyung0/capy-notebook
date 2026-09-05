@@ -1,0 +1,20 @@
+[
+  {
+    "corsRuleName": "evo-spa-uat",
+    "allowedOrigins": [
+      "https://uat.capynotebook.com",
+      "https://*.uat.capynotebook.com",
+      "http://localhost:5173",
+      "http://127.0.0.1:5173"
+    ],
+    "allowedHeaders": ["content-type", "range"],
+    "allowedOperations": ["s3_put", "s3_get", "s3_head"],
+    "exposeHeaders": [
+      "etag",
+      "content-length",
+      "content-range",
+      "accept-ranges"
+    ],
+    "maxAgeSeconds": 3600
+  }
+]

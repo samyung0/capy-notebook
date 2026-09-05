@@ -20,7 +20,7 @@ func TestQuizRoundTripPreservesEveryQuestionTypeAndGrading(t *testing.T) {
 		{"id":"q7","type":"open","level":"application","prompt":"Explain","accepted":[{"value":"cristae"}],"hints":[{"value":"ATP"}],"rubrics":[{"value":"Mentions folds"}],"points":1}
 	]`)
 	limit := 20
-	raw, err := QuizDocument("Quiz", questions, &limit)
+	raw, err := QuizDocument(questions, &limit)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,8 +46,39 @@ func TestQuizRoundTripPreservesEveryQuestionTypeAndGrading(t *testing.T) {
 	}
 }
 
+func TestStandaloneArtifactDocumentsContainOnlyTheirCustomBlock(t *testing.T) {
+	quiz, err := QuizDocument(json.RawMessage(
+		`[{"id":"q1","type":"boolean","level":"recall","prompt":"True?","correct":true}]`,
+	), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	flashcards, err := FlashcardsDocument([]Card{{ID: "c_1", Front: "A", Back: "B"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mermaid, err := MermaidDocument("flowchart LR\nA-->B", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for kind, raw := range map[string]string{
+		"quiz":       quiz,
+		"flashcards": flashcards,
+		"mermaid":    mermaid,
+	} {
+		doc, err := Parse(raw)
+		if err != nil {
+			t.Fatalf("%s: %v", kind, err)
+		}
+		if len(doc.Value) != 1 || doc.Value[0]["type"] != kind {
+			t.Fatalf("%s document retained metadata title content: %#v", kind, doc.Value)
+		}
+	}
+}
+
 func TestFillQuestionTypeIsRejected(t *testing.T) {
-	_, err := QuizDocument("Quiz", json.RawMessage(
+	_, err := QuizDocument(json.RawMessage(
 		`[{"id":"q1","type":"fill","level":"recall","prompt":"Fill?","accepted":[{"value":"alpha"}]}]`,
 	), nil)
 	if err == nil {
@@ -56,7 +87,7 @@ func TestFillQuestionTypeIsRejected(t *testing.T) {
 }
 
 func TestQuizUsesTypedAnnotatableDescendants(t *testing.T) {
-	raw, err := QuizDocument("Quiz", json.RawMessage(
+	raw, err := QuizDocument(json.RawMessage(
 		`[{"id":"q1","type":"mcq","level":"recall","prompt":"Prompt","options":[{"value":"A"},{"value":"B"}],"correct":[1],"explanation":"Why"}]`,
 	), nil)
 	if err != nil {
@@ -82,7 +113,7 @@ func TestQuizUsesTypedAnnotatableDescendants(t *testing.T) {
 }
 
 func TestReplacePreservesRichTextButNotRuntimeCommentMarks(t *testing.T) {
-	raw, err := QuizDocument("Quiz", json.RawMessage(
+	raw, err := QuizDocument(json.RawMessage(
 		`[{"id":"q1","type":"mcq","level":"recall","prompt":"Prompt","options":[{"value":"A"},{"value":"B"}],"correct":[0]}]`,
 	), nil)
 	if err != nil {
@@ -115,7 +146,7 @@ func TestReplacePreservesRichTextButNotRuntimeCommentMarks(t *testing.T) {
 }
 
 func TestFlashcardsReplacePreservesCardIDsAndAnnotations(t *testing.T) {
-	raw, err := FlashcardsDocument("Deck", []Card{{ID: "c_1", Front: "A", Back: "B"}})
+	raw, err := FlashcardsDocument([]Card{{ID: "c_1", Front: "A", Back: "B"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +177,7 @@ func TestFlashcardsReplacePreservesCardIDsAndAnnotations(t *testing.T) {
 }
 
 func TestRewriteFlashcardIDsStripsRuntimeCommentMarks(t *testing.T) {
-	raw, err := FlashcardsDocument("Deck", []Card{{ID: "c_old", Front: "Front", Back: "Back"}})
+	raw, err := FlashcardsDocument([]Card{{ID: "c_old", Front: "Front", Back: "Back"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,6 +220,45 @@ func TestMarshalUsesJavaScriptCompatibleUTF8Escaping(t *testing.T) {
 	}
 }
 
+func TestMetricsExcludeRuntimeCommentMarks(t *testing.T) {
+	clean := `{"schemaVersion":1,"value":[{"children":[{"bold":true,"commentary":"kept","text":"annotated"}],"id":"block_1","type":"p"}]}`
+	marked := `{"schemaVersion":1,"value":[{"children":[{"bold":true,"comment":"discussion_1","comment_thread_1":true,"commentary":"kept","text":"annotated"}],"id":"block_1","type":"p"}]}`
+	cleanMetrics, err := Metrics(clean)
+	if err != nil {
+		t.Fatal(err)
+	}
+	markedMetrics, err := Metrics(marked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if markedMetrics != cleanMetrics {
+		t.Fatalf("runtime comment metrics = %+v, want %+v", markedMetrics, cleanMetrics)
+	}
+}
+
+func TestMetricsMeasureEveryStructurallyValidDeepNode(t *testing.T) {
+	node := map[string]any{"text": "bottom"}
+	const depth = 300
+	for range depth {
+		node = map[string]any{
+			"type":     "blockquote",
+			"children": []any{node},
+		}
+	}
+	doc := Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{node}}
+	raw, err := MarshalProjection(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metrics, err := Metrics(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metrics.MaxDepth != depth || metrics.NodeCount != depth+1 {
+		t.Fatalf("deep metrics = %+v, want depth %d and %d nodes", metrics, depth, depth+1)
+	}
+}
+
 func TestValidationRejectsOpaqueAndVoidCustomElements(t *testing.T) {
 	cases := []Envelope{
 		{
@@ -201,7 +271,7 @@ func TestValidationRejectsOpaqueAndVoidCustomElements(t *testing.T) {
 		{
 			SchemaVersion: 1,
 			Value: []map[string]any{{
-				"type": "flashcards", "id": "deck_1", "cards": []any{},
+				"type": "flashcards", "id": "flashcardSet_1", "cards": []any{},
 				"children": []any{textLeaf("")},
 			}},
 		},
@@ -260,6 +330,26 @@ func TestValidationAcceptsJSONDecodedTimeLimit(t *testing.T) {
 	}
 }
 
+func TestValidationBoundsQuizTimeLimit(t *testing.T) {
+	valid := MaxQuizTimeLimit
+	if _, err := QuizDocument(json.RawMessage(
+		`[{"id":"q1","type":"boolean","level":"recall","prompt":"True?","correct":true}]`,
+	), &valid); err != nil {
+		t.Fatalf("maximum quiz time limit was rejected: %v", err)
+	}
+
+	for _, value := range []string{"0", "181", "9007199254740992", "1e100"} {
+		var doc Envelope
+		raw := fmt.Sprintf(`{"schemaVersion":1,"value":[{"type":"quiz","id":"quiz_1","timeLimitMin":%s,"children":[{"type":"quiz_question","id":"q1","questionType":"boolean","level":"recall","correctBoolean":true,"children":[{"type":"quiz_prompt","children":[{"text":"True?"}]}]}]}]}`, value)
+		if err := json.Unmarshal([]byte(raw), &doc); err != nil {
+			t.Fatalf("decode time limit %s: %v", value, err)
+		}
+		if err := Validate(doc); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("time limit %s accepted: %v", value, err)
+		}
+	}
+}
+
 func TestValidationAcceptsYouTubeEmbedAndRejectsUploadedVideo(t *testing.T) {
 	valid := Envelope{
 		SchemaVersion: 1,
@@ -291,8 +381,75 @@ func TestValidationAcceptsYouTubeEmbedAndRejectsUploadedVideo(t *testing.T) {
 	}
 }
 
+func TestRewriteClonedEditorAssetIDsDropsUncopiedAssets(t *testing.T) {
+	raw, err := Marshal(Envelope{
+		SchemaVersion: SchemaVersion,
+		Value: []map[string]any{
+			{"type": "p", "id": "before", "children": []any{textLeaf("before")}},
+			{"type": "img", "id": "ready", "assetId": "asset-ready", "children": []any{textLeaf("")}},
+			{"type": "audio", "id": "pending", "assetId": "asset-pending", "children": []any{textLeaf("")}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rewritten, err := RewriteClonedEditorAssetIDs(raw, map[string]string{
+		"asset-ready": "asset-clone",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(rewritten, "asset-pending") || strings.Contains(rewritten, `"id":"pending"`) {
+		t.Fatalf("uncopied asset node survived: %s", rewritten)
+	}
+	if !strings.Contains(rewritten, `"assetId":"asset-clone"`) {
+		t.Fatalf("ready asset was not rewritten: %s", rewritten)
+	}
+}
+
+func TestEditorAssetIDsFindsNestedUniqueReferences(t *testing.T) {
+	raw, err := Marshal(Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{
+		{
+			"type": "column_group", "children": []any{
+				map[string]any{"type": "img", "assetId": "asset-one", "children": []any{textLeaf("")}},
+				map[string]any{"type": "audio", "assetId": "asset-two", "children": []any{textLeaf("")}},
+			},
+		},
+		map[string]any{"type": "img", "assetId": "asset-one", "children": []any{textLeaf("")}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids, err := EditorAssetIDs(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 2 {
+		t.Fatalf("asset ids = %#v, want two distinct references", ids)
+	}
+}
+
+func TestRewriteClonedEditorAssetIDsLeavesValidEmptyDocument(t *testing.T) {
+	raw, err := Marshal(Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{{
+		"type": "img", "id": "pending", "assetId": "asset-pending", "children": []any{textLeaf("")},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rewritten, err := RewriteClonedEditorAssetIDs(raw, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Parse(rewritten); err != nil {
+		t.Fatalf("empty clone document is invalid: %v", err)
+	}
+	if strings.Contains(rewritten, "asset-pending") {
+		t.Fatalf("uncopied asset survived: %s", rewritten)
+	}
+}
+
 func TestDiagramContract(t *testing.T) {
-	raw, err := FromLegacyMarkdown("diagram", "Flow", "```mermaid\nflowchart LR\nA-->B\n```")
+	raw, err := FromLegacyMarkdown("diagram", "```mermaid\nflowchart LR\nA-->B\n```")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,11 +468,11 @@ func TestDiagramContract(t *testing.T) {
 }
 
 func TestGeneratorReplayIgnoresMintedIDs(t *testing.T) {
-	first, err := FromLegacyMarkdown("note", "Replay", "alpha")
+	first, err := FromLegacyMarkdown("note", "alpha")
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := FromLegacyMarkdown("note", "Replay", "alpha")
+	second, err := FromLegacyMarkdown("note", "alpha")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,7 +490,7 @@ func TestGeneratorReplayIgnoresMintedIDs(t *testing.T) {
 		t.Fatal("note mismatch should not compare equal")
 	}
 
-	diagram, err := FromLegacyMarkdown("diagram", "Flow", "```mermaid\nflowchart LR\nA-->B\n```")
+	diagram, err := FromLegacyMarkdown("diagram", "```mermaid\nflowchart LR\nA-->B\n```")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -393,6 +550,24 @@ func TestLimitsGateWritesButNotReads(t *testing.T) {
 
 	if _, err := Marshal(doc); !errors.Is(err, ErrLimitExceeded) {
 		t.Fatalf("Marshal accepted an over-limit document: %v", err)
+	}
+	projected, err := MarshalProjection(doc)
+	if err != nil {
+		t.Fatalf("projection serialization rejected valid over-limit content: %v", err)
+	}
+	if projected != raw {
+		t.Fatal("projection serialization did not preserve canonical over-limit content")
+	}
+}
+
+func TestProjectionSerializationStillRejectsInvalidStructure(t *testing.T) {
+	doc := Empty()
+	doc.Value[0]["children"] = []any{map[string]any{
+		"text":     "invalid",
+		"children": []any{},
+	}}
+	if _, err := MarshalProjection(doc); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("MarshalProjection accepted invalid structure: %v", err)
 	}
 }
 

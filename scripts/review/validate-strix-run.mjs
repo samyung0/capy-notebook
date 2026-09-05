@@ -1,6 +1,11 @@
 #!/usr/bin/env node
 
-import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  existsSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 
 const directory = path.resolve(process.argv[2] ?? '');
@@ -66,6 +71,11 @@ process.stdout.write(summary);
 if (process.env.GITHUB_STEP_SUMMARY) {
   appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
 }
+// One line for the commit status description (140 character cap upstream).
+writeFileSync(
+  path.join(directory, 'status-description.txt'),
+  `${run?.status ?? 'missing'}, ${findings.length} findings ${JSON.stringify(severityCounts)}, spend ${Number.isFinite(spend) ? spend.toFixed(2) : '?'}/${maxBudget ?? '?'}\n`
+);
 
 if (run?.status !== 'completed') {
   console.error(

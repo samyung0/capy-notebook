@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/evonotes/server/internal/models"
+	appstore "github.com/evonotes/server/internal/store"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -36,6 +37,88 @@ func rolePool(
 	}
 	t.Cleanup(pool.Close)
 	return pool
+}
+
+func TestReadRoleRequiresEveryPlanLimitsStartupColumn(t *testing.T) {
+	want := map[string]bool{
+		"plan_tier":               true,
+		"storage_limit_bytes":     true,
+		"credit_limit_micros":     true,
+		"source_file_max_bytes":   true,
+		"material_revision_limit": true,
+		"owned_workspace_limit":   true,
+		"files_per_workspace":     true,
+		"files_per_upload":        true,
+	}
+	got := map[string]bool{}
+	for _, privilege := range readRequiredPrivileges {
+		if privilege.table == "plan_limits" && privilege.privilege == "SELECT" {
+			got[privilege.column] = true
+		}
+	}
+	if len(got) != len(want) {
+		t.Fatalf("plan_limits required columns = %v, want %v", got, want)
+	}
+	for column := range want {
+		if !got[column] {
+			t.Fatalf("plan_limits required columns missing %q", column)
+		}
+	}
+}
+
+func TestRegistryWritePrivilegesRejectBroadAndUnexpectedModelConfigUpdates(t *testing.T) {
+	ownerDSN := integrationDSN(t)
+	ctx := context.Background()
+	owner, err := pgxpool.New(ctx, ownerDSN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(owner.Close)
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	role := "ops_registry_write_test_" + suffix
+	password := "ops-test-password"
+	ident := pgx.Identifier{role}.Sanitize()
+	if _, err := owner.Exec(ctx, fmt.Sprintf(`
+		CREATE ROLE %s LOGIN NOINHERIT PASSWORD '%s';
+		GRANT CONNECT ON DATABASE %s TO %s;
+		GRANT USAGE ON SCHEMA public TO %s;
+		GRANT UPDATE (enabled, is_default_for, updated_at, updated_by)
+			ON model_configs TO %s`,
+		ident, password,
+		pgx.Identifier{owner.Config().ConnConfig.Database}.Sanitize(), ident,
+		ident, ident,
+	)); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = owner.Exec(ctx, fmt.Sprintf(`
+			SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename='%s';
+			DROP OWNED BY %s;
+			DROP ROLE IF EXISTS %s`, role, ident, ident,
+		))
+	})
+	pool := rolePool(t, ctx, ownerDSN, role, password)
+	if problems := validateRegistryTableWrites(ctx, pool); len(problems) != 0 {
+		t.Fatalf("narrow registry update rejected: %v", problems)
+	}
+	if _, err := owner.Exec(ctx, fmt.Sprintf(
+		"GRANT UPDATE ON model_configs TO %s", ident,
+	)); err != nil {
+		t.Fatal(err)
+	}
+	if problems := validateRegistryTableWrites(ctx, pool); len(problems) == 0 {
+		t.Fatal("table-level model_configs UPDATE was accepted")
+	}
+	if _, err := owner.Exec(ctx, fmt.Sprintf(`
+		REVOKE UPDATE ON model_configs FROM %s;
+		GRANT UPDATE (enabled, is_default_for, updated_at, updated_by, provider_name)
+			ON model_configs TO %s`, ident, ident,
+	)); err != nil {
+		t.Fatal(err)
+	}
+	if problems := validateRegistryTableWrites(ctx, pool); len(problems) == 0 {
+		t.Fatal("model_configs.provider_name UPDATE was accepted")
+	}
 }
 
 func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
@@ -94,10 +177,16 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 		GRANT SELECT (user_id, delta_bytes)
 			ON user_storage_deltas TO %s;
 		GRANT SELECT (
-			id, name, email, plan_tier, deletion_requested_at, purge_after,
-			deleted_at, suspended_at, suspended_reason, created_at
+			id, name, email, plan_tier, subscription_status,
+			deletion_requested_at, purge_after,
+			deleted_at, suspended_at, suspended_reason,
+			session_revoke_pending, session_revoke_attempts,
+			session_revoke_not_before, session_revoke_last_error, created_at
 		) ON users TO %s;
-		GRANT SELECT (user_id, current_period_end)
+		GRANT SELECT (
+			user_id, status, plan_tier, current_period_end, ended_at,
+			canceled_at, stripe_event_created, updated_at
+		)
 			ON user_subscriptions TO %s;
 		GRANT SELECT (
 			id, user_id, name, embedding_provider_slug, embedding_model_slug, embedding_model_version,
@@ -106,7 +195,7 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 		GRANT SELECT (user_id, role) ON operators TO %s;
 		GRANT SELECT (role, permission) ON ops_permissions TO %s;
 		GRANT SELECT (
-			version, provider_name, model_name, provider_slug, model_slug, platform_enabled, byok_enabled, thinking_levels, default_thinking, context_window_tokens, params, surfaces,
+			version, provider_name, model_name, provider_slug, model_slug, platform_enabled, byok_enabled, thinking_levels, default_thinking, context_window_tokens, params, slots, capabilities,
 			micros_per_input_token, micros_per_cached_input_token,
 			micros_per_output_token, enabled, is_default_for,
 			created_at, updated_at, created_by, updated_by
@@ -144,7 +233,7 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 		GRANT EXECUTE ON FUNCTION touch_operator_seen(text) TO %s;
 
 		GRANT SELECT (
-			version, provider_name, model_name, provider_slug, model_slug, platform_enabled, byok_enabled, thinking_levels, default_thinking, context_window_tokens, params, surfaces,
+			version, provider_name, model_name, provider_slug, model_slug, platform_enabled, byok_enabled, thinking_levels, default_thinking, context_window_tokens, params, slots, capabilities,
 			micros_per_input_token, micros_per_cached_input_token,
 			micros_per_output_token, enabled, is_default_for,
 			created_at, updated_at, created_by, updated_by
@@ -170,11 +259,12 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 		GRANT SELECT (idempotency_key) ON email_outbox TO %s;
 		GRANT SELECT (user_id, provider_slug) ON user_llm_credentials TO %s;
 		GRANT INSERT (
-			version, provider_name, model_name, provider_slug, model_slug, platform_enabled, byok_enabled, thinking_levels, default_thinking, context_window_tokens, params, surfaces,
+			version, provider_name, model_name, provider_slug, model_slug, platform_enabled, byok_enabled, thinking_levels, default_thinking, context_window_tokens, params, slots, capabilities,
 			micros_per_input_token, micros_per_cached_input_token,
 			micros_per_output_token, enabled, is_default_for, created_by, updated_by
 		) ON model_configs TO %s;
-		GRANT UPDATE ON model_configs TO %s;
+		GRANT UPDATE (enabled, is_default_for, updated_at, updated_by)
+			ON model_configs TO %s;
 		GRANT UPDATE (version, updated_at)
 			ON model_registry_state TO %s;
 		GRANT UPDATE (
@@ -247,7 +337,7 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 			source_format, claimed_at, finished_at, next_retry_at,
 			queue_milliseconds, duration_milliseconds, stage_timings, parse_pages,
 			parse_ocr_pages, parse_slices, figures_selected, figures_cached,
-			figures_captioned, figures_failed, chunks_created, concepts_created
+			figures_captioned, figures_failed, chunks_created
 		) ON ingest_job_attempts TO %s;
 	`, readIdent, readIdent, readIdent, readIdent, readIdent, readIdent, readIdent)); err != nil {
 		t.Fatal(err)
@@ -284,8 +374,55 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 	if err := ValidateDatabaseRole(ctx, readPool, ReadDatabaseRole); err != nil {
 		t.Fatalf("read role contract: %v", err)
 	}
+	if err := appstore.NewWithPool(readPool).LoadPlanLimits(ctx); err != nil {
+		t.Fatalf("read role plan-limits startup load: %v", err)
+	}
+	for _, privilege := range []string{"INSERT", "UPDATE", "REFERENCES"} {
+		if _, err := owner.Exec(ctx, fmt.Sprintf(
+			"GRANT %s (plan_tier) ON plan_limits TO %s", privilege, readIdent,
+		)); err != nil {
+			t.Fatalf("grant column-level %s: %v", privilege, err)
+		}
+		if err := ValidateDatabaseRole(ctx, readPool, ReadDatabaseRole); err == nil {
+			t.Fatalf("read role with column-level %s was accepted", privilege)
+		}
+		if _, err := owner.Exec(ctx, fmt.Sprintf(
+			"REVOKE %s (plan_tier) ON plan_limits FROM %s", privilege, readIdent,
+		)); err != nil {
+			t.Fatalf("revoke column-level %s: %v", privilege, err)
+		}
+	}
+	if err := ValidateDatabaseRole(ctx, readPool, ReadDatabaseRole); err != nil {
+		t.Fatalf("read role contract after column-write revokes: %v", err)
+	}
 	if err := ValidateDatabaseRole(ctx, adminPool, AdminDatabaseRole); err != nil {
 		t.Fatalf("admin role contract: %v", err)
+	}
+	for _, unexpected := range []struct {
+		grant  string
+		revoke string
+	}{
+		{
+			grant:  "GRANT UPDATE ON operators TO %s",
+			revoke: "REVOKE UPDATE ON operators FROM %s",
+		},
+		{
+			grant:  "GRANT INSERT ON reconcile_runs TO %s",
+			revoke: "REVOKE INSERT ON reconcile_runs FROM %s",
+		},
+	} {
+		if _, err := owner.Exec(ctx, fmt.Sprintf(unexpected.grant, adminIdent)); err != nil {
+			t.Fatal(err)
+		}
+		if err := ValidateDatabaseRole(ctx, adminPool, AdminDatabaseRole); err == nil {
+			t.Fatalf("admin role with %q was accepted", unexpected.grant)
+		}
+		if _, err := owner.Exec(ctx, fmt.Sprintf(unexpected.revoke, adminIdent)); err != nil {
+			t.Fatal(err)
+		}
+		if err := ValidateDatabaseRole(ctx, adminPool, AdminDatabaseRole); err != nil {
+			t.Fatalf("admin role after revoke: %v", err)
+		}
 	}
 
 	if _, err := readPool.Exec(ctx,
@@ -308,7 +445,7 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 			version, provider_name, model_name, provider_slug, model_slug,
 			platform_enabled, byok_enabled, context_window_tokens,
 			thinking_levels, default_thinking, params,
-			surfaces, micros_per_input_token, micros_per_cached_input_token,
+			slots, micros_per_input_token, micros_per_cached_input_token,
 			micros_per_output_token, enabled, is_default_for
 		) VALUES (
 			99, 'Ops', 'Role Model', $1, $2,
@@ -323,6 +460,15 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 		INSERT INTO users (id, name, email, chat_model_provider_slug, chat_model_slug)
 		VALUES ($1, 'Ops Role User', $2, $3, $4)`,
 		userID, userID+"@example.test", modelRef.ProviderSlug, modelRef.ModelSlug,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := owner.Exec(ctx, `
+		INSERT INTO user_subscriptions (
+			stripe_subscription_id, user_id, status, plan_tier,
+			current_period_end, stripe_event_created
+		) VALUES ($1, $2, 'active', 'pro', now() + interval '30 days', 1)`,
+		"sub_"+userID, userID,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -453,6 +599,20 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 	}
 	if _, err := readStore.Health(ctx, 30); err != nil {
 		t.Fatalf("least-privilege health failed: %v", err)
+	}
+	users, err := readStore.SearchUsers(ctx, userID)
+	if err != nil {
+		t.Fatalf("least-privilege user search failed: %v", err)
+	}
+	if len(users) != 1 || users[0].UserID != userID || users[0].AccountState != "active" {
+		t.Fatalf("least-privilege user search = %+v", users)
+	}
+	user, err := readStore.User(ctx, userID)
+	if err != nil {
+		t.Fatalf("least-privilege user detail failed: %v", err)
+	}
+	if user.UserID != userID || user.AccountState != "active" {
+		t.Fatalf("least-privilege user detail = %+v", user)
 	}
 	audit, err := readStore.AuditEvents(ctx, 0, auditPageMax)
 	if err != nil {

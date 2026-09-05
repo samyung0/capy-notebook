@@ -16,8 +16,8 @@ docker compose -f ../deploy/docker-compose.yml up --build
 Standalone (needs a Postgres reachable at `DATABASE_URL`):
 
 ```bash
-cp .env.example .env          # adjust DATABASE_URL if needed
-go mod tidy                   # resolve deps + write go.sum (first run)
+set -a; . ../deploy/.env; set +a   # the binary does not auto-load env files
+go mod tidy                        # resolve deps + write go.sum (first run)
 go run ./cmd/api
 ```
 
@@ -51,8 +51,8 @@ Orval TypeScript bindings. Frontend code imports generated contracts through
 `src/api/types.ts`; the Ops API module is its equivalent boundary for the
 separate dashboard bundle.
 
-Backblaze B2 is required. Set every `B2_*` variable in `.env`; startup verifies
-bucket access and exits if those credentials are invalid.
+Backblaze B2 is required. Set every `B2_*` variable in `deploy/.env`; startup
+verifies bucket access and exits if those credentials are invalid.
 
 With `MIGRATE=true` (local default) the server applies each numbered file in
 `migrations/` once, records it in `schema_migrations`, then loads `dev_seed.sql`
@@ -61,7 +61,8 @@ image, then start the API with `MIGRATE=false`.
 
 ### Bucket configuration
 
-Apply `../deploy/b2-lifecycle.example.json` to the bucket. Two things depend on
+Apply `../deploy/b2-lifecycle.prod.json` (or `b2-lifecycle.uat.json` for the
+UAT bucket, which local development shares) to the bucket. Two things depend on
 it:
 
 - The `incoming/` and `editor-assets/incoming/` prefixes expire after a day. A
@@ -116,6 +117,12 @@ positions plus stable block ID/version/quote fallback. Comment mutations publish
 Redis invalidations. Membership changes and deletions publish room eviction
 events.
 
+The API requires `CLERK_SECRET_KEY` at startup unless an explicit local/test
+bypass is enabled. Local single-user development must set
+`APP_ENV=development AUTH_DISABLED=true`; a missing Clerk secret by itself never
+enables the development identity. All identity modes still read account
+lifecycle state and fail closed with 503 if that state cannot be loaded.
+
 ## Support: cancel a scheduled account deletion
 
 Users cannot undo account deletion themselves. After they confirm, sessions are
@@ -128,6 +135,12 @@ DATABASE_URL=... go run ./cmd/cancel-deletion -email user@example.com
 # optional: also send the deletion-cancelled email + in-app notice
 DATABASE_URL=... go run ./cmd/cancel-deletion -email user@example.com -notify
 ```
+
+Owned workspaces are hidden from members and link/public visitors while the
+request is pending, but their membership and sharing records remain intact.
+Successful cancellation restores listing, access, editing, invitations, and
+cloning. After the 30-day deadline, purge permanently deletes every owned
+workspace, including shared workspaces, and their share links and content.
 
 ## Layout
 

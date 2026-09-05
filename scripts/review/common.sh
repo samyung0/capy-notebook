@@ -3,7 +3,7 @@
 set -euo pipefail
 
 REVIEW_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-REVIEW_ENV_FILE="${REVIEW_ENV_FILE:-$REVIEW_ROOT/review/.env.uat}"
+REVIEW_ENV_FILE="${REVIEW_ENV_FILE:-$REVIEW_ROOT/deploy/.env.uat}"
 
 review_load_env() {
   if [[ -f "$REVIEW_ENV_FILE" ]]; then

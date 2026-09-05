@@ -25,7 +25,7 @@ type ValidationError struct {
 	Message   string
 	Code      string
 	ModelSlug string
-	Surface   string
+	Slot      string
 	Reason    string
 }
 
@@ -65,7 +65,8 @@ type querier interface {
 
 func snapshotFrom(ctx context.Context, q querier) (RegistrySnapshot, error) {
 	out := RegistrySnapshot{
-		Surfaces:                 models.AllSurfaces(),
+		Slots:                    models.AllSlots(),
+		Capabilities:             models.OperatorCapabilities(),
 		AliasesAllowed:           false,
 		Configs:                  []CatalogConfig{},
 		ProviderCredentials:      []ProviderCredentialAvailability{},
@@ -79,7 +80,7 @@ func snapshotFrom(ctx context.Context, q querier) (RegistrySnapshot, error) {
 		SELECT version, provider_name, model_name, provider_slug, model_slug,
 			platform_enabled, byok_enabled, context_window_tokens,
 			thinking_levels, default_thinking, params,
-			surfaces, micros_per_input_token, micros_per_cached_input_token,
+			slots, capabilities, micros_per_input_token, micros_per_cached_input_token,
 			micros_per_output_token, enabled, is_default_for,
 			created_at, updated_at, created_by, updated_by
 		FROM model_configs ORDER BY provider_slug, model_slug, version`)
@@ -90,8 +91,8 @@ func snapshotFrom(ctx context.Context, q querier) (RegistrySnapshot, error) {
 		var c CatalogConfig
 		if err := rows.Scan(&c.Version, &c.ProviderName, &c.ModelName,
 			&c.ProviderSlug, &c.ModelSlug, &c.PlatformEnabled, &c.ByokEnabled,
-			&c.ContextWindowTokens, &c.ThinkingLevels, &c.DefaultThinking, &c.Params, &c.Surfaces,
-			&c.MicrosPerInputToken, &c.MicrosPerCachedInputToken,
+			&c.ContextWindowTokens, &c.ThinkingLevels, &c.DefaultThinking, &c.Params, &c.Slots,
+			&c.Capabilities, &c.MicrosPerInputToken, &c.MicrosPerCachedInputToken,
 			&c.MicrosPerOutputToken, &c.Enabled, &c.IsDefaultFor,
 			&c.CreatedAt, &c.UpdatedAt, &c.CreatedBy, &c.UpdatedBy); err != nil {
 			rows.Close()
@@ -117,7 +118,7 @@ func snapshotFrom(ctx context.Context, q querier) (RegistrySnapshot, error) {
 	}
 	for index := range out.Configs {
 		config := &out.Configs[index]
-		if !contains(config.Surfaces, models.SurfaceEmbedding) {
+		if !contains(config.Slots, models.SlotRetrieval) {
 			continue
 		}
 		config.EmbeddingDefaultEligible, config.EmbeddingValidationError, err =
@@ -158,7 +159,7 @@ func credentialEnv(provider string) string {
 type compiledDraft struct {
 	gridDraft
 	Version    int
-	Surfaces   []string
+	Slots      []string
 	DefaultFor []string
 }
 
@@ -171,7 +172,7 @@ type CellTarget struct {
 
 type GridCell struct {
 	Row       models.Ref
-	Surface   string
+	Slot      string
 	Target    CellTarget
 	IsDefault bool
 }
@@ -188,6 +189,7 @@ type gridDraft struct {
 	ThinkingLevels            []string
 	DefaultThinking           string
 	Params                    json.RawMessage
+	Capabilities              []string
 	MicrosPerInputToken       int64
 	MicrosPerCachedInputToken int64
 	MicrosPerOutputToken      int64
@@ -237,21 +239,25 @@ func activeToGrid(req RegistrySaveRequest, current RegistrySnapshot) (gridSaveRe
 			return grid, validation("active provider/model identities must be unique")
 		}
 		seenModels[ref] = true
-		if len(draft.Surfaces) == 0 {
-			return grid, validation("active config %s needs at least one surface", ref)
+		if len(draft.Slots) == 0 {
+			return grid, validation("active config %s needs at least one slot", ref)
 		}
-		surfaces, err := uniqueSurfaces(draft.Surfaces)
+		slots, err := uniqueSlots(draft.Slots)
 		if err != nil {
 			return grid, err
 		}
-		defaults, err := uniqueSurfaces(draft.DefaultFor)
+		defaults, err := uniqueSlots(draft.DefaultFor)
 		if err != nil {
 			return grid, err
 		}
-		for _, surface := range defaults {
-			if !contains(surfaces, surface) {
-				return grid, validation("default %s is not served by %s", surface, ref)
+		for _, slot := range defaults {
+			if !contains(slots, slot) {
+				return grid, validation("default %s is not served by %s", slot, ref)
 			}
+		}
+		capabilities, err := uniqueCapabilities(draft.Capabilities)
+		if err != nil {
+			return grid, err
 		}
 		internal := gridDraft{
 			ID:           ref.String(),
@@ -261,27 +267,28 @@ func activeToGrid(req RegistrySaveRequest, current RegistrySnapshot) (gridSaveRe
 			ContextWindowTokens: draft.ContextWindowTokens,
 			ThinkingLevels:      append([]string(nil), draft.ThinkingLevels...),
 			DefaultThinking:     draft.DefaultThinking,
-			Params:              draft.Params, MicrosPerInputToken: draft.Rates.InputMicros,
+			Params:              draft.Params, Capabilities: capabilities,
+			MicrosPerInputToken:       draft.Rates.InputMicros,
 			MicrosPerCachedInputToken: draft.Rates.CachedInputMicros,
 			MicrosPerOutputToken:      draft.Rates.OutputMicros,
 		}
 		currentConfig, exists := latest[ref]
-		if err := bindEliteLLMDraft(&internal, surfaces); err != nil {
+		if err := bindEliteLLMDraft(&internal, slots); err != nil {
 			return grid, err
 		}
-		embedding := contains(surfaces, models.SurfaceEmbedding)
+		embedding := contains(slots, models.SlotRetrieval)
 		if embedding {
-			if !exists || !contains(currentConfig.Surfaces, models.SurfaceEmbedding) {
+			if !exists || !contains(currentConfig.Slots, models.SlotRetrieval) {
 				return grid, validation("new embedding rows require a schema and code deploy")
 			}
-			if err := validateEmbeddingDraft(currentConfig, internal, surfaces); err != nil {
+			if err := validateEmbeddingDraft(currentConfig, internal, slots); err != nil {
 				return grid, err
 			}
 		} else {
 			if err := validateDraft(internal); err != nil {
 				return grid, err
 			}
-			if err := validateConfigForSurfaces(internal, surfaces); err != nil {
+			if err := validateConfigForSlots(internal, slots); err != nil {
 				return grid, err
 			}
 		}
@@ -294,22 +301,22 @@ func activeToGrid(req RegistrySaveRequest, current RegistrySnapshot) (gridSaveRe
 		} else {
 			grid.Drafts = append(grid.Drafts, internal)
 		}
-		for _, surface := range surfaces {
+		for _, slot := range slots {
 			grid.Cells = append(grid.Cells, GridCell{
-				Row: ref, Surface: surface, Target: target,
-				IsDefault: contains(defaults, surface),
+				Row: ref, Slot: slot, Target: target,
+				IsDefault: contains(defaults, slot),
 			})
 		}
 	}
 	for _, config := range current.Configs {
-		if config.Enabled && contains(config.Surfaces, models.SurfaceEmbedding) &&
+		if config.Enabled && contains(config.Slots, models.SlotRetrieval) &&
 			!seenModels[config.Ref()] {
 			return grid, validation("embedding model %s must remain active", config.Ref())
 		}
 	}
 	sort.Slice(grid.Cells, func(i, j int) bool {
 		if grid.Cells[i].Row == grid.Cells[j].Row {
-			return grid.Cells[i].Surface < grid.Cells[j].Surface
+			return grid.Cells[i].Slot < grid.Cells[j].Slot
 		}
 		if grid.Cells[i].Row.ProviderSlug == grid.Cells[j].Row.ProviderSlug {
 			return grid.Cells[i].Row.ModelSlug < grid.Cells[j].Row.ModelSlug
@@ -319,15 +326,34 @@ func activeToGrid(req RegistrySaveRequest, current RegistrySnapshot) (gridSaveRe
 	return grid, nil
 }
 
-func uniqueSurfaces(values []string) ([]string, error) {
+func uniqueSlots(values []string) ([]string, error) {
 	seen := make(map[string]bool)
 	out := make([]string, 0, len(values))
 	for _, value := range values {
-		if _, known := models.ParseSurface(value); !known {
-			return nil, validation("unknown surface %q", value)
+		if _, known := models.ParseSlot(value); !known {
+			return nil, validation("unknown slot %q", value)
 		}
 		if seen[value] {
-			return nil, validation("duplicate surface %q", value)
+			return nil, validation("duplicate slot %q", value)
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// uniqueCapabilities accepts only operator-set capabilities. agentic_loop is
+// derived from the certification file and is rejected here on purpose.
+func uniqueCapabilities(values []string) ([]string, error) {
+	seen := make(map[string]bool)
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if _, known := models.ParseCapability(value); !known {
+			return nil, validation("unknown capability %q", value)
+		}
+		if seen[value] {
+			return nil, validation("duplicate capability %q", value)
 		}
 		seen[value] = true
 		out = append(out, value)
@@ -347,6 +373,7 @@ func configIdentityMatches(current CatalogConfig, draft gridDraft) bool {
 		current.DefaultThinking == draft.DefaultThinking &&
 		current.ContextWindowTokens == draft.ContextWindowTokens &&
 		sameJSON(current.Params, draft.Params) &&
+		sameStringSet(current.Capabilities, draft.Capabilities) &&
 		current.MicrosPerInputToken == draft.MicrosPerInputToken &&
 		current.MicrosPerCachedInputToken == draft.MicrosPerCachedInputToken &&
 		current.MicrosPerOutputToken == draft.MicrosPerOutputToken
@@ -355,9 +382,9 @@ func configIdentityMatches(current CatalogConfig, draft gridDraft) bool {
 func validateEmbeddingDraft(
 	current CatalogConfig,
 	draft gridDraft,
-	surfaces []string,
+	slots []string,
 ) error {
-	if !sameStringSet(current.Surfaces, surfaces) ||
+	if !sameStringSet(current.Slots, slots) ||
 		current.ProviderName != draft.ProviderName ||
 		current.ModelName != draft.ModelName ||
 		current.ModelSlug != draft.ModelSlug ||
@@ -367,10 +394,11 @@ func validateEmbeddingDraft(
 		current.DefaultThinking != draft.DefaultThinking ||
 		current.ContextWindowTokens != draft.ContextWindowTokens ||
 		!sameJSON(current.Params, draft.Params) ||
+		!sameStringSet(current.Capabilities, draft.Capabilities) ||
 		current.MicrosPerInputToken != draft.MicrosPerInputToken ||
 		current.MicrosPerCachedInputToken != draft.MicrosPerCachedInputToken ||
 		current.MicrosPerOutputToken != draft.MicrosPerOutputToken {
-		return validation("embedding identity, params, rates, and surfaces are immutable")
+		return validation("retrieval identity, params, capabilities, rates, and slots are immutable")
 	}
 	return nil
 }
@@ -385,13 +413,13 @@ func sameJSON(left, right json.RawMessage) bool {
 func embeddingDefaultChanged(req gridSaveRequest, current RegistrySnapshot) bool {
 	var currentTarget existingTarget
 	for _, config := range current.Configs {
-		if contains(config.IsDefaultFor, models.SurfaceEmbedding) {
+		if contains(config.IsDefaultFor, models.SlotRetrieval) {
 			currentTarget = existingTarget{Ref: config.Ref(), Version: config.Version}
 			break
 		}
 	}
 	for _, cell := range req.Cells {
-		if cell.Surface != models.SurfaceEmbedding || !cell.IsDefault {
+		if cell.Slot != models.SlotRetrieval || !cell.IsDefault {
 			continue
 		}
 		return (cell.Target.Kind != "existing" && cell.Target.Kind != "catalog") ||
@@ -493,10 +521,6 @@ func (s *RegistryStore) saveTx(
 		}
 		return RegistrySaveResult{}, &ConflictError{Current: current}
 	}
-	if _, err := tx.Exec(ctx,
-		`LOCK TABLE model_configs IN SHARE ROW EXCLUSIVE MODE`); err != nil {
-		return RegistrySaveResult{}, err
-	}
 	current, err := snapshotFrom(ctx, tx)
 	if err != nil {
 		return RegistrySaveResult{}, err
@@ -531,9 +555,9 @@ func (s *RegistryStore) saveTx(
 			drafts[i].Version, drafts[i].ProviderName, drafts[i].ModelName,
 			drafts[i].ProviderSlug, drafts[i].ModelSlug,
 			drafts[i].PlatformEnabled, drafts[i].ByokEnabled,
-			drafts[i].ContextWindowTokens, drafts[i].ThinkingLevels, drafts[i].DefaultThinking,
-			drafts[i].Params, drafts[i].Surfaces, drafts[i].MicrosPerInputToken,
-			drafts[i].MicrosPerCachedInputToken,
+			drafts[i].ContextWindowTokens, orEmpty(drafts[i].ThinkingLevels), drafts[i].DefaultThinking,
+			drafts[i].Params, drafts[i].Slots, orEmpty(drafts[i].Capabilities),
+			drafts[i].MicrosPerInputToken, drafts[i].MicrosPerCachedInputToken,
 			drafts[i].MicrosPerOutputToken, drafts[i].DefaultFor, actorID)
 		if err != nil {
 			return result, err
@@ -566,10 +590,6 @@ func compileGrid(
 	req gridSaveRequest,
 	current RegistrySnapshot,
 ) ([]compiledDraft, map[existingTarget][]string, map[string]existingTarget, error) {
-	catalog, err := models.LoadEliteLLMProviders()
-	if err != nil {
-		return nil, nil, nil, err
-	}
 	configs := make(map[existingTarget]CatalogConfig)
 	for _, c := range current.Configs {
 		configs[existingTarget{Ref: c.Ref(), Version: c.Version}] = c
@@ -577,6 +597,11 @@ func compileGrid(
 	draftByID := make(map[string]gridDraft)
 	for i := range req.Drafts {
 		d := req.Drafts[i]
+		capabilities, err := uniqueCapabilities(d.Capabilities)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		d.Capabilities = capabilities
 		if err := bindEliteLLMDraft(&d, nil); err != nil {
 			return nil, nil, nil, err
 		}
@@ -589,7 +614,7 @@ func compileGrid(
 		draftByID[d.ID] = d
 	}
 	type draftUse struct {
-		surfaces []string
+		slots    []string
 		defaults []string
 	}
 	draftUses := make(map[string]*draftUse)
@@ -597,15 +622,15 @@ func compileGrid(
 	defaults := make(map[string]existingTarget)
 	seenCells := make(map[string]bool)
 	for _, cell := range req.Cells {
-		if _, known := models.ParseSurface(cell.Surface); !known {
-			return nil, nil, nil, validation("unknown surface %q", cell.Surface)
+		if _, known := models.ParseSlot(cell.Slot); !known {
+			return nil, nil, nil, validation("unknown slot %q", cell.Slot)
 		}
 		if cell.Row.Zero() {
 			return nil, nil, nil, validation("row model is required")
 		}
-		cellID := cell.Row.ProviderSlug + "\x00" + cell.Row.ModelSlug + "\x00" + cell.Surface
+		cellID := cell.Row.ProviderSlug + "\x00" + cell.Row.ModelSlug + "\x00" + cell.Slot
 		if seenCells[cellID] {
-			return nil, nil, nil, validation("duplicate cell for %s/%s", cell.Row, cell.Surface)
+			return nil, nil, nil, validation("duplicate cell for %s/%s", cell.Row, cell.Slot)
 		}
 		seenCells[cellID] = true
 		if cell.Target.Kind == "existing" || cell.Target.Kind == "catalog" {
@@ -617,19 +642,18 @@ func compileGrid(
 			if cell.Row != key.Ref {
 				return nil, nil, nil, validation("aliases are not supported: row model must equal target model")
 			}
-			if cell.Surface == models.SurfaceEmbedding {
-				if !contains(c.Surfaces, models.SurfaceEmbedding) {
-					return nil, nil, nil, validation("new embedding rows require a schema and code deploy")
-				}
-			} else if err := validateProviderSurface(catalog, c.ProviderSlug, c.ModelSlug, cell.Surface); err != nil {
+			if cell.Slot == models.SlotRetrieval && !contains(c.Slots, models.SlotRetrieval) {
+				return nil, nil, nil, validation("new retrieval rows require a schema and code deploy")
+			}
+			if err := validateSlotAssignment(c.ProviderSlug, c.ModelSlug, c.Capabilities, cell.Slot); err != nil {
 				return nil, nil, nil, err
 			}
-			existing[key] = appendUnique(existing[key], cell.Surface)
+			existing[key] = appendUnique(existing[key], cell.Slot)
 			if cell.IsDefault {
-				if _, duplicate := defaults[cell.Surface]; duplicate {
-					return nil, nil, nil, validation("surface %q has more than one default", cell.Surface)
+				if _, duplicate := defaults[cell.Slot]; duplicate {
+					return nil, nil, nil, validation("slot %q has more than one default", cell.Slot)
 				}
-				defaults[cell.Surface] = key
+				defaults[cell.Slot] = key
 			}
 		} else if cell.Target.Kind == "draft" {
 			d, ok := draftByID[cell.Target.DraftID]
@@ -639,21 +663,21 @@ func compileGrid(
 			if cell.Row != d.Ref() {
 				return nil, nil, nil, validation("aliases are not supported: row model must equal draft model")
 			}
-			if cell.Surface == models.SurfaceEmbedding {
-				return nil, nil, nil, validation("new embedding catalog rows require a schema migration and cannot be created here")
+			if cell.Slot == models.SlotRetrieval {
+				return nil, nil, nil, validation("new retrieval catalog rows require a schema migration and cannot be created here")
 			}
 			use := draftUses[d.ID]
 			if use == nil {
 				use = &draftUse{}
 				draftUses[d.ID] = use
 			}
-			use.surfaces = appendUnique(use.surfaces, cell.Surface)
+			use.slots = appendUnique(use.slots, cell.Slot)
 			if cell.IsDefault {
-				if _, duplicate := defaults[cell.Surface]; duplicate {
-					return nil, nil, nil, validation("surface %q has more than one default", cell.Surface)
+				if _, duplicate := defaults[cell.Slot]; duplicate {
+					return nil, nil, nil, validation("slot %q has more than one default", cell.Slot)
 				}
-				use.defaults = appendUnique(use.defaults, cell.Surface)
-				defaults[cell.Surface] = existingTarget{Ref: d.Ref(), Version: -1}
+				use.defaults = appendUnique(use.defaults, cell.Slot)
+				defaults[cell.Slot] = existingTarget{Ref: d.Ref(), Version: -1}
 			}
 		} else {
 			return nil, nil, nil, validation("cell target kind must be existing or draft")
@@ -661,13 +685,13 @@ func compileGrid(
 	}
 	requiredDefaults := make(map[string]bool)
 	for _, config := range current.Configs {
-		for _, surface := range config.IsDefaultFor {
-			requiredDefaults[surface] = true
+		for _, slot := range config.IsDefaultFor {
+			requiredDefaults[slot] = true
 		}
 	}
-	for surface := range requiredDefaults {
-		if _, ok := defaults[surface]; !ok {
-			return nil, nil, nil, validation("surface %q needs exactly one default", surface)
+	for slot := range requiredDefaults {
+		if _, ok := defaults[slot]; !ok {
+			return nil, nil, nil, validation("slot %q needs exactly one default", slot)
 		}
 	}
 	if err := enforceEmbeddingUnchanged(current, existing); err != nil {
@@ -675,11 +699,11 @@ func compileGrid(
 	}
 	var drafts []compiledDraft
 	for id, use := range draftUses {
-		if len(use.surfaces) == 0 {
+		if len(use.slots) == 0 {
 			continue
 		}
 		d := draftByID[id]
-		sort.Strings(use.surfaces)
+		sort.Strings(use.slots)
 		sort.Strings(use.defaults)
 		if use.defaults == nil {
 			use.defaults = []string{}
@@ -687,27 +711,27 @@ func compileGrid(
 		if !d.PlatformEnabled && len(use.defaults) > 0 {
 			return nil, nil, nil, validation("BYOK-only draft %q cannot be a default", d.ID)
 		}
-		if err := bindEliteLLMDraft(&d, use.surfaces); err != nil {
+		if err := bindEliteLLMDraft(&d, use.slots); err != nil {
 			return nil, nil, nil, err
 		}
-		if err := validateConfigForSurfaces(d, use.surfaces); err != nil {
+		if err := validateConfigForSlots(d, use.slots); err != nil {
 			return nil, nil, nil, err
 		}
-		drafts = append(drafts, compiledDraft{gridDraft: d, Surfaces: use.surfaces, DefaultFor: use.defaults})
+		drafts = append(drafts, compiledDraft{gridDraft: d, Slots: use.slots, DefaultFor: use.defaults})
 	}
-	for target, surfaces := range existing {
+	for target, slots := range existing {
 		config := configs[target]
-		sortedSurfaces := append([]string(nil), surfaces...)
-		sort.Strings(sortedSurfaces)
-		currentSurfaces := append([]string(nil), config.Surfaces...)
-		sort.Strings(currentSurfaces)
-		if strings.Join(sortedSurfaces, "\x00") == strings.Join(currentSurfaces, "\x00") {
+		sortedSlots := append([]string(nil), slots...)
+		sort.Strings(sortedSlots)
+		currentSlots := append([]string(nil), config.Slots...)
+		sort.Strings(currentSlots)
+		if strings.Join(sortedSlots, "\x00") == strings.Join(currentSlots, "\x00") {
 			continue
 		}
 		var defaultFor []string
-		for surface, defaultTarget := range defaults {
+		for slot, defaultTarget := range defaults {
 			if defaultTarget == target {
-				defaultFor = append(defaultFor, surface)
+				defaultFor = append(defaultFor, slot)
 			}
 		}
 		sort.Strings(defaultFor)
@@ -727,11 +751,12 @@ func compileGrid(
 				ThinkingLevels:            append([]string(nil), config.ThinkingLevels...),
 				DefaultThinking:           config.DefaultThinking,
 				Params:                    config.Params,
+				Capabilities:              append([]string(nil), config.Capabilities...),
 				MicrosPerInputToken:       config.MicrosPerInputToken,
 				MicrosPerCachedInputToken: config.MicrosPerCachedInputToken,
 				MicrosPerOutputToken:      config.MicrosPerOutputToken,
 			},
-			Surfaces:   sortedSurfaces,
+			Slots:      sortedSlots,
 			DefaultFor: defaultFor,
 		})
 		delete(existing, target)
@@ -742,7 +767,7 @@ func compileGrid(
 
 func validateEmbeddingPins(current RegistrySnapshot) error {
 	for _, config := range current.Configs {
-		if !config.Enabled || !contains(config.Surfaces, models.SurfaceEmbedding) {
+		if !config.Enabled || !contains(config.Slots, models.SlotRetrieval) {
 			continue
 		}
 		if !config.EmbeddingDefaultEligible {
@@ -758,7 +783,7 @@ func validateEmbeddingDefault(
 	current RegistrySnapshot,
 	defaults map[string]existingTarget,
 ) error {
-	target, ok := defaults[models.SurfaceEmbedding]
+	target, ok := defaults[models.SlotRetrieval]
 	if !ok {
 		return nil
 	}
@@ -772,7 +797,7 @@ func validateEmbeddingDefault(
 		}
 	}
 	if config == nil || !config.Enabled ||
-		!contains(config.Surfaces, models.SurfaceEmbedding) {
+		!contains(config.Slots, models.SlotRetrieval) {
 		return validation("embedding default must target an enabled pre-shipped row")
 	}
 	eligible, reason, err := embeddingEligibility(ctx, tx, *config)
@@ -854,17 +879,13 @@ func validateDraft(d gridDraft) error {
 	return nil
 }
 
-func validateConfigForSurfaces(d gridDraft, surfaces []string) error {
-	if err := models.ValidateThinking(surfaces, d.ThinkingLevels, d.DefaultThinking); err != nil {
+func validateConfigForSlots(d gridDraft, slots []string) error {
+	if err := models.ValidateThinking(slots, d.ThinkingLevels, d.DefaultThinking); err != nil {
 		return validation("draft %q: %v", d.ID, err)
 	}
-	for _, surface := range surfaces {
-		switch surface {
-		case models.SurfaceChat, models.SurfaceGenerate, models.SurfaceEditor,
-			models.SurfaceQuiz, models.SurfaceIngest:
-			if d.ContextWindowTokens <= 0 {
-				return validation("draft %q needs a positive context window", d.ID)
-			}
+	for _, slot := range slots {
+		if models.IsLLMSlot(slot) && d.ContextWindowTokens <= 0 {
+			return validation("draft %q needs a positive context window", d.ID)
 		}
 	}
 	return nil
@@ -875,14 +896,14 @@ func enforceEmbeddingUnchanged(
 	existing map[existingTarget][]string,
 ) error {
 	for _, c := range current.Configs {
-		if !c.Enabled || !contains(c.Surfaces, models.SurfaceEmbedding) {
+		if !c.Enabled || !contains(c.Slots, models.SlotRetrieval) {
 			continue
 		}
 		target := existingTarget{Ref: c.Ref(), Version: c.Version}
-		surfaces := existing[target]
-		if !contains(surfaces, models.SurfaceEmbedding) ||
-			!sameStringSet(surfaces, c.Surfaces) {
-			return validation("embedding rows cannot be removed, disabled, or reassigned")
+		slots := existing[target]
+		if !contains(slots, models.SlotRetrieval) ||
+			!sameStringSet(slots, c.Slots) {
+			return validation("retrieval rows cannot be removed, disabled, or reassigned")
 		}
 	}
 	return nil
@@ -910,9 +931,9 @@ func applyExistingTargets(
 			continue
 		}
 		key := existingTarget{Ref: c.Ref(), Version: c.Version}
-		surfaces, selected := targets[key]
+		slots, selected := targets[key]
 		if !selected {
-			if contains(c.Surfaces, models.SurfaceEmbedding) {
+			if contains(c.Slots, models.SlotRetrieval) {
 				continue
 			}
 			tag, err := tx.Exec(ctx, `
@@ -928,16 +949,16 @@ func applyExistingTargets(
 			continue
 		}
 		var defaultFor []string
-		for surface, target := range defaults {
+		for slot, target := range defaults {
 			if target == key {
-				defaultFor = append(defaultFor, surface)
+				defaultFor = append(defaultFor, slot)
 			}
 		}
 		sort.Strings(defaultFor)
 		if defaultFor == nil {
 			defaultFor = []string{}
 		}
-		if !sameStringSet(surfaces, c.Surfaces) {
+		if !sameStringSet(slots, c.Slots) {
 			var nextVersion int
 			if err := tx.QueryRow(ctx, `
 				SELECT COALESCE(max(version), 0) + 1
@@ -948,8 +969,8 @@ func applyExistingTargets(
 			if _, err := tx.Exec(ctx, insertModelConfigSQL,
 				nextVersion, c.ProviderName, c.ModelName, c.ProviderSlug,
 				c.ModelSlug, c.PlatformEnabled, c.ByokEnabled,
-				c.ContextWindowTokens, c.ThinkingLevels, c.DefaultThinking,
-				c.Params, surfaces,
+				c.ContextWindowTokens, orEmpty(c.ThinkingLevels), c.DefaultThinking,
+				c.Params, slots, orEmpty(c.Capabilities),
 				c.MicrosPerInputToken, c.MicrosPerCachedInputToken,
 				c.MicrosPerOutputToken, defaultFor, actorID); err != nil {
 				return disabled, inserted, err
@@ -995,29 +1016,29 @@ const insertModelConfigSQL = `
 		version, provider_name, model_name, provider_slug, model_slug,
 		platform_enabled, byok_enabled, context_window_tokens,
 		thinking_levels, default_thinking, params,
-		surfaces, micros_per_input_token,
+		slots, capabilities, micros_per_input_token,
 		micros_per_cached_input_token, micros_per_output_token,
 		enabled, is_default_for, created_by, updated_by
 	) VALUES (
-		$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,true,$16,$17,$17
+		$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,true,$17,$18,$18
 	)`
 
 func remapPrefsToDefaults(ctx context.Context, tx pgx.Tx) (int64, error) {
 	var remapped int64
-	for surface, columns := range userPreferenceColumns {
+	for slot, columns := range userPreferenceColumns {
 		var defaultRef models.Ref
 		err := tx.QueryRow(ctx, `
 			SELECT provider_slug, model_slug FROM model_configs
 			 WHERE enabled AND $1 = ANY(is_default_for)
-			 ORDER BY version DESC LIMIT 1`, surface).Scan(&defaultRef.ProviderSlug, &defaultRef.ModelSlug)
+			 ORDER BY version DESC LIMIT 1`, slot).Scan(&defaultRef.ProviderSlug, &defaultRef.ModelSlug)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return remapped, validation("surface %q needs exactly one default", surface)
+				return remapped, validation("slot %q needs exactly one default", slot)
 			}
 			return remapped, err
 		}
 		browserGuard := ""
-		if surface == models.SurfaceQuiz {
+		if slot == models.SlotQuiz {
 			browserGuard = fmt.Sprintf("AND u.%s <> 'browser'", columns.Provider)
 		}
 		tag, err := tx.Exec(ctx, fmt.Sprintf(`
@@ -1029,7 +1050,7 @@ func remapPrefsToDefaults(ctx context.Context, tx pgx.Tx) (int64, error) {
 			      WHERE c.provider_slug = u.%s
 			        AND c.model_slug = u.%s
 			        AND c.enabled
-			        AND $3 = ANY(c.surfaces)
+			        AND $3 = ANY(c.slots)
 			        AND (
 			          c.platform_enabled
 			          OR (
@@ -1044,7 +1065,7 @@ func remapPrefsToDefaults(ctx context.Context, tx pgx.Tx) (int64, error) {
 			   )`, columns.Provider, columns.Model,
 			columns.Provider, columns.Model, browserGuard,
 			columns.Provider, columns.Model),
-			defaultRef.ProviderSlug, defaultRef.ModelSlug, surface)
+			defaultRef.ProviderSlug, defaultRef.ModelSlug, slot)
 		if err != nil {
 			return remapped, err
 		}
@@ -1060,6 +1081,14 @@ func contains(values []string, value string) bool {
 		}
 	}
 	return false
+}
+
+// orEmpty keeps a nil list from reaching Postgres as NULL on a NOT NULL array.
+func orEmpty(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return values
 }
 
 func appendUnique(values []string, value string) []string {
@@ -1093,7 +1122,6 @@ func listEliteLLMProviders() EliteLLMProviderPage {
 		out.Providers = append(out.Providers, EliteLLMProvider{
 			Slug:        provider.Slug,
 			Name:        provider.Name,
-			Modes:       append([]string(nil), provider.Modes...),
 			BYOK:        provider.BYOK,
 			PlatformEnv: provider.PlatformEnv,
 			Thinking:    append([]string(nil), provider.Thinking...),
@@ -1106,17 +1134,17 @@ func validation(format string, args ...any) error {
 	return &ValidationError{Message: fmt.Sprintf(format, args...)}
 }
 
-func codedValidation(code, message, modelSlug, surface, reason string) error {
+func codedValidation(code, message, modelSlug, slot, reason string) error {
 	return &ValidationError{
 		Code:      code,
 		Message:   message,
 		ModelSlug: modelSlug,
-		Surface:   surface,
+		Slot:      slot,
 		Reason:    reason,
 	}
 }
 
-func bindEliteLLMDraft(draft *gridDraft, surfaces []string) error {
+func bindEliteLLMDraft(draft *gridDraft, slots []string) error {
 	catalog, err := models.LoadEliteLLMProviders()
 	if err != nil {
 		return err
@@ -1129,6 +1157,9 @@ func bindEliteLLMDraft(draft *gridDraft, surfaces []string) error {
 			"provider and model slug are required",
 			modelSlug, "", "provider or model slug is empty",
 		)
+	}
+	if slug != draft.ProviderSlug || modelSlug != draft.ModelSlug {
+		return validation("provider and model slugs must not have leading or trailing whitespace")
 	}
 	if !catalog.Known(slug) {
 		return codedValidation(
@@ -1159,41 +1190,44 @@ func bindEliteLLMDraft(draft *gridDraft, surfaces []string) error {
 			modelSlug, "", "provider byok is false",
 		)
 	}
-	for _, surface := range surfaces {
-		if err := validateProviderSurface(catalog, slug, modelSlug, surface); err != nil {
+	for _, slot := range slots {
+		if err := validateSlotAssignment(slug, modelSlug, draft.Capabilities, slot); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateProviderSurface(
-	catalog *models.EliteLLMProviders,
-	providerSlug, modelSlug, surface string,
-) error {
-	parsedSurface, known := models.ParseSurface(surface)
+// validateSlotAssignment is the single gate for putting a row into a slot:
+// the slot must exist and the row must carry every capability the slot
+// requires. It runs for drafts and for existing rows alike so a stale row
+// cannot keep a slot it no longer qualifies for.
+func validateSlotAssignment(providerSlug, modelSlug string, capabilities []string, slot string) error {
+	parsedSlot, known := models.ParseSlot(slot)
 	if !known {
 		return codedValidation(
-			"unsupported_surface",
-			fmt.Sprintf("surface %q is unknown", surface),
-			modelSlug, surface, "surface is not registered",
+			"unsupported_slot",
+			fmt.Sprintf("slot %q is unknown", slot),
+			modelSlug, slot, "slot is not registered",
 		)
 	}
-	if allowed, reason := catalog.AllowsSurface(providerSlug, surface); !allowed {
-		return codedValidation(
-			"unsupported_surface",
-			reason,
-			modelSlug, surface, reason,
-		)
+	certified := models.AgenticLoopCertified(providerSlug, modelSlug)
+	missing, ok := models.MissingCapability(parsedSlot, capabilities, certified)
+	if !ok {
+		return nil
 	}
-	if models.RequiresAgenticLoop(parsedSurface) && !models.AgenticLoopCertified(providerSlug, modelSlug) {
+	if missing == models.CapabilityAgenticLoop {
 		return codedValidation(
 			"agentic_loop_not_certified",
-			fmt.Sprintf("%s is not certified for the %s agentic loop", modelSlug, surface),
-			modelSlug, surface, "two-turn streaming replay cassette is missing",
+			fmt.Sprintf("%s is not certified for the %s agentic loop", modelSlug, slot),
+			modelSlug, slot, "two-turn streaming replay cassette is missing",
 		)
 	}
-	return nil
+	return codedValidation(
+		"capability_missing",
+		fmt.Sprintf("%s lacks the %s capability required by the %s slot", modelSlug, missing, slot),
+		modelSlug, slot, fmt.Sprintf("row capabilities omit %s", missing),
+	)
 }
 
 func IsValidation(err error) bool {

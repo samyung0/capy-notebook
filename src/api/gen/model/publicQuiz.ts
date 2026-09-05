@@ -9,6 +9,7 @@ import type { PublicQuizQuestionsItem } from './publicQuizQuestionsItem.ts';
 
 export interface PublicQuiz {
   author: string;
+  canEdit: boolean;
   chapters: string[];
   clones: number;
   createdAt: string;

@@ -64,7 +64,7 @@ type (
 	Chapter            = store.Chapter
 	File               = store.File
 	Attempt            = store.Attempt
-	Deck               = store.Deck
+	FlashcardSet       = store.FlashcardSet
 	Flashcard          = store.Flashcard
 	Label              = store.Label
 	Event              = store.Event
@@ -109,8 +109,8 @@ type ModelsResponse struct {
 	SelectedThinking string        `json:"selectedThinking"`
 }
 
-// SetModelPrefsReq patches one or more surface preferences. Omitted fields are
-// left as they are, so a picker on one surface cannot reset another.
+// SetModelPrefsReq patches one or more slot preferences. Omitted fields are
+// left as they are, so a picker on one slot cannot reset another.
 type SetModelPrefsReq struct {
 	ChatModel        *models.Ref `json:"chatModel,omitempty"`
 	GenerateModel    *models.Ref `json:"generateModel,omitempty"`
@@ -215,7 +215,7 @@ type Material struct {
 }
 
 // MaterialUpdateResult is the lightweight acknowledgement returned by
-// PATCH /api/materials/{id}. The client already owns the content it sent, so
+// PATCH /api/materials/{id}/metadata. The client already owns the content it sent, so
 // echoing and decoding the complete document again only adds response bytes
 // and main-thread JSON work for large notes.
 type MaterialUpdateResult struct {
@@ -395,15 +395,18 @@ type Quiz struct {
 	CreatedAt     time.Time        `json:"createdAt"`
 	Privacy       store.Privacy    `json:"privacy"`
 	TimeLimitMin  *int             `json:"timeLimitMin,omitempty"`
-	// IsOwner is request-scoped: false for link/public shared reads.
+	// IsOwner and CanEdit are request-scoped. Explicit workspace editors can
+	// edit while link/public visitors cannot.
 	IsOwner bool `json:"isOwner"`
+	CanEdit bool `json:"canEdit"`
 }
 
 func FromQuiz(q store.Quiz) Quiz {
 	out := Quiz{
 		ID: q.ID, Name: q.Name, WorkspaceID: q.WorkspaceID, WorkspaceName: q.WorkspaceName,
 		Chapters: q.Chapters, Questions: decodeQuestions(q.Questions), CreatedAt: q.CreatedAt,
-		Privacy: q.Privacy, TimeLimitMin: q.TimeLimitMin, IsOwner: true,
+		Privacy: q.Privacy, TimeLimitMin: q.TimeLimitMin,
+		IsOwner: q.IsOwner, CanEdit: q.CanEdit,
 	}
 	if out.Chapters == nil {
 		out.Chapters = []string{}
@@ -448,22 +451,23 @@ func FromPublicQuizzes(qs []store.PublicQuiz) []PublicQuiz {
 	for i, q := range qs {
 		pq := PublicQuiz{Quiz: FromQuiz(q.Quiz), Author: q.Author, Clones: q.Clones}
 		pq.IsOwner = false
+		pq.CanEdit = false
 		out[i] = pq
 	}
 	return out
 }
 
-// PublicDeck is a flashcard deck shared on Explore.
-type PublicDeck struct {
-	store.Deck
+// PublicFlashcardSet is a flashcard flashcardSet shared on Explore.
+type PublicFlashcardSet struct {
+	store.FlashcardSet
 	Author string `json:"author"`
 	Clones int    `json:"clones"`
 }
 
-func FromPublicDecks(ds []store.PublicDeck) []PublicDeck {
-	out := make([]PublicDeck, len(ds))
+func FromPublicFlashcardSets(ds []store.PublicFlashcardSet) []PublicFlashcardSet {
+	out := make([]PublicFlashcardSet, len(ds))
 	for i, d := range ds {
-		out[i] = PublicDeck{Deck: d.Deck, Author: d.Author, Clones: d.Clones}
+		out[i] = PublicFlashcardSet{FlashcardSet: d.FlashcardSet, Author: d.Author, Clones: d.Clones}
 	}
 	return out
 }
@@ -489,12 +493,12 @@ type SubscriptionBlocker struct {
 // DeletionPreflight is everything the danger zone needs to state consequences
 // before the user commits.
 type DeletionPreflight struct {
-	CanDelete bool `json:"canDelete"`
-	// WorkspacesNeedingTransfer have other live members. Deleting them would
-	// take somebody else's work with them, so each has to be transferred or
-	// emptied first.
+	CanDelete           bool  `json:"canDelete"`
+	LifecycleGeneration int64 `json:"lifecycleGeneration"`
+	// WorkspacesNeedingTransfer is retained as an empty compatibility field.
+	// Owned workspaces are destroyed regardless of collaborators.
 	WorkspacesNeedingTransfer []Workspace `json:"workspacesNeedingTransfer"`
-	// WorkspacesToDestroy are solely the user's and will be destroyed.
+	// WorkspacesToDestroy are all workspaces owned by the user.
 	WorkspacesToDestroy []Workspace          `json:"workspacesToDestroy"`
 	Subscription        *SubscriptionBlocker `json:"subscription,omitempty"`
 	StorageUsedBytes    int64                `json:"storageUsedBytes"`

@@ -31,10 +31,6 @@ class CapacityWait(Exception):
     """
 
 
-class ExternalWait(Exception):
-    """An asynchronous provider owns the work; yield without spending an attempt."""
-
-
 @dataclass(frozen=True)
 class JobPolicy:
     max_attempts: int
@@ -44,6 +40,15 @@ class JobPolicy:
 
 
 POLICIES: dict[str, JobPolicy] = {
+    "import": JobPolicy(
+        # Provider 429/5xx and B2 hiccups are cheap to retry; every attempt asks
+        # the gateway for a fresh download grant. Exhausting the budget fails
+        # the import and releases its reservation.
+        max_attempts=4,
+        backoff_base_s=30,
+        timeout_s=cfg.import_job_timeout,
+        lease_s=180,
+    ),
     "parse": JobPolicy(
         # One initial attempt and one retry. Confirmed hard parser resource
         # failures are TerminalError and do not spend the second attempt.
@@ -90,7 +95,7 @@ def backoff_s(policy: JobPolicy, attempts: int) -> int:
 
 
 def is_retryable(exc: BaseException) -> bool:
-    if isinstance(exc, (TerminalError, CapacityWait, ExternalWait)):
+    if isinstance(exc, (TerminalError, CapacityWait)):
         return False
     if isinstance(exc, RetryableError):
         return True

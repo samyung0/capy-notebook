@@ -27,6 +27,29 @@ def test_openai_nested_cached_tokens_are_discounted():
     assert usage.cached_read_tokens == 20
 
 
+def test_routed_zai_cache_split_prices_against_the_glm_row():
+    # The catalog slug stays zai; DeepInfra serves and bills the call.
+    usage = extract_usage(
+        {
+            "prompt_tokens": 172,
+            "completion_tokens": 53,
+            "prompt_tokens_details": {"cached_tokens": 128},
+        },
+        provider="zai",
+    )
+    assert usage.cached_read_tokens == 128
+    assert usage.anomaly == ""
+
+
+def test_zai_cache_over_reported_input_still_fails_closed():
+    usage = extract_usage(
+        {"prompt_tokens": 100, "prompt_tokens_details": {"cached_tokens": 400}},
+        provider="zai",
+    )
+    assert usage.cached_read_tokens == 0
+    assert usage.anomaly == "cached_gt_input"
+
+
 def test_missing_or_invalid_cache_charges_full_input():
     missing = extract_usage(
         {"prompt_tokens": 50, "completion_tokens": 2}, provider="deepseek"

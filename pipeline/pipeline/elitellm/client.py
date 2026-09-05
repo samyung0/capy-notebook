@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from typing import Any
@@ -17,7 +18,6 @@ ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 DEEPSEEK_CHAT_URL = "https://api.deepseek.com/chat/completions"
-GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 DEEPINFRA_CHAT_URL = "https://api.deepinfra.com/v1/openai/chat/completions"
 DEEPINFRA_EMBED_URL = "https://api.deepinfra.com/v1/openai/embeddings"
 
@@ -30,8 +30,6 @@ CONTINUITY_KEYS = (
     "reasoning_content",
     "encrypted_content",
     "reasoning",
-    "thought_signature",
-    "thought_signatures",
     "provider_specific_fields",
 )
 
@@ -144,14 +142,6 @@ def transport_model_slug(spec: ModelConfig) -> str:
     if _is_routed_zai_glm(spec):
         return DEEPINFRA_GLM_FLASH_MODEL
     return spec.model_slug
-
-
-def gemini_thinking_config(model_slug: str, thinking: str) -> dict[str, str | int]:
-    if model_slug.startswith("gemini-2.5-"):
-        budgets = {"low": 1024, "mid": 8192, "high": 24576, "max": 24576}
-        return {"thinkingBudget": budgets.get(thinking, 0)}
-    level = "minimal" if thinking in ("", "instant") else thinking
-    return {"thinkingLevel": "medium" if level == "mid" else level}
 
 
 def anthropic_endpoint(spec: ModelConfig) -> tuple[str, dict[str, str]]:
@@ -442,22 +432,6 @@ def context_components(
         schemas = list(body.get("tools") or [])
         return body.get("system") or "", body.get("messages") or [], schemas
 
-    if spec.provider_slug == "gemini":
-        system = ""
-        conversation: list[dict[str, Any]] = []
-        for message in messages:
-            role = message.get("role")
-            if role == "system":
-                system = str(message.get("content") or "")
-                continue
-            conversation.append(
-                {
-                    "role": "user" if role == "user" else "model",
-                    "parts": _gemini_parts(message.get("content")),
-                }
-            )
-        return system, conversation, []
-
     system = [message for message in messages if message.get("role") == "system"]
     conversation = [message for message in messages if message.get("role") != "system"]
     schemas = list(tools or [])
@@ -495,8 +469,10 @@ async def _post_json(
     headers: dict[str, str],
     body: dict[str, Any],
 ) -> dict[str, Any]:
-    async with httpx.AsyncClient(timeout=_timeout()) as client:
-        response = await client.post(url, headers=headers, json=jsonable(body))
+    timeout = _timeout()
+    async with asyncio.timeout(timeout):
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(url, headers=headers, json=jsonable(body))
     if response.status_code >= 400:
         raise ProviderError(
             response.text or f"provider HTTP {response.status_code}",
@@ -510,25 +486,29 @@ async def _stream_sse(
     headers: dict[str, str],
     body: dict[str, Any],
 ) -> AsyncIterator[dict[str, Any]]:
-    async with (
-        httpx.AsyncClient(timeout=_timeout()) as client,
-        client.stream("POST", url, headers=headers, json=jsonable(body)) as response,
-    ):
-        if response.status_code >= 400:
-            text = await response.aread()
-            raise ProviderError(
-                text.decode() if text else f"provider HTTP {response.status_code}",
-                status_code=response.status_code,
-            )
-        async for line in response.aiter_lines():
-            if not line.startswith("data:"):
-                continue
-            payload = line[5:].strip()
-            if payload == "[DONE]":
-                return
-            if not payload:
-                continue
-            yield json.loads(payload)
+    timeout = _timeout()
+    async with asyncio.timeout(timeout):
+        async with (
+            httpx.AsyncClient(timeout=timeout) as client,
+            client.stream(
+                "POST", url, headers=headers, json=jsonable(body)
+            ) as response,
+        ):
+            if response.status_code >= 400:
+                text = await response.aread()
+                raise ProviderError(
+                    text.decode() if text else f"provider HTTP {response.status_code}",
+                    status_code=response.status_code,
+                )
+            async for line in response.aiter_lines():
+                if not line.startswith("data:"):
+                    continue
+                payload = line[5:].strip()
+                if payload == "[DONE]":
+                    return
+                if not payload:
+                    continue
+                yield json.loads(payload)
 
 
 def _bearer(key: str) -> dict[str, str]:
@@ -618,8 +598,6 @@ async def complete(
             tool_choice=tool_choice,
         )
         return _as_obj(await _post_json(DEEPINFRA_CHAT_URL, _bearer(key), body))
-    if spec.provider_slug == "gemini":
-        return _as_obj(await _gemini_complete(spec, messages, thinking, max_tokens))
     raise RegistryError(f"elitellm has no chat route for {spec.provider_slug}")
 
 
@@ -750,82 +728,6 @@ def _thinking_for_call(spec: ModelConfig, reasoning: bool | None) -> str:
             return "low"
         return ""
     return spec.resolve_thinking(_request_thinking())
-
-
-def _gemini_parts(content: Any) -> list[dict[str, Any]]:
-    if isinstance(content, str):
-        return [{"text": content}] if content else []
-    if not isinstance(content, list):
-        return [{"text": str(content or "")}]
-    parts: list[dict[str, Any]] = []
-    for item in content:
-        if not isinstance(item, dict):
-            continue
-        kind = item.get("type")
-        if kind == "text":
-            parts.append({"text": str(item.get("text") or "")})
-            continue
-        if kind == "image_url":
-            url = str((item.get("image_url") or {}).get("url") or "")
-            if url.startswith("data:"):
-                header, _, payload = url.partition(",")
-                mime = "image/png"
-                if header.startswith("data:") and ";base64" in header:
-                    mime = header[5:].split(";", 1)[0] or mime
-                parts.append({"inline_data": {"mime_type": mime, "data": payload}})
-            elif url:
-                parts.append({"file_data": {"file_uri": url}})
-    return parts or [{"text": ""}]
-
-
-async def _gemini_complete(
-    spec: ModelConfig,
-    messages: list[dict[str, Any]],
-    thinking: str,
-    max_tokens: int | None,
-) -> dict[str, Any]:
-    key = resolve_api_key(spec)
-    url = f"{GEMINI_BASE}/{spec.model_slug}:generateContent"
-    contents = []
-    system = ""
-    for message in messages:
-        role = message.get("role")
-        if role == "system":
-            system = str(message.get("content") or "")
-            continue
-        contents.append(
-            {
-                "role": "user" if role == "user" else "model",
-                "parts": _gemini_parts(message.get("content")),
-            }
-        )
-    body: dict[str, Any] = {"contents": contents}
-    if system:
-        body["systemInstruction"] = {"parts": [{"text": system}]}
-    config: dict[str, Any] = {}
-    if max_tokens is not None:
-        config["maxOutputTokens"] = max_tokens
-    config["thinkingConfig"] = gemini_thinking_config(spec.model_slug, thinking)
-    if config:
-        body["generationConfig"] = config
-    async with httpx.AsyncClient(timeout=_timeout()) as client:
-        response = await client.post(url, params={"key": key}, json=body)
-    if response.status_code >= 400:
-        raise ProviderError(response.text, status_code=response.status_code)
-    raw = response.json()
-    text = ""
-    for candidate in raw.get("candidates") or []:
-        for part in (candidate.get("content") or {}).get("parts") or []:
-            if part.get("text"):
-                text += part["text"]
-    usage = raw.get("usageMetadata") or {}
-    return {
-        "choices": [{"message": {"role": "assistant", "content": text}}],
-        "usage": {
-            "prompt_tokens": usage.get("promptTokenCount") or 0,
-            "completion_tokens": usage.get("candidatesTokenCount") or 0,
-        },
-    }
 
 
 def _anthropic_as_chat(raw: dict[str, Any]) -> Any:

@@ -35,13 +35,13 @@ func openRegistry(t *testing.T) (*pgxpool.Pool, *Registry) {
 	return pool, reg
 }
 
-func insertLLM(t *testing.T, pool *pgxpool.Pool, version int, slug string, surfaces, defaults string) Ref {
+func insertLLM(t *testing.T, pool *pgxpool.Pool, version int, slug string, slots, defaults string) Ref {
 	t.Helper()
 	_, err := pool.Exec(context.Background(), `
 		INSERT INTO model_configs (
 			version, provider_name, model_name, provider_slug, model_slug,
 			platform_enabled, byok_enabled, context_window_tokens,
-			thinking_levels, default_thinking, params, surfaces,
+			thinking_levels, default_thinking, params, slots,
 			micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
 			enabled, is_default_for
 		) VALUES (
@@ -49,7 +49,7 @@ func insertLLM(t *testing.T, pool *pgxpool.Pool, version int, slug string, surfa
 			true, false, 100000,
 			ARRAY['instant','low','mid','high','max']::text[], 'instant',
 			$3::jsonb, $4::text[], 250, 1000, 250, true, $5::text[]
-		)`, version, slug, testLLMParams, surfaces, defaults)
+		)`, version, slug, testLLMParams, slots, defaults)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestGetLoadsPinnedVersionOnMissAndNeverFallsBack(t *testing.T) {
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing pin must be an error, not a default, got %v", err)
 	}
-	def, err := reg.Default(ctx, SurfaceChat)
+	def, err := reg.Default(ctx, SlotChat)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestOldVersionStaysResolvableAfterNewerDefault(t *testing.T) {
 		INSERT INTO model_configs (
 			version, provider_name, model_name, provider_slug, model_slug,
 			platform_enabled, byok_enabled, context_window_tokens,
-			thinking_levels, default_thinking, params, surfaces,
+			thinking_levels, default_thinking, params, slots,
 			micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
 			enabled, is_default_for
 		) VALUES (2, 'DeepSeek', 'Flash v2', 'deepseek', 'deepseek-v4-flash-vision-exp',
@@ -133,7 +133,7 @@ func TestOldVersionStaysResolvableAfterNewerDefault(t *testing.T) {
 func TestEmbeddingDimRequiresADeclaredWidth(t *testing.T) {
 	_, reg := openRegistry(t)
 	ctx := context.Background()
-	embed, err := reg.Default(ctx, SurfaceEmbedding)
+	embed, err := reg.Default(ctx, SlotRetrieval)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestEmbeddingDimRequiresADeclaredWidth(t *testing.T) {
 		t.Fatalf("dim %d has no vector table", dim)
 	}
 
-	chat, err := reg.Default(ctx, SurfaceChat)
+	chat, err := reg.Default(ctx, SlotChat)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,7 @@ func TestEmbeddingRowsAreFrozen(t *testing.T) {
 	}
 
 	_, err = pool.Exec(ctx, `
-		UPDATE model_configs SET surfaces=ARRAY['chat']
+		UPDATE model_configs SET slots=ARRAY['chat']
 		 WHERE provider_slug=$1 AND model_slug=$2 AND version=1`, embedRef.ProviderSlug, embedRef.ModelSlug)
 	if err == nil {
 		t.Fatal("stripped embedding from the seeded row")
@@ -196,14 +196,14 @@ func TestEmbeddingRowsAreFrozen(t *testing.T) {
 		INSERT INTO model_configs (
 			version, provider_name, model_name, provider_slug, model_slug,
 			platform_enabled, byok_enabled, context_window_tokens,
-			thinking_levels, default_thinking, params, surfaces,
+			thinking_levels, default_thinking, params, slots,
 			micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
 			enabled, is_default_for
 		) VALUES (
 			1, 'Ghost', 'Ghost', 'embedtest', 'ghost',
 			true, false, 0, ARRAY[]::text[], '',
 			'{"dimensions": 2560, "vector_table": "rag_chunk_vectors_2560"}'::jsonb,
-			ARRAY['embedding'], 50, 50, 0, false,
+			ARRAY['retrieval'], 50, 50, 0, false,
 			ARRAY[]::text[])`)
 	if err == nil {
 		t.Fatal("inserted a disabled embedding row")
@@ -216,7 +216,7 @@ func TestEmbeddingRowsAreFrozen(t *testing.T) {
 	})
 	_, err = pool.Exec(ctx, `
 		UPDATE model_configs
-		   SET surfaces=ARRAY['chat','embedding'],
+		   SET slots=ARRAY['chat','retrieval'],
 		       params='{"dimensions": 2560}'::jsonb
 		 WHERE provider_slug=$1 AND model_slug=$2`, ref.ProviderSlug, ref.ModelSlug)
 	if err == nil {
@@ -243,13 +243,13 @@ func TestEmbeddingRowsAreFrozen(t *testing.T) {
 		INSERT INTO model_configs (
 			version, provider_name, model_name, provider_slug, model_slug,
 			platform_enabled, byok_enabled, context_window_tokens,
-			thinking_levels, default_thinking, params, surfaces,
+			thinking_levels, default_thinking, params, slots,
 			micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
 			enabled, is_default_for
 		) VALUES (1, 'Lock', 'Embed', 'embedtest', $1,
 			true, false, 0, ARRAY[]::text[], '',
 			'{"dimensions": 2560, "vector_table": "rag_chunk_vectors_other_1"}'::jsonb,
-			ARRAY['embedding'], 50, 50, 0, true,
+			ARRAY['retrieval'], 50, 50, 0, true,
 			ARRAY[]::text[])`, embedSlug)
 	if err != nil {
 		t.Fatalf("a new same-width embedding row must insert: %v", err)
@@ -271,20 +271,20 @@ func TestEmbeddingRowsAreFrozen(t *testing.T) {
 		t.Fatalf("model_name must stay writable on embedding rows: %v", err)
 	}
 	_, err = tx.Exec(ctx, `
-		UPDATE model_configs SET is_default_for=ARRAY['embedding'] WHERE provider_slug='embedtest' AND model_slug=$1`, embedSlug)
+		UPDATE model_configs SET is_default_for=ARRAY['retrieval'] WHERE provider_slug='embedtest' AND model_slug=$1`, embedSlug)
 	if err == nil {
 		t.Fatal("two embedding defaults")
 	}
 }
 
-func TestOneDefaultPerSurface(t *testing.T) {
+func TestOneDefaultPerSlot(t *testing.T) {
 	pool, _ := openRegistry(t)
 	slug := fmt.Sprintf("dup-default-%d", time.Now().UnixNano())
 	_, err := pool.Exec(context.Background(), `
 		INSERT INTO model_configs (
 			version, provider_name, model_name, provider_slug, model_slug,
 			platform_enabled, byok_enabled, context_window_tokens,
-			thinking_levels, default_thinking, params, surfaces,
+			thinking_levels, default_thinking, params, slots,
 			micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
 			enabled, is_default_for
 		) VALUES (1, 'Dup', 'Dup', 'deepseek', $1,
@@ -299,15 +299,15 @@ func TestOneDefaultPerSurface(t *testing.T) {
 func TestResolveUserRequiresAnEnabledPreference(t *testing.T) {
 	_, reg := openRegistry(t)
 	ctx := context.Background()
-	_, err := reg.ResolveUser(ctx, Ref{}, SurfaceChat)
+	_, err := reg.ResolveUser(ctx, Ref{}, SlotChat)
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("empty pref: %v", err)
 	}
-	_, err = reg.ResolveUser(ctx, Ref{ProviderSlug: "deepseek", ModelSlug: "not-a-model"}, SurfaceChat)
+	_, err = reg.ResolveUser(ctx, Ref{ProviderSlug: "deepseek", ModelSlug: "not-a-model"}, SlotChat)
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("unknown pref: %v", err)
 	}
-	got, err := reg.ResolveUser(ctx, flashRef, SurfaceChat)
+	got, err := reg.ResolveUser(ctx, flashRef, SlotChat)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,22 +359,22 @@ func TestResolveThinking(t *testing.T) {
 }
 
 func TestValidateThinking(t *testing.T) {
-	if err := ValidateThinking([]string{SurfaceChat}, []string{"instant", "high"}, "instant"); err != nil {
+	if err := ValidateThinking([]string{SlotChat}, []string{"instant", "high"}, "instant"); err != nil {
 		t.Fatal(err)
 	}
-	if err := ValidateThinking([]string{SurfaceEmbedding}, nil, ""); err != nil {
+	if err := ValidateThinking([]string{SlotRetrieval}, nil, ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := ValidateThinking([]string{SurfaceChat}, nil, ""); err == nil {
+	if err := ValidateThinking([]string{SlotChat}, nil, ""); err == nil {
 		t.Fatal("llm row without thinking")
 	}
-	if err := ValidateThinking([]string{SurfaceChat}, []string{"instant", "high"}, "mid"); err == nil {
+	if err := ValidateThinking([]string{SlotChat}, []string{"instant", "high"}, "mid"); err == nil {
 		t.Fatal("default not in levels")
 	}
-	if err := ValidateThinking([]string{SurfaceVision}, []string{"instant"}, "instant"); err == nil {
+	if err := ValidateThinking([]string{SlotCaptioning}, []string{"instant"}, "instant"); err == nil {
 		t.Fatal("vision row with thinking")
 	}
-	if err := ValidateThinking([]string{SurfaceEditor}, []string{"low", "high"}, "high"); err == nil {
+	if err := ValidateThinking([]string{SlotEditor}, []string{"low", "high"}, "high"); err == nil {
 		t.Fatal("editor row without instant")
 	}
 }
@@ -387,7 +387,7 @@ func TestCatalogRefusesBrokenThinking(t *testing.T) {
 		INSERT INTO model_configs (
 			version, provider_name, model_name, provider_slug, model_slug,
 			platform_enabled, byok_enabled, context_window_tokens,
-			thinking_levels, default_thinking, params, surfaces,
+			thinking_levels, default_thinking, params, slots,
 			micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
 			enabled, is_default_for
 		) VALUES (1, 'Bad', 'Bad', 'deepseek', $1,
@@ -400,7 +400,7 @@ func TestCatalogRefusesBrokenThinking(t *testing.T) {
 		INSERT INTO model_configs (
 			version, provider_name, model_name, provider_slug, model_slug,
 			platform_enabled, byok_enabled, context_window_tokens,
-			thinking_levels, default_thinking, params, surfaces,
+			thinking_levels, default_thinking, params, slots,
 			micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
 			enabled, is_default_for
 		) VALUES (1, 'Bad', 'Default', 'deepseek', $1,
@@ -413,7 +413,7 @@ func TestCatalogRefusesBrokenThinking(t *testing.T) {
 		INSERT INTO model_configs (
 			version, provider_name, model_name, provider_slug, model_slug,
 			platform_enabled, byok_enabled, context_window_tokens,
-			thinking_levels, default_thinking, params, surfaces,
+			thinking_levels, default_thinking, params, slots,
 			micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
 			enabled, is_default_for
 		) VALUES (1, 'Bad', 'Editor', 'deepseek', $1,
@@ -426,7 +426,7 @@ func TestCatalogRefusesBrokenThinking(t *testing.T) {
 		INSERT INTO model_configs (
 			version, provider_name, model_name, provider_slug, model_slug,
 			platform_enabled, byok_enabled,
-			thinking_levels, default_thinking, params, surfaces,
+			thinking_levels, default_thinking, params, slots,
 			micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
 			enabled, is_default_for
 		) VALUES (1, 'Bad', 'Window', 'deepseek', $1,
@@ -449,31 +449,34 @@ func TestSeedOmitsAnthropicModels(t *testing.T) {
 	}
 }
 
-func TestSeededGLMKeepsZAIIdentityAndMaxChatDefault(t *testing.T) {
+func TestSeededGLMKeepsZAIIdentityAndServesCertifiedChat(t *testing.T) {
 	pool, _ := openRegistry(t)
 	var (
 		platformEnabled, byokEnabled bool
 		contextWindow                int
-		thinkingLevels, surfaces     []string
+		thinkingLevels, slots        []string
 		defaultThinking              string
 	)
 	if err := pool.QueryRow(context.Background(), `
 		SELECT platform_enabled, byok_enabled, context_window_tokens,
-		       thinking_levels, default_thinking, surfaces
+		       thinking_levels, default_thinking, slots
 		  FROM model_configs
 		 WHERE provider_slug='zai' AND model_slug='glm-5.3-flash' AND version=1`).Scan(
 		&platformEnabled, &byokEnabled, &contextWindow,
-		&thinkingLevels, &defaultThinking, &surfaces,
+		&thinkingLevels, &defaultThinking, &slots,
 	); err != nil {
 		t.Fatal(err)
 	}
 	if !platformEnabled || byokEnabled || contextWindow != 1048576 {
 		t.Fatalf("routed GLM auth/window = %v/%v/%d", platformEnabled, byokEnabled, contextWindow)
 	}
-	if !slices.Equal(thinkingLevels, []string{"low", "high", "max"}) || defaultThinking != "max" {
+	if !slices.Equal(thinkingLevels, []string{"low", "high", "max"}) || defaultThinking != "low" {
 		t.Fatalf("routed GLM thinking = %v default %q", thinkingLevels, defaultThinking)
 	}
-	if !slices.Equal(surfaces, []string{"chat", "vision"}) {
-		t.Fatalf("routed GLM surfaces = %v", surfaces)
+	if !AgenticLoopCertified("zai", "glm-5.3-flash") {
+		t.Fatal("seeded GLM chat row needs its agentic-loop certificate")
+	}
+	if !slices.Equal(slots, []string{"chat", "captioning"}) {
+		t.Fatalf("routed GLM slots = %v", slots)
 	}
 }

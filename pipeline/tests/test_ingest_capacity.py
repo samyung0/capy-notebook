@@ -10,6 +10,10 @@ def test_role_lock_is_shared_and_released(tmp_path, monkeypatch):
 
     parse = capacity.try_acquire("parse")
     assert parse is not None
+    imported = capacity.try_acquire("import")
+    assert imported is not None
+    assert capacity.try_acquire("import") is None
+    imported.release()
     parse.release()
     first.release()
 

@@ -105,7 +105,7 @@ function toastShareError(err: unknown) {
 }
 
 /** Generic share dialog: pick a visibility (private / link / public) and copy
- * the share link. Used by workspaces, quizzes and flashcard decks. */
+ * the share link. Used by workspaces, quizzes, and standalone flashcards. */
 export function ShareDialog({
   open,
   onClose,

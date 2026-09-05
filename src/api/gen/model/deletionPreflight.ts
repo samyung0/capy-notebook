@@ -12,6 +12,7 @@ export interface DeletionPreflight {
   readonly $schema?: string;
   canDelete: boolean;
   graceDays: number;
+  lifecycleGeneration: number;
   storageUsedBytes: number;
   subscription?: SubscriptionBlocker;
   /** @nullable */

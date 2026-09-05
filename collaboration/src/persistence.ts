@@ -1,6 +1,12 @@
 import { slateNodesToInsertDelta, yTextToSlateElement } from '@slate-yjs/core';
 import type { Pool, PoolClient } from 'pg';
 import * as Y from 'yjs';
+import type { CollaborationAccess } from './auth.js';
+import {
+  type DocumentContributor,
+  documentContributors,
+  removeDocumentContributors,
+} from './contributors.js';
 import {
   MATERIAL_DOCUMENT_LIMITS,
   MaterialDocumentLimitError,
@@ -10,8 +16,10 @@ import {
   measureMaterialValue,
   recoversMaterialLimits,
 } from './limits.js';
+import { assertCanonicalMaterialValue } from './materialDocument.js';
 
 const CONTENT_ROOT = 'content';
+const CONTRIBUTORS_ROOT = '__evo_pending_contributors';
 const ROOM_PATTERN = /^material:([A-Za-z0-9_-]+):schema:(\d+)$/;
 // Measuring a document means cloning it and serializing it to Plate JSON, so
 // doing it per inbound update costs O(document) per keystroke. Amortize it over
@@ -23,6 +31,7 @@ const DEPTH_HEADROOM = 4;
 
 export interface StoredDocument {
   content: { schemaVersion: 1; value: unknown[] };
+  contributors: DocumentContributor[];
   limitCode: MaterialLimitCode | null;
   metrics: MaterialDocumentMetrics;
   state: Uint8Array;
@@ -78,11 +87,268 @@ async function lockMaterial(client: PoolClient, materialId: string) {
   ]);
 }
 
+type LiveAccessRow = {
+  actor_deleted_at: Date | null;
+  actor_deletion_requested_at: Date | null;
+  actor_suspended_at: Date | null;
+  material_owner_id: string;
+  material_privacy: string;
+  member_role: string;
+  owner_deleted_at: Date | null;
+  owner_deletion_requested_at: Date | null;
+  owner_over_quota: boolean;
+  owner_suspended_at: Date | null;
+  share_role: string | null;
+  workspace_id: string | null;
+  workspace_owner_id: string | null;
+  workspace_privacy: string | null;
+};
+
+type Queryable = Pick<Pool, 'query'>;
+
+const roleRank: Record<string, number> = {
+  commenter: 2,
+  editor: 3,
+  owner: 4,
+  viewer: 1,
+};
+
+function paidLapseOverQuotaSQL(userAlias: 'owner' | 'u'): string {
+  return `EXISTS(SELECT 1 FROM user_subscriptions paid_sub
+        WHERE paid_sub.user_id=${userAlias}.id
+          AND paid_sub.plan_tier='pro')
+      AND NOT EXISTS(SELECT 1 FROM user_subscriptions live_sub
+        WHERE live_sub.user_id=${userAlias}.id
+          AND live_sub.plan_tier='pro'
+          AND live_sub.status IN ('active','trialing','past_due')
+          AND (live_sub.current_period_end IS NULL
+            OR live_sub.current_period_end > now()))
+      AND (EXISTS(SELECT 1 FROM user_subscriptions expired_sub
+          WHERE expired_sub.user_id=${userAlias}.id
+            AND expired_sub.plan_tier='pro'
+            AND expired_sub.status IN ('active','trialing','past_due')
+            AND expired_sub.current_period_end <= now())
+        OR EXISTS(SELECT 1 FROM user_subscriptions closed_sub
+          WHERE closed_sub.user_id=${userAlias}.id
+            AND closed_sub.plan_tier='pro'
+            AND closed_sub.status NOT IN ('active','trialing','past_due')))
+      AND COALESCE(storage.used_bytes, 0)
+        + COALESCE(storage.reserved_bytes, 0)
+        + COALESCE((SELECT sum(delta_bytes) FROM user_storage_deltas delta
+          WHERE delta.user_id=${userAlias}.id), 0)
+        > (SELECT storage_limit_bytes FROM plan_limits WHERE plan_tier='free')`;
+}
+
+export class CollaborationAuthorizationError extends Error {}
+
+function denyCollaboration(message: string): never {
+  throw new CollaborationAuthorizationError(message);
+}
+
+async function liveCollaborationAccess(
+  queryable: Queryable,
+  materialId: string,
+  actorUserId: string
+): Promise<CollaborationAccess> {
+  const result = await queryable.query<LiveAccessRow>(
+    `SELECT m.owner_user_id AS material_owner_id,
+      m.privacy AS material_privacy, m.workspace_id,
+      owner.deleted_at AS owner_deleted_at,
+      owner.deletion_requested_at AS owner_deletion_requested_at,
+      owner.suspended_at AS owner_suspended_at,
+      actor.deleted_at AS actor_deleted_at,
+      actor.deletion_requested_at AS actor_deletion_requested_at,
+      actor.suspended_at AS actor_suspended_at,
+      w.user_id AS workspace_owner_id, w.privacy AS workspace_privacy,
+      w.share_role, COALESCE(wm.role, '') AS member_role,
+      ${paidLapseOverQuotaSQL('owner')} AS owner_over_quota
+     FROM materials m
+     JOIN users owner ON owner.id=m.owner_user_id
+     JOIN users actor ON actor.id=$2
+     LEFT JOIN workspaces w ON w.id=m.workspace_id
+     LEFT JOIN workspace_members wm
+       ON wm.workspace_id=w.id AND wm.user_id=$2
+     LEFT JOIN user_storage storage ON storage.user_id=owner.id
+     WHERE m.id=$1`,
+    [materialId, actorUserId]
+  );
+  if (result.rowCount === 0) denyCollaboration('material not found');
+  const row = result.rows[0];
+  if (row.owner_deleted_at || row.owner_deletion_requested_at) {
+    denyCollaboration('material not found');
+  }
+  if (
+    row.actor_deleted_at ||
+    row.actor_deletion_requested_at ||
+    row.actor_suspended_at
+  ) {
+    denyCollaboration('actor account is locked');
+  }
+
+  let effectiveRole = '';
+  if (
+    actorUserId === row.material_owner_id ||
+    actorUserId === row.workspace_owner_id
+  ) {
+    effectiveRole = 'owner';
+  } else {
+    let sharedRole = '';
+    if (
+      row.workspace_id &&
+      (row.workspace_privacy === 'link' || row.workspace_privacy === 'public')
+    ) {
+      sharedRole = row.share_role ?? 'viewer';
+    } else if (
+      !row.workspace_id &&
+      (row.material_privacy === 'link' || row.material_privacy === 'public')
+    ) {
+      sharedRole = 'viewer';
+    }
+    effectiveRole =
+      (roleRank[row.member_role] ?? 0) >= (roleRank[sharedRole] ?? 0)
+        ? row.member_role
+        : sharedRole;
+  }
+  if ((roleRank[effectiveRole] ?? 0) < roleRank.commenter) {
+    denyCollaboration('material access was revoked');
+  }
+  let liveAccess: CollaborationAccess = 'comment';
+  if ((roleRank[effectiveRole] ?? 0) >= roleRank.editor) {
+    liveAccess = row.owner_suspended_at
+      ? 'comment'
+      : row.owner_over_quota
+        ? 'shrink'
+        : 'write';
+  }
+  return liveAccess;
+}
+
+async function assertLiveCollaborationAccess(
+  queryable: Queryable,
+  materialId: string,
+  actorUserId: string,
+  requested: CollaborationAccess
+) {
+  const liveAccess = await liveCollaborationAccess(
+    queryable,
+    materialId,
+    actorUserId
+  );
+  const allowed =
+    requested === 'comment' ||
+    (requested === 'shrink' && liveAccess !== 'comment') ||
+    (requested === 'write' && liveAccess === 'write');
+  if (!allowed) denyCollaboration('collaboration access changed');
+}
+
+type LockedAccount = {
+  deleted_at: Date | null;
+  deletion_requested_at: Date | null;
+  id: string;
+  over_quota: boolean;
+  suspended_at: Date | null;
+};
+
+// Match Go's structural mutation order: workspace (when present), ordered
+// accounts, then material. The advisory lock serializes Yjs stores only; it
+// does not participate in SQL row-lock deadlock detection.
+async function lockCollaborationBoundary(
+  client: PoolClient,
+  materialId: string,
+  actorUserIds: readonly string[]
+) {
+  const placement = await client.query<{
+    kind: string;
+    owner_user_id: string;
+    workspace_id: string | null;
+  }>('SELECT owner_user_id, workspace_id, kind FROM materials WHERE id=$1', [
+    materialId,
+  ]);
+  if (placement.rowCount === 0) denyCollaboration('material not found');
+  const expected = placement.rows[0];
+  const workspaceId = expected.workspace_id;
+  if (workspaceId) {
+    const workspace = await client.query(
+      'SELECT id FROM workspaces WHERE id=$1 FOR SHARE',
+      [workspaceId]
+    );
+    if (workspace.rowCount === 0) denyCollaboration('material not found');
+  }
+
+  const accountIds = [
+    ...new Set([expected.owner_user_id, ...actorUserIds]),
+  ].sort();
+  const accounts = await client.query<LockedAccount>(
+    `SELECT u.id, u.deleted_at, u.deletion_requested_at, u.suspended_at,
+      ${paidLapseOverQuotaSQL('u')} AS over_quota
+     FROM users u
+     LEFT JOIN user_storage storage ON storage.user_id=u.id
+     WHERE u.id=ANY($1::text[])
+     ORDER BY u.id
+     FOR SHARE OF u`,
+    [accountIds]
+  );
+  if (accounts.rowCount !== accountIds.length) {
+    denyCollaboration('collaboration account not found');
+  }
+
+  const material = await client.query<{
+    kind: string;
+    owner_user_id: string;
+    workspace_id: string | null;
+  }>(
+    `SELECT owner_user_id, workspace_id, kind
+     FROM materials WHERE id=$1 FOR SHARE`,
+    [materialId]
+  );
+  if (material.rowCount === 0) denyCollaboration('material not found');
+  const locked = material.rows[0];
+  if (
+    locked.owner_user_id !== expected.owner_user_id ||
+    locked.workspace_id !== expected.workspace_id ||
+    locked.kind !== expected.kind
+  ) {
+    denyCollaboration('material placement changed');
+  }
+  return {
+    accounts: new Map(accounts.rows.map((account) => [account.id, account])),
+    materialKind: expected.kind,
+    ownerUserId: expected.owner_user_id,
+  };
+}
+
 function applyStoredState(document: Y.Doc, state: Buffer | Uint8Array) {
   if (state.byteLength > 0) Y.applyUpdate(document, new Uint8Array(state));
 }
 
+export function assertMaterialDocumentRoots(document: Y.Doc) {
+  for (const name of document.share.keys()) {
+    if (name !== CONTENT_ROOT && name !== CONTRIBUTORS_ROOT) {
+      throw new Error(`unsupported collaboration document root: ${name}`);
+    }
+  }
+  type RootStructure = {
+    _map: Map<string, unknown>;
+    _start: unknown;
+  };
+  if (document.share.has(CONTENT_ROOT)) {
+    const content = document.get(CONTENT_ROOT, Y.XmlText) as Y.XmlText &
+      RootStructure;
+    if (content._map.size > 0) {
+      throw new Error('invalid collaboration content root');
+    }
+  }
+  if (document.share.has(CONTRIBUTORS_ROOT)) {
+    const contributors = document.getMap(CONTRIBUTORS_ROOT) as Y.Map<unknown> &
+      RootStructure;
+    if (contributors._start !== null) {
+      throw new Error('invalid collaboration contributor root');
+    }
+  }
+}
+
 function plateValue(document: Y.Doc): unknown[] {
+  assertMaterialDocumentRoots(document);
   const root = yTextToSlateElement(document.get(CONTENT_ROOT, Y.XmlText)) as {
     children?: unknown[];
   };
@@ -124,18 +390,28 @@ export class YjsDocumentStore {
       this.validators.set(room, validator);
     }
     validator.pendingBytes += update.byteLength;
-    if (!validator.shouldMeasure() && !options?.shrinkOnly) return;
+    assertMaterialDocumentRoots(current);
+    const candidate = new Y.Doc({ gc: true });
+    try {
+      Y.applyUpdate(candidate, Y.encodeStateAsUpdate(current));
+      Y.applyUpdate(candidate, update);
+      assertMaterialDocumentRoots(candidate);
+    } catch (error) {
+      candidate.destroy();
+      throw error;
+    }
+    if (!validator.shouldMeasure() && !options?.shrinkOnly) {
+      candidate.destroy();
+      return;
+    }
     // A document that loaded from PostgreSQL already over the limit still needs
     // a baseline, otherwise the edits that would bring it back under are the
     // ones we reject.
     if (!validator.metrics) {
       validator.metrics = measureMaterialValue(plateValue(current));
     }
-    const candidate = new Y.Doc({ gc: true });
     let metrics: MaterialDocumentMetrics;
     try {
-      Y.applyUpdate(candidate, Y.encodeStateAsUpdate(current));
-      Y.applyUpdate(candidate, update);
       metrics = measureMaterialValue(plateValue(candidate));
     } finally {
       candidate.destroy();
@@ -157,6 +433,45 @@ export class YjsDocumentStore {
 
   forgetRoom(room: string) {
     this.validators.delete(room);
+  }
+
+  async assertConnectionAccess(
+    room: string,
+    actorUserId: string,
+    requested: CollaborationAccess
+  ) {
+    await assertLiveCollaborationAccess(
+      this.pool,
+      materialIdFromRoom(room),
+      actorUserId,
+      requested
+    );
+  }
+
+  async commandConnectionAccess(
+    room: string,
+    actorUserId: string
+  ): Promise<'shrink' | 'write'> {
+    const access = await liveCollaborationAccess(
+      this.pool,
+      materialIdFromRoom(room),
+      actorUserId
+    );
+    if (access === 'comment') {
+      denyCollaboration('material access was revoked');
+    }
+    return access;
+  }
+
+  async currentRoom(materialId: string): Promise<string | null> {
+    const result = await this.pool.query<{ room_schema: number }>(
+      'SELECT room_schema FROM material_yjs_documents WHERE material_id=$1',
+      [materialId]
+    );
+    if (result.rowCount === 0) return null;
+    const room = `material:${materialId}:schema:${result.rows[0].room_schema}`;
+    materialIdFromRoom(room);
+    return room;
   }
 
   async load(room: string, target: Y.Doc): Promise<void> {
@@ -205,6 +520,8 @@ export class YjsDocumentStore {
         throw new Error('stale collaboration room schema');
       }
       applyStoredState(target, result.rows[0].state);
+      assertMaterialDocumentRoots(target);
+      documentContributors(target);
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK');
@@ -215,13 +532,42 @@ export class YjsDocumentStore {
   }
 
   async store(room: string, current: Y.Doc): Promise<StoredDocument> {
+    assertMaterialDocumentRoots(current);
     const materialId = materialIdFromRoom(room);
     const roomSchema = roomSchemaFromRoom(room);
+    const contributors = documentContributors(current);
+    const accessByActor = new Map<string, CollaborationAccess>();
+    for (const contributor of contributors) {
+      const previous = accessByActor.get(contributor.userId);
+      if (contributor.access === 'write' || previous === undefined) {
+        accessByActor.set(contributor.userId, contributor.access);
+      }
+    }
     const client = await this.pool.connect();
     const merged = new Y.Doc({ gc: true });
     try {
       await client.query('BEGIN');
       await lockMaterial(client, materialId);
+      const boundary = await lockCollaborationBoundary(client, materialId, [
+        ...accessByActor.keys(),
+      ]);
+      for (const [actorUserId, actorAccess] of accessByActor) {
+        await assertLiveCollaborationAccess(
+          client,
+          materialId,
+          actorUserId,
+          actorAccess
+        );
+      }
+      const lifecycle = boundary.accounts.get(boundary.ownerUserId);
+      if (!lifecycle) throw new Error('material owner not found');
+      if (
+        lifecycle.deleted_at ||
+        lifecycle.deletion_requested_at ||
+        lifecycle.suspended_at
+      ) {
+        denyCollaboration('material owner account is locked');
+      }
       const existing = await client.query<{
         state: Buffer;
         room_schema: number;
@@ -239,6 +585,7 @@ export class YjsDocumentStore {
       }
       Y.applyUpdate(merged, Y.encodeStateAsUpdate(current));
       const value = plateValue(merged);
+      assertCanonicalMaterialValue(value, boundary.materialKind);
       const metrics = measureMaterialValue(value);
       const limitCode = materialLimitCode(metrics);
       if (limitCode) {
@@ -249,6 +596,14 @@ export class YjsDocumentStore {
           throw new MaterialDocumentLimitError(limitCode, metrics);
         }
       }
+      if (
+        lifecycle.over_quota &&
+        existing.rowCount &&
+        !recoversMaterialLimits(metrics, measureState(existing.rows[0].state))
+      ) {
+        throw new MaterialDocumentLimitError('document_size_exceeded', metrics);
+      }
+      removeDocumentContributors(merged, contributors);
       const state = Y.encodeStateAsUpdate(merged);
       const version = existing.rowCount
         ? Number(existing.rows[0].stored_version) + 1
@@ -268,6 +623,7 @@ export class YjsDocumentStore {
       this.validators.get(room)?.accept(metrics);
       return {
         content: { schemaVersion: 1, value },
+        contributors,
         limitCode,
         metrics,
         state,
@@ -412,11 +768,18 @@ export class YjsDocumentStore {
     }
   }
 
-  async recordProjectionError(materialId: string, message: string) {
+  async recordProjectionError(
+    materialId: string,
+    version: number,
+    message: string
+  ) {
     await this.pool.query(
       `UPDATE material_yjs_documents
-       SET projection_error=$2 WHERE material_id=$1`,
-      [materialId, message.slice(0, 2000)]
+       SET projection_error=$3
+       WHERE material_id=$1
+         AND projected_version < $2
+         AND stored_version >= $2`,
+      [materialId, version, message.slice(0, 2000)]
     );
   }
 }

@@ -8,6 +8,8 @@ are called via ``asyncio.to_thread``.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import secrets
 import threading
 import time
@@ -24,10 +26,19 @@ _pool: ConnectionPool | None = None
 _pool_lock = threading.Lock()
 _telemetry_maintenance_lock = threading.Lock()
 _telemetry_maintenance_at = 0.0
+log = logging.getLogger(__name__)
 
 
 class SourceSupersededError(TerminalError):
     """The job's source revision is no longer the file's current source."""
+
+
+class ProviderReceiptExpired(RuntimeError):
+    """The exact provider receipt arrived after its stored deadline."""
+
+
+class ProviderSettlementRejected(RuntimeError):
+    """The receipt cannot match the immutable local accounting state."""
 
 
 def pool() -> ConnectionPool:
@@ -194,6 +205,38 @@ def try_source_artifact_lock(identity: str):
     return None
 
 
+async def try_source_artifact_lock_async(identity: str):
+    """Acquire in a thread and return any late lock before cancellation exits."""
+    operation = asyncio.create_task(
+        asyncio.to_thread(try_source_artifact_lock, identity)
+    )
+    try:
+        return await asyncio.shield(operation)
+    except asyncio.CancelledError:
+        while not operation.done():
+            try:
+                await asyncio.shield(operation)
+            except asyncio.CancelledError:
+                continue
+        connection = operation.result()
+        if connection is not None:
+            release = asyncio.create_task(
+                asyncio.to_thread(release_source_artifact_lock, connection, identity)
+            )
+            while not release.done():
+                try:
+                    await asyncio.shield(release)
+                except asyncio.CancelledError:
+                    continue
+            try:
+                release.result()
+            except Exception:
+                log.exception(
+                    "could not release source artifact lock after cancellation"
+                )
+        raise
+
+
 def release_source_artifact_lock(conn, identity: str) -> None:
     """Release a lock acquired by :func:`try_source_artifact_lock`."""
     try:
@@ -333,7 +376,6 @@ def finish_job_attempt(
         "figures_applied": max(0, int(stats.get("figures_applied") or 0)),
         "figures_failed": max(0, int(stats.get("figures_failed") or 0)),
         "chunks_created": max(0, int(stats.get("chunks_created") or 0)),
-        "concepts_created": max(0, int(stats.get("concepts_created") or 0)),
         "donor_reused": bool(stats.get("donor_reused") or False),
     }
     details = {
@@ -353,7 +395,7 @@ def finish_job_attempt(
           source_bytes=%s, artifact_bytes=%s,
           figures_selected=%s, figures_cached=%s, figures_captioned=%s,
           figures_decorative=%s, figures_applied=%s, figures_failed=%s,
-          chunks_created=%s, concepts_created=%s, donor_reused=%s,
+          chunks_created=%s, donor_reused=%s,
           stage_timings=%s, details=%s
         WHERE id=%s AND status='running'
         """,
@@ -374,7 +416,6 @@ def finish_job_attempt(
             typed["figures_applied"],
             typed["figures_failed"],
             typed["chunks_created"],
-            typed["concepts_created"],
             typed["donor_reused"],
             Jsonb(timings),
             Jsonb(details),
@@ -432,6 +473,7 @@ def claim_is_current(cur, job_id: str, attempt: int) -> bool:
         """
         SELECT 1 FROM jobs
         WHERE id=%s AND status='running' AND attempts=%s
+          AND lease_expires_at IS NOT NULL AND lease_expires_at > now()
         FOR UPDATE
         """,
         (job_id, attempt),
@@ -439,7 +481,228 @@ def claim_is_current(cur, job_id: str, attempt: int) -> bool:
     return cur.fetchone() is not None
 
 
-def heartbeat_job(cur, job_id: str, lease_s: int, attempt: int) -> None:
+def _pipeline_source_cancellation(
+    cur,
+    payload: dict[str, Any],
+    *,
+    file_lock: str,
+) -> tuple[str, str, str, str] | None:
+    """Lock and recheck one pipeline source without opposing Go's lock order.
+
+    Go workspace mutations lock workspace, ordered account rows, membership,
+    then file. Pipeline heartbeats, provider admission, and final writes use the
+    same order. The job row comes afterward; provider admission then locks its
+    exact attempt. This prevents lifecycle deletion/replacement from forming a
+    file-to-user or job-to-workspace cycle with a worker.
+    """
+    if file_lock not in {"SHARE", "UPDATE"}:
+        raise ValueError("invalid pipeline file lock")
+    file_id = str(payload.get("fileId") or "")
+    workspace_id = str(payload.get("workspaceId") or "")
+    try:
+        source_revision = int(payload["sourceRevision"])
+    except (KeyError, TypeError, ValueError):
+        return (
+            "superseded",
+            "superseded",
+            "source_superseded",
+            "ingest source identity is invalid",
+        )
+    source_etag = str(payload.get("sourceETag") or "")
+    if not file_id or not workspace_id:
+        return (
+            "failed",
+            "lifecycle",
+            "source_deleted",
+            "ingest source identity is invalid",
+        )
+
+    # The workspace row is the common first lock for Go and Python. It also
+    # freezes ownership while we derive the storage owner and actor checks.
+    cur.execute(
+        """
+        SELECT user_id FROM workspaces WHERE id=%s
+        FOR SHARE
+        """,
+        (workspace_id,),
+    )
+    workspace = cur.fetchone()
+    if workspace is None:
+        return ("failed", "lifecycle", "source_deleted", "source deleted")
+    owner_user_id = str(workspace[0] or "")
+    actor_user_id = str(payload.get("actorUserId") or "")
+    expected_user_ids = {str(owner_user_id or ""), actor_user_id}
+    if "" in expected_user_ids:
+        return (
+            "failed",
+            "lifecycle",
+            "account_deletion",
+            "ingest account no longer exists",
+        )
+    cur.execute(
+        """
+        SELECT id, deleted_at, suspended_at, deletion_requested_at
+        FROM users
+        WHERE id = ANY(%s)
+        ORDER BY id
+        FOR SHARE
+        """,
+        (list(expected_user_ids),),
+    )
+    accounts = cur.fetchall()
+    if {str(row[0]) for row in accounts} != expected_user_ids:
+        return (
+            "failed",
+            "lifecycle",
+            "account_deletion",
+            "ingest account no longer exists",
+        )
+    if any(row[1] is not None or row[3] is not None for row in accounts):
+        return (
+            "failed",
+            "lifecycle",
+            "account_deletion",
+            "account deletion requested",
+        )
+    if any(row[2] is not None for row in accounts):
+        return (
+            "failed",
+            "lifecycle",
+            "account_suspended",
+            "account suspended",
+        )
+
+    if actor_user_id != owner_user_id:
+        cur.execute(
+            """
+            SELECT role FROM workspace_members
+            WHERE workspace_id=%s AND user_id=%s
+            FOR SHARE
+            """,
+            (workspace_id, actor_user_id),
+        )
+        membership = cur.fetchone()
+        if membership is None or str(membership[0]) != "editor":
+            return (
+                "failed",
+                "authorization",
+                "workspace_access_revoked",
+                "workspace editor access was revoked",
+            )
+
+    cur.execute(
+        f"""
+        SELECT workspace_id, user_id, revision, COALESCE(source_etag, '')
+        FROM files WHERE id=%s
+        FOR {file_lock}
+        """,
+        (file_id,),
+    )
+    source = cur.fetchone()
+    if source is None:
+        return ("failed", "lifecycle", "source_deleted", "source deleted")
+    source_workspace, source_owner, current_revision, current_etag = source
+    if (
+        str(source_workspace or "") != workspace_id
+        or str(source_owner or "") != owner_user_id
+    ):
+        return ("failed", "lifecycle", "source_deleted", "source moved")
+    if int(current_revision) != source_revision or str(current_etag) != source_etag:
+        return (
+            "superseded",
+            "superseded",
+            "source_superseded",
+            "superseded by file replacement",
+        )
+    return None
+
+
+def _cancel_pipeline_heartbeat_claim(
+    cur,
+    job_id: str,
+    payload: dict[str, Any],
+    cancellation: tuple[str, str, str, str],
+) -> None:
+    outcome, category, code, detail = cancellation
+    cur.execute(
+        "SELECT cancel_pipeline_jobs(ARRAY[%s]::text[], %s, %s, %s, %s)",
+        (job_id, outcome, category, code, detail),
+    )
+    cur.fetchone()
+    # Account deletion normally removes these rows in cancel_user_async_work.
+    # A lifecycle transaction that skipped this locked job could not do so.
+    cur.execute(
+        "DELETE FROM rag_contents WHERE claim_job_id=%s AND status='processing'",
+        (job_id,),
+    )
+    fail_pipeline_file_if_current(cur, payload)
+
+
+def fail_pipeline_file_if_current(cur, payload: dict[str, Any]) -> bool:
+    """Fail only the file revision named by a cancelled pipeline claim."""
+    file_id = str(payload.get("fileId") or "")
+    source_etag = str(payload.get("sourceETag") or "")
+    try:
+        source_revision = int(payload.get("sourceRevision"))
+    except (TypeError, ValueError):
+        return False
+    if not file_id:
+        return False
+    cur.execute(
+        """
+        UPDATE files
+        SET status='failed', indexed=false, preview_blob_path=NULL
+        WHERE id=%s AND revision=%s AND COALESCE(source_etag, '')=%s
+          AND status IN ('pending','processing')
+        """,
+        (file_id, source_revision, source_etag),
+    )
+    return bool(cur.rowcount)
+
+
+def heartbeat_job(cur, job_id: str, lease_s: int, attempt: int) -> bool:
+    """Renew a claim only while its exact source and accounts remain current."""
+    cur.execute(
+        """
+        SELECT type, payload FROM jobs
+        WHERE id=%s AND status='running' AND attempts=%s
+          AND lease_expires_at IS NOT NULL AND lease_expires_at > now()
+        """,
+        (job_id, attempt),
+    )
+    claim = cur.fetchone()
+    if claim is None:
+        return False
+    job_type, payload = claim
+    cancellation = None
+    if job_type in {"parse", "ingest"}:
+        cancellation = _pipeline_source_cancellation(
+            cur,
+            payload if isinstance(payload, dict) else {},
+            file_lock="UPDATE",
+        )
+
+    # Job comes last. Re-read the claim under its lock because the lease reaper
+    # may have moved it while we waited at a workspace or file boundary.
+    cur.execute(
+        """
+        SELECT type, payload FROM jobs
+        WHERE id=%s AND status='running' AND attempts=%s
+          AND lease_expires_at IS NOT NULL AND lease_expires_at > now()
+        FOR UPDATE
+        """,
+        (job_id, attempt),
+    )
+    locked_claim = cur.fetchone()
+    if locked_claim is None:
+        return False
+    locked_type, locked_payload = locked_claim
+    if locked_type != job_type or locked_payload != payload:
+        return False
+    if cancellation is not None:
+        _cancel_pipeline_heartbeat_claim(cur, job_id, payload, cancellation)
+        return False
+
     cur.execute(
         """
         UPDATE jobs
@@ -447,9 +710,12 @@ def heartbeat_job(cur, job_id: str, lease_s: int, attempt: int) -> None:
             lease_expires_at=now() + make_interval(secs => %s),
             updated_at=now()
         WHERE id=%s AND status='running' AND attempts=%s
+          AND lease_expires_at IS NOT NULL AND lease_expires_at > now()
         """,
         (lease_s, job_id, attempt),
     )
+    if not cur.rowcount:
+        return False
     # Keep this job's own processing claim fresh so a waiter does not steal a
     # live ingest. Only the creator may refresh it: a waiter attaches its file
     # to the creator's content row, so refreshing by file would let a waiter
@@ -462,6 +728,55 @@ def heartbeat_job(cur, job_id: str, lease_s: int, attempt: int) -> None:
         """,
         (job_id,),
     )
+    return True
+
+
+def lock_pipeline_claim_boundary(
+    cur,
+    *,
+    job_id: str,
+    attempt: int,
+    payload: dict[str, Any],
+    file_lock: str = "UPDATE",
+) -> str:
+    """Lock source access first, then fence the exact job attempt.
+
+    Returns ``current``, ``lost``, or ``cancelled``. The caller must commit a
+    cancelled result so the terminal job/session transition remains durable.
+    """
+    cancellation = _pipeline_source_cancellation(cur, payload, file_lock=file_lock)
+    cur.execute(
+        """
+        SELECT type, payload FROM jobs
+        WHERE id=%s AND status='running' AND attempts=%s
+          AND lease_expires_at IS NOT NULL AND lease_expires_at > now()
+        FOR UPDATE
+        """,
+        (job_id, attempt),
+    )
+    claim = cur.fetchone()
+    if claim is None:
+        return "lost"
+    job_type, locked_payload = claim
+    locked_payload = locked_payload if isinstance(locked_payload, dict) else {}
+    identity_keys = (
+        "actorUserId",
+        "fileId",
+        "reservationId",
+        "sourceETag",
+        "sourceRevision",
+        "workspaceId",
+    )
+    identity_changed = any(
+        str(locked_payload.get(key) or "") != str(payload.get(key) or "")
+        for key in identity_keys
+    )
+    if job_type not in {"parse", "ingest"} or identity_changed:
+        return "lost"
+    if cancellation is not None:
+        _cancel_pipeline_heartbeat_claim(cur, job_id, locked_payload, cancellation)
+        return "cancelled"
+    return "current"
 
 
 def requeue_job(
@@ -536,256 +851,80 @@ def set_job_local_source(
     return bool(cur.rowcount)
 
 
-# ------------------------------------------------ asynchronous audio transcription
-
-
-def audio_transcription(cur, job_id: str) -> dict[str, Any] | None:
+def active_local_spool_keys(cur) -> set[str]:
+    """Return local source/artifact keys still referenced by queued work."""
     cur.execute(
         """
-        SELECT id, provider_transcription_id, status, source_sha256, duration_seconds,
-               billable_seconds, concurrency_units, rate_version,
-               credit_micros_per_second, provider_call_id, result, error,
-               submitted_at, updated_at
-        FROM audio_transcriptions WHERE job_id=%s
-        """,
-        (job_id,),
+        SELECT key FROM (
+          SELECT payload#>>'{localSource,key}' AS key
+          FROM jobs WHERE status IN ('pending','running')
+          UNION
+          SELECT payload#>>'{parseArtifact,key}' AS key
+          FROM jobs WHERE status IN ('pending','running')
+          UNION
+          SELECT f.parsed_blob_path AS key
+          FROM jobs j JOIN files f ON f.id=j.payload->>'fileId'
+          WHERE j.status IN ('pending','running')
+        ) active
+        WHERE key IS NOT NULL AND key <> ''
+        """
     )
-    row = cur.fetchone()
-    if not row:
-        return None
-    return {
-        "id": row[0],
-        "provider_transcription_id": row[1],
-        "status": row[2],
-        "source_sha256": row[3],
-        "duration_seconds": float(row[4]),
-        "billable_seconds": int(row[5]),
-        "concurrency_units": int(row[6]),
-        "rate_version": int(row[7]),
-        "credit_micros_per_second": int(row[8]),
-        "provider_call_id": row[9],
-        "result": row[10],
-        "error": row[11],
-        "submitted_at": row[12],
-        "updated_at": row[13],
-    }
+    return {str(row[0]) for row in cur.fetchall()}
 
 
-def create_audio_transcription(
+# ------------------------------------------------ provider capacity leases
+
+
+def acquire_provider_capacity(
     cur,
     *,
-    transcription_id: str,
-    job_id: str,
-    file_id: str,
-    source_sha256: str,
-    duration_seconds: float,
-    billable_seconds: int,
-    concurrency_units: int,
-    rate_version: int,
-    credit_micros_per_second: int,
-    provider_call_id: str,
+    lease_id: str,
+    provider: str,
+    units: int,
     capacity: int,
+    lease_seconds: int,
 ) -> bool:
-    """Reserve weighted Starter capacity and insert the durable provider stub."""
-    cur.execute("SELECT pg_advisory_xact_lock(hashtext('elevenlabs:scribe:capacity'))")
+    """Atomically reserve weighted capacity across every ingest process."""
     cur.execute(
-        """
-        SELECT 1 FROM audio_transcriptions
-        WHERE source_sha256=%s AND model='scribe_v2'
-          AND status IN ('submitting','pending','completed')
-        LIMIT 1
-        """,
-        (source_sha256,),
+        "SELECT pg_advisory_xact_lock(hashtext(%s))",
+        (f"provider-capacity:{provider}",),
     )
-    if cur.fetchone() is not None:
-        return False
     cur.execute(
-        """
-        SELECT COALESCE(SUM(concurrency_units), 0)
-        FROM audio_transcriptions
-        WHERE status IN ('submitting','pending')
-        """
+        "DELETE FROM provider_capacity_leases WHERE provider=%s AND expires_at<=now()",
+        (provider,),
+    )
+    cur.execute(
+        "SELECT COALESCE(SUM(units),0) FROM provider_capacity_leases WHERE provider=%s",
+        (provider,),
     )
     used = int(cur.fetchone()[0])
-    if used + concurrency_units > capacity:
+    if used + units > capacity:
         return False
     cur.execute(
         """
-        INSERT INTO audio_transcriptions
-          (id, job_id, file_id, source_sha256, duration_seconds,
-           billable_seconds, concurrency_units, rate_version,
-           credit_micros_per_second, provider_call_id)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-        ON CONFLICT (job_id) DO NOTHING
+        INSERT INTO provider_capacity_leases (id,provider,units,expires_at)
+        VALUES (%s,%s,%s,now()+make_interval(secs => %s))
         """,
-        (
-            transcription_id,
-            job_id,
-            file_id,
-            source_sha256,
-            duration_seconds,
-            billable_seconds,
-            concurrency_units,
-            rate_version,
-            credit_micros_per_second,
-            provider_call_id,
-        ),
+        (lease_id, provider, units, lease_seconds),
+    )
+    return True
+
+
+def release_provider_capacity(cur, lease_id: str) -> None:
+    cur.execute("DELETE FROM provider_capacity_leases WHERE id=%s", (lease_id,))
+
+
+def renew_provider_capacity(cur, lease_id: str, lease_seconds: int) -> bool:
+    """Extend a live capacity lease without reviving an expired one."""
+    cur.execute(
+        """
+        UPDATE provider_capacity_leases
+        SET expires_at=now()+make_interval(secs => %s)
+        WHERE id=%s AND expires_at>now()
+        """,
+        (lease_seconds, lease_id),
     )
     return bool(cur.rowcount)
-
-
-def mark_audio_submitting(cur, transcription_id: str) -> None:
-    cur.execute(
-        """
-        UPDATE audio_transcriptions
-        SET submitted_at=now(), updated_at=now(), error=NULL
-        WHERE id=%s AND status='submitting'
-        """,
-        (transcription_id,),
-    )
-
-
-def mark_audio_pending(cur, transcription_id: str, provider_id: str) -> None:
-    cur.execute(
-        """
-        UPDATE audio_transcriptions
-        SET provider_transcription_id=%s,
-            status=CASE WHEN cleanup_requested THEN status ELSE 'pending' END,
-            cleanup_not_before=CASE
-                WHEN cleanup_requested THEN now() ELSE cleanup_not_before END,
-            updated_at=now(),
-            error=CASE WHEN cleanup_requested THEN error ELSE NULL END
-        WHERE id=%s
-          AND (status IN ('submitting','pending') OR cleanup_requested)
-        """,
-        (provider_id, transcription_id),
-    )
-
-
-def complete_audio_transcription(
-    cur, transcription_id: str, result: dict[str, Any]
-) -> None:
-    cur.execute(
-        """
-        UPDATE audio_transcriptions
-        SET status='completed', result=%s, error=NULL,
-            completed_at=now(), updated_at=now()
-        WHERE id=%s AND status IN ('submitting','pending','completed')
-        """,
-        (Jsonb(result), transcription_id),
-    )
-
-
-def fail_audio_transcription(
-    cur,
-    transcription_id: str,
-    error: str,
-    *,
-    cleanup_requested: bool = False,
-) -> None:
-    cur.execute(
-        """
-        UPDATE audio_transcriptions
-        SET status='failed', error=%s,
-            cleanup_requested=cleanup_requested OR %s,
-            cleanup_not_before=CASE WHEN %s THEN now() ELSE cleanup_not_before END,
-            completed_at=now(), updated_at=now()
-        WHERE id=%s
-        """,
-        (error[:500], cleanup_requested, cleanup_requested, transcription_id),
-    )
-
-
-def fail_audio_transcription_for_job(cur, job_id: str, error: str) -> None:
-    cur.execute(
-        """
-        UPDATE audio_transcriptions
-        SET status='failed', error=%s, cleanup_requested=true,
-            cleanup_not_before=now(), completed_at=now(), updated_at=now()
-        WHERE job_id=%s AND status IN ('submitting','pending','completed')
-        """,
-        (error[:500], job_id),
-    )
-
-
-def request_audio_cleanup(cur, transcription_id: str, error: str = "") -> None:
-    cur.execute(
-        """
-        UPDATE audio_transcriptions
-        SET cleanup_requested=true,
-            cleanup_not_before=now(),
-            cleanup_error=CASE WHEN %s='' THEN cleanup_error ELSE %s END,
-            updated_at=now()
-        WHERE id=%s
-        """,
-        (error[:500], error[:500], transcription_id),
-    )
-
-
-def claim_audio_cleanup(cur) -> dict[str, Any] | None:
-    """Lease one provider deletion by advancing its retry deadline."""
-    cur.execute(
-        """
-        UPDATE audio_transcriptions SET
-            cleanup_attempts=cleanup_attempts+1,
-            cleanup_not_before=now() + make_interval(
-                secs => LEAST(3600, 30 * (2 ^ LEAST(cleanup_attempts, 7)))
-            ),
-            updated_at=now()
-        WHERE id = (
-            SELECT id FROM audio_transcriptions
-            WHERE cleanup_requested
-              AND provider_transcription_id IS NOT NULL
-              AND (cleanup_not_before IS NULL OR cleanup_not_before <= now())
-            ORDER BY updated_at
-            FOR UPDATE SKIP LOCKED LIMIT 1
-        )
-        RETURNING id, provider_transcription_id, provider_call_id, cleanup_attempts
-        """
-    )
-    row = cur.fetchone()
-    if not row:
-        return None
-    return {
-        "id": row[0],
-        "provider_transcription_id": row[1],
-        "provider_call_id": row[2],
-        "attempts": int(row[3]),
-    }
-
-
-def complete_audio_cleanup(cur, transcription_id: str, provider_call_id: str) -> None:
-    abandon_provider_call(cur, provider_call_id)
-    cur.execute(
-        "DELETE FROM audio_transcriptions WHERE id=%s AND cleanup_requested",
-        (transcription_id,),
-    )
-
-
-def fail_audio_cleanup(cur, transcription_id: str, error: str) -> None:
-    cur.execute(
-        """
-        UPDATE audio_transcriptions
-        SET cleanup_error=%s, updated_at=now()
-        WHERE id=%s AND cleanup_requested
-        """,
-        (error[:500], transcription_id),
-    )
-
-
-def finalize_audio_transcription(cur, transcription_id: str) -> None:
-    cur.execute(
-        """
-        UPDATE audio_transcriptions
-        SET status='finalized', result=NULL, updated_at=now()
-        WHERE id=%s AND status='completed'
-        """,
-        (transcription_id,),
-    )
-
-
-def delete_audio_transcription(cur, transcription_id: str) -> None:
-    cur.execute("DELETE FROM audio_transcriptions WHERE id=%s", (transcription_id,))
 
 
 def reclaim_expired_leases(
@@ -801,14 +940,37 @@ def reclaim_expired_leases(
         FROM jobs
         WHERE status='running' AND lease_expires_at IS NOT NULL
           AND lease_expires_at < now()
-        FOR UPDATE SKIP LOCKED
         """
     )
-    rows = cur.fetchall()
+    candidates = cur.fetchall()
     reclaimed: list[dict[str, Any]] = []
-    for job_id, job_type, payload, attempts, error in rows:
+    for job_id, job_type, payload, attempts, error in candidates:
         payload = payload or {}
-        if job_type == "ingest":
+        cap = max_attempts.get(job_type)
+        terminal_pipeline = job_type in {"parse", "ingest"} and (
+            cap is None or attempts >= cap
+        )
+        if terminal_pipeline:
+            # Replacement and lifecycle cancellation lock the source boundary
+            # before the job. Follow that order before the terminal transaction
+            # updates the exact file revision and closes its reservation.
+            _pipeline_source_cancellation(cur, payload, file_lock="UPDATE")
+        cur.execute(
+            """
+            SELECT id, type, payload, attempts, error
+            FROM jobs
+            WHERE id=%s AND status='running'
+              AND lease_expires_at IS NOT NULL AND lease_expires_at < now()
+            FOR UPDATE SKIP LOCKED
+            """,
+            (job_id,),
+        )
+        locked = cur.fetchone()
+        if locked is None:
+            continue
+        job_id, job_type, payload, attempts, error = locked
+        payload = payload or {}
+        if job_type in {"parse", "ingest"}:
             # The dead worker never ran abandon_content. Drop the claim it
             # created so a waiter (or this job's retry) can recreate it. Keyed
             # on the owning job, not on the file: a dead waiter's file points at
@@ -839,6 +1001,10 @@ def reclaim_expired_leases(
                 backoff_s=base * (2 ** max(int(attempts) - 1, 0)),
             )
             retryable = True
+        file_failed = False
+        if outcome == "failed" and job_type in {"parse", "ingest"}:
+            file_failed = fail_pipeline_file_if_current(cur, payload)
+            close_credit_reservation(cur, str(payload.get("reservationId") or ""))
         cur.execute(
             """
             UPDATE ingest_job_attempts SET
@@ -865,6 +1031,7 @@ def reclaim_expired_leases(
                 "payload": payload,
                 "attempts": attempts,
                 "outcome": outcome,
+                "file_failed": file_failed,
             }
         )
     return reclaimed
@@ -1073,6 +1240,8 @@ def sweep_artifact_cache(cur, *, caption_ttl_days: int) -> int:
                  AND a.last_used_at < now() - make_interval(days => %s))
              OR (a.kind = 'derived_text'
                  AND a.last_used_at < now() - make_interval(days => %s))
+             OR (a.kind = 'parse_bundle'
+                 AND a.last_used_at < now() - make_interval(days => %s))
             )
           AND NOT EXISTS (
               SELECT 1
@@ -1082,7 +1251,12 @@ def sweep_artifact_cache(cur, *, caption_ttl_days: int) -> int:
                 AND f.source_sha256 = a.source_sha256
           )
         """,
-        (caption_ttl_days, caption_ttl_days, caption_ttl_days),
+        (
+            caption_ttl_days,
+            caption_ttl_days,
+            caption_ttl_days,
+            caption_ttl_days,
+        ),
     )
     return cur.rowcount or 0
 
@@ -1232,12 +1406,122 @@ def record_usage_event(
         cur.execute(
             """
             UPDATE user_credits
-            SET used_micros = used_micros + %s, updated_at = now()
+            SET period_start = date_trunc('month', now() AT TIME ZONE 'UTC')::date,
+                used_micros = CASE
+                    WHEN period_start < date_trunc('month', now() AT TIME ZONE 'UTC')::date
+                    THEN %s
+                    ELSE used_micros + %s
+                END,
+                updated_at = now()
             WHERE user_id = %s
             """,
-            (credit_micros, actor_user_id),
+            (credit_micros, credit_micros, actor_user_id),
         )
     return inserted
+
+
+def _lock_ingest_provider_boundary(
+    cur,
+    *,
+    session_id: str,
+    job_attempt_id: int | None,
+    expected_actor: str,
+    expected_workspace: str,
+) -> None:
+    """Fence ingest provider admission to its live claim and source.
+
+    Lock order is workspace, ordered users, membership, file, job, attempt,
+    then provider session. Claim transitions lock the job before the attempt,
+    so admission must hold both in that order while it revalidates the lease.
+    """
+    if job_attempt_id is None:
+        raise RuntimeError("ingest provider call requires a job attempt")
+
+    # This first read only finds the source identity. The job and attempt are
+    # read again under their locks after access and source are stable.
+    cur.execute(
+        """
+        SELECT j.id, j.payload
+        FROM ingest_job_attempts a
+        JOIN jobs j ON j.id = a.job_id
+        WHERE a.id = %s
+        """,
+        (job_attempt_id,),
+    )
+    preliminary = cur.fetchone()
+    payload = preliminary[1] if preliminary is not None else None
+    payload = payload if isinstance(payload, dict) else {}
+    file_id = str(payload.get("fileId") or "")
+    if not file_id:
+        raise RuntimeError("ingest provider call has no source file")
+    cancellation = _pipeline_source_cancellation(cur, payload, file_lock="SHARE")
+    if cancellation is not None:
+        raise RuntimeError(cancellation[3])
+
+    preliminary_job_id = str(preliminary[0] or "")
+    cur.execute(
+        """
+        SELECT type, status, attempts, lease_expires_at > now(), payload
+        FROM jobs
+        WHERE id = %s
+        FOR SHARE
+        """,
+        (preliminary_job_id,),
+    )
+    locked_job = cur.fetchone()
+    if locked_job is None:
+        raise RuntimeError("ingest provider job no longer exists")
+    cur.execute(
+        """
+        SELECT job_id, attempt, job_type, status
+        FROM ingest_job_attempts
+        WHERE id = %s
+        FOR SHARE
+        """,
+        (job_attempt_id,),
+    )
+    locked_attempt = cur.fetchone()
+    if locked_attempt is None:
+        raise RuntimeError("ingest provider job attempt no longer exists")
+    (
+        job_type,
+        job_status,
+        job_attempt,
+        lease_live,
+        payload,
+    ) = locked_job
+    (
+        attempt_job_id,
+        attempt,
+        attempt_type,
+        attempt_status,
+    ) = locked_attempt
+    payload = payload if isinstance(payload, dict) else {}
+    try:
+        payload_revision = int(payload["sourceRevision"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise RuntimeError("ingest provider source identity is invalid") from exc
+
+    if (
+        attempt_status != "running"
+        or job_status != "running"
+        or str(attempt_job_id or "") != preliminary_job_id
+        or attempt_type not in {"parse", "ingest"}
+        or job_type != attempt_type
+        or int(attempt) != int(job_attempt)
+        or not lease_live
+    ):
+        raise RuntimeError("ingest provider job claim is no longer current")
+    if (
+        str(payload.get("reservationId") or "") != session_id
+        or str(payload.get("actorUserId") or "") != expected_actor
+        or str(payload.get("workspaceId") or "") != expected_workspace
+        or str(payload.get("fileId") or "") != file_id
+    ):
+        raise RuntimeError("ingest provider job identity does not match its session")
+    # The source revision was validated under the file lock above. Parsing it
+    # here still rejects malformed payloads before opening provider state.
+    del payload_revision
 
 
 def open_provider_call(
@@ -1257,6 +1541,7 @@ def open_provider_call(
     context_window_tokens: int = 0,
     context_counting_method: str = "",
     context_counting_version: int = 0,
+    receipt_timeout_seconds: int = 12 * 60 * 60 + 5 * 60,
 ) -> None:
     """Authorize the exact call before the provider HTTP request."""
     context_values = (
@@ -1273,9 +1558,49 @@ def open_provider_call(
         context_system_tokens + context_tool_tokens + context_conversation_tokens
     ):
         raise RuntimeError("provider call context total does not match its components")
+    if receipt_timeout_seconds <= 0:
+        raise RuntimeError("provider receipt timeout must be positive")
+    # Read identity without a lock. The surface-specific boundary below takes
+    # its owning rows before the provider session lock.
     cur.execute(
         """
-        SELECT actor_user_id, status, credits_exhausted_at, terminal_call_id
+        SELECT actor_user_id, workspace_id, surface
+          FROM provider_sessions WHERE id = %s
+        """,
+        (session_id,),
+    )
+    identity = cur.fetchone()
+    if identity is None:
+        raise RuntimeError("spend session not found")
+    expected_actor, expected_workspace, expected_surface = identity
+    if expected_surface == "ingest":
+        _lock_ingest_provider_boundary(
+            cur,
+            session_id=session_id,
+            job_attempt_id=job_attempt_id,
+            expected_actor=str(expected_actor or ""),
+            expected_workspace=str(expected_workspace or ""),
+        )
+    else:
+        cur.execute(
+            """
+            SELECT u.id, u.deleted_at, u.suspended_at, u.deletion_requested_at
+              FROM users u
+             WHERE u.id = %s
+                OR u.id = (SELECT user_id FROM workspaces WHERE id = %s)
+             ORDER BY u.id
+             FOR SHARE
+            """,
+            (expected_actor, expected_workspace),
+        )
+        lifecycle_rows = cur.fetchall()
+        if not lifecycle_rows or any(any(row[1:]) for row in lifecycle_rows):
+            raise RuntimeError("account lifecycle no longer permits provider work")
+
+    cur.execute(
+        """
+        SELECT actor_user_id, workspace_id, surface, status,
+               credits_exhausted_at, terminal_call_id
           FROM provider_sessions WHERE id = %s FOR UPDATE
         """,
         (session_id,),
@@ -1283,7 +1608,20 @@ def open_provider_call(
     reservation = cur.fetchone()
     if reservation is None:
         raise RuntimeError("spend session not found")
-    actor_user_id, status, exhausted_at, terminal_call_id = reservation
+    (
+        actor_user_id,
+        workspace_id,
+        surface,
+        status,
+        exhausted_at,
+        terminal_call_id,
+    ) = reservation
+    if (
+        actor_user_id != expected_actor
+        or workspace_id != expected_workspace
+        or surface != expected_surface
+    ):
+        raise RuntimeError("spend session changed during lifecycle admission")
     if status != "open":
         raise RuntimeError("provider session is closed")
     if purpose == "terminal" and (kind != "llm" or exhausted_at is None):
@@ -1336,9 +1674,10 @@ def open_provider_call(
           context_system_tokens, context_tool_tokens,
           context_conversation_tokens, context_total_tokens,
           context_window_tokens, context_counting_method,
-          context_counting_version
+          context_counting_version, receipt_deadline_at
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                now() + (%s * interval '1 second'))
         """,
         (
             call_id,
@@ -1356,6 +1695,7 @@ def open_provider_call(
             context_window_tokens,
             context_counting_method,
             context_counting_version,
+            receipt_timeout_seconds,
         ),
     )
     if purpose == "terminal":
@@ -1378,6 +1718,18 @@ def abandon_provider_call(
     if not call_id:
         return
     cur.execute(
+        "SELECT reservation_id, purpose FROM provider_calls WHERE id=%s", (call_id,)
+    )
+    candidate = cur.fetchone()
+    if candidate is None:
+        return
+    if candidate[1] == "terminal":
+        # Settlement locks session then call. Match that order so explicit
+        # abandonment cannot deadlock a concurrent terminal receipt.
+        cur.execute(
+            "SELECT id FROM provider_sessions WHERE id=%s FOR UPDATE", (candidate[0],)
+        )
+    cur.execute(
         """
         UPDATE provider_calls SET status = 'abandoned', abandoned_at=now(),
           error_category=%s, error_code=%s, provider_status=%s
@@ -1397,55 +1749,9 @@ def abandon_provider_call(
         )
 
 
-def settle_ingest_provider_call(
-    cur,
-    *,
-    session_id: str,
-    call_id: str,
-    kind: str,
-    purpose: str,
-    thinking: str,
-    provider: str,
-    model: str,
-    catalog_provider_slug: str,
-    catalog_model_slug: str,
-    model_version: int,
-    usage: Any,
-    credit_micros: int,
-    units: int = 0,
-    unit: str = "tokens",
-) -> None:
-    """Atomically apply one post-paid ingest provider attempt."""
-    cur.execute(
-        """
-        SELECT actor_user_id, workspace_id, trace_id, surface, status
-          FROM provider_sessions WHERE id = %s FOR UPDATE
-        """,
-        (session_id,),
-    )
-    reservation = cur.fetchone()
-    if reservation is None:
-        raise RuntimeError("ingest spend session not found")
-    actor_user_id, workspace_id, trace_id, surface, reservation_status = reservation
-    if surface != "ingest" or reservation_status != "open":
-        raise RuntimeError("ingest spend session is closed or has the wrong surface")
-
-    cur.execute(
-        """
-        SELECT kind, purpose, thinking, status
-          FROM provider_calls
-         WHERE id = %s AND reservation_id = %s FOR UPDATE
-        """,
-        (call_id, session_id),
-    )
-    call = cur.fetchone()
-    if call is None or call[:3] != (kind, purpose, thinking):
-        raise RuntimeError("ingest provider call does not match its open stub")
-    if call[3] == "applied":
-        return
-    if call[3] != "open":
-        raise RuntimeError("ingest provider call is not open")
-
+def _ingest_provider_metadata(
+    call_id: str, purpose: str, kind: str, usage: Any
+) -> dict[str, Any]:
     metadata: dict[str, Any] = {
         "callId": call_id,
         "purpose": purpose,
@@ -1465,6 +1771,138 @@ def settle_ingest_provider_call(
         and not usage.output_tokens
     ):
         metadata["usageMissing"] = True
+    return metadata
+
+
+def settle_ingest_provider_call(
+    cur,
+    *,
+    session_id: str,
+    call_id: str,
+    kind: str,
+    purpose: str,
+    thinking: str,
+    provider: str,
+    model: str,
+    catalog_provider_slug: str,
+    catalog_model_slug: str,
+    model_version: int,
+    usage: Any,
+    credit_micros: int,
+    units: int = 0,
+    unit: str = "tokens",
+) -> str:
+    """Atomically apply one post-paid ingest provider attempt."""
+    cur.execute(
+        """
+        SELECT actor_user_id, workspace_id, trace_id, surface, status
+          FROM provider_sessions WHERE id = %s FOR UPDATE
+        """,
+        (session_id,),
+    )
+    reservation = cur.fetchone()
+    if reservation is None:
+        raise ProviderSettlementRejected("ingest spend session not found")
+    actor_user_id, workspace_id, trace_id, surface, reservation_status = reservation
+    if surface != "ingest" or reservation_status not in {
+        "open",
+        "settled",
+        "released",
+    }:
+        raise ProviderSettlementRejected(
+            "ingest spend session is closed or has the wrong surface"
+        )
+
+    cur.execute(
+        """
+        SELECT reservation_id, kind, purpose, thinking, status,
+               receipt_deadline_at <= now(), provider, model,
+               input_tokens, output_tokens, cached_read_tokens,
+               cache_write_tokens, reasoning_tokens, cache_anomaly,
+               units, unit, credit_micros
+          FROM provider_calls
+         WHERE id = %s FOR UPDATE
+        """,
+        (call_id,),
+    )
+    call = cur.fetchone()
+    if call is None or call[:4] != (session_id, kind, purpose, thinking):
+        raise ProviderSettlementRejected(
+            "ingest provider call does not match its open stub"
+        )
+    if call[4] == "applied":
+        cur.execute(
+            """
+            SELECT reservation_id, provider_call_id, kind, surface,
+                   provider, model, catalog_provider_slug,
+                   catalog_model_slug, model_version, input_tokens,
+                   output_tokens, units, unit, credit_micros, metadata
+              FROM usage_events
+             WHERE reservation_id = %s AND provider_call_id = %s
+             FOR UPDATE
+            """,
+            (session_id, call_id),
+        )
+        event = cur.fetchone()
+        expected_call_receipt = (
+            provider,
+            model,
+            usage.input_tokens,
+            usage.output_tokens,
+            usage.cached_read_tokens,
+            usage.cache_write_tokens,
+            usage.reasoning_tokens,
+            usage.anomaly,
+            units,
+            unit,
+            credit_micros,
+        )
+        expected_event = (
+            session_id,
+            call_id,
+            kind,
+            "ingest",
+            provider,
+            model,
+            catalog_provider_slug,
+            catalog_model_slug,
+            model_version,
+            usage.input_tokens,
+            usage.output_tokens,
+            units,
+            unit,
+            credit_micros,
+            _ingest_provider_metadata(call_id, purpose, kind, usage),
+        )
+        if call[6:] == expected_call_receipt and event == expected_event:
+            return "duplicate"
+        raise ProviderSettlementRejected(
+            "ingest provider call receipt conflicts with its applied settlement"
+        )
+    if call[4] != "open":
+        raise ProviderSettlementRejected("ingest provider call is not open")
+    if call[5]:
+        cur.execute(
+            """
+            UPDATE provider_calls SET status='abandoned', abandoned_at=now(),
+              error_category='provider', error_code='receipt_timeout'
+             WHERE id=%s AND reservation_id=%s AND status='open'
+             RETURNING purpose
+            """,
+            (call_id, session_id),
+        )
+        expired = cur.fetchone()
+        if expired is not None and expired[0] == "terminal":
+            cur.execute(
+                """
+                UPDATE provider_sessions SET terminal_call_id=NULL
+                 WHERE id=%s AND terminal_call_id=%s
+                """,
+                (session_id, call_id),
+            )
+        return "expired"
+
+    metadata = _ingest_provider_metadata(call_id, purpose, kind, usage)
 
     record_usage_event(
         cur,
@@ -1515,7 +1953,16 @@ def settle_ingest_provider_call(
         ),
     )
     if cur.rowcount != 1:
-        raise RuntimeError("ingest provider call could not be applied")
+        raise ProviderSettlementRejected("ingest provider call could not be applied")
+    if reservation_status == "released":
+        cur.execute(
+            """
+            UPDATE provider_sessions SET status = 'settled'
+             WHERE id = %s AND status = 'released'
+            """,
+            (session_id,),
+        )
+    return "applied"
 
 
 def settle_credit_reservation(cur, reservation_id: str) -> None:
@@ -1585,7 +2032,7 @@ def close_credit_reservation(cur, reservation_id: str) -> None:
     )
 
 
-def account_allows_ingest(cur, user_id: str) -> bool:
+def account_allows_ingest(cur, user_id: str, *, allow_over_quota: bool = False) -> bool:
     """Mirror store.AccountStatus.CanCreate for the ingest worker.
 
     Locked / over-quota accounts must not keep consuming parse capacity. The
@@ -1594,7 +2041,19 @@ def account_allows_ingest(cur, user_id: str) -> bool:
     """
     cur.execute(
         """
-        SELECT u.deleted_at, u.suspended_at, u.deletion_requested_at,
+        SELECT CASE
+                 WHEN NOT EXISTS(SELECT 1 FROM user_subscriptions any_sub
+                   WHERE any_sub.user_id=u.id) THEN u.plan_tier
+                 ELSE COALESCE((SELECT live.plan_tier
+                   FROM user_subscriptions live
+                   WHERE live.user_id=u.id
+                     AND live.status IN ('active','trialing','past_due')
+                     AND (live.current_period_end IS NULL
+                       OR live.current_period_end > now())
+                   ORDER BY (live.plan_tier='pro') DESC,
+                     live.current_period_end DESC NULLS FIRST LIMIT 1), 'free')
+               END,
+               u.deleted_at, u.suspended_at, u.deletion_requested_at,
                COALESCE(st.used_bytes, 0) + COALESCE(
                    (SELECT sum(delta_bytes) FROM user_storage_deltas d
                     WHERE d.user_id = u.id), 0
@@ -1602,7 +2061,12 @@ def account_allows_ingest(cur, user_id: str) -> bool:
                (SELECT max(s.current_period_end)
                   FROM user_subscriptions s
                  WHERE s.user_id = u.id
-                   AND s.current_period_end IS NOT NULL) AS period_end
+                   AND s.status IN ('active','trialing','past_due')
+                   AND s.current_period_end IS NOT NULL) AS period_end,
+               EXISTS(SELECT 1 FROM user_subscriptions s WHERE s.user_id=u.id),
+               EXISTS(SELECT 1 FROM user_subscriptions s
+                   WHERE s.user_id=u.id
+                     AND s.status IN ('active','trialing','past_due'))
         FROM users u
         LEFT JOIN user_storage st ON st.user_id = u.id
         WHERE u.id = %s
@@ -1612,7 +2076,16 @@ def account_allows_ingest(cur, user_id: str) -> bool:
     row = cur.fetchone()
     if not row:
         return False
-    deleted_at, suspended_at, deletion_requested_at, effective_used, period_end = row
+    (
+        plan_tier,
+        deleted_at,
+        suspended_at,
+        deletion_requested_at,
+        effective_used,
+        period_end,
+        has_subscriptions,
+        has_entitling_subscription,
+    ) = row
     if (
         deleted_at is not None
         or suspended_at is not None
@@ -1621,33 +2094,92 @@ def account_allows_ingest(cur, user_id: str) -> bool:
         return False
     from datetime import datetime, timezone
 
-    if period_end is not None:
+    if has_subscriptions and not has_entitling_subscription:
+        plan_tier = "free"
+    elif period_end is not None:
         now = datetime.now(timezone.utc)
         end = (
             period_end if period_end.tzinfo else period_end.replace(tzinfo=timezone.utc)
         )
-        # After lapse the free-tier storage limit applies regardless of the
-        # denormalized plan_tier column, which may lag a missed webhook.
-        if end < now and effective_used > plan_limits.for_tier("free").storage_bytes:
-            return False
-    return True
+        if end <= now:
+            plan_tier = "free"
+    return not (
+        effective_used > plan_limits.for_tier(plan_tier).storage_bytes
+        and not allow_over_quota
+    )
+
+
+def ingest_accounts_active(cur, file_id: str, actor_user_id: str) -> bool:
+    """Lock and recheck source access for an in-flight ingest write.
+
+    Claim-time admission is insufficient for a long parse/index job: suspension,
+    deletion, or membership revocation may commit minutes later. Callers about
+    to persist a stage outcome use this in the same transaction as that outcome.
+    """
+    if not file_id:
+        return False
+    cur.execute(
+        """
+        SELECT workspace_id, revision, COALESCE(source_etag, ''),
+               COALESCE(created_by, user_id)
+        FROM files WHERE id = %s
+        """,
+        (file_id,),
+    )
+    source = cur.fetchone()
+    if source is None:
+        return False
+    if not actor_user_id:
+        actor_user_id = str(source[3] or "")
+    if not actor_user_id:
+        return False
+    cancellation = _pipeline_source_cancellation(
+        cur,
+        {
+            "actorUserId": actor_user_id,
+            "fileId": file_id,
+            "sourceETag": str(source[2] or ""),
+            "sourceRevision": int(source[1]),
+            "workspaceId": str(source[0] or ""),
+        },
+        file_lock="UPDATE",
+    )
+    return cancellation is None
 
 
 def actor_has_credits(cur, user_id: str) -> bool:
-    """Unlocked credits remaining check for ingest claim time.
-
-    Lifecycle is deliberately not consulted: a deletion_pending uploader must
-    not strand the owner with bytes they already paid for. Credits are the
-    actor's money; the owner's workspace is the owner's business.
-    """
+    """Unlocked lifecycle and credits check for ingest claim time."""
     if not user_id:
         return False
     cur.execute(
         """
-        SELECT u.plan_tier,
+        SELECT CASE
+                 WHEN NOT EXISTS(SELECT 1 FROM user_subscriptions any_sub
+                   WHERE any_sub.user_id=u.id) THEN u.plan_tier
+                 ELSE COALESCE((SELECT live.plan_tier
+                   FROM user_subscriptions live
+                   WHERE live.user_id=u.id
+                     AND live.status IN ('active','trialing','past_due')
+                     AND (live.current_period_end IS NULL
+                       OR live.current_period_end > now())
+                   ORDER BY (live.plan_tier='pro') DESC,
+                     live.current_period_end DESC NULLS FIRST LIMIT 1), 'free')
+               END,
+               u.deleted_at,
+               u.suspended_at,
+               u.deletion_requested_at,
                COALESCE(c.used_micros, 0),
                COALESCE(c.reserved_micros, 0),
-               c.period_start
+               c.period_start,
+               (SELECT max(s.current_period_end)
+                  FROM user_subscriptions s
+                 WHERE s.user_id = u.id
+                   AND s.status IN ('active','trialing','past_due')
+                   AND s.current_period_end IS NOT NULL) AS period_end,
+               EXISTS(SELECT 1 FROM user_subscriptions s WHERE s.user_id=u.id),
+               EXISTS(SELECT 1 FROM user_subscriptions s
+                   WHERE s.user_id=u.id
+                     AND s.status IN ('active','trialing','past_due'))
           FROM users u
           LEFT JOIN user_credits c ON c.user_id = u.id
          WHERE u.id = %s
@@ -1657,10 +2189,35 @@ def actor_has_credits(cur, user_id: str) -> bool:
     row = cur.fetchone()
     if not row:
         return False
-    plan_tier, used, reserved, period_start = row
+    (
+        plan_tier,
+        deleted_at,
+        suspended_at,
+        deletion_requested_at,
+        used,
+        reserved,
+        period_start,
+        period_end,
+        has_subscriptions,
+        has_entitling_subscription,
+    ) = row
+    if (
+        deleted_at is not None
+        or suspended_at is not None
+        or deletion_requested_at is not None
+    ):
+        return False
     from datetime import datetime, timezone
 
     today = datetime.now(timezone.utc).date()
     if period_start is not None and period_start < today.replace(day=1):
         used = 0
+    if has_subscriptions and not has_entitling_subscription:
+        plan_tier = "free"
+    elif period_end is not None:
+        end = (
+            period_end if period_end.tzinfo else period_end.replace(tzinfo=timezone.utc)
+        )
+        if end <= datetime.now(timezone.utc):
+            plan_tier = "free"
     return (used + reserved) < plan_limits.for_tier(plan_tier).credit_micros

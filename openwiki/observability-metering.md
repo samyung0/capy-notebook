@@ -173,7 +173,7 @@ Pageviews fire once per parameterized TanStack route pattern
 | `quota_blocked` | User-visible quota or credits block on mutation, clone, or upload. |
 | `subscription_checkout_started` | Checkout returns a `url`, before redirect. |
 | `note_created` | `useCreateNote` succeeds. |
-| `deck_study_finished` | Session queue empties after `sessionTotal > 0`. Once per session. |
+| `flashcards_study_finished` | Session queue empties after `sessionTotal > 0`. Once per session. |
 | `item_cloned` | Clone succeeds. `source` is `share`, `explore`, or `app` (`/quizzes`, `/flashcards`, and their child routes). Workspace clones still fire only from share or explore call sites. |
 | `invite_accepted` | `useAcceptWorkspaceInvite` succeeds. |
 
@@ -185,7 +185,7 @@ session.
 
 Activation is `workspace_created` → `source_uploaded` →
 `source_ingest_completed` with `indexed` true → first of `chat_turn_sent`,
-`note_created`, or `deck_study_finished`.
+`note_created`, or `flashcards_study_finished`.
 
 Retention is weekly first-time `$pageview`, returning on `$pageview`.
 
@@ -226,30 +226,51 @@ Every inference path is actor-billed.
 
 `model_configs` rows are immutable and versioned. Their catalog identity is
 `provider_slug` + `model_slug` from the closed EliteLLM list
-(`elitellm_providers.json`). Most rows call the named provider directly. Two
-exact DeepInfra exceptions are allowed:
+(`elitellm_providers.json`). Ops rejects leading or trailing whitespace on
+either slug before it constructs or persists that identity. Most rows call the
+named provider directly. Two exact DeepInfra exceptions are allowed:
 
 - `deepinfra/Qwen/Qwen3-Embedding-4B` uses the same identity on DeepInfra's
   OpenAI-compatible embedding endpoint.
 - `zai/glm-5.3-flash` remains a ZAI catalog row but EliteLLM sends it to
-  DeepInfra as `zai-org/GLM-5.3-Flash`.
+  DeepInfra as `zai-org/GLM-5.3-Flash`. The identity stays with ZAI because
+  ZAI is the model's maker; the hop exists because ZAI's own API needs a
+  monthly plan while DeepInfra bills the same model pay-as-you-go. DeepInfra
+  runs the model on its own GPUs rather than forwarding to ZAI, so usage it
+  reports — including the prompt-cache split — describes the call we pay for.
 
 Neither exception opens a general router path. Other DeepInfra embedding slugs
 and other ZAI slugs fail registry validation. Both use the platform-only
 `DEEPINFRA_API_KEY`; a ZAI user key cannot authenticate the routed GLM call.
-The typed surface policy in `server/internal/models/surface.go` lists which
-product surfaces need an agentic loop. Assigning a model to any listed surface
-requires a current two-turn streaming replay certification for the exact
-`(provider_slug, model_slug)` identity. Chat is currently the only listed
-surface. The seeded GLM row lists chat before a certificate so the transport and
-recording workflow can be tested. Do not select it for production chat until
-`zai/glm-5.3-flash` has a certificate. Ops cannot assign or save that chat cell
-before then. The gate also runs when an existing catalog row is saved, so a
-stale row cannot bypass a removed certificate.
+A **slot** is a named place the product calls a model. Every slot holds one
+default pin; chat, generate, editor and quiz also hold a per-user preference.
+The slots are `chat`, `generate`, `editor`, `quiz`, `ingest`, `retrieval`
+(the workspace embedding model, used by ingest indexing and by chat/generate
+query embedding) and `captioning` (the vision model used for ingest figure
+captions and standalone image uploads). Retrieval and captioning are separate
+slots because the row that fills them is a different model from the text
+model.
+
+A **capability** is what a row must be able to do to sit in a slot. Operators
+set `capabilities` (`vision`, `pdf`, `embedding`) on the catalog row;
+`agentic_loop` is derived from the checked-in certification file
+(`agentic_loop_certs.json`) and can never be set by hand. The only place the
+slot-to-capability policy lives is the map in
+`server/internal/models/slot.go`: chat needs `agentic_loop`, retrieval needs
+`embedding`, captioning needs `vision`, the other slots need nothing. Every
+registry save runs that subset check for drafts and for existing rows alike,
+so a stale row cannot keep a slot it no longer qualifies for; the ops error
+codes are `capability_missing` and `agentic_loop_not_certified`. The
+`elitellm_providers.json` list no longer carries per-provider modes.
+Certification requires a current two-turn streaming replay for the exact
+`(provider_slug, model_slug)` identity. `zai/glm-5.3-flash` holds one, so the
+clean seed offers it for chat as well as captioning; DeepSeek Flash stays the
+chat default.
 `pnpm test:pipeline:replay` only replays the checked-in certification tapes and
 never records. `pnpm model:certify` makes the paid live calls needed to certify
 a new exact model slug or replace an existing certification, then regenerates
-the Go agentic-loop certificate embed. It does not write the model registry database.
+the Go agentic-loop certificate embed. A rejected provider API key exits before
+model selection. It does not write the model registry database.
 Both the gateway (`server/internal/models`) and the pipeline
 (`pipeline/pipeline/registry.py`) cache `(provider_slug, model_slug, version)` forever and
 poll `model_registry_state` every 10 minutes for the current defaults. A
@@ -258,14 +279,14 @@ pinned pair that is not in cache is a point read of the table. A cache miss
 in-flight pin. Operators disable rows rather than deleting them for that
 reason (ops dashboard registry grid). In-flight assistant pins keep resolving
 via `Get` of the disabled row. Clearing a preference remaps users to the
-surface default. A pref that still names an unusable key fails
+slot default. A pref that still names an unusable key fails
 `model_unavailable`, except BYOK-only rows that the user still has a key
 for.
 
 Conversations do not snapshot a model. Each chat turn calls
-`ratesForSurface`, which reads `users.chat_model_provider_slug` and
+`ratesForSlot`, which reads `users.chat_model_provider_slug` and
 `users.chat_model_slug` (always set; populated
-from the registry surface default at account creation) and resolves the latest
+from the registry slot default at account creation) and resolves the latest
 enabled version of that provider/model identity. The
 `{providerSlug, modelSlug, modelVersion, modelDisplayName}` tuple
 is written onto the **assistant message**. Settings changes apply to the next
@@ -274,13 +295,13 @@ message in an existing thread. Generate resolves the
 the same way per request. The browser cannot choose a model per message.
 Chat, generate, editor and quiz preferences are edited in **Settings → LLM**
 (`GET /api/models`, `PATCH /api/me/models`). Empty preference writes are
-rejected, and a `PATCH` only touches the surfaces it names. Editor AI
+rejected, and a `PATCH` only touches the slots it names. Editor AI
 (`/ai/command`, `/ai/copilot`) resolves
 the `users.editor_model_provider_slug` / `users.editor_model_slug` pair the same
 way chat does. It is the highest-call-volume
-surface per user, so it is the one where an expensive choice shows up first in
+slot per user, so it is the one where an expensive choice shows up first in
 credit burn. Editor thinking is forced to Instant on the Python call.
-Settings show Instant as a disabled control for this surface. Quiz marking (`POST /api/quiz-grade`) resolves
+Settings show Instant as a disabled control for this slot. Quiz marking (`POST /api/quiz-grade`) resolves
 the `users.quiz_model_provider_slug` / `users.quiz_model_slug` pair the same way. A
 `browser:` prefix is a client-only in-tab GGUF: it is stored on the user row,
 skipped by registry lookup, and never metered. Those grades never call
@@ -288,7 +309,7 @@ skipped by registry lookup, and never metered. Those grades never call
 Billing. Attempt points stay on the quiz snapshot for the taker. They are
 not a billed or trusted score.
 
-Ingest and vision are pinned onto the job at enqueue (`ingestJobPayload`),
+Ingest and captioning are pinned onto the job at enqueue (`ingestJobPayload`),
 because their defaults are hot-reloadable and a queued job may outlive one.
 Embedding is not on the job: it belongs to the workspace
 (`workspaces.embedding_provider_slug`, `embedding_model_slug`, and version) for
@@ -297,8 +318,8 @@ ingest and query read it from there. See
 [agentic-retrieval.md](agentic-retrieval.md) for why that is not a normal
 preference.
 
-Nothing resolves a surface default on the way to a provider call. `resolve_pinned`
-in the pipeline requires an exact `(key, version)` for every surface, and a pin
+Nothing resolves a slot default on the way to a provider call. `resolve_pinned`
+in the pipeline requires an exact `(key, version)` for every slot, and a pin
 or preference that cannot be loaded fails the request (`model_unavailable`) or
 the job. There is no Flash fallback.
 
@@ -309,6 +330,12 @@ cached-read input, and output. The 1x reference is DeepSeek Flash (250 / 25 /
 `(input-cached)*input + cached*cache + output*output`. A 0 stays 0. Missing or
 unproven cache details charge all reported input at the input rate and do not
 fail the request. Cache writes are ordinary input under the three-rate design.
+DeepSeek, OpenAI, and routed GLM under its `zai` slug report a cache
+split proven inclusive of their own reported input; Anthropic's disjoint
+counters are folded into input separately. Routed GLM counts because DeepInfra
+serves the model on its own hardware and bills us directly, so its split is
+the one the row's cached rate is priced against. A split larger than reported
+input is still refused as `cached_gt_input` and charged in full.
 Credit micros may be 0 only on BYOK-only rows (`platform_enabled=false`).
 (`model_configs_credit_rates_check`). Platform chat/generate/editor/quiz/
 ingest/vision rows need input, cached-read, and output all > 0. Embedding needs
@@ -332,7 +359,10 @@ row for the gate to lock, reconcile pass for drift.
 Monthly credit limits come from the immutable `plan_limits` startup snapshot
 (1,000 free / 20,000 Pro), shared with the other upgradeable product limits.
 The Go gateway and Python ingest worker do not query that table while admitting
-or claiming work.
+or claiming work. A stale monthly counter is rolled over inside the same row
+lock used by reads, reservations, and direct usage recording. Once the latest
+paid period ends, both runtimes apply the Free credit and storage limits even
+if a delayed webhook has not yet changed `users.plan_tier`.
 
 The signed-in billing page reads this ledger directly. `GET /api/billing` now
 includes the current credit counter (`creditsUsedMicros` / reserved / limit /
@@ -365,9 +395,19 @@ gate. Other BYOK routes skip the LLM lease.
 
 Every outbound attempt inserts its `provider_calls` row before the network
 call. A successful response appends its `usage_events` row and marks the call
-`applied` in the same transaction. A failed attempt is `abandoned`, so an
-applied call without a matching ledger event is an invariant violation rather
-than an expected timing window.
+`applied` in the same transaction. Closing the parent session prevents another
+call from starting, but it does not discard a receipt for a call already sent.
+That exact call id remains settleable against a `settled` or `released` session
+until its `receipt_deadline_at`. Python sets the deadline to the provider HTTP
+timeout plus five minutes; direct SQL callers use the same maximum
+12-hour-five-minute window as ElevenLabs. ElevenLabs itself runs under an
+absolute 12-hour request timeout; the additional five minutes are receipt-only
+settlement grace. Settlement checks the stored deadline
+under the call-row lock, and the usage worker also sweeps unanswered calls once
+per minute. Both paths abandon expiry with `receipt_timeout`. A provider error
+with a known failed response abandons the call immediately. An applied call without a
+matching ledger event is therefore an invariant violation rather than an
+expected timing window.
 
 After each platform-paid LLM settlement, the gateway compares the new
 `used_micros + reserved_micros` balance with the plan limit. Crossing the limit
@@ -410,9 +450,11 @@ Python resolves the thinking level for that specific call, locks the open
 session, and inserts an exact `provider_calls` authorization row (`open`) with
 that level. Calls after exhaustion must be the one `terminal` LLM call; this
 check and terminal-slot claim happen before provider spend. A failed open does
-not call the provider. A provider exception marks the row `abandoned` and
-releases a claimed terminal slot. Measured usage is then posted to the existing
-settle callback.
+not call the provider. Only a definitive failed provider response marks the row
+`abandoned` and releases a claimed terminal slot immediately. Cancellation,
+transport loss, timeouts, and partial streams are uncertain after a request may
+have been sent, so their calls stay open until an exact receipt settles or the
+deadline expires. Measured usage is then posted to the existing settle callback.
 
 Settlement is atomic. One database transaction locks the reservation and
 actor counter, writes `usage_events`, applies the measured credits, and changes
@@ -432,10 +474,12 @@ response as an error rather than finalizing a partial stream as complete.
 
 ### Where tokens are captured
 
-`pipeline/pipeline/retrieval/models.py` is the **only** module that calls a
-provider. That makes it the only place capture is needed, and the only place a
-missing capture can hide — a new provider call added elsewhere is invisible and
-silently free.
+`pipeline/pipeline/retrieval/models.py` is the single boundary for token-reporting
+LLM and embedding calls. Synchronous ElevenLabs transcription is the deliberate
+non-token exception: `pipeline/pipeline/ingest/source_text.py` opens and settles
+its metered audio call directly around `/v1/speech-to-text`. Any new provider
+path must use one of these explicit accounting boundaries or it is invisible
+and silently free.
 
 A contextvar accumulator (`obs.Usage`) still aggregates request telemetry.
 Chat, generate, editor, and quiz bind a `RequestAccounting` context when the
@@ -451,13 +495,25 @@ instead of silently accepting it.
 Provider SDK automatic retries are disabled, so one call id represents one
 outbound provider attempt. A future explicit provider retry must use a new call
 id; retrying only the settlement callback keeps the original id.
-Chat planning retries a pre-byte provider failure twice on a new call id and
-`abandons` the failed attempt. After the first provider chunk — even if the
-browser has not received SSE yet — the failure is final and the row is
-`abandoned`, not left `open`. A client disconnect cancels only the
+Chat planning retries an uncertain pre-byte provider failure twice on a new
+call id while leaving each earlier uncertain attempt open for its bounded
+receipt window. A failure after the first provider chunk — even if the browser
+has not received SSE yet — is final for that response and is not retried, but
+the call remains open unless the provider supplied a definitive failed HTTP
+response. Settlement retries retain the same call id and in-memory receipt
+across transient database or gateway failures until it applies or its stored
+deadline expires. A deterministic local identity/session rejection fails
+immediately and leaves the immutable call for the normal deadline policy. Once
+that settlement becomes a final `SettlementError`, provider retry loops and the
+ingest queue must not start a fresh provider call; the exact-call retry window
+has already been exhausted. A client disconnect cancels only the
 server→browser SSE write; the in-flight provider call is not cancelled. When
 that response returns usage it is settled and billed, and the agent loop does
 not start another planning step.
+Plate text commands use the same boundary: the response iterator stops
+forwarding deltas after disconnect, while a retained background consumer drains
+that one already-open provider stream through its exact receipt. It cannot
+start a replacement call.
 The response says whether the call exhausted credits and whether one terminal
 call remains. The session authorizes that tools-disabled terminal call without
 another begin gate, so it may overspend. Authorization claims the slot before
@@ -490,20 +546,25 @@ bytes via `gateStorageTx`.
 
 Claim-time gating is two lookups, not one widened check:
 
-| Subject | Checked for | On failure |
-| --- | --- | --- |
-| Owner (`files.user_id`) | lifecycle state, storage | refuse the job |
-| Actor (payload `actorUserId`) | credits only | refuse the job |
-| Actor | lifecycle | **not checked** |
+| Subject                       | Checked for                        | On failure     |
+| ----------------------------- | ---------------------------------- | -------------- |
+| Owner (`files.user_id`)       | lifecycle state, storage           | refuse the job |
+| Actor (payload `actorUserId`) | lifecycle state, available credits | refuse the job |
 
-This admission check runs on a direct ingest job or the initial parse job. A
-document ingest continuation with the immutable parse handoff is already in
-flight and does not repeat the credit check between stages.
-
-Actor lifecycle does not gate ingest. A `deletion_pending` uploader must not
-leave the owner holding an unindexed file whose bytes they already paid for.
-Credits are the actor's money; lifecycle is the owner's workspace's business.
-A job already running finishes and bills after the fact.
+This admission check runs on a direct ingest job and the initial parse job.
+Long work is not allowed to rely on that snapshot: opening a provider call,
+persisting parse/preview/caption/source metadata, handing off parse or repair
+work, and final success all lock and recheck both the actor and storage owner in
+the same transaction as the stage outcome. Job-claim and source-revision fences
+also prevent a canceled or replaced job from reviving stale work. Ingest
+provider admission requires its durable attempt id, locks the current file and
+exact running job and attempt, and verifies the live lease, job attempt token,
+spend session, source revision, and source ETag before inserting the
+provider-call stub. Its lock order is workspace, ordered users, membership,
+file, job, attempt, provider session. Claim transitions also lock job before
+attempt. Lease reclamation therefore skips an admission transaction instead of
+changing the job and then waiting on its attempt. Suspension or deletion stops
+an in-flight actor before its next durable stage or external provider call.
 
 Upload reservation (`createSourceUpload`) checks the same two budgets up front,
 with the same distinct errors.
@@ -562,9 +623,11 @@ one concurrent document, so the dashboard keeps MinerU pool memory and
 whole-host CPU/memory separate from per-worker cgroups and page billing.
 
 Every queue claim opens `ingest_job_attempts` in the same transaction as the
-claim. Terminal success, retry, capacity wait, external wait, supersession, and
-failure close that exact row. The lease reaper closes rows abandoned by a dead
-worker as `lease_expired`. Capacity/external waits may decrement the visible
+claim. Terminal success, retry, capacity wait, supersession, and failure close
+that exact row. The lease reaper closes rows abandoned by a dead worker as
+`lease_expired`. An exhausted parse or ingest lease also closes its credit
+reservation and source-fenced file state in that transaction. Capacity waits
+may decrement the visible
 `jobs.attempts` value, so the generated attempt id—not `(job_id, attempt)`—is
 the durable identity. Provider calls opened by ingest carry that id and the
 current job stage, which lets Ops connect figure captions and other LLM calls
@@ -592,10 +655,39 @@ snapshot, while new work uses the active version.
 
 ### Background workers
 
-`server/cmd/api/usage_workers.go`: reservation sweep (1 min) and reconciliation
-queue polling (5 s). The poller idempotently
-enqueues one UTC-daily storage run and, when Stripe is configured, one
-UTC-daily Stripe run. Manual ops requests use the same queue.
+`server/cmd/api/usage_workers.go`: reservation sweep (1 min), Stripe
+compensation polling (5 s), and reconciliation queue polling (5 s). The
+compensation queue recovers and expires an unbound Checkout reservation,
+expires raced Checkout sessions, cancels subscriptions, and refunds the paid
+object on a raced checkout's latest/initial invoice with leased retries and
+stable Stripe idempotency keys. Cancelling account deletion suppresses
+deletion-only expiration/cancellation before it starts, while already-owed
+refund work remains. A subscription-cancellation job records a durable
+provider-started boundary before its first provider lookup or mutation;
+restoration is blocked until a started job is reconciled locally, preventing an
+uncertain remote success from restoring stale entitlement. Pending refunds
+retain their Stripe id and are polled to a terminal status; a failed/canceled
+refund advances to a new idempotency generation. Successful subscription
+cancellation also writes a terminal local ordering row when no creation webhook
+has arrived yet. The reconciliation poller idempotently enqueues one UTC-daily
+storage run and, when Stripe is configured, one UTC-daily Stripe run. Manual ops
+requests use the same queue.
+
+Normal Checkout stores the user id on both the session and the subscription it
+creates, so an early subscription event does not depend on local customer
+binding. Normal binding terminally suppresses both pending recovery jobs and
+claimed recovery jobs that have not acquired the lifecycle lock, clearing the
+stale lease before returning the provider session. If bind fails after the
+request creates a customer, successful synchronous session expiration records
+that customer on both the user and reservation before it suppresses recovery.
+Checkout completion requires the event, reservation, user customer mapping,
+and metadata user attribution to agree. Failed-invoice webhooks stay
+retryable when a known, non-purged Stripe customer is only waiting for its local
+subscription mapping. A metadata-free checkout completion with no local customer
+mapping, a subscription with neither a mapping nor valid application metadata,
+and subscription or invoice events for purged tombstones are acknowledged as
+terminal orphans, including invoices resolved through a retained subscription
+row owned by the purged tombstone.
 
 `reconcile_runs` is both queue and history. A runner claims one pending row with
 `FOR UPDATE SKIP LOCKED` and a lease, then records status, timing, operator,
@@ -608,8 +700,22 @@ reclaimed worker cannot keep writing alongside its replacement.
 Stripe reconciliation reads the complete paginated set of active, trialing, and
 past-due subscriptions. It compare-and-swaps against the database snapshot from
 before the Stripe read and retries if a webhook committed in between. The
-provider-read start time is the webhook ordering watermark, so a webhook
-created after that read can still supersede the reconciliation result.
+complete provider result then writes differing subscription fields
+authoritatively, including when its timestamp second ties the stored webhook
+second. It keeps the greatest webhook stamp, so an older delivery cannot undo
+the provider result. A webhook committed during the remote read changes the
+version and forces a retry; one committed after the transaction waits on the
+same user lock and can supersede the result only through normal event ordering.
+Deletion-pending and deleted customers are reconciled to no local entitlement;
+any provider-side live subscription not already scheduled to cancel at period
+end is queued into the same cancellation/refund compensation path. This makes
+reconciliation the backstop when the checkout or subscription webhook race was
+missed without refunding a previously legitimate period-end cancellation. The
+compensation worker distinguishes a still-live period-end subscription, which
+suppresses cleanup, from an already-canceled subscription whose period-end flag
+remains set, which writes terminal local truth without a refund. A fresh
+deletion window reopens matching cleanup suppressed by a prior support restore
+when current Checkout/subscription evidence still requires it.
 
 These loops run in-process on every replica. Queue claims are replica-safe; the
 reservation sweep is idempotent but still duplicates scheduling work until it
@@ -698,8 +804,12 @@ Browser sessions never receive database credentials. Read endpoints require
 `read_all`. Tokens are rows on `ops_permissions` keyed by `operators.role`;
 the two database login roles stay deploy-time DSNs. Startup validates both role
 contracts. Broad owner/gateway credentials, customer-content reads, direct
-operator-table updates, direct reconciliation queue writes, and registry
-DELETE privileges fail startup.
+operator-table updates, direct reconciliation queue writes, column-level
+`INSERT`/`UPDATE`/`REFERENCES` grants on the read role, and registry DELETE
+privileges fail startup. The admin check enumerates every public relation and
+rejects every table-level write or unexpected column-level write outside the
+documented registry allowlist. Required column-level `SELECT` grants remain
+allowed.
 
 `operator_audit_events` is the chronological record of accepted Ops mutations.
 Registry saves and manual reconciliation requests append an actor-role snapshot,
@@ -779,6 +889,10 @@ Worth knowing before trusting a dashboard:
   still per-replica and unrelated to the Redis limiter.
 - **Reindexing a workspace into a different embedding model.** Not implemented,
   deliberately: see [agentic-retrieval.md](agentic-retrieval.md).
+- **Retrieval quality per language.** Visible only through `rag_search_events`
+  (one row per `search_workspace` call, features and ids, no text; see the
+  search telemetry section of [agentic-retrieval.md](agentic-retrieval.md)).
+  It is not in `usage_events` and has no ops page yet; query it directly.
 - **Ingest retries.** Each published parse fingerprint has one idempotent page
   charge, including work followed by later-stage failure. The creating job can
   recover the receipt from the local bundle; another job reusing that bundle is
@@ -820,9 +934,8 @@ the likelihood grew every time the registry was reconfigured.
 | `CORS_ALLOWED_ORIGINS` | gateway | comma separated; empty means `*` |
 | `RATE_LIMIT_DISABLED` | gateway | forced true under `APP_ENV=e2e` |
 | `RATE_LIMIT_AI_PER_HOUR` | gateway | overrides the default 200; 15/min burst and editor 120/min are code-only |
-| `IMPORT_RELAY_ENQUEUE_URL` | gateway | Cloudflare Worker `/enqueue`; empty with the secret disables Drive imports |
-| `IMPORT_RELAY_SECRET` | gateway, Drive import Worker | shared HMAC key; set with `wrangler secret`, never as a Worker plain-text variable |
-| `API_BASE_URL` / `IMPORT_DLQ_NAME` | Drive import Worker | public gateway origin and the configured dead-letter queue name |
+| `GATEWAY_URL` / `PIPELINE_SECRET` | import worker | the gateway's private URL and shared secret for `/api/internal/import/*`; the gateway's empty `PIPELINE_SECRET` disables Drive imports |
+| `EVO_IMPORT_JOB_TIMEOUT` / `EVO_IMPORT_DOWNLOAD_HOSTS` | import worker | per-attempt transfer budget (600 s) and the provider download host allowlist |
 | `SENTRY_DSN_GATEWAY` / `_RETRIEVAL` / `_WORKER` / `_COLLABORATION` | compose | mapped onto each process's `SENTRY_DSN` |
 | `SENTRY_DSN_OPS` / `VITE_SENTRY_DSN_OPS` | ops | separate operator-service project; empty disables |
 | `OPS_DATABASE_URL` | ops | `evo_ops` read/auth role; routine reads plus execute-only last-seen update |

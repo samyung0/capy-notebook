@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   assertAllowedOrigin,
+  claimsContext,
   mintCollaborationToken,
   signCollaborationToken,
   verifyCollaborationToken,
@@ -22,9 +23,16 @@ function token(overrides: Record<string, unknown> = {}) {
 
 describe('collaboration tokens', () => {
   it('accepts exact signed room claims', () => {
-    expect(
-      verifyCollaborationToken(token(), 'secret', 'material:note_1:schema:1')
-    ).toMatchObject({ access: 'write', sub: 'user-1' });
+    const claims = verifyCollaborationToken(
+      token(),
+      'secret',
+      'material:note_1:schema:1'
+    );
+    expect(claims).toMatchObject({ access: 'write', sub: 'user-1' });
+    expect(claimsContext(claims)).toMatchObject({
+      expiresAt: claims.exp,
+      userId: 'user-1',
+    });
   });
 
   it('mints short-lived write tokens for a room', () => {

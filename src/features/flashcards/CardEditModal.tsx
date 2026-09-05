@@ -12,21 +12,21 @@ import { m } from '@/i18n';
 
 /**
  * Create or edit a single flashcard. When `card` is provided the modal edits it,
- * otherwise it creates a new card in `deckId`.
+ * otherwise it creates a new card in `flashcardSetId`.
  */
 export function CardEditModal({
-  deckId,
+  flashcardSetId,
   card,
   open,
   onClose,
 }: {
-  deckId: string;
+  flashcardSetId: string;
   card?: Flashcard | null;
   open: boolean;
   onClose: () => void;
 }) {
-  const { mutateAsync: createCard } = useCreateCard(deckId);
-  const { mutateAsync: updateCard } = useUpdateCard(deckId);
+  const { mutateAsync: createCard } = useCreateCard(flashcardSetId);
+  const { mutateAsync: updateCard } = useUpdateCard(flashcardSetId);
 
   const {
     formState: { isDirty, isValid, isSubmitting },

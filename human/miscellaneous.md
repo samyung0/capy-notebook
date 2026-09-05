@@ -1,0 +1,2 @@
+- Developer Epo decided large completed implementations use repeated independent subagent review rounds whose reports live in /private/tmp; reviewers are subagents and obeys the `human` skill
+- Developer Epo decided (2026-09-05) that while no production database or data exists, schema changes edit `server/migrations/0001_init.sql` in place instead of adding migration files. server/migrations/0001_init.sql

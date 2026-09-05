@@ -36,14 +36,11 @@ type SourceImportJob struct {
 	TraceID           string
 	Status            string
 	Attempts          int
-	NextAttemptAt     time.Time
 	LeaseToken        string
 	LeaseExpiresAt    *time.Time
 	LeaseActive       bool
-	AttemptReady      bool
 	SessionExpired    bool
 	AttemptObjectPath string
-	EnqueuedAt        *time.Time
 	LastErrorCode     string
 	LastError         string
 	FileID            *string
@@ -67,11 +64,6 @@ type NewSourceImport struct {
 	TraceID         string
 }
 
-type SourceImportDispatch struct {
-	JobID    string
-	Attempts int
-}
-
 func (s *Store) BeginSourceImportRequest(
 	ctx context.Context,
 	actorUserID, workspaceID, requestID, fingerprint string,
@@ -80,7 +72,17 @@ func (s *Store) BeginSourceImportRequest(
 		fingerprint == "" || len(requestID) > 128 {
 		return nil, false, errors.New("invalid source import request")
 	}
-	tag, err := s.pool.Exec(ctx, `INSERT INTO source_import_requests
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := s.lockWorkspaceEditorMutationTx(
+		ctx, tx, workspaceID, actorUserID,
+	); err != nil {
+		return nil, false, err
+	}
+	tag, err := tx.Exec(ctx, `INSERT INTO source_import_requests
 		(actor_user_id, request_id, workspace_id, fingerprint)
 		VALUES ($1,$2,$3,$4)
 		ON CONFLICT (actor_user_id, request_id) DO NOTHING`,
@@ -89,13 +91,13 @@ func (s *Store) BeginSourceImportRequest(
 		return nil, false, err
 	}
 	if tag.RowsAffected() == 1 {
-		return nil, false, nil
+		return nil, false, tx.Commit(ctx)
 	}
 
 	var storedWorkspace, storedFingerprint string
 	var response []byte
 	var completed bool
-	err = s.pool.QueryRow(ctx, `SELECT workspace_id, fingerprint,
+	err = tx.QueryRow(ctx, `SELECT workspace_id, fingerprint,
 		COALESCE(response,'null'::jsonb), response IS NOT NULL
 		FROM source_import_requests
 		WHERE actor_user_id=$1 AND request_id=$2`,
@@ -108,33 +110,12 @@ func (s *Store) BeginSourceImportRequest(
 		return nil, false, ErrImportIdempotencyConflict
 	}
 	if !completed {
-		return nil, false, nil
+		return nil, false, tx.Commit(ctx)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, false, err
 	}
 	return json.RawMessage(response), true, nil
-}
-
-func (s *Store) CompleteSourceImportRequest(
-	ctx context.Context,
-	actorUserID, requestID, fingerprint string,
-	response json.RawMessage,
-) (json.RawMessage, error) {
-	if !json.Valid(response) {
-		return nil, errors.New("invalid source import response")
-	}
-	var stored []byte
-	err := s.pool.QueryRow(ctx, `UPDATE source_import_requests
-		SET response=COALESCE(response,$4::jsonb),
-			completed_at=COALESCE(completed_at,now())
-		WHERE actor_user_id=$1 AND request_id=$2 AND fingerprint=$3
-		RETURNING response`,
-		actorUserID, requestID, fingerprint, string(response)).Scan(&stored)
-	if isNoRows(err) {
-		return nil, ErrImportIdempotencyConflict
-	}
-	if err != nil {
-		return nil, err
-	}
-	return json.RawMessage(stored), nil
 }
 
 func secureImportToken() (string, error) {
@@ -145,15 +126,15 @@ func secureImportToken() (string, error) {
 	return hex.EncodeToString(buf), nil
 }
 
-// CreateSourceImports writes reservations and their queue outbox rows in one
-// transaction. A dispatcher may send a row more than once; the attempt lease
-// and idempotent upload finalization make duplicate Queue messages harmless.
+// CreateSourceImports writes reservations, their import rows and the pipeline
+// `import` queue jobs in one transaction. The attempt lease and idempotent
+// upload finalization make a re-delivered queue claim harmless.
 func (s *Store) CreateSourceImports(
 	ctx context.Context,
 	imports []NewSourceImport,
 ) ([]SourceImportJob, error) {
 	for range 3 {
-		jobs, err := s.createSourceImports(ctx, imports)
+		jobs, err := s.createSourceImports(ctx, imports, nil)
 		if errors.Is(err, errImportOwnerChanged) {
 			continue
 		}
@@ -162,19 +143,68 @@ func (s *Store) CreateSourceImports(
 	return nil, errImportOwnerChanged
 }
 
+type sourceImportRequestCompletion struct {
+	actorUserID string
+	workspaceID string
+	requestID   string
+	fingerprint string
+	response    json.RawMessage
+	stored      json.RawMessage
+}
+
+// CreateSourceImportsAndCompleteRequest commits the canonical response in the
+// same transaction as the import rows, reservations, and queue jobs it names.
+func (s *Store) CreateSourceImportsAndCompleteRequest(
+	ctx context.Context,
+	actorUserID, workspaceID, requestID, fingerprint string,
+	imports []NewSourceImport,
+	response json.RawMessage,
+) (json.RawMessage, error) {
+	completion := sourceImportRequestCompletion{
+		actorUserID: actorUserID,
+		workspaceID: workspaceID,
+		requestID:   requestID,
+		fingerprint: fingerprint,
+		response:    response,
+	}
+	for range 3 {
+		completion.stored = nil
+		_, err := s.createSourceImports(ctx, imports, &completion)
+		if errors.Is(err, errImportOwnerChanged) {
+			continue
+		}
+		return completion.stored, err
+	}
+	return nil, errImportOwnerChanged
+}
+
 func (s *Store) createSourceImports(
 	ctx context.Context,
 	imports []NewSourceImport,
+	completion *sourceImportRequestCompletion,
 ) ([]SourceImportJob, error) {
-	if len(imports) == 0 {
+	if completion != nil && (completion.actorUserID == "" ||
+		completion.workspaceID == "" || completion.requestID == "" ||
+		completion.fingerprint == "" || !json.Valid(completion.response)) {
+		return nil, errors.New("invalid source import request completion")
+	}
+	if len(imports) == 0 && completion == nil {
 		return nil, nil
 	}
-	workspaceID := imports[0].Upload.WorkspaceID
+	workspaceID := ""
+	if completion != nil {
+		workspaceID = completion.workspaceID
+	} else {
+		workspaceID = imports[0].Upload.WorkspaceID
+	}
 	var total int64
 	keys := make(map[string]struct{}, len(imports))
 	for _, item := range imports {
 		if item.Upload.WorkspaceID != workspaceID {
 			return nil, errors.New("source imports must share a workspace")
+		}
+		if completion != nil && item.Upload.CreatedBy != completion.actorUserID {
+			return nil, errors.New("source imports must share the request actor")
 		}
 		if item.Provider != "google" && item.Provider != "microsoft" {
 			return nil, fmt.Errorf("unsupported import provider %q", item.Provider)
@@ -207,6 +237,25 @@ func (s *Store) createSourceImports(
 	if err != nil {
 		return nil, err
 	}
+	actors := map[string]struct{}{}
+	if completion != nil {
+		actors[completion.actorUserID] = struct{}{}
+	}
+	for _, item := range imports {
+		actorID := item.Upload.CreatedBy
+		actors[actorID] = struct{}{}
+	}
+	for actorID := range actors {
+		currentOwnerID, err := s.lockWorkspaceEditorMutationTx(
+			ctx, tx, workspaceID, actorID,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if currentOwnerID != ownerID {
+			return nil, errImportOwnerChanged
+		}
+	}
 	if err := s.lockStorageRowTx(ctx, tx, ownerID); err != nil {
 		return nil, err
 	}
@@ -216,6 +265,35 @@ func (s *Store) createSourceImports(
 	}
 	if currentOwnerID != ownerID {
 		return nil, errImportOwnerChanged
+	}
+	if completion != nil {
+		var storedWorkspace, storedFingerprint string
+		var stored []byte
+		var completed bool
+		err := tx.QueryRow(ctx, `SELECT workspace_id, fingerprint,
+			COALESCE(response,'null'::jsonb), response IS NOT NULL
+			FROM source_import_requests
+			WHERE actor_user_id=$1 AND request_id=$2
+			FOR UPDATE`, completion.actorUserID, completion.requestID).Scan(
+			&storedWorkspace, &storedFingerprint, &stored, &completed,
+		)
+		if isNoRows(err) {
+			return nil, ErrImportIdempotencyConflict
+		}
+		if err != nil {
+			return nil, err
+		}
+		if storedWorkspace != completion.workspaceID ||
+			storedFingerprint != completion.fingerprint {
+			return nil, ErrImportIdempotencyConflict
+		}
+		if completed {
+			if err := tx.Commit(ctx); err != nil {
+				return nil, err
+			}
+			completion.stored = json.RawMessage(stored)
+			return nil, nil
+		}
 	}
 
 	existing := make([]SourceImportJob, 0, len(imports))
@@ -239,6 +317,9 @@ func (s *Store) createSourceImports(
 		existing = append(existing, job)
 	}
 	if len(existing) > 0 {
+		if completion != nil {
+			return nil, ErrImportIdempotencyConflict
+		}
 		if len(existing) != len(imports) {
 			return nil, errors.New("partial source import idempotency replay")
 		}
@@ -277,12 +358,44 @@ func (s *Store) createSourceImports(
 			item.IdempotencyKey, item.TraceID); err != nil {
 			return nil, err
 		}
+		// The pipeline's import worker claims this row; the payload names only
+		// the import so provider identity stays on source_import_jobs.
+		queuePayload, err := json.Marshal(map[string]any{
+			"importJobId": item.JobID,
+			"workspaceId": u.WorkspaceID,
+			"actorUserId": u.CreatedBy,
+			"traceId":     item.TraceID,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO jobs (id, type, payload)
+			VALUES ($1,'import',$2)`, item.JobID, queuePayload); err != nil {
+			return nil, err
+		}
 		job, err := scanSourceImport(tx.QueryRow(ctx,
 			sourceImportSelect+` WHERE j.id=$1`, item.JobID))
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, job)
+	}
+	if completion != nil {
+		var stored []byte
+		err := tx.QueryRow(ctx, `UPDATE source_import_requests
+			SET response=$5::jsonb, completed_at=now()
+			WHERE actor_user_id=$1 AND request_id=$2 AND workspace_id=$3
+				AND fingerprint=$4 AND response IS NULL
+			RETURNING response`, completion.actorUserID, completion.requestID,
+			completion.workspaceID, completion.fingerprint,
+			string(completion.response)).Scan(&stored)
+		if isNoRows(err) {
+			return nil, ErrImportIdempotencyConflict
+		}
+		if err != nil {
+			return nil, err
+		}
+		completion.stored = json.RawMessage(stored)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
@@ -294,9 +407,9 @@ func (s *Store) createSourceImports(
 const sourceImportSelect = `SELECT j.id, j.upload_session_id, u.workspace_id,
 	u.user_id, j.actor_user_id, j.provider, j.provider_file_id, j.provider_drive_id,
 	j.max_bytes, j.idempotency_key, j.trace_id, j.status, j.attempts,
-	j.next_attempt_at, COALESCE(j.lease_token,''), j.lease_expires_at,
-	COALESCE(j.lease_expires_at > now(),false), j.next_attempt_at <= now(),
-	u.expires_at <= now(), COALESCE(j.attempt_object_path,''), j.enqueued_at,
+	COALESCE(j.lease_token,''), j.lease_expires_at,
+	COALESCE(j.lease_expires_at > now(),false),
+	u.expires_at <= now(), COALESCE(j.attempt_object_path,''),
 	COALESCE(j.last_error_code,''), COALESCE(j.last_error,''), u.file_id,
 	u.name, u.kind, u.content_type, u.declared_size, u.object_path, u.final_path,
 	u.expires_at
@@ -310,9 +423,9 @@ func scanSourceImport(row interface{ Scan(...any) error }) (SourceImportJob, err
 		&job.ActorUserID,
 		&job.Provider, &job.ProviderFileID, &job.ProviderDriveID, &job.MaxBytes,
 		&job.IdempotencyKey, &job.TraceID, &job.Status, &job.Attempts,
-		&job.NextAttemptAt, &job.LeaseToken, &job.LeaseExpiresAt,
-		&job.LeaseActive, &job.AttemptReady, &job.SessionExpired,
-		&job.AttemptObjectPath, &job.EnqueuedAt,
+		&job.LeaseToken, &job.LeaseExpiresAt,
+		&job.LeaseActive, &job.SessionExpired,
+		&job.AttemptObjectPath,
 		&job.LastErrorCode, &job.LastError, &job.FileID, &job.Name, &job.Kind,
 		&job.ContentType, &job.DeclaredSize, &job.ObjectPath, &job.FinalPath,
 		&job.SessionExpiresAt,
@@ -338,51 +451,6 @@ func (s *Store) GetSourceImportByID(ctx context.Context, jobID string) (SourceIm
 	return job, err
 }
 
-func (s *Store) PendingSourceImportDispatches(
-	ctx context.Context,
-	limit int,
-) ([]SourceImportDispatch, error) {
-	if limit <= 0 || limit > 100 {
-		limit = 20
-	}
-	rows, err := s.pool.Query(ctx, `SELECT id, dispatch_attempts
-		FROM source_import_jobs
-		WHERE status='pending' AND enqueued_at IS NULL AND dispatch_after<=now()
-		ORDER BY created_at LIMIT $1`, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var dispatches []SourceImportDispatch
-	for rows.Next() {
-		var item SourceImportDispatch
-		if err := rows.Scan(&item.JobID, &item.Attempts); err != nil {
-			return nil, err
-		}
-		dispatches = append(dispatches, item)
-	}
-	return dispatches, rows.Err()
-}
-
-func (s *Store) MarkSourceImportEnqueued(ctx context.Context, jobID string) error {
-	_, err := s.pool.Exec(ctx, `UPDATE source_import_jobs
-		SET enqueued_at=COALESCE(enqueued_at,now()), updated_at=now()
-		WHERE id=$1 AND status='pending'`, jobID)
-	return err
-}
-
-func (s *Store) MarkSourceImportDispatchFailed(ctx context.Context, jobID string, delay time.Duration, message string) error {
-	if delay < time.Second {
-		delay = time.Second
-	}
-	_, err := s.pool.Exec(ctx, `UPDATE source_import_jobs
-		SET dispatch_attempts=dispatch_attempts+1, dispatch_after=now()+$2,
-			last_error_code='queue_dispatch_failed', last_error=$3, updated_at=now()
-		WHERE id=$1 AND status='pending' AND enqueued_at IS NULL`,
-		jobID, delay, message)
-	return err
-}
-
 func (s *Store) AcquireSourceImport(ctx context.Context, jobID string) (SourceImportJob, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -406,9 +474,6 @@ func (s *Store) AcquireSourceImport(ctx context.Context, jobID string) (SourceIm
 		return job, ErrImportNotReady
 	}
 	if job.Status == "running" && job.LeaseActive {
-		return job, ErrImportNotReady
-	}
-	if !job.AttemptReady {
 		return job, ErrImportNotReady
 	}
 	token, err := secureImportToken()
@@ -482,14 +547,27 @@ func (s *Store) prepareSourceImportUpload(
 	}
 	defer tx.Rollback(ctx)
 
-	var ownerID string
-	if err := tx.QueryRow(ctx, `SELECT u.user_id
+	var workspaceID string
+	var actorID *string
+	if err := tx.QueryRow(ctx, `SELECT u.workspace_id, j.actor_user_id
 		FROM source_import_jobs j
 		JOIN upload_sessions u ON u.id=j.upload_session_id
-		WHERE j.id=$1`, jobID).Scan(&ownerID); err != nil {
+		WHERE j.id=$1`, jobID).Scan(&workspaceID, &actorID); err != nil {
 		if isNoRows(err) {
 			return SourceImportJob{}, ErrNotFound
 		}
+		return SourceImportJob{}, err
+	}
+	ownerID, err := s.storageOwnerTx(ctx, tx, workspaceID)
+	if err != nil {
+		return SourceImportJob{}, err
+	}
+	actor := ""
+	if actorID != nil {
+		actor = *actorID
+	}
+	ownerID, err = s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, actor)
+	if err != nil {
 		return SourceImportJob{}, err
 	}
 	if err := s.lockStorageRowTx(ctx, tx, ownerID); err != nil {
@@ -605,14 +683,27 @@ func (s *Store) finalizeSourceImport(
 	}
 	defer tx.Rollback(ctx)
 
-	var ownerID string
-	if err := tx.QueryRow(ctx, `SELECT u.user_id
+	var workspaceID string
+	var actorID *string
+	if err := tx.QueryRow(ctx, `SELECT u.workspace_id, j.actor_user_id
 		FROM source_import_jobs j
 		JOIN upload_sessions u ON u.id=j.upload_session_id
-		WHERE j.id=$1`, jobID).Scan(&ownerID); err != nil {
+		WHERE j.id=$1`, jobID).Scan(&workspaceID, &actorID); err != nil {
 		if isNoRows(err) {
 			return File{}, ErrNotFound
 		}
+		return File{}, err
+	}
+	ownerID, err := s.storageOwnerTx(ctx, tx, workspaceID)
+	if err != nil {
+		return File{}, err
+	}
+	actor := ""
+	if actorID != nil {
+		actor = *actorID
+	}
+	ownerID, err = s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, actor)
+	if err != nil {
 		return File{}, err
 	}
 	if err := s.lockStorageRowTx(ctx, tx, ownerID); err != nil {
@@ -715,14 +806,12 @@ func assertSourceImportActorTx(
 	return nil
 }
 
+// MarkSourceImportRetry releases a live attempt so the pipeline's next queue
+// claim can acquire again; the retry schedule itself lives on the jobs row.
 func (s *Store) MarkSourceImportRetry(
 	ctx context.Context,
 	jobID, leaseToken, code, message string,
-	delay time.Duration,
 ) error {
-	if delay < time.Second {
-		delay = time.Second
-	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -736,15 +825,17 @@ func (s *Store) MarkSourceImportRetry(
 	if err != nil {
 		return err
 	}
-	if job.Status != "running" || job.LeaseToken != leaseToken {
+	if job.Status != "running" || job.LeaseToken != leaseToken ||
+		!job.LeaseActive {
 		return ErrImportLeaseLost
 	}
 	tag, err := tx.Exec(ctx, `UPDATE source_import_jobs
-		SET status='pending', next_attempt_at=now()+$3, lease_token=NULL,
+		SET status='pending', lease_token=NULL,
 			lease_expires_at=NULL, attempt_object_path=NULL,
-			last_error_code=$4, last_error=$5, updated_at=now()
-		WHERE id=$1 AND status='running' AND lease_token=$2`,
-		jobID, leaseToken, delay, code, message)
+			last_error_code=$3, last_error=$4, updated_at=now()
+		WHERE id=$1 AND status='running' AND lease_token=$2
+			AND lease_expires_at>now()`,
+		jobID, leaseToken, code, message)
 	if err != nil {
 		return err
 	}
@@ -759,125 +850,16 @@ func (s *Store) MarkSourceImportRetry(
 	return tx.Commit(ctx)
 }
 
-// RecoverStalledSourceImports is the durable backstop for Queue and DLQ
-// deliveries that disappear. It reopens expired attempts immediately and
-// pending jobs after the configured DLQ retry horizon has elapsed.
-func (s *Store) RecoverStalledSourceImports(
-	ctx context.Context,
-	limit int,
-) (int, error) {
-	if limit <= 0 || limit > 100 {
-		limit = 20
-	}
-	rows, err := s.pool.Query(ctx, `SELECT j.id
-		FROM source_import_jobs j
-		JOIN upload_sessions u ON u.id=j.upload_session_id
-		WHERE u.status='pending' AND u.expires_at>now() AND (
-			(j.status='running' AND j.lease_expires_at<=now())
-			OR (j.status='pending' AND j.enqueued_at IS NOT NULL
-				AND j.next_attempt_at<=now()
-				AND j.updated_at<=now()-interval '6 hours')
-		)
-		ORDER BY COALESCE(j.lease_expires_at,j.updated_at) LIMIT $1`, limit)
-	if err != nil {
-		return 0, err
-	}
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
-			return 0, err
-		}
-		ids = append(ids, id)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return 0, err
-	}
-
-	recovered := 0
-	for _, id := range ids {
-		ok, err := s.recoverStalledSourceImport(ctx, id)
-		if err != nil {
-			return recovered, err
-		}
-		if ok {
-			recovered++
-		}
-	}
-	return recovered, nil
-}
-
-func (s *Store) recoverStalledSourceImport(
-	ctx context.Context,
-	jobID string,
-) (bool, error) {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return false, err
-	}
-	defer tx.Rollback(ctx)
-	job, err := scanSourceImport(tx.QueryRow(ctx, sourceImportSelect+
-		` WHERE j.id=$1 FOR UPDATE OF j`, jobID))
-	if isNoRows(err) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	if job.SessionExpired {
-		return false, tx.Commit(ctx)
-	}
-	switch {
-	case job.Status == "running" && !job.LeaseActive:
-		if _, err := tx.Exec(ctx, `UPDATE source_import_jobs
-			SET status='pending', next_attempt_at=now(), lease_token=NULL,
-				lease_expires_at=NULL, attempt_object_path=NULL, enqueued_at=NULL,
-				dispatch_after=now(), last_error_code='attempt_lease_expired',
-				last_error='source import attempt lease expired', updated_at=now()
-			WHERE id=$1`, jobID); err != nil {
-			return false, err
-		}
-		if err := s.EnqueueBlobDeletionTx(
-			ctx, tx, uploadPresignGrace, job.AttemptObjectPath,
-		); err != nil {
-			return false, err
-		}
-	case job.Status == "pending" && job.EnqueuedAt != nil && job.AttemptReady:
-		tag, err := tx.Exec(ctx, `UPDATE source_import_jobs
-			SET enqueued_at=NULL, dispatch_after=now(),
-				last_error_code='queue_delivery_stalled',
-				last_error='source import queue delivery stalled', updated_at=now()
-			WHERE id=$1 AND status='pending' AND enqueued_at IS NOT NULL
-				AND updated_at<=now()-interval '6 hours'`, jobID)
-		if err != nil {
-			return false, err
-		}
-		if tag.RowsAffected() == 0 {
-			return false, tx.Commit(ctx)
-		}
-	default:
-		return false, tx.Commit(ctx)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
+// MarkSourceImportFailed closes an import and expires its upload session so the
+// reservation is released. With a lease token it fences the live attempt; with
+// an empty token it closes a job that holds no live lease and refuses one that
+// does, which is how the pipeline reports a job whose attempts ran out before
+// an attempt was ever acquired.
 func (s *Store) MarkSourceImportFailed(
 	ctx context.Context,
 	jobID, leaseToken, code, message string,
 ) error {
-	return s.failSourceImport(ctx, jobID, leaseToken, code, message, false)
-}
-
-func (s *Store) DeadLetterSourceImport(
-	ctx context.Context,
-	jobID, code, message string,
-) error {
-	return s.failSourceImport(ctx, jobID, "", code, message, true)
+	return s.failSourceImport(ctx, jobID, leaseToken, code, message, leaseToken == "")
 }
 
 func (s *Store) failSourceImport(
@@ -938,16 +920,28 @@ func (s *Store) failSourceImportOnce(
 	if ignoreLease && job.Status == "running" && job.LeaseActive {
 		return ErrImportNotReady
 	}
-	if !ignoreLease && (job.Status != "running" || job.LeaseToken != leaseToken) {
+	if !ignoreLease && (job.Status != "running" ||
+		job.LeaseToken != leaseToken || !job.LeaseActive) {
 		return ErrImportLeaseLost
 	}
 
-	if _, err := tx.Exec(ctx, `UPDATE source_import_jobs
+	updateQuery := `UPDATE source_import_jobs
 		SET status='failed', completed_at=now(), lease_token=NULL,
 			lease_expires_at=NULL, attempt_object_path=NULL,
 			last_error_code=$2, last_error=$3, updated_at=now()
-		WHERE id=$1`, jobID, code, message); err != nil {
+		WHERE id=$1`
+	updateArgs := []any{jobID, code, message}
+	if !ignoreLease {
+		updateQuery += ` AND status='running' AND lease_token=$4
+			AND lease_expires_at>now()`
+		updateArgs = append(updateArgs, leaseToken)
+	}
+	tag, err := tx.Exec(ctx, updateQuery, updateArgs...)
+	if err != nil {
 		return err
+	}
+	if !ignoreLease && tag.RowsAffected() == 0 {
+		return ErrImportLeaseLost
 	}
 	var objectPath, finalPath string
 	err = tx.QueryRow(ctx, `UPDATE upload_sessions SET status='expired'

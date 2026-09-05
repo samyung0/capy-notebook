@@ -250,8 +250,8 @@ func TestOperatorRejectsProductAccountLocksButAllowsOverQuota(t *testing.T) {
 	}
 	if _, err := pool.Exec(ctx, `
 		INSERT INTO user_subscriptions (
-			stripe_subscription_id, user_id, status, current_period_end
-		) VALUES ($2, $1, 'canceled', now() - interval '30 days')`,
+			stripe_subscription_id, user_id, status, plan_tier, current_period_end
+		) VALUES ($2, $1, 'canceled', 'pro', now() - interval '30 days')`,
 		userID, "sub_"+userID,
 	); err != nil {
 		t.Fatal(err)

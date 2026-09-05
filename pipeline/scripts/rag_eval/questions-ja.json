@@ -1,0 +1,73 @@
+[
+  {
+    "q": "事前学習で言語モデルは何を獲得するのか",
+    "expect": [
+      ["jp_llm2.pptx", 10],
+      ["jp_llm2.pptx", 7],
+      ["jp_llm2.pptx", 14],
+      ["jp_llm2.pptx", 17]
+    ],
+    "flag": 2
+  },
+  {
+    "q": "RLHFとは何か",
+    "expect": [["jp_llm2.pptx", 12], ["jp_llm.pdf", 28]],
+    "flag": 2
+  },
+  {
+    "q": "Mixture of Expertsはなぜ計算量を抑えられるのか",
+    "expect": [["jp_llm2.pptx", 60], ["jp_llm2.pptx", 62]],
+    "flag": 2
+  },
+  {
+    "q": "FlashAttentionはどうやって高速化するのか",
+    "expect": [["jp_llm2.pptx", 56], ["jp_llm2.pptx", 55]],
+    "flag": 2
+  },
+  {
+    "q": "量子化で性能劣化を防ぐにはどうするか",
+    "expect": [
+      ["jp_llm2.pptx", 97],
+      ["jp_llm2.pptx", 99],
+      ["jp_llm2.pptx", 141]
+    ],
+    "flag": 2
+  },
+  {
+    "q": "ハルシネーションはなぜ不可避なのか",
+    "expect": [["jp_llm.pdf", 65], ["jp_llm.pdf", 66], ["jp_llm.pdf", 63]],
+    "flag": 2
+  },
+  {
+    "q": "普遍文法と社会語用論の違いは何か",
+    "expect": [["jp_llm.pdf", 43], ["jp_llm.pdf", 46], ["jp_llm.pdf", 40]],
+    "flag": 2
+  },
+  {
+    "q": "ロール指定は計算精度にどう影響するか",
+    "expect": [["jp_llm.pdf", 52], ["jp_llm.pdf", 53], ["jp_llm.pdf", 54]],
+    "flag": 2
+  },
+  { "q": "GPT-4はMoE構造なのか", "expect": [["jp_llm2.pptx", 62]], "flag": 2 },
+  {
+    "q": "コードで学習すると推論性能は上がるか",
+    "expect": [["jp_llm2.pptx", 109]],
+    "flag": 2
+  },
+  {
+    "q": "What is FlashAttention?",
+    "expect": [["jp_llm2.pptx", 55], ["jp_llm2.pptx", 56]],
+    "flag": 2
+  },
+  {
+    "q": "ハルシネーションの不可避性について説明して",
+    "expect": [["jp_llm.pdf", 10], ["jp_llm.pdf", 66], ["jp_llm.pdf", 63]],
+    "flag": 2
+  },
+  { "q": "top-p samplingとは何か", "expect": [["jp_llm.pdf", 23]], "flag": 2 },
+  {
+    "q": "人間のフィードバックで言語モデルの価値観を合わせる段階はどれか",
+    "expect": [["jp_llm2.pptx", 12]],
+    "flag": 2
+  }
+]

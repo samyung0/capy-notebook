@@ -3,7 +3,7 @@
 Why record-replay
 -----------------
 The pipeline's real cost is model traffic: embeddings and DeepSeek
-completions for summaries, concept extraction and answers. Those HTTP
+completions for summaries and answers. Those HTTP
 interactions are recorded ONCE into per-test YAML cassettes
 (``tests/cassettes/``) and replayed for free afterwards. Postgres and Redis are
 raw TCP, not HTTP, so cassette tests start fresh containers per pytest session
@@ -63,7 +63,6 @@ os.environ["EVO_EMBEDDING_BATCH"] = "1000"
 for _k in (
     "DEEPSEEK_API_KEY",
     "ANTHROPIC_API_KEY",
-    "GEMINI_API_KEY",
     "OPENAI_API_KEY",
     "DEEPINFRA_API_KEY",
 ):
@@ -264,7 +263,6 @@ def _vcr():
             "authorization",
             "api-key",
             "x-api-key",
-            "x-goog-api-key",
             "cookie",
             "set-cookie",
         ],
@@ -386,7 +384,7 @@ def workspace(_test_infra) -> Workspace:
     equal to the seeded embedding row — so the workspace is pinned to a real
     model without the fixture having to resolve a registry.
 
-    Installing pins is not incidental setup: no surface resolves its own default
+    Installing pins is not incidental setup: no slot resolves its own default
     any more, so ``index_file`` and ``search`` raise without them. The tests call
     those functions directly instead of going through ``process_ingest_job``, so
     the fixture has to stand in for the part of the worker that reads the
@@ -412,11 +410,11 @@ def workspace(_test_infra) -> Workspace:
     registry.registry.refresh()
     registry.set_job_pins(
         registry.JobPins(
-            ingest=registry.registry.default(registry.Surface.INGEST),
+            ingest=registry.registry.default(registry.Slot.INGEST),
             embedding=registry.resolve_pinned(
-                row[0], row[1], row[2], registry.Surface.EMBEDDING
+                row[0], row[1], row[2], registry.Slot.RETRIEVAL
             ),
-            vision=registry.registry.default(registry.Surface.VISION),
+            captioning=registry.registry.default(registry.Slot.CAPTIONING),
         )
     )
     try:

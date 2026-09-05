@@ -49,6 +49,10 @@ var ErrLLMKeyFailed = errors.New("llm credential failed")
 // ErrConflict reports a failed optimistic revision comparison.
 var ErrConflict = errors.New("revision conflict")
 
+// ErrAccountLifecycleChanged means an account-deletion confirmation was based
+// on a preflight taken before support restored the account.
+var ErrAccountLifecycleChanged = errors.New("account lifecycle changed")
+
 // ErrForbidden reports authenticated access without the required workspace
 // role. Shared-resource probing still uses ErrNotFound.
 var ErrForbidden = errors.New("forbidden")
@@ -88,7 +92,7 @@ func (s *Store) SetLLMCredentialKey(key []byte) { s.credKey = key }
 func (s *Store) Pool() *pgxpool.Pool { return s.pool }
 
 // SetModelRegistry attaches the process-wide registry so account creation
-// can snapshot surface defaults onto the user row, chat/generate can resolve
+// can snapshot slot defaults onto the user row, chat/generate can resolve
 // the preference per request, and ingest enqueue can pin embedding/vision.
 func (s *Store) SetModelRegistry(r *models.Registry) { s.registry = r }
 
@@ -157,8 +161,8 @@ func (s *Store) MaxSourceFileBytes() (int64, error) {
 
 func (s *Store) Close() { s.pool.Close() }
 
-// ConfigureCollaboration enables Yjs-authoritative commands for initialized
-// materials. The URL is the sidecar's internal HTTP origin.
+// ConfigureCollaboration enables Yjs-authoritative commands. The sidecar
+// bootstraps a missing durable document from the SQL projection on first use.
 func (s *Store) ConfigureCollaboration(rawURL, secret string) {
 	s.collaborationURL = strings.TrimRight(rawURL, "/")
 	s.collaborationSecret = secret
@@ -177,6 +181,135 @@ func isNoRows(err error) bool { return errors.Is(err, pgx.ErrNoRows) }
 func isUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
+
+func isRetryableTransactionError(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && (pgErr.Code == "40001" || pgErr.Code == "40P01")
+}
+
+type cloneSourceLock struct {
+	key    string
+	shared bool
+}
+
+func cloneSourceLockKey(sourceKind, sourceID string) string {
+	return "clone-source:" + sourceKind + ":" + sourceID
+}
+
+// lockCloneSources establishes the canonical source hierarchy before a clone
+// snapshot or deletion takes any account or content lock. Callers choose shared
+// or exclusive mode for each level. A transaction-scoped lock is too late
+// because PostgreSQL can establish a snapshot while waiting for it.
+func (s *Store) lockCloneSources(
+	ctx context.Context,
+	locks []cloneSourceLock,
+) (*pgxpool.Conn, func(), error) {
+	for attempt := 0; ; attempt++ {
+		conn, err := s.pool.Acquire(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		acquired := locks[:0]
+		for _, lock := range locks {
+			query := `SELECT pg_try_advisory_lock(hashtextextended($1, 0))`
+			if lock.shared {
+				query = `SELECT pg_try_advisory_lock_shared(hashtextextended($1, 0))`
+			}
+			var locked bool
+			err = conn.QueryRow(ctx, query, lock.key).Scan(&locked)
+			if err != nil || !locked {
+				break
+			}
+			acquired = append(acquired, lock)
+		}
+		if err == nil && len(acquired) == len(locks) {
+			return conn, func() {
+				unlockCloneSources(context.WithoutCancel(ctx), conn, acquired)
+				conn.Release()
+			}, nil
+		}
+		unlockCloneSources(context.WithoutCancel(ctx), conn, acquired)
+		conn.Release()
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := waitCloneRetry(ctx, attempt); err != nil {
+			return nil, nil, err
+		}
+	}
+}
+
+func unlockCloneSources(ctx context.Context, conn *pgxpool.Conn, locks []cloneSourceLock) {
+	for i := len(locks) - 1; i >= 0; i-- {
+		query := `SELECT pg_advisory_unlock(hashtextextended($1, 0))`
+		if locks[i].shared {
+			query = `SELECT pg_advisory_unlock_shared(hashtextextended($1, 0))`
+		}
+		_, _ = conn.Exec(ctx, query, locks[i].key)
+	}
+}
+
+func (s *Store) lockWorkspaceCloneSource(
+	ctx context.Context,
+	workspaceID string,
+	shared bool,
+) (*pgxpool.Conn, func(), error) {
+	return s.lockCloneSources(ctx, []cloneSourceLock{{
+		key: cloneSourceLockKey("workspace", workspaceID), shared: shared,
+	}})
+}
+
+// lockMaterialCloneSource orders a workspace-contained material under its
+// workspace fence. The returned connection is also the transaction starter so
+// the session locks cannot migrate to a different pooled connection.
+func (s *Store) lockMaterialCloneSource(
+	ctx context.Context,
+	materialID string,
+	shared bool,
+) (*pgxpool.Conn, func(), error) {
+	for attempt := 0; ; attempt++ {
+		var workspaceID *string
+		if err := s.pool.QueryRow(ctx,
+			`SELECT workspace_id FROM materials WHERE id=$1`, materialID,
+		).Scan(&workspaceID); isNoRows(err) {
+			return nil, nil, ErrNotFound
+		} else if err != nil {
+			return nil, nil, err
+		}
+		locks := make([]cloneSourceLock, 0, 2)
+		if workspaceID != nil {
+			locks = append(locks, cloneSourceLock{
+				key: cloneSourceLockKey("workspace", *workspaceID), shared: true,
+			})
+		}
+		locks = append(locks, cloneSourceLock{
+			key: cloneSourceLockKey("material", materialID), shared: shared,
+		})
+		conn, unlock, err := s.lockCloneSources(ctx, locks)
+		if err != nil {
+			return nil, nil, err
+		}
+		var placementUnchanged bool
+		err = conn.QueryRow(ctx, `SELECT workspace_id IS NOT DISTINCT FROM $2::text
+			FROM materials WHERE id=$1`, materialID, workspaceID).
+			Scan(&placementUnchanged)
+		if isNoRows(err) {
+			unlock()
+			return nil, nil, ErrNotFound
+		}
+		if err != nil {
+			unlock()
+			return nil, nil, err
+		}
+		if placementUnchanged {
+			return conn, unlock, nil
+		}
+		unlock()
+		if err := waitCloneRetry(ctx, attempt); err != nil {
+			return nil, nil, err
+		}
+	}
 }
 
 func uniqueConstraintName(err error) string {

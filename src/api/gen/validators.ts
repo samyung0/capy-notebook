@@ -19,6 +19,7 @@ export const GetDeletionPreflightResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "canDelete": zod.boolean(),
   "graceDays": zod.int(),
+  "lifecycleGeneration": zod.int(),
   "storageUsedBytes": zod.int(),
   "subscription": zod.object({
   "currentPeriodEnd": zod.iso.datetime({"offset":true}).optional(),
@@ -88,10 +89,13 @@ export const GetDeletionPreflightResponse = zod.object({
  */
 export const requestAccountDeletionBodyConfirmEmailMax = 320;
 
+export const requestAccountDeletionBodyLifecycleGenerationMin = 0;
+
 
 
 export const RequestAccountDeletionBody = zod.object({
-  "confirmEmail": zod.string().min(1).max(requestAccountDeletionBodyConfirmEmailMax)
+  "confirmEmail": zod.string().min(1).max(requestAccountDeletionBodyConfirmEmailMax),
+  "lifecycleGeneration": zod.int().min(requestAccountDeletionBodyLifecycleGenerationMin)
 })
 
 export const RequestAccountDeletionResponse = zod.object({
@@ -204,69 +208,6 @@ export const BillingCheckoutResponse = zod.object({
 export const BillingPortalResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "url": zod.string()
-})
-
-
-/**
- * @summary Delete a card
- */
-export const DeleteCardParams = zod.object({
-  "id": zod.string()
-})
-
-export const DeleteCardResponse = zod.void()
-
-
-/**
- * @summary Update a card
- */
-export const UpdateCardParams = zod.object({
-  "id": zod.string()
-})
-
-export const updateCardBodyBackMax = 4000;
-
-export const updateCardBodyFrontMax = 4000;
-
-
-
-export const UpdateCardBody = zod.object({
-  "back": zod.string().min(1).max(updateCardBodyBackMax).optional(),
-  "front": zod.string().min(1).max(updateCardBodyFrontMax).optional(),
-  "known": zod.boolean().optional(),
-  "srs": zod.object({
-  "difficulty": zod.number(),
-  "due": zod.string(),
-  "elapsed_days": zod.int(),
-  "lapses": zod.int(),
-  "last_review": zod.string().optional(),
-  "learning_steps": zod.int().optional(),
-  "reps": zod.int(),
-  "scheduled_days": zod.int(),
-  "stability": zod.number(),
-  "state": zod.int()
-}).optional()
-})
-
-export const UpdateCardResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "back": zod.string(),
-  "deckId": zod.string(),
-  "front": zod.string(),
-  "id": zod.string(),
-  "known": zod.boolean(),
-  "srs": zod.object({
-  "difficulty": zod.number(),
-  "due": zod.string(),
-  "elapsed_days": zod.int(),
-  "lapses": zod.int(),
-  "last_review": zod.string().optional(),
-  "learning_steps": zod.int().optional(),
-  "reps": zod.int(),
-  "scheduled_days": zod.int(),
-  "stability": zod.number(),
-  "state": zod.int()
-})
 })
 
 
@@ -399,200 +340,6 @@ export const ListMessagesResponseItem = zod.object({
   "status": zod.string()
 })
 export const ListMessagesResponse = zod.array(ListMessagesResponseItem)
-
-
-/**
- * @summary List decks
- */
-export const ListDecksResponseItem = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "cardCount": zod.int(),
-  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
-  "dueCount": zod.int(),
-  "id": zod.string(),
-  "isOwner": zod.boolean(),
-  "knownPct": zod.int(),
-  "name": zod.string(),
-  "privacy": zod.enum(['private', 'public', 'link']),
-  "workspaceId": zod.string(),
-  "workspaceName": zod.string()
-})
-export const ListDecksResponse = zod.array(ListDecksResponseItem)
-
-
-/**
- * @summary Create a deck
- */
-export const createDeckBodyColorDefault = `green`;
-export const createDeckBodyNameMax = 200;
-
-
-
-export const CreateDeckBody = zod.object({
-  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']).default(createDeckBodyColorDefault),
-  "name": zod.string().max(createDeckBodyNameMax).optional(),
-  "workspaceId": zod.string().optional()
-})
-
-export const CreateDeckResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "cardCount": zod.int(),
-  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
-  "dueCount": zod.int(),
-  "id": zod.string(),
-  "isOwner": zod.boolean(),
-  "knownPct": zod.int(),
-  "name": zod.string(),
-  "privacy": zod.enum(['private', 'public', 'link']),
-  "workspaceId": zod.string(),
-  "workspaceName": zod.string()
-})
-
-
-/**
- * @summary Get a deck
- */
-export const GetDeckParams = zod.object({
-  "id": zod.string()
-})
-
-export const GetDeckResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "cardCount": zod.int(),
-  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
-  "dueCount": zod.int(),
-  "id": zod.string(),
-  "isOwner": zod.boolean(),
-  "knownPct": zod.int(),
-  "name": zod.string(),
-  "privacy": zod.enum(['private', 'public', 'link']),
-  "workspaceId": zod.string(),
-  "workspaceName": zod.string()
-})
-
-
-/**
- * @summary Update a deck (rename / recolor / share)
- */
-export const UpdateDeckParams = zod.object({
-  "id": zod.string()
-})
-
-export const updateDeckBodyNameMax = 200;
-
-
-
-export const UpdateDeckBody = zod.object({
-  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']).optional(),
-  "name": zod.string().min(1).max(updateDeckBodyNameMax).optional(),
-  "privacy": zod.enum(['private', 'public', 'link']).optional().describe('Visibility (share standalone)')
-})
-
-export const UpdateDeckResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "cardCount": zod.int(),
-  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
-  "dueCount": zod.int(),
-  "id": zod.string(),
-  "isOwner": zod.boolean(),
-  "knownPct": zod.int(),
-  "name": zod.string(),
-  "privacy": zod.enum(['private', 'public', 'link']),
-  "workspaceId": zod.string(),
-  "workspaceName": zod.string()
-})
-
-
-/**
- * @summary List cards in a deck
- */
-export const ListCardsParams = zod.object({
-  "id": zod.string()
-})
-
-export const ListCardsResponseItem = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "back": zod.string(),
-  "deckId": zod.string(),
-  "front": zod.string(),
-  "id": zod.string(),
-  "known": zod.boolean(),
-  "srs": zod.object({
-  "difficulty": zod.number(),
-  "due": zod.string(),
-  "elapsed_days": zod.int(),
-  "lapses": zod.int(),
-  "last_review": zod.string().optional(),
-  "learning_steps": zod.int().optional(),
-  "reps": zod.int(),
-  "scheduled_days": zod.int(),
-  "stability": zod.number(),
-  "state": zod.int()
-})
-})
-export const ListCardsResponse = zod.array(ListCardsResponseItem)
-
-
-/**
- * @summary Create a card
- */
-export const CreateCardParams = zod.object({
-  "id": zod.string()
-})
-
-export const createCardBodyBackMax = 4000;
-
-export const createCardBodyFrontMax = 4000;
-
-
-
-export const CreateCardBody = zod.object({
-  "back": zod.string().min(1).max(createCardBodyBackMax),
-  "front": zod.string().min(1).max(createCardBodyFrontMax)
-})
-
-export const CreateCardResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "back": zod.string(),
-  "deckId": zod.string(),
-  "front": zod.string(),
-  "id": zod.string(),
-  "known": zod.boolean(),
-  "srs": zod.object({
-  "difficulty": zod.number(),
-  "due": zod.string(),
-  "elapsed_days": zod.int(),
-  "lapses": zod.int(),
-  "last_review": zod.string().optional(),
-  "learning_steps": zod.int().optional(),
-  "reps": zod.int(),
-  "scheduled_days": zod.int(),
-  "stability": zod.number(),
-  "state": zod.int()
-})
-})
-
-
-/**
- * @summary Clone a shared deck
- */
-export const CloneDeckParams = zod.object({
-  "id": zod.string()
-})
-
-export const CloneDeckResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "cardCount": zod.int(),
-  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
-  "dueCount": zod.int(),
-  "id": zod.string(),
-  "isOwner": zod.boolean(),
-  "knownPct": zod.int(),
-  "name": zod.string(),
-  "privacy": zod.enum(['private', 'public', 'link']),
-  "workspaceId": zod.string(),
-  "workspaceName": zod.string()
-})
 
 
 /**
@@ -746,10 +493,11 @@ export const UpdateEventResponse = zod.object({
 
 
 /**
- * @summary Public flashcard decks
+ * @summary Public flashcards
  */
-export const ExploreDecksResponseItem = zod.object({
+export const ExploreFlashcardSetsResponseItem = zod.object({
   "author": zod.string(),
+  "canEdit": zod.boolean(),
   "cardCount": zod.int(),
   "clones": zod.int(),
   "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
@@ -762,7 +510,7 @@ export const ExploreDecksResponseItem = zod.object({
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
-export const ExploreDecksResponse = zod.array(ExploreDecksResponseItem)
+export const ExploreFlashcardSetsResponse = zod.array(ExploreFlashcardSetsResponseItem)
 
 
 /**
@@ -770,6 +518,7 @@ export const ExploreDecksResponse = zod.array(ExploreDecksResponseItem)
  */
 export const ExploreQuizzesResponseItem = zod.object({
   "author": zod.string(),
+  "canEdit": zod.boolean(),
   "chapters": zod.array(zod.string()),
   "clones": zod.int(),
   "createdAt": zod.iso.datetime({"offset":true}),
@@ -973,6 +722,326 @@ export const CompleteFileReplacementUploadResponse = zod.object({
 
 
 /**
+ * @summary List flashcard sets
+ */
+export const ListFlashcardSetsResponseItem = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "canEdit": zod.boolean(),
+  "cardCount": zod.int(),
+  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
+  "dueCount": zod.int(),
+  "id": zod.string(),
+  "isOwner": zod.boolean(),
+  "knownPct": zod.int(),
+  "name": zod.string(),
+  "privacy": zod.enum(['private', 'public', 'link']),
+  "workspaceId": zod.string(),
+  "workspaceName": zod.string()
+})
+export const ListFlashcardSetsResponse = zod.array(ListFlashcardSetsResponseItem)
+
+
+/**
+ * @summary Create flashcards
+ */
+export const createFlashcardSetBodyColorDefault = `green`;
+export const createFlashcardSetBodyNameMax = 200;
+
+
+
+export const CreateFlashcardSetBody = zod.object({
+  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']).default(createFlashcardSetBodyColorDefault),
+  "name": zod.string().max(createFlashcardSetBodyNameMax).optional(),
+  "workspaceId": zod.string().optional()
+})
+
+export const CreateFlashcardSetResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "canEdit": zod.boolean(),
+  "cardCount": zod.int(),
+  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
+  "dueCount": zod.int(),
+  "id": zod.string(),
+  "isOwner": zod.boolean(),
+  "knownPct": zod.int(),
+  "name": zod.string(),
+  "privacy": zod.enum(['private', 'public', 'link']),
+  "workspaceId": zod.string(),
+  "workspaceName": zod.string()
+})
+
+
+/**
+ * @summary Delete a card
+ */
+export const DeleteCardParams = zod.object({
+  "id": zod.string()
+})
+
+export const DeleteCardResponse = zod.void()
+
+
+/**
+ * @summary Update card content
+ */
+export const UpdateCardParams = zod.object({
+  "id": zod.string()
+})
+
+export const updateCardBodyBackMax = 4000;
+
+export const updateCardBodyFrontMax = 4000;
+
+
+
+export const UpdateCardBody = zod.object({
+  "back": zod.string().min(1).max(updateCardBodyBackMax).optional(),
+  "front": zod.string().min(1).max(updateCardBodyFrontMax).optional()
+})
+
+export const UpdateCardResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "back": zod.string(),
+  "front": zod.string(),
+  "id": zod.string(),
+  "known": zod.boolean(),
+  "materialId": zod.string(),
+  "srs": zod.object({
+  "difficulty": zod.number(),
+  "due": zod.string(),
+  "elapsed_days": zod.int(),
+  "lapses": zod.int(),
+  "last_review": zod.string().optional(),
+  "learning_steps": zod.int().optional(),
+  "reps": zod.int(),
+  "scheduled_days": zod.int(),
+  "stability": zod.number(),
+  "state": zod.int()
+})
+})
+
+
+/**
+ * @summary Update card study state
+ */
+export const UpdateCardStudyStateParams = zod.object({
+  "id": zod.string()
+})
+
+export const UpdateCardStudyStateBody = zod.object({
+  "known": zod.boolean().optional(),
+  "srs": zod.object({
+  "difficulty": zod.number(),
+  "due": zod.string(),
+  "elapsed_days": zod.int(),
+  "lapses": zod.int(),
+  "last_review": zod.string().optional(),
+  "learning_steps": zod.int().optional(),
+  "reps": zod.int(),
+  "scheduled_days": zod.int(),
+  "stability": zod.number(),
+  "state": zod.int()
+}).optional()
+})
+
+export const UpdateCardStudyStateResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "back": zod.string(),
+  "front": zod.string(),
+  "id": zod.string(),
+  "known": zod.boolean(),
+  "materialId": zod.string(),
+  "srs": zod.object({
+  "difficulty": zod.number(),
+  "due": zod.string(),
+  "elapsed_days": zod.int(),
+  "lapses": zod.int(),
+  "last_review": zod.string().optional(),
+  "learning_steps": zod.int().optional(),
+  "reps": zod.int(),
+  "scheduled_days": zod.int(),
+  "stability": zod.number(),
+  "state": zod.int()
+})
+})
+
+
+/**
+ * @summary Get flashcards
+ */
+export const GetFlashcardSetParams = zod.object({
+  "id": zod.string()
+})
+
+export const GetFlashcardSetResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "canEdit": zod.boolean(),
+  "cardCount": zod.int(),
+  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
+  "dueCount": zod.int(),
+  "id": zod.string(),
+  "isOwner": zod.boolean(),
+  "knownPct": zod.int(),
+  "name": zod.string(),
+  "privacy": zod.enum(['private', 'public', 'link']),
+  "workspaceId": zod.string(),
+  "workspaceName": zod.string()
+})
+
+
+/**
+ * @summary List cards
+ */
+export const ListCardsParams = zod.object({
+  "id": zod.string()
+})
+
+export const ListCardsResponseItem = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "back": zod.string(),
+  "front": zod.string(),
+  "id": zod.string(),
+  "known": zod.boolean(),
+  "materialId": zod.string(),
+  "srs": zod.object({
+  "difficulty": zod.number(),
+  "due": zod.string(),
+  "elapsed_days": zod.int(),
+  "lapses": zod.int(),
+  "last_review": zod.string().optional(),
+  "learning_steps": zod.int().optional(),
+  "reps": zod.int(),
+  "scheduled_days": zod.int(),
+  "stability": zod.number(),
+  "state": zod.int()
+})
+})
+export const ListCardsResponse = zod.array(ListCardsResponseItem)
+
+
+/**
+ * @summary Create a card
+ */
+export const CreateCardParams = zod.object({
+  "id": zod.string()
+})
+
+export const createCardBodyBackMax = 4000;
+
+export const createCardBodyFrontMax = 4000;
+
+
+
+export const CreateCardBody = zod.object({
+  "back": zod.string().min(1).max(createCardBodyBackMax),
+  "front": zod.string().min(1).max(createCardBodyFrontMax)
+})
+
+export const CreateCardResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "back": zod.string(),
+  "front": zod.string(),
+  "id": zod.string(),
+  "known": zod.boolean(),
+  "materialId": zod.string(),
+  "srs": zod.object({
+  "difficulty": zod.number(),
+  "due": zod.string(),
+  "elapsed_days": zod.int(),
+  "lapses": zod.int(),
+  "last_review": zod.string().optional(),
+  "learning_steps": zod.int().optional(),
+  "reps": zod.int(),
+  "scheduled_days": zod.int(),
+  "stability": zod.number(),
+  "state": zod.int()
+})
+})
+
+
+/**
+ * @summary Clone shared flashcards
+ */
+export const CloneFlashcardSetParams = zod.object({
+  "id": zod.string()
+})
+
+export const CloneFlashcardSetResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "canEdit": zod.boolean(),
+  "cardCount": zod.int(),
+  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
+  "dueCount": zod.int(),
+  "id": zod.string(),
+  "isOwner": zod.boolean(),
+  "knownPct": zod.int(),
+  "name": zod.string(),
+  "privacy": zod.enum(['private', 'public', 'link']),
+  "workspaceId": zod.string(),
+  "workspaceName": zod.string()
+})
+
+
+/**
+ * @summary Update flashcard metadata
+ */
+export const UpdateFlashcardSetParams = zod.object({
+  "id": zod.string()
+})
+
+export const updateFlashcardSetBodyNameMax = 200;
+
+
+
+export const UpdateFlashcardSetBody = zod.object({
+  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']).optional(),
+  "name": zod.string().min(1).max(updateFlashcardSetBodyNameMax).optional()
+})
+
+export const UpdateFlashcardSetResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "canEdit": zod.boolean(),
+  "cardCount": zod.int(),
+  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
+  "dueCount": zod.int(),
+  "id": zod.string(),
+  "isOwner": zod.boolean(),
+  "knownPct": zod.int(),
+  "name": zod.string(),
+  "privacy": zod.enum(['private', 'public', 'link']),
+  "workspaceId": zod.string(),
+  "workspaceName": zod.string()
+})
+
+
+/**
+ * @summary Update standalone flashcard sharing
+ */
+export const UpdateFlashcardSetSharingParams = zod.object({
+  "id": zod.string()
+})
+
+export const UpdateFlashcardSetSharingBody = zod.object({
+  "privacy": zod.enum(['private', 'public', 'link']).describe('Visibility for a standalone material')
+})
+
+export const UpdateFlashcardSetSharingResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "canEdit": zod.boolean(),
+  "cardCount": zod.int(),
+  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
+  "dueCount": zod.int(),
+  "id": zod.string(),
+  "isOwner": zod.boolean(),
+  "knownPct": zod.int(),
+  "name": zod.string(),
+  "privacy": zod.enum(['private', 'public', 'link']),
+  "workspaceId": zod.string(),
+  "workspaceName": zod.string()
+})
+
+
+/**
  * @summary Integration status
  */
 export const GetIntegrationsResponse = zod.object({
@@ -1106,38 +1175,6 @@ export const GetMaterialResponse = zod.object({
   "updatedAt": zod.iso.datetime({"offset":true}),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
-})
-
-
-/**
- * @summary Update a material
- */
-export const UpdateMaterialParams = zod.object({
-  "id": zod.string()
-})
-
-
-export const updateMaterialBodyTitleMax = 200;
-
-
-
-export const UpdateMaterialBody = zod.object({
-  "chapterId": zod.string().optional().describe('Chapter to file under; empty string unfiles; omit to leave unchanged'),
-  "expectedRevision": zod.int().min(1).optional().describe('Required when changing title'),
-  "privacy": zod.enum(['private', 'public', 'link']).optional().describe('Visibility (share standalone)'),
-  "scopeChapters": zod.array(zod.string()).optional(),
-  "scopeFileNames": zod.array(zod.string()).optional(),
-  "title": zod.string().min(1).max(updateMaterialBodyTitleMax).optional()
-})
-
-export const UpdateMaterialResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "contentBytes": zod.int().describe('UTF-8 byte length of persisted content JSON'),
-  "id": zod.string(),
-  "maxDepth": zod.int(),
-  "nodeCount": zod.int(),
-  "revision": zod.int(),
-  "updatedAt": zod.iso.datetime({"offset":true})
 })
 
 
@@ -1302,6 +1339,37 @@ export const CreateMaterialDiscussionResponse = zod.object({
 
 
 /**
+ * @summary Update material metadata
+ */
+export const UpdateMaterialParams = zod.object({
+  "id": zod.string()
+})
+
+
+export const updateMaterialBodyTitleMax = 200;
+
+
+
+export const UpdateMaterialBody = zod.object({
+  "chapterId": zod.string().optional().describe('Chapter to file under; empty string unfiles; omit to leave unchanged'),
+  "expectedRevision": zod.int().min(1).optional().describe('Required when changing title'),
+  "scopeChapters": zod.array(zod.string()).optional(),
+  "scopeFileNames": zod.array(zod.string()).optional(),
+  "title": zod.string().min(1).max(updateMaterialBodyTitleMax).optional()
+})
+
+export const UpdateMaterialResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "contentBytes": zod.int().describe('UTF-8 byte length of persisted content JSON'),
+  "id": zod.string(),
+  "maxDepth": zod.int(),
+  "nodeCount": zod.int(),
+  "revision": zod.int(),
+  "updatedAt": zod.iso.datetime({"offset":true})
+})
+
+
+/**
  * @summary List material revisions
  */
 export const ListMaterialRevisionsParams = zod.object({
@@ -1323,6 +1391,51 @@ export const ListMaterialRevisionsResponseItem = zod.object({
   "title": zod.string()
 })
 export const ListMaterialRevisionsResponse = zod.array(ListMaterialRevisionsResponseItem)
+
+
+/**
+ * @summary Update standalone material sharing
+ */
+export const UpdateMaterialSharingParams = zod.object({
+  "id": zod.string()
+})
+
+export const UpdateMaterialSharingBody = zod.object({
+  "privacy": zod.enum(['private', 'public', 'link']).describe('Visibility for a standalone material')
+})
+
+export const UpdateMaterialSharingResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "capabilities": zod.object({
+  "canComment": zod.boolean(),
+  "canEdit": zod.boolean(),
+  "canManageMembers": zod.boolean(),
+  "canView": zod.boolean()
+}),
+  "chapterId": zod.string().nullable(),
+  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']).optional(),
+  "content": zod.object({
+  "schemaVersion": zod.int(),
+  "value": zod.array(zod.record(zod.string(), zod.unknown())).nullable()
+}),
+  "contentBytes": zod.int().describe('UTF-8 byte length of persisted content JSON'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "id": zod.string(),
+  "isOwner": zod.boolean(),
+  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']),
+  "maxDepth": zod.int(),
+  "nodeCount": zod.int(),
+  "position": zod.int(),
+  "privacy": zod.enum(['private', 'public', 'link']),
+  "revision": zod.int(),
+  "role": zod.enum(['owner', 'editor', 'commenter', 'viewer']).optional(),
+  "scopeChapters": zod.array(zod.string()),
+  "scopeFileNames": zod.array(zod.string()),
+  "title": zod.string(),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "workspaceId": zod.string(),
+  "workspaceName": zod.string()
+})
 
 
 /**
@@ -1452,6 +1565,7 @@ export const SetModelPrefsResponse = zod.void()
  */
 export const GetMistakesResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "canEdit": zod.boolean(),
   "chapters": zod.array(zod.string()),
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
@@ -1466,19 +1580,19 @@ export const GetMistakesResponse = zod.object({
 
 
 /**
- * @summary Known model surfaces
+ * @summary Known model slots
  */
-export const ListModelSurfacesResponse = zod.object({
+export const ListModelSlotsResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "surfaces": zod.array(zod.enum(['chat', 'generate', 'editor', 'quiz', 'ingest', 'embedding', 'vision']))
+  "slots": zod.array(zod.enum(['chat', 'generate', 'editor', 'quiz', 'ingest', 'retrieval', 'captioning']))
 })
 
 
 /**
- * @summary Enabled models for a surface
+ * @summary Enabled models for a slot
  */
 export const ListModelsQueryParams = zod.object({
-  "surface": zod.enum(['chat', 'generate', 'editor', 'quiz']).optional()
+  "slot": zod.enum(['chat', 'generate', 'editor', 'quiz']).optional()
 })
 
 export const ListModelsResponse = zod.object({
@@ -1612,6 +1726,7 @@ export const GradeQuizAnswerResponse = zod.object({
  */
 export const ListQuizzesResponseItem = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "canEdit": zod.boolean(),
   "chapters": zod.array(zod.string()),
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
@@ -1646,6 +1761,7 @@ export const CreateQuizBody = zod.object({
 
 export const CreateQuizResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "canEdit": zod.boolean(),
   "chapters": zod.array(zod.string()),
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
@@ -1678,42 +1794,7 @@ export const GetQuizParams = zod.object({
 
 export const GetQuizResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "chapters": zod.array(zod.string()),
-  "createdAt": zod.iso.datetime({"offset":true}),
-  "id": zod.string(),
-  "isOwner": zod.boolean(),
-  "name": zod.string(),
-  "privacy": zod.enum(['private', 'public', 'link']),
-  "questions": zod.array(zod.record(zod.string(), zod.unknown())),
-  "timeLimitMin": zod.int().optional(),
-  "workspaceId": zod.string(),
-  "workspaceName": zod.string()
-})
-
-
-/**
- * @summary Update a quiz
- */
-export const UpdateQuizParams = zod.object({
-  "id": zod.string()
-})
-
-export const updateQuizBodyNameMax = 200;
-
-export const updateQuizBodyTimeLimitMinMax = 180;
-
-
-
-export const UpdateQuizBody = zod.object({
-  "chapters": zod.array(zod.string()).optional(),
-  "name": zod.string().min(1).max(updateQuizBodyNameMax).optional(),
-  "privacy": zod.enum(['private', 'public', 'link']).optional(),
-  "questions": zod.array(zod.record(zod.string(), zod.unknown())).optional(),
-  "timeLimitMin": zod.int().min(1).max(updateQuizBodyTimeLimitMinMax).optional()
-})
-
-export const UpdateQuizResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "canEdit": zod.boolean(),
   "chapters": zod.array(zod.string()),
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
@@ -1771,6 +1852,98 @@ export const CloneQuizParams = zod.object({
 
 export const CloneQuizResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "canEdit": zod.boolean(),
+  "chapters": zod.array(zod.string()),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "id": zod.string(),
+  "isOwner": zod.boolean(),
+  "name": zod.string(),
+  "privacy": zod.enum(['private', 'public', 'link']),
+  "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "timeLimitMin": zod.int().optional(),
+  "workspaceId": zod.string(),
+  "workspaceName": zod.string()
+})
+
+
+/**
+ * @summary Update quiz content
+ */
+export const UpdateQuizContentParams = zod.object({
+  "id": zod.string()
+})
+
+export const updateQuizContentBodyTimeLimitMinMax = 180;
+
+
+
+export const UpdateQuizContentBody = zod.object({
+  "questions": zod.array(zod.record(zod.string(), zod.unknown())).optional(),
+  "timeLimitMin": zod.int().min(1).max(updateQuizContentBodyTimeLimitMinMax).optional()
+})
+
+export const UpdateQuizContentResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "canEdit": zod.boolean(),
+  "chapters": zod.array(zod.string()),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "id": zod.string(),
+  "isOwner": zod.boolean(),
+  "name": zod.string(),
+  "privacy": zod.enum(['private', 'public', 'link']),
+  "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "timeLimitMin": zod.int().optional(),
+  "workspaceId": zod.string(),
+  "workspaceName": zod.string()
+})
+
+
+/**
+ * @summary Update quiz metadata
+ */
+export const UpdateQuizMetadataParams = zod.object({
+  "id": zod.string()
+})
+
+export const updateQuizMetadataBodyNameMax = 200;
+
+
+
+export const UpdateQuizMetadataBody = zod.object({
+  "chapters": zod.array(zod.string()).optional(),
+  "name": zod.string().min(1).max(updateQuizMetadataBodyNameMax).optional()
+})
+
+export const UpdateQuizMetadataResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "canEdit": zod.boolean(),
+  "chapters": zod.array(zod.string()),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "id": zod.string(),
+  "isOwner": zod.boolean(),
+  "name": zod.string(),
+  "privacy": zod.enum(['private', 'public', 'link']),
+  "questions": zod.array(zod.record(zod.string(), zod.unknown())),
+  "timeLimitMin": zod.int().optional(),
+  "workspaceId": zod.string(),
+  "workspaceName": zod.string()
+})
+
+
+/**
+ * @summary Update standalone quiz sharing
+ */
+export const UpdateQuizSharingParams = zod.object({
+  "id": zod.string()
+})
+
+export const UpdateQuizSharingBody = zod.object({
+  "privacy": zod.enum(['private', 'public', 'link']).describe('Visibility for a standalone material')
+})
+
+export const UpdateQuizSharingResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "canEdit": zod.boolean(),
   "chapters": zod.array(zod.string()),
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
@@ -2442,7 +2615,7 @@ export const ListWorkspaceFilesResponse = zod.array(ListWorkspaceFilesResponseIt
 
 
 /**
- * @summary Generate a quiz, deck, mindmap, or diagram
+ * @summary Generate a quiz, flashcards, mindmap, or diagram
  */
 export const GenerateParams = zod.object({
   "id": zod.string()
@@ -2514,7 +2687,7 @@ export const ListMaterialsResponseItem = zod.object({
   "revision": zod.int(),
   "sizeBytes": zod.int(),
   "title": zod.string(),
-  "type": zod.enum(['mindmap', 'diagram', 'quiz', 'deck', 'note'])
+  "type": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note'])
 })
 export const ListMaterialsResponse = zod.array(ListMaterialsResponseItem)
 
@@ -2675,6 +2848,7 @@ export const ImportSourcesParams = zod.object({
 
 export const importSourcesBodyChapterNameMax = 255;
 
+export const importSourcesBodyFileIdsMax = 20;
 
 export const importSourcesBodyRequestIdMax = 128;
 
@@ -2685,7 +2859,7 @@ export const ImportSourcesBody = zod.object({
   "chapterId": zod.string().optional(),
   "chapterName": zod.string().max(importSourcesBodyChapterNameMax).optional(),
   "driveIds": zod.array(zod.string()).optional(),
-  "fileIds": zod.array(zod.string()).min(1),
+  "fileIds": zod.array(zod.string()).min(1).max(importSourcesBodyFileIdsMax),
   "parseMode": zod.enum(['fast', 'none']).optional(),
   "provider": zod.enum(['google', 'microsoft']),
   "requestId": zod.string().max(importSourcesBodyRequestIdMax).optional()

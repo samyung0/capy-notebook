@@ -2,9 +2,54 @@ package httpapi
 
 import (
 	"context"
+	"time"
 
 	"github.com/evonotes/server/internal/store"
 )
+
+const liveAuthorizationRecheckInterval = 5 * time.Second
+
+// liveWorkspaceContext keeps a long-running provider or event stream inside
+// the same actor and workspace lifecycle boundary used at request admission.
+// It closes promptly when the actor is locked, membership is removed, or the
+// workspace owner starts account deletion.
+func (a *api) liveWorkspaceContext(
+	parent context.Context,
+	userID, workspaceID string,
+) (context.Context, context.CancelFunc) {
+	return a.liveWorkspaceContextAtInterval(
+		parent, userID, workspaceID, liveAuthorizationRecheckInterval,
+	)
+}
+
+func (a *api) liveWorkspaceContextAtInterval(
+	parent context.Context,
+	userID, workspaceID string,
+	interval time.Duration,
+) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(parent)
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				allowed, _, err := a.s.AccountSessionAllowed(ctx, userID)
+				if err != nil || !allowed {
+					cancel()
+					return
+				}
+				if _, err := a.s.WorkspaceAccess(ctx, userID, workspaceID); err != nil {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	return ctx, cancel
+}
 
 // requireAccountCreate rejects the request when the authenticated user may not
 // create workspaces, files, materials, uploads or clones.

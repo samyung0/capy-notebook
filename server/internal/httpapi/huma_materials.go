@@ -33,24 +33,29 @@ type updateMaterialInput struct {
 	ID   string `path:"id"`
 	Body apimodel.UpdateMaterialReq
 }
+type updateMaterialSharingInput struct {
+	ID   string `path:"id"`
+	Body apimodel.UpdateStandaloneSharingReq
+}
 
 func (a *api) registerMaterials(api huma.API) {
 	const tag = "Materials"
 	reg(api, http.MethodGet, "/api/workspaces/{id}/materials", "listMaterials", tag, "List study materials", http.StatusOK, a.listMaterials)
 	regWithMaxBody(api, http.MethodPost, "/api/workspaces/{id}/materials", "createMaterial", tag, "Create a note material", http.StatusCreated, materialRequestMaxBytes, a.createMaterial)
 	reg(api, http.MethodGet, "/api/materials/{id}", "getMaterial", tag, "Get a material", http.StatusOK, a.getMaterial)
-	regWithMaxBody(api, http.MethodPatch, "/api/materials/{id}", "updateMaterial", tag, "Update a material", http.StatusOK, materialRequestMaxBytes, a.updateMaterial)
+	regWithMaxBody(api, http.MethodPatch, "/api/materials/{id}/metadata", "updateMaterial", tag, "Update material metadata", http.StatusOK, materialRequestMaxBytes, a.updateMaterial)
+	reg(api, http.MethodPatch, "/api/materials/{id}/sharing", "updateMaterialSharing", tag, "Update standalone material sharing", http.StatusOK, a.updateMaterialSharing)
 	reg(api, http.MethodDelete, "/api/materials/{id}", "deleteMaterial", tag, "Delete a material", http.StatusNoContent, a.deleteMaterial)
 	a.registerMembership(api)
 	a.registerCollaboration(api)
 }
 
 // assertMaterialOwner checks direct material ownership. This supports both
-// workspace-contained and truly standalone quizzes/decks.
+// workspace-contained and truly standalone quizzes/flashcardSets.
 func (a *api) assertMaterialOwner(ctx context.Context, matID string) error {
 	err := a.s.AssertMaterialEditor(ctx, userID(ctx), matID)
 	if errors.Is(err, store.ErrForbidden) {
-		// Existing quiz/deck handlers map only not-found; keep unauthorized
+		// Existing quiz/flashcardSet handlers map only not-found; keep unauthorized
 		// mutation indistinguishable from a missing private resource.
 		return store.ErrNotFound
 	}
@@ -166,17 +171,10 @@ func (a *api) updateMaterial(
 	ctx context.Context,
 	in *updateMaterialInput,
 ) (*materialUpdateOutput, error) {
-	// Title, filing and scope are size-neutral, so an over-quota account keeps
-	// them: the quota is a creation gate, and renaming is part of how such an
-	// account finds what to delete. Publishing is not size-neutral in effect —
-	// a public material is an Explore surface and every clone of it is charged
-	// to the cloner — so it needs a fully writable account. Content shrink
-	// recovery goes through the collaboration server, not this REST path.
-	if in.Body.Privacy != nil {
-		if err := a.requireAccountEdit(ctx); err != nil {
-			return nil, err
-		}
-	} else if err := a.requireAccountMutate(ctx); err != nil {
+	// Metadata is size-neutral, so an over-quota account keeps it: renaming and
+	// filing are part of how such an account finds what to delete. Content goes
+	// through collaboration and sharing has its own fully-writable path.
+	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
 	access, err := a.s.AssertMaterialContentEditor(ctx, userID(ctx), in.ID)
@@ -196,7 +194,6 @@ func (a *api) updateMaterial(
 		Title:            in.Body.Title,
 		ScopeChapters:    in.Body.ScopeChapters,
 		ScopeFileNames:   in.Body.ScopeFileNames,
-		Privacy:          in.Body.Privacy,
 		ExpectedRevision: in.Body.ExpectedRevision,
 		UpdatedBy:        userID(ctx),
 	}
@@ -221,9 +218,6 @@ func (a *api) updateMaterial(
 		}
 		return nil, hErr(err)
 	}
-	if in.Body.Privacy != nil {
-		a.publishMaterialEviction(ctx, in.ID)
-	}
 	return &materialUpdateOutput{Body: apimodel.MaterialUpdateResult{
 		ID:           res.ID,
 		Revision:     res.Revision,
@@ -234,6 +228,22 @@ func (a *api) updateMaterial(
 	}}, nil
 }
 
+func (a *api) updateMaterialSharing(
+	ctx context.Context,
+	in *updateMaterialSharingInput,
+) (*materialOutput, error) {
+	if err := a.requireAccountEdit(ctx); err != nil {
+		return nil, err
+	}
+	material, err := a.s.UpdateStandaloneMaterialPrivacy(
+		ctx, userID(ctx), in.ID, "", in.Body.Privacy,
+	)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return materialResponse(material, store.RoleOwner)
+}
+
 func (a *api) deleteMaterial(ctx context.Context, in *materialIDInput) (*Empty, error) {
 	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
@@ -241,9 +251,8 @@ func (a *api) deleteMaterial(ctx context.Context, in *materialIDInput) (*Empty, 
 	if err := a.assertMaterialOwner(ctx, in.ID); err != nil {
 		return nil, collaborationError(err)
 	}
-	if err := a.s.DeleteMaterial(ctx, in.ID); err != nil {
+	if err := a.s.DeleteMaterial(ctx, userID(ctx), in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	a.publishMaterialEviction(ctx, in.ID)
 	return &Empty{}, nil
 }

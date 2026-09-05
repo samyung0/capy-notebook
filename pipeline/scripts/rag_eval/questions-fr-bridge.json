@@ -1,0 +1,18 @@
+[
+  {
+    "q": "L'article sur CamemBERT compare OSCAR, CCNet et un troisième corpus « totalement édité ». L'autre document décrit un corpus de reconnaissance d'entités nommées construit à partir de cette même source : comment ses annotations d'origine ont-elles été produites ?",
+    "expect": [["wikiner-fr-gold.pdf", 5]]
+  },
+  {
+    "q": "Le corpus d'entités nommées décrit dans WikiNER-fr-gold provient d'une encyclopédie en ligne. Dans l'expérience de CamemBERT, un modèle pré-entraîné uniquement sur cette encyclopédie fait-il mieux ou moins bien que les modèles entraînés sur Common Crawl, et sur quel type de textes l'écart est-il le plus grand ?",
+    "expect": [["camembert-taln.pdf", 18]]
+  },
+  {
+    "q": "Quel dump de Wikipédia française CamemBERT utilise-t-il, et combien de tokens contient le sous-corpus français de WikiNER ?",
+    "expect": [["camembert-taln.pdf", 11], ["wikiner-fr-gold.pdf", 4]]
+  },
+  {
+    "q": "Des outils comme spaCy et Flair ont été entraînés sur le corpus décrit dans WikiNER-fr-gold. Pour la même tâche de NER, de combien l'architecture LARGE de CamemBERT réduit-elle l'erreur par rapport à BASE ?",
+    "expect": [["camembert-taln.pdf", 25]]
+  }
+]

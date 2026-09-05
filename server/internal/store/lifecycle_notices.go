@@ -22,15 +22,39 @@ const (
 func (s *Store) SweepOverQuotaNotices(ctx context.Context) (int, error) {
 	// Candidate: most recent paid period has ended, account not deleted /
 	// suspended / pending deletion. Storage comparison happens per row.
-	rows, err := s.pool.Query(ctx, `SELECT u.id, u.email, u.locale, max(s.current_period_end)
+	rows, err := s.pool.Query(ctx, `SELECT u.id, u.email, u.locale,
+		GREATEST(
+			max(s.current_period_end) FILTER (
+				WHERE s.plan_tier='pro' AND s.status IN `+entitlingStatuses+`
+					AND s.current_period_end <= now()),
+			max(LEAST(
+				COALESCE(s.current_period_end, s.ended_at, s.canceled_at,
+					to_timestamp(NULLIF(s.stripe_event_created, 0)), s.updated_at),
+				COALESCE(s.ended_at, s.canceled_at,
+					to_timestamp(NULLIF(s.stripe_event_created, 0)), s.updated_at)
+			)) FILTER (WHERE s.plan_tier='pro' AND s.status NOT IN `+entitlingStatuses+`)
+		)
 		FROM users u
 		JOIN user_subscriptions s ON s.user_id = u.id
 		WHERE u.deleted_at IS NULL
 			AND u.suspended_at IS NULL
 			AND u.deletion_requested_at IS NULL
-			AND s.current_period_end IS NOT NULL
 		GROUP BY u.id, u.email, u.locale
-		HAVING max(s.current_period_end) < now()`)
+		HAVING NOT EXISTS(SELECT 1 FROM user_subscriptions live
+			WHERE live.user_id=u.id AND live.plan_tier='pro'
+				AND live.status IN `+entitlingStatuses+`
+				AND (live.current_period_end IS NULL OR live.current_period_end > now()))
+			AND GREATEST(
+				max(s.current_period_end) FILTER (
+					WHERE s.plan_tier='pro' AND s.status IN `+entitlingStatuses+`
+						AND s.current_period_end <= now()),
+				max(LEAST(
+					COALESCE(s.current_period_end, s.ended_at, s.canceled_at,
+						to_timestamp(NULLIF(s.stripe_event_created, 0)), s.updated_at),
+					COALESCE(s.ended_at, s.canceled_at,
+						to_timestamp(NULLIF(s.stripe_event_created, 0)), s.updated_at)
+				)) FILTER (WHERE s.plan_tier='pro' AND s.status NOT IN `+entitlingStatuses+`)
+			) IS NOT NULL`)
 	if err != nil {
 		return 0, err
 	}
@@ -107,6 +131,17 @@ func (s *Store) sendLifecycleNotice(
 		return false, err
 	}
 	defer tx.Rollback(ctx)
+	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
+		return false, err
+	}
+	current, err := s.accountAccess(ctx, tx, userID)
+	if err != nil {
+		return false, err
+	}
+	if !current.ShrinkOnly() {
+		return false, nil
+	}
+	status = current
 
 	tag, err := tx.Exec(ctx, `INSERT INTO lifecycle_notices (user_id, kind, period_end)
 		VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`, userID, kind, periodEnd)

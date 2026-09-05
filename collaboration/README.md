@@ -8,8 +8,9 @@ Local `pnpm dev` works with no env file: missing values fall back to the same
 defaults as `deploy/docker-compose.yml` / the Go API
 (`http://localhost:5173`, `dev-collaboration-secret`, local Postgres/Redis).
 
-Optional: `cp .env.example .env` and edit. `dev` / `start` / `chaos` load
-`.env` via Node `--env-file-if-exists` when present.
+Optional: fill these in `deploy/.env` (the repository's single env file, see
+`deploy/.env.example`). `dev` / `start` / `chaos` load it via Node
+`--env-file-if-exists` when present.
 
 ```text
 COLLABORATION_ALLOWED_ORIGINS=http://localhost:5173   # comma-separated
@@ -40,7 +41,19 @@ lock. After that, the binary Y.Doc is never reconstructed from JSON.
 Every store merges persisted and in-memory updates while holding the material
 lock, increments `stored_version`, and commits the encoded state. Failed stores
 remain in an in-memory retry queue. A successful store sends a validated Plate
-projection to Go; rows where projection lags are retried periodically.
+projection to Go. A projection failure never puts the committed snapshot back
+in the store retry queue or increments `stored_version` again. The sidecar
+records the projection error only while that failed Yjs version remains ahead
+of the projected version, and the periodic lag scan retries the projection from
+the committed Yjs row. An older failure therefore cannot restore an error after
+a newer projection succeeds. Background query, projection, and error-recording
+failures are contained and reported instead of escaping as rejected promises.
+Internal commands register a completion ID before opening their direct
+connection. The store hook records its projection result against that ID, and
+the HTTP handler checks it after Hocuspocus finishes disconnecting. This check
+is separate because Hocuspocus catches store-hook errors. A failed synchronous
+projection therefore returns 503 even though the Yjs update is durable and the
+lag scanner will retry that projection.
 
 On restart, the exact stored binary update is loaded. Redis synchronizes
 document and awareness updates between replicas but is not persistence.
@@ -59,7 +72,9 @@ IDs are held in memory per room, claimed before the store reads the document, an
 returned in the `checkpoint-persisted` broadcast once PostgreSQL commits, along
 with the stored version and the document metrics. Nothing is written into the
 Y.Doc, so a receipt costs no Yjs update and leaves nothing behind in the
-persisted state.
+persisted state. A transient failure keeps the IDs claimed by that exact
+snapshot. Its successful retry returns only those IDs that are still pending;
+IDs requested after the failed snapshot wait for a later durable store.
 
 ## Document limits
 
@@ -71,14 +86,21 @@ cloning the document and serializing it, so it is amortized over a budget of
 applied update bytes and only runs per update once the document is near a limit.
 An over-limit document still accepts updates that do not worsen size, node count,
 or depth; without that allowance the deletions needed to recover would also be
-rejected. A rejected update closes just that connection after sending it
-`document-rejected`, so the client discards its forked Y.Doc rather than
-reconnecting and resending it forever.
+rejected. Metrics walk every structurally valid level through the decode
+ceiling, including documents already deeper than the product cap. A rejected
+update closes just that connection after sending it `document-rejected`, so the
+client discards its forked Y.Doc rather than reconnecting and resending it
+forever.
 
 The store hook repeats the check as a backstop. Hocuspocus swallows store
 failures and keeps the document loaded, so a limit failure there broadcasts
 `document-rejected` and evicts the room across all replicas instead of leaving it
-live and silently unsavable.
+live and silently unsavable. A transient store failure queues the snapshot for
+retry. If that retry later fails a document or quota limit, the sidecar removes
+the queued snapshot and follows the same rejection and discard-eviction path.
+Only one retry pass runs in a sidecar process at a time. A completed retry
+removes its queue entry only when that entry is still the exact snapshot it
+stored, so a newer failed edit remains queued for the next pass.
 
 ## Access
 

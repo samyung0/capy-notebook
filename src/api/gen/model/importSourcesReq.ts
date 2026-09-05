@@ -15,7 +15,10 @@ export interface ImportSourcesReq {
   /** @maxLength 255 */
   chapterName?: string;
   driveIds?: string[];
-  /** @minItems 1 */
+  /**
+     * @minItems 1
+     * @maxItems 20
+     */
   fileIds: string[];
   parseMode?: ImportSourcesReqParseMode;
   provider: ImportSourcesReqProvider;

@@ -1,0 +1,39 @@
+[
+  {
+    "q": "實驗二在AiScholar平臺上測試了什麼？",
+    "expect": [["mixed_zh_en.pdf", 4], ["mixed_zh_en.pdf", 14]]
+  },
+  {
+    "q": "本研究如何處理倫理、隱私和數據安全問題？",
+    "expect": [
+      ["mixed_zh_en.pdf", 7],
+      ["mixed_zh_en.pdf", 8],
+      ["mixed_zh_en.pdf", 17],
+      ["mixed_zh_en.pdf", 20]
+    ]
+  },
+  {
+    "q": "研究對評審員的認知負荷有什麼發現？",
+    "expect": [
+      ["mixed_zh_en.pdf", 3],
+      ["mixed_zh_en.pdf", 6],
+      ["mixed_zh_en.pdf", 16]
+    ]
+  },
+  {
+    "q": "本論文的理論貢獻是什麼？",
+    "expect": [["mixed_zh_en.pdf", 9], ["mixed_zh_en.pdf", 21]]
+  },
+  {
+    "q": "傳統人工同行評審系統為什麼難以應對？",
+    "expect": [["mixed_zh_en.pdf", 1], ["mixed_zh_en.pdf", 11]]
+  },
+  {
+    "q": "論文答辯委員會由哪些教授組成？",
+    "expect": [["mixed_zh_en.pdf", 23]]
+  },
+  {
+    "q": "這項研究的經驗可以推廣到哪些知識密集型行業？",
+    "expect": [["mixed_zh_en.pdf", 19]]
+  }
+]

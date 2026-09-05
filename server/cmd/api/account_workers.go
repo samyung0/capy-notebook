@@ -9,12 +9,33 @@ import (
 	"github.com/evonotes/server/internal/store"
 )
 
-// runAccountPurgeWorker permanently destroys accounts whose purge_after has
-// elapsed. Content deletion and PII scrub run in PurgeUser; Clerk identity
-// deletion happens afterwards so a crash mid-purge leaves a row the next tick
-// can finish, rather than an orphaned Clerk user with no local account.
+// runAccountPurgeWorker retries session revocation for deletion-pending users,
+// then permanently destroys accounts whose purge_after has elapsed. Content
+// deletion and PII scrub run in PurgeUser; Clerk identity deletion happens
+// afterwards so a crash mid-purge leaves a row the next tick can finish.
 func runAccountPurgeWorker(ctx context.Context, st *store.Store, clerkEnabled bool) {
 	tick := func() {
+		if clerkEnabled {
+			ids, err := st.ClaimUsersDueForSessionRevocation(ctx, 10)
+			if err != nil {
+				if ctx.Err() == nil {
+					log.Printf("session revocation claim: %v", err)
+				}
+			} else {
+				for _, id := range ids {
+					if err := integrations.RevokeUserSessions(ctx, id); err != nil {
+						log.Printf("revoke Clerk sessions %s: %v", id, err)
+						if retryErr := st.RetrySessionRevocation(ctx, id, err); retryErr != nil {
+							log.Printf("schedule session revocation retry %s: %v", id, retryErr)
+						}
+						continue
+					}
+					if err := st.MarkSessionRevocationComplete(ctx, id); err != nil {
+						log.Printf("finish session revocation %s: %v", id, err)
+					}
+				}
+			}
+		}
 		ids, err := st.ClaimUsersDueForPurge(ctx, 10)
 		if err != nil {
 			if ctx.Err() == nil {
@@ -31,11 +52,16 @@ func runAccountPurgeWorker(ctx context.Context, st *store.Store, clerkEnabled bo
 			}
 			if clerkEnabled {
 				if err := integrations.DeleteIdentity(ctx, id); err != nil {
-					// Local tombstone is already committed. A failed Clerk
-					// delete is retried on the next user.deleted webhook (no-op)
-					// or by ops; do not undo the scrub.
 					log.Printf("purge clerk identity %s: %v", id, err)
+					if retryErr := st.RetryIdentityDeletion(ctx, id); retryErr != nil {
+						log.Printf("schedule clerk identity retry %s: %v", id, retryErr)
+					}
+					continue
 				}
+			}
+			if err := st.MarkIdentityDeletionComplete(ctx, id); err != nil {
+				log.Printf("finish identity deletion %s: %v", id, err)
+				continue
 			}
 			log.Printf("purged account %s", id)
 		}

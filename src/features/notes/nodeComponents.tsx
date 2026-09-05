@@ -502,7 +502,8 @@ function Toc(props: PlateElementProps) {
 
 /* mention (inline void) */
 function Mention(props: PlateElementProps) {
-  const value = String((props.element as { value?: string }).value ?? '');
+  const mention = props.element as { key?: string; value?: string };
+  const value = String(mention.value ?? mention.key ?? '');
   return (
     <PlateElement {...props} as="span" className={MENTION_CLASS}>
       <span contentEditable={false}>@{value}</span>

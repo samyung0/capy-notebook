@@ -11,6 +11,7 @@ import type { Material, WorkspaceRole } from '@/api/types';
 import { Spinner } from '@/components/ui/feedback';
 import { userToast } from '@/components/ui/userToast';
 import { FileError, FileLoading } from '@/features/files/FileStates';
+import { MaterialRenderProvider } from '@/features/materials/MaterialRenderContext';
 import { m } from '@/i18n';
 import {
   EditorRuntimeProvider,
@@ -169,6 +170,14 @@ function CollaborativeNoteEditor({
       role,
     ]
   );
+  const renderContext = useMemo(
+    () => ({
+      isStandalone: !material.workspaceId,
+      kind: material.kind,
+      title: material.title,
+    }),
+    [material.kind, material.title, material.workspaceId]
+  );
 
   if (meIsPending || discussionsIsPending || collaborationTokenIsPending) {
     return <FileLoading />;
@@ -183,21 +192,23 @@ function CollaborativeNoteEditor({
   }
 
   return (
-    <EditorRuntimeProvider value={runtime}>
-      <div className="flex h-full flex-col gap-0 overflow-hidden">
-        <NoteEditorCore
-          allowExternalAssets={allowExternalAssets}
-          collaborationToken={collaborationTokenData}
-          currentUserId={meData.id}
-          currentUserName={meData.name}
-          discussions={discussionsData ?? NO_DISCUSSIONS}
-          key={`${collaborationTokenData.room}:${editorGeneration}`}
-          material={material}
-          mode={mode}
-          onDocumentRejected={onDocumentRejected}
-          onEditorStatusChange={onEditorStatusChange}
-        />
-      </div>
-    </EditorRuntimeProvider>
+    <MaterialRenderProvider value={renderContext}>
+      <EditorRuntimeProvider value={runtime}>
+        <div className="flex h-full flex-col gap-0 overflow-hidden">
+          <NoteEditorCore
+            allowExternalAssets={allowExternalAssets}
+            collaborationToken={collaborationTokenData}
+            currentUserId={meData.id}
+            currentUserName={meData.name}
+            discussions={discussionsData ?? NO_DISCUSSIONS}
+            key={`${collaborationTokenData.room}:${editorGeneration}`}
+            material={material}
+            mode={mode}
+            onDocumentRejected={onDocumentRejected}
+            onEditorStatusChange={onEditorStatusChange}
+          />
+        </div>
+      </EditorRuntimeProvider>
+    </MaterialRenderProvider>
   );
 }

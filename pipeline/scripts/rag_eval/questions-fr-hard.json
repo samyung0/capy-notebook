@@ -1,0 +1,26 @@
+[
+  {
+    "q": "Un corpus web de seulement quatre gigaoctets marche aussi bien que cent trente-huit",
+    "expect": [
+      ["camembert-taln.pdf", 20],
+      ["camembert-taln.pdf", 21],
+      ["camembert-taln.pdf", 1]
+    ]
+  },
+  {
+    "q": "Le modèle français concurrent publié par Le et al. en 2019",
+    "expect": [["camembert-taln.pdf", 6]]
+  },
+  {
+    "q": "La version filtrée au niveau deux qu'ils ont choisie pour annoter",
+    "expect": [["wikiner-fr-gold.pdf", 7]]
+  },
+  {
+    "q": "Comment marquer le début, l'intérieur et la fin d'une mention en une seule étiquette",
+    "expect": [["wikiner-fr-gold.pdf", 9]]
+  },
+  {
+    "q": "Masquer le mot entier plutôt que des morceaux de sous-mots, ça change quoi",
+    "expect": [["camembert-taln.pdf", 24]]
+  }
+]

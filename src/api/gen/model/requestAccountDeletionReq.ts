@@ -13,4 +13,6 @@ export interface RequestAccountDeletionReq {
      * @maxLength 320
      */
   confirmEmail: string;
+  /** @minimum 0 */
+  lifecycleGeneration: number;
 }

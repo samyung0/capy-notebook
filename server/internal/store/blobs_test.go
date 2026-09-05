@@ -3,8 +3,11 @@ package store
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/evonotes/server/internal/materialdoc"
 )
 
 // newBlobTestUser creates a user that is torn down at the end of the test,
@@ -95,7 +98,7 @@ func TestBlobRefcountQueuesOnlyUnreferencedObjects(t *testing.T) {
 		t.Error("shared path was queued while another file still references it")
 	}
 
-	if err := s.DeleteFile(ctx, first.ID); err != nil {
+	if err := s.DeleteFile(ctx, ownerID, first.ID); err != nil {
 		t.Fatal(err)
 	}
 	if got := blobRefCount(t, s, sharedPath); got != 0 {
@@ -131,6 +134,7 @@ func TestArtifactCacheRefsSurviveFileDelete(t *testing.T) {
 	}
 	sourcePath := "sources/" + uid("blob")
 	captionPath := "captions/" + uid("blob")
+	parseBundlePath := "parse-bundles/" + uid("blob") + ".zip"
 	file, err := s.CreateSourceReady(ctx, ws.ID, ownerID, "doc.pdf", "pdf",
 		nil, "", 100, sourcePath)
 	if err != nil {
@@ -141,10 +145,18 @@ func TestArtifactCacheRefsSurviveFileDelete(t *testing.T) {
 		captionPath, "abc"); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO artifact_cache
+		(object_path, kind, source_sha256) VALUES ($1, 'parse_bundle', $2)`,
+		parseBundlePath, "abc"); err != nil {
+		t.Fatal(err)
+	}
 	if got := blobRefCount(t, s, captionPath); got != 1 {
 		t.Fatalf("caption refs = %d, want 1", got)
 	}
-	if err := s.DeleteFile(ctx, file.ID); err != nil {
+	if got := blobRefCount(t, s, parseBundlePath); got != 1 {
+		t.Fatalf("parse bundle refs = %d, want 1", got)
+	}
+	if err := s.DeleteFile(ctx, ownerID, file.ID); err != nil {
 		t.Fatal(err)
 	}
 	if got := blobRefCount(t, s, captionPath); got != 1 {
@@ -152,6 +164,9 @@ func TestArtifactCacheRefsSurviveFileDelete(t *testing.T) {
 	}
 	if blobQueued(t, s, captionPath) {
 		t.Error("caption cache was queued when its file was deleted")
+	}
+	if blobQueued(t, s, parseBundlePath) {
+		t.Error("parse bundle cache was queued when its file was deleted")
 	}
 	n, err := s.SweepArtifactCache(ctx, 0)
 	if err != nil {
@@ -171,99 +186,11 @@ func TestArtifactCacheRefsSurviveFileDelete(t *testing.T) {
 	if !blobQueued(t, s, captionPath) {
 		t.Error("caption cache was not queued by GC")
 	}
-}
-
-func TestFileDeleteRetainsPendingAudioUntilProviderCleanup(t *testing.T) {
-	s := openAccessTestStore(t)
-	ctx := context.Background()
-	ownerID := newBlobTestUser(t, s, "u_audio_cleanup")
-	ws, err := s.CreateWorkspace(ctx, ownerID, "Audio cleanup", ColorGreen, []TagRef{})
-	if err != nil {
-		t.Fatal(err)
+	if got := blobRefCount(t, s, parseBundlePath); got != 0 {
+		t.Errorf("parse bundle refs after GC = %d, want 0", got)
 	}
-	file, err := s.CreateSourceReady(ctx, ws.ID, ownerID, "lecture.mp3", "audio",
-		nil, "", 100, "sources/"+uid("audio"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	jobID := uid("job")
-	transcriptionID := uid("at")
-	if _, err := s.pool.Exec(ctx, `INSERT INTO jobs (id, type, payload)
-		VALUES ($1, 'ingest', jsonb_build_object('fileId', $2::text))`, jobID, file.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.pool.Exec(ctx, `INSERT INTO audio_transcriptions
-		(id, job_id, file_id, source_sha256, provider_transcription_id,
-		 duration_seconds, billable_seconds, concurrency_units, rate_version,
-		 credit_micros_per_second, provider_call_id, status)
-		VALUES ($1,$2,$3,$4,$5,10,10,1,1,250000,$6,'pending')`,
-		transcriptionID, jobID, file.ID, "ab", "provider-1", "pc-1"); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := s.DeleteFile(ctx, file.ID); err != nil {
-		t.Fatal(err)
-	}
-	var fileID *string
-	var cleanup bool
-	var status string
-	if err := s.pool.QueryRow(ctx, `SELECT file_id, cleanup_requested, status
-		FROM audio_transcriptions WHERE id=$1`, transcriptionID).Scan(&fileID, &cleanup, &status); err != nil {
-		t.Fatal(err)
-	}
-	if fileID != nil || !cleanup || status != "failed" {
-		t.Fatalf("audio cleanup state = file %v cleanup %t status %q", fileID, cleanup, status)
-	}
-}
-
-func TestDeletedAudioWebhookRecordsProviderIDWithoutWakingJob(t *testing.T) {
-	s := openAccessTestStore(t)
-	ctx := context.Background()
-	ownerID := newBlobTestUser(t, s, "u_audio_webhook")
-	ws, err := s.CreateWorkspace(ctx, ownerID, "Audio webhook", ColorGreen, []TagRef{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	file, err := s.CreateSourceReady(ctx, ws.ID, ownerID, "lecture.mp3", "audio",
-		nil, "", 100, "sources/"+uid("audio"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	jobID := uid("job")
-	transcriptionID := uid("at")
-	if _, err := s.pool.Exec(ctx, `INSERT INTO jobs
-		(id, type, payload, not_before) VALUES ($1, 'ingest', '{}', now() + interval '1 hour')`, jobID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.pool.Exec(ctx, `INSERT INTO audio_transcriptions
-		(id, job_id, file_id, source_sha256, duration_seconds, billable_seconds,
-		 concurrency_units, rate_version, credit_micros_per_second,
-		 provider_call_id, status, cleanup_requested)
-		VALUES ($1,$2,$3,$4,10,10,1,1,250000,$5,'failed',true)`,
-		transcriptionID, jobID, file.ID, "ab", "pc-1"); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := s.CompleteAudioTranscriptionWebhook(
-		ctx, transcriptionID, "provider-late", map[string]any{"text": "late"},
-	); err != nil {
-		t.Fatal(err)
-	}
-	var providerID string
-	var result map[string]any
-	if err := s.pool.QueryRow(ctx, `SELECT provider_transcription_id, result
-		FROM audio_transcriptions WHERE id=$1`, transcriptionID).Scan(&providerID, &result); err != nil {
-		t.Fatal(err)
-	}
-	if providerID != "provider-late" || result != nil {
-		t.Fatalf("late cleanup webhook = provider %q result %#v", providerID, result)
-	}
-	var due bool
-	if err := s.pool.QueryRow(ctx, `SELECT not_before > now() FROM jobs WHERE id=$1`, jobID).Scan(&due); err != nil {
-		t.Fatal(err)
-	}
-	if !due {
-		t.Fatal("cleanup-only webhook woke the deleted audio job")
+	if !blobQueued(t, s, parseBundlePath) {
+		t.Error("parse bundle cache was not queued by GC")
 	}
 }
 
@@ -285,7 +212,7 @@ func TestBlobReferenceCancelsQueuedDeletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.DeleteFile(ctx, file.ID); err != nil {
+	if err := s.DeleteFile(ctx, ownerID, file.ID); err != nil {
 		t.Fatal(err)
 	}
 	if !blobQueued(t, s, path) {
@@ -310,10 +237,143 @@ func TestBlobReferenceCancelsQueuedDeletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer s.ReleaseBlobDeletionClaims(claimed)
 	for _, got := range claimed {
-		if got == path {
+		if got.ObjectPath == path {
 			t.Error("reaper claimed a path that is still referenced")
 		}
+	}
+}
+
+func TestExpiredBlobDeletionClaimCannotBeResurrected(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	ownerID := newBlobTestUser(t, s, "u_claimed_blob")
+	workspace, err := s.CreateWorkspace(ctx, ownerID, "Claimed blob", ColorBlue, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := "sources/" + uid("claimed")
+	if _, err := s.pool.Exec(ctx, `INSERT INTO pending_blob_deletions
+		(object_path,not_before) VALUES ($1,now()-interval '100 years')`, path); err != nil {
+		t.Fatal(err)
+	}
+	claims, err := s.ClaimBlobDeletions(ctx, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claims) != 1 || claims[0].ObjectPath != path {
+		t.Fatalf("claims = %#v, want %q", claims, path)
+	}
+	if err := s.RecordBlobDeletionUncertain(ctx, claims, "response lost"); err != nil {
+		t.Fatal(err)
+	}
+	var retainedToken *string
+	if err := s.pool.QueryRow(ctx, `SELECT claim_token
+		FROM pending_blob_deletions WHERE object_path=$1`, path).Scan(&retainedToken); err != nil {
+		t.Fatal(err)
+	}
+	if retainedToken == nil || *retainedToken != claims[0].Token {
+		t.Fatalf("uncertain delete cleared claim fence: token=%v", retainedToken)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE pending_blob_deletions
+		SET claim_expires_at=now()-interval '1 second', not_before=now()-interval '100 years'
+		WHERE object_path=$1`, path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateSourceReady(ctx, workspace.ID, ownerID, "missing.pdf", "pdf",
+		nil, "", 10, path); err == nil {
+		t.Fatal("expired claimed path was allowed to become live again")
+	}
+	reclaimed, err := s.ClaimBlobDeletions(ctx, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reclaimed) != 1 || reclaimed[0].ObjectPath != path ||
+		reclaimed[0].Token == claims[0].Token {
+		t.Fatalf("reclaimed = %#v, want a fresh claim for %q", reclaimed, path)
+	}
+	s.ReleaseBlobDeletionClaims(reclaimed)
+}
+
+func TestBlobDeletionClaimHoldsPathLockThroughSettlement(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	path := "sources/" + uid("locked-delete")
+	if _, err := s.pool.Exec(ctx, `INSERT INTO pending_blob_deletions
+		(object_path,not_before) VALUES ($1,now()-interval '1 day')`, path); err != nil {
+		t.Fatal(err)
+	}
+	claims, err := s.ClaimBlobDeletions(ctx, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claims) != 1 || claims[0].ObjectPath != path {
+		t.Fatalf("claims = %#v, want %q", claims, path)
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `SET LOCAL lock_timeout='100ms'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `SELECT blob_ref($1)`, path); err == nil {
+		t.Fatal("blob_ref did not wait for the reaper's path lock")
+	}
+	if err := tx.Rollback(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.RecordBlobDeletionUncertain(ctx, claims, "response lost"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `SELECT blob_ref($1)`, path); err == nil {
+		t.Fatal("uncertain remote delete allowed the path to become live")
+	}
+}
+
+func TestBlobDeletionClaimSkipsReferenceTransactionAlreadyInFlight(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	path := "sources/" + uid("inflight-ref")
+	if _, err := s.pool.Exec(ctx, `INSERT INTO pending_blob_deletions
+		(object_path,not_before) VALUES ($1,now()-interval '1 day')`, path); err != nil {
+		t.Fatal(err)
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx,
+		`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, path); err != nil {
+		t.Fatal(err)
+	}
+	claims, err := s.ClaimBlobDeletions(ctx, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claims) != 0 {
+		s.ReleaseBlobDeletionClaims(claims)
+		t.Fatalf("reaper claimed path locked by an in-flight reference: %#v", claims)
+	}
+	if err := tx.Rollback(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	claims, err = s.ClaimBlobDeletions(ctx, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claims) != 1 || claims[0].ObjectPath != path {
+		s.ReleaseBlobDeletionClaims(claims)
+		t.Fatalf("claims after reference transaction ended = %#v, want %q", claims, path)
+	}
+	if err := s.FinishBlobDeletions(ctx, claims); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -353,6 +413,66 @@ func TestCloneThenDeleteKeepsTheSurvivingCopy(t *testing.T) {
 		previewPath); err != nil {
 		t.Fatal(err)
 	}
+	for _, status := range []string{"pending", "processing", "failed"} {
+		if _, err := s.pool.Exec(ctx, `INSERT INTO files
+			(id, workspace_id, user_id, created_by, name, status, size_bytes)
+			VALUES ($1,$2,$3,$3,$4,$5,0)`, uid("f"), source.ID, ownerID,
+			status+".pdf", status); err != nil {
+			t.Fatal(err)
+		}
+	}
+	readyAssetID := uid("asset")
+	pendingAssetID := uid("asset")
+	if _, err := s.pool.Exec(ctx, `INSERT INTO editor_assets
+		(id,workspace_id,user_id,created_by,name,purpose,object_path,content_type,
+		 size_bytes,status,completed_at)
+		VALUES
+		($1,$3,$4,$4,'ready.png','image',$5,'image/png',10,'ready',now()),
+		($2,$3,$4,$4,'pending.png','image',$6,'image/png',10,'pending',NULL)`,
+		readyAssetID, pendingAssetID, source.ID, ownerID,
+		"editor/"+readyAssetID, "editor/"+pendingAssetID); err != nil {
+		t.Fatal(err)
+	}
+	materialContent, err := materialdoc.Marshal(materialdoc.Envelope{
+		SchemaVersion: materialdoc.SchemaVersion,
+		Value: []map[string]any{
+			{"type": "p", "id": "text", "children": []any{map[string]any{"text": "kept"}}},
+			{"type": "img", "id": "ready-media", "assetId": readyAssetID,
+				"children": []any{map[string]any{"text": ""}}},
+			{"type": "img", "id": "pending-media", "assetId": pendingAssetID,
+				"children": []any{map[string]any{"text": ""}}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	material, err := s.CreateMaterial(ctx, Material{
+		CreatedBy: ownerID, WorkspaceID: source.ID, WorkspaceName: source.Name,
+		Kind: "note", Title: "Clone history boundary",
+		Content: materialContent,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE material_revisions
+		SET version_date=current_date-1, created_at=now()-interval '1 day'
+		WHERE material_id=$1`, material.ID); err != nil {
+		t.Fatal(err)
+	}
+	updatedDocument, err := materialdoc.Parse(materialContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updatedDocument.Value[0]["children"] = []any{map[string]any{"text": "updated"}}
+	updatedContent, err := materialdoc.Marshal(updatedDocument)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpdateMaterial(ctx, material.ID, MaterialPatch{
+		Content: &updatedContent, UpdatedBy: ownerID,
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	clone, err := s.CloneWorkspace(ctx, clonerID, source.ID)
 	if err != nil {
@@ -366,11 +486,74 @@ func TestCloneThenDeleteKeepsTheSurvivingCopy(t *testing.T) {
 	}
 	var clonedPreview *string
 	if err := s.pool.QueryRow(ctx, `SELECT preview_blob_path FROM files
-		WHERE workspace_id=$1`, clone.ID).Scan(&clonedPreview); err != nil {
+		WHERE workspace_id=$1 AND preview_blob_path IS NOT NULL`, clone.ID).Scan(&clonedPreview); err != nil {
 		t.Fatal(err)
 	}
 	if clonedPreview == nil || *clonedPreview != previewPath {
 		t.Fatalf("clone preview = %v, want %q", clonedPreview, previewPath)
+	}
+	var clonedFileCount, unfinishedFileCount int
+	if err := s.pool.QueryRow(ctx, `SELECT count(*), count(*) FILTER (
+		WHERE status IN ('pending','processing')) FROM files WHERE workspace_id=$1`,
+		clone.ID).Scan(&clonedFileCount, &unfinishedFileCount); err != nil {
+		t.Fatal(err)
+	}
+	if clonedFileCount != 1 || unfinishedFileCount != 0 {
+		t.Fatalf("clone files = %d with %d unfinished, want ready only",
+			clonedFileCount, unfinishedFileCount)
+	}
+	var clonedMaterialID string
+	var clonedRevision int64
+	if err := s.pool.QueryRow(ctx, `SELECT id, revision FROM materials
+		WHERE workspace_id=$1 AND title='Clone history boundary'`, clone.ID).
+		Scan(&clonedMaterialID, &clonedRevision); err != nil {
+		t.Fatal(err)
+	}
+	var clonedHistory int
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM material_revisions
+		WHERE material_id=$1`, clonedMaterialID).Scan(&clonedHistory); err != nil {
+		t.Fatal(err)
+	}
+	if clonedRevision != 2 || clonedHistory != 2 {
+		t.Fatalf("cloned material revision=%d history=%d, want retained source history",
+			clonedRevision, clonedHistory)
+	}
+	var clonedAssetID string
+	if err := s.pool.QueryRow(ctx, `SELECT id FROM editor_assets WHERE workspace_id=$1`,
+		clone.ID).Scan(&clonedAssetID); err != nil {
+		t.Fatal(err)
+	}
+	var clonedContent string
+	if err := s.pool.QueryRow(ctx, `SELECT content::text FROM materials WHERE id=$1`,
+		clonedMaterialID).Scan(&clonedContent); err != nil {
+		t.Fatal(err)
+	}
+	if clonedAssetID == readyAssetID || !strings.Contains(clonedContent, clonedAssetID) {
+		t.Fatalf("ready editor asset was not cloned and rewritten: id=%q content=%s",
+			clonedAssetID, clonedContent)
+	}
+	if strings.Contains(clonedContent, pendingAssetID) || strings.Contains(clonedContent, "pending-media") {
+		t.Fatalf("pending editor asset reference survived clone: %s", clonedContent)
+	}
+	rows, err := s.pool.Query(ctx, `SELECT content::text FROM material_revisions
+		WHERE material_id=$1 ORDER BY version_date`, clonedMaterialID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var historyContent string
+		if err := rows.Scan(&historyContent); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(historyContent, clonedAssetID) ||
+			strings.Contains(historyContent, readyAssetID) ||
+			strings.Contains(historyContent, pendingAssetID) {
+			t.Fatalf("cloned history asset rewrite failed: %s", historyContent)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
 	}
 
 	if err := s.DeleteWorkspace(ctx, ownerID, source.ID); err != nil {
@@ -470,9 +653,10 @@ func TestAbandonedUploadQueuesBothPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer s.ReleaseBlobDeletionClaims(claimed)
 	for _, got := range claimed {
-		if got == session.ObjectPath || got == session.FinalPath {
-			t.Errorf("%s was claimed before its presign window closed", got)
+		if got.ObjectPath == session.ObjectPath || got.ObjectPath == session.FinalPath {
+			t.Errorf("%s was claimed before its presign window closed", got.ObjectPath)
 		}
 	}
 }

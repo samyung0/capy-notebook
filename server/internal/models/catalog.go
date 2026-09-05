@@ -53,9 +53,6 @@ const (
 	SeededHopEmbedSlug             = "Qwen/Qwen3-Embedding-4B"
 	ProviderDeepInfra              = "deepinfra"
 	ProviderAnthropic              = "anthropic"
-	EliteLLMModeChat               = "chat"
-	EliteLLMModeVision             = "vision"
-	EliteLLMModeEmbedding          = "embedding"
 )
 
 type EliteLLMProvidersFile struct {
@@ -65,7 +62,6 @@ type EliteLLMProvidersFile struct {
 
 type EliteLLMProviderSpec struct {
 	Name              string   `json:"name"`
-	Modes             []string `json:"modes"`
 	BYOK              bool     `json:"byok"`
 	PlatformEnv       string   `json:"platformEnv"`
 	Thinking          []string `json:"thinking"`
@@ -125,19 +121,6 @@ func parseEliteLLMProviders(raw []byte) (*EliteLLMProviders, error) {
 		}
 		if strings.TrimSpace(spec.Name) == "" || strings.TrimSpace(spec.PlatformEnv) == "" {
 			return nil, fmt.Errorf("elitellm provider %q is missing name or platformEnv", slug)
-		}
-		if len(spec.Modes) == 0 {
-			return nil, fmt.Errorf("elitellm provider %q has no modes", slug)
-		}
-		seenModes := make(map[string]bool, len(spec.Modes))
-		for _, mode := range spec.Modes {
-			if mode != EliteLLMModeChat && mode != EliteLLMModeVision && mode != EliteLLMModeEmbedding {
-				return nil, fmt.Errorf("elitellm provider %q has unknown mode %q", slug, mode)
-			}
-			if seenModes[mode] {
-				return nil, fmt.Errorf("elitellm provider %q repeats mode %q", slug, mode)
-			}
-			seenModes[mode] = true
 		}
 		bySlug[slug] = spec
 		all = append(all, EliteLLMProvider{Slug: slug, EliteLLMProviderSpec: spec})
@@ -201,27 +184,6 @@ func (c *EliteLLMProviders) AllowsThinking(slug string, levels []string) (bool, 
 	return true, ""
 }
 
-func (c *EliteLLMProviders) AllowsSurface(slug, surface string) (bool, string) {
-	spec, ok := c.Lookup(slug)
-	if !ok {
-		return false, "provider is not handled by elitellm"
-	}
-	mode := EliteLLMModeChat
-	switch surface {
-	case SurfaceVision:
-		mode = EliteLLMModeVision
-	case SurfaceEmbedding:
-		mode = EliteLLMModeEmbedding
-	case SurfaceChat, SurfaceGenerate, SurfaceEditor, SurfaceQuiz, SurfaceIngest:
-	default:
-		return false, fmt.Sprintf("surface %q is unknown", surface)
-	}
-	if !containsString(spec.Modes, mode) {
-		return false, fmt.Sprintf("%s does not implement %s mode for surface %s", slug, mode, surface)
-	}
-	return true, ""
-}
-
 func (c *EliteLLMProviders) PlatformEnvConfigured(slug string) (bool, string) {
 	spec, ok := c.Lookup(slug)
 	if !ok {
@@ -242,7 +204,7 @@ func (c *EliteLLMProviders) CredentialEnv(slug string) string {
 }
 
 func IsFirstPartyProvider(slug string) bool {
-	return slug == "anthropic" || slug == "openai" || slug == "deepseek" || slug == "gemini" || slug == "zai"
+	return slug == "anthropic" || slug == "openai" || slug == "deepseek" || slug == "zai"
 }
 
 func IsSeededHopException(providerSlug, modelSlug string) bool {

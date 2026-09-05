@@ -1,83 +1,82 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  validateCallableGate,
   validateDeploymentWorkflows,
-  validateDeterministicWorkflow,
-  validateManualAgentWorkflow,
-  validateManualDeterministicWorkflow,
   validateRepositoryBoundaries,
-  validateSkillMetadata,
+  validateWorkflowIsDeterministic,
 } from './validate-review-boundaries.mjs';
 
-const agentToolError = /agent-driven tool/;
-const implicitInvocationError = /allow_implicit_invocation=false/;
-const manualOnlyError = /workflow_dispatch-only/;
-const noScheduleError = /must not be scheduled/;
-const sharedGateError = /must call the reusable UAT quality gate/;
+const uat =
+  'on:\n  workflow_run:\n  workflow_dispatch:\njobs:\n  gate:\n    uses: ./.github/workflows/uat-quality.yml\n';
+const reusable = 'on:\n  workflow_call:\n';
+const production = [
+  'on:\n  workflow_dispatch:\njobs:',
+  '  gate:\n    uses: ./.github/workflows/uat-quality.yml',
+  '  perf:\n    uses: ./.github/workflows/perf.yml',
+  '  evidence:\n    steps:\n      - run: scripts/review/require-statuses.sh "$SHA" source/codex-security uat/strix',
+  '  deploy:\n    with:\n      environment_name: production\n',
+].join('\n');
 
-test('the checked-in review automation keeps agent work manual', () => {
+const SCHEDULED = /must not be scheduled/;
+const RUNS_LOCALLY = /must run locally/;
+const CALLABLE = /callable by deployment flows/;
+const STRIX_STATUS = /must include 'uat\/strix'/;
+const PERF_CALL = /perf\.yml/;
+
+test('the checked-in workflows keep agent work local and gates callable', () => {
   assert.doesNotThrow(validateRepositoryBoundaries);
 });
 
-test('scheduled agent workflow is rejected', () => {
+test('a scheduled workflow is rejected', () => {
   assert.throws(
     () =>
-      validateManualAgentWorkflow(
+      validateWorkflowIsDeterministic(
         'on:\n  workflow_dispatch:\n  schedule:\n    - cron: "0 0 * * *"\n',
         'bad.yml'
       ),
-    manualOnlyError
+    SCHEDULED
   );
 });
 
-test('deterministic workflow rejects embedded agent tools', () => {
+test('a workflow that runs an agent scanner is rejected', () => {
   assert.throws(
     () =>
-      validateDeterministicWorkflow(
-        'on:\n  workflow_dispatch:\njobs:\n  scan:\n    steps:\n      - run: strix scan\n',
+      validateWorkflowIsDeterministic(
+        'on:\n  workflow_dispatch:\njobs:\n  scan:\n    steps:\n      - run: uv tool install strix-agent==1.5.3\n',
         'bad.yml'
       ),
-    agentToolError
+    RUNS_LOCALLY
   );
 });
 
-test('deterministic UAT workflow cannot regain a schedule', () => {
+test('a gate must stay dispatchable and callable', () => {
   assert.throws(
-    () =>
-      validateDeterministicWorkflow(
-        'on:\n  workflow_dispatch:\n  workflow_call:\n  schedule:\n    - cron: "0 0 * * *"\n',
-        'bad.yml'
-      ),
-    noScheduleError
+    () => validateCallableGate('on:\n  workflow_dispatch:\n', 'perf.yml'),
+    CALLABLE
   );
 });
 
-test('manual performance workflow cannot regain a schedule', () => {
-  assert.throws(
-    () =>
-      validateManualDeterministicWorkflow(
-        'on:\n  workflow_dispatch:\n  schedule:\n    - cron: "0 0 * * *"\n',
-        'perf.yml'
-      ),
-    manualOnlyError
+test('production promotion cannot drop a required gate', () => {
+  assert.doesNotThrow(() =>
+    validateDeploymentWorkflows(uat, production, reusable)
   );
-});
-
-test('production promotion cannot bypass the shared UAT gate', () => {
   assert.throws(
     () =>
       validateDeploymentWorkflows(
-        'on:\n  workflow_run:\n  workflow_dispatch:\njobs:\n  gate:\n    uses: ./.github/workflows/uat-quality.yml\n',
-        'on:\n  workflow_dispatch:\njobs:\n  deploy:\n    with:\n      environment_name: production\n',
-        'on:\n  workflow_call:\n'
+        uat,
+        production.replace('uat/strix', ''),
+        reusable
       ),
-    sharedGateError
+    STRIX_STATUS
   );
-});
-
-test('skill metadata must disable implicit invocation', () => {
   assert.throws(
-    () => validateSkillMetadata('policy:\n  allow_implicit_invocation: true\n'),
-    implicitInvocationError
+    () =>
+      validateDeploymentWorkflows(
+        uat,
+        production.replace('perf.yml', 'nothing.yml'),
+        reusable
+      ),
+    PERF_CALL
   );
 });

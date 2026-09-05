@@ -32,6 +32,10 @@ MAX_CONTEXT_CHARS = 200_000
 MAX_INSTRUCTION_CHARS = 16_000
 MAX_HISTORY_CHARS = 32_000
 
+# Streaming response generators are canceled when the browser disconnects.
+# Keep provider consumers alive until their final receipt has been recorded.
+_background_receipt_tasks: set[asyncio.Task[None]] = set()
+
 
 class UIMessagePart(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -111,7 +115,7 @@ def _editor_spec(req: PlateCommandReq | PlateCopilotReq):
         req.providerSlug,
         req.modelSlug,
         req.configVersion,
-        surface=registry.Surface.EDITOR,
+        slot=registry.Slot.EDITOR,
     )
 
 
@@ -488,6 +492,10 @@ async def _wait_completion(
         while not task.done():
             if await request.is_disconnected():
                 task.cancel()
+                # complete_response may already hold a provider receipt. Await
+                # its cancellation cleanup so accounting can settle that known
+                # usage before this disconnected request exits.
+                await task
                 raise asyncio.CancelledError
             await asyncio.sleep(0.05)
         return await task
@@ -580,25 +588,81 @@ async def _structured_events(
     )
 
 
+async def _consume_text_stream(
+    prompt: str,
+    spec: Any,
+    queue: asyncio.Queue[tuple[str, str | Exception | None]],
+    disconnected: asyncio.Event,
+) -> None:
+    try:
+        async for delta in models.stream_text(
+            [
+                {
+                    "role": "user",
+                    "content": clip_to_tokens(prompt, registry.input_budget(spec)),
+                }
+            ],
+            model=spec,
+            temperature=0.7,
+            reasoning=False,
+        ):
+            if delta and not disconnected.is_set():
+                await queue.put(("delta", delta))
+    except Exception as exc:
+        if disconnected.is_set():
+            log.exception("Plate provider stream failed after client disconnect")
+        else:
+            await queue.put(("error", exc))
+    finally:
+        if not disconnected.is_set():
+            await queue.put(("done", None))
+
+
+def _retain_receipt_task(task: asyncio.Task[None]) -> None:
+    _background_receipt_tasks.add(task)
+
+    def finished(done: asyncio.Task[None]) -> None:
+        _background_receipt_tasks.discard(done)
+        if not done.cancelled() and (error := done.exception()) is not None:
+            log.error(
+                "Plate provider receipt task failed",
+                exc_info=(type(error), error, error.__traceback__),
+            )
+
+    task.add_done_callback(finished)
+
+
 async def _text_events(request: Request, prompt: str, spec: Any) -> AsyncIterator[str]:
     text_id = secrets.token_urlsafe(18)
     yield _sse({"type": "text-start", "id": text_id})
-    async for delta in models.stream_text(
-        [
-            {
-                "role": "user",
-                "content": clip_to_tokens(prompt, registry.input_budget(spec)),
-            }
-        ],
-        model=spec,
-        temperature=0.7,
-        reasoning=False,
-    ):
-        if await request.is_disconnected():
-            return
-        if delta:
-            yield _sse({"type": "text-delta", "id": text_id, "delta": delta})
-    yield _sse({"type": "text-end", "id": text_id})
+    queue: asyncio.Queue[tuple[str, str | Exception | None]] = asyncio.Queue()
+    disconnected = asyncio.Event()
+    consumer = asyncio.create_task(
+        _consume_text_stream(prompt, spec, queue, disconnected)
+    )
+    _retain_receipt_task(consumer)
+    try:
+        while True:
+            if await request.is_disconnected():
+                disconnected.set()
+                return
+            try:
+                kind, payload = await asyncio.wait_for(queue.get(), timeout=0.05)
+            except TimeoutError:
+                continue
+            if kind == "delta":
+                yield _sse({"type": "text-delta", "id": text_id, "delta": payload})
+            elif kind == "error":
+                assert isinstance(payload, Exception)
+                raise payload
+            else:
+                yield _sse({"type": "text-end", "id": text_id})
+                return
+    finally:
+        # Never cancel the provider consumer here. It owns accounting context
+        # copied at task creation and must drain the response to its receipt.
+        if not consumer.done():
+            disconnected.set()
 
 
 async def command_events(req: PlateCommandReq, request: Request) -> AsyncIterator[str]:

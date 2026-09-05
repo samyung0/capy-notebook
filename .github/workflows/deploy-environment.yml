@@ -134,7 +134,7 @@ jobs:
           CLOUDFLARE_PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
           DEPLOY_REVISION: ${{ inputs.revision }}
         run: >-
-          pnpm --filter @evo-notes/drive-import-relay exec wrangler pages deploy
+          pnpm dlx wrangler@4.125.0 pages deploy
           "$GITHUB_WORKSPACE/dist"
           --project-name="$CLOUDFLARE_PAGES_PROJECT"
           --branch="$CLOUDFLARE_PAGES_BRANCH"

@@ -70,19 +70,22 @@ type CreateMaterialReq struct {
 	ScopeFileNames []string              `json:"scopeFileNames,omitempty"`
 }
 
-// UpdateMaterialReq is the (partial) body for PATCH /api/materials/{id}.
+// UpdateMaterialReq is the (partial) body for PATCH /api/materials/{id}/metadata.
 //
 // ChapterID files the material under a chapter (membership): omit to leave it
 // unchanged, send an empty string to unfile it, or a chapter id to file it. The
 // empty-string sentinel is needed because JSON null is indistinguishable from
 // an omitted field with a single pointer.
 type UpdateMaterialReq struct {
-	Title            *string        `json:"title,omitempty" minLength:"1" maxLength:"200"`
-	ExpectedRevision *int64         `json:"expectedRevision,omitempty" minimum:"1" doc:"Required when changing title"`
-	ChapterID        *string        `json:"chapterId,omitempty" doc:"Chapter to file under; empty string unfiles; omit to leave unchanged"`
-	ScopeChapters    *[]string      `json:"scopeChapters,omitempty"`
-	ScopeFileNames   *[]string      `json:"scopeFileNames,omitempty"`
-	Privacy          *store.Privacy `json:"privacy,omitempty" doc:"Visibility (share standalone)"`
+	Title            *string   `json:"title,omitempty" minLength:"1" maxLength:"200"`
+	ExpectedRevision *int64    `json:"expectedRevision,omitempty" minimum:"1" doc:"Required when changing title"`
+	ChapterID        *string   `json:"chapterId,omitempty" doc:"Chapter to file under; empty string unfiles; omit to leave unchanged"`
+	ScopeChapters    *[]string `json:"scopeChapters,omitempty"`
+	ScopeFileNames   *[]string `json:"scopeFileNames,omitempty"`
+}
+
+type UpdateStandaloneSharingReq struct {
+	Privacy store.Privacy `json:"privacy" doc:"Visibility for a standalone material"`
 }
 
 type CreateWorkspaceInviteReq struct {
@@ -132,12 +135,14 @@ type CreateQuizReq struct {
 	TimeLimitMin *int             `json:"timeLimitMin,omitempty" minimum:"1" maximum:"180"`
 }
 
-type UpdateQuizReq struct {
-	Name         *string           `json:"name,omitempty" minLength:"1" maxLength:"200"`
-	Chapters     *[]string         `json:"chapters,omitempty"`
+type UpdateQuizContentReq struct {
 	Questions    *[]map[string]any `json:"questions,omitempty"`
-	Privacy      *store.Privacy    `json:"privacy,omitempty"`
 	TimeLimitMin *int              `json:"timeLimitMin,omitempty" minimum:"1" maximum:"180"`
+}
+
+type UpdateQuizMetadataReq struct {
+	Name     *string   `json:"name,omitempty" minLength:"1" maxLength:"200"`
+	Chapters *[]string `json:"chapters,omitempty"`
 }
 
 type CreateAttemptReq struct {
@@ -148,7 +153,7 @@ type CreateAttemptReq struct {
 	Questions []map[string]any `json:"questions,omitempty" doc:"Question snapshot taken at submit time"`
 }
 
-type CreateDeckReq struct {
+type CreateFlashcardSetReq struct {
 	Name        string          `json:"name,omitempty" maxLength:"200"`
 	Color       store.UserColor `json:"color,omitempty" default:"green"`
 	WorkspaceID string          `json:"workspaceId,omitempty"`
@@ -208,7 +213,7 @@ type CreateFileReplacementUploadReq struct {
 // ImportSourcesReq pulls files from a connected Drive/OneDrive account.
 type ImportSourcesReq struct {
 	Provider      string   `json:"provider" enum:"google,microsoft"`
-	FileIds       []string `json:"fileIds" minItems:"1" nullable:"false"`
+	FileIds       []string `json:"fileIds" minItems:"1" maxItems:"20" nullable:"false"`
 	DriveIds      []string `json:"driveIds,omitempty" nullable:"false"`
 	ChapterID     *string  `json:"chapterId,omitempty"`
 	ChapterName   string   `json:"chapterName,omitempty" maxLength:"255"`
@@ -241,11 +246,10 @@ type SourceImportStatus struct {
 	ErrorCode string  `json:"errorCode,omitempty"`
 }
 
-// UpdateDeckReq is the (partial) body for PATCH /api/decks/{id}.
-type UpdateDeckReq struct {
-	Name    *string          `json:"name,omitempty" minLength:"1" maxLength:"200"`
-	Color   *store.UserColor `json:"color,omitempty"`
-	Privacy *store.Privacy   `json:"privacy,omitempty" doc:"Visibility (share standalone)"`
+// UpdateFlashcardSetReq changes relational metadata only.
+type UpdateFlashcardSetReq struct {
+	Name  *string          `json:"name,omitempty" minLength:"1" maxLength:"200"`
+	Color *store.UserColor `json:"color,omitempty"`
 }
 
 type CreateCardReq struct {
@@ -254,8 +258,11 @@ type CreateCardReq struct {
 }
 
 type UpdateCardReq struct {
-	Front *string         `json:"front,omitempty" minLength:"1" maxLength:"4000"`
-	Back  *string         `json:"back,omitempty" minLength:"1" maxLength:"4000"`
+	Front *string `json:"front,omitempty" minLength:"1" maxLength:"4000"`
+	Back  *string `json:"back,omitempty" minLength:"1" maxLength:"4000"`
+}
+
+type UpdateCardStudyStateReq struct {
 	Known *bool           `json:"known,omitempty"`
 	Srs   *store.SrsState `json:"srs,omitempty"`
 }
@@ -378,5 +385,6 @@ func EncodeRaw(v any) json.RawMessage {
 // RequestAccountDeletionReq confirms an irreversible action. The email is
 // re-typed by the user and verified server-side.
 type RequestAccountDeletionReq struct {
-	ConfirmEmail string `json:"confirmEmail" required:"true" minLength:"1" maxLength:"320"`
+	ConfirmEmail        string `json:"confirmEmail" required:"true" minLength:"1" maxLength:"320"`
+	LifecycleGeneration int64  `json:"lifecycleGeneration" required:"true" minimum:"0"`
 }

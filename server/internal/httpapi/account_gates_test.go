@@ -92,7 +92,7 @@ func overQuotaFixture(t *testing.T) quotaFixture {
 		PriceID:              "price_pro",
 		PlanTier:             store.PlanPro,
 		CurrentPeriodEnd:     &live,
-		StripeEventCreated:   1,
+		StripeEventCreated:   time.Now().Unix() - 1,
 	}
 	if err := st.UpsertSubscription(ctx, sub); err != nil {
 		t.Fatal(err)
@@ -105,7 +105,7 @@ func overQuotaFixture(t *testing.T) quotaFixture {
 	sub.Status = "canceled"
 	sub.PlanTier = store.PlanFree
 	sub.CurrentPeriodEnd = &lapsed
-	sub.StripeEventCreated = 2
+	sub.StripeEventCreated = time.Now().Unix()
 	if err := st.UpsertSubscription(ctx, sub); err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestOverQuotaOwnerKeepsSizeNeutralEditsButCannotPublish(t *testing.T) {
 		t.Fatalf("an over-quota account must not create, got %d body=%s", rec.Code, rec.Body.String())
 	}
 
-	rec = doReq(t, h, http.MethodPatch, "/api/materials/"+material.ID, "", map[string]any{
+	rec = doReq(t, h, http.MethodPatch, "/api/materials/"+material.ID+"/metadata", "", map[string]any{
 		"title":            "After",
 		"expectedRevision": material.Revision,
 	})
@@ -145,7 +145,7 @@ func TestOverQuotaOwnerKeepsSizeNeutralEditsButCannotPublish(t *testing.T) {
 			"got %d body=%s", rec.Code, rec.Body.String())
 	}
 
-	rec = doReq(t, h, http.MethodPatch, "/api/materials/"+material.ID, "", map[string]any{
+	rec = doReq(t, h, http.MethodPatch, "/api/materials/"+material.ID+"/sharing", "", map[string]any{
 		"privacy": "public",
 	})
 	if rec.Code != http.StatusForbidden {
@@ -199,40 +199,55 @@ func TestWorkspaceReportsTheStorageOwnersStateNotTheReaders(t *testing.T) {
 	}
 }
 
-// Deck creation used to resolve the workspace with `WHERE id=$1 AND user_id=$2`,
+// Flashcard creation used to resolve the workspace with `WHERE id=$1 AND user_id=$2`,
 // which made flashcards the only material kind a workspace editor could not
 // create in someone else's workspace. The lookup missed rather than denied, so
 // the failure surfaced as a raw pgx no-rows error and a 500.
-func TestWorkspaceEditorCanCreateFlashcardDecks(t *testing.T) {
+func TestWorkspaceEditorCanCreateAndRenameFlashcards(t *testing.T) {
 	h := openShareHTTP(t)
 
-	rec := doReq(t, h, http.MethodPost, "/api/decks", "u_editor", map[string]any{
-		"name":        "Editor deck",
+	rec := doReq(t, h, http.MethodPost, "/api/flashcards", "u_editor", map[string]any{
+		"name":        "Editor flashcards",
 		"workspaceId": "ws_e2e_private",
 	})
 	if rec.Code != http.StatusCreated {
-		t.Fatalf("editor deck create = %d body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("editor flashcard create = %d body=%s", rec.Code, rec.Body.String())
 	}
-	var deck map[string]any
-	_ = json.Unmarshal(rec.Body.Bytes(), &deck)
-	if deck["isOwner"] != false {
+	var flashcardSet map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &flashcardSet)
+	if flashcardSet["isOwner"] != false {
 		t.Errorf("an editor is not the storage owner of what they create in the owner's "+
-			"workspace, isOwner = %v", deck["isOwner"])
+			"workspace, isOwner = %v", flashcardSet["isOwner"])
 	}
-	if id, _ := deck["id"].(string); id != "" {
+	if flashcardSet["canEdit"] != true {
+		t.Errorf("workspace editor canEdit = %v, want true", flashcardSet["canEdit"])
+	}
+	if id, _ := flashcardSet["id"].(string); id != "" {
 		t.Cleanup(func() {
 			_ = doReq(t, h, http.MethodDelete, "/api/materials/"+id, "u_owner", nil)
 		})
+		rec = doReq(t, h, http.MethodPatch, "/api/flashcards/"+id+"/metadata", "u_editor", map[string]any{
+			"name": "Renamed flashcards",
+		})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("rename workspace flashcards = %d body=%s", rec.Code, rec.Body.String())
+		}
+		rec = doReq(t, h, http.MethodPatch, "/api/flashcards/"+id+"/sharing", "u_editor", map[string]any{
+			"privacy": "public",
+		})
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("workspace flashcard visibility update = %d body=%s", rec.Code, rec.Body.String())
+		}
 	}
 
 	// A non-member must still be refused, and refused as a miss rather than an
 	// unhandled database error.
-	rec = doReq(t, h, http.MethodPost, "/api/decks", "u_other", map[string]any{
-		"name":        "Trespassing deck",
+	rec = doReq(t, h, http.MethodPost, "/api/flashcards", "u_other", map[string]any{
+		"name":        "Trespassing flashcards",
 		"workspaceId": "ws_e2e_private",
 	})
 	if rec.Code != http.StatusNotFound {
-		t.Fatalf("non-member deck create = %d body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("non-member flashcard create = %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -313,7 +328,7 @@ func generatedMaterialID(t *testing.T, body []byte) string {
 	if err := json.Unmarshal(body, &payload); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"material", "deck", "quiz"} {
+	for _, key := range []string{"material", "flashcardSet", "quiz"} {
 		raw, ok := payload[key]
 		if !ok {
 			continue

@@ -24,8 +24,8 @@ type NotifyParams struct {
 }
 
 // NotifyResult reports what was written. EmailCreated is false when the
-// recipient disabled the category, when Template is empty, or when the
-// idempotency key already exists.
+// recipient has no email, disabled the category, when Template is empty, or
+// when the idempotency key already exists.
 type NotifyResult struct {
 	Notification Notification
 	EmailCreated bool

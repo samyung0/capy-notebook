@@ -1,0 +1,81 @@
+[
+  {
+    "q": "Prompt Engineering",
+    "expect": [
+      ["grosse-sprachmodelle.pdf", 34],
+      ["grosse-sprachmodelle.pdf", 35]
+    ],
+    "flag": 1
+  },
+  {
+    "q": "Fine Tuning",
+    "expect": [
+      ["grosse-sprachmodelle.pdf", 35],
+      ["grosse-sprachmodelle.pdf", 34]
+    ],
+    "flag": 1
+  },
+  {
+    "q": "LAMARR Institut",
+    "expect": [
+      ["grosse-sprachmodelle.pdf", 42],
+      ["grosse-sprachmodelle.pdf", 41]
+    ],
+    "flag": 1
+  },
+  { "q": "XLM-R", "expect": [["grosse-sprachmodelle.pdf", 48]], "flag": 1 },
+  {
+    "q": "Oktopus Test",
+    "expect": [
+      ["grosse-sprachmodelle.pdf", 62],
+      ["grosse-sprachmodelle.pdf", 63],
+      ["grosse-sprachmodelle.pdf", 64]
+    ],
+    "flag": 1
+  },
+  {
+    "q": "DeepL Vicuna",
+    "expect": [
+      ["grosse-sprachmodelle.pdf", 14],
+      ["grosse-sprachmodelle.pdf", 15]
+    ],
+    "flag": 1
+  },
+  {
+    "q": "Stable Diffusion",
+    "expect": [
+      ["grosse-sprachmodelle.pdf", 40],
+      ["grosse-sprachmodelle.pdf", 43]
+    ],
+    "flag": 1
+  },
+  {
+    "q": "GPT-3.5 BARD",
+    "expect": [["grosse-sprachmodelle.pdf", 18]],
+    "flag": 1
+  },
+  { "q": "Willard Quine", "expect": [["putnam-einleitung.pdf", 7]], "flag": 1 },
+  { "q": "Hilary Putnam", "expect": [["putnam-einleitung.pdf", 1]], "flag": 1 },
+  {
+    "q": "Abbildung 1",
+    "expect": [["grosse-sprachmodelle.pdf", 12]],
+    "flag": 1
+  },
+  { "q": "Rudolf Carnap", "expect": [["putnam-einleitung.pdf", 3]], "flag": 1 },
+  {
+    "q": "DFKI",
+    "expect": [
+      ["grosse-sprachmodelle.pdf", 42],
+      ["grosse-sprachmodelle.pdf", 41]
+    ],
+    "flag": 1
+  },
+  {
+    "q": "ChatGPT",
+    "expect": [
+      ["grosse-sprachmodelle.pdf", 3],
+      ["grosse-sprachmodelle.pdf", 24]
+    ],
+    "flag": 1
+  }
+]

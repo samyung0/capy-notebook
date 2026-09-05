@@ -89,7 +89,7 @@ func (a *api) addChapter(ctx context.Context, in *addChapterInput) (*chapterOutp
 	if err := a.assertWorkspaceEditor(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	res, err := a.s.AddChapter(ctx, in.ID, in.Body.Name)
+	res, err := a.s.AddChapter(ctx, in.ID, userID(ctx), in.Body.Name)
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -100,7 +100,7 @@ func (a *api) updateChapter(ctx context.Context, in *updateChapterInput) (*chapt
 	if err := a.assertChapterEditor(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	res, err := a.s.UpdateChapter(ctx, in.ID, store.ChapterPatch{Name: in.Body.Name, Order: in.Body.Order})
+	res, err := a.s.UpdateChapter(ctx, userID(ctx), in.ID, store.ChapterPatch{Name: in.Body.Name, Order: in.Body.Order})
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -111,7 +111,7 @@ func (a *api) reorderChapters(ctx context.Context, in *reorderChaptersInput) (*E
 	if err := a.assertWorkspaceEditor(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	if err := a.s.ReorderChapters(ctx, in.Body.IDs); err != nil {
+	if err := a.s.ReorderChapters(ctx, userID(ctx), in.ID, in.Body.IDs); err != nil {
 		return nil, hErr(err)
 	}
 	return &Empty{}, nil
@@ -125,7 +125,7 @@ func (a *api) reorderContent(ctx context.Context, in *reorderContentInput) (*Emp
 	for i, item := range in.Body.Items {
 		items[i] = store.ContentOrderItem{ID: item.ID, Type: item.Type}
 	}
-	if err := a.s.ReorderContent(ctx, in.ID, in.Body.ChapterID, items); err != nil {
+	if err := a.s.ReorderContent(ctx, in.ID, userID(ctx), in.Body.ChapterID, items); err != nil {
 		return nil, hErr(err)
 	}
 	return &Empty{}, nil
@@ -135,7 +135,7 @@ func (a *api) deleteChapter(ctx context.Context, in *chapterIDInput) (*Empty, er
 	if err := a.assertChapterEditor(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	if err := a.s.DeleteChapter(ctx, in.ID); err != nil {
+	if err := a.s.DeleteChapter(ctx, userID(ctx), in.ID); err != nil {
 		return nil, hErr(err)
 	}
 	return &Empty{}, nil
@@ -187,7 +187,7 @@ func (a *api) updateFile(ctx context.Context, in *updateFileInput) (*fileOutput,
 			patch.ChapterID = &p
 		}
 	}
-	res, err := a.s.UpdateFile(ctx, in.ID, patch)
+	res, err := a.s.UpdateFile(ctx, userID(ctx), in.ID, patch)
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -200,7 +200,7 @@ func (a *api) deleteFile(ctx context.Context, in *fileIDInput) (*Empty, error) {
 	}
 	// The blob objects are queued for the reaper by trigger, so there is nothing
 	// to clean up here and no chance of leaking them if this request dies.
-	if err := a.s.DeleteFile(ctx, in.ID); err != nil {
+	if err := a.s.DeleteFile(ctx, userID(ctx), in.ID); err != nil {
 		return nil, hErr(err)
 	}
 	return &Empty{}, nil

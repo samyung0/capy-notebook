@@ -1,5 +1,5 @@
 import { useSetModelPrefs } from '@/api/hooks';
-import type { ModelOption, ModelSurface } from '@/api/types';
+import type { ModelOption, ModelSlot } from '@/api/types';
 import {
   Select,
   SelectContent,
@@ -22,12 +22,12 @@ export function ReasoningControls({
   disabled,
   selected,
   stored,
-  surface,
+  slot,
 }: {
   disabled?: boolean;
   selected: ModelOption | undefined;
   stored: string;
-  surface: Exclude<ModelSurface, 'editor' | 'quiz'>;
+  slot: Exclude<ModelSlot, 'editor' | 'quiz'>;
 }) {
   const { isPending, mutate } = useSetModelPrefs();
   if (!hasThinkingControls(selected?.thinking)) return null;
@@ -38,7 +38,7 @@ export function ReasoningControls({
     <Select
       disabled={busy}
       onValueChange={(next) => {
-        mutate({ [thinkingField(surface)]: next });
+        mutate({ [thinkingField(slot)]: next });
       }}
       value={stored}
     >

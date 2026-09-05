@@ -1,7 +1,7 @@
 ---
 type: Guide
 title: 'Editor performance checkpoints'
-description: 'Playwright editor budgets, the manual GitHub Actions snapshot compare, and why relative deltas stay warn-only.'
+description: 'Playwright editor budgets, the GitHub Actions snapshot compare against median-of-5 and best green, and why relative deltas stay warn-only.'
 tags: [frontend, testing, playwright, performance, github-actions]
 ---
 
@@ -9,9 +9,9 @@ tags: [frontend, testing, playwright, performance, github-actions]
 
 `pnpm perf` measures the Plate editor against a Vite **dev** build and MSW. It
 is a regression tripwire, not a production SLO. Absolute `BUDGET` ceilings in
-[`e2e/perf/editor.perf.ts`](../e2e/perf/editor.perf.ts) are the only hard fail.
-GitHub Actions adds a same-class delta report on top so you can see whether a
-checkpoint got slower than the last green run of the same workflow.
+[`e2e/perf/editor.perf.ts`](../e2e/perf/editor.perf.ts) are the only hard fail
+and they gate production promotion. GitHub Actions adds a delta table on top
+so a human can see drift against recent and best green runs.
 
 File inventory lives in [test-catalog.md](test-catalog.md). Editor architecture
 and why a save cycle must not re-render the tree live in
@@ -36,25 +36,33 @@ deltas.
 
 ## GitHub Actions
 
-Workflow [`Editor perf`](../.github/workflows/perf.yml) is `workflow_dispatch`
-only. Pin is `ubuntu-24.04`. Typical wall time is 15 to 25 minutes.
+Workflow [`Editor perf`](../.github/workflows/perf.yml) runs on manual
+dispatch and by `workflow_call` from `promote-production.yml`, which passes the
+candidate SHA as `revision`. Pin is `ubuntu-24.04`. Typical wall time is 15 to
+25 minutes.
 
 1. Run `pnpm perf` with `PERF_SNAPSHOT_DIR` set. `reportMetrics` writes one JSON
    file per budget case.
 2. [`e2e/perf/compare-cli.ts`](../e2e/perf/compare-cli.ts) assembles a
    `PerfSnapshot` (commit, CPU model, Playwright version, `PERF_CPU`, cases).
-3. Compare against the snapshot artifact from the **most recent successful**
-   run of this workflow (`gh run list --workflow=perf.yml --status=success
-   --limit=1`). The current job is still in progress, so it cannot pick itself.
-   A run that failed the absolute budgets is red and is not used as the base.
-4. Write the table to the job summary. Relative deltas never fail the job.
-5. Upload `perf-snapshot.json` (90 days). Assemble and upload are hard fails so
-   a green run always leaves a file the next dispatch can download.
+   `PERF_COMMIT` carries the measured revision because `GITHUB_SHA` is the
+   caller's SHA under `workflow_call`.
+3. Download `perf-snapshot` from the last 10 successful runs of `perf.yml` and
+   of `promote-production.yml` (promotions call this workflow, so their green
+   runs count). Expired or missing artifacts are skipped.
+4. [`e2e/perf/snapshot.ts`](../e2e/perf/snapshot.ts) sorts them by creation
+   time and writes two columns: vs the **median of the newest 5** ("are we
+   drifting") and vs the **best over all retained** (a floor that cannot creep
+   upward one checkpoint at a time). Artifacts expire at 90 days, which bounds
+   the lookback.
+5. Write the table to the job summary. Relative deltas never fail the job.
+6. Upload `perf-snapshot.json` (90 days). Assemble and upload run even when
+   budgets fail; the job then fails on the budget result.
 
 First dispatch has nothing to diff. That is expected. After that, GHA-vs-GHA
 only. Do not check in a laptop JSON.
 
-You can dispatch from any branch. "Last success" is not automatically `main`.
+You can dispatch from any branch. Baselines are not automatically `main`.
 
 ## What the relative table includes
 
@@ -75,15 +83,18 @@ CPU throttle is a multiplier of the host, so it does not cancel that spread.
 
 ## Why this stays warn-only
 
-Absolute ceilings have ~2x headroom from the Aug 2026 recalibration. They catch
-cliffs. They cannot answer "did this checkpoint make near-limit typing 20%
-worse on the same harness?"
+Absolute ceilings are the gate. They were set on 2026-09-03 to about 1.3x the
+median of three GHA runs on the same SHA (large-document INP is held at 1.5x
+because one unlucky keystroke sets it). A human lowers a ceiling when a real
+improvement lands; nothing raises one automatically. Recalibrate the same way:
+dispatch the workflow three times, download the `perf-snapshot` artifacts,
+take the median per metric.
 
 Standard GitHub-hosted runners are a mixed CPU pool. Independent PassMark
 samples of ubuntu-24.04 x64 (same Azure fleet, mid-2026) land around 2200 to 2670
-single-thread. A 1.25x relative fail will fire when the candidate simply draws
-a slower host than the baseline. Treat the table as a human-read delta, not a
-merge gate.
+single-thread. A relative fail against the best green would fire whenever the
+candidate draws a slower host than the luckiest baseline. Treat the table as a
+human-read delta, not a gate.
 
 Other caveats that already apply to the absolute budgets:
 
@@ -91,8 +102,8 @@ Other caveats that already apply to the absolute budgets:
   user-facing SLOs.
 - MSW save-cycle work runs on the main thread. A real collab server does that
   work elsewhere.
-- Artifacts expire after 90 days. The last success may still exist as a run
-  with no file left to download.
+- Artifacts expire after 90 days. A green run may still be listed with no file
+  left to download; it is skipped.
 
 If relative fail ever becomes a merge gate, leave the shared `ubuntu-24.04`
 pool. Larger GitHub runners need a Team/Enterprise org. A labeled self-hosted

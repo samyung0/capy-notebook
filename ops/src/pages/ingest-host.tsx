@@ -163,11 +163,14 @@ export function IngestHostPage() {
   const attempts = environment.attempts;
   const queue = environment.queue;
   const queued =
+    queue.importReady +
+    queue.importDelayed +
     queue.parseReady +
     queue.parseDelayed +
     queue.ingestReady +
     queue.ingestDelayed;
-  const running = queue.parseRunning + queue.ingestRunning;
+  const running =
+    queue.importRunning + queue.parseRunning + queue.ingestRunning;
 
   return (
     <>
@@ -201,7 +204,7 @@ export function IngestHostPage() {
         className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
       >
         <MetricCard
-          detail={`${queue.parseReady} parse · ${queue.ingestReady} ingest ready · oldest ${duration(queue.oldestQueuedMilliseconds)}`}
+          detail={`${queue.importReady} import · ${queue.parseReady} parse · ${queue.ingestReady} ingest ready · oldest ${duration(queue.oldestQueuedMilliseconds)}`}
           label="Queued jobs"
           tone={
             queue.expiredLeases > 0
@@ -213,7 +216,7 @@ export function IngestHostPage() {
           value={formatCount(queued)}
         />
         <MetricCard
-          detail={`${queue.parseRunning} parse · ${queue.ingestRunning} ingest · ${queue.expiredLeases} expired leases`}
+          detail={`${queue.importRunning} import · ${queue.parseRunning} parse · ${queue.ingestRunning} ingest · ${queue.expiredLeases} expired leases`}
           label="Running jobs"
           tone={queue.expiredLeases > 0 ? 'danger' : 'neutral'}
           value={formatCount(running)}
@@ -403,8 +406,8 @@ export function IngestHostPage() {
         <CardHeader>
           <CardTitle>Attempt statistics, last 24 hours</CardTitle>
           <CardDescription>
-            One row is recorded for every queue claim, including capacity and
-            external-provider waits that do not spend a visible retry.
+            One row is recorded for every queue claim, including capacity waits
+            that do not spend a visible retry.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -429,7 +432,6 @@ export function IngestHostPage() {
             value={formatCount(attempts.providerCalls)}
           />
           <MetricCard
-            detail={`${formatCount(attempts.conceptsCreated)} concepts`}
             label="Chunks created"
             value={formatCount(attempts.chunksCreated)}
           />
@@ -439,7 +441,7 @@ export function IngestHostPage() {
             value={formatCount(attempts.ocrPages)}
           />
           <MetricCard
-            detail={`${attempts.externalWaits} external waits`}
+            detail={`${attempts.capacityWaits} capacity waits`}
             label="Claims"
             value={formatCount(attempts.attempts)}
           />

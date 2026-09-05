@@ -79,7 +79,7 @@ func TestRequestBodyValidation(t *testing.T) {
 		{
 			name:   "create card empty front",
 			method: http.MethodPost,
-			path:   "/api/decks/dk_1/cards",
+			path:   "/api/flashcards/dk_1/cards",
 			body:   `{"front":"","back":"answer"}`,
 		},
 		{

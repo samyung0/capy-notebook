@@ -1,7 +1,7 @@
 ---
 type: Backend
-title: 'Backend Storage Quota Accounting'
-description: 'How used/reserved bytes are accounted, gated, and measured for materials, uploads, and clones.'
+title: "Backend Storage Quota Accounting"
+description: "How used/reserved bytes are accounted, gated, and measured for materials, uploads, and clones."
 tags: [backend, storage, quota, accounting, uploads, materials]
 ---
 
@@ -17,15 +17,28 @@ This page is the accounting contract.
 `plan_limits` in `server/migrations/0001_init.sql` is the canonical backend
 catalog for every numeric limit that may vary by subscription plan:
 
-| Limit | Free | Pro |
-| --- | ---: | ---: |
-| Storage | 100,000,000 bytes (100 MB) | 1,000,000,000 bytes (1 GB) |
-| Monthly credits | 1,000 | 20,000 |
-| Source file | 10 MiB | 30 MiB |
-| Material daily-history entries | 3 | 30 |
-| Owned workspaces | Unlimited (`NULL`) | Unlimited (`NULL`) |
-| Files per workspace | 100 | 100 |
-| Files per upload/import request | 20 | 20 |
+| Limit                           |                       Free |                        Pro |
+| ------------------------------- | -------------------------: | -------------------------: |
+| Storage                         | 100,000,000 bytes (100 MB) | 1,000,000,000 bytes (1 GB) |
+| Monthly credits                 |                      1,000 |                     20,000 |
+| Source file                     |                     10 MiB |                     30 MiB |
+| Material daily-history entries  |                          3 |                         30 |
+| Owned workspaces                |         Unlimited (`NULL`) |         Unlimited (`NULL`) |
+| Files per workspace             |                        100 |                        100 |
+| Files per upload/import request |                         20 |                         20 |
+
+Material history retains at most one snapshot per UTC day. A Pro-to-Free
+downgrade permanently deletes snapshots 4 through 30 in the same transaction
+that projects the Free tier. Material saves, API startup, and the daily sweep
+are backstops for a missed billing webhook. Upgrading again cannot recover those
+27 deleted snapshots. A reversible suspension or deletion-pending projection is
+not itself a downgrade: while preserved provider rows still grant Pro, webhook,
+failed-invoice, reconciliation, and daily-prune paths retain the Pro history.
+When an account has no subscription rows, its stored tier is the effective tier
+for retention, so a reversible closed-lifecycle projection also preserves
+no-row stored-Pro history through support restoration. An active Stripe
+reconciliation whose provider snapshot is explicitly empty establishes Free
+provider truth and performs the irreversible prune.
 
 The Go gateway and ops process load and validate the complete two-row catalog
 once during startup. The Python ingest worker does the same before it starts its
@@ -39,18 +52,21 @@ limit requires updating that file and the affected Paraglide translations along
 with the SQL seed. APIs may still return a requester's effective current value,
 such as workspace `filesLimit`, upload-policy `maxBytes`, and billing counters.
 
-Subscription projection remains owned by the existing Stripe lifecycle code.
-Loading this catalog does not add or change cancellation/downgrade transitions.
+Subscription projection remains owned by the Stripe lifecycle code. Request
+gates do not trust a stale projected Pro tier past the latest paid
+`current_period_end`: Go and Python both apply Free limits at that boundary,
+even before a delayed webhook reconciles `users.plan_tier`. Accounts without a
+dated subscription retain their stored tier for local/operator fixtures.
 
 ## What counts
 
 Storage is charged once per logical row owned by a user:
 
-| Resource | Counted size | Charged when |
-| --- | --- | --- |
-| Source files | `files.size_bytes` | row exists |
-| Editor assets | `editor_assets.size_bytes` | `status = 'ready'` only |
-| Materials | `materials.size_bytes` | always; set from content JSON |
+| Resource      | Counted size               | Charged when                  |
+| ------------- | -------------------------- | ----------------------------- |
+| Source files  | `files.size_bytes`         | row exists                    |
+| Editor assets | `editor_assets.size_bytes` | `status = 'ready'` only       |
+| Materials     | `materials.size_bytes`     | always; set from content JSON |
 
 Workspace-owned rows resolve the payer from `workspaces.user_id` into
 `files.user_id` / `editor_assets.user_id` / `materials.owner_user_id`. A
@@ -141,7 +157,9 @@ The Yjs projection (`ProjectMaterialContent`) is the one write that does not
 re-check the bounds: the collaboration service already refused every update
 that grows an over-limit document, so re-rejecting here would strand
 `materials.content` behind the Y.Doc for exactly the documents recovering
-towards the limit.
+towards the limit. The internal projection handler uses
+`materialdoc.MarshalProjection`, which still validates and canonicalizes the
+Plate envelope but does not apply the product caps.
 
 The browser applies its own, independent render threshold
 (`MATERIAL_RENDER_WARNING` in `src/lib/const.ts`) to decide when opening a
@@ -168,7 +186,10 @@ Its upload session reserves `max(new_size - current_size, 0)`, so unchanged or
 smaller saves do not need free quota they will not consume. Finalization locks
 the file, verifies its expected revision, swaps the blob and size, then releases
 the growth reservation. The normal file-size trigger applies the signed used
-byte delta. A stale editor or a file that is no longer ready cannot finalize.
+byte delta. A same-size or smaller replacement is explicitly permitted while
+the storage owner is over quota, so Office editing provides a replacement-based
+recovery path. Suspended, deletion-pending, and deleted owners remain blocked.
+A stale editor or a file that is no longer ready cannot finalize.
 
 Editor assets write to an `editor-assets/incoming/…` key and are promoted to
 an unpresigned stable `editor-assets/{id}/…` key before finalization, so the
@@ -179,7 +200,34 @@ orphan object.
 Workspace clones snapshot the source, gate the total file + material + ready
 editor-asset payload against the **cloner's** quota, copy ready asset rows
 with new logical IDs (rewriting embedded references), and reuse physical blob
-paths under reference counting.
+paths under reference counting. Only `ready` source files are copied; pending,
+processing, and failed files are omitted. Material nodes referring to a pending,
+failed, missing, or otherwise uncopied editor asset are removed from the cloned
+document instead of retaining an unrenderable source id. Retained daily
+material history is copied from the same repeatable-read snapshot, capped by
+the cloner's plan, and uses the same fresh editor-asset/card ID map as current
+content. Revision rows are not separately charged by byte; the material's
+current content and cloned logical assets are the storage-accounted payload.
+Before writing cloned rows, the transaction locks every copied source,
+Office-preview, and ready editor-asset blob refcount in stable path order. The
+last source reference therefore cannot queue and reap a physical object until
+the clone commits. A path deleted after the repeatable-read snapshot causes a
+transaction retry instead of a clone that points at missing bytes.
+
+A single-material clone is always a new **private standalone** material. It
+copies only ready editor assets referenced by the current SQL projection or the
+revision rows retained for the cloner's plan, gives each asset a fresh logical
+ID owned by the clone, rewrites every retained document, and charges the asset
+bytes to the cloner. Physical object paths remain shared through blob
+refcounting. Source workspace asset IDs never survive in standalone content.
+Contended clones poll the per-source advisory hierarchy without retaining a
+pool connection while they wait, then take the repeatable-read snapshot once
+the locks are held; a clone burst therefore cannot starve unrelated database
+work. Workspace operations take the workspace fence before material fences.
+Public deletion takes the same source fence before account, workspace, or
+storage rows, while before-delete triggers also protect direct SQL and cascade
+cleanup. The trigger cleans the detached popularity counter only after earlier
+clones release the fence, so a clone cannot leave an orphan counter behind.
 
 ## Yjs storage growth
 
@@ -195,7 +243,31 @@ increments `room_schema`. Tokens, Redis events, service commands, and client
 Y.Docs bind to that epoch so a stale client cannot merge pre-compaction state
 back in.
 
+Ordinary persistence embeds server-owned actor provenance in the same Yjs
+transaction as each edit and rechecks every contributor in the exact debounced
+snapshot, along with current membership/share role, workspace owner, and live
+subscription/storage state. Claimed markers are removed from the committed
+state; newer generations remain for the next save. A token minted before role
+removal, suspension, deletion, or plan expiry cannot bypass the database
+boundary. A rejected authorization-race save evicts the room so the uncommitted
+update is not retained in memory. Before writing authoritative Yjs state, the
+sidecar applies the same structural and material-kind contract as Go. Invalid
+Plate content cannot become a durable state that projection will reject. The
+sidecar discards that in-memory room and reloads the last durable state instead
+of retrying an unsavable snapshot.
+
+Once a lapsed owner is over the Free limit, the next state must not grow in
+serialized size, node count, or depth. Structural validation does not apply
+those caps, so a valid document that starts over a limit can still shrink back
+towards it. The TypeScript and Go metric walks count every node through the
+shared structural depth ceiling, so growth below an already-over-limit deep
+branch cannot hide behind unrelated deletions. A live Free subscription by itself is an ordinary active account.
+The sidecar switches to shrink-only access only when it sees an expired or
+closed Pro boundary and usage exceeds the Free limit, matching Go's account
+resolver.
+
 Sources: [storage gate and reconciliation](../server/internal/store/storage.go),
 [material bounds](../server/internal/materialdoc/document.go),
 [collab limits](../collaboration/src/limits.ts),
+[collab document validation](../collaboration/src/materialDocument.ts),
 [compaction config](../collaboration/src/config.ts).

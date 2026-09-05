@@ -146,6 +146,40 @@ services:
     volumes:
       - parse_spool:/var/lib/evo-parse
 
+  # Drive/OneDrive imports: one provider file per claim, streamed into B2.
+  # Its own service so a slow provider download never holds an ingest slot.
+  import-worker:
+    image: evo-ingest-pipeline:${RELEASE_SHA:?set the exact 40-character release SHA}
+    build:
+      context: ..
+      dockerfile: pipeline/Dockerfile
+      args:
+        RELEASE_SHA: ${RELEASE_SHA:?set the exact 40-character release SHA}
+    network_mode: host
+    environment:
+      <<: *pipeline-env
+      SENTRY_DSN: ${SENTRY_DSN_WORKER:-}
+      GATEWAY_URL: ${GATEWAY_URL:?set the private WireGuard gateway URL}
+      PIPELINE_SECRET: ${PIPELINE_SECRET:?set the gateway PIPELINE_SECRET}
+      EVO_IMPORT_JOB_TIMEOUT: ${EVO_IMPORT_JOB_TIMEOUT:-600}
+      EVO_IMPORT_DOWNLOAD_HOSTS: ${EVO_IMPORT_DOWNLOAD_HOSTS:-}
+      EVO_DB_SYNC_POOL_MAX_SIZE: "2"
+      EVO_DB_ASYNC_POOL_MAX_SIZE: "2"
+    command: ["python", "-m", "pipeline.ingest.import_worker"]
+    mem_limit: ${EVO_IMPORT_WORKER_MEMORY_LIMIT:-256m}
+    memswap_limit: ${EVO_IMPORT_WORKER_MEMORY_SWAP_LIMIT:-384m}
+    cpus: ${EVO_IMPORT_WORKER_CPUS:-0.5}
+    pids_limit: ${EVO_IMPORT_WORKER_PIDS_LIMIT:-64}
+    deploy:
+      mode: replicated
+      replicas: ${IMPORT_WORKER_REPLICAS:-2}
+    depends_on:
+      parse-spool-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    volumes:
+      - parse_spool:/var/lib/evo-parse
+
   worker:
     image: evo-ingest-pipeline:${RELEASE_SHA:?set the exact 40-character release SHA}
     build:
@@ -161,10 +195,8 @@ services:
       DEEPINFRA_API_KEY: ${DEEPINFRA_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
       ELEVENLABS_BASE_URL: ${ELEVENLABS_BASE_URL:-https://api.elevenlabs.io}
-      ELEVENLABS_WEBHOOK_ID: ${ELEVENLABS_WEBHOOK_ID:-}
       EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}
       # Caption concurrency is per worker. Four workers allow at most sixteen
       # uncached embedded-figure caption calls at once.
@@ -174,6 +206,7 @@ services:
       EVO_IMAGE_MAX_PIXELS: ${EVO_IMAGE_MAX_PIXELS:-100000000}
       EVO_ELEVENLABS_TRANSCRIPT_VERSION: ${EVO_ELEVENLABS_TRANSCRIPT_VERSION:-scribe-v2-1}
       EVO_ELEVENLABS_CONCURRENCY_UNITS: ${EVO_ELEVENLABS_CONCURRENCY_UNITS:-12}
+      EVO_ELEVENLABS_SYNC_TIMEOUT_S: ${EVO_ELEVENLABS_SYNC_TIMEOUT_S:-43200}
       EVO_AUDIO_MAX_DURATION_SECONDS: ${EVO_AUDIO_MAX_DURATION_SECONDS:-36000}
       EVO_TABULAR_TEXT_VERSION: ${EVO_TABULAR_TEXT_VERSION:-v1}
       EVO_CAPTION_CACHE_TTL_DAYS: ${EVO_CAPTION_CACHE_TTL_DAYS:-90}

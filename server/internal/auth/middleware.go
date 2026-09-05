@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -40,9 +41,13 @@ type Config struct {
 // UserStore lazily provisions users on first authenticated request and reports
 // whether the account may still hold a session.
 type UserStore interface {
-	// UpsertUserFromClerk returns true when a new user row was inserted.
+	// UpsertUserFromClerk returns true while the one-time starter workspace is
+	// still pending.
 	UpsertUserFromClerk(ctx context.Context, id, name, email, avatarURL string) (bool, error)
 	CreateDefaultWorkspace(ctx context.Context, userID string) error
+	// UserProvisioned distinguishes an existing local account from an identity
+	// whose first-request provisioning has not completed.
+	UserProvisioned(ctx context.Context, userID string) (bool, error)
 	// AccountSessionAllowed reports whether the account may hold a session at
 	// all. code is a machine-readable reason when it may not. The verdict is
 	// reduced to a bool here so this package stays free of the store types.
@@ -104,6 +109,22 @@ func tryE2EAuth(w http.ResponseWriter, r *http.Request, cfg Config) (userID stri
 	return userID, true, false
 }
 
+func sessionAllowed(w http.ResponseWriter, r *http.Request, cfg Config, userID string) bool {
+	if cfg.Store == nil {
+		return true
+	}
+	allowed, code, err := cfg.Store.AccountSessionAllowed(r.Context(), userID)
+	if err != nil {
+		writeSessionUnavailable(w)
+		return false
+	}
+	if !allowed {
+		writeAccountForbidden(w, code)
+		return false
+	}
+	return true
+}
+
 // Middleware validates Clerk JWTs (or bypasses when Disabled / E2E auth).
 func Middleware(cfg Config) func(http.Handler) http.Handler {
 	if cfg.DevUserID == "" {
@@ -144,9 +165,12 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 			// Local development is a single-user authenticated environment.
 			// Apply DevUserID before anonymous-public-read handling so private
 			// resources remain available when Clerk is intentionally disabled.
-			if (cfg.Disabled || cfg.SecretKey == "") && !cfg.E2EAuth {
+			if cfg.Disabled && !cfg.E2EAuth {
 				if hasE2EHeaders(r) {
 					writeUnauthorized(w)
+					return
+				}
+				if !sessionAllowed(w, r, cfg, cfg.DevUserID) {
 					return
 				}
 				next.ServeHTTP(w, r.WithContext(WithUserID(r.Context(), cfg.DevUserID)))
@@ -163,6 +187,9 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 			if userID, ok, written := tryE2EAuth(w, r, cfg); written {
 				return
 			} else if ok {
+				if !sessionAllowed(w, r, cfg, userID) {
+					return
+				}
 				next.ServeHTTP(w, r.WithContext(WithUserID(r.Context(), userID)))
 				return
 			}
@@ -187,17 +214,15 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 				userID := claims.Subject
 
 				if cfg.Store != nil {
-					name, email, avatar := profileFromSession(r.Context(), userID)
-					if created, err := cfg.Store.UpsertUserFromClerk(r.Context(), userID, name, email, avatar); err == nil && created {
-						_ = cfg.Store.CreateDefaultWorkspace(r.Context(), userID)
+					if err := syncClerkAccount(r.Context(), cfg.Store, userID, profileFromSession); err != nil {
+						writeSessionUnavailable(w)
+						return
 					}
 					// A purged account is refused here rather than per handler,
 					// so a Clerk token that outlived the purge cannot reach any
-					// route. Store failures fail open: an unavailable database
-					// is a 500 from the handler, not a spurious 403.
-					allowed, code, err := cfg.Store.AccountSessionAllowed(r.Context(), userID)
-					if err == nil && !allowed {
-						writeAccountForbidden(w, code)
+					// route. Store failures fail closed with 503 so an outage
+					// cannot bypass suspension or deletion state.
+					if !sessionAllowed(w, r, cfg, userID) {
 						return
 					}
 				}
@@ -208,10 +233,53 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 	}
 }
 
-func profileFromSession(ctx context.Context, userID string) (name, email, avatar string) {
+type profileFetcher func(context.Context, string) (name, email, avatar string, err error)
+
+var errAccountNotProvisioned = errors.New("account not provisioned")
+
+// syncClerkAccount keeps profile refresh best-effort for an existing local
+// account, but refuses a first request while its local identity is still
+// unknown. A concurrent successful provision wins because the final existence
+// check observes that row and lets both requests continue.
+func syncClerkAccount(
+	ctx context.Context,
+	store UserStore,
+	userID string,
+	fetch profileFetcher,
+) error {
+	name, email, avatar, profileErr := fetch(ctx, userID)
+	if profileErr == nil {
+		needsDefaultWorkspace, upsertErr := store.UpsertUserFromClerk(ctx, userID, name, email, avatar)
+		if upsertErr == nil {
+			if needsDefaultWorkspace {
+				if err := store.CreateDefaultWorkspace(ctx, userID); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}
+
+	provisioned, err := store.UserProvisioned(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if !provisioned {
+		return errAccountNotProvisioned
+	}
+	// The profile refresh is best-effort for an existing account, but a pending
+	// starter workspace is not. Its durable marker makes this a cheap no-op once
+	// the one-time provision completed.
+	return store.CreateDefaultWorkspace(ctx, userID)
+}
+
+func profileFromSession(ctx context.Context, userID string) (name, email, avatar string, err error) {
 	u, err := user.Get(ctx, userID)
-	if err != nil || u == nil {
-		return "", "", ""
+	if err != nil {
+		return "", "", "", err
+	}
+	if u == nil {
+		return "", "", "", errors.New("Clerk profile unavailable")
 	}
 	if u.FirstName != nil || u.LastName != nil {
 		parts := []string{}
@@ -232,13 +300,22 @@ func profileFromSession(ctx context.Context, userID string) (name, email, avatar
 	if u.ImageURL != nil {
 		avatar = *u.ImageURL
 	}
-	return name, email, avatar
+	return name, email, avatar, nil
 }
 
 func writeUnauthorized(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
 	_ = json.NewEncoder(w).Encode(map[string]string{"message": "unauthorized"})
+}
+
+func writeSessionUnavailable(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"code":    "account_state_unavailable",
+		"message": "account state unavailable",
+	})
 }
 
 // writeAccountForbidden reports a valid identity whose account may not hold a

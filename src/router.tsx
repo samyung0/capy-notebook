@@ -19,13 +19,13 @@ import {
   cardsQuery,
   chaptersQuery,
   conversationsQuery,
-  deckQuery,
-  decksQuery,
   eventsQuery,
-  exploreDecksQuery,
+  exploreFlashcardSetsQuery,
   exploreQuizzesQuery,
   exploreWorkspacesQuery,
   filesQuery,
+  flashcardSetQuery,
+  flashcardSetsQuery,
   labelsQuery,
   materialsQuery,
   meQuery,
@@ -119,14 +119,14 @@ const publicRoutes = [
     path: '/share/quizzes/$quizId',
   }),
   createRoute({
-    component: lazyRouteComponent(() => import('@/routes/DeckStudy')),
+    component: lazyRouteComponent(() => import('@/routes/FlashcardStudy')),
     errorComponent: ShareRouteErrorComponent,
     getParentRoute: () => rootRoute,
     loader: ({ context: { queryClient: qc }, params }) => {
-      qc.prefetchQuery(deckQuery(params.deckId));
-      qc.prefetchQuery(cardsQuery(params.deckId));
+      qc.prefetchQuery(flashcardSetQuery(params.flashcardSetId));
+      qc.prefetchQuery(cardsQuery(params.flashcardSetId));
     },
-    path: '/share/decks/$deckId',
+    path: '/share/flashcards/$flashcardSetId',
   }),
   ...(USE_MSW
     ? []
@@ -226,14 +226,14 @@ const appRoutes = [
   page(
     '/flashcards',
     () => import('@/routes/Flashcards'),
-    ({ context: { queryClient: qc } }) => qc.prefetchQuery(decksQuery())
+    ({ context: { queryClient: qc } }) => qc.prefetchQuery(flashcardSetsQuery())
   ),
   page(
-    '/flashcards/$deckId',
-    () => import('@/routes/DeckStudy'),
+    '/flashcards/$flashcardSetId',
+    () => import('@/routes/FlashcardStudy'),
     ({ context: { queryClient: qc }, params }) => {
-      qc.prefetchQuery(deckQuery(params.deckId));
-      qc.prefetchQuery(cardsQuery(params.deckId));
+      qc.prefetchQuery(flashcardSetQuery(params.flashcardSetId));
+      qc.prefetchQuery(cardsQuery(params.flashcardSetId));
     }
   ),
   page(
@@ -275,7 +275,7 @@ const appRoutes = [
           ({ context: { queryClient: qc } }) => {
             qc.prefetchQuery(exploreWorkspacesQuery());
             qc.prefetchQuery(exploreQuizzesQuery());
-            qc.prefetchQuery(exploreDecksQuery());
+            qc.prefetchQuery(exploreFlashcardSetsQuery());
           }
         ),
       ]

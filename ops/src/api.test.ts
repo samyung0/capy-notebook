@@ -15,8 +15,6 @@ describe('ops API errors', () => {
               averageQueueMilliseconds: 200,
               capacityWaits: 1,
               chunksCreated: 20,
-              conceptsCreated: 3,
-              externalWaits: 0,
               failed: 1,
               figuresCached: 0,
               figuresCaptioned: 2,
@@ -40,6 +38,9 @@ describe('ops API errors', () => {
             lastJobActivityAt: '2026-08-31T11:59:00Z',
             queue: {
               expiredLeases: 0,
+              importDelayed: 0,
+              importReady: 0,
+              importRunning: 0,
               ingestDelayed: 0,
               ingestReady: 0,
               ingestRunning: 1,

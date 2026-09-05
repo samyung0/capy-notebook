@@ -300,7 +300,6 @@ func ingestEnvironmentMetrics(
 		       count(*) FILTER (WHERE status = 'retrying')::bigint,
 		       count(*) FILTER (WHERE status = 'failed')::bigint,
 		       count(*) FILTER (WHERE status = 'capacity_wait')::bigint,
-		       count(*) FILTER (WHERE status = 'external_wait')::bigint,
 		       count(*) FILTER (WHERE status = 'lease_expired')::bigint,
 		       COALESCE(sum(parse_pages), 0)::bigint,
 		       COALESCE(sum(parse_ocr_pages), 0)::bigint,
@@ -310,7 +309,6 @@ func ingestEnvironmentMetrics(
 		       COALESCE(sum(figures_captioned), 0)::bigint,
 		       COALESCE(sum(figures_failed), 0)::bigint,
 		       COALESCE(sum(chunks_created), 0)::bigint,
-		       COALESCE(sum(concepts_created), 0)::bigint,
 		       COALESCE(round(avg(queue_milliseconds)), 0)::bigint,
 		       COALESCE(round(percentile_cont(0.95) WITHIN GROUP (
 		         ORDER BY queue_milliseconds)), 0)::bigint,
@@ -324,12 +322,12 @@ func ingestEnvironmentMetrics(
 		   AND claimed_at >= now() - make_interval(hours => $1)
 	`, hours, environment).Scan(
 		&out.Attempts.Attempts, &out.Attempts.Succeeded, &out.Attempts.Retrying,
-		&out.Attempts.Failed, &out.Attempts.CapacityWaits, &out.Attempts.ExternalWaits,
+		&out.Attempts.Failed, &out.Attempts.CapacityWaits,
 		&out.Attempts.LeaseExpired, &out.Attempts.Pages, &out.Attempts.OCRPages,
 		&out.Attempts.Slices, &out.Attempts.FiguresSelected,
 		&out.Attempts.FiguresCached, &out.Attempts.FiguresCaptioned,
 		&out.Attempts.FiguresFailed,
-		&out.Attempts.ChunksCreated, &out.Attempts.ConceptsCreated,
+		&out.Attempts.ChunksCreated,
 		&out.Attempts.AverageQueueMilliseconds, &out.Attempts.P95QueueMilliseconds,
 		&out.Attempts.AverageDurationMilliseconds, &out.Attempts.P95DurationMilliseconds,
 	)
@@ -354,6 +352,13 @@ func ingestEnvironmentMetrics(
 	}
 	err = db.QueryRow(ctx, `
 		SELECT count(*) FILTER (
+		         WHERE type = 'import' AND status = 'pending'
+		           AND COALESCE(not_before, now()) <= now())::bigint,
+		       count(*) FILTER (
+		         WHERE type = 'import' AND status = 'pending'
+		           AND not_before > now())::bigint,
+		       count(*) FILTER (WHERE type = 'import' AND status = 'running')::bigint,
+		       count(*) FILTER (
 		         WHERE type = 'parse' AND status = 'pending'
 		           AND COALESCE(not_before, now()) <= now())::bigint,
 		       count(*) FILTER (
@@ -372,8 +377,9 @@ func ingestEnvironmentMetrics(
 		       COALESCE(extract(epoch FROM now() - min(queued_at) FILTER (
 		         WHERE status = 'pending')) * 1000, 0)::bigint
 		  FROM jobs
-		 WHERE type IN ('parse', 'ingest')
+		 WHERE type IN ('import', 'parse', 'ingest')
 	`).Scan(
+		&out.Queue.ImportReady, &out.Queue.ImportDelayed, &out.Queue.ImportRunning,
 		&out.Queue.ParseReady, &out.Queue.ParseDelayed, &out.Queue.ParseRunning,
 		&out.Queue.IngestReady, &out.Queue.IngestDelayed, &out.Queue.IngestRunning,
 		&out.Queue.ExpiredLeases, &out.Queue.OldestQueuedMS,
@@ -619,7 +625,7 @@ func ingestEnvironmentMetrics(
 		    FROM ingest_job_attempts WHERE environment=$1
 		  UNION ALL
 		  SELECT max(updated_at)
-		    FROM jobs WHERE type IN ('parse', 'ingest')
+		    FROM jobs WHERE type IN ('import', 'parse', 'ingest')
 		) activity
 	`, environment).Scan(&out.LastJobActivityAt)
 	if err != nil {
@@ -947,9 +953,13 @@ func (s *ReadStore) User(ctx context.Context, userID string) (UserDetail, error)
 		DataAsOf:    time.Now().UTC(),
 	}
 	err := s.db.QueryRow(ctx, `
-		SELECT id, name, COALESCE(email, ''), plan_tier
+		SELECT id, name, COALESCE(email, ''), plan_tier,
+		       session_revoke_pending, session_revoke_attempts,
+		       session_revoke_not_before, session_revoke_last_error
 		FROM users WHERE id = $1`, userID).
-		Scan(&out.UserID, &out.Name, &out.Email, &out.PlanTier)
+		Scan(&out.UserID, &out.Name, &out.Email, &out.PlanTier,
+			&out.SessionRevocationPending, &out.SessionRevocationAttempts,
+			&out.SessionRevocationDueAt, &out.SessionRevocationError)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return out, store.ErrNotFound
 	}

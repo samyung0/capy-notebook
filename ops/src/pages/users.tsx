@@ -250,6 +250,29 @@ export function UserDetailPage({ userId }: { userId: string }) {
         />
       </section>
 
+      {data.sessionRevocationPending ? (
+        <Card className="border-destructive/40 shadow-sm">
+          <CardHeader>
+            <CardTitle>Clerk session revocation pending</CardTitle>
+            <CardDescription>
+              Support restoration is blocked until a complete session sweep
+              succeeds.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-1 text-sm">
+            <p>{formatCount(data.sessionRevocationAttempts)} failed attempts</p>
+            {data.sessionRevocationDueAt ? (
+              <p>Next retry: {formatDateTime(data.sessionRevocationDueAt)}</p>
+            ) : null}
+            {data.sessionRevocationError ? (
+              <p className="font-mono text-muted-foreground text-xs">
+                {data.sessionRevocationError}
+              </p>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
       <Card className="shadow-sm">
         <CardHeader>
           <CardTitle>Current-month usage</CardTitle>

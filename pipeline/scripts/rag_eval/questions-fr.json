@@ -1,0 +1,88 @@
+[
+  {
+    "q": "Pourquoi 4Go de données web suffisent-ils pour CamemBERT?",
+    "expect": [["camembert-taln.pdf", 20], ["camembert-taln.pdf", 21]],
+    "flag": 2
+  },
+  {
+    "q": "Quelle est la différence entre OSCAR et CCNet?",
+    "expect": [["camembert-taln.pdf", 10], ["camembert-taln.pdf", 11]],
+    "flag": 2
+  },
+  {
+    "q": "Comment utilise-t-on CamemBERT en fine-tuning?",
+    "expect": [["camembert-taln.pdf", 14]],
+    "flag": 2
+  },
+  {
+    "q": "Quel impact a le whole word masking sur les performances?",
+    "expect": [["camembert-taln.pdf", 24]],
+    "flag": 2
+  },
+  {
+    "q": "FlauBERT offre-t-il des performances équivalentes à CamemBERT?",
+    "expect": [["camembert-taln.pdf", 6]],
+    "flag": 2
+  },
+  {
+    "q": "Sur quelle architecture RoBERTa CamemBERT est-il basé?",
+    "expect": [["camembert-taln.pdf", 9]],
+    "flag": 2
+  },
+  {
+    "q": "Qu'est-ce que WikiNER-fr-gold?",
+    "expect": [
+      ["wikiner-fr-gold.pdf", 1],
+      ["wikiner-fr-gold.pdf", 20],
+      ["wikiner-fr-gold.pdf", 21]
+    ],
+    "flag": 2
+  },
+  {
+    "q": "Combien de phrases contient le corpus WikiNER-fr-gold?",
+    "expect": [["wikiner-fr-gold.pdf", 1], ["wikiner-fr-gold.pdf", 4]],
+    "flag": 2
+  },
+  {
+    "q": "Comment le format BIOES annote-t-il les entités?",
+    "expect": [["wikiner-fr-gold.pdf", 9]],
+    "flag": 2
+  },
+  {
+    "q": "Quels types d'entités sont inclus dans chaque catégorie WikiNER?",
+    "expect": [["wikiner-fr-gold.pdf", 8]],
+    "flag": 2
+  },
+  {
+    "q": "Pourquoi les annotations originales de WikiNER sont-elles un standard argenté?",
+    "expect": [
+      ["wikiner-fr-gold.pdf", 4],
+      ["wikiner-fr-gold.pdf", 5],
+      ["wikiner-fr-gold.pdf", 6]
+    ],
+    "flag": 2
+  },
+  {
+    "q": "What is CamemBERT trained on?",
+    "expect": [
+      ["camembert-taln.pdf", 2],
+      ["camembert-taln.pdf", 10],
+      ["camembert-taln.pdf", 11]
+    ],
+    "flag": 2
+  },
+  {
+    "q": "Les modèles entraînés sur quatre gigaoctets dépassent-ils Wikipedia?",
+    "expect": [
+      ["camembert-taln.pdf", 18],
+      ["camembert-taln.pdf", 21],
+      ["camembert-taln.pdf", 20]
+    ],
+    "flag": 2
+  },
+  {
+    "q": "Quelles métriques UPOS LAS F1 sont utilisées?",
+    "expect": [["camembert-taln.pdf", 13]],
+    "flag": 2
+  }
+]

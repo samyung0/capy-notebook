@@ -87,7 +87,7 @@ def test_platform_row_ignores_bound_user_key(monkeypatch):
             provider_slug="deepinfra",
             platform_enabled=True,
             byok_enabled=False,
-            surfaces=("embedding",),
+            slots=("retrieval",),
         )
     )
     assert key == "sk-platform-deepinfra"
@@ -101,7 +101,7 @@ def test_embedding_uses_provider_env(monkeypatch):
             provider_slug="deepinfra",
             platform_enabled=True,
             byok_enabled=False,
-            surfaces=("embedding",),
+            slots=("retrieval",),
         )
     )
     assert key == "sk-deepinfra"

@@ -16,16 +16,16 @@ import (
 )
 
 type modelsInput struct {
-	Surface models.UserModelSurface `query:"surface"`
+	Slot models.UserModelSlot `query:"slot"`
 }
 
 type modelsOutput struct {
 	Body apimodel.ModelsResponse
 }
 
-type modelSurfacesOutput struct {
+type modelSlotsOutput struct {
 	Body struct {
-		Surfaces []models.Surface `json:"surfaces" nullable:"false"`
+		Slots []models.Slot `json:"slots" nullable:"false"`
 	}
 }
 
@@ -35,26 +35,26 @@ type setModelsInput struct {
 
 func (a *api) registerModels(api huma.API) {
 	const tag = "Account"
-	reg(api, http.MethodGet, "/api/model-surfaces", "listModelSurfaces", tag, "Known model surfaces", http.StatusOK, a.listModelSurfaces)
-	reg(api, http.MethodGet, "/api/models", "listModels", tag, "Enabled models for a surface", http.StatusOK, a.listModels)
+	reg(api, http.MethodGet, "/api/model-slots", "listModelSlots", tag, "Known model slots", http.StatusOK, a.listModelSlots)
+	reg(api, http.MethodGet, "/api/models", "listModels", tag, "Enabled models for a slot", http.StatusOK, a.listModels)
 	reg(api, http.MethodPatch, "/api/me/models", "setModelPrefs", tag, "Set chat, generate, editor and quiz model preferences", http.StatusNoContent, a.setModelPrefs)
 	reg(api, http.MethodGet, "/api/me/llm-credentials", "listLLMCredentials", tag, "Saved provider keys", http.StatusOK, a.listLLMCredentials)
 	reg(api, http.MethodPut, "/api/me/llm-credentials", "upsertLLMCredential", tag, "Save a provider key", http.StatusNoContent, a.upsertLLMCredential)
 	reg(api, http.MethodDelete, "/api/me/llm-credentials/{provider}", "deleteLLMCredential", tag, "Remove a provider key", http.StatusNoContent, a.deleteLLMCredential)
 }
 
-func (a *api) listModelSurfaces(context.Context, *struct{}) (*modelSurfacesOutput, error) {
-	out := &modelSurfacesOutput{}
-	out.Body.Surfaces = models.AllSurfaces()
+func (a *api) listModelSlots(context.Context, *struct{}) (*modelSlotsOutput, error) {
+	out := &modelSlotsOutput{}
+	out.Body.Slots = models.AllSlots()
 	return out, nil
 }
 
 func (a *api) listModels(ctx context.Context, in *modelsInput) (*modelsOutput, error) {
 	out := apimodel.ModelsResponse{Models: []apimodel.ModelOption{}}
-	if in.Surface == "" {
+	if in.Slot == "" {
 		return &modelsOutput{Body: out}, nil
 	}
-	surface := string(in.Surface)
+	slot := string(in.Slot)
 	if a.modelReg == nil {
 		return &modelsOutput{Body: out}, nil
 	}
@@ -66,8 +66,8 @@ func (a *api) listModels(ctx context.Context, in *modelsInput) (*modelsOutput, e
 	if credErr != nil {
 		return nil, hErr(credErr)
 	}
-	pref := prefs.Model(surface)
-	def, err := a.modelReg.DefaultPin(surface)
+	pref := prefs.Model(slot)
+	def, err := a.modelReg.DefaultPin(slot)
 	if err == nil {
 		out.DefaultModel = def.Ref
 	}
@@ -78,7 +78,7 @@ func (a *api) listModels(ctx context.Context, in *modelsInput) (*modelsOutput, e
 	}
 
 	var items []listedModel
-	for _, cfg := range a.modelReg.ListEnabled(surface) {
+	for _, cfg := range a.modelReg.ListEnabled(slot) {
 		hasCred := credSlugs[cfg.ProviderSlug]
 		opt := apimodel.ModelOption{
 			ProviderName: cfg.ProviderName,
@@ -111,7 +111,7 @@ func (a *api) listModels(ctx context.Context, in *modelsInput) (*modelsOutput, e
 		out.Models = append(out.Models, item.opt)
 	}
 	if selected, ok := findListed(items, out.SelectedModel); ok && selected.Thinking != nil {
-		resolved, err := listedCfg(items, out.SelectedModel).ResolveThinking(prefs.Thinking(surface))
+		resolved, err := listedCfg(items, out.SelectedModel).ResolveThinking(prefs.Thinking(slot))
 		if err != nil {
 			return nil, hErr(fmt.Errorf("%w: %v", store.ErrModelUnavailable, err))
 		}
@@ -181,28 +181,28 @@ func (r resolvedLLM) attach(body map[string]any) {
 	}
 }
 
-func (a *api) resolveLLM(ctx context.Context, userID, surface string) (resolvedLLM, error) {
+func (a *api) resolveLLM(ctx context.Context, userID, slot string) (resolvedLLM, error) {
 	var out resolvedLLM
 	if a.modelReg == nil {
 		return out, fmt.Errorf("%w: registry not configured", store.ErrModelUnavailable)
 	}
-	switch surface {
-	case models.SurfaceChat, models.SurfaceGenerate, models.SurfaceEditor, models.SurfaceQuiz:
+	switch slot {
+	case models.SlotChat, models.SlotGenerate, models.SlotEditor, models.SlotQuiz:
 		if userID == "" {
-			return out, fmt.Errorf("%w: missing user for %s", store.ErrModelUnavailable, surface)
+			return out, fmt.Errorf("%w: missing user for %s", store.ErrModelUnavailable, slot)
 		}
 		prefs, err := a.s.UserLLMPrefs(ctx, userID)
 		if err != nil {
 			return out, err
 		}
-		pref := prefs.Model(surface)
+		pref := prefs.Model(slot)
 		if pref.Zero() {
-			return out, fmt.Errorf("%w: empty %s preference", store.ErrModelUnavailable, surface)
+			return out, fmt.Errorf("%w: empty %s preference", store.ErrModelUnavailable, slot)
 		}
 		if store.IsBrowserQuizModel(pref) {
 			return out, fmt.Errorf("%w: browser quiz model", store.ErrModelUnavailable)
 		}
-		cfg, err := a.modelReg.ResolveUser(ctx, pref, surface)
+		cfg, err := a.modelReg.ResolveUser(ctx, pref, slot)
 		if err != nil {
 			return out, fmt.Errorf("%w: %v", store.ErrModelUnavailable, err)
 		}
@@ -221,8 +221,8 @@ func (a *api) resolveLLM(ctx context.Context, userID, surface string) (resolvedL
 		} else {
 			out.PaidBy = models.PaidByPlatform
 		}
-		stored := prefs.Thinking(surface)
-		if surface == models.SurfaceEditor {
+		stored := prefs.Thinking(slot)
+		if slot == models.SlotEditor {
 			stored = models.ThinkingInstant
 		}
 		out.Thinking, err = cfg.ResolveThinking(stored)
@@ -231,7 +231,7 @@ func (a *api) resolveLLM(ctx context.Context, userID, surface string) (resolvedL
 		}
 		return out, nil
 	default:
-		cfg, err := a.modelReg.Default(ctx, surface)
+		cfg, err := a.modelReg.Default(ctx, slot)
 		if err != nil {
 			return out, fmt.Errorf("%w: %v", store.ErrModelUnavailable, err)
 		}
@@ -242,8 +242,8 @@ func (a *api) resolveLLM(ctx context.Context, userID, surface string) (resolvedL
 	}
 }
 
-func (a *api) ratesForSurface(ctx context.Context, userID, surface string) (cfg models.Config, rates store.TokenRates, err error) {
-	resolved, err := a.resolveLLM(ctx, userID, surface)
+func (a *api) ratesForSlot(ctx context.Context, userID, slot string) (cfg models.Config, rates store.TokenRates, err error) {
+	resolved, err := a.resolveLLM(ctx, userID, slot)
 	if err != nil {
 		return models.Config{}, store.TokenRates{}, err
 	}

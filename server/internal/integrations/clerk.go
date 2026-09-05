@@ -10,7 +10,7 @@ import (
 )
 
 // Clerk owns the OAuth lifecycle for provider integrations (Google Drive,
-// OneDrive, Notion): users link external accounts through Clerk's account
+// OneDrive): users link external accounts through Clerk's account
 // portal / frontend SDK, and the backend pulls fresh access tokens from
 // Clerk's token wallet. No provider tokens are stored or refreshed locally.
 
@@ -41,7 +41,7 @@ func ClerkAccessToken(ctx context.Context, userID, provider string) (string, err
 }
 
 // ClerkConnectedProviders reports which providers have a verified external
-// account linked on the Clerk user (keys: "google", "microsoft", "notion", …).
+// account linked on the Clerk user (keys: "google", "microsoft").
 func ClerkConnectedProviders(ctx context.Context, userID string) (map[string]bool, error) {
 	u, err := clerkuser.Get(ctx, userID)
 	if err != nil {

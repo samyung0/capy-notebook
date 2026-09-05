@@ -74,6 +74,11 @@ and 404 all map to the same “private or unavailable” surface. Do not include
 resource names, server details, or different actions that disclose which case
 occurred.
 
+Workspace invitation acceptance uses the same non-disclosing surface for an
+invalid link or unavailable workspace. Network and server failures keep the
+invitation panel visible with inline error copy and a retry action. The mutation
+does not also emit a global toast.
+
 ## Offline and paused work
 
 `ConnectionBanner` exposes offline state as

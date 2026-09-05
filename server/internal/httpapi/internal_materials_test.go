@@ -22,7 +22,6 @@ import (
 )
 
 const pipeSecret = "pipe-test-secret"
-const importRelayTestSecret = "import-relay-test-secret-at-least-32-bytes"
 
 func openInternalMaterialsHTTP(t *testing.T) http.Handler {
 	h, _ := openInternalHTTP(t)
@@ -51,13 +50,12 @@ func openInternalHTTPWithBlob(t *testing.T) (http.Handler, *store.Store, *blob.M
 	st.SetModelRegistry(reg)
 	mem := blob.NewMemory()
 	h := httpapi.New(st, mem, nil, nil, "docling", "evo", httpapi.Config{
-		AuthDisabled:      true,
-		E2EAuth:           true,
-		E2ESecret:         "e2e-test-secret",
-		E2EUserIDs:        []string{"u_owner", "u_editor", "u_commenter", "u_viewer", "u_other"},
-		ModelRegistry:     reg,
-		PipelineSecret:    pipeSecret,
-		ImportRelaySecret: importRelayTestSecret,
+		AuthDisabled:   true,
+		E2EAuth:        true,
+		E2ESecret:      "e2e-test-secret",
+		E2EUserIDs:     []string{"u_owner", "u_editor", "u_commenter", "u_viewer", "u_other"},
+		ModelRegistry:  reg,
+		PipelineSecret: pipeSecret,
 	})
 	return h, st, mem
 }
@@ -217,7 +215,7 @@ func TestInternalMaterialConcurrentSameIDConverges(t *testing.T) {
 	}
 }
 
-func TestInternalGeneratedQuizAndDeckPersistResolvedScope(t *testing.T) {
+func TestInternalGeneratedQuizAndFlashcardSetPersistResolvedScope(t *testing.T) {
 	h, st := openInternalHTTP(t)
 	ctx := context.Background()
 

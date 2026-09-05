@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useGenerate } from '@/api/hooks';
 import type {
   Chapter,
-  Deck,
+  FlashcardSet,
   GenerateOptions,
   Material,
   Quiz,
@@ -16,7 +16,7 @@ import { m } from '@/i18n';
 import { GenerateFormDialog, type GenerateMode } from './GenerateFormDialog';
 
 type GenerateResultData =
-  | { kind: 'flashcards'; deck?: Deck; cards?: unknown[] }
+  | { kind: 'flashcards'; material?: FlashcardSet; cards?: unknown[] }
   | { kind: 'quiz'; quiz?: Quiz }
   | { kind: 'mindmap' | 'diagram'; material?: Material };
 
@@ -73,7 +73,7 @@ export function GeneratePanel({
         r.kind === 'quiz'
           ? r.quiz?.id
           : r.kind === 'flashcards'
-            ? r.deck?.id
+            ? r.material?.id
             : r.material?.id;
       if (materialId) onOpenItem?.({ id: materialId, kind: 'material' });
     } catch {
@@ -140,11 +140,11 @@ function GenerateResult({
       open = { id: result.quiz.id, kind: 'material' };
     }
   } else if (result.kind === 'flashcards') {
-    label = m.generate_deck_ready({
+    label = m.generate_flashcards_ready({
       count: result.cards?.length ?? 0,
-      name: result.deck?.name ?? '',
+      name: result.material?.name ?? '',
     });
-    if (result.deck) open = { id: result.deck.id, kind: 'material' };
+    if (result.material) open = { id: result.material.id, kind: 'material' };
   } else if (result.material) {
     label = m.generate_material_ready({
       kind:

@@ -58,13 +58,19 @@ func TestFileReplacementReusesIngestPolicy(t *testing.T) {
 		oldJobID, oldPayload); err != nil {
 		t.Fatal(err)
 	}
-	audioID := uid("at")
-	if _, err := s.pool.Exec(ctx, `INSERT INTO audio_transcriptions
-		(id,job_id,file_id,source_sha256,provider_transcription_id,
-		 duration_seconds,billable_seconds,concurrency_units,rate_version,
-		 credit_micros_per_second,provider_call_id,status)
-		VALUES ($1,$2,$3,'old-source','provider-old',10,10,1,1,250000,$4,'pending')`,
-		audioID, oldJobID, file.ID, uid("pc")); err != nil {
+	var oldAttemptID int64
+	if err := s.pool.QueryRow(ctx, `INSERT INTO ingest_job_attempts
+		(job_id, operation_id, attempt, job_type, environment, host_id,
+		 worker_instance_id, trace_id, queued_at)
+		VALUES ($1,$2,1,'ingest','test','test-host','test-worker',$3,now())
+		RETURNING id`, oldJobID, uid("op"), uid("trace")).Scan(&oldAttemptID); err != nil {
+		t.Fatal(err)
+	}
+	oldCallID := uid("call")
+	if _, err := s.pool.Exec(ctx, `INSERT INTO provider_calls
+		(id, reservation_id, actor_user_id, job_attempt_id, kind)
+		VALUES ($1,$2,$3,$4,'audio')`,
+		oldCallID, oldReservationID, ownerID, oldAttemptID); err != nil {
 		t.Fatal(err)
 	}
 	session, err := s.CreateReplacementUploadSession(ctx, NewReplacementUploadSession{
@@ -86,7 +92,7 @@ func TestFileReplacementReusesIngestPolicy(t *testing.T) {
 	if replaced.Status != FilePending || replaced.Revision != 2 {
 		t.Fatalf("replacement state = %#v", replaced)
 	}
-	var oldJobStatus, oldJobError, oldReservationStatus string
+	var oldJobStatus, oldJobError, oldReservationStatus, oldAttemptStatus, oldCallStatus string
 	if err := s.pool.QueryRow(ctx, `SELECT status, error FROM jobs WHERE id=$1`,
 		oldJobID).Scan(&oldJobStatus, &oldJobError); err != nil {
 		t.Fatal(err)
@@ -101,16 +107,25 @@ func TestFileReplacementReusesIngestPolicy(t *testing.T) {
 	if oldReservationStatus != "released" {
 		t.Fatalf("old ingest reservation = %q, want released", oldReservationStatus)
 	}
-	var audioStatus string
-	var cleanupRequested bool
-	if err := s.pool.QueryRow(ctx, `SELECT status, cleanup_requested
-		FROM audio_transcriptions WHERE id=$1`, audioID).Scan(
-		&audioStatus, &cleanupRequested,
-	); err != nil {
+	if err := s.pool.QueryRow(ctx, `SELECT status FROM ingest_job_attempts WHERE id=$1`,
+		oldAttemptID).Scan(&oldAttemptStatus); err != nil {
 		t.Fatal(err)
 	}
-	if audioStatus != "failed" || !cleanupRequested {
-		t.Fatalf("old audio cleanup = status %q requested %t", audioStatus, cleanupRequested)
+	if oldAttemptStatus != "superseded" {
+		t.Fatalf("old ingest attempt = %q, want superseded", oldAttemptStatus)
+	}
+	if err := s.pool.QueryRow(ctx, `SELECT status FROM provider_calls WHERE id=$1`,
+		oldCallID).Scan(&oldCallStatus); err != nil {
+		t.Fatal(err)
+	}
+	if oldCallStatus != "open" {
+		t.Fatalf("old provider call = %q, want open for its late receipt", oldCallStatus)
+	}
+	if _, err := s.SettleProviderCall(ctx, oldReservationID, ProviderCallUsage{
+		CallID: oldCallID, Kind: KindAudio, Provider: "elevenlabs",
+		Model: "scribe_v2", Units: 1, Unit: "seconds",
+	}); err != nil {
+		t.Fatalf("settle superseded attempt's provider receipt: %v", err)
 	}
 	var raw []byte
 	if err := s.pool.QueryRow(ctx, `SELECT payload FROM jobs
@@ -122,13 +137,84 @@ func TestFileReplacementReusesIngestPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	if payload["parseMode"] != "fast" || payload["captionImages"] != true ||
-		payload["sourceRevision"] != float64(2) {
+		payload["sourceRevision"] != float64(2) || payload["quotaRecovery"] != false {
 		t.Fatalf("replacement ingest payload = %#v", payload)
 	}
 	plan, ok := payload["processingPlan"].(map[string]any)
 	if !ok || plan["version"] != float64(1) || plan["route"] != "document_parse" ||
 		plan["captionMode"] != "embedded" || plan["officePreview"] != true {
 		t.Fatalf("replacement processing plan = %#v", payload["processingPlan"])
+	}
+}
+
+func TestOverQuotaOwnerCanReserveOnlyNonGrowingReplacement(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	ownerID := newBlobTestUser(t, s, "u_replace_recovery")
+	workspace, err := s.CreateWorkspace(
+		ctx, ownerID, "Replacement recovery", ColorGreen, []TagRef{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := s.CreateSourceReady(
+		ctx, workspace.ID, ownerID, "recover.xlsx", "sheet", nil, "", 100,
+		"sources/replace-recovery",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := s.CreateSourceReady(
+		ctx, workspace.ID, ownerID, "quota.pdf", "pdf", nil, "", 100,
+		"sources/replace-quota",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	freeLimit := mustPlanLimits(t, s, PlanFree).StorageBytes
+	if _, err := s.pool.Exec(ctx, `UPDATE files SET size_bytes=$2 WHERE id=$1`,
+		other.ID, freeLimit+1); err != nil {
+		t.Fatal(err)
+	}
+	lapsed := time.Now().Add(-time.Hour).UTC()
+	ended := proSubscription(ownerID, uid("sub"), time.Now().Unix())
+	ended.Status = "canceled"
+	ended.CurrentPeriodEnd = &lapsed
+	if err := s.UpsertSubscription(ctx, ended); err != nil {
+		t.Fatal(err)
+	}
+	status, err := s.AccountAccess(ctx, ownerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.State != AccountOverQuotaGrace {
+		t.Fatalf("account state=%s, want over-quota grace", status.State)
+	}
+
+	recovery, err := s.CreateReplacementUploadSession(ctx, NewReplacementUploadSession{
+		ID: uid("up"), FileID: file.ID, CreatedBy: ownerID,
+		ObjectPath: "incoming/recovery", FinalPath: "sources/recovery",
+		ContentType:  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+		DeclaredSize: 90, ExpectedRevision: file.Revision,
+		ExpiresAt: time.Now().UTC().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovery.ReservedSize != 0 {
+		t.Fatalf("recovery replacement reserved %d bytes, want 0", recovery.ReservedSize)
+	}
+
+	_, err = s.CreateReplacementUploadSession(ctx, NewReplacementUploadSession{
+		ID: uid("up"), FileID: file.ID, CreatedBy: ownerID,
+		ObjectPath: "incoming/growth", FinalPath: "sources/growth",
+		ContentType:  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+		DeclaredSize: 101, ExpectedRevision: file.Revision,
+		ExpiresAt: time.Now().UTC().Add(time.Hour),
+	})
+	var locked *AccountLockedError
+	if !errors.As(err, &locked) || locked.State != AccountOverQuotaGrace {
+		t.Fatalf("growing replacement error=%v, want over-quota lock", err)
 	}
 }
 

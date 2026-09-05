@@ -44,6 +44,9 @@ func (a *api) listCanvases(ctx context.Context, _ *struct{}) (*canvasesOutput, e
 }
 
 func (a *api) createCanvas(ctx context.Context, in *createCanvasInput) (*canvasOutput, error) {
+	if err := a.requireAccountMutate(ctx); err != nil {
+		return nil, err
+	}
 	res, err := a.s.CreateCanvas(ctx, userID(ctx), in.Body.Name)
 	if err != nil {
 		return nil, hErr(err)
@@ -52,7 +55,7 @@ func (a *api) createCanvas(ctx context.Context, in *createCanvasInput) (*canvasO
 }
 
 func (a *api) getCanvas(ctx context.Context, in *canvasIDInput) (*canvasOutput, error) {
-	res, err := a.s.GetCanvas(ctx, in.ID)
+	res, err := a.s.GetCanvas(ctx, userID(ctx), in.ID)
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -60,11 +63,14 @@ func (a *api) getCanvas(ctx context.Context, in *canvasIDInput) (*canvasOutput, 
 }
 
 func (a *api) saveCanvas(ctx context.Context, in *saveCanvasInput) (*canvasOutput, error) {
+	if err := a.requireAccountMutate(ctx); err != nil {
+		return nil, err
+	}
 	var scene json.RawMessage
 	if in.Body.Scene != nil {
 		scene = apimodel.EncodeRaw(in.Body.Scene)
 	}
-	res, err := a.s.SaveCanvas(ctx, in.ID, in.Body.Name, scene)
+	res, err := a.s.SaveCanvas(ctx, userID(ctx), in.ID, in.Body.Name, scene)
 	if err != nil {
 		return nil, hErr(err)
 	}

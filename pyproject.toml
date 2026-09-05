@@ -1,7 +1,7 @@
 [project]
 name = "evo-pipeline"
 version = "0.4.0"
-description = "Evo Notes ingest + retrieval pipeline (in-house chunk store, summary tree and concept index)"
+description = "Evo Notes ingest + retrieval pipeline (in-house chunk store and per-file summaries)"
 requires-python = ">=3.10"
 dependencies = [
   # Everything retrieval-related is ours now; the schema is owned by the Go

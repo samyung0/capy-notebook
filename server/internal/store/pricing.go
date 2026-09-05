@@ -116,7 +116,7 @@ func (s *Store) EmbeddingRates(ctx context.Context, workspaceID string) (TokenRa
 	if err != nil {
 		return TokenRates{}, fmt.Errorf("%w: %v", ErrModelUnavailable, err)
 	}
-	if !cfg.Allows(models.SurfaceEmbedding) {
+	if !cfg.Allows(models.SlotRetrieval) {
 		return TokenRates{}, fmt.Errorf("%w: %s v%d is not an embedding model", ErrModelUnavailable, cfg.Ref(), cfg.Version)
 	}
 	return RatesFromConfig(cfg), nil

@@ -235,7 +235,12 @@ function MaterialContent({
       {activeMode === 'view' && (
         <div className="h-full min-h-0 overflow-auto">
           <Suspense fallback={<FileLoading />}>
-            <MaterialPreview content={material.content} />
+            <MaterialPreview
+              content={material.content}
+              isStandalone={!material.workspaceId}
+              kind={material.kind}
+              title={material.title}
+            />
           </Suspense>
         </div>
       )}

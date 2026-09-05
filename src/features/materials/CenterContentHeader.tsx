@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
-import { useDeck, useFile, useMaterial, useQuiz } from '@/api/hooks';
+import { useFile, useFlashcardSet, useMaterial, useQuiz } from '@/api/hooks';
 import type {
   Chapter,
   Material,
@@ -88,15 +88,20 @@ function useHeader(item: OpenItem): {
   };
 }
 
-function DeckPreviewActions({ deckId }: { deckId: string }) {
-  const { data: deckData, isLoading: deckIsLoading } = useDeck(deckId, {
-    errorBoundary: false,
-  });
+function FlashcardSetPreviewActions({
+  flashcardSetId,
+}: {
+  flashcardSetId: string;
+}) {
+  const { data: flashcardSetData, isLoading: flashcardSetIsLoading } =
+    useFlashcardSet(flashcardSetId, {
+      errorBoundary: false,
+    });
   const navigate = useNavigate();
-  const summary = deckData
-    ? `${deckData.cardCount} card${deckData.cardCount === 1 ? '' : 's'} · ${deckData.knownPct}% known`
-    : deckIsLoading
-      ? 'Loading deck details…'
+  const summary = flashcardSetData
+    ? `${flashcardSetData.cardCount} card${flashcardSetData.cardCount === 1 ? '' : 's'} · ${flashcardSetData.knownPct}% known`
+    : flashcardSetIsLoading
+      ? 'Loading flashcards…'
       : 'Flashcards';
 
   return (
@@ -109,7 +114,10 @@ function DeckPreviewActions({ deckId }: { deckId: string }) {
       <Button
         iconRight="arrowRight"
         onClick={() =>
-          navigate({ params: { deckId }, to: '/flashcards/$deckId' })
+          navigate({
+            params: { flashcardSetId },
+            to: '/flashcards/$flashcardSetId',
+          })
         }
         size="sm"
         variant="ghost-hover"
@@ -165,7 +173,8 @@ function MaterialViewActions({
   kind: MaterialKind;
 }) {
   if (kind === 'quiz') return <QuizPreviewActions quizId={materialId} />;
-  if (kind === 'flashcards') return <DeckPreviewActions deckId={materialId} />;
+  if (kind === 'flashcards')
+    return <FlashcardSetPreviewActions flashcardSetId={materialId} />;
   return null;
 }
 

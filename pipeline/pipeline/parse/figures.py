@@ -7,7 +7,7 @@ for a file, every figure that survives filtering is described — the filters, n
 a count, are what bound the cost.
 
 Descriptions are written onto the ``content_list`` image blocks in place, before
-chunking, so a caption is embedded, summarized, concept-extracted and cited as
+chunking, so a caption is embedded, summarized and cited as
 part of the passage it belongs to.
 
 ## Filtering
@@ -65,7 +65,8 @@ _DECORATIVE = "DECORATIVE"
 
 _CAPTION_PROMPT = """Describe this figure from a study document so a student's search can find the information it carries.
 Use brief, clear sentences. Include visible facts, data, labels, formulas, relationships, and conclusions. Do not add facts that are not visible or supported by the supplied context.
-If the image is likely only decorative, such as an ornament, generic icon, divider, background, or branding with no useful study information, return exactly DECORATIVE in all caps and nothing else. If uncertain, describe the potentially useful information instead."""
+If the image is likely only decorative, such as an ornament, generic icon, divider, background, or branding with no useful study information, return exactly DECORATIVE in all caps and nothing else. If uncertain, describe the potentially useful information instead.
+Do not use headings or other formattings since this response will be chunked and indexed."""
 
 # Appended only when there is context to introduce. Left dangling on a figure
 # with no surrounding text, the trailing colon reads as a promise of material
@@ -235,7 +236,7 @@ def _load_cache(key: str) -> dict[str, str]:
         return {}
     try:
         parsed = json.loads(raw)
-    except json.JSONDecodeError:
+    except (UnicodeDecodeError, json.JSONDecodeError):
         return {}
     if not isinstance(parsed, dict):
         return {}
@@ -266,9 +267,7 @@ class _CaptionCacheLock:
 
     async def __aenter__(self) -> None:
         while self.connection is None:
-            self.connection = await asyncio.to_thread(
-                db.try_source_artifact_lock, self.identity
-            )
+            self.connection = await db.try_source_artifact_lock_async(self.identity)
             if self.connection is None:
                 await asyncio.sleep(max(0.1, cfg.poll_interval))
 
@@ -378,7 +377,15 @@ async def caption_figures(
                     data_url, _prompt(figure)
                 )
 
-        fresh = await asyncio.gather(*(describe(figure) for figure in pending))
+        tasks = [asyncio.create_task(describe(figure)) for figure in pending]
+        try:
+            fresh = await asyncio.gather(*tasks)
+        except BaseException:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
         written = {digest: text.strip() for digest, text in fresh if text.strip()}
         saved = False
         if written:

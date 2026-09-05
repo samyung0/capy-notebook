@@ -53,29 +53,32 @@ const KEY_DELAY_MS = 40;
  * is why scrolling moved with it.
  */
 const BUDGET = {
+  // Ceilings sit at ~1.3x the median of three ubuntu-24.04 runs on 2026-09-03
+  // (mixed AMD EPYC 9V74 / Intel Xeon pool, CPU x4). They are the only perf
+  // gate and only a human lowers them. See openwiki/editor-perf.md.
   large: {
     // Wall-clock from navigation to a synced, editable Plate instance. Measured
     // unthrottled: this path is already tens of seconds without any slowdown.
-    interactiveOpenMs: 35_000,
-    readOnlyOpenMs: 8000,
+    interactiveOpenMs: 20_000, // median 15,165
+    readOnlyOpenMs: 2600, // median 1,952
     // Debounce, Yjs commit, the acknowledgement's state updates, and the
     // projection invalidation. Nothing here may touch the document tree, so
-    // this budget is tight on purpose — it is the tripwire for a regression
-    // that reconnects the save path to the editor's render.
-    saveCycleBlockingMs: 1500,
-    typingBlockingPerKeystrokeMs: 700,
+    // this budget is the tripwire for a regression that reconnects the save
+    // path to the editor's render.
+    saveCycleBlockingMs: 475, // median 362
+    typingBlockingPerKeystrokeMs: 275, // median 209
     // A single unlucky keystroke sets this one, so it spreads wider run to run
-    // than the average above (0.5-0.8s observed on the same build).
-    typingInpMs: 2000,
+    // than the average above; held at 1.5x (median 336) instead of 1.3x.
+    typingInpMs: 500,
   },
   scroll: {
-    avgFps: 20,
-    longestFrameMs: 1200,
+    avgFps: 38, // median 50.2, higher is better
+    longestFrameMs: 370, // median 283
   },
   small: {
-    // Small enough now that it is mostly noise: 2.5-7.7ms across runs.
-    typingBlockingPerKeystrokeMs: 30,
-    typingInpMs: 350,
+    // GHA measures 0ms; the floor exists so a local run has something to hit.
+    typingBlockingPerKeystrokeMs: 10,
+    typingInpMs: 85, // median 64
   },
 };
 

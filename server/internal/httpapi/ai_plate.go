@@ -166,7 +166,9 @@ func (a *api) aiCommand(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	userID := uid(r)
-	llm, err := a.resolveLLM(ctx, userID, models.SurfaceEditor)
+	ctx, cancelLiveAuthorization := a.liveWorkspaceContext(ctx, userID, wsID)
+	defer cancelLiveAuthorization()
+	llm, err := a.resolveLLM(ctx, userID, models.SlotEditor)
 	if err != nil {
 		writeAIError(w, http.StatusServiceUnavailable, "ai_unavailable", "AI service is unavailable", true)
 		return
@@ -315,7 +317,9 @@ func (a *api) aiCopilot(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	userID := uid(r)
-	llm, err := a.resolveLLM(ctx, userID, models.SurfaceEditor)
+	ctx, cancelLiveAuthorization := a.liveWorkspaceContext(ctx, userID, wsID)
+	defer cancelLiveAuthorization()
+	llm, err := a.resolveLLM(ctx, userID, models.SlotEditor)
 	if err != nil {
 		writeAIError(w, http.StatusServiceUnavailable, "ai_unavailable", "AI service is unavailable", true)
 		return

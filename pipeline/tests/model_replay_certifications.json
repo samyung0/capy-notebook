@@ -12,5 +12,11 @@
       "cassette": "pipeline/tests/cassettes/replay/deepseek__deepseek_v4_pro.yaml",
       "test": "pipeline/tests/test_model_replay.py::test_certified_two_turn_replay[deepseek/deepseek-v4-pro]"
     }
+  },
+  "zai": {
+    "glm-5.3-flash": {
+      "cassette": "pipeline/tests/cassettes/replay/zai__glm_5_3_flash.yaml",
+      "test": "pipeline/tests/test_model_replay.py::test_certified_two_turn_replay[zai/glm-5.3-flash]"
+    }
   }
 }

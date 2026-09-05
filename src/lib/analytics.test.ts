@@ -5,9 +5,9 @@ import {
   cardCountBucket,
   cloneSourceFromPath,
   createIngestTracker,
-  deckStudySource,
   durationBucket,
   failureReason,
+  flashcardsStudySource,
   identityKey,
   ingestFailReason,
   ingestStageCode,
@@ -21,8 +21,8 @@ const ANALYTICS_EVENT_NAMES = {
   chat_turn_completed: true,
   chat_turn_sent: true,
   collaborator_invited: true,
-  deck_study_finished: true,
   editor_ai_used: true,
+  flashcards_study_finished: true,
   invite_accepted: true,
   item_cloned: true,
   material_generate_failed: true,
@@ -105,9 +105,9 @@ describe('analytics helpers', () => {
     expect(cloneSourceFromPath('/workspaces/ws_1')).toBeNull();
   });
 
-  it('labels deck study from the share path', () => {
-    expect(deckStudySource('/share/decks/d_1')).toBe('share');
-    expect(deckStudySource('/flashcards/d_1')).toBe('app');
+  it('labels flashcards study from the share path', () => {
+    expect(flashcardsStudySource('/share/flashcards/d_1')).toBe('share');
+    expect(flashcardsStudySource('/flashcards/d_1')).toBe('app');
   });
 
   it('keeps ingest stage and reason as short codes', () => {

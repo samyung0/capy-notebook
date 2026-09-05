@@ -20,6 +20,7 @@ const (
 	MaxDocumentBytes = 2 << 20
 	MaxDepth         = 16
 	MaxNodes         = 10000
+	MaxQuizTimeLimit = 180
 	// depthCeiling bounds recursion while decoding untrusted JSON. It is not a
 	// product limit: MaxDepth gates writes only, so a document seeded outside
 	// the write paths or predating a limit change stays readable.
@@ -103,18 +104,34 @@ func marshalCanonicalJSON(value any) ([]byte, error) {
 }
 
 func Marshal(doc Envelope) (string, error) {
-	if err := Validate(doc); err != nil {
+	raw, metrics, err := marshalValidated(doc)
+	if err != nil {
 		return "", err
+	}
+	if err := metrics.LimitError(); err != nil {
+		return "", err
+	}
+	return raw, nil
+}
+
+// MarshalProjection canonicalizes structurally valid collaboration content
+// without applying product caps. The sidecar already enforces those caps and
+// permits valid shrink-only recovery for documents that start over a limit.
+func MarshalProjection(doc Envelope) (string, error) {
+	raw, _, err := marshalValidated(doc)
+	return raw, err
+}
+
+func marshalValidated(doc Envelope) (string, DocumentMetrics, error) {
+	if err := Validate(doc); err != nil {
+		return "", DocumentMetrics{}, err
 	}
 	doc.Value = stripRuntimeCommentMarks(doc.Value)
 	b, err := marshalCanonicalJSON(doc)
 	if err != nil {
-		return "", err
+		return "", DocumentMetrics{}, err
 	}
-	if err := measure(b, doc.Value).LimitError(); err != nil {
-		return "", err
-	}
-	return string(b), nil
+	return string(b), measure(b, doc.Value), nil
 }
 
 // Metrics validates a canonical document and returns the serialized size and
@@ -354,8 +371,8 @@ func validateQuiz(node map[string]any) error {
 	}
 	if value, ok := node["timeLimitMin"]; ok {
 		v, ok := integer(value)
-		if !ok || v <= 0 {
-			return errors.New("timeLimitMin must be a positive integer")
+		if !ok || v < 1 || v > MaxQuizTimeLimit {
+			return fmt.Errorf("timeLimitMin must be an integer from 1 to %d", MaxQuizTimeLimit)
 		}
 	}
 	return nil
@@ -633,7 +650,7 @@ func integer(value any) (int64, bool) {
 	}
 }
 
-func QuizDocument(title string, questions json.RawMessage, timeLimit *int) (string, error) {
+func QuizDocument(questions json.RawMessage, timeLimit *int) (string, error) {
 	values, err := decodeArray(questions)
 	if err != nil {
 		return "", err
@@ -660,7 +677,7 @@ func QuizDocument(title string, questions json.RawMessage, timeLimit *int) (stri
 	if timeLimit != nil {
 		node["timeLimitMin"] = *timeLimit
 	}
-	return Marshal(artifactDocument(title, node))
+	return Marshal(artifactDocument(node))
 }
 
 func quizQuestionNode(question map[string]any) (map[string]any, error) {
@@ -808,7 +825,7 @@ func quizQuestionNode(question map[string]any) (map[string]any, error) {
 	return node, nil
 }
 
-func FlashcardsDocument(title string, cards []Card) (string, error) {
+func FlashcardsDocument(cards []Card) (string, error) {
 	if len(cards) == 0 {
 		cards = []Card{{ID: newID("card")}}
 	}
@@ -819,15 +836,15 @@ func FlashcardsDocument(title string, cards []Card) (string, error) {
 		}
 		children[i] = cardNode(card)
 	}
-	return Marshal(artifactDocument(title, map[string]any{
+	return Marshal(artifactDocument(map[string]any{
 		"type":     "flashcards",
 		"id":       newID("flashcards"),
 		"children": children,
 	}))
 }
 
-func MermaidDocument(title, source, caption string) (string, error) {
-	return Marshal(artifactDocument(title, map[string]any{
+func MermaidDocument(source, caption string) (string, error) {
+	return Marshal(artifactDocument(map[string]any{
 		"type":   "mermaid",
 		"id":     newID("mermaid"),
 		"source": source,
@@ -837,14 +854,8 @@ func MermaidDocument(title, source, caption string) (string, error) {
 	}))
 }
 
-func artifactDocument(title string, node map[string]any) Envelope {
-	if title == "" {
-		title = "Untitled"
-	}
-	return Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{
-		{"type": "h1", "id": newID("block"), "children": []any{textLeaf(title)}},
-		node,
-	}}
+func artifactDocument(node map[string]any) Envelope {
+	return Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{node}}
 }
 
 func validateTopLevelBlockIDs(nodes []map[string]any) error {
@@ -1012,7 +1023,7 @@ func IncomingMermaidSource(content string) string {
 }
 
 func ReplaceQuiz(raw string, questions json.RawMessage, timeLimit *int) (string, error) {
-	replacement, err := QuizDocument("", questions, timeLimit)
+	replacement, err := QuizDocument(questions, timeLimit)
 	if err != nil {
 		return "", err
 	}
@@ -1020,7 +1031,7 @@ func ReplaceQuiz(raw string, questions json.RawMessage, timeLimit *int) (string,
 }
 
 func ReplaceFlashcards(raw string, cards []Card) (string, error) {
-	replacement, err := FlashcardsDocument("", cards)
+	replacement, err := FlashcardsDocument(cards)
 	if err != nil {
 		return "", err
 	}
@@ -1086,6 +1097,86 @@ func RewriteEditorAssetIDs(raw string, idMap map[string]string) (string, error) 
 	}
 	for _, node := range doc.Value {
 		rewrite(node)
+	}
+	return Marshal(doc)
+}
+
+// EditorAssetIDs returns the distinct editor assets referenced anywhere in a
+// Plate document. Cloning uses this to copy only media that the retained
+// current content or revision history can actually render.
+func EditorAssetIDs(raw string) ([]string, error) {
+	doc, err := Parse(raw)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]struct{}{}
+	var collect func(map[string]any)
+	collect = func(node map[string]any) {
+		if assetID, ok := node["assetId"].(string); ok && assetID != "" {
+			seen[assetID] = struct{}{}
+		}
+		for _, child := range children(node) {
+			collect(child)
+		}
+	}
+	for _, node := range doc.Value {
+		collect(node)
+	}
+	ids := make([]string, 0, len(seen))
+	for id := range seen {
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+// RewriteClonedEditorAssetIDs rewrites references to ready editor assets and
+// removes media nodes whose source asset was not copied. A clone never carries
+// pending or failed asset rows, so preserving those references would create a
+// document that can never render successfully.
+func RewriteClonedEditorAssetIDs(raw string, idMap map[string]string) (string, error) {
+	doc, err := Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	var rewrite func(map[string]any) (map[string]any, bool)
+	rewrite = func(node map[string]any) (map[string]any, bool) {
+		if assetID, ok := node["assetId"].(string); ok {
+			replacement := idMap[assetID]
+			if replacement == "" {
+				return nil, false
+			}
+			node["assetId"] = replacement
+		}
+		rawChildren, ok := node["children"].([]any)
+		if !ok {
+			return node, true
+		}
+		kept := make([]any, 0, len(rawChildren))
+		for _, rawChild := range rawChildren {
+			child, ok := rawChild.(map[string]any)
+			if !ok {
+				continue
+			}
+			if rewritten, keep := rewrite(child); keep {
+				kept = append(kept, rewritten)
+			}
+		}
+		if len(kept) == 0 {
+			kept = []any{textLeaf("")}
+		}
+		node["children"] = kept
+		return node, true
+	}
+	kept := make([]map[string]any, 0, len(doc.Value))
+	for _, node := range doc.Value {
+		if rewritten, keep := rewrite(node); keep {
+			kept = append(kept, rewritten)
+		}
+	}
+	if len(kept) == 0 {
+		doc.Value = Empty().Value
+	} else {
+		doc.Value = kept
 	}
 	return Marshal(doc)
 }
@@ -1213,12 +1304,12 @@ func replaceInNode(node map[string]any, typ string, replacement map[string]any) 
 // FromLegacyMarkdown is only used at generator boundaries that still produce
 // markdown. Persisted diagram-like artifacts always use canonical mermaid
 // source and an annotatable caption child.
-func FromLegacyMarkdown(kind, title, markdown string) (string, error) {
+func FromLegacyMarkdown(kind, markdown string) (string, error) {
 	if parsed, err := Parse(markdown); err == nil {
 		return Marshal(parsed)
 	}
 	if kind == "mindmap" || kind == "diagram" {
-		return MermaidDocument(title, fenced(markdown, "mermaid"), "")
+		return MermaidDocument(fenced(markdown, "mermaid"), "")
 	}
 	doc := Empty()
 	doc.Value[0]["children"] = []any{textLeaf(markdown)}

@@ -1,0 +1,72 @@
+[
+  {
+    "q": "CIL-LLM框架如何避免灾难性遗忘",
+    "expect": [["zh-CN.pdf", 1], ["zh-CN.pdf", 9]],
+    "flag": 2
+  },
+  {
+    "q": "什么是类别增量学习",
+    "expect": [["zh-CN.pdf", 6], ["zh-CN.pdf", 7]],
+    "flag": 2
+  },
+  {
+    "q": "示例压缩和关键词匹配起什么作用",
+    "expect": [["zh-CN.pdf", 8], ["zh-CN.pdf", 15]],
+    "flag": 2
+  },
+  {
+    "q": "THUCNews数据集有多少个类别",
+    "expect": [["zh-CN.pdf", 41]],
+    "flag": 2
+  },
+  {
+    "q": "消融实验里各环节贡献了多少",
+    "expect": [["zh-CN.pdf", 54], ["zh-CN.pdf", 55]],
+    "flag": 2
+  },
+  {
+    "q": "AI辅助同行评审如何影响效率和准确性",
+    "expect": [
+      ["mixed_zh_en.pdf", 2],
+      ["mixed_zh_en.pdf", 12],
+      ["mixed_zh_en.pdf", 13]
+    ],
+    "flag": 2
+  },
+  {
+    "q": "人机协作的三种反思机制是什么",
+    "expect": [["mixed_zh_en.pdf", 4]],
+    "flag": 2
+  },
+  {
+    "q": "AI辅助初期认知负荷会如何变化",
+    "expect": [["mixed_zh_en.pdf", 3], ["mixed_zh_en.pdf", 6]],
+    "flag": 2
+  },
+  {
+    "q": "撑粤语运动是什么时候在哪里发生的",
+    "expect": [["zh_HK.pdf", 2]],
+    "flag": 2
+  },
+  {
+    "q": "推普政策的两个时间目标是什么",
+    "expect": [["zh_HK.pdf", 10]],
+    "flag": 2
+  },
+  {
+    "q": "港澳与珠三角的语文政策有何差异",
+    "expect": [["zh_HK.pdf", 14], ["zh_HK.pdf", 15], ["zh_HK.pdf", 18]],
+    "flag": 2
+  },
+  { "q": "广州下一代还讲粤语吗", "expect": [["zh_HK.pdf", 29]], "flag": 2 },
+  {
+    "q": "What is CIL-LLM?",
+    "expect": [["zh-CN.pdf", 1], ["zh-CN.pdf", 7], ["zh-CN.pdf", 6]],
+    "flag": 2
+  },
+  {
+    "q": "类别增量学习的灾难性遗忘问题是什么",
+    "expect": [["zh-CN.pdf", 6], ["zh-CN.pdf", 7], ["zh-CN.pdf", 1]],
+    "flag": 2
+  }
+]

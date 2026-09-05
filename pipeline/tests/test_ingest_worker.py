@@ -4,7 +4,7 @@ Figure selection and captioning live in ``parse/figures.py`` and are tested
 there. What is left here is the branching the worker owns: which contract route
 is executed, whether captioning runs at all, and the ordering
 the whole feature rests on — that captions are on the blocks before chunking, so
-they reach embedding, summarization and concept extraction rather than arriving
+they reach embedding and summarization rather than arriving
 after the passage they belong to has already been built.
 """
 
@@ -19,6 +19,150 @@ import pytest
 from pipeline.ingest import plan as ingest_plan
 from pipeline.ingest import worker
 from pipeline.parse import parser_client
+
+
+def test_audio_job_timeout_preserves_pre_provider_ingest_budget(monkeypatch):
+    monkeypatch.setattr(worker.cfg, "elevenlabs_sync_timeout_s", 1_200)
+    audio_job = {
+        "type": "ingest",
+        "payload": {"processingPlan": {"route": ingest_plan.AUDIO_TRANSCRIPTION}},
+    }
+
+    assert worker._job_timeout(audio_job, 900) == 900 + 1_200 + 300
+    assert worker._job_timeout({"type": "ingest", "payload": {}}, 900) == 900
+
+
+def test_heartbeat_cancels_work_when_the_exact_claim_is_gone(monkeypatch):
+    cancelled: list[str] = []
+    heartbeats: list[tuple[str, int, int]] = []
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def cursor(self):
+            return self
+
+        def commit(self):
+            return None
+
+    class StopAfterOneHeartbeat:
+        def wait(self, _timeout):
+            return False
+
+    monkeypatch.setattr(worker.db, "connect", Connection)
+
+    def heartbeat(_cur, job_id, lease_s, attempt):
+        heartbeats.append((job_id, lease_s, attempt))
+        return False
+
+    monkeypatch.setattr(worker.db, "heartbeat_job", heartbeat)
+
+    worker._heartbeat_loop(
+        "job_1",
+        180,
+        2,
+        StopAfterOneHeartbeat(),
+        lambda: cancelled.append("cancel"),
+    )
+
+    assert heartbeats == [("job_1", 180, 2)]
+    assert cancelled == ["cancel"]
+
+
+@pytest.mark.parametrize(
+    ("source", "accounts", "expected"),
+    [
+        (
+            None,
+            [
+                ("u_actor", None, None, None),
+                ("u_owner", None, None, None),
+            ],
+            ("failed", "lifecycle", "source_deleted", "source deleted"),
+        ),
+        (
+            ("ws_1", "u_owner", 2, "etag-b"),
+            [
+                ("u_actor", None, None, None),
+                ("u_owner", None, None, None),
+            ],
+            (
+                "superseded",
+                "superseded",
+                "source_superseded",
+                "superseded by file replacement",
+            ),
+        ),
+        (
+            ("ws_1", "u_owner", 1, "etag-a"),
+            [
+                ("u_actor", None, None, None),
+                ("u_owner", None, None, object()),
+            ],
+            (
+                "failed",
+                "lifecycle",
+                "account_deletion",
+                "account deletion requested",
+            ),
+        ),
+    ],
+    ids=["file-deleted", "source-replaced", "owner-deleting"],
+)
+def test_heartbeat_closes_a_skipped_lifecycle_claim(source, accounts, expected):
+    payload = {
+        "actorUserId": "u_actor",
+        "fileId": "f_1",
+        "sourceETag": "etag-a",
+        "sourceRevision": 1,
+        "workspaceId": "ws_1",
+    }
+
+    class Cursor:
+        rowcount = 1
+
+        def __init__(self):
+            self.calls: list[tuple[str, tuple]] = []
+            self.result = None
+
+        def execute(self, query, params):
+            statement = " ".join(query.split())
+            self.calls.append((statement, params))
+            if "SELECT type, payload FROM jobs" in statement:
+                self.result = ("ingest", payload)
+            elif "FROM workspaces WHERE id=" in statement:
+                self.result = ("u_owner",)
+            elif "FROM files WHERE id=" in statement:
+                self.result = source
+            elif "FROM users" in statement:
+                self.result = accounts
+            elif "FROM workspace_members" in statement:
+                self.result = ("editor",)
+            elif "cancel_pipeline_jobs" in statement:
+                self.result = (1,)
+            else:
+                self.result = None
+            return self
+
+        def fetchone(self):
+            return self.result
+
+        def fetchall(self):
+            return self.result
+
+    cur = Cursor()
+
+    assert not worker.db.heartbeat_job(cur, "job_1", 180, 1)
+    cancellation = next(
+        params for query, params in cur.calls if "cancel_pipeline_jobs" in query
+    )
+    assert cancellation == ("job_1", *expected)
+    assert any("DELETE FROM rag_contents" in query for query, _params in cur.calls)
+    assert not any("UPDATE jobs SET locked_at" in query for query, _params in cur.calls)
 
 
 @pytest.fixture
@@ -45,6 +189,8 @@ def parse_stub(monkeypatch):
         state["route"] = route
         state["require_office_preview"] = require_office_preview
         raw_dir.mkdir(parents=True, exist_ok=True)
+        if require_office_preview:
+            (raw_dir / "preview.pdf").write_bytes(b"%PDF-preview")
         return content_list
 
     async def _caption(*, content_list, raw_dir, file_name, source_sha256):
@@ -69,6 +215,11 @@ def parse_stub(monkeypatch):
     monkeypatch.setattr(worker, "_record_parse_artifact", lambda *a, **k: None)
     monkeypatch.setattr(worker, "_record_caption_blob", lambda *a, **k: None)
     monkeypatch.setattr(worker, "_touch_or_upsert_artifact", lambda **k: None)
+    monkeypatch.setattr(
+        worker,
+        "_cache_office_preview",
+        lambda **_kwargs: "previews/test.pdf",
+    )
     monkeypatch.setattr(worker.progress, "publish", lambda *_a, **_k: None)
     return state
 
@@ -150,9 +301,9 @@ def _ingest_payload(**overrides):
         "ingestProviderSlug": "deepseek",
         "ingestModelSlug": "ingest",
         "ingestModelVersion": 1,
-        "visionProviderSlug": "gemini",
-        "visionModelSlug": "vision",
-        "visionModelVersion": 1,
+        "captioningProviderSlug": "zai",
+        "captioningModelSlug": "vision",
+        "captioningModelVersion": 1,
         "sourceRevision": 1,
         "sourceETag": "etag-a",
         "parseArtifact": _artifact(),
@@ -216,13 +367,24 @@ def test_parse_handoff_atomically_enqueues_an_immutable_ingest_continuation(
     payload = _ingest_payload()
     payload.pop("parseArtifact")
     payload.pop("parseJobId")
+    payload["localSource"] = {
+        "key": "sources/source-1",
+        "sha256": "aa" * 32,
+    }
     artifact = _artifact()
+    artifact["durableKey"] = "parse-bundles/" + "a" * 64 + ".zip"
     monkeypatch.setattr(worker.db, "connect", lambda: _Conn())
     monkeypatch.setattr(worker, "_lost_claim", lambda *_a: False)
+    monkeypatch.setattr(worker.db, "ingest_accounts_active", lambda *_a: True)
     monkeypatch.setattr(
         worker.db,
         "require_current_file_source",
         lambda *_a: events.append(("source",)),
+    )
+    monkeypatch.setattr(
+        worker,
+        "_touch_or_upsert_artifact",
+        lambda **values: events.append(("cache", values)) or True,
     )
     monkeypatch.setattr(
         worker.db,
@@ -251,6 +413,13 @@ def test_parse_handoff_atomically_enqueues_an_immutable_ingest_continuation(
     assert enqueue[3]["parseArtifact"] == artifact
     assert enqueue[3]["parseJobId"] == "job_parse"
     assert "parseArtifact" not in payload
+    cache = next(event for event in events if event[0] == "cache")
+    assert cache[1] == {
+        "object_path": artifact["durableKey"],
+        "kind": "parse_bundle",
+        "source_sha256": "aa" * 32,
+        "size_bytes": artifact["size"],
+    }
     assert events[-1] == ("set", "job_parse", "done")
 
 
@@ -270,6 +439,7 @@ def test_invalid_artifact_returns_to_parse_only_once(monkeypatch):
         ),
     )
     monkeypatch.setattr(worker.db, "set_job", lambda *_a: None)
+    monkeypatch.setattr(worker.db, "ingest_accounts_active", lambda *_a: True)
 
     assert worker._handoff_for_artifact_repair(
         job={"id": "job_ingest", "attempts": 1},
@@ -283,21 +453,18 @@ def test_invalid_artifact_returns_to_parse_only_once(monkeypatch):
     assert queued["artifactRepairAttempts"] == 1
 
 
-def test_reaped_superseded_final_attempt_releases_its_reservation(monkeypatch):
-    finished: list[tuple[str, int, str]] = []
+def test_reaped_superseded_final_attempt_only_runs_best_effort_cleanup(monkeypatch):
+    cleaned: list[dict] = []
+    published: list[tuple] = []
     monkeypatch.setattr(
         worker,
-        "_notify_ingest_terminal",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            worker.db.SourceSupersededError("source replaced")
-        ),
+        "_cleanup_payload_source",
+        lambda payload: cleaned.append(payload),
     )
     monkeypatch.setattr(
-        worker,
-        "_finish_superseded",
-        lambda job_id, attempt, reservation_id: finished.append(
-            (job_id, attempt, reservation_id)
-        ),
+        worker.progress,
+        "publish",
+        lambda *args, **kwargs: published.append((args, kwargs)),
     )
 
     worker._announce_reclaimed(
@@ -306,11 +473,63 @@ def test_reaped_superseded_final_attempt_releases_its_reservation(monkeypatch):
             "type": "ingest",
             "attempts": 3,
             "outcome": "failed",
+            "file_failed": False,
             "payload": _ingest_payload(reservationId="cr_old_source"),
         }
     )
 
-    assert finished == [("job_old_source", 3, "cr_old_source")]
+    assert cleaned == [_ingest_payload(reservationId="cr_old_source")]
+    assert published == []
+
+
+def test_optional_cache_registration_drops_a_row_for_a_reaped_object(monkeypatch):
+    events: list[tuple] = []
+    monkeypatch.setattr(worker.db, "connect", lambda: _Conn())
+    monkeypatch.setattr(
+        worker.db,
+        "upsert_artifact_cache",
+        lambda _cur, **values: events.append(("upsert", values)),
+    )
+    monkeypatch.setattr(
+        worker.db,
+        "drop_artifact_cache",
+        lambda _cur, key: events.append(("drop", key)),
+    )
+    monkeypatch.setattr(worker.blobstore, "object_info", lambda _key: None)
+
+    assert not worker._touch_or_upsert_artifact(
+        object_path="derived-text/source/image-v1.json",
+        kind="derived_text",
+        source_sha256="aa" * 32,
+    )
+    assert [event[0] for event in events] == ["upsert", "drop"]
+
+
+def test_parse_handoff_drops_unregistered_durable_key(monkeypatch):
+    payload = _ingest_payload()
+    payload.pop("parseArtifact")
+    payload.pop("parseJobId")
+    payload["localSource"] = {"key": "sources/source-1", "sha256": "aa" * 32}
+    artifact = _artifact()
+    artifact["durableKey"] = "parse-bundles/" + "a" * 64 + ".zip"
+    queued: list[dict] = []
+    monkeypatch.setattr(worker.db, "connect", lambda: _Conn())
+    monkeypatch.setattr(worker, "_lost_claim", lambda *_a: False)
+    monkeypatch.setattr(worker, "_touch_or_upsert_artifact", lambda **_values: False)
+    monkeypatch.setattr(worker.obs, "take_parse_usage", worker.obs.ParseUsage)
+    monkeypatch.setattr(
+        worker.db, "enqueue_job", lambda _c, _i, _t, p: queued.append(p)
+    )
+    monkeypatch.setattr(worker.db, "set_job", lambda *_a: None)
+
+    assert worker._handoff_parsed_artifact(
+        job={"id": "job_parse", "attempts": 1},
+        payload=payload,
+        file_id="f_1",
+        workspace_id="ws_1",
+        artifact=artifact,
+    )
+    assert "durableKey" not in queued[0]["parseArtifact"]
 
 
 async def test_the_processing_plan_selects_the_route(parse_stub):
@@ -410,6 +629,44 @@ async def test_a_missing_actor_fails_the_file_without_retry(monkeypatch):
     assert failed == []
 
 
+async def test_admission_refusal_passes_the_full_source_identity(monkeypatch):
+    failed: list[dict] = []
+    payload = _ingest_payload()
+    monkeypatch.setattr(worker, "_file_exists", lambda *_a: True)
+    monkeypatch.setattr(worker, "_read_name", lambda *_a: "notes.txt")
+    monkeypatch.setattr(worker, "_require_current_source", lambda *_a: None)
+    monkeypatch.setattr(worker, "_account_allows_ingest", lambda *_a: False)
+    monkeypatch.setattr(
+        worker, "_finish_fail", lambda **values: failed.append(values) or True
+    )
+    monkeypatch.setattr(worker.progress, "publish", lambda *_a, **_k: None)
+
+    await worker._process_ingest_job(
+        {"id": "job_refused", "type": "ingest", "attempts": 1},
+        payload,
+        "f_1",
+        "ws_1",
+        "txt",
+        _plan(ingest_plan.RAW_TEXT, format_name="txt"),
+    )
+
+    assert failed == [
+        {
+            "file_id": "f_1",
+            "job_id": "job_refused",
+            "error": "notes.txt: ingest refused because the account is locked or over quota.",
+            "attempt": 1,
+            "reservation_id": "cr_1",
+            "source_revision": 1,
+            "source_etag": "etag-a",
+            "actor_user_id": "u_1",
+            "workspace_id": "ws_1",
+            "error_category": "accounting",
+            "error_code": "ingest_admission_refused",
+        }
+    ]
+
+
 async def test_lost_claim_does_not_publish_a_stale_terminal_progress(monkeypatch):
     events: list[tuple] = []
     payload = _ingest_payload()
@@ -436,9 +693,7 @@ async def test_lost_claim_does_not_publish_a_stale_terminal_progress(monkeypatch
     assert all(args[2] != "done" for args, _kwargs in events)
 
 
-async def test_parsed_document_continuation_does_not_repeat_credit_admission(
-    monkeypatch,
-):
+async def test_parsed_document_continuation_rechecks_account_lifecycle(monkeypatch):
     class ReachedPostProcessing(RuntimeError):
         pass
 
@@ -459,12 +714,11 @@ async def test_parsed_document_continuation_does_not_repeat_credit_admission(
     monkeypatch.setattr(worker, "_file_exists", lambda *_a: True)
     monkeypatch.setattr(worker, "_read_name", lambda *_a: "notes.pdf")
     monkeypatch.setattr(worker, "_require_current_source", lambda *_a: None)
+    admission_checks: list[tuple] = []
     monkeypatch.setattr(
         worker,
         "_account_allows_ingest",
-        lambda *_a: (_ for _ in ()).throw(
-            AssertionError("parsed continuation repeated credit admission")
-        ),
+        lambda *args: admission_checks.append(args) or True,
     )
     monkeypatch.setattr(worker, "_record_source_sha", lambda *_a: None)
     monkeypatch.setattr(worker.store, "workspace_embedding_pin", _pin)
@@ -491,6 +745,11 @@ async def test_parsed_document_continuation_does_not_repeat_credit_admission(
             "pdf",
             _plan(),
         )
+
+    assert admission_checks == [
+        ("f_1", _ingest_payload()),
+        ("f_1", _ingest_payload()),
+    ]
 
 
 async def test_text_sources_never_reach_the_parse_service(parse_stub, monkeypatch):
@@ -634,6 +893,7 @@ def test_office_preview_is_shared_and_uploaded_as_pdf(tmp_path, monkeypatch):
         fingerprint="fp-1",
         source_revision=1,
         source_etag="etag-a",
+        actor_user_id="u_actor",
     )
 
     assert key == f"previews/{'aa' * 32}/marker-v1/fp-1.pdf"
@@ -681,6 +941,7 @@ def test_oversized_office_preview_is_not_read_uploaded_or_recorded(
         fingerprint="fp-1",
         source_revision=1,
         source_etag="etag-a",
+        actor_user_id="u_actor",
     )
 
     assert key is None
@@ -728,11 +989,77 @@ def test_office_preview_growth_during_read_is_not_uploaded_or_recorded(
         fingerprint="fp-1",
         source_revision=1,
         source_etag="etag-a",
+        actor_user_id="u_actor",
     )
 
     assert key is None
     assert reads == [len(original) + 1]
     assert events == []
+
+
+@pytest.mark.parametrize(
+    ("cached", "info"),
+    [
+        (b"not-a-pdf-object", {"size": 16, "content_type": "application/pdf"}),
+        (b"", {"size": 0, "content_type": "application/pdf"}),
+        (b"%PDF-old", {"size": 8, "content_type": "application/octet-stream"}),
+    ],
+    ids=["wrong-bytes", "empty", "wrong-content-type"],
+)
+def test_invalid_existing_office_preview_is_replaced_from_validated_bundle(
+    tmp_path, monkeypatch, cached: bytes, info: dict
+):
+    preview = tmp_path / "preview.pdf"
+    local = b"%PDF-current-preview"
+    preview.write_bytes(local)
+    writes: list[tuple[str, bytes, str]] = []
+    monkeypatch.setattr(worker.blobstore, "object_info", lambda _key: info)
+    monkeypatch.setattr(worker.blobstore, "read_bytes", lambda _key, _limit: cached)
+    monkeypatch.setattr(
+        worker.blobstore,
+        "write_bytes",
+        lambda key, data, content_type: writes.append((key, data, content_type)),
+    )
+    monkeypatch.setattr(worker, "_touch_or_upsert_artifact", lambda **_values: None)
+    monkeypatch.setattr(worker, "_record_preview_blob", lambda *_values: None)
+
+    key = worker._cache_office_preview(
+        raw_dir=tmp_path,
+        file_id="f_1",
+        source_sha256="aa" * 32,
+        parser_version="marker-v1",
+        fingerprint="fp-1",
+        source_revision=1,
+        source_etag="etag-a",
+        actor_user_id="u_actor",
+    )
+
+    assert key is not None
+    assert writes == [(key, local, "application/pdf")]
+
+
+async def test_required_office_preview_failure_stops_ingest_ready_path(
+    parse_stub, monkeypatch
+):
+    monkeypatch.setattr(worker, "_cache_office_preview", lambda **_kwargs: None)
+
+    with pytest.raises(worker.RetryableError, match="required Office preview"):
+        await worker._chunks_for(
+            payload={
+                "actorUserId": "u_actor",
+                "blobPath": "sources/lesson.docx",
+                "parseArtifact": _artifact(),
+                "sourceETag": "etag-a",
+                "sourceRevision": 1,
+            },
+            name="lesson.docx",
+            processing_plan=_plan(format_name="docx", office_preview=True),
+            local_path="/shared/sources/source-1",
+            source_key="sources/source-1",
+            ws="ws_1",
+            file_id="f_1",
+            source_sha256="aa" * 32,
+        )
 
 
 def test_office_donor_requires_an_existing_exact_preview(monkeypatch):
@@ -741,11 +1068,24 @@ def test_office_donor_requires_an_existing_exact_preview(monkeypatch):
     monkeypatch.setattr(worker.blobstore, "object_info", lambda _key: None)
     assert worker._donor_office_preview("lesson.docx", donor) is None
 
-    monkeypatch.setattr(worker.blobstore, "object_info", lambda _key: {"size": 2048})
+    preview = b"%PDF-" + b"x" * 2043
+    monkeypatch.setattr(
+        worker.blobstore,
+        "object_info",
+        lambda _key: {"size": len(preview), "content_type": "application/pdf"},
+    )
+    monkeypatch.setattr(worker.blobstore, "read_bytes", lambda _key, _limit: preview)
     assert (
         worker._donor_office_preview("lesson.docx", donor) == donor["preview_blob_path"]
     )
     assert worker._donor_office_preview("lesson.pdf", {}) == ""
+
+    monkeypatch.setattr(
+        worker.blobstore,
+        "object_info",
+        lambda _key: (_ for _ in ()).throw(OSError("B2 unavailable")),
+    )
+    assert worker._donor_office_preview("lesson.docx", donor) is None
 
 
 def test_reused_preview_is_attached_only_when_the_object_exists(monkeypatch):
@@ -767,12 +1107,19 @@ def test_reused_preview_is_attached_only_when_the_object_exists(monkeypatch):
         "preview_blob_path": "previews/source/marker/fingerprint.pdf",
         "source_revision": 1,
         "source_etag": "etag-a",
+        "actor_user_id": "u_actor",
     }
     assert not worker._reuse_office_preview(**values)
     assert touched == []
     assert attached == []
 
-    monkeypatch.setattr(worker.blobstore, "object_info", lambda _key: {"size": 2048})
+    preview = b"%PDF-" + b"x" * 2043
+    monkeypatch.setattr(
+        worker.blobstore,
+        "object_info",
+        lambda _key: {"size": len(preview), "content_type": "application/pdf"},
+    )
+    monkeypatch.setattr(worker.blobstore, "read_bytes", lambda _key, _limit: preview)
     assert worker._reuse_office_preview(**values)
     assert touched == [
         {
@@ -780,9 +1127,21 @@ def test_reused_preview_is_attached_only_when_the_object_exists(monkeypatch):
             "kind": "office_preview",
             "source_sha256": values["source_sha256"],
             "size_bytes": 2048,
+            "strict": True,
         }
     ]
     assert attached == [("f_1", values["preview_blob_path"])]
+
+    touched.clear()
+    attached.clear()
+    monkeypatch.setattr(
+        worker.blobstore,
+        "object_info",
+        lambda _key: (_ for _ in ()).throw(OSError("B2 unavailable")),
+    )
+    assert not worker._reuse_office_preview(**values)
+    assert touched == []
+    assert attached == []
 
 
 def test_oversized_cached_preview_is_not_reused_or_recorded(monkeypatch):
@@ -803,6 +1162,7 @@ def test_oversized_cached_preview_is_not_reused_or_recorded(monkeypatch):
         preview_blob_path="previews/source/marker/fingerprint.pdf",
         source_revision=1,
         source_etag="etag-a",
+        actor_user_id="u_actor",
     )
     assert (
         worker._donor_office_preview(
@@ -926,7 +1286,7 @@ def test_the_source_is_downloaded_once_while_hashing_real_bytes(monkeypatch, tmp
     Browsers PUT through a presigned URL that signs host and content-type only,
     leaving ``x-amz-checksum-sha256`` free for the client to set. Trusting it
     would let anyone claim the hash of a document they do not have and be handed
-    that document's chunks, summary and concepts by the donor lookup.
+    that document's chunks and summary by the donor lookup.
     """
     import hashlib
     import io
@@ -1122,8 +1482,10 @@ async def test_text_sources_do_not_take_a_gpu_slot(parse_stub, monkeypatch):
     assert taken == []
 
 
-async def test_pending_audio_resumes_without_downloading_the_source(monkeypatch):
-    from pipeline.jobs import ExternalWait
+async def test_audio_ingest_downloads_source_before_synchronous_transcription(
+    monkeypatch,
+):
+    from pipeline.jobs import CapacityWait
 
     async def _pin(_workspace_id):
         return {
@@ -1134,10 +1496,13 @@ async def test_pending_audio_resumes_without_downloading_the_source(monkeypatch)
         }
 
     async def _chunks(**values):
-        assert values["local_path"] is None
-        assert values["source_key"] == ""
+        assert values["local_path"] == "/shared/lecture.mp3"
+        assert values["source_key"] == "sources/lecture.mp3"
         assert values["source_sha256"] == "aa" * 32
-        raise ExternalWait("provider is still transcribing")
+        raise CapacityWait("provider capacity")
+
+    async def _donor(**_values):
+        return None
 
     monkeypatch.setattr(worker, "_file_exists", lambda *_a: True)
     monkeypatch.setattr(worker, "_read_name", lambda *_a: "lecture.mp3")
@@ -1146,17 +1511,16 @@ async def test_pending_audio_resumes_without_downloading_the_source(monkeypatch)
     monkeypatch.setattr(worker, "_record_source_sha", lambda *_a: None)
     monkeypatch.setattr(worker.store, "workspace_embedding_pin", _pin)
     monkeypatch.setattr(
-        worker.source_text,
-        "audio_state",
-        lambda _job_id: {"source_sha256": "aa" * 32, "status": "pending"},
-    )
-    monkeypatch.setattr(
         worker,
         "_acquire_local_source",
-        lambda *_a: (_ for _ in ()).throw(
-            AssertionError("pending audio fetched B2 again")
+        lambda *_a: (
+            "/shared/lecture.mp3",
+            "sources/lecture.mp3",
+            "aa" * 32,
+            lambda: None,
         ),
     )
+    monkeypatch.setattr(worker.store, "find_ready_donor", _donor)
     monkeypatch.setattr(worker, "_chunks_for", _chunks)
     monkeypatch.setattr(worker.progress, "publish", lambda *_a, **_k: None)
 
@@ -1165,7 +1529,7 @@ async def test_pending_audio_resumes_without_downloading_the_source(monkeypatch)
         kind="audio",
     )
     plan = _plan(ingest_plan.AUDIO_TRANSCRIPTION, format_name="mp3")
-    with pytest.raises(ExternalWait):
+    with pytest.raises(CapacityWait):
         await worker._process_ingest_job(
             {"id": "job_audio", "attempts": 1},
             payload,
@@ -1196,6 +1560,23 @@ async def test_a_missing_source_etag_fails_explicitly():
         await worker.process_ingest_job(
             {"id": "job_1", "attempts": 1, "payload": payload}
         )
+
+
+def test_caption_blob_pointer_is_best_effort(monkeypatch, caplog):
+    def fail_pointer_write(*_args, **_kwargs):
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(worker, "_record_caption_blob", fail_pointer_write)
+
+    worker._record_caption_blob_best_effort(
+        "f_1",
+        "captions/source/v1.json",
+        1,
+        "etag-a",
+        "u_1",
+    )
+
+    assert "could not record optional caption cache identity" in caplog.text
 
 
 async def test_legacy_route_hints_are_not_required(monkeypatch):
@@ -1294,6 +1675,80 @@ async def test_post_parse_resource_failure_retries_without_parse_quarantine(
     )
 
     assert events == [("requeue", "job_ingest")]
+
+
+async def test_final_provider_receipt_failure_does_not_requeue_ingest(monkeypatch):
+    events: list[tuple[str, str]] = []
+    monkeypatch.setattr(worker, "_require_current_source", lambda *_a: None)
+    monkeypatch.setattr(worker.obs, "capture_error", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        worker,
+        "_requeue",
+        lambda job, *_a, **_k: events.append(("requeue", job["id"])),
+    )
+    monkeypatch.setattr(
+        worker,
+        "_notify_ingest_terminal",
+        lambda *_a, **_k: events.append(("terminal", "job_ingest")),
+    )
+
+    await worker._handle_job_failure(
+        {
+            "id": "job_ingest",
+            "type": "ingest",
+            "attempts": 1,
+            "payload": _ingest_payload(),
+        },
+        worker.accounting.SettlementError("receipt rejected"),
+    )
+
+    assert events == [("terminal", "job_ingest")]
+
+
+async def test_direct_donor_cache_head_failure_falls_through(monkeypatch):
+    async def embedding_pin(_workspace_id):
+        return {
+            "embedding_provider_slug": "provider",
+            "embedding_model_slug": "model",
+            "embedding_model_version": 1,
+            "embedding_dim": 1024,
+        }
+
+    monkeypatch.setattr(worker.store, "workspace_embedding_pin", embedding_pin)
+    monkeypatch.setattr(
+        worker.blobstore,
+        "object_info",
+        lambda _key: (_ for _ in ()).throw(OSError("B2 unavailable")),
+    )
+    monkeypatch.setattr(
+        worker.store,
+        "attach_file_content",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("donor must not attach without its cache object")
+        ),
+    )
+
+    reused = await worker._reuse_donor(
+        job={"id": "job_ingest", "attempts": 1},
+        payload=_ingest_payload(),
+        file_id="f_1",
+        ws="ws_1",
+        name="diagram.png",
+        kind="image",
+        route=ingest_plan.IMAGE_CAPTION,
+        donor={
+            "id": "content_donor",
+            "content_hash": "hash",
+            "embedding_provider_slug": "provider",
+            "embedding_model_slug": "model",
+            "embedding_model_version": 1,
+            "embedding_dim": 1024,
+        },
+        identity="pipeline",
+        source_sha256="ab" * 32,
+    )
+
+    assert reused is False
 
 
 @pytest.mark.parametrize("during", ["requeue", "terminal"])

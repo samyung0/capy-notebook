@@ -27,7 +27,7 @@ func enumRef(r huma.Registry, name string, values ...string) *huma.Schema {
 	return &huma.Schema{Ref: "#/components/schemas/" + name}
 }
 
-// UserColor is the palette shared by workspaces, decks and labels.
+// UserColor is the palette shared by workspaces, flashcardSets and labels.
 type UserColor string
 
 const (
@@ -206,25 +206,24 @@ func (GenerateDiagramType) Schema(r huma.Registry) *huma.Schema {
 	return enumRef(r, "GenerateDiagramType", "auto", "flowchart", "sequence", "class", "state", "er")
 }
 
-// MaterialRefType is the kind exposed by the unified materials list. It keeps
-// the legacy "deck" name for persisted flashcard materials.
+// MaterialRefType is the kind exposed by the unified materials list.
 type MaterialRefType string
 
 const (
-	MaterialRefMindmap MaterialRefType = "mindmap"
-	MaterialRefDiagram MaterialRefType = "diagram"
-	MaterialRefQuiz    MaterialRefType = "quiz"
-	MaterialRefDeck    MaterialRefType = "deck"
-	MaterialRefNote    MaterialRefType = "note"
+	MaterialRefMindmap    MaterialRefType = "mindmap"
+	MaterialRefDiagram    MaterialRefType = "diagram"
+	MaterialRefQuiz       MaterialRefType = "quiz"
+	MaterialRefFlashcards MaterialRefType = "flashcards"
+	MaterialRefNote       MaterialRefType = "note"
 )
 
 func (MaterialRefType) Schema(r huma.Registry) *huma.Schema {
-	return enumRef(r, "MaterialRefType", "mindmap", "diagram", "quiz", "deck", "note")
+	return enumRef(r, "MaterialRefType", "mindmap", "diagram", "quiz", "flashcards", "note")
 }
 
 func (k MaterialKind) RefType() MaterialRefType {
 	if k == MaterialFlashcards {
-		return MaterialRefDeck
+		return MaterialRefFlashcards
 	}
 	return MaterialRefType(k)
 }

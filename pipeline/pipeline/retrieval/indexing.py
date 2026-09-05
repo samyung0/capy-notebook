@@ -1,4 +1,4 @@
-"""Index one file: chunk, embed, summarize, extract concepts.
+"""Index one file: chunk, embed, summarize.
 
 Called by the ingest worker once a document has been parsed. Everything below is
 idempotent per file — re-running replaces that file's rows and nothing else — so
@@ -17,8 +17,9 @@ from typing import Any
 from .. import registry
 from ..jobs import RetryableError
 from ..registry import embedding_spec, ingest_spec
-from . import models, store
+from . import accounting, models, store
 from .chunking import Chunk, _is_cjk, estimate_tokens, tokenize_for_search
+from .lang import detect_lang
 from .workflows import extract_json
 
 log = logging.getLogger("evo.retrieval.indexing")
@@ -68,7 +69,7 @@ async def index_file(
     on_progress=None,
     claim_job_id: str | None = None,
 ) -> dict[str, Any]:
-    """Write chunks, summary and concepts for canonical parsed content."""
+    """Write chunks and summary for canonical parsed content."""
     if not chunks:
         await store.replace_content_chunks(
             workspace_id=workspace_id,
@@ -76,7 +77,7 @@ async def index_file(
             rows=[],
             claim_job_id=claim_job_id,
         )
-        return {"chunks": 0, "concepts": 0}
+        return {"chunks": 0}
 
     fingerprint = content_hash(chunks)
     indexed = [chunk.indexed_text() for chunk in chunks]
@@ -102,7 +103,11 @@ async def index_file(
                 "page_start": chunk.page_start,
                 "page_end": chunk.page_end,
                 "regions": [region.as_dict() for region in chunk.regions],
-                "search_text": tokenize_for_search(text),
+                # Per chunk, not per file: a bilingual textbook switches
+                # language between passages, and the stemmer must follow.
+                "lang": detect_lang(chunk.text),
+                # A reference list stays out of the lexical leg: see Chunk.reference.
+                "search_text": "" if chunk.reference else tokenize_for_search(text),
                 "embedding": store.vector_literal(vector),
             }
         )
@@ -125,14 +130,10 @@ async def index_file(
         summary_version=SUMMARY_VERSION,
     )
 
-    concepts = await extract_concepts(file_name, chunks, rows)
-    await store.replace_content_concepts(
-        workspace_id=workspace_id, content_id=content_id, concepts=concepts
-    )
     await store.mark_content_ready(content_id, claim_job_id=claim_job_id)
     if on_progress:
         on_progress(95)
-    return {"chunks": len(rows), "concepts": len(concepts), "fingerprint": fingerprint}
+    return {"chunks": len(rows), "fingerprint": fingerprint}
 
 
 async def embed_copied_chunks(
@@ -165,7 +166,11 @@ async def embed_copied_chunks(
                 "regions": row["regions"]
                 if isinstance(row["regions"], list)
                 else json.loads(row["regions"] or "[]"),
-                "search_text": tokenize_for_search(text),
+                "lang": row["lang"],
+                # A donor's reference list stays out of the lexical leg here too.
+                "search_text": ""
+                if row.get("reference")
+                else tokenize_for_search(text),
                 "embedding": store.vector_literal(vector),
             }
         )
@@ -361,6 +366,8 @@ async def summarize_file(file_name: str, chunks: list[Chunk]) -> tuple[str, str]
             descriptor, summary = await _summarize_once(body, word_target)
         else:
             descriptor, summary = await _summarize_mapped(chunks, word_target)
+    except accounting.SettlementError:
+        raise
     except Exception as exc:
         log.warning("file summary failed for %s", file_name, exc_info=True)
         raise RetryableError(f"file summary failed: {exc}") from exc
@@ -368,88 +375,3 @@ async def summarize_file(file_name: str, chunks: list[Chunk]) -> tuple[str, str]
         _truncate_words(descriptor, _DESCRIPTOR_WORDS),
         _truncate_words(summary, word_target),
     )
-
-
-# ------------------------------------------------------------------- concepts
-
-_CONCEPT_SYSTEM = (
-    "Extract the named concepts a student would look up: theories, methods, "
-    "terms of art, named entities, formulas, events. Return ONLY a JSON array of "
-    "strings. No relations, no descriptions, no duplicates, at most 24 items. "
-    "Skip generic words that carry no meaning outside their sentence."
-)
-
-# Extraction runs per passage group rather than per chunk: one call for every
-# chunk of a 400-page book is the cost profile that made graph extraction
-# unaffordable in the first place. The group size is a mention-granularity
-# knob, not a context budget — mentions attach to every chunk in the group.
-_CONCEPT_GROUP = 12
-_CONCEPT_CHARS = 20000
-
-
-async def extract_concepts(
-    file_name: str, chunks: list[Chunk], rows: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
-    """Concepts per chunk group, deduped by normalized name.
-
-    Deliberately relation-free. Extracting typed edges is where graph RAG spends
-    most of its ingest budget and most of its accuracy: the entities are
-    reliable, the relations are not. Co-mention recovers the useful part of an
-    edge at query time, from data that cannot be hallucinated.
-
-    ``file_name`` is log context only, for the same reason as the summary above:
-    concepts are copied to every workspace that uploads these bytes.
-    """
-    by_norm: dict[str, dict[str, Any]] = {}
-    for start in range(0, len(chunks), _CONCEPT_GROUP):
-        group = chunks[start : start + _CONCEPT_GROUP]
-        group_rows = rows[start : start + _CONCEPT_GROUP]
-        text = "\n\n".join(chunk.text for chunk in group)[:_CONCEPT_CHARS]
-        if not text.strip():
-            continue
-        try:
-            raw = await models.complete_text(
-                [
-                    {"role": "system", "content": _CONCEPT_SYSTEM},
-                    {"role": "user", "content": text},
-                ],
-                model=ingest_spec(),
-                temperature=0.0,
-                reasoning=False,
-                call_purpose="concept_extraction",
-            )
-        except Exception:
-            log.warning("concept extraction failed for %s", file_name, exc_info=True)
-            continue
-        for name in _parse_concepts(raw):
-            norm = store.normalize_concept(name)
-            if len(norm) < 2 or len(norm) > 120:
-                continue
-            entry = by_norm.setdefault(
-                norm,
-                {
-                    "id": _uid("cpt"),
-                    "name": name.strip(),
-                    "norm": norm,
-                    "chunk_ids": [],
-                },
-            )
-            entry["chunk_ids"].extend(row["id"] for row in group_rows)
-    for entry in by_norm.values():
-        entry["chunk_ids"] = list(dict.fromkeys(entry["chunk_ids"]))
-    return list(by_norm.values())
-
-
-def _parse_concepts(raw: str) -> list[str]:
-    if not raw:
-        return []
-    fenced = re.search(r"```(?:json)?\s*(.+?)\s*```", raw, re.DOTALL)
-    candidate = fenced.group(1) if fenced else raw
-    match = re.search(r"\[.*\]", candidate, re.DOTALL)
-    if not match:
-        return []
-    try:
-        parsed = json.loads(match.group(0))
-    except json.JSONDecodeError:
-        return []
-    return [str(item) for item in parsed if isinstance(item, (str, int, float))]

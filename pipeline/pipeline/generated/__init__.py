@@ -1,5 +1,5 @@
 """Generated bindings shared with the Go API contract."""
 
-from .surface import Surface
+from .slot import Slot
 
-__all__ = ["Surface"]
+__all__ = ["Slot"]

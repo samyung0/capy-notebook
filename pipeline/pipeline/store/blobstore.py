@@ -17,6 +17,7 @@ import logging
 import os
 import re
 import tempfile
+import time
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 
@@ -25,6 +26,7 @@ from ..config import cfg
 log = logging.getLogger("evo.blob")
 
 _client = None
+_WRITE_ATTEMPTS = 3
 
 
 def _s3_client():
@@ -176,8 +178,8 @@ def _object_info_from_head(out: dict) -> dict:
     }
 
 
-def read_bytes(blob_path: str) -> bytes | None:
-    """Read a small object, or None when it does not exist."""
+def read_bytes(blob_path: str, max_bytes: int | None = None) -> bytes | None:
+    """Read a small object, optionally refusing a body over ``max_bytes``."""
     from botocore.exceptions import ClientError
 
     try:
@@ -187,13 +189,105 @@ def read_bytes(blob_path: str) -> bytes | None:
         if code in {"404", "NoSuchKey", "NotFound"}:
             return None
         raise
-    return out["Body"].read()
+    body = out["Body"]
+    try:
+        if max_bytes is None:
+            return body.read()
+        if max_bytes <= 0:
+            raise ValueError("B2 read limit must be positive")
+        data = body.read(max_bytes + 1)
+        if len(data) > max_bytes:
+            raise ValueError("B2 cache object exceeds configured byte limit")
+        return data
+    finally:
+        close = getattr(body, "close", None)
+        if callable(close):
+            close()
 
 
-def write_bytes(blob_path: str, data: bytes, content_type: str) -> None:
-    _s3_client().put_object(
-        Bucket=cfg.b2_bucket, Key=blob_path, Body=data, ContentType=content_type
-    )
+def write_bytes(blob_path: str, data: bytes | bytearray, content_type: str) -> None:
+    for attempt in range(1, _WRITE_ATTEMPTS + 1):
+        try:
+            _s3_client().put_object(
+                Bucket=cfg.b2_bucket,
+                Key=blob_path,
+                Body=data,
+                ContentType=content_type,
+            )
+            return
+        except Exception:
+            if attempt == _WRITE_ATTEMPTS:
+                raise
+            log.warning(
+                "B2 cache write failed for %s; retrying (%s/%s)",
+                blob_path,
+                attempt,
+                _WRITE_ATTEMPTS,
+                exc_info=True,
+            )
+            time.sleep(0.1 * attempt)
+
+
+def write_file(blob_path: str, local_path: str, content_type: str) -> None:
+    """Upload a cache file with the same three-attempt policy as byte writes."""
+    for attempt in range(1, _WRITE_ATTEMPTS + 1):
+        try:
+            with open(local_path, "rb") as body:
+                _s3_client().put_object(
+                    Bucket=cfg.b2_bucket,
+                    Key=blob_path,
+                    Body=body,
+                    ContentType=content_type,
+                )
+            return
+        except Exception:
+            if attempt == _WRITE_ATTEMPTS:
+                raise
+            log.warning(
+                "B2 cache write failed for %s; retrying (%s/%s)",
+                blob_path,
+                attempt,
+                _WRITE_ATTEMPTS,
+                exc_info=True,
+            )
+            time.sleep(0.1 * attempt)
+
+
+def download_file(
+    blob_path: str, local_path: str, max_bytes: int
+) -> tuple[int, str] | None:
+    """Download a bounded cache object and return its size and SHA-256."""
+    from botocore.exceptions import ClientError
+
+    try:
+        out = _s3_client().get_object(Bucket=cfg.b2_bucket, Key=blob_path)
+    except ClientError as exc:
+        code = str(exc.response.get("Error", {}).get("Code", ""))
+        if code in {"404", "NoSuchKey", "NotFound"}:
+            return None
+        raise
+    body = out["Body"]
+    digest = hashlib.sha256()
+    size = 0
+    try:
+        with open(local_path, "wb") as destination:
+            while chunk := body.read(min(1024 * 1024, max_bytes - size + 1)):
+                size += len(chunk)
+                if size > max_bytes:
+                    raise ValueError("B2 cache object exceeds configured byte limit")
+                digest.update(chunk)
+                destination.write(chunk)
+    except Exception:
+        _safe_unlink(local_path)
+        raise
+    finally:
+        close = getattr(body, "close", None)
+        if callable(close):
+            close()
+    if size <= 0:
+        _safe_unlink(local_path)
+        raise ValueError("B2 cache object is empty")
+    return size, digest.hexdigest()
 
 
 def delete(blob_path: str) -> None:

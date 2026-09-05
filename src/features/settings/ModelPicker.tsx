@@ -1,5 +1,5 @@
 import { useModels, useSetModelPrefs } from '@/api/hooks';
-import type { ModelOption, ModelSurface, SetModelPrefsReq } from '@/api/types';
+import type { ModelOption, ModelSlot, SetModelPrefsReq } from '@/api/types';
 import { Icon } from '@/components/ui/Icon';
 import {
   Select,
@@ -50,31 +50,31 @@ export function ModelOptionLabel({ option }: { option: ModelOption }) {
   );
 }
 
-type CloudSurface = Exclude<ModelSurface, 'quiz'>;
+type CloudSlot = Exclude<ModelSlot, 'quiz'>;
 
-const SURFACE_LABEL: Record<CloudSurface, () => string> = {
+const SLOT_LABEL: Record<CloudSlot, () => string> = {
   chat: () => m.settings_llm_chat(),
   editor: () => m.settings_llm_editor(),
   generate: () => m.settings_llm_generate(),
 };
 
-const PREF_FIELD: Record<CloudSurface, keyof SetModelPrefsReq> = {
+const PREF_FIELD: Record<CloudSlot, keyof SetModelPrefsReq> = {
   chat: 'chatModel',
   editor: 'editorModel',
   generate: 'generateModel',
 };
 
-/** Preference picker for one surface. Changing it applies to the next request;
+/** Preference picker for one slot. Changing it applies to the next request;
  * work already in flight keeps the model it ran with, and existing assistant
  * turns keep the model pinned onto them. */
 export function ModelPicker({
   className,
-  surface,
+  slot,
 }: {
   className?: string;
-  surface: CloudSurface;
+  slot: CloudSlot;
 }) {
-  const { data } = useModels(surface, { errorBoundary: false });
+  const { data } = useModels(slot, { errorBoundary: false });
   const { isPending, mutate } = useSetModelPrefs();
   const models = sortModelOptions(data?.models ?? []);
   const selected = models.find((option) =>
@@ -89,14 +89,14 @@ export function ModelPicker({
         <Select
           disabled={isPending || models.length === 0}
           onValueChange={(value) => {
-            mutate({ [PREF_FIELD[surface]]: parseModelRef(value) });
+            mutate({ [PREF_FIELD[slot]]: parseModelRef(value) });
           }}
           value={
             data?.selectedModel ? modelRefValue(data.selectedModel) : undefined
           }
         >
           <SelectTrigger
-            aria-label={SURFACE_LABEL[surface]()}
+            aria-label={SLOT_LABEL[slot]()}
             className="w-full max-w-sm"
           >
             <SelectValue placeholder={m.model_picker_label()} />
@@ -120,7 +120,7 @@ export function ModelPicker({
             ))}
           </SelectContent>
         </Select>
-        {surface === 'editor' ? (
+        {slot === 'editor' ? (
           <Select disabled value="instant">
             <SelectTrigger
               aria-label={m.settings_llm_thinking()}
@@ -135,11 +135,11 @@ export function ModelPicker({
               </SelectItem>
             </SelectContent>
           </Select>
-        ) : surface === 'chat' || surface === 'generate' ? (
+        ) : slot === 'chat' || slot === 'generate' ? (
           <ReasoningControls
             selected={selected}
+            slot={slot}
             stored={data?.selectedThinking ?? ''}
-            surface={surface}
           />
         ) : null}
       </div>
