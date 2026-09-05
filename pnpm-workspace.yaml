@@ -7,6 +7,9 @@ packages:
 injectWorkspacePackages: true
 
 allowBuilds:
+  # Pulled in by @sentry/vite-plugin. Its postinstall fetches the platform
+  # sentry-cli binary, which is what performs the source map upload.
+  "@sentry/cli": true
   canvas: true
   # Pulled in by posthog-js. Its postinstall only prints a funding notice, so
   # there is nothing to run.

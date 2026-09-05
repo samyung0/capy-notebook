@@ -188,7 +188,7 @@ func main() {
 	obs.Init("gateway", appEnv)
 	shutdownSentry := obs.InitSentry(obs.SentryConfig{
 		DSN:         env("SENTRY_DSN", ""),
-		Environment: appEnv,
+		Environment: env("SENTRY_ENVIRONMENT", appEnv),
 		Release:     env("RELEASE_SHA", ""),
 		SampleRate:  env("SENTRY_TRACES_SAMPLE_RATE", "0.1"),
 		Service:     "gateway",

@@ -66,7 +66,7 @@ func main() {
 
 	obs.Init("ops", cfg.AppEnv)
 	shutdownSentry := obs.InitSentry(obs.SentryConfig{
-		DSN: env("SENTRY_DSN", ""), Environment: cfg.AppEnv,
+		DSN: env("SENTRY_DSN", ""), Environment: env("SENTRY_ENVIRONMENT", cfg.AppEnv),
 		Release:    env("RELEASE_SHA", ""),
 		SampleRate: env("SENTRY_TRACES_SAMPLE_RATE", "0.1"), Service: "ops",
 	})

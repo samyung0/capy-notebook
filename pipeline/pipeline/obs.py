@@ -204,7 +204,10 @@ def init_sentry(service: str) -> None:
 
     sentry_sdk.init(
         dsn=dsn,
-        environment=os.getenv("APP_ENV", "development"),
+        # Not APP_ENV: UAT runs with APP_ENV=production to exercise
+        # production checks, and still has to report as its own environment.
+        environment=os.getenv("SENTRY_ENVIRONMENT")
+        or os.getenv("APP_ENV", "development"),
         release=os.getenv("RELEASE_SHA") or None,
         traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
         # Logs stay as breadcrumbs. capture_error is the only event path, so a

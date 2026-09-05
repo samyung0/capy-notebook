@@ -35,6 +35,9 @@ x-pipeline-env: &pipeline-env
   EVO_PARSE_IMAGE_MAX_BYTES: ${EVO_PARSE_IMAGE_MAX_BYTES:-33554432}
   EVO_PARSE_IMAGES_MAX_BYTES: ${EVO_PARSE_IMAGES_MAX_BYTES:-268435456}
   SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.1}
+  # The Sentry environment tag. Empty falls back to APP_ENV in code; UAT sets
+  # it because its APP_ENV stays `production` to exercise production checks.
+  SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
 
 services:
   parse-spool-init:

@@ -618,29 +618,52 @@ re-embedding stays on the parse path and is handled later by ingest.
 
 ## 5. Sentry
 
-1. Add `ops` as the fifth compose-service project beside `gateway`,
-   `retrieval`, `worker`, and `collaboration`. Keep the existing SPA browser
-   project separate. Operator failures must not share product alert rules.
-2. Set `SENTRY_DSN_OPS` for the Go process and `VITE_SENTRY_DSN_OPS` for the
-   ops browser build. A browser DSN is public. It must never contain a server
-   auth token.
-3. Set `RELEASE_SHA` / `VITE_RELEASE_SHA` in CI, and upload SPA source maps —
-   without them every browser stack trace is minified and useless.
-4. Set an **inbound filter** for `AbortError` as a second line of defence
+1. Create the organization in the **EU region**. The storage location is fixed
+   at creation, projects cannot be transferred between regions, and moving
+   means a whole new organization.
+2. Create two projects: `capy-web` (browser) and `capy-backend`, shared by
+   `SENTRY_DSN_GATEWAY`, `_RETRIEVAL`, `_WORKER`, `_COLLABORATION`, and the
+   ingest host's `SENTRY_DSN`. Those four separate by the `service` tag each
+   already sets. Add `capy-ops` when the ops profile is enabled (§8) — operator
+   failures must not share product alert rules — and set `SENTRY_DSN_OPS` for
+   the Go process and `VITE_SENTRY_DSN_OPS` for its browser build. A browser
+   DSN is public and belongs only to a browser project.
+3. UAT and production share these projects and separate by environment. Set
+   `SENTRY_ENVIRONMENT=uat` in the UAT resource: its `APP_ENV` stays
+   `production` (§12.2), so without this its errors land in production's
+   bucket. Scope every alert rule to an environment.
+4. For source map upload, set the `uat` / `production` environment secret
+   `SENTRY_AUTH_TOKEN` (scopes: `project:releases`, `org:read`) and the
+   variables `SENTRY_ORG`, `SENTRY_PROJECT=capy-web`, and
+   `SENTRY_URL=https://de.sentry.io/`. The EU region needs that host; the US
+   default uploads nothing the organization can resolve. Without maps every
+   browser stack trace is minified and useless. `RELEASE_SHA` /
+   `VITE_RELEASE_SHA` must be set for the upload to attach to a release.
+5. Turn on **"Prevent Storing of IP Addresses"** in Security & Privacy. The
+   SDK's `send_default_pii: false` stops the client sending one; confirm the
+   server is not inferring it from the request.
+6. Set an **inbound filter** for `AbortError` as a second line of defence
    behind the client-side `ignoreErrors`.
-5. Set a spend cap. Default sampling can burn a month's quota in a day during
+7. Set a spend cap. Default sampling can burn a month's quota in a day during
    an incident, which is exactly when reporting must not stop.
 
 ---
 
 ## 6. PostHog
 
-1. Create a project; use the **EU** host if any user is in the EU.
+No project exists for local or UAT, and none is needed: an unset
+`VITE_POSTHOG_KEY` leaves capture, identify, pageviews, and flags inert. Do this
+at production launch.
+
+1. Create a project on the **EU** host. A region move afterwards is a support
+   ticket on a paid tier.
 2. Set `VITE_POSTHOG_KEY` and `VITE_POSTHOG_HOST`.
 3. Under project settings, **enable "Authorized URLs"** for `https://abcd.com`
    only, or anyone can post events into your project with the public key.
 4. Do **not** enable autocapture or session replay defaults in the UI; both are
    configured in code and the UI settings will override intent silently.
+5. Verify once before launch — `identify`, one `$pageview`, one custom event —
+   with a throwaway key, since nothing has exercised this path before.
 
 ---
 
@@ -1404,7 +1427,9 @@ authentication strategy.
    review tooling.
 5. Copy `deploy/.env.prod.example` into the UAT resource and fill it with only
    UAT values. Set `APP_ENV=production`; UAT must exercise production safety
-   checks. Set `OPS_INGEST_PRIMARY_ENVIRONMENT=uat` and leave
+   checks. Set `SENTRY_ENVIRONMENT=uat`, which is the only thing keeping UAT
+   errors out of production's Sentry bucket. Set
+   `OPS_INGEST_PRIMARY_ENVIRONMENT=uat` and leave
    `OPS_INGEST_UAT_DATABASE_URL` unset: the compose default is `production`,
    which would silently empty the UAT ingest dashboard (§8). Use the UAT origins in `APP_URL`, CORS, collaboration, OAuth, Sentry,
    and browser build variables.
@@ -1423,7 +1448,8 @@ authentication strategy.
    both the `local` and `uat` profiles as shown in §7.1. Do not start an ingest
    worker inside the UAT Coolify resource.
 
-Give UAT a visible banner and separate Sentry/PostHog projects if practical.
+Give UAT a visible banner. It shares Sentry projects with production and
+separates by `SENTRY_ENVIRONMENT` (§5); it has no PostHog project at all (§6).
 Budget alerts and conservative rate limits belong on UAT too: automated
 security exploration can generate more traffic and LLM work than a human test.
 
@@ -1722,6 +1748,9 @@ DEPLOYMENT_API_URL=https://uat-api.example.com
 DEPLOYMENT_COLLAB_URL=wss://uat-collab.example.com
 DEPLOYMENT_OPS_URL=https://uat-ops.example.com
 CLERK_PUBLISHABLE_KEY=<UAT publishable key>
+SENTRY_ORG=<EU organization slug>
+SENTRY_PROJECT=capy-web
+SENTRY_URL=https://de.sentry.io/
 # Optional public VITE_* values: Sentry, PostHog, picker/OAuth, feature flags
 ```
 
@@ -1731,6 +1760,7 @@ Protected secrets on the `uat` environment:
 COOLIFY_API_TOKEN=<token able to update, deploy, and read the UAT application>
 CLOUDFLARE_API_TOKEN=<token with Cloudflare Pages Edit for the UAT project>
 CLERK_SECRET_KEY=<UAT Clerk secret key>
+SENTRY_AUTH_TOKEN=<source map upload; project:releases + org:read>
 ```
 
 If `LLM_API_KEY` or `STRIX_UAT_AUTH_INSTRUCTIONS` still exist as GitHub

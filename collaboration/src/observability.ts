@@ -11,6 +11,9 @@ import * as Sentry from '@sentry/node';
 
 const DSN = process.env.SENTRY_DSN ?? '';
 const APP_ENV = process.env.APP_ENV ?? 'development';
+// Not APP_ENV: UAT runs with APP_ENV=production to exercise production
+// checks, and still has to report as its own Sentry environment.
+const SENTRY_ENVIRONMENT = process.env.SENTRY_ENVIRONMENT || APP_ENV;
 
 export function initErrorReporting(): void {
   if (!DSN) {
@@ -19,7 +22,7 @@ export function initErrorReporting(): void {
   }
   Sentry.init({
     dsn: DSN,
-    environment: APP_ENV,
+    environment: SENTRY_ENVIRONMENT,
     release: process.env.RELEASE_SHA || undefined,
     sendDefaultPii: false,
     // Tracing is off here rather than sampled: every connection is a
@@ -27,7 +30,7 @@ export function initErrorReporting(): void {
     // rather than anything actionable.
     tracesSampleRate: 0,
   });
-  log('info', 'sentry enabled', { environment: APP_ENV });
+  log('info', 'sentry enabled', { environment: SENTRY_ENVIRONMENT });
 }
 
 type Level = 'debug' | 'info' | 'warn' | 'error';

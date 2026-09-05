@@ -64,6 +64,12 @@ jobs:
       - name: Build the SPA for the target environment
         env:
           NODE_OPTIONS: --max-old-space-size=4096
+          # Presence of the token is what enables source map generation and
+          # upload; SENTRY_URL is the EU region API host.
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+          SENTRY_URL: ${{ vars.SENTRY_URL }}
           VITE_APP_ENV: ${{ inputs.environment_name }}
           VITE_APP_URL: ${{ vars.DEPLOYMENT_APP_URL }}
           VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}

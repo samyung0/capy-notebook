@@ -164,6 +164,7 @@ services:
       <<: *worker-env
       APP_ENV: development
       EVO_INGEST_ENVIRONMENT: local
+      SENTRY_ENVIRONMENT: local
       EVO_PARSE_COORDINATOR_CONCURRENCY: "1"
       EVO_DB_SYNC_POOL_MAX_SIZE: "2"
       EVO_DB_ASYNC_POOL_MAX_SIZE: "2"
@@ -183,6 +184,7 @@ services:
       <<: *worker-env
       APP_ENV: production
       EVO_INGEST_ENVIRONMENT: uat
+      SENTRY_ENVIRONMENT: uat
       EVO_PARSE_COORDINATOR_CONCURRENCY: "1"
       EVO_DB_SYNC_POOL_MAX_SIZE: "2"
       EVO_DB_ASYNC_POOL_MAX_SIZE: "2"
@@ -202,6 +204,7 @@ services:
       <<: *worker-env
       APP_ENV: development
       EVO_INGEST_ENVIRONMENT: local
+      SENTRY_ENVIRONMENT: local
     command: ["python", "-m", "pipeline.ingest.worker"]
     depends_on:
       parse-spool-init:
@@ -216,6 +219,7 @@ services:
       <<: *worker-env
       APP_ENV: production
       EVO_INGEST_ENVIRONMENT: uat
+      SENTRY_ENVIRONMENT: uat
     command: ["python", "-m", "pipeline.ingest.worker"]
     depends_on:
       parse-spool-init:
@@ -232,6 +236,7 @@ services:
       <<: *worker-env
       APP_ENV: development
       EVO_INGEST_ENVIRONMENT: local
+      SENTRY_ENVIRONMENT: local
       EVO_DB_SYNC_POOL_MAX_SIZE: "2"
       EVO_DB_ASYNC_POOL_MAX_SIZE: "2"
     command: ["python", "-m", "pipeline.ingest.import_worker"]
@@ -248,6 +253,7 @@ services:
       <<: *worker-env
       APP_ENV: production
       EVO_INGEST_ENVIRONMENT: uat
+      SENTRY_ENVIRONMENT: uat
       EVO_DB_SYNC_POOL_MAX_SIZE: "2"
       EVO_DB_ASYNC_POOL_MAX_SIZE: "2"
     command: ["python", "-m", "pipeline.ingest.import_worker"]
@@ -265,6 +271,7 @@ services:
       <<: *worker-env
       APP_ENV: development
       EVO_INGEST_ENVIRONMENT: local
+      SENTRY_ENVIRONMENT: local
       EVO_HOST_PROC: /host/proc
       EVO_HOST_METRICS_ENABLED: "false"
       PARSER_HEALTH_URL: http://127.0.0.1:${PARSER_PORT:-8091}/healthz
@@ -288,6 +295,7 @@ services:
       <<: *worker-env
       APP_ENV: production
       EVO_INGEST_ENVIRONMENT: uat
+      SENTRY_ENVIRONMENT: uat
       EVO_HOST_PROC: /host/proc
       EVO_HOST_METRICS_ENABLED: "false"
       PARSER_HEALTH_URL: http://127.0.0.1:${PARSER_PORT:-8091}/healthz

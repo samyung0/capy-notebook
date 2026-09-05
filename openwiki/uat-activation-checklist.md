@@ -114,7 +114,21 @@ a different Clerk instance than the gateway's secret key.
 - Provider keys are UAT keys with their own budget. Inference and parse metering
   is in [`observability-metering.md`](observability-metering.md).
 
-## 6. Before treating UAT as shared
+## 6. Error reporting
+
+UAT shares its Sentry projects with production and separates only by the
+environment tag, so this is worth one deliberate check.
+
+| Check | Proves |
+| --- | --- |
+| An error from any backend service appears in `capy-backend` under environment `uat`, not `production` | `SENTRY_ENVIRONMENT=uat` reached the containers. `APP_ENV` stays `production` here, so an unset tag files UAT errors in production's bucket |
+| A browser error appears in `capy-web` with a readable stack trace | The SPA build uploaded source maps: `SENTRY_AUTH_TOKEN` was present and `SENTRY_URL` pointed at the EU host |
+| The same `trace_id` finds the request in both Sentry and the gateway logs | The W3C id survived the hop, as described in [`observability-metering.md`](observability-metering.md) |
+
+PostHog has no UAT project. An unset `VITE_POSTHOG_KEY` is the expected state,
+not a misconfiguration.
+
+## 7. Before treating UAT as shared
 
 Everyone on this lane shares one Postgres and one bucket. The migrator records
 a checksum per migration and refuses to run when an applied file changes

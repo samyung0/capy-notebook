@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { paraglideVitePlugin } from '@inlang/paraglide-js';
+import { sentryVitePlugin } from '@sentry/vite-plugin';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv } from 'vite';
@@ -21,6 +22,10 @@ export default defineConfig(({ mode }) => {
   // dev:public` repoints HMR at the tunnel's 443, because that override breaks
   // HMR for an ordinary localhost session.
   const devHost = env.VITE_DEV_HOST;
+  // Maps are generated only when they will be uploaded and then deleted, so a
+  // released bundle ships none and a local build pays nothing for them.
+  // Without them every browser stack trace in Sentry is minified.
+  const uploadSourceMaps = Boolean(env.SENTRY_AUTH_TOKEN);
   const servePublic = devHost !== undefined && env.VITE_DEV_PUBLIC === 'true';
   return {
     assetsInclude: ['**/*.wasm'],
@@ -35,6 +40,7 @@ export default defineConfig(({ mode }) => {
           ),
         },
       },
+      sourcemap: uploadSourceMaps ? 'hidden' : false,
     },
     envDir: ENV_DIR,
     optimizeDeps: {
@@ -63,6 +69,17 @@ export default defineConfig(({ mode }) => {
         project: './project.inlang',
         strategy: ['localStorage', 'preferredLanguage', 'baseLocale'],
       }),
+      uploadSourceMaps &&
+        sentryVitePlugin({
+          authToken: env.SENTRY_AUTH_TOKEN,
+          org: env.SENTRY_ORG,
+          project: env.SENTRY_PROJECT,
+          release: { name: env.VITE_RELEASE_SHA },
+          sourcemaps: { filesToDeleteAfterUpload: ['./dist/**/*.map'] },
+          // The EU region has its own API host; the US default silently
+          // uploads nothing an EU organization can resolve.
+          url: env.SENTRY_URL,
+        }),
     ],
     resolve: {
       // Subpath entries must precede package roots. Vite matches string aliases

@@ -12,7 +12,10 @@ import (
 )
 
 type SentryConfig struct {
-	DSN         string
+	DSN string
+	// Environment is the Sentry tag, not APP_ENV: UAT runs with
+	// APP_ENV=production to exercise production checks, and still has to
+	// report as its own environment.
 	Environment string
 	Release     string
 	// SampleRate is read as a string so it can come straight from the

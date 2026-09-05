@@ -113,6 +113,28 @@ streams, which happen every time a user navigates away mid-answer.
 `send_default_pii` is off everywhere. Prompts, note content, and chat history
 flow through these services.
 
+### Environment, projects, source maps
+
+The Sentry environment tag comes from `SENTRY_ENVIRONMENT`, falling back to
+`APP_ENV`. They are not the same question: UAT runs `APP_ENV=production` so it
+exercises production safety checks, and would otherwise file its errors in
+production's bucket. UAT sets `SENTRY_ENVIRONMENT=uat`; the shared nonproduction
+ingest host sets it per service, since one host runs both `local` and `uat`
+consumers.
+
+Two projects, EU region. `capy-web` takes the browser SPA; `capy-backend` takes
+the gateway, retrieval, worker, and collaboration, which separate by the
+`service` tag each already sets. `capy-ops` joins when the ops profile is
+enabled, so operator alerts stay off the product rules. The browser DSN is
+public and belongs only to `capy-web`.
+
+The SPA build generates hidden source maps, uploads them, and deletes them
+before the bundle ships. `SENTRY_AUTH_TOKEN` being present is what turns this
+on, so CI uploads and a local build does not. `SENTRY_URL` must be the EU
+region host (`https://de.sentry.io/`); the US default uploads nothing an EU
+organization can resolve. Without maps, every browser stack trace is minified.
+The ops bundle is built inside its Docker image and uploads nothing.
+
 ---
 
 ## 4. Product analytics (PostHog)
@@ -120,6 +142,11 @@ flow through these services.
 `src/lib/observability.ts` loads PostHog lazily and lets it fail silently.
 PostHog is never the source of truth for anything a user is charged for. A
 meaningful share of users block it. Billing lives in `usage_events`.
+
+There is no local or UAT project. An unset `VITE_POSTHOG_KEY` leaves capture,
+identify, pageviews, and flags inert, and nothing in the app depends on any of
+them. The project is created at production launch, in the EU region, and
+verified once beforehand with a throwaway key.
 
 There is no server-side PostHog SDK. The backend already writes
 `usage_events` (transactional, complete) and structured logs (unsampled). A

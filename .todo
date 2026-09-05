@@ -15,7 +15,7 @@ low priority:
 13. manage feature flags better than just env, likely in posthog?
 14. Gemma-4-E2B
 15. add suspend/unsuspend account controls to the Ops dashboard (separate feature; current suspension is database/operator-only)
-16. stripe local mode + secret
+16. switch posthog to eu first
 
 high PRIORITIES:
 google drive import in dev

@@ -31,6 +31,9 @@ x-observability: &observability
   APP_ENV: ${APP_ENV:-development}
   RELEASE_SHA: ${RELEASE_SHA:-}
   SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.1}
+  # The Sentry environment tag. Empty falls back to APP_ENV in code; UAT sets
+  # it because its APP_ENV stays `production` to exercise production checks.
+  SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
 
 services:
   db:
@@ -161,6 +164,7 @@ services:
       args:
         VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:-}
         VITE_SENTRY_DSN: ${VITE_SENTRY_DSN_OPS:-}
+        VITE_APP_ENV: ${SENTRY_ENVIRONMENT:-development}
         VITE_RELEASE_SHA: ${RELEASE_SHA:-}
     environment:
       <<: *observability
