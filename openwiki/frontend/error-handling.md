@@ -68,11 +68,14 @@ Resetting a boundary also resets TanStack Query's error state before retrying.
 
 ## Shared-resource security
 
-Public `/share/...` routes must never reveal whether a resource exists, whether
-the caller is signed out, or whether the caller lacks permission. HTTP 401, 403,
-and 404 all map to the same “private or unavailable” surface. Do not include
-resource names, server details, or different actions that disclose which case
-occurred.
+Public workspace summaries at `/w/:id`, including redirects from
+`/share/workspaces/:id`, render on the server. Upstream HTTP 401, 403, and 404
+all produce the same “private or unavailable” HTML with HTTP 404, `no-store`,
+and `noindex, nofollow`. They do not use the React error components. Do not
+include resource names, server details, or different actions that disclose
+which case occurred. Worker tests inject upstream failures; browser tests
+compare actual private and missing workspace summaries because browser route
+interception cannot intercept the server's summary fetch.
 
 Workspace invitation acceptance uses the same non-disclosing surface for an
 invalid link or unavailable workspace. Network and server failures keep the

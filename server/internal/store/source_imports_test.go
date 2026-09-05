@@ -387,6 +387,11 @@ func TestSourceImportFinalizeRejectsReplacedAttemptAtomically(t *testing.T) {
 	); err != nil {
 		t.Fatalf("current completion fence err=%v", err)
 	}
+	if _, err := s.PrepareSourceImportUpload(
+		ctx, job.ID, first.LeaseToken, 401,
+	); !errors.Is(err, ErrImportLeaseLost) {
+		t.Fatalf("stale prepare err=%v", err)
+	}
 	if _, err := s.FinalizeSourceImport(
 		ctx, job.ID, first.LeaseToken, "etag-stale", "default", "default",
 	); !errors.Is(err, ErrImportLeaseLost) {
@@ -408,6 +413,17 @@ func TestSourceImportFinalizeRejectsReplacedAttemptAtomically(t *testing.T) {
 		completed.FileID == nil || *completed.FileID != file.ID {
 		t.Fatalf("completed=%+v file=%+v err=%v", completed, file, err)
 	}
+	// Cover both losing-request interleavings: before the HTTP fence and after
+	// the fence but before reservation preparation.
+	replay, err := s.FenceSourceImportCompletion(ctx, job.ID, second.LeaseToken)
+	if err != nil || replay.FileID == nil || *replay.FileID != file.ID {
+		t.Fatalf("fence replay=%+v err=%v", replay, err)
+	}
+	replay, err = s.PrepareSourceImportUpload(ctx, job.ID, second.LeaseToken, 401)
+	if err != nil || replay.FileID == nil || *replay.FileID != file.ID || replay.DeclaredSize != 400 {
+		t.Fatalf("prepare replay=%+v err=%v", replay, err)
+	}
+
 }
 
 func TestSourceImportExpiredLeaseCanBeReacquired(t *testing.T) {

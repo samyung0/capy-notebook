@@ -5,14 +5,15 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type Slot = (typeof Slot)[keyof typeof Slot];
+export type Slot = typeof Slot[keyof typeof Slot];
+
 
 export const Slot = {
-  captioning: 'captioning',
   chat: 'chat',
-  editor: 'editor',
   generate: 'generate',
-  ingest: 'ingest',
+  editor: 'editor',
   quiz: 'quiz',
+  ingest: 'ingest',
   retrieval: 'retrieval',
+  captioning: 'captioning',
 } as const;

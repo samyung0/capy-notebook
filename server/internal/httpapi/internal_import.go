@@ -302,9 +302,10 @@ func (a *api) internalCompleteSourceImport(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "invalid completion"})
 		return
 	}
-	if _, err := a.s.FenceSourceImportCompletion(
+	job, err := a.s.FenceSourceImportCompletion(
 		r.Context(), req.JobID, req.AttemptToken,
-	); err != nil {
+	)
+	if err != nil {
 		if errors.Is(err, store.ErrImportLeaseLost) {
 			writeJSON(w, http.StatusConflict, map[string]string{"code": "import_lease_lost"})
 			return
@@ -312,9 +313,15 @@ func (a *api) internalCompleteSourceImport(w http.ResponseWriter, r *http.Reques
 		a.fail(w, err)
 		return
 	}
+	if job.Status == "succeeded" && job.FileID != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"jobId": job.ID, "fileId": *job.FileID, "status": "succeeded",
+		})
+		return
+	}
 	// The provider's declared size was only a reservation estimate. Settle the
 	// reservation on the bytes that actually landed before finalizing.
-	job, err := a.s.PrepareSourceImportUpload(
+	job, err = a.s.PrepareSourceImportUpload(
 		r.Context(), req.JobID, req.AttemptToken, req.ActualSize,
 	)
 	if errors.Is(err, store.ErrImportTooLarge) {
@@ -327,6 +334,12 @@ func (a *api) internalCompleteSourceImport(w http.ResponseWriter, r *http.Reques
 	}
 	if err != nil {
 		a.fail(w, err)
+		return
+	}
+	if job.Status == "succeeded" && job.FileID != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"jobId": job.ID, "fileId": *job.FileID, "status": "succeeded",
+		})
 		return
 	}
 	if job.ActorUserID == nil {

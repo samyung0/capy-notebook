@@ -584,6 +584,11 @@ func (s *Store) prepareSourceImportUpload(
 	if job.StorageOwnerID != ownerID {
 		return job, errImportOwnerChanged
 	}
+	// A concurrent completion may already have committed. Replay its result
+	// without renewing a lease or changing the settled upload reservation.
+	if job.Status == "succeeded" && job.FileID != nil {
+		return job, nil
+	}
 	if job.Status != "running" || job.LeaseToken != leaseToken ||
 		!job.LeaseActive {
 		return job, ErrImportLeaseLost
@@ -634,6 +639,11 @@ func (s *Store) FenceSourceImportCompletion(
 	}
 	if err != nil {
 		return SourceImportJob{}, err
+	}
+	// A concurrent completion may already have committed. Replay its result
+	// without renewing a lease or changing the settled upload reservation.
+	if job.Status == "succeeded" && job.FileID != nil {
+		return job, nil
 	}
 	if job.Status != "running" || job.LeaseToken != leaseToken ||
 		!job.LeaseActive {
