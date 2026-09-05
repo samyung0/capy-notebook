@@ -743,17 +743,25 @@ def assign_citations(
 def render_result(result: ToolResult, numbered: list[tuple[int, Passage]]) -> str:
     if result.refused and not numbered:
         return result.error or result.text()
+    parts: list[str] = []
     if numbered and result.paged:
         body = "\n\n".join(
             f"[{number}] {passage.location()} (chunk {passage.chunk_idx})\n{passage.text}"
             for number, passage in numbered
         )
-        return body + "\n\n" + result.text_parts[0]
-    parts: list[str] = []
+        parts.extend([body, result.text_parts[0]])
+    else:
+        if numbered:
+            parts.append("\n\n".join(passage.as_context(n) for n, passage in numbered))
+        parts.extend(part for part in result.text_parts if part)
+    text = "\n\n".join(parts) if parts else result.text()
     if numbered:
-        parts.append("\n\n".join(passage.as_context(n) for n, passage in numbered))
-    parts.extend(part for part in result.text_parts if part)
-    return "\n\n".join(parts) if parts else result.text()
+        locations = "\n".join(
+            f"[{number}] file_id={passage.file_id}, start={passage.chunk_idx}"
+            for number, passage in numbered
+        )
+        text += "\n\nLocations for read_document:\n" + locations
+    return text
 
 
 TOOL_RESULT_MAX_TOKENS = 8192

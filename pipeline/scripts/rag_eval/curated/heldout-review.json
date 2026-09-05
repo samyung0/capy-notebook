@@ -1,0 +1,709 @@
+{
+  "reviewer": "Codex",
+  "method": "Read every final answer against its recorded gold facts and source-evidence diagnostics; this is assistant review, not an independent human or blinded model judge. Citation-chain coverage is reported separately.",
+  "rows": [
+    {
+      "row": 0,
+      "id": "lookup-22",
+      "variant": "follow_links",
+      "repeat": 1,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 1,
+      "id": "absent-3",
+      "variant": "follow_links",
+      "repeat": 1,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": "Correct abstention; adds an uncited list of assay identifiers and unrelated parameter values."
+    },
+    {
+      "row": 2,
+      "id": "bridge-13",
+      "variant": "follow_links",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 3,
+      "id": "bridge-15",
+      "variant": "baseline",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 4,
+      "id": "compare-24",
+      "variant": "follow_links_ids",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 5,
+      "id": "lookup-23",
+      "variant": "baseline",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 6,
+      "id": "lookup-23",
+      "variant": "baseline",
+      "repeat": 1,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 7,
+      "id": "missing-12",
+      "variant": "follow_links_ids",
+      "repeat": 1,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 8,
+      "id": "lookup-22",
+      "variant": "follow_links_ids",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 9,
+      "id": "lookup-22",
+      "variant": "baseline",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 10,
+      "id": "bridge-15",
+      "variant": "follow_links_ids",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 11,
+      "id": "table-29",
+      "variant": "baseline",
+      "repeat": 1,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 12,
+      "id": "crosslang-es",
+      "variant": "follow_links",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 13,
+      "id": "bridge-15",
+      "variant": "baseline",
+      "repeat": 1,
+      "answer_correct": false,
+      "fully_supported": false,
+      "note": "Stops after the field note and incorrectly claims the specimen has no documented incubation settings; misses the accession register and current assay manual."
+    },
+    {
+      "row": 14,
+      "id": "compare-24",
+      "variant": "follow_links",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 15,
+      "id": "bridge-12",
+      "variant": "baseline",
+      "repeat": 1,
+      "answer_correct": false,
+      "fully_supported": false,
+      "note": "Stops after the field note and incorrectly claims the specimen has no documented incubation settings; misses the accession register and current assay manual."
+    },
+    {
+      "row": 16,
+      "id": "missing-12",
+      "variant": "baseline",
+      "repeat": 1,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 17,
+      "id": "missing-12",
+      "variant": "baseline",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": false,
+      "note": "Correctly withholds settings, but claims the only temperature/time figures present are demonstration values. The workspace also contains current assay manuals."
+    },
+    {
+      "row": 18,
+      "id": "version-30",
+      "variant": "follow_links",
+      "repeat": 1,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 19,
+      "id": "version-30",
+      "variant": "baseline",
+      "repeat": 1,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 20,
+      "id": "missing-12",
+      "variant": "follow_links_ids",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 21,
+      "id": "lookup-22",
+      "variant": "baseline",
+      "repeat": 1,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 22,
+      "id": "bridge-14",
+      "variant": "follow_links_ids",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 23,
+      "id": "missing-15",
+      "variant": "follow_links_ids",
+      "repeat": 0,
+      "answer_correct": false,
+      "fully_supported": false,
+      "note": "Withholds numeric values, but states that no incubation settings apply. Missing assignment evidence does not establish that no procedure applies."
+    },
+    {
+      "row": 24,
+      "id": "lookup-23",
+      "variant": "follow_links_ids",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 25,
+      "id": "bridge-14",
+      "variant": "follow_links_ids",
+      "repeat": 1,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 26,
+      "id": "missing-12",
+      "variant": "follow_links",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 27,
+      "id": "missing-15",
+      "variant": "follow_links",
+      "repeat": 1,
+      "answer_correct": false,
+      "fully_supported": false,
+      "note": "Ends with raw DSML read_document markup and a promise to investigate, rather than a completed cited answer. Keep as an answer failure even though SSE status is complete."
+    },
+    {
+      "row": 28,
+      "id": "version-30",
+      "variant": "follow_links_ids",
+      "repeat": 1,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 29,
+      "id": "absent-3",
+      "variant": "baseline",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": "Correct abstention; adds an uncited list of assay identifiers and unrelated parameter values."
+    },
+    {
+      "row": 30,
+      "id": "crosslang-es",
+      "variant": "follow_links_ids",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": "Facts and evidence are correct; answer remains mostly English despite a Spanish question. Language compliance is outside the numeric/evidence score."
+    },
+    {
+      "row": 31,
+      "id": "bridge-13",
+      "variant": "follow_links_ids",
+      "repeat": 1,
+      "answer_correct": false,
+      "fully_supported": false,
+      "note": "Stops after the field note and incorrectly claims the specimen has no documented incubation settings; misses the accession register and current assay manual."
+    },
+    {
+      "row": 32,
+      "id": "table-29",
+      "variant": "baseline",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 33,
+      "id": "missing-15",
+      "variant": "baseline",
+      "repeat": 0,
+      "answer_correct": false,
+      "fully_supported": false,
+      "note": "Withholds numeric values, but states that no incubation settings apply. Missing assignment evidence does not establish that no procedure applies."
+    },
+    {
+      "row": 34,
+      "id": "bridge-15",
+      "variant": "follow_links",
+      "repeat": 1,
+      "answer_correct": false,
+      "fully_supported": false,
+      "note": "Stops after the field note and incorrectly claims the specimen has no documented incubation settings; misses the accession register and current assay manual."
+    },
+    {
+      "row": 35,
+      "id": "bridge-14",
+      "variant": "baseline",
+      "repeat": 1,
+      "answer_correct": false,
+      "fully_supported": false,
+      "note": "Stops after the field note and incorrectly claims the specimen has no documented incubation settings; misses the accession register and current assay manual."
+    },
+    {
+      "row": 36,
+      "id": "bridge-12",
+      "variant": "follow_links",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 37,
+      "id": "bridge-14",
+      "variant": "follow_links",
+      "repeat": 1,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 38,
+      "id": "version-30",
+      "variant": "baseline",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 39,
+      "id": "table-29",
+      "variant": "follow_links",
+      "repeat": 1,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 40,
+      "id": "compare-24",
+      "variant": "baseline",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 41,
+      "id": "bridge-13",
+      "variant": "baseline",
+      "repeat": 0,
+      "answer_correct": false,
+      "fully_supported": false,
+      "note": "Stops after the field note and incorrectly claims the specimen has no documented incubation settings; misses the accession register and current assay manual."
+    },
+    {
+      "row": 42,
+      "id": "missing-15",
+      "variant": "baseline",
+      "repeat": 1,
+      "answer_correct": false,
+      "fully_supported": false,
+      "note": "Withholds numeric values, but states that no incubation settings apply. Missing assignment evidence does not establish that no procedure applies."
+    },
+    {
+      "row": 43,
+      "id": "table-29",
+      "variant": "follow_links",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 44,
+      "id": "bridge-14",
+      "variant": "baseline",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 45,
+      "id": "crosslang-es",
+      "variant": "follow_links_ids",
+      "repeat": 1,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": "Facts and evidence are correct; answer remains mostly English despite a Spanish question. Language compliance is outside the numeric/evidence score."
+    },
+    {
+      "row": 46,
+      "id": "lookup-22",
+      "variant": "follow_links_ids",
+      "repeat": 1,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 47,
+      "id": "bridge-13",
+      "variant": "baseline",
+      "repeat": 1,
+      "answer_correct": false,
+      "fully_supported": false,
+      "note": "Stops after the field note and incorrectly claims the specimen has no documented incubation settings; misses the accession register and current assay manual."
+    },
+    {
+      "row": 48,
+      "id": "crosslang-es",
+      "variant": "baseline",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": "Facts and evidence are correct; answer remains mostly English despite a Spanish question. Language compliance is outside the numeric/evidence score."
+    },
+    {
+      "row": 49,
+      "id": "bridge-12",
+      "variant": "follow_links_ids",
+      "repeat": 1,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 50,
+      "id": "lookup-23",
+      "variant": "follow_links_ids",
+      "repeat": 1,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 51,
+      "id": "bridge-15",
+      "variant": "follow_links_ids",
+      "repeat": 1,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 52,
+      "id": "absent-3",
+      "variant": "follow_links_ids",
+      "repeat": 1,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 53,
+      "id": "compare-24",
+      "variant": "follow_links_ids",
+      "repeat": 1,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 54,
+      "id": "crosslang-es",
+      "variant": "follow_links",
+      "repeat": 1,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 55,
+      "id": "absent-3",
+      "variant": "follow_links",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 56,
+      "id": "missing-12",
+      "variant": "follow_links",
+      "repeat": 1,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 57,
+      "id": "lookup-23",
+      "variant": "follow_links",
+      "repeat": 1,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 58,
+      "id": "compare-24",
+      "variant": "follow_links",
+      "repeat": 1,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 59,
+      "id": "compare-24",
+      "variant": "baseline",
+      "repeat": 1,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 60,
+      "id": "bridge-12",
+      "variant": "baseline",
+      "repeat": 0,
+      "answer_correct": false,
+      "fully_supported": false,
+      "note": "Stops after the field note and incorrectly claims the specimen has no documented incubation settings; misses the accession register and current assay manual."
+    },
+    {
+      "row": 61,
+      "id": "bridge-13",
+      "variant": "follow_links",
+      "repeat": 1,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 62,
+      "id": "bridge-12",
+      "variant": "follow_links_ids",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 63,
+      "id": "version-30",
+      "variant": "follow_links",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 64,
+      "id": "bridge-14",
+      "variant": "follow_links",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 65,
+      "id": "lookup-23",
+      "variant": "follow_links",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 66,
+      "id": "table-29",
+      "variant": "follow_links_ids",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 67,
+      "id": "absent-3",
+      "variant": "follow_links_ids",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 68,
+      "id": "bridge-13",
+      "variant": "follow_links_ids",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 69,
+      "id": "version-30",
+      "variant": "follow_links_ids",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 70,
+      "id": "lookup-22",
+      "variant": "follow_links",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 71,
+      "id": "crosslang-es",
+      "variant": "baseline",
+      "repeat": 1,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 72,
+      "id": "bridge-12",
+      "variant": "follow_links",
+      "repeat": 1,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 73,
+      "id": "table-29",
+      "variant": "follow_links_ids",
+      "repeat": 1,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 74,
+      "id": "missing-15",
+      "variant": "follow_links_ids",
+      "repeat": 1,
+      "answer_correct": false,
+      "fully_supported": false,
+      "note": "Withholds numeric values, but states that no incubation settings apply. Missing assignment evidence does not establish that no procedure applies."
+    },
+    {
+      "row": 75,
+      "id": "bridge-15",
+      "variant": "follow_links",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": ""
+    },
+    {
+      "row": 76,
+      "id": "missing-15",
+      "variant": "follow_links",
+      "repeat": 0,
+      "answer_correct": true,
+      "fully_supported": false,
+      "note": "Correctly withholds the requested settings, but claims AX-542 is the only actual procedure in the sources. The workspace contains 32 procedures."
+    },
+    {
+      "row": 77,
+      "id": "absent-3",
+      "variant": "baseline",
+      "repeat": 1,
+      "answer_correct": true,
+      "fully_supported": true,
+      "note": "Correct abstention; adds uncited but correct examples of unrelated procedures."
+    }
+  ],
+  "reviewed_turns": 78
+}

@@ -61,7 +61,15 @@ SYSTEM_PROMPT = (
 
 
 def system_prompt(locale: str | None) -> str:
-    return SYSTEM_PROMPT + "\n- " + response_language_rule(locale)
+    return (
+        SYSTEM_PROMPT
+        + "\n- "
+        + response_language_rule(locale)
+        + "\n- If a retrieved passage supplies an identifier or refers to another source "
+        "that can answer the question, follow that reference with a search or document "
+        "read before deciding the answer is unavailable. A passage lacking the answer "
+        "does not establish that the workspace lacks it."
+    )
 
 
 def _parse_args(raw: str | None) -> dict[str, Any]:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 
 import pytest
 
@@ -148,6 +149,58 @@ async def test_a_repeat_search_is_told_it_found_nothing_new(monkeypatch):
     assert [e["prior_overlap"] for e in ctx.search_events] == [0, 3]
     assert ctx.search_events[1]["chunk_ids"] == ["c1", "c2", "c3"]
     assert ctx.search_events[1]["hits"] == 3
+
+
+async def test_search_hit_location_can_be_used_for_a_document_read(monkeypatch):
+    passage = _passage(file_id="f_opaque", file_name="notes.md", chunk_idx=7)
+
+    async def _search(**_kwargs):
+        return [passage]
+
+    read_args = {}
+
+    async def _read_range(**kwargs):
+        read_args.update(kwargs)
+        return [
+            {
+                "id": passage.chunk_id,
+                "file_id": passage.file_id,
+                "file_name": passage.file_name,
+                "chunk_idx": passage.chunk_idx,
+                "text": passage.text,
+            }
+        ]
+
+    monkeypatch.setattr(tools, "search", _search)
+    monkeypatch.setattr(tools.store, "read_file_range", _read_range)
+    ctx = ToolContext(workspace_id="ws_1", budget=agent.TurnBudget())
+    ctx._scope_outline = {
+        "chapters": [],
+        "files": [
+            {"id": "f_opaque", "name": "notes.md", "chapter_id": None, "chunks": 12}
+        ],
+    }
+    tools.assign_citations(ctx, [_passage(chunk_id="prior", file_id="f_opaque")])
+    result = await tools._search_workspace({"query": "chlorophyll"}, ctx)
+    rendered = tools.render_result(result, tools.assign_citations(ctx, result.passages))
+    location = re.search(r"\[2\] file_id=([^,\s]+), start=(\d+)", rendered)
+    assert location is not None, (
+        "Search hits must expose a usable document-read location."
+    )
+
+    read = await tools._read_document(
+        {"file_id": location[1], "start": int(location[2])}, ctx
+    )
+    assert not read.refused
+    assert read_args == {
+        "workspace_id": "ws_1",
+        "file_id": "f_opaque",
+        "start": 7,
+        "count": 4,
+    }
+    page = tools.render_result(read, tools.assign_citations(ctx, read.passages))
+    assert "(next start = 8)" in page
+    assert "[2] file_id=f_opaque, start=7" in page
 
 
 async def test_turn_end_marks_which_hits_the_answer_cited(monkeypatch):

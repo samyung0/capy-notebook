@@ -1,0 +1,860 @@
+{
+  "date": "2026-09-05",
+  "baseline_revision": "a903b8e917144701186b9c6cd2a6bbeea1bd15f9",
+  "lab_host": "159.195.61.195",
+  "lab_root": "/opt/capy-rag-curated-20260905",
+  "formal_agent_turns": 169,
+  "excluded": "Two pilot turns and 12 diagnostic oracle searches are excluded from agent scores.",
+  "corpus_manifest": {
+    "seed": 20260905,
+    "nature": "entirely fictional controlled course corpus",
+    "sources": [
+      {
+        "file": "accession-register-1.md",
+        "bytes": 12270,
+        "sha256": "1091fb54de2d1123a1fe3c9702e7a87070f56394a9c7b46f589da8a41b4001aa"
+      },
+      {
+        "file": "accession-register-2.md",
+        "bytes": 12270,
+        "sha256": "3673ecc9d2da3eb2083c08c0241e5a1de450b625ca25f0f65da7156e585ee15d"
+      },
+      {
+        "file": "archive-autumn-2024.md",
+        "bytes": 19950,
+        "sha256": "830d2a1bd0912ffe9c5592e3e089d046af719751e8a626239cc1e28d636c52f4"
+      },
+      {
+        "file": "assay-manual-1.md",
+        "bytes": 8546,
+        "sha256": "bb5dbafa0a5ceb8e89bc311dc17c556a40e87b3a2e8b7b83aaded31d20aa8e70"
+      },
+      {
+        "file": "assay-manual-2.md",
+        "bytes": 8541,
+        "sha256": "48002ab663c091f72e8fb09023410f7a8d3045ae8a1fa5f0bbe7d85b1910d0c5"
+      },
+      {
+        "file": "assay-manual-3.md",
+        "bytes": 8546,
+        "sha256": "567b11563d4492825f6223117bd534aaf47ddd77c07775e3d877cc5f0684be05"
+      },
+      {
+        "file": "assay-manual-4.md",
+        "bytes": 8544,
+        "sha256": "443e0b77d49c36ce0649b21e7a098990746e335eb914f6510a8e7afb24acd2dc"
+      },
+      {
+        "file": "course-brief.md",
+        "bytes": 1406,
+        "sha256": "e8390cdad07e0b5dc0204f361214c5d85d1aa856687e4a7f272a54db721bca22"
+      },
+      {
+        "file": "field-glossary-es.md",
+        "bytes": 727,
+        "sha256": "2d9a5b013708cf11fa09203a79138f29111a5cca8ee3eb5f055ced1fc38fbb44"
+      },
+      {
+        "file": "field-glossary-fr.md",
+        "bytes": 734,
+        "sha256": "15f164462313857c6b2df6a0c16fbe30f3fbf647b561b4c0af4bdd49400f727a"
+      },
+      {
+        "file": "field-glossary-ja.md",
+        "bytes": 727,
+        "sha256": "2ee99b5896b7536aedbe344633611e458113aebb89cebb91c2e1b8bab48b4611"
+      },
+      {
+        "file": "field-glossary-zh.md",
+        "bytes": 727,
+        "sha256": "cf800a823215fdee3498ba296dc0b424a3e7946ecf8edd5ee91b404a18fbe228"
+      },
+      {
+        "file": "field-notes-1.md",
+        "bytes": 9119,
+        "sha256": "2c6ba7456b2c077b1c1622c1c2cb3ab76afc449249b4f1cff87161cd199f8abd"
+      },
+      {
+        "file": "field-notes-2.md",
+        "bytes": 9102,
+        "sha256": "a86cd727a336b91a985d3b9500a294a59f152387a1c9273c39a518724ae9d624"
+      },
+      {
+        "file": "field-notes-3.md",
+        "bytes": 9119,
+        "sha256": "6d1e71d2bde2e8c30f8fb9ed4852fd9b5747c63c066580ba7ae59beab2a9e5ca"
+      },
+      {
+        "file": "field-notes-4.md",
+        "bytes": 9103,
+        "sha256": "ec53737a170c3897e34d2eaa590a2dfe6a58712c82e900ad74a6fa4397199748"
+      },
+      {
+        "file": "instrument-log-1.pdf",
+        "bytes": 2608,
+        "sha256": "2b06303979db35bbe772b17790852909de45f18b1da88c300a0acd7a1ed7f7a0"
+      },
+      {
+        "file": "instrument-log-2.pdf",
+        "bytes": 2609,
+        "sha256": "ad6169e180b9ae4cf372d4b5d37adfc870f28ccb2c8e929023e6bb302ff14b26"
+      },
+      {
+        "file": "seminar-notes-1.md",
+        "bytes": 28615,
+        "sha256": "7ee0e54407228009c0eeee4fef547c9896924a1cc175da3bc763c6f04af5c9d2"
+      },
+      {
+        "file": "seminar-notes-2.md",
+        "bytes": 28633,
+        "sha256": "146cc54a2deb5bdb13567b7d7031ddda6aaf4ff03600993a69bd739b4fcd73b7"
+      },
+      {
+        "file": "seminar-notes-3.md",
+        "bytes": 28633,
+        "sha256": "4da15133312de59ea63cdf84b824dc104aeec01c3c009d55f19a850e32a447c4"
+      },
+      {
+        "file": "seminar-notes-4.md",
+        "bytes": 28652,
+        "sha256": "a357d78005ca0c246f2916bdd1de9e5ac72db38c730ee903c8b87938a29addd4"
+      },
+      {
+        "file": "shipping-register.md",
+        "bytes": 19869,
+        "sha256": "7f383644adc5aba080e21d3dda67ffd8519a3f6583f01fa8776f08296f5fbe4d"
+      }
+    ],
+    "omitted_from_missing_bridge": [
+      "accession-register-1.md",
+      "accession-register-2.md"
+    ]
+  },
+  "index": {
+    "chunker_version": "v5",
+    "models": [
+      {
+        "provider_slug": "deepseek",
+        "model_slug": "deepseek-v4-flash-vision-exp",
+        "version": 1,
+        "is_default_for": ["chat", "generate", "editor", "quiz", "ingest"]
+      },
+      {
+        "provider_slug": "deepinfra",
+        "model_slug": "Qwen/Qwen3-Embedding-4B",
+        "version": 1,
+        "is_default_for": ["retrieval"]
+      },
+      {
+        "provider_slug": "zai",
+        "model_slug": "glm-5.3-flash",
+        "version": 1,
+        "is_default_for": ["captioning"]
+      }
+    ],
+    "content_pins": [
+      {
+        "workspace_id": "ws_3662d0431f",
+        "pipeline_identity": "plan-v1:auto:fast:mineru-3.4.5-pipeline-sliced-v1+a903b8e917144701186b9c6cd2a6bbeea1bd15f9:none:v5",
+        "embedding_provider_slug": "deepinfra",
+        "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+        "embedding_model_version": 1,
+        "count": 2
+      },
+      {
+        "workspace_id": "ws_3662d0431f",
+        "pipeline_identity": "plan-v1:direct:text:v5",
+        "embedding_provider_slug": "deepinfra",
+        "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+        "embedding_model_version": 1,
+        "count": 19
+      },
+      {
+        "workspace_id": "ws_33898d4e05",
+        "pipeline_identity": "plan-v1:direct:text:v5",
+        "embedding_provider_slug": "deepinfra",
+        "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+        "embedding_model_version": 1,
+        "count": 21
+      },
+      {
+        "workspace_id": "ws_33898d4e05",
+        "pipeline_identity": "plan-v1:auto:fast:mineru-3.4.5-pipeline-sliced-v1+a903b8e917144701186b9c6cd2a6bbeea1bd15f9:none:v5",
+        "embedding_provider_slug": "deepinfra",
+        "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+        "embedding_model_version": 1,
+        "count": 2
+      }
+    ],
+    "workspaces": {
+      "complete": {
+        "id": "ws_33898d4e05",
+        "files": 23,
+        "chunks": 283,
+        "languages": {
+          "en": 283
+        }
+      },
+      "missing_bridge": {
+        "id": "ws_3662d0431f",
+        "files": 21,
+        "chunks": 249,
+        "languages": {
+          "en": 249
+        }
+      }
+    },
+    "all_required_source_spans_present": true
+  },
+  "holdout_freeze": {
+    "frozen_at": "2026-09-05T09:33:43.451604+00:00",
+    "baseline_revision": "a903b8e917144701186b9c6cd2a6bbeea1bd15f9",
+    "variants": ["baseline", "follow_links", "follow_links_ids"],
+    "repeats": 2,
+    "primary": "Correct answer with every required evidence group reached; manually review values, associations and unsupported claims. Negative controls need calibrated abstention without invented values or source-inventory claims.",
+    "secondary": [
+      "all required evidence groups cited",
+      "refused reads",
+      "search count",
+      "elapsed time",
+      "reported tokens"
+    ],
+    "selection_reason": "Both reference-following candidates passed 6/6 positive development-screen questions. File IDs alone passed 2/6, baseline 5/6, top8 5/6, no_stop_hint 5/6, lexical_equal 3/6. Compare prompt only with combined version to isolate whether the IDs add value.",
+    "files_sha256": {
+      "corpus/questions.json": "37ae3d4123e78b4f20436a0b40deccc730be2491c3fa9ad0246dd558e7983529",
+      "corpus/manifest.json": "fa20754953edd90817f9c7d3cd2e27a0a84b8820f637ae4f2f44facb426a169f",
+      "lab_server.py": "03c2c83b9fdfabe7924c91978cec5b8042cf819b6eed73bfa5b1c29a91fe6279",
+      "run_agent.py": "21926ab9c32b9503711d2ba35ba572b5cfd93ac1c7cd805c8eb0c7d85cc01294",
+      "index-snapshot.json": "6f86358e6cce8532326a77eb8e3cbd9efa8a6c14ebf66350be0c25e1e8e93c33"
+    }
+  },
+  "phases": {
+    "development_baseline": [
+      {
+        "variant": "baseline",
+        "split": "development",
+        "completed": 35,
+        "attempted": 35,
+        "answerable": 30,
+        "all_answer_values_present": 24,
+        "all_required_evidence_reached": 24,
+        "values_and_evidence": 24,
+        "all_required_evidence_cited": 18,
+        "needs_manual_grade": [
+          "absent-2",
+          "absent-1",
+          "missing-00",
+          "missing-05",
+          "absent-0"
+        ],
+        "failed_value_or_evidence_checks": [
+          "bridge-08",
+          "bridge-02",
+          "bridge-04",
+          "bridge-09",
+          "bridge-01",
+          "bridge-07"
+        ],
+        "mean_searches": 2.51,
+        "median_latency_s": 6.89,
+        "mean_latency_s": 7.65,
+        "mean_reported_tokens": 11678,
+        "document_reads": 8,
+        "refused_document_reads": 7,
+        "max_latency_s": 21.99,
+        "by_category": {
+          "bridge": {
+            "turns": 12,
+            "values_and_evidence": 6
+          },
+          "comparison": {
+            "turns": 3,
+            "values_and_evidence": 3
+          },
+          "cross_language": {
+            "turns": 3,
+            "values_and_evidence": 3
+          },
+          "lookup": {
+            "turns": 6,
+            "values_and_evidence": 6
+          },
+          "missing_bridge": {
+            "turns": 2,
+            "values_and_evidence": null
+          },
+          "table": {
+            "turns": 3,
+            "values_and_evidence": 3
+          },
+          "unanswerable": {
+            "turns": 3,
+            "values_and_evidence": null
+          },
+          "version": {
+            "turns": 3,
+            "values_and_evidence": 3
+          }
+        }
+      }
+    ],
+    "development_screen": [
+      {
+        "variant": "baseline",
+        "split": "development",
+        "completed": 8,
+        "attempted": 8,
+        "answerable": 6,
+        "all_answer_values_present": 5,
+        "all_required_evidence_reached": 5,
+        "values_and_evidence": 5,
+        "all_required_evidence_cited": 5,
+        "needs_manual_grade": ["absent-0", "missing-00"],
+        "failed_value_or_evidence_checks": ["bridge-04"],
+        "mean_searches": 2.5,
+        "median_latency_s": 8.29,
+        "mean_latency_s": 8.28,
+        "mean_reported_tokens": 13070,
+        "document_reads": 4,
+        "refused_document_reads": 4,
+        "max_latency_s": 15.568,
+        "by_category": {
+          "bridge": {
+            "turns": 4,
+            "values_and_evidence": 3
+          },
+          "comparison": {
+            "turns": 1,
+            "values_and_evidence": 1
+          },
+          "lookup": {
+            "turns": 1,
+            "values_and_evidence": 1
+          },
+          "missing_bridge": {
+            "turns": 1,
+            "values_and_evidence": null
+          },
+          "unanswerable": {
+            "turns": 1,
+            "values_and_evidence": null
+          }
+        }
+      },
+      {
+        "variant": "follow_links",
+        "split": "development",
+        "completed": 8,
+        "attempted": 8,
+        "answerable": 6,
+        "all_answer_values_present": 6,
+        "all_required_evidence_reached": 6,
+        "values_and_evidence": 6,
+        "all_required_evidence_cited": 5,
+        "needs_manual_grade": ["missing-00", "absent-0"],
+        "failed_value_or_evidence_checks": [],
+        "mean_searches": 3.88,
+        "median_latency_s": 10.77,
+        "mean_latency_s": 12.66,
+        "mean_reported_tokens": 21770,
+        "document_reads": 3,
+        "refused_document_reads": 1,
+        "max_latency_s": 23.669,
+        "by_category": {
+          "bridge": {
+            "turns": 4,
+            "values_and_evidence": 4
+          },
+          "comparison": {
+            "turns": 1,
+            "values_and_evidence": 1
+          },
+          "lookup": {
+            "turns": 1,
+            "values_and_evidence": 1
+          },
+          "missing_bridge": {
+            "turns": 1,
+            "values_and_evidence": null
+          },
+          "unanswerable": {
+            "turns": 1,
+            "values_and_evidence": null
+          }
+        }
+      },
+      {
+        "variant": "follow_links_ids",
+        "split": "development",
+        "completed": 8,
+        "attempted": 8,
+        "answerable": 6,
+        "all_answer_values_present": 6,
+        "all_required_evidence_reached": 6,
+        "values_and_evidence": 6,
+        "all_required_evidence_cited": 4,
+        "needs_manual_grade": ["missing-00", "absent-0"],
+        "failed_value_or_evidence_checks": [],
+        "mean_searches": 4.12,
+        "median_latency_s": 10.22,
+        "mean_latency_s": 12.39,
+        "mean_reported_tokens": 27005,
+        "document_reads": 4,
+        "refused_document_reads": 0,
+        "max_latency_s": 28.19,
+        "by_category": {
+          "bridge": {
+            "turns": 4,
+            "values_and_evidence": 4
+          },
+          "comparison": {
+            "turns": 1,
+            "values_and_evidence": 1
+          },
+          "lookup": {
+            "turns": 1,
+            "values_and_evidence": 1
+          },
+          "missing_bridge": {
+            "turns": 1,
+            "values_and_evidence": null
+          },
+          "unanswerable": {
+            "turns": 1,
+            "values_and_evidence": null
+          }
+        }
+      },
+      {
+        "variant": "lexical_equal",
+        "split": "development",
+        "completed": 8,
+        "attempted": 8,
+        "answerable": 6,
+        "all_answer_values_present": 3,
+        "all_required_evidence_reached": 3,
+        "values_and_evidence": 3,
+        "all_required_evidence_cited": 2,
+        "needs_manual_grade": ["missing-00", "absent-0"],
+        "failed_value_or_evidence_checks": [
+          "bridge-08",
+          "bridge-04",
+          "bridge-02"
+        ],
+        "mean_searches": 1.75,
+        "median_latency_s": 4.92,
+        "mean_latency_s": 6.62,
+        "mean_reported_tokens": 7860,
+        "document_reads": 1,
+        "refused_document_reads": 1,
+        "max_latency_s": 13.504,
+        "by_category": {
+          "bridge": {
+            "turns": 4,
+            "values_and_evidence": 1
+          },
+          "comparison": {
+            "turns": 1,
+            "values_and_evidence": 1
+          },
+          "lookup": {
+            "turns": 1,
+            "values_and_evidence": 1
+          },
+          "missing_bridge": {
+            "turns": 1,
+            "values_and_evidence": null
+          },
+          "unanswerable": {
+            "turns": 1,
+            "values_and_evidence": null
+          }
+        }
+      },
+      {
+        "variant": "navigable_hits",
+        "split": "development",
+        "completed": 8,
+        "attempted": 8,
+        "answerable": 6,
+        "all_answer_values_present": 2,
+        "all_required_evidence_reached": 2,
+        "values_and_evidence": 2,
+        "all_required_evidence_cited": 1,
+        "needs_manual_grade": ["missing-00", "absent-0"],
+        "failed_value_or_evidence_checks": [
+          "bridge-09",
+          "bridge-08",
+          "bridge-04",
+          "bridge-02"
+        ],
+        "mean_searches": 1.75,
+        "median_latency_s": 5.14,
+        "mean_latency_s": 6.34,
+        "mean_reported_tokens": 7817,
+        "document_reads": 1,
+        "refused_document_reads": 0,
+        "max_latency_s": 11.292,
+        "by_category": {
+          "bridge": {
+            "turns": 4,
+            "values_and_evidence": 0
+          },
+          "comparison": {
+            "turns": 1,
+            "values_and_evidence": 1
+          },
+          "lookup": {
+            "turns": 1,
+            "values_and_evidence": 1
+          },
+          "missing_bridge": {
+            "turns": 1,
+            "values_and_evidence": null
+          },
+          "unanswerable": {
+            "turns": 1,
+            "values_and_evidence": null
+          }
+        }
+      },
+      {
+        "variant": "no_stop_hint",
+        "split": "development",
+        "completed": 8,
+        "attempted": 8,
+        "answerable": 6,
+        "all_answer_values_present": 5,
+        "all_required_evidence_reached": 5,
+        "values_and_evidence": 5,
+        "all_required_evidence_cited": 3,
+        "needs_manual_grade": ["absent-0", "missing-00"],
+        "failed_value_or_evidence_checks": ["bridge-09"],
+        "mean_searches": 3,
+        "median_latency_s": 8.72,
+        "mean_latency_s": 9.66,
+        "mean_reported_tokens": 18607,
+        "document_reads": 5,
+        "refused_document_reads": 3,
+        "max_latency_s": 18.836,
+        "by_category": {
+          "bridge": {
+            "turns": 4,
+            "values_and_evidence": 3
+          },
+          "comparison": {
+            "turns": 1,
+            "values_and_evidence": 1
+          },
+          "lookup": {
+            "turns": 1,
+            "values_and_evidence": 1
+          },
+          "missing_bridge": {
+            "turns": 1,
+            "values_and_evidence": null
+          },
+          "unanswerable": {
+            "turns": 1,
+            "values_and_evidence": null
+          }
+        }
+      },
+      {
+        "variant": "top8",
+        "split": "development",
+        "completed": 8,
+        "attempted": 8,
+        "answerable": 6,
+        "all_answer_values_present": 5,
+        "all_required_evidence_reached": 5,
+        "values_and_evidence": 5,
+        "all_required_evidence_cited": 5,
+        "needs_manual_grade": ["missing-00", "absent-0"],
+        "failed_value_or_evidence_checks": ["bridge-09"],
+        "mean_searches": 3.5,
+        "median_latency_s": 10.59,
+        "mean_latency_s": 10.03,
+        "mean_reported_tokens": 22489,
+        "document_reads": 0,
+        "refused_document_reads": 0,
+        "max_latency_s": 16.495,
+        "by_category": {
+          "bridge": {
+            "turns": 4,
+            "values_and_evidence": 3
+          },
+          "comparison": {
+            "turns": 1,
+            "values_and_evidence": 1
+          },
+          "lookup": {
+            "turns": 1,
+            "values_and_evidence": 1
+          },
+          "missing_bridge": {
+            "turns": 1,
+            "values_and_evidence": null
+          },
+          "unanswerable": {
+            "turns": 1,
+            "values_and_evidence": null
+          }
+        }
+      }
+    ],
+    "holdout": [
+      {
+        "variant": "baseline",
+        "split": "holdout",
+        "completed": 26,
+        "attempted": 26,
+        "answerable": 20,
+        "all_answer_values_present": 14,
+        "all_required_evidence_reached": 14,
+        "values_and_evidence": 14,
+        "all_required_evidence_cited": 11,
+        "needs_manual_grade": [
+          "missing-12",
+          "missing-12",
+          "absent-3",
+          "missing-15",
+          "missing-15",
+          "absent-3"
+        ],
+        "failed_value_or_evidence_checks": [
+          "bridge-15",
+          "bridge-12",
+          "bridge-14",
+          "bridge-13",
+          "bridge-13",
+          "bridge-12"
+        ],
+        "mean_searches": 2.31,
+        "median_latency_s": 6.52,
+        "mean_latency_s": 8.06,
+        "mean_reported_tokens": 11883,
+        "document_reads": 4,
+        "refused_document_reads": 4,
+        "max_latency_s": 18.987,
+        "by_category": {
+          "bridge": {
+            "turns": 8,
+            "values_and_evidence": 2
+          },
+          "comparison": {
+            "turns": 2,
+            "values_and_evidence": 2
+          },
+          "cross_language": {
+            "turns": 2,
+            "values_and_evidence": 2
+          },
+          "lookup": {
+            "turns": 4,
+            "values_and_evidence": 4
+          },
+          "missing_bridge": {
+            "turns": 4,
+            "values_and_evidence": null
+          },
+          "table": {
+            "turns": 2,
+            "values_and_evidence": 2
+          },
+          "unanswerable": {
+            "turns": 2,
+            "values_and_evidence": null
+          },
+          "version": {
+            "turns": 2,
+            "values_and_evidence": 2
+          }
+        },
+        "reviewed_supported_positive_answers": 14,
+        "reviewed_supported_negative_answers": 3,
+        "negative_controls": 6,
+        "questions_correct_in_both_repeats": 6,
+        "markup_answer_failures": []
+      },
+      {
+        "variant": "follow_links",
+        "split": "holdout",
+        "completed": 26,
+        "attempted": 26,
+        "answerable": 20,
+        "all_answer_values_present": 19,
+        "all_required_evidence_reached": 19,
+        "values_and_evidence": 19,
+        "all_required_evidence_cited": 17,
+        "needs_manual_grade": [
+          "absent-3",
+          "missing-12",
+          "missing-15",
+          "absent-3",
+          "missing-12",
+          "missing-15"
+        ],
+        "failed_value_or_evidence_checks": ["bridge-15"],
+        "mean_searches": 3,
+        "median_latency_s": 8.79,
+        "mean_latency_s": 9.24,
+        "mean_reported_tokens": 16365,
+        "document_reads": 5,
+        "refused_document_reads": 2,
+        "max_latency_s": 25.335,
+        "by_category": {
+          "bridge": {
+            "turns": 8,
+            "values_and_evidence": 7
+          },
+          "comparison": {
+            "turns": 2,
+            "values_and_evidence": 2
+          },
+          "cross_language": {
+            "turns": 2,
+            "values_and_evidence": 2
+          },
+          "lookup": {
+            "turns": 4,
+            "values_and_evidence": 4
+          },
+          "missing_bridge": {
+            "turns": 4,
+            "values_and_evidence": null
+          },
+          "table": {
+            "turns": 2,
+            "values_and_evidence": 2
+          },
+          "unanswerable": {
+            "turns": 2,
+            "values_and_evidence": null
+          },
+          "version": {
+            "turns": 2,
+            "values_and_evidence": 2
+          }
+        },
+        "reviewed_supported_positive_answers": 19,
+        "reviewed_supported_negative_answers": 4,
+        "negative_controls": 6,
+        "questions_correct_in_both_repeats": 9,
+        "markup_answer_failures": [
+          {
+            "id": "missing-15",
+            "repeat": 1,
+            "message_id": "m_1584c167f1"
+          }
+        ]
+      },
+      {
+        "variant": "follow_links_ids",
+        "split": "holdout",
+        "completed": 26,
+        "attempted": 26,
+        "answerable": 20,
+        "all_answer_values_present": 19,
+        "all_required_evidence_reached": 19,
+        "values_and_evidence": 19,
+        "all_required_evidence_cited": 16,
+        "needs_manual_grade": [
+          "missing-12",
+          "missing-12",
+          "missing-15",
+          "absent-3",
+          "absent-3",
+          "missing-15"
+        ],
+        "failed_value_or_evidence_checks": ["bridge-13"],
+        "mean_searches": 2.85,
+        "median_latency_s": 8.23,
+        "mean_latency_s": 10.07,
+        "mean_reported_tokens": 14755,
+        "document_reads": 2,
+        "refused_document_reads": 0,
+        "max_latency_s": 30.256,
+        "by_category": {
+          "bridge": {
+            "turns": 8,
+            "values_and_evidence": 7
+          },
+          "comparison": {
+            "turns": 2,
+            "values_and_evidence": 2
+          },
+          "cross_language": {
+            "turns": 2,
+            "values_and_evidence": 2
+          },
+          "lookup": {
+            "turns": 4,
+            "values_and_evidence": 4
+          },
+          "missing_bridge": {
+            "turns": 4,
+            "values_and_evidence": null
+          },
+          "table": {
+            "turns": 2,
+            "values_and_evidence": 2
+          },
+          "unanswerable": {
+            "turns": 2,
+            "values_and_evidence": null
+          },
+          "version": {
+            "turns": 2,
+            "values_and_evidence": 2
+          }
+        },
+        "reviewed_supported_positive_answers": 19,
+        "reviewed_supported_negative_answers": 4,
+        "negative_controls": 6,
+        "questions_correct_in_both_repeats": 9,
+        "markup_answer_failures": []
+      }
+    ]
+  },
+  "raw_runs": [
+    {
+      "file": "development-baseline.jsonl",
+      "bytes": 2551344,
+      "sha256": "13260692e4342c2865ceb29650e663f678da9b4a6e8c3d769d738533bc636ac5",
+      "rows": 35
+    },
+    {
+      "file": "development-variants.jsonl",
+      "bytes": 3975789,
+      "sha256": "62742765cd8d9e55bdd3b17d43ed52a78a8b90e95df67b3215457ebbe5368668",
+      "rows": 40
+    },
+    {
+      "file": "development-navigation.jsonl",
+      "bytes": 1498464,
+      "sha256": "94585f7f0e639d4673ea4b4269f712e683b15d5f410551a68d5244f5bc1bc96e",
+      "rows": 16
+    },
+    {
+      "file": "holdout.jsonl",
+      "bytes": 6404348,
+      "sha256": "6c664d44f9ea27fb8b3d6dbc91f97a1a67fcebdab9d8334203fddfa103aaba64",
+      "rows": 78
+    }
+  ],
+  "review_file": "heldout-review.json",
+  "selection": {
+    "variant": "follow_links_ids",
+    "reason": "Matched the prompt-only candidate at 19/20 supported positive answers and removed invalid document-read arguments in observed reads. No claim of an accuracy advantage over prompt-only; mean latency was higher and citation-chain coverage slightly lower."
+  },
+  "verification": {
+    "focused_offline_tests_passed": 69,
+    "render_equivalence_sha256": "23887e811d4914180782543650a926f001493dff4c951481747cd83d34e0349d",
+    "literal_pdf_table_labels_checked": 4,
+    "rescored_turns_after_numeric_normalization_fix": 169,
+    "primary_or_evidence_outcomes_changed": 0,
+    "diagnostic_only_differences": [],
+    "as_run_runner_retained": "run_agent-as-run.py"
+  }
+}

@@ -811,6 +811,10 @@ always point at document passages.
    The hit chunk is what the model sees. A packing cut is a `read_document`
    follow-up, not automatic neighbour expansion.
 
+Tool results with passages include each citation's `file_id` and starting chunk
+index, so the model can call `read_document` directly from a hit. Filenames are
+display labels, not valid file IDs. Paged reads retain their next-start marker.
+
 When at least half of a search's hits were already shown earlier in the same
 turn (any prior search or read), the result also carries an overlap line
 (`tools._overlap_footer`): how many were repeats, and that the workspace has
@@ -860,6 +864,12 @@ and are not sent back as LLM history.
    `search_workspace` when the question needs sources. At most one
    `search_workspace` per model response; a later response in the same turn may
    search again. Other independent reads in that response still run concurrently.
+   The prompt instructs the agent to follow relevant identifiers and source
+   references before deciding an answer is unavailable; a missing answer in one
+   passage does not establish absence from the workspace. In the
+   [2026-09-05 curated lab comparison](../pipeline/scripts/rag_eval/curated/REPORT.md),
+   this instruction plus readable file locations raised complete-evidence answers
+   from 14/20 to 19/20 held-out turns; missing-evidence wording remained imperfect.
 3. Every tool-capable model response is streamed. Text that arrives with tool
    calls is a narration block. The first completed response with text and no
    tools is the persisted answer. There is no unconditional second answer
