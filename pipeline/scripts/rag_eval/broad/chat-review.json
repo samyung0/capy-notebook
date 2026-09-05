@@ -1,0 +1,1442 @@
+[
+  {
+    "id": "hotpot-5a778b345542992a6e59decf",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_fa122eed4e",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Both birth dates and the comparison follow from citations 1 and 8."
+  },
+  {
+    "id": "native-de-3163303#0",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_4b1e10a0e6",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Sacramento and the added geographic facts are supported by the five cited passages."
+  },
+  {
+    "id": "cross-0",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_f64f76bc14",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct 16.30 percent; comparison percentages are present in the English passage."
+  },
+  {
+    "id": "cross-1",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_b68448b0f0",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct forward differences and higher differences, supported by the English passage."
+  },
+  {
+    "id": "hotpot-5ae0ff95554299422ee995b0",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_b50ed75cc5",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Both the father-son relationship and birth date are established by the cited documents."
+  },
+  {
+    "id": "cross-1",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_7b84e57ed0",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct differences explanation and related summation discussion follow from cited passages."
+  },
+  {
+    "id": "native-ja-2529",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_f8dc72ca74",
+    "answer_correct": true,
+    "grounded": false,
+    "citation_supported": false,
+    "reason": "Correct second-century answer and chronicle distinction, but adds AD 192 without retrieved support. It admits the source gives only the century."
+  },
+  {
+    "id": "native-zh-509765#0",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_9d6ad9a392",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "DNA, histones and structural details follow from cited passages. The source itself incorrectly describes chromosomes as exclusive to eukaryotes; this is a source-grounded QA score, not biological fact verification."
+  },
+  {
+    "id": "missing-2",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_a5dfdb6485",
+    "answer_correct": false,
+    "grounded": false,
+    "citation_supported": false,
+    "reason": "Provider stream read failed before a final answer; retained first attempt, not retried."
+  },
+  {
+    "id": "native-ko-755",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_2152d5717c",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Sofia is directly supported by the cited Korean passages."
+  },
+  {
+    "id": "missing-0",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_e84b54f2e2",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correctly identifies Dealey Plaza and missing designation year after searches, read and source listing. Cited background is supported. Its separate claim that outside knowledge is forbidden misstates the system prompt."
+  },
+  {
+    "id": "hotpot-5a79332555429907847277e7",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_655d6b297f",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Both death dates and earlier death follow from the cited biographies."
+  },
+  {
+    "id": "native-de-3163303#0",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_a18dfe6b58",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Sacramento, geography and dated population are supported by the retrieved document."
+  },
+  {
+    "id": "native-es-313181#0",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_d894424bff",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Meal-gap explanation and additional tea customs are supported by the cited Spanish passages."
+  },
+  {
+    "id": "cross-1",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_bf6f84ab48",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct higher-difference explanation; acknowledges the missing formula and cites supporting material."
+  },
+  {
+    "id": "missing-4",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_b4f1d7e406",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": false,
+    "reason": "Accurate source-insufficiency answer and document summaries, but the factual summaries have no attached numbered citations."
+  },
+  {
+    "id": "native-ja-2529",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_a47825fae4",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct second-century founding, with the separately attributed AD 1000 chronicle account."
+  },
+  {
+    "id": "missing-2",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_7957a6c6aa",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Accurately reports missing poverty information and cites the actual unrelated documents."
+  },
+  {
+    "id": "native-en-2839",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_666562490f",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct microorganism definition; extra uses of the term are supported by cited passages."
+  },
+  {
+    "id": "native-ja-2529",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_2d6c5ffc8d",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct second-century founding and separately attributed capital-relocation chronology."
+  },
+  {
+    "id": "missing-5",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_d979b29c2c",
+    "answer_correct": true,
+    "grounded": false,
+    "citation_supported": false,
+    "reason": "Correct missing-source abstention, but silently changes the source's 105 cm gun measurements to 105 mm. Likely source typos, yet the correction is not established by the cited text."
+  },
+  {
+    "id": "cross-0",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_a33749d79b",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct poverty percentage and all comparison figures are in the cited passage."
+  },
+  {
+    "id": "native-ja-4278",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_3178bc8258",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct 1937 birth year and source-supported biography. The source calls Chip Taylor a sister; this inherited source error is not an answer-year error."
+  },
+  {
+    "id": "native-en-2839",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_2dc814d0a3",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct microbe definition and cited ancillary examples."
+  },
+  {
+    "id": "hotpot-5ae46b615542995dadf24327",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_221f708767",
+    "answer_correct": true,
+    "grounded": false,
+    "citation_supported": false,
+    "reason": "Correct profession comparison, but adds that Laura is film noir; the cited and other retrieved passages do not establish its genre. Consistency review caught this unsupported addition."
+  },
+  {
+    "id": "missing-1",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_6c585f06c3",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correctly separates the song's lyricists from missing evidence about the whole musical; supported partial answer and explicit limitation."
+  },
+  {
+    "id": "native-ko-755",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_32f6b54935",
+    "answer_correct": true,
+    "grounded": false,
+    "citation_supported": false,
+    "reason": "Correct Sofia answer, but changes the cited Blagoevgrad distance from 101 m to 101 km without identifying the source correction."
+  },
+  {
+    "id": "cross-4",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_0e9cec0bd4",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "At least 1 km is directly stated in the Spanish evidence."
+  },
+  {
+    "id": "hotpot-5ac113e2554299294b21909a",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_34c131349b",
+    "answer_correct": true,
+    "grounded": false,
+    "citation_supported": false,
+    "reason": "Names match the answer rubric, but the seen and cited passage establishes one song's lyricists, not the whole musical. Required musical source was not reached."
+  },
+  {
+    "id": "hotpot-5ae46b615542995dadf24327",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_588e304c36",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct comparison with sourced director, actor and producer roles; limits the conclusion to the available biographies."
+  },
+  {
+    "id": "native-ja-2529",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_c211a3f0b3",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct second-century founding and separately attributed AD 1000 chronology."
+  },
+  {
+    "id": "native-zh-674078#0",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_77aaa1a32c",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct 1878 founding and 1902 renaming, with citations attached to supporting claims."
+  },
+  {
+    "id": "missing-0",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_81fcaa79ca",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correctly identifies Dealey Plaza and accurately states the designation year is absent."
+  },
+  {
+    "id": "cross-7",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_c4b2905041",
+    "answer_correct": true,
+    "grounded": false,
+    "citation_supported": false,
+    "reason": "Correct 1980-1990 answer, but adds that Magach models 1-5 derive from M48; source lists 1, 2, 3 and 5, excluding 4."
+  },
+  {
+    "id": "native-en-600",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_0af3f0081a",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct 1517 answer and supported spread of the movement."
+  },
+  {
+    "id": "missing-0",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_da728c7a40",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Accurate designation-year abstention; cited plaza identification is supported."
+  },
+  {
+    "id": "native-ja-4278",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_11bb74b1fd",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct 1937 birth year and explicit absence of month and day."
+  },
+  {
+    "id": "hotpot-5a8c2bb4554299240d9c20ac",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_588b983c0b",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "University, festival invitee and ministerial role are supported by both cited sources."
+  },
+  {
+    "id": "missing-5",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_a534645149",
+    "answer_correct": true,
+    "grounded": false,
+    "citation_supported": false,
+    "reason": "Correct missing replacement-timeline answer, but silently changes the cited 105 cm measurements to 105 mm."
+  },
+  {
+    "id": "native-de-1147888#0",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_c63e6d833b",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct Yellowstone location and all added dates, dimensions and geography are cited."
+  },
+  {
+    "id": "native-ja-4278",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_0b45161117",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct 1937 birth year and Yonkers birthplace are supported."
+  },
+  {
+    "id": "hotpot-5a8c2bb4554299240d9c20ac",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_1a84f295dd",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct Aligarh Muslim University answer with both festival and minister evidence."
+  },
+  {
+    "id": "native-es-7684628#0",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_329703430c",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Celebrations, new year, lights and additional religious traditions follow from cited passages."
+  },
+  {
+    "id": "cross-6",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_2514c66020",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct legal sociology, legal philosophy and legal dogmatics triad; explanatory mapping follows the German passage."
+  },
+  {
+    "id": "cross-3",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_ad83c634b4",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct lamb and sheep preference; additional food context follows the German passage."
+  },
+  {
+    "id": "native-ja-4278",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_2192805a3a",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct 1937 year and explicit absence of month and day."
+  },
+  {
+    "id": "missing-4",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_dd6d0a447b",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Accurate missing-distance answer with cited coverage of all available documents."
+  },
+  {
+    "id": "cross-2",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_73510a7e24",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Indian nationality and added biography are directly supported by the English passage."
+  },
+  {
+    "id": "cross-6",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_a053df9fca",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct subfield triad and source-grounded methodological explanation."
+  },
+  {
+    "id": "hotpot-5a778b345542992a6e59decf",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_3bd5e81583",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Both birth dates and the comparison are supported by the cited biographies."
+  },
+  {
+    "id": "native-de-3163303#0",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_c4ed81e2c4",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct Sacramento answer with sourced geographic and dated population details."
+  },
+  {
+    "id": "native-fr-11892575#0",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_d0aca250d5",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct supernova explanation; mechanisms, history and examples are supported by the cited French passages."
+  },
+  {
+    "id": "cross-4",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_ed5b5f8288",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "At least 1 km is directly stated by the Spanish source."
+  },
+  {
+    "id": "cross-4",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_9bce8da839",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct minimum distance with a supporting Spanish quotation."
+  },
+  {
+    "id": "cross-6",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_f130f96a19",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct legal subfield triad and explanation grounded in the German source."
+  },
+  {
+    "id": "native-zh-674078#0",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_fa7e9788ab",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct 1878 answer; explicitly handles the conflicting 1887 source and cites the stronger agreement."
+  },
+  {
+    "id": "hotpot-5a79332555429907847277e7",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_4714fdaf5b",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Both death dates and the comparison are supported by cited biographies."
+  },
+  {
+    "id": "cross-7",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_a37870faae",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct 1980-1990 replacement interval and gradual-replacement caveat follow from the Chinese passage."
+  },
+  {
+    "id": "hotpot-5ae46b615542995dadf24327",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_3d5f2a14ec",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct profession comparison supported by both biographies and specific cited roles and films."
+  },
+  {
+    "id": "missing-1",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_dddd1ddb8f",
+    "answer_correct": false,
+    "grounded": false,
+    "citation_supported": false,
+    "reason": "Does not acknowledge insufficient whole-musical evidence; treats one song's lyric credits as credits for the entire show. This retained-song control has an ambiguous attachment in the source wording and is reported separately as a sensitivity case."
+  },
+  {
+    "id": "hotpot-5ae0ff95554299422ee995b0",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_fabff3eb26",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct Larry Johnson Jr. answer supported by father-son and birth-date evidence."
+  },
+  {
+    "id": "hotpot-5ae7821b5542997ec2727678",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_23c0389907",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct 1993 answer with both plaza identification and landmark-designation evidence."
+  },
+  {
+    "id": "missing-1",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_975b655669",
+    "answer_correct": false,
+    "grounded": false,
+    "citation_supported": false,
+    "reason": "Confident whole-show credits from the retained song passage, without an insufficiency statement. This source-scope control is ambiguous and is reported separately."
+  },
+  {
+    "id": "missing-0",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_c50a78a201",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct designation-year abstention and cited source coverage. Its separate refusal rationale overstates the prompt's restriction on labeled outside knowledge."
+  },
+  {
+    "id": "native-ko-1078",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_32e8baaace",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct ampere-to-coulomb relation; added history is source-supported, although the source's statement that the 1948 definition is current is outdated."
+  },
+  {
+    "id": "missing-1",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_0e89f3c095",
+    "answer_correct": false,
+    "grounded": false,
+    "citation_supported": false,
+    "reason": "Confident whole-musical attribution from the retained song passage, without acknowledging missing whole-show evidence; ambiguous source-scope control."
+  },
+  {
+    "id": "hotpot-5a778b345542992a6e59decf",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_d54873243e",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Both birth dates and the comparison follow from cited biographies."
+  },
+  {
+    "id": "missing-2",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_52d8b7ef45",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": false,
+    "reason": "Accurately states poverty evidence is absent, but its factual descriptions of available documents have no attached numbered citations."
+  },
+  {
+    "id": "native-zh-509765#0",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_5b5d7cdf8a",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct DNA and histone composition with cited structural detail and bacterial/eukaryotic distinction."
+  },
+  {
+    "id": "cross-3",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_1f579a8b8e",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct lamb and sheep answer; the cited German passage supports the accompanying dietary context."
+  },
+  {
+    "id": "missing-3",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_6fa0ad9d36",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Accurate missing-nationality answer with cited coverage of the two unrelated documents."
+  },
+  {
+    "id": "hotpot-5a887898554299206df2b2a2",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_802bb30d6f",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct no answer; both orchid and mint family classifications and added examples are cited."
+  },
+  {
+    "id": "cross-0",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_da89abc283",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct 16.30 percent answer and comparison figure follow from the cited passage."
+  },
+  {
+    "id": "native-ko-755",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_7174fce39c",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Sofia is directly supported by the Korean citations."
+  },
+  {
+    "id": "cross-2",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_8ce77c909f",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct Indian nationality with supported biographical details."
+  },
+  {
+    "id": "hotpot-5a79332555429907847277e7",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_6322922a21",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Both death dates and the comparison are supported by cited biographies."
+  },
+  {
+    "id": "missing-3",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_ccc14e1102",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": false,
+    "reason": "Accurate missing-nationality answer and descriptions of the two documents, but no attached numbered citations."
+  },
+  {
+    "id": "hotpot-5ac113e2554299294b21909a",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_47c75953aa",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct credited names; final claim is narrowed to music associated with the debut and specifically identifies the song. Those claims are supported even though the labeled whole-musical passage is not reached. Source-scope ambiguity is documented separately."
+  },
+  {
+    "id": "hotpot-5ac113e2554299294b21909a",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_8d417350b6",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct lyricists with both debut biography and explicit whole-musical credit passage reached and cited."
+  },
+  {
+    "id": "native-fr-11892575#0",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_e53bc56bf1",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct supernova explanation with supporting citations for mechanisms, history and remnant details."
+  },
+  {
+    "id": "cross-3",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_0edc2c9272",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct lamb and mutton answer; additional dietary and beverage facts are sourced."
+  },
+  {
+    "id": "hotpot-5ae7821b5542997ec2727678",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_c7308ab6e5",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct 1993 answer with both plaza-identification and designation evidence."
+  },
+  {
+    "id": "cross-0",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_1bcd2f57ac",
+    "answer_correct": true,
+    "grounded": false,
+    "citation_supported": false,
+    "reason": "Correct 16.30 percent answer, but translates the source's age group 65 and older as over 65, changing the boundary of an added statistic."
+  },
+  {
+    "id": "native-es-7684628#0",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_6d4eed308e",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct Diwali celebrations and customs, supported by the cited Spanish passages."
+  },
+  {
+    "id": "hotpot-5ae0ff95554299422ee995b0",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_eb3f6a6062",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct Larry Johnson Jr. answer with both parentage and birth-date evidence."
+  },
+  {
+    "id": "missing-3",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_cd2eb156c4",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Accurate missing-nationality answer and cited descriptions of the available documents."
+  },
+  {
+    "id": "missing-5",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_860a04428c",
+    "answer_correct": true,
+    "grounded": false,
+    "citation_supported": false,
+    "reason": "Correct missing replacement-period answer, but silently changes both cited 105 cm gun measurements to 105 mm."
+  },
+  {
+    "id": "hotpot-5a887898554299206df2b2a2",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_4386b9d167",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct no answer with both plant-family classifications and supported examples."
+  },
+  {
+    "id": "hotpot-5a778b345542992a6e59decf",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_fce32432d4",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct birth-date comparison supported by both biographies."
+  },
+  {
+    "id": "native-es-313181#0",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_c90f568ac9",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct meal-gap explanation and source-supported additional tea customs."
+  },
+  {
+    "id": "missing-5",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_c9f60c02f1",
+    "answer_correct": true,
+    "grounded": false,
+    "citation_supported": false,
+    "reason": "Correct missing replacement timeline, but an added gun specification silently changes 105 cm in the source to 105 mm."
+  },
+  {
+    "id": "hotpot-5ac113e2554299294b21909a",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_a7d71437a7",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct lyricists, with the whole-musical credit passage and debut biography reached and cited."
+  },
+  {
+    "id": "native-zh-674078#0",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_4b6920fb16",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct 1878 founding; explicitly discusses the contradictory 1887 source and cites the supporting majority."
+  },
+  {
+    "id": "missing-2",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_042eea3738",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": false,
+    "reason": "Accurate missing-poverty answer and source summaries, but no attached numbered citations."
+  },
+  {
+    "id": "native-ko-755",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_06e307badf",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct Sofia answer supported by Korean citations."
+  },
+  {
+    "id": "hotpot-5ae7821b5542997ec2727678",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_e821c7f76b",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct 1993 answer with both identification and designation evidence."
+  },
+  {
+    "id": "native-ko-1078",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_24d1ec5127",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct ampere relation and supported ampere-hour comparison. Its quoted current-definition statement inherits an outdated source."
+  },
+  {
+    "id": "native-fr-6556824#0",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_9483efa622",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Strategic location, Seleucid capital and cultural role are established; additional historical discussion follows cited passages."
+  },
+  {
+    "id": "cross-2",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_167b3c8940",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct Indian nationality and supported biographical details."
+  },
+  {
+    "id": "missing-3",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_09027c5f75",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Accurate missing-nationality answer with cited source coverage."
+  },
+  {
+    "id": "hotpot-5ae0ff95554299422ee995b0",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_3901c92b19",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct Larry Johnson Jr. answer with cited parentage and birth-date evidence."
+  },
+  {
+    "id": "native-de-1147888#0",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_a383ea8e44",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct Yellowstone location, with sourced proportions, geography and establishment details."
+  },
+  {
+    "id": "native-en-2839",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_17fc634fbf",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct microscopic-organism definition and source-supported additional uses of the term."
+  },
+  {
+    "id": "native-en-600",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_208ae833dc",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct 1517 start with supported Luther and centenary context."
+  },
+  {
+    "id": "native-en-600",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_6002cae132",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct 1517 start and source-supported Reformation context."
+  },
+  {
+    "id": "cross-5",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_5d11d61dac",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct noble-value belief, with faithful translation and supported examples of other authors."
+  },
+  {
+    "id": "native-fr-11892575#0",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_d8717a546e",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": false,
+    "reason": "Correct and grounded supernova explanation, but the Latin nova etymology is attached to citation 4, which lacks it. The relevant etymology is in retrieved passage 2, cited elsewhere for remnants."
+  },
+  {
+    "id": "hotpot-5a8c2bb4554299240d9c20ac",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_61cda60e61",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct university with festival-invitee and ministerial-role evidence."
+  },
+  {
+    "id": "native-fr-6556824#0",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_77b0ebca5f",
+    "answer_correct": true,
+    "grounded": false,
+    "citation_supported": false,
+    "reason": "Correct core importance of Antioch, but treats Saint Symeon and Seleucia as equivalent where the cited source explicitly says that identification is uncertain."
+  },
+  {
+    "id": "hotpot-5ae46b615542995dadf24327",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_d33d29947e",
+    "answer_correct": true,
+    "grounded": false,
+    "citation_supported": false,
+    "reason": "Correct profession comparison, but adds Rosebud's thriller/drama genre and Laura's film-noir genre without support in any retrieved passage."
+  },
+  {
+    "id": "native-ko-1078",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_93f694f7be",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct ampere relation. Added ampere-hour and historical claims follow the citations, including source errors: a contradictory one-second ampere-hour statement and an outdated current-definition date. This is source support, not validation of those source facts."
+  },
+  {
+    "id": "native-de-3163303#0",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_46fd2e138c",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct Sacramento answer with sourced geography and dated population."
+  },
+  {
+    "id": "missing-4",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_539d9aec1c",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": false,
+    "reason": "Accurate missing-distance answer, but factual summaries of the documents lack attached numbered citations."
+  },
+  {
+    "id": "hotpot-5a887898554299206df2b2a2",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_0ff66801ce",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct no answer with supported orchid and mint classifications."
+  },
+  {
+    "id": "cross-3",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_c5df1ac3b9",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct lamb and sheep answer with supported dietary context."
+  },
+  {
+    "id": "native-zh-674078#0",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_3b58931c06",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct 1878 founding and explicit handling of the conflicting source year."
+  },
+  {
+    "id": "native-fr-6556824#0",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_b2aa0c762a",
+    "answer_correct": true,
+    "grounded": false,
+    "citation_supported": false,
+    "reason": "Correct strategic and cultural importance, but adds the fourteenth century for Ibn Battuta where the retrieved text has lost its century field."
+  },
+  {
+    "id": "native-de-1147888#0",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_be5c25862e",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct Yellowstone location and source-supported geographic and establishment details."
+  },
+  {
+    "id": "native-en-600",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_e7e6a83349",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct 1517 answer and supported Reformation context."
+  },
+  {
+    "id": "cross-5",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_90d89abc12",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct noble-value belief with supported translation and examples."
+  },
+  {
+    "id": "cross-1",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_f646fd7c21",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct dependence on forward differences and higher orders, with explicit acknowledgment of the truncated formula."
+  },
+  {
+    "id": "native-fr-6556824#0",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_ebd5e6d80c",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct strategic and cultural importance; preserves the source's caveat about the port's economic importance."
+  },
+  {
+    "id": "hotpot-5a8c2bb4554299240d9c20ac",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_df1588cce1",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct university with both festival-invitee and ministerial-role evidence."
+  },
+  {
+    "id": "cross-5",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_15e91d935a",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct noble-value belief and source-supported translation and author examples."
+  },
+  {
+    "id": "native-es-313181#0",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_e8fdad0057",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct meal-gap explanation with supported tea-time variants and hotel example."
+  },
+  {
+    "id": "native-zh-509765#0",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_445d40b23a",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct DNA and histone composition with supported chemical and structural detail."
+  },
+  {
+    "id": "hotpot-5ae7821b5542997ec2727678",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_95305bd592",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": false,
+    "reason": "Correct year with all evidence retrieved, but the film-to-plaza connection has no supporting attached citation; only the designation passage is cited."
+  },
+  {
+    "id": "hotpot-5a79332555429907847277e7",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_40773c97ff",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct death-date comparison with supported Madrid location."
+  },
+  {
+    "id": "cross-5",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_b7430aa3c3",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct noble-value belief with supported translation and author examples."
+  },
+  {
+    "id": "native-en-2839",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_64f46db63e",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct microscopic-organism definition and source-supported additional examples."
+  },
+  {
+    "id": "native-es-7684628#0",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_c29023c65c",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct Diwali meanings and celebrations with supporting citations."
+  },
+  {
+    "id": "cross-6",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_52ffa22197",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct legal subfield triad and source-grounded methodological explanation."
+  },
+  {
+    "id": "native-fr-11892575#0",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_015ccdf868",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct supernova definition, mechanisms and history; etymology is attached to the appropriate passage."
+  },
+  {
+    "id": "hotpot-5a887898554299206df2b2a2",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_7c9019a1cd",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct no answer with both plant-family classifications supported."
+  },
+  {
+    "id": "cross-4",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_19cf88b9d4",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct at-least-1-km answer and cited protest context."
+  },
+  {
+    "id": "native-de-1147888#0",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_2996c72e75",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct Yellowstone location, with sourced geographic dimensions, elevation and volcanic context."
+  },
+  {
+    "id": "native-es-313181#0",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_1d44578480",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct meal-gap explanation with supported and distinguished tea-time variants."
+  },
+  {
+    "id": "cross-7",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_d9c1d3a0e7",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct 1980-1990 period, preserves gradual replacement, and accurately lists the source's tank variants."
+  },
+  {
+    "id": "native-zh-509765#0",
+    "variant": "baseline",
+    "repeat": 0,
+    "message_id": "m_7b4cb2d081",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct DNA and histone composition with supported structural details."
+  },
+  {
+    "id": "cross-2",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_e32a0aa958",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct Indian nationality with supported biographical details."
+  },
+  {
+    "id": "native-es-7684628#0",
+    "variant": "baseline",
+    "repeat": 1,
+    "message_id": "m_96b3eebdf1",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct Diwali meanings and customs with supporting citations."
+  },
+  {
+    "id": "cross-7",
+    "variant": "follow_links_ids",
+    "repeat": 1,
+    "message_id": "m_7f10929f99",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct 1980-1990 interval with the gradual-replacement qualification and accurate variant list."
+  },
+  {
+    "id": "native-ko-1078",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_c7ce0b77a5",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": true,
+    "reason": "Correct requested ampere relation and faithful citations, but repeats a malformed source electron count with a missing exponent, plus the outdated definition date. Source support must not be read as factual validation of these additions."
+  },
+  {
+    "id": "missing-4",
+    "variant": "follow_links_ids",
+    "repeat": 0,
+    "message_id": "m_9b43628c3c",
+    "answer_correct": true,
+    "grounded": true,
+    "citation_supported": false,
+    "reason": "Accurate missing-distance answer and document description, but no attached numbered citation."
+  }
+]

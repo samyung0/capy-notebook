@@ -1,52 +1,352 @@
 [
-  ["En 'His memory is a sieve', nombre explícitamente la figura retórica y explique la comparación.", "La figura retórica es una metáfora.", "Sugiere que él olvida cosas como un colador deja pasar el material.", "Esta es una metáfora: las cosas se deslizan de su memoria como se deslizan a través de los agujeros de un colador.", "Es una afirmación científica literal de que su cerebro es una herramienta de cocina de metal."],
-  ["En 'The lake was like glass', nombre explícitamente la figura retórica y explique la cualidad compartida.", "La figura retórica es una símil.", "La comparación sugiere que la superficie del lago es lisa o tranquila como el vidrio.", "Es un símil que compara el agua calma y lisa con el vidrio.", "La frase dice literalmente que todo el lago se ha convertido en vidrio sólido, sin comparación."],
-  ["En 'The wind whispered through the trees', nombre explícitamente la figura retórica e identifique la acción humana.", "La figura retórica es personificación.", "Susurrar es la acción humana atribuida al viento.", "Esta es personificación porque al viento se le atribuye la acción humana de hablar en susurro.", "Es un reporte literal de un humano dentro de cada árbol, y no se atribuye ninguna acción al viento."],
-  ["En 'I waited a thousand years for the bus', nombre explícitamente el recurso de exageración y explique el significado pretendido.", "El dispositivo es hipérbole.", "El hablante significa que la espera se sintió muy larga, no que pasaron literalmente mil años.", "La hipérbole transmite una espera que se siente insoportablemente larga en lugar de un milenio real.", "Esta es una medición histórica exacta que prueba que el hablante tiene más de mil años de edad."],
-  ["Un organizador cuenta un chiste para 'break the ice' en una primera reunión. Explique la expresión idiomática e identifique la situación en la que se usa aquí.", "La expresión idiomática significa reducir la incomodidad o hacer que la gente se sienta a gusto.", "Aquí se usa cuando la gente se conoce por primera vez.", "El chiste ayuda a la gente a relajarse, en el contexto de una reunión inicial.", "El organizador debe romper agua congelada durante una reunión que nunca tiene lugar."],
-  ["'Alex told Sam that he had won.' Indica los dos posibles referentes de 'he'.", "Él podría referirse a Alex.", "Él podría referirse a Sam.", "Alex o Sam pueden ser la persona que ganó.", "Él solo puede referirse a una tercera persona llamada Lee que nunca se menciona."],
-  ["'Las carreteras estaban heladas, por lo tanto el partido se pospuso.' Identifica la causa y el resultado declarados.", "Las carreteras heladas son la causa declarada.", "Posponer el partido es el resultado.", "El hielo en las carreteras lleva a la decisión de posponer el partido.", "La posposición causa el hielo anterior, y el partido tiene lugar según lo programado originalmente."],
-  ["Compara 'Mina was tired, but she continued' con 'Mina was tired, and she was hungry.' Indica la relación marcada por cada conector.", "But marca un contraste entre el cansancio y continuar.", "And añade la información de que Mina tenía hambre.", "La primera vincula ideas contrastantes; la segunda añade otra condición junto al cansancio.", "But significa adición simple y and señala que el hambre contradice el cansancio."],
-  ["'A vase stood beside a book. The vase fell and shattered. This upset Jo.' ¿A qué se refiere 'this' y quién está molesto?", "Esto se refiere a que el jarrón cayó y se rompió.", "Jo está molesto.", "La rotura del jarrón es a lo que esto apunta, y Jo es la persona afectada.", "Esto significa que el libro fue reparado, y el texto dice solo que Mina estaba molesta."],
-  ["Explica la diferencia entre 'Let's eat, Grandma' y 'Let's eat Grandma'.", "Con la coma, abuela es quien se invita a comer.", "Sin la coma, la frase presenta a abuela como lo que será comido.", "La coma hace de abuela la persona a quien se dirige; omitirla la convierte en objeto gramatical de comer.", "Ambas frases significan sin ambigüedad que abuela ya comió y nadie habla con ella."],
-  ["Lena dijo: 'El puente es seguro'. El narrador añadió que no se había realizado ninguna inspección'. Identifique la afirmación de Lena y la declaración del narrador.", "Lena afirma que el puente es seguro.", "El narrador declara que no ha sido inspeccionado.", "La seguridad es la afirmación de Lena; la ausencia de una inspección es información proporcionada por el narrador.", "El narrador garantiza la seguridad después de una inspección, mientras que Lena dice que el puente está cerrado."],
-  ["'El jardín necesita agua: su suelo está seco y sus hojas se marchitan'. Identifique la afirmación y las observaciones de apoyo.", "La afirmación es que el jardín necesita agua.", "El suelo seco y las hojas marchitas son las observaciones de apoyo.", "El escritor argumenta a favor de regar, citando la tierra seca y las hojas mustias como evidencia.", "La afirmación es que el jardín está inundado, apoyada por suelo empapado y hojas erguidas."],
-  ["Un escritor ve a un perro nadar y afirma que todos los perros aman el agua. Indique qué respalda la observación y por qué la afirmación más amplia es demasiado fuerte.", "Muestra que el perro observado nadó.", "Un ejemplo no establece una preferencia compartida por todos los perros.", "La evidencia concierne a un perro que nada; no puede probar que todos los perros disfrutan del agua.", "La observación prueba que ningún perro puede nadar y que todos los perros desprecian el agua."],
-  ["'Ari se puso un abrigo y tomó un paraguas'. Dé una acción explícita y una inferencia plausible pero no probada sobre el clima.", "Ari explícitamente tomó un paraguas.", "Es posible que se espere lluvia, pero el pasaje no establece que esté lloviendo.", "El texto dice directamente que Ari tomó un paraguas; esperar lluvia es una posibilidad razonable en lugar de un informe meteorológico probado.", "El pasaje establece explícitamente que está nevando y que Ari dejó el paraguas atrás."],
-  ["'Las tres lámparas en la habitación están apagadas'. Indique qué se establece sobre esas lámparas y si esto prueba que todo el edificio está oscuro.", "Las tres lámparas en la habitación especificada están apagadas.", "La oración no establece que todo el edificio esté oscuro.", "Solo se dice que las lámparas de esa habitación están apagadas; la iluminación en otras partes del edificio permanece sin especificar.", "Cada lámpara en el edificio está definitivamente encendida y la oración prueba que cada habitación está oscura."],
-  ["Resume: 'El nuevo itinerario es más rápido en horas tranquilas, pero el tráfico intenso puede eliminar esa ventaja.' Mantenga el beneficio y su condición.", "El itinerario puede ser más rápido en el tráfico tranquilo.", "El tráfico intenso puede eliminar la ventaja de velocidad.", "Ahorra tiempo cuando el tráfico es ligero, pero ese ahorro puede desaparecer cuando el tráfico se vuelve intenso.", "El itinerario siempre es más rápido en todo tipo de tráfico y nunca pierde su ventaja."],
-  ["El pasaje dice que una biblioteca abre a las nueve. Un resumen añade 'que es mucho demasiado tarde'. Identifique el hecho de la fuente y la opinión añadida.", "Que abre a las nueve es el hecho proporcionado por el pasaje.", "Llamar a esa hora mucho demasiado tarde es un juicio añadido.", "Las nueve en punto provienen de la fuente, mientras que desaprobar esa hora de apertura es la propia evaluación del resumidor.", "El pasaje dice que la biblioteca nunca abre y proporciona la opinión exacta de que las nueve son demasiado temprano."],
-  ["Compare 'The door is locked' con 'The door is not locked'. Explique la afirmación de cada oración.", "La primera afirma que la puerta está cerrada con llave.", "La segunda niega que la puerta esté cerrada con llave.", "Uno dice que el cerrojo está activado; el otro dice que no es así.", "Ambas declaraciones dicen que la puerta ha sido físicamente retirada y no hacen ninguna afirmación sobre si está cerrada con llave."],
-  ["Contraste 'The parcel may arrive today' y 'The parcel will arrive today' en cuanto a la certeza expresada.", "May presenta la llegada de hoy como una posibilidad.", "Will presenta la llegada de hoy como una expectativa o predicción afirmada.", "El primero permite la llegada como posible, mientras que el segundo la establece como lo que se espera que suceda.", "May garantiza que la entrega ya ocurrió ayer, mientras que will niega toda posibilidad de entrega."],
-  ["Distinga 'Some players are tired' de 'All players are tired'. Establezca el alcance de cada uno.", "Some dice que al menos parte del grupo está cansado sin afirmar que todos los jugadores lo están.", "All dice que cada jugador del grupo está cansado.", "El primero afirma el cansancio para al menos algunos miembros, mientras que el segundo lo extiende a todo el grupo.", "Some significa que nadie está cansado y all significa que exactamente un jugador está cansado."],
-  ["'Solo puedes entrar si tienes un pase.' Expresa la condición necesaria y si la frase garantiza la entrada a todos los titulares de un pase.", "Tener un pase es necesario para la entrada.", "La frase por sí sola no garantiza la entrada a todos los titulares de un pase.", "La entrada requiere un pase, pero no se afirma que poseerlo sea garantía completa de admisión.", "No se necesita un pase y se garantiza la entrada a todas las personas sin él."],
-  ["'Devuelve cada artículo prestado excepto la carpeta roja.' Explica qué debe devolverse y qué artículo está exento.", "Todos los demás artículos prestados deben devolverse.", "La carpeta roja está exenta de esta instrucción de devolución.", "Trae de vuelta los artículos prestados excepto la carpeta roja, que la instrucción excluye.", "Mantén todos los artículos prestados y devuelve solo una carpeta azul no prestada."],
-  ["'Lava la taza antes de llenarla.' Expresa la primera acción y la acción posterior.", "Lavar la taza viene primero.", "Llenar la taza viene después.", "La taza se lava y luego se llena.", "Llena la taza primero y la instrucción prohíbe lavarla después o antes."],
-  ["'She sat on the bank and watched the river.' Explica el significado de 'bank' aquí e identifica la pista contextual.", "Bank significa la tierra junto al río.", "La referencia a mirar el río apoya ese significado.", "Es una orilla de río, con la mención cercana del río que aclara la palabra.", "Bank debe significar una institución financiera porque la frase no contiene ninguna referencia al agua."],
-  ["Compara work en el uso cotidiano 'I worked hard' con el uso de física 'No work was done because there was no displacement.' Explica los dos significados.", "En el uso cotidiano, work puede significar esfuerzo o actividad.", "El trabajo mecánico en física requiere un componente de fuerza adecuado actuando a través del desplazamiento.", "El lenguaje ordinario puede llamar trabajo al esfuerzo, mientras que la cantidad física depende de la fuerza actuando a lo largo del movimiento.", "En el uso cotidiano, work siempre significa exactamente fuerza por desplazamiento, mientras que en física significa cualquier sensación de cansancio."],
-  ["En un poema corto, 'Come home' comienza cada estrofa. Identifica la frase repetida y un efecto plausible.", "La frase repetida es Come home.", "La repetición puede enfatizar el anhelo o la urgencia por el regreso de alguien.", "Repetir Come home al inicio de cada estrofa resalta el deseo del hablante de que alguien regrese.", "La frase nunca se repite y el poema celebra explícitamente el deseo de que nadie regrese."],
-  ["En 'silver snakes slide silently', nombra explícitamente el recurso de repetición del sonido inicial e identifica el sonido repetido.", "El dispositivo es la aliteración.", "El sonido inicial /s/ se repite.", "Esta es una aliteración construida alrededor de sonidos s repetidos al inicio de palabras.", "Es una rima basada en que cada palabra termina con el sonido de cat."],
-  ["'El agudo aroma de pino llenó el aire frío.' Identifica el sentido principal evocado por 'aroma' y cita la fuente de ese aroma.", "Apela al sentido del olfato.", "El pino es la fuente declarada del aroma.", "La línea evoca el olfato, específicamente el olor a pino.", "La línea apela solo a la vista y dice que el olor proviene de naranjas."],
-  ["'El salón vacío resonó. «Qué apacible», pensé.' Distingue una atmósfera sugerida por el salón de la actitud declarada del hablante.", "El salón vacío y resonante puede sugerir una atmósfera solitaria o silenciosa.", "El hablante lo considera apacible.", "El lugar puede sentirse solitario y tranquilo, mientras que el narrador acoge explícitamente su paz.", "El salón se describe como abarrotado y ruidoso, y el hablante lo llama explícitamente aterrador."],
-  ["'Vitoreamos cuando se abrieron las puertas. Luego vimos los escombros y nos quedamos en silencio.' Identifica el tono antes y después del descubrimiento.", "El tono inicial es de entusiasmo o celebración.", "El tono posterior muestra conmoción o un ánimo sombrío.", "La alegría al abrirse las puertas da paso a una conmoción contenida al ver los destrozos.", "Al principio los hablantes callan de tristeza y después celebran los escombros."],
-  ["Nadie estaba mirando, sin embargo Noor devolvió la cartera perdida. Infiera una cualidad y identifique la acción que la respalda.", "La acción sugiere honestidad.", "Noor devuelve una cartera perdida incluso sin testigos.", "Noor parece honesta, como se demuestra al devolver la cartera cuando nadie la observa.", "Noor claramente roba la cartera para aplausos, demostrando que nadie nunca la devuelve."],
-  ["Distinga el narrador de una historia ficticia de su autor.", "El narrador es la voz o figura que cuenta la historia.", "El autor es la persona que crea la obra.", "La voz que cuenta la historia es su narrador; el escritor real que construye la obra es su autor.", "Cada narrador ficticio es automáticamente el autor real, y no puede existir distinción."],
-  ["Un narrador en primera persona dice: 'Esperé fuera de la puerta de la sala de reuniones cerrada y no pude ver ni oír lo que ocurría adentro'. Establezca qué experimenta directamente el narrador y una limitación en su conocimiento.", "El narrador experimenta directamente esperar afuera.", "El relato no da acceso directo a lo que ocurre adentro de la reunión.", "El hablante conoce su propia espera, pero los eventos más allá de la puerta cerrada están fuera de su observación directa.", "El narrador ve directamente cada acción dentro de la sala y nunca espera afuera."],
-  ["Un narrador dice: 'Nunca leí la carta', pero luego admite haber leído esa misma carta. Identifique la contradicción y su efecto en la fiabilidad.", "La negación de haber leído entra en conflicto con la posterior admisión de haberla leído.", "La contradicción da motivo para cuestionar la fiabilidad del narrador.", "El narrador primero niega haber leído la carta y luego admite haberlo hecho, lo cual socava la confianza en el relato.", "Las declaraciones están totalmente de acuerdo y prueban que el narrador nunca puede ser poco fiable."],
-  ["El público ve una trampa oculta, mientras un personaje camina hacia ella sin saberlo. Establezca el conocimiento del público y el conocimiento del personaje.", "El público sabe que la trampa está ahí.", "El personaje no sabe nada sobre la trampa.", "Los espectadores ven el peligro, pero el personaje que se acerca permanece ignorante de él.", "El personaje sabe sobre la trampa mientras que al público no se le ha dicho nada al respecto."],
-  ["Una historia muestra primero una cuerda desgastada; luego se rompe durante una escalada. Identifique la pista anterior y explique la conexión con el evento posterior.", "La pista anterior es el estado desgastado de la cuerda.", "Ese daño anticipa el rompimiento de la cuerda durante la escalada.", "El desgaste inicial en la cuerda sugiere el fallo que ocurre más tarde.", "La pista anterior es un puente de acero nuevo, y la cuerda nunca se rompe."],
-  ["Para un relato en el que un corredor presuntuoso pierde después de descansar demasiado, distinga un detalle de la trama de un posible tema.", "Perder después de un descanso excesivamente largo es un evento de la trama.", "La confianza excesiva puede llevar al fracaso es un posible tema.", "La pérdida del corredor tras un descanso largo pertenece a los hechos; la advertencia sobre la confianza excesiva es una idea más amplia.", "La trama es que nadie corre nunca, y el único tema posible es que la confianza excesiva garantiza siempre el éxito."],
-  ["Un personaje lleva una llave después de abandonar su hogar de la infancia y la llama 'una parte de donde pertenezco'. Identifique el objeto y un significado simbólico respaldado.", "El objeto es una llave.", "Puede simbolizar la conexión con el hogar o el sentido de pertenencia.", "La llave es el objeto, representando el vínculo continuo del personaje con su hogar.", "El objeto es un mapa que simboliza explícitamente el odio hacia cada hogar y relación."],
-  ["Una historia ambientada durante un viaje presente se detiene para describir la infancia del narrador. Identifique el cambio y el tiempo anterior que se recuerda.", "La narrativa se desvía hacia un flashback.", "Los eventos recordados provienen de la infancia del narrador.", "Un flashback interrumpe el viaje para volver a visitar los años tempranos del hablante.", "La historia salta a un evento futuro garantizado y nunca menciona el pasado."],
-  ["'Olvidaste otra vez.' 'Lo sé. Lo siento.' Dé una tensión de relación respaldada y la respuesta del segundo hablante.", "El primer hablante expresa frustración por una falla repetida.", "El segundo hablante lo reconoce y se disculpa.", "Un hablante está molesto por que haya sucedido de nuevo; el otro acepta la queja y dice lo siento.", "Ambos hablantes niegan cualquier error y responden felicitándose mutuamente."],
-  ["Compara 'Please inform me of your decision' con 'Let me know what you pick.' Identifica cuál redacción es más formal y si ambas oraciones solicitan acciones diferentes.", "Please inform me of your decision es más formal.", "Ambas piden a la otra persona que comunique su decisión.", "La redacción con inform me es más formal; ambas versiones piden al oyente que le diga al hablante qué decide.", "Ambas son idénticas en redacción y ninguna expresa una solicitud de decisión."],
-  ["Describes un resultado científico a especialistas y a niños pequeños. Elige una opción de vocabulario apropiada para cada audiencia.", "Una audiencia de especialistas puede entender terminología técnica precisa.", "Los niños pequeños pueden necesitar palabras familiares y explicaciones de términos desconocidos.", "Los expertos pueden usar el vocabulario técnico del campo; los niños se benefician del lenguaje cotidiano con nuevos términos explicados.", "Los niños siempre requieren jerga avanzada sin explicar, mientras que los especialistas nunca pueden entender ningún término técnico."],
-  ["Corrige 'She go to school every day' en inglés estándar en presente y identifica la persona y el número gramatical de su sujeto.", "La oración corregida es She goes to school every day.", "El sujeto she es tercera persona singular.", "La oración debe leerse She goes to school every day, y she denota un sujeto de tercera persona singular.", "La corrección es She go to school every day; she es primera persona plural."],
-  ["Elige 'is' o 'are' en 'The list of names ___ on the desk' e identifica el núcleo del sujeto que controla la concordancia.", "La elección correcta es is.", "List es el núcleo singular del sujeto.", "Usa is porque list, en lugar de names, es el núcleo singular del sujeto.", "Usa are porque desk es el sujeto plural."],
-  ["Compara 'Close the window' y 'Could you please close the window?' Establece la acción que ambas solicitan y la diferencia de cortesía.", "Ambas solicitan cerrar la ventana.", "La segunda está redactada de manera más cortés o indirecta.", "Piden la misma acción de cerrar la ventana, con la forma de pregunta añadiendo una solicitud más cortés e indirecta.", "La primera pide abrir la ventana, mientras que la segunda prohíbe cerrarla y es necesariamente un insulto."],
-  ["¿Por qué traducir 'spill the beans' palabra por palabra puede engañar a un lector? Dé el significado idiomático y la imagen literal.", "La frase idiomática significa revelar un secreto.", "Las palabras literales describen esparcer frijoles fuera de un recipiente.", "Su significado intencional es divulgar información secreta, aunque las palabras literalmente pintan frijoles derramándose.", "La frase idiomática significa guardar cada secreto para siempre y literalmente describe pintar una pared."],
-  ["Parafrasea 'Mira did not send the letter yesterday' preservando la negación y la referencia temporal.", "La paráfrasis debe mantener que Mira no envió la carta.", "Debe mantener ayer como la referencia temporal declarada.", "Ayer, Mira no envió la carta.", "Mira ciertamente envió la carta mañana."],
-  ["El original dice 'Tres estudiantes llegaron después del mediodía'; una paráfrasis dice 'Personas vinieron'. Identifique dos detalles específicos perdidos.", "Se pierde el conteo exacto de tres estudiantes.", "Se pierde la llegada después del mediodía.", "Se pierden el número y el hecho de que eran estudiantes, además de la llegada después del mediodía.", "Pierde el conteo exacto de diez profesores y la afirmación de que nadie llegó."],
-  ["Después de que se rompieron promesas repetidas, un orador pregunta: '¿Cómo podría confiar en ti ahora?' Explique su propósito retórico probable y si principalmente pide un procedimiento factual.", "Expresa duda o crítica sobre la confiabilidad de la persona.", "Es principalmente retórica en lugar de una solicitud de instrucciones factuales paso a paso.", "La pregunta expresa desconfianza, sirviendo como crítica en lugar de preguntar genuinamente por un procedimiento.", "Es una promesa entusiasta de confianza completa y una solicitud literal de un manual de reparación numerado."],
-  ["'Finalmente la habitación quedó en silencio. Ella sonrió, luego miró la silla vacía.' Dé dos lecturas defensibles y la pista textual para cada una.", "La sonrisa puede sugerir alivio o placer por el silencio.", "Mirar la silla vacía puede sugerir conciencia de la ausencia de alguien o una pérdida.", "Su sonrisa apoya el alivio, mientras su atención a la silla vacía apoya una sensación de ausencia.", "El pasaje prueba que ella está gritando a una silla llena y no da señal de silencio o una sonrisa."]
+  [
+    "En 'His memory is a sieve', nombre explícitamente la figura retórica y explique la comparación.",
+    "La figura retórica es una metáfora.",
+    "Sugiere que él olvida cosas como un colador deja pasar el material.",
+    "Esta es una metáfora: las cosas se deslizan de su memoria como se deslizan a través de los agujeros de un colador.",
+    "Es una afirmación científica literal de que su cerebro es una herramienta de cocina de metal."
+  ],
+  [
+    "En 'The lake was like glass', nombre explícitamente la figura retórica y explique la cualidad compartida.",
+    "La figura retórica es una símil.",
+    "La comparación sugiere que la superficie del lago es lisa o tranquila como el vidrio.",
+    "Es un símil que compara el agua calma y lisa con el vidrio.",
+    "La frase dice literalmente que todo el lago se ha convertido en vidrio sólido, sin comparación."
+  ],
+  [
+    "En 'The wind whispered through the trees', nombre explícitamente la figura retórica e identifique la acción humana.",
+    "La figura retórica es personificación.",
+    "Susurrar es la acción humana atribuida al viento.",
+    "Esta es personificación porque al viento se le atribuye la acción humana de hablar en susurro.",
+    "Es un reporte literal de un humano dentro de cada árbol, y no se atribuye ninguna acción al viento."
+  ],
+  [
+    "En 'I waited a thousand years for the bus', nombre explícitamente el recurso de exageración y explique el significado pretendido.",
+    "El dispositivo es hipérbole.",
+    "El hablante significa que la espera se sintió muy larga, no que pasaron literalmente mil años.",
+    "La hipérbole transmite una espera que se siente insoportablemente larga en lugar de un milenio real.",
+    "Esta es una medición histórica exacta que prueba que el hablante tiene más de mil años de edad."
+  ],
+  [
+    "Un organizador cuenta un chiste para 'break the ice' en una primera reunión. Explique la expresión idiomática e identifique la situación en la que se usa aquí.",
+    "La expresión idiomática significa reducir la incomodidad o hacer que la gente se sienta a gusto.",
+    "Aquí se usa cuando la gente se conoce por primera vez.",
+    "El chiste ayuda a la gente a relajarse, en el contexto de una reunión inicial.",
+    "El organizador debe romper agua congelada durante una reunión que nunca tiene lugar."
+  ],
+  [
+    "'Alex told Sam that he had won.' Indica los dos posibles referentes de 'he'.",
+    "Él podría referirse a Alex.",
+    "Él podría referirse a Sam.",
+    "Alex o Sam pueden ser la persona que ganó.",
+    "Él solo puede referirse a una tercera persona llamada Lee que nunca se menciona."
+  ],
+  [
+    "'Las carreteras estaban heladas, por lo tanto el partido se pospuso.' Identifica la causa y el resultado declarados.",
+    "Las carreteras heladas son la causa declarada.",
+    "Posponer el partido es el resultado.",
+    "El hielo en las carreteras lleva a la decisión de posponer el partido.",
+    "La posposición causa el hielo anterior, y el partido tiene lugar según lo programado originalmente."
+  ],
+  [
+    "Compara 'Mina was tired, but she continued' con 'Mina was tired, and she was hungry.' Indica la relación marcada por cada conector.",
+    "But marca un contraste entre el cansancio y continuar.",
+    "And añade la información de que Mina tenía hambre.",
+    "La primera vincula ideas contrastantes; la segunda añade otra condición junto al cansancio.",
+    "But significa adición simple y and señala que el hambre contradice el cansancio."
+  ],
+  [
+    "'A vase stood beside a book. The vase fell and shattered. This upset Jo.' ¿A qué se refiere 'this' y quién está molesto?",
+    "Esto se refiere a que el jarrón cayó y se rompió.",
+    "Jo está molesto.",
+    "La rotura del jarrón es a lo que esto apunta, y Jo es la persona afectada.",
+    "Esto significa que el libro fue reparado, y el texto dice solo que Mina estaba molesta."
+  ],
+  [
+    "Explica la diferencia entre 'Let's eat, Grandma' y 'Let's eat Grandma'.",
+    "Con la coma, abuela es quien se invita a comer.",
+    "Sin la coma, la frase presenta a abuela como lo que será comido.",
+    "La coma hace de abuela la persona a quien se dirige; omitirla la convierte en objeto gramatical de comer.",
+    "Ambas frases significan sin ambigüedad que abuela ya comió y nadie habla con ella."
+  ],
+  [
+    "Lena dijo: 'El puente es seguro'. El narrador añadió que no se había realizado ninguna inspección'. Identifique la afirmación de Lena y la declaración del narrador.",
+    "Lena afirma que el puente es seguro.",
+    "El narrador declara que no ha sido inspeccionado.",
+    "La seguridad es la afirmación de Lena; la ausencia de una inspección es información proporcionada por el narrador.",
+    "El narrador garantiza la seguridad después de una inspección, mientras que Lena dice que el puente está cerrado."
+  ],
+  [
+    "'El jardín necesita agua: su suelo está seco y sus hojas se marchitan'. Identifique la afirmación y las observaciones de apoyo.",
+    "La afirmación es que el jardín necesita agua.",
+    "El suelo seco y las hojas marchitas son las observaciones de apoyo.",
+    "El escritor argumenta a favor de regar, citando la tierra seca y las hojas mustias como evidencia.",
+    "La afirmación es que el jardín está inundado, apoyada por suelo empapado y hojas erguidas."
+  ],
+  [
+    "Un escritor ve a un perro nadar y afirma que todos los perros aman el agua. Indique qué respalda la observación y por qué la afirmación más amplia es demasiado fuerte.",
+    "Muestra que el perro observado nadó.",
+    "Un ejemplo no establece una preferencia compartida por todos los perros.",
+    "La evidencia concierne a un perro que nada; no puede probar que todos los perros disfrutan del agua.",
+    "La observación prueba que ningún perro puede nadar y que todos los perros desprecian el agua."
+  ],
+  [
+    "'Ari se puso un abrigo y tomó un paraguas'. Dé una acción explícita y una inferencia plausible pero no probada sobre el clima.",
+    "Ari explícitamente tomó un paraguas.",
+    "Es posible que se espere lluvia, pero el pasaje no establece que esté lloviendo.",
+    "El texto dice directamente que Ari tomó un paraguas; esperar lluvia es una posibilidad razonable en lugar de un informe meteorológico probado.",
+    "El pasaje establece explícitamente que está nevando y que Ari dejó el paraguas atrás."
+  ],
+  [
+    "'Las tres lámparas en la habitación están apagadas'. Indique qué se establece sobre esas lámparas y si esto prueba que todo el edificio está oscuro.",
+    "Las tres lámparas en la habitación especificada están apagadas.",
+    "La oración no establece que todo el edificio esté oscuro.",
+    "Solo se dice que las lámparas de esa habitación están apagadas; la iluminación en otras partes del edificio permanece sin especificar.",
+    "Cada lámpara en el edificio está definitivamente encendida y la oración prueba que cada habitación está oscura."
+  ],
+  [
+    "Resume: 'El nuevo itinerario es más rápido en horas tranquilas, pero el tráfico intenso puede eliminar esa ventaja.' Mantenga el beneficio y su condición.",
+    "El itinerario puede ser más rápido en el tráfico tranquilo.",
+    "El tráfico intenso puede eliminar la ventaja de velocidad.",
+    "Ahorra tiempo cuando el tráfico es ligero, pero ese ahorro puede desaparecer cuando el tráfico se vuelve intenso.",
+    "El itinerario siempre es más rápido en todo tipo de tráfico y nunca pierde su ventaja."
+  ],
+  [
+    "El pasaje dice que una biblioteca abre a las nueve. Un resumen añade 'que es mucho demasiado tarde'. Identifique el hecho de la fuente y la opinión añadida.",
+    "Que abre a las nueve es el hecho proporcionado por el pasaje.",
+    "Llamar a esa hora mucho demasiado tarde es un juicio añadido.",
+    "Las nueve en punto provienen de la fuente, mientras que desaprobar esa hora de apertura es la propia evaluación del resumidor.",
+    "El pasaje dice que la biblioteca nunca abre y proporciona la opinión exacta de que las nueve son demasiado temprano."
+  ],
+  [
+    "Compare 'The door is locked' con 'The door is not locked'. Explique la afirmación de cada oración.",
+    "La primera afirma que la puerta está cerrada con llave.",
+    "La segunda niega que la puerta esté cerrada con llave.",
+    "Uno dice que el cerrojo está activado; el otro dice que no es así.",
+    "Ambas declaraciones dicen que la puerta ha sido físicamente retirada y no hacen ninguna afirmación sobre si está cerrada con llave."
+  ],
+  [
+    "Contraste 'The parcel may arrive today' y 'The parcel will arrive today' en cuanto a la certeza expresada.",
+    "May presenta la llegada de hoy como una posibilidad.",
+    "Will presenta la llegada de hoy como una expectativa o predicción afirmada.",
+    "El primero permite la llegada como posible, mientras que el segundo la establece como lo que se espera que suceda.",
+    "May garantiza que la entrega ya ocurrió ayer, mientras que will niega toda posibilidad de entrega."
+  ],
+  [
+    "Distinga 'Some players are tired' de 'All players are tired'. Establezca el alcance de cada uno.",
+    "Some dice que al menos parte del grupo está cansado sin afirmar que todos los jugadores lo están.",
+    "All dice que cada jugador del grupo está cansado.",
+    "El primero afirma el cansancio para al menos algunos miembros, mientras que el segundo lo extiende a todo el grupo.",
+    "Some significa que nadie está cansado y all significa que exactamente un jugador está cansado."
+  ],
+  [
+    "'Solo puedes entrar si tienes un pase.' Expresa la condición necesaria y si la frase garantiza la entrada a todos los titulares de un pase.",
+    "Tener un pase es necesario para la entrada.",
+    "La frase por sí sola no garantiza la entrada a todos los titulares de un pase.",
+    "La entrada requiere un pase, pero no se afirma que poseerlo sea garantía completa de admisión.",
+    "No se necesita un pase y se garantiza la entrada a todas las personas sin él."
+  ],
+  [
+    "'Devuelve cada artículo prestado excepto la carpeta roja.' Explica qué debe devolverse y qué artículo está exento.",
+    "Todos los demás artículos prestados deben devolverse.",
+    "La carpeta roja está exenta de esta instrucción de devolución.",
+    "Trae de vuelta los artículos prestados excepto la carpeta roja, que la instrucción excluye.",
+    "Mantén todos los artículos prestados y devuelve solo una carpeta azul no prestada."
+  ],
+  [
+    "'Lava la taza antes de llenarla.' Expresa la primera acción y la acción posterior.",
+    "Lavar la taza viene primero.",
+    "Llenar la taza viene después.",
+    "La taza se lava y luego se llena.",
+    "Llena la taza primero y la instrucción prohíbe lavarla después o antes."
+  ],
+  [
+    "'She sat on the bank and watched the river.' Explica el significado de 'bank' aquí e identifica la pista contextual.",
+    "Bank significa la tierra junto al río.",
+    "La referencia a mirar el río apoya ese significado.",
+    "Es una orilla de río, con la mención cercana del río que aclara la palabra.",
+    "Bank debe significar una institución financiera porque la frase no contiene ninguna referencia al agua."
+  ],
+  [
+    "Compara work en el uso cotidiano 'I worked hard' con el uso de física 'No work was done because there was no displacement.' Explica los dos significados.",
+    "En el uso cotidiano, work puede significar esfuerzo o actividad.",
+    "El trabajo mecánico en física requiere un componente de fuerza adecuado actuando a través del desplazamiento.",
+    "El lenguaje ordinario puede llamar trabajo al esfuerzo, mientras que la cantidad física depende de la fuerza actuando a lo largo del movimiento.",
+    "En el uso cotidiano, work siempre significa exactamente fuerza por desplazamiento, mientras que en física significa cualquier sensación de cansancio."
+  ],
+  [
+    "En un poema corto, 'Come home' comienza cada estrofa. Identifica la frase repetida y un efecto plausible.",
+    "La frase repetida es Come home.",
+    "La repetición puede enfatizar el anhelo o la urgencia por el regreso de alguien.",
+    "Repetir Come home al inicio de cada estrofa resalta el deseo del hablante de que alguien regrese.",
+    "La frase nunca se repite y el poema celebra explícitamente el deseo de que nadie regrese."
+  ],
+  [
+    "En 'silver snakes slide silently', nombra explícitamente el recurso de repetición del sonido inicial e identifica el sonido repetido.",
+    "El dispositivo es la aliteración.",
+    "El sonido inicial /s/ se repite.",
+    "Esta es una aliteración construida alrededor de sonidos s repetidos al inicio de palabras.",
+    "Es una rima basada en que cada palabra termina con el sonido de cat."
+  ],
+  [
+    "'El agudo aroma de pino llenó el aire frío.' Identifica el sentido principal evocado por 'aroma' y cita la fuente de ese aroma.",
+    "Apela al sentido del olfato.",
+    "El pino es la fuente declarada del aroma.",
+    "La línea evoca el olfato, específicamente el olor a pino.",
+    "La línea apela solo a la vista y dice que el olor proviene de naranjas."
+  ],
+  [
+    "'El salón vacío resonó. «Qué apacible», pensé.' Distingue una atmósfera sugerida por el salón de la actitud declarada del hablante.",
+    "El salón vacío y resonante puede sugerir una atmósfera solitaria o silenciosa.",
+    "El hablante lo considera apacible.",
+    "El lugar puede sentirse solitario y tranquilo, mientras que el narrador acoge explícitamente su paz.",
+    "El salón se describe como abarrotado y ruidoso, y el hablante lo llama explícitamente aterrador."
+  ],
+  [
+    "'Vitoreamos cuando se abrieron las puertas. Luego vimos los escombros y nos quedamos en silencio.' Identifica el tono antes y después del descubrimiento.",
+    "El tono inicial es de entusiasmo o celebración.",
+    "El tono posterior muestra conmoción o un ánimo sombrío.",
+    "La alegría al abrirse las puertas da paso a una conmoción contenida al ver los destrozos.",
+    "Al principio los hablantes callan de tristeza y después celebran los escombros."
+  ],
+  [
+    "Nadie estaba mirando, sin embargo Noor devolvió la cartera perdida. Infiera una cualidad y identifique la acción que la respalda.",
+    "La acción sugiere honestidad.",
+    "Noor devuelve una cartera perdida incluso sin testigos.",
+    "Noor parece honesta, como se demuestra al devolver la cartera cuando nadie la observa.",
+    "Noor claramente roba la cartera para aplausos, demostrando que nadie nunca la devuelve."
+  ],
+  [
+    "Distinga el narrador de una historia ficticia de su autor.",
+    "El narrador es la voz o figura que cuenta la historia.",
+    "El autor es la persona que crea la obra.",
+    "La voz que cuenta la historia es su narrador; el escritor real que construye la obra es su autor.",
+    "Cada narrador ficticio es automáticamente el autor real, y no puede existir distinción."
+  ],
+  [
+    "Un narrador en primera persona dice: 'Esperé fuera de la puerta de la sala de reuniones cerrada y no pude ver ni oír lo que ocurría adentro'. Establezca qué experimenta directamente el narrador y una limitación en su conocimiento.",
+    "El narrador experimenta directamente esperar afuera.",
+    "El relato no da acceso directo a lo que ocurre adentro de la reunión.",
+    "El hablante conoce su propia espera, pero los eventos más allá de la puerta cerrada están fuera de su observación directa.",
+    "El narrador ve directamente cada acción dentro de la sala y nunca espera afuera."
+  ],
+  [
+    "Un narrador dice: 'Nunca leí la carta', pero luego admite haber leído esa misma carta. Identifique la contradicción y su efecto en la fiabilidad.",
+    "La negación de haber leído entra en conflicto con la posterior admisión de haberla leído.",
+    "La contradicción da motivo para cuestionar la fiabilidad del narrador.",
+    "El narrador primero niega haber leído la carta y luego admite haberlo hecho, lo cual socava la confianza en el relato.",
+    "Las declaraciones están totalmente de acuerdo y prueban que el narrador nunca puede ser poco fiable."
+  ],
+  [
+    "El público ve una trampa oculta, mientras un personaje camina hacia ella sin saberlo. Establezca el conocimiento del público y el conocimiento del personaje.",
+    "El público sabe que la trampa está ahí.",
+    "El personaje no sabe nada sobre la trampa.",
+    "Los espectadores ven el peligro, pero el personaje que se acerca permanece ignorante de él.",
+    "El personaje sabe sobre la trampa mientras que al público no se le ha dicho nada al respecto."
+  ],
+  [
+    "Una historia muestra primero una cuerda desgastada; luego se rompe durante una escalada. Identifique la pista anterior y explique la conexión con el evento posterior.",
+    "La pista anterior es el estado desgastado de la cuerda.",
+    "Ese daño anticipa el rompimiento de la cuerda durante la escalada.",
+    "El desgaste inicial en la cuerda sugiere el fallo que ocurre más tarde.",
+    "La pista anterior es un puente de acero nuevo, y la cuerda nunca se rompe."
+  ],
+  [
+    "Para un relato en el que un corredor presuntuoso pierde después de descansar demasiado, distinga un detalle de la trama de un posible tema.",
+    "Perder después de un descanso excesivamente largo es un evento de la trama.",
+    "La confianza excesiva puede llevar al fracaso es un posible tema.",
+    "La pérdida del corredor tras un descanso largo pertenece a los hechos; la advertencia sobre la confianza excesiva es una idea más amplia.",
+    "La trama es que nadie corre nunca, y el único tema posible es que la confianza excesiva garantiza siempre el éxito."
+  ],
+  [
+    "Un personaje lleva una llave después de abandonar su hogar de la infancia y la llama 'una parte de donde pertenezco'. Identifique el objeto y un significado simbólico respaldado.",
+    "El objeto es una llave.",
+    "Puede simbolizar la conexión con el hogar o el sentido de pertenencia.",
+    "La llave es el objeto, representando el vínculo continuo del personaje con su hogar.",
+    "El objeto es un mapa que simboliza explícitamente el odio hacia cada hogar y relación."
+  ],
+  [
+    "Una historia ambientada durante un viaje presente se detiene para describir la infancia del narrador. Identifique el cambio y el tiempo anterior que se recuerda.",
+    "La narrativa se desvía hacia un flashback.",
+    "Los eventos recordados provienen de la infancia del narrador.",
+    "Un flashback interrumpe el viaje para volver a visitar los años tempranos del hablante.",
+    "La historia salta a un evento futuro garantizado y nunca menciona el pasado."
+  ],
+  [
+    "'Olvidaste otra vez.' 'Lo sé. Lo siento.' Dé una tensión de relación respaldada y la respuesta del segundo hablante.",
+    "El primer hablante expresa frustración por una falla repetida.",
+    "El segundo hablante lo reconoce y se disculpa.",
+    "Un hablante está molesto por que haya sucedido de nuevo; el otro acepta la queja y dice lo siento.",
+    "Ambos hablantes niegan cualquier error y responden felicitándose mutuamente."
+  ],
+  [
+    "Compara 'Please inform me of your decision' con 'Let me know what you pick.' Identifica cuál redacción es más formal y si ambas oraciones solicitan acciones diferentes.",
+    "Please inform me of your decision es más formal.",
+    "Ambas piden a la otra persona que comunique su decisión.",
+    "La redacción con inform me es más formal; ambas versiones piden al oyente que le diga al hablante qué decide.",
+    "Ambas son idénticas en redacción y ninguna expresa una solicitud de decisión."
+  ],
+  [
+    "Describes un resultado científico a especialistas y a niños pequeños. Elige una opción de vocabulario apropiada para cada audiencia.",
+    "Una audiencia de especialistas puede entender terminología técnica precisa.",
+    "Los niños pequeños pueden necesitar palabras familiares y explicaciones de términos desconocidos.",
+    "Los expertos pueden usar el vocabulario técnico del campo; los niños se benefician del lenguaje cotidiano con nuevos términos explicados.",
+    "Los niños siempre requieren jerga avanzada sin explicar, mientras que los especialistas nunca pueden entender ningún término técnico."
+  ],
+  [
+    "Corrige 'She go to school every day' en inglés estándar en presente y identifica la persona y el número gramatical de su sujeto.",
+    "La oración corregida es She goes to school every day.",
+    "El sujeto she es tercera persona singular.",
+    "La oración debe leerse She goes to school every day, y she denota un sujeto de tercera persona singular.",
+    "La corrección es She go to school every day; she es primera persona plural."
+  ],
+  [
+    "Elige 'is' o 'are' en 'The list of names ___ on the desk' e identifica el núcleo del sujeto que controla la concordancia.",
+    "La elección correcta es is.",
+    "List es el núcleo singular del sujeto.",
+    "Usa is porque list, en lugar de names, es el núcleo singular del sujeto.",
+    "Usa are porque desk es el sujeto plural."
+  ],
+  [
+    "Compara 'Close the window' y 'Could you please close the window?' Establece la acción que ambas solicitan y la diferencia de cortesía.",
+    "Ambas solicitan cerrar la ventana.",
+    "La segunda está redactada de manera más cortés o indirecta.",
+    "Piden la misma acción de cerrar la ventana, con la forma de pregunta añadiendo una solicitud más cortés e indirecta.",
+    "La primera pide abrir la ventana, mientras que la segunda prohíbe cerrarla y es necesariamente un insulto."
+  ],
+  [
+    "¿Por qué traducir 'spill the beans' palabra por palabra puede engañar a un lector? Dé el significado idiomático y la imagen literal.",
+    "La frase idiomática significa revelar un secreto.",
+    "Las palabras literales describen esparcer frijoles fuera de un recipiente.",
+    "Su significado intencional es divulgar información secreta, aunque las palabras literalmente pintan frijoles derramándose.",
+    "La frase idiomática significa guardar cada secreto para siempre y literalmente describe pintar una pared."
+  ],
+  [
+    "Parafrasea 'Mira did not send the letter yesterday' preservando la negación y la referencia temporal.",
+    "La paráfrasis debe mantener que Mira no envió la carta.",
+    "Debe mantener ayer como la referencia temporal declarada.",
+    "Ayer, Mira no envió la carta.",
+    "Mira ciertamente envió la carta mañana."
+  ],
+  [
+    "El original dice 'Tres estudiantes llegaron después del mediodía'; una paráfrasis dice 'Personas vinieron'. Identifique dos detalles específicos perdidos.",
+    "Se pierde el conteo exacto de tres estudiantes.",
+    "Se pierde la llegada después del mediodía.",
+    "Se pierden el número y el hecho de que eran estudiantes, además de la llegada después del mediodía.",
+    "Pierde el conteo exacto de diez profesores y la afirmación de que nadie llegó."
+  ],
+  [
+    "Después de que se rompieron promesas repetidas, un orador pregunta: '¿Cómo podría confiar en ti ahora?' Explique su propósito retórico probable y si principalmente pide un procedimiento factual.",
+    "Expresa duda o crítica sobre la confiabilidad de la persona.",
+    "Es principalmente retórica en lugar de una solicitud de instrucciones factuales paso a paso.",
+    "La pregunta expresa desconfianza, sirviendo como crítica en lugar de preguntar genuinamente por un procedimiento.",
+    "Es una promesa entusiasta de confianza completa y una solicitud literal de un manual de reparación numerado."
+  ],
+  [
+    "'Finalmente la habitación quedó en silencio. Ella sonrió, luego miró la silla vacía.' Dé dos lecturas defensibles y la pista textual para cada una.",
+    "La sonrisa puede sugerir alivio o placer por el silencio.",
+    "Mirar la silla vacía puede sugerir conciencia de la ausencia de alguien o una pérdida.",
+    "Su sonrisa apoya el alivio, mientras su atención a la silla vacía apoya una sensación de ausencia.",
+    "El pasaje prueba que ella está gritando a una silla llena y no da señal de silencio o una sonrisa."
+  ]
 ]

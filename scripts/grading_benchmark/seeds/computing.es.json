@@ -1,52 +1,352 @@
 [
-  ["Después de la asignación de pseudocódigo count = 7, distingue el nombre de la variable de su valor almacenado.", "El nombre de la variable es count.", "Su valor almacenado es 7.", "El identificador es count y actualmente contiene el número siete.", "El nombre es 7 y el valor almacenado es la palabra count."],
-  ["En este lenguaje, la división entera descarta la parte fraccionaria y la división real la conserva. Evalúa entero 7/2 y real 7/2.", "La división entera da 3.", "La división real da 3.5.", "Con enteros el resultado es tres; con división de números reales es tres y medio.", "La división entera da 4 y la división real da 2."],
-  ["Un bucle visita i = 0,1,2,3,4 pero debería visitar exactamente las primeras cuatro posiciones de un array de índice base cero. Identifica el índice extra y la condición correcta del límite superior.", "El índice 4 es la iteración extra.", "El bucle debería requerir i < 4 en lugar de i <= 4.", "Visita la quinta posición por error; probar estrictamente menor que cuatro corrige el límite.", "El índice 0 siempre es inválido, por lo que cambiar la condición a i <= 5 lo corrige."],
-  ["Aquí = asigna un valor y == prueba la igualdad. Explica x = 5 y x == 5.", "x = 5 almacena 5 en x.", "x == 5 comprueba si x es igual a 5 sin asignarle.", "El signo igual simple actualiza x a cinco; el signo doble compara su valor existente con cinco.", "Ambas expresiones siempre asignan diez a x."],
-  ["Con AND de cortocircuito de izquierda a derecha, explica por qué x != null AND x.ready evita una desreferenciación nula.", "Si x es nulo, la primera condición es falsa.", "Un primer operando falso evita la evaluación de x.ready.", "Nulo hace que la prueba izquierda falle, por lo que el cortocircuito salta el acceso al campo.", "AND siempre evalúa ambos operandos, pero nulo tiene automáticamente un campo ready."],
-  ["Una función imprime 5 y luego devuelve 8. Indique qué aparece en la salida y qué valor recibe el llamador.", "La salida impresa es 5.", "El valor devuelto por la función es 8.", "Se muestra cinco, mientras que la llamada se evalúa como ocho.", "Ocho se imprime y el llamador recibe cinco."],
-  ["Una función recursiva devuelve en n = 0; de lo contrario, se llama a sí misma con n - 1 para un entero positivo n. Identifique su caso base y paso de progreso.", "El caso base es n = 0.", "Restar uno mueve el n positivo hacia el caso base.", "Cero detiene la recursión, y cada llamada reduce n en uno hasta alcanzar ese valor de parada.", "El caso base es cualquier infinito negativo, e incrementar n indefinidamente garantiza la terminación."],
-  ["¿Por qué la recursión profunda puede agotar una pila de llamadas incluso cuando tiene un caso base válido? Mencione las llamadas retenidas y la memoria finita.", "Las llamadas recursivas pendientes retienen marcos de pila hasta que regresan.", "El espacio disponible en la pila es finito y puede excederse antes de alcanzar el caso base.", "Cada llamada pendiente ocupa un marco, y demasiados marcos de este tipo pueden llenar la pila limitada antes de que termine la recursión.", "Cada llamada recursiva elimina inmediatamente todos los marcos anteriores, y la memoria de la pila es infinita."],
-  ["Contraste una variable local de función con un estado mutable compartido por dos funciones.", "Una variable local pertenece al ámbito local de su función.", "Los cambios al estado mutable compartido pueden ser observados por otro código que usa ese estado.", "La vinculación local de una función tiene alcance allí, mientras que actualizar datos compartidos puede afectar a otra función que lo accede.", "Cada variable local es automáticamente pública mundialmente, y el estado compartido nunca puede cambiar."],
-  ["a y b hacen referencia a la misma lista mutable [1,2]. Después de agregar 3 a través de a, indique el contenido de b y explique por qué.", "b observa [1,2,3].", "Ambas referencias apuntan al mismo objeto de lista.", "Leer b da uno, dos y tres porque ambos nombres son alias de una misma lista subyacente.", "b se convierte en una lista vacía porque cada referencia crea automáticamente una copia independiente."],
-  ["Contrasta copias superficiales y profundas de una lista que contiene listas internas mutables.", "Una copia superficial duplica la lista externa pero mantiene referencias a las listas internas.", "Una copia profunda también copia los contenidos mutables anidados bajo la estructura ordinaria declarada.", "Una copia superficial crea una nueva lista externa pero comparte sus listas internas; una copia profunda crea nuevas listas externas e internas.", "Una copia superficial duplica recursivamente todo, mientras que una copia profunda solo renombra la lista original."],
-  ["Empuja A y luego B en una pila vacía. ¿Qué elemento se extrae primero y qué regla de ordenación lo explica?", "Se extrae B primero.", "Una pila sigue el orden último en entrar, primero en salir.", "La primera extracción es B porque el elemento más recientemente introducido sale primero.", "Se extrae A primero porque una pila es primero en entrar, primero en salir."],
-  ["Encola A y luego B en una cola vacía. ¿Qué elemento se descola primero y qué regla de ordenación lo explica?", "Se descola A primero.", "Una cola sigue el orden primero en entrar, primero en salir.", "A sale antes que B porque la llegada más temprana es atendida primero.", "B sale primero porque una cola debe ser siempre último en entrar, primero en salir."],
-  ["Compara el acceso a la posición k en un array de acceso aleatorio ordinario y en una lista enlazada simple que comienza en su cabeza.", "El array puede acceder a la posición k directamente en tiempo constante bajo el modelo usual.", "La lista enlazada requiere seguir enlaces hasta esa posición, tomando tiempo proporcional a k.", "El índice del array es O(1), mientras que alcanzar la misma posición desde la cabeza de una lista toma O(k) de recorrido.", "Un array debe seguir k nodos enlazados, mientras que cada posición de una lista enlazada es direccionable directamente en tiempo constante."],
-  ["Dos claves diferentes hashan al mismo cubo. Define este evento y explica si un valor debe perderse.", "Esto es una colisión de hash.", "Un método de resolución de colisiones como la encadenamiento puede retener ambas entradas.", "Las claves colisionan, pero almacenar una cadena o usar otro esquema de resolución preserva ambos mapeos.", "Esto es prueba de que las claves son idénticas, por lo que un valor siempre debe eliminarse."],
-  ["Para una tabla de hash convencional, contraste el tiempo de búsqueda esperado con un caso peor posible cuando muchas claves colisionan.", "Con un hashing adecuado y una carga apropiada, la búsqueda esperada es O(1).", "Una búsqueda en el peor caso puede ser O(n) si deben examinarse muchas entradas.", "El acceso normal esperado es de tiempo constante, pero las colisiones patológicas pueden hacer que una búsqueda escanee un número lineal de entradas.", "La búsqueda esperada siempre toma O(n al cuadrado), mientras que el caso peor está garantizado en O(0)."],
-  ["¿Por qué la búsqueda lineal puede funcionar en una lista no ordenada, y cuál es su trabajo en el peor caso para n elementos?", "Verifica los elementos individualmente sin depender del orden.", "Puede examinar todos los n elementos, dando un trabajo en el peor caso de O(n).", "La búsqueda prueba cada candidato independientemente del orden de clasificación y puede escanear toda la lista en el peor caso.", "Solo funciona con entrada ordenada y siempre inspecciona exactamente un elemento."],
-  ["Un ordenamiento clasifica registros por edad. ¿Qué garantiza la estabilidad y qué garantiza un ordenamiento correcto ordinario sin esa propiedad extra?", "La estabilidad preserva el orden relativo original de los registros con edades iguales.", "Un ordenamiento correcto por edad coloca las edades en el orden no decreciente o no creciente solicitado.", "El ordenamiento estable mantiene los empates en su secuencia previa; el ordenamiento básico correcto requiere el orden de edad elegido.", "La estabilidad mezcla aleatoriamente las edades iguales, y un ordenamiento correcto no necesita ordenar las edades en absoluto."],
-  ["Durante el ordenamiento por inserción, un prefijo ordenado [2,5] está seguido por el siguiente elemento 3. Dé el nuevo prefijo e indique el invariante mantenido.", "El nuevo prefijo es [2,3,5].", "El prefijo procesado permanece ordenado después de cada inserción.", "Insertar tres produce dos, tres, cinco, manteniendo la propiedad de que todos los elementos procesados forman un prefijo ordenado.", "El prefijo se convierte en [5,2,3], y el invariante requiere que los elementos procesados permanezcan desordenados."],
-  ["¿Por qué un algoritmo O(n log n) no necesariamente supera a un algoritmo O(n al cuadrado) en una entrada pequeña? Explique el alcance asintótico y un factor práctico.", "La complejidad asintótica describe el crecimiento a medida que el tamaño de la entrada se vuelve grande.", "Las constantes y el sobrecosto pueden dominar el tiempo de ejecución en entradas pequeñas.", "La notación de tasa de crecimiento se refiere a n suficientemente grandes; los trabajos pequeños pueden estar determinados por costos de configuración o factores constantes.", "La notación Big-O da el tiempo de ejecución exacto en segundos para cada entrada y excluye todo el sobrecosto de implementación."],
-  ["Un bucle externo se ejecuta n veces y su bucle interno siempre se ejecuta exactamente tres veces. Dé el número total de iteraciones internas y la complejidad asintótica.", "Hay 3n iteraciones internas.", "El trabajo total del bucle es O(n), asumiendo un trabajo constante por iteración.", "El cuerpo interno se ejecuta tres veces n, por lo que el trabajo de ejecución crece linealmente.", "Hay n al cuadrado de iteraciones y el trabajo debe ser exponencial simplemente porque los bucles están anidados."],
-  ["¿Por qué usar un conjunto visitado al recorrer un grafo finito con ciclos? Explique las visitas repetidas y la terminación.", "El conjunto identifica los vértices que ya han sido procesados.", "Saltar el procesamiento repetido evita ciclos indefinidos y permite que la travesía finita termine.", "Recordar los vértices procesados permite que la travesía evite volver a visitarlos para siempre alrededor de un ciclo.", "El conjunto visitado crea nuevos vértices indefinidamente y garantiza que cada ciclo se siga para siempre."],
-  ["En un grafo no ponderado, ¿por qué el recorrido en anchura encuentra un camino con el menor número de aristas? Mencione el orden de exploración y los costos iguales de las aristas.", "El recorrido en anchura explora los vértices en distancia creciente medida en número de aristas.", "Con costos iguales de aristas, menos aristas también significa un camino más corto bajo ese modelo de costo.", "Expande una capa de distancia de arista a la vez, y los pesos uniformes de las aristas hacen que el conteo mínimo de aristas sea el costo deseado del camino.", "Sigue una rama más profunda primero, y los costos de aristas desiguales arbitrarios nunca importan."],
-  ["Un grafo tiene una única arista dirigida A -> B. Indique la alcanzabilidad desde A hasta B y desde B hasta A usando solo esa arista.", "B es alcanzable desde A.", "A no es alcanzable desde B usando solo esa arista dirigida.", "El viaje es posible desde A hasta B, pero el viaje inverso no tiene un camino dirigido aquí.", "Solo B puede alcanzar A, porque las flechas siempre apuntan en la dirección opuesta a la permitida."],
-  ["Un grafo no dirigido contiene las aristas A-B, B-C y C-A. Identifique el ciclo y explique por qué el grafo no es un árbol.", "A-B-C-A forma un ciclo.", "Un árbol no dirigido debe ser acíclico.", "Seguir A a B a C y volver a A cierra un bucle, violando el requisito de sin ciclos de un árbol.", "No hay ningún ciclo, y los árboles deben contener un triángulo."],
-  ["Contraste una clave primaria con un índice de base de datos no único.", "Una clave primaria identifica de manera única una fila y no permite valores nulos en la clave.", "Un índice no único puede acelerar las búsquedas sin requerir que los valores indexados sean únicos.", "La clave primaria es un identificador de fila único y sin nulos; un índice no único ordinario es una ayuda para la búsqueda que permite valores duplicados.", "Una clave primaria debe contener duplicados, mientras que cada índice no único prohíbe todos los valores repetidos."],
-  ["La clave foránea orders.customer_id referencia customers.id. Establezca su requisito de integridad y si un cliente puede existir sin ninguna orden que haga referencia a él.", "El valor de clave foránea no nulo debe coincidir con una clave de cliente referenciada.", "Un cliente puede existir sin ninguna orden que haga referencia a él.", "Cada referencia no nula de cliente en una orden debe identificar a un cliente existente, pero se permite que un cliente no tenga órdenes.", "Las órdenes pueden referenciar clientes inexistentes, y cada cliente debe tener al menos una orden."],
-  ["Distinga entre WHERE y GROUP BY en una consulta de agregación básica.", "WHERE filtra filas individuales de entrada mediante una condición.", "GROUP BY agrupa filas en grupos utilizados para la agregación.", "WHERE selecciona qué registros permanecen; GROUP BY organiza los registros restantes en grupos de agregación.", "WHERE siempre crea un nuevo esquema de tabla, mientras que GROUP BY elimina todos los resultados de agregación."],
-  ["Una clave de unión aparece dos veces en la tabla A y tres veces en la tabla B. ¿Cuántas parejas coincidentes produce una unión de igualdad para esa clave y por qué?", "Produce seis filas coincidentes.", "Cada una de las dos filas de A coincide con cada una de las tres filas de B.", "Hay seis parejas porque la unión combina cada fila coincidente de un lado con cada fila coincidente del otro lado.", "Siempre produce una fila porque las uniones eliminan automáticamente cada clave duplicada."],
-  ["Una transferencia resta 10 a un saldo y suma 10 a otro. ¿Qué requiere la atomicidad de la transacción si falla el segundo paso?", "La resta también debe deshacerse si la transferencia no puede confirmarse.", "La atomicidad hace que la operación agrupada sea todo o nada.", "Si falla el abono, debe deshacerse el débito, porque los cambios de la transacción se confirman todos juntos o no se confirma ninguno.", "La atomicidad requiere mantener el débito y perder el dinero permanentemente cada vez que falla el crédito."],
-  ["Dos trabajadores leen el contador 5, cada uno calcula 6 y luego escribe 6. ¿Cuál es el valor final y explica la actualización perdida.", "El contador final es 6.", "Una de las incrementaciones se pierde porque ambas escrituras se basaron en el mismo valor antiguo en lugar de incorporar la otra incrementación.", "Termina en seis, ya que la segunda escritura obsoleta no preserva ambas incrementaciones independientes.", "Termina en siete porque las escrituras obsoletas fusionan automáticamente cada operación aritmética."],
-  ["¿La exclusión mutua por sí sola descarta el interbloqueo? Define su garantía y describe cómo dos bloqueos pueden producir un interbloqueo.", "La exclusión mutua evita el acceso simultáneo a un recurso protegido por titulares competidores.", "Dos tareas pueden bloquearse mutuamente si cada una mantiene un candado mientras espera el candado de la otra.", "Se impide que varios poseedores accedan simultáneamente al mismo recurso, pero la espera circular entre varios bloqueos ya adquiridos aún puede dejar detenidas a ambas tareas.", "La exclusión mutua significa que todas las tareas comparten cada candado simultáneamente, por lo que la espera circular es imposible por definición."],
-  ["Un cliente reintenta una operación de prueba similar a un pago después de perder la respuesta. Explica cómo puede ocurrir un efecto duplicado y qué era incierto.", "La primera solicitud ya puede haberse completado antes de que se perdiera su respuesta.", "Repetir una operación no idempotente puede aplicar su efecto una segunda vez.", "El servidor ya pudo haber actuado sobre la solicitud original a pesar de la respuesta faltante, por lo que ejecutar el reintento nuevamente puede duplicar el cambio.", "Una respuesta faltante prueba que el servidor no hizo nada, por lo que los reintentos nunca pueden repetir un efecto."],
-  ["¿Cómo ayuda una clave de idempotencia con dos envíos de la misma operación lógica? Indica el requisito de la clave y el comportamiento del servidor.", "Los reintentos de una operación lógica usan la misma clave, mientras que las operaciones lógicas diferentes usan claves diferentes.", "El servidor reconoce la clave repetida y reutiliza el resultado registrado en lugar de aplicar el efecto nuevamente.", "Mantén un identificador para los reintentos de una operación y elige un identificador diferente para una operación diferente; el servidor devuelve el resultado guardado para un identificador repetido sin aplicar el cambio nuevamente.", "Cada reintento debe usar una clave fresca, lo que instruye al servidor a ejecutar cada duplicado nuevamente."],
-  ["Distingue entre autenticación y autorización.", "La autenticación establece quién es el solicitante.", "La autorización decide qué puede hacer ese solicitante.", "El primero verifica la identidad; el segundo verifica el permiso para una acción o recurso.", "La autenticación significa decidir el tamaño del disco, mientras que la autorización significa cambiar aleatoriamente la identidad de un usuario desconocido."],
-  ["Explica cómo SQL parametrizado trata un valor no confiable y si un parámetro de valor vinculado ordinario puede sustituir un nombre de tabla.", "La entrada se vincula como datos separados de la estructura de la instrucción SQL.", "Un parámetro de valor vinculado ordinario no puede sustituir un nombre de tabla ni otro identificador SQL.", "Los valores se proporcionan por separado de la estructura de consulta ejecutable; los marcadores de valor ordinarios no pueden elegir el nombre de la tabla.", "Los parámetros insertan directamente los valores del usuario en SQL ejecutable, y un parámetro de valor vinculado ordinario puede reemplazar cualquier identificador de tabla."],
-  ["Distingue el hashing criptográfico del cifrado reversible.", "Un hash criptográfico está diseñado como un resumen de un solo sentido en lugar de una codificación reversible.", "La encriptación está diseñada para recuperar el texto plano usando la clave adecuada.", "El hashing produce un resumen sin un procedimiento de descifrado; los datos encriptados pueden descifrarse con la clave correcta.", "Cada hash tiene una clave secreta de descifrado incorporada, mientras que la encriptación descarta permanentemente toda información recuperable."],
-  ["¿Por qué dar a cada hash de contraseña almacenada una sal única? Explica contraseñas idénticas y ataques precalculados.", "Sales diferentes hacen que contraseñas idénticas produzcan resultados de hash almacenados diferentes.", "Las sales previenen el reutilizado de una tabla de hash precalculada a través de todos los registros salados.", "Las sales por registro distinguen los hashes de contraseñas iguales y obligan a precalcular para tener en cuenta cada sal por separado.", "Una sal es un secreto universal que hace que todos los hashes de contraseñas sean idénticos y permite una tabla de búsqueda para todos."],
-  ["Distingue la encriptación en tránsito de la autorización en el servidor receptor.", "La encriptación de transporte protege los datos mientras viajan entre puntos finales.", "El servidor aún necesita verificar si el solicitante puede acceder o modificar el recurso.", "La encriptación de transporte protege la ruta de comunicación, mientras que las verificaciones de permisos determinan lo que permite la aplicación receptora.", "Una conexión encriptada otorga automáticamente acceso de administrador a cada solicitante y elimina la necesidad de todas las verificaciones de permisos."],
-  ["¿Por qué la validación de entrada solo en el navegador es insuficiente para proteger un servidor? Menciona el origen de la solicitud y dónde deben hacerse cumplir las restricciones.", "Un solicitante puede eludir la interfaz del navegador y enviar una solicitud personalizada.", "El servidor debe validar y aplicar sus propias restricciones requeridas.", "Las solicitudes no necesitan pasar por la UI proporcionada, por lo que el backend debe verificar las reglas por sí mismo.", "Cada posible solicitud de red se fuerza a través del formulario del navegador exacto, por lo que los servidores deben confiar ciegamente en toda la entrada."],
-  ["Contrasta un acierto en caché con una respuesta de origen que acaba de ser obtenida.", "Un acierto en caché sirve una respuesta o valor previamente almacenado.", "Una respuesta de origen fresca se obtiene del servicio fuente para esa solicitud.", "La caché reutiliza contenido guardado, mientras que una solicitud al origen pide al servicio que proporcione una respuesta ahora.", "Un acierto en caché siempre reconstruye la base de datos de la fuente, mientras que una respuesta de origen es necesariamente una copia local de hace años."],
-  ["Un valor de origen cambia de 10 a 12 mientras que una caché sin actualizar sigue teniendo 10. Indica qué puede devolver la caché y por qué está obsoleta.", "La caché puede devolver 10.", "Su copia almacenada no se ha actualizado para reflejar el nuevo valor de origen.", "Puede servir el diez antiguo porque la entrada en caché no ha dado cuenta del cambio de la fuente.", "La caché debe devolver 12 al instante porque cada copia en caché se actualiza a sí misma sin comunicación."],
-  ["Distingue entre latencia de red y rendimiento.", "La latencia es el retraso para una comunicación o respuesta.", "El rendimiento es la cantidad de datos transferidos por unidad de tiempo.", "Uno mide cuánto tarda la comunicación en llegar; el otro mide la tasa de datos sostenida.", "La latencia mide bytes por segundo, mientras que el rendimiento mide solo el tiempo de espera antes del primer byte."],
-  ["Los paquetes A y B se envían en ese orden sobre una red genérica. Explica si se garantiza el orden de llegada y cómo un protocolo puede reconstruirlo.", "El orden de llegada no está garantizado sin un mecanismo de ordenación.", "Los números de secuencia pueden permitir que un protocolo reordene los datos recibidos.", "B puede llegar antes que A; numerar los datos permite al receptor restaurar la secuencia prevista.", "Cada red posible garantiza automáticamente el orden de envío, y los números de secuencia no contienen información de ordenación."],
-  ["Se agota el tiempo de espera de un cliente que espera una operación del servidor. ¿Qué permite concluir ese vencimiento y qué deja incierto?", "El cliente no recibió una respuesta dentro de su límite de espera.", "No establece si el servidor realizó la operación.", "La respuesta no se recibió a tiempo, pero el resultado del lado del servidor puede seguir siendo completado o incompleto.", "Que se agote el tiempo de espera demuestra que el servidor nunca recibió la solicitud y garantiza que no ocurrió ningún cambio."],
-  ["Distinguir el idioma de un texto de su codificación de caracteres.", "El idioma es el sistema lingüístico, como el francés o el japonés.", "La codificación especifica cómo se representan los caracteres como unidades de código o bytes, como UTF-8.", "El francés identifica el idioma humano; UTF-8 describe una representación de su texto como bytes.", "UTF-8 es un idioma hablado, mientras que el japonés es un algoritmo de compresión para bytes."],
-  ["¿Por qué puede diferir el conteo de bytes de una cadena Unicode de su conteo de caracteres visibles? Mencione la longitud de la codificación y los caracteres de múltiples puntos de código.", "Una codificación como UTF-8 puede usar múltiples bytes para un solo punto de código.", "Un carácter visible puede consistir en múltiples puntos de código, como una letra base más una marca de combinación.", "Los puntos de código no necesitan ocupar un byte cada uno, y un carácter mostrado puede combinar varios puntos de código.", "Cada carácter Unicode visible es exactamente un byte y nunca puede contener una marca de combinación."],
-  ["¿Por qué la suma binaria de punto flotante 0.1 + 0.2 puede diferir ligeramente del decimal exacto 0.3? Explique la representación y los efectos acumulados de la aritmética.", "Muchas fracciones decimales finitas, incluido 0.1, no tienen una representación binaria finita.", "Las operaciones sobre sus representaciones redondeadas pueden producir una pequeña discrepancia de redondeo.", "El decimal 0.1 y 0.2 se repiten indefinidamente en binario, por lo que el punto flotante binario finito almacena aproximaciones redondeadas; la aritmética sobre esos valores redondeados puede dejar una pequeña discrepancia respecto al decimal exacto 0.3.", "El punto flotante binario almacena exactamente cada fracción decimal, y cualquier discrepancia prueba que la suma no tiene significado matemático."],
-  ["¿Por qué un conjunto de pruebas finito que pasa no demuestra que un programa general es correcto para cada entrada? Mencione la cobertura y un caso no probado.", "Las pruebas ejercitan solo las entradas y condiciones seleccionadas.", "Un defecto puede permanecer en una entrada o ruta que las pruebas no cubrieron.", "El éxito es evidencia de los escenarios ejecutados, mientras que una entrada no examinada aún puede desencadenar un error.", "Pasar un ejemplo agota exhaustivamente todos los programas posibles y garantiza que no hay entradas no probadas."],
-  ["Una función devuelve el entero más grande en una lista no vacía y debe rechazar una lista vacía. Nombre el caso límite y su comportamiento requerido.", "Una lista vacía es un caso límite.", "La función debe informar un error o un rechazo explícito para esa entrada.", "Pruebe cero elementos, esperando un rechazo en lugar de un máximo fabricado.", "El límite es una lista no vacía larga ordinaria, y una lista vacía debe devolver silenciosamente un cero inventado."]
+  [
+    "Después de la asignación de pseudocódigo count = 7, distingue el nombre de la variable de su valor almacenado.",
+    "El nombre de la variable es count.",
+    "Su valor almacenado es 7.",
+    "El identificador es count y actualmente contiene el número siete.",
+    "El nombre es 7 y el valor almacenado es la palabra count."
+  ],
+  [
+    "En este lenguaje, la división entera descarta la parte fraccionaria y la división real la conserva. Evalúa entero 7/2 y real 7/2.",
+    "La división entera da 3.",
+    "La división real da 3.5.",
+    "Con enteros el resultado es tres; con división de números reales es tres y medio.",
+    "La división entera da 4 y la división real da 2."
+  ],
+  [
+    "Un bucle visita i = 0,1,2,3,4 pero debería visitar exactamente las primeras cuatro posiciones de un array de índice base cero. Identifica el índice extra y la condición correcta del límite superior.",
+    "El índice 4 es la iteración extra.",
+    "El bucle debería requerir i < 4 en lugar de i <= 4.",
+    "Visita la quinta posición por error; probar estrictamente menor que cuatro corrige el límite.",
+    "El índice 0 siempre es inválido, por lo que cambiar la condición a i <= 5 lo corrige."
+  ],
+  [
+    "Aquí = asigna un valor y == prueba la igualdad. Explica x = 5 y x == 5.",
+    "x = 5 almacena 5 en x.",
+    "x == 5 comprueba si x es igual a 5 sin asignarle.",
+    "El signo igual simple actualiza x a cinco; el signo doble compara su valor existente con cinco.",
+    "Ambas expresiones siempre asignan diez a x."
+  ],
+  [
+    "Con AND de cortocircuito de izquierda a derecha, explica por qué x != null AND x.ready evita una desreferenciación nula.",
+    "Si x es nulo, la primera condición es falsa.",
+    "Un primer operando falso evita la evaluación de x.ready.",
+    "Nulo hace que la prueba izquierda falle, por lo que el cortocircuito salta el acceso al campo.",
+    "AND siempre evalúa ambos operandos, pero nulo tiene automáticamente un campo ready."
+  ],
+  [
+    "Una función imprime 5 y luego devuelve 8. Indique qué aparece en la salida y qué valor recibe el llamador.",
+    "La salida impresa es 5.",
+    "El valor devuelto por la función es 8.",
+    "Se muestra cinco, mientras que la llamada se evalúa como ocho.",
+    "Ocho se imprime y el llamador recibe cinco."
+  ],
+  [
+    "Una función recursiva devuelve en n = 0; de lo contrario, se llama a sí misma con n - 1 para un entero positivo n. Identifique su caso base y paso de progreso.",
+    "El caso base es n = 0.",
+    "Restar uno mueve el n positivo hacia el caso base.",
+    "Cero detiene la recursión, y cada llamada reduce n en uno hasta alcanzar ese valor de parada.",
+    "El caso base es cualquier infinito negativo, e incrementar n indefinidamente garantiza la terminación."
+  ],
+  [
+    "¿Por qué la recursión profunda puede agotar una pila de llamadas incluso cuando tiene un caso base válido? Mencione las llamadas retenidas y la memoria finita.",
+    "Las llamadas recursivas pendientes retienen marcos de pila hasta que regresan.",
+    "El espacio disponible en la pila es finito y puede excederse antes de alcanzar el caso base.",
+    "Cada llamada pendiente ocupa un marco, y demasiados marcos de este tipo pueden llenar la pila limitada antes de que termine la recursión.",
+    "Cada llamada recursiva elimina inmediatamente todos los marcos anteriores, y la memoria de la pila es infinita."
+  ],
+  [
+    "Contraste una variable local de función con un estado mutable compartido por dos funciones.",
+    "Una variable local pertenece al ámbito local de su función.",
+    "Los cambios al estado mutable compartido pueden ser observados por otro código que usa ese estado.",
+    "La vinculación local de una función tiene alcance allí, mientras que actualizar datos compartidos puede afectar a otra función que lo accede.",
+    "Cada variable local es automáticamente pública mundialmente, y el estado compartido nunca puede cambiar."
+  ],
+  [
+    "a y b hacen referencia a la misma lista mutable [1,2]. Después de agregar 3 a través de a, indique el contenido de b y explique por qué.",
+    "b observa [1,2,3].",
+    "Ambas referencias apuntan al mismo objeto de lista.",
+    "Leer b da uno, dos y tres porque ambos nombres son alias de una misma lista subyacente.",
+    "b se convierte en una lista vacía porque cada referencia crea automáticamente una copia independiente."
+  ],
+  [
+    "Contrasta copias superficiales y profundas de una lista que contiene listas internas mutables.",
+    "Una copia superficial duplica la lista externa pero mantiene referencias a las listas internas.",
+    "Una copia profunda también copia los contenidos mutables anidados bajo la estructura ordinaria declarada.",
+    "Una copia superficial crea una nueva lista externa pero comparte sus listas internas; una copia profunda crea nuevas listas externas e internas.",
+    "Una copia superficial duplica recursivamente todo, mientras que una copia profunda solo renombra la lista original."
+  ],
+  [
+    "Empuja A y luego B en una pila vacía. ¿Qué elemento se extrae primero y qué regla de ordenación lo explica?",
+    "Se extrae B primero.",
+    "Una pila sigue el orden último en entrar, primero en salir.",
+    "La primera extracción es B porque el elemento más recientemente introducido sale primero.",
+    "Se extrae A primero porque una pila es primero en entrar, primero en salir."
+  ],
+  [
+    "Encola A y luego B en una cola vacía. ¿Qué elemento se descola primero y qué regla de ordenación lo explica?",
+    "Se descola A primero.",
+    "Una cola sigue el orden primero en entrar, primero en salir.",
+    "A sale antes que B porque la llegada más temprana es atendida primero.",
+    "B sale primero porque una cola debe ser siempre último en entrar, primero en salir."
+  ],
+  [
+    "Compara el acceso a la posición k en un array de acceso aleatorio ordinario y en una lista enlazada simple que comienza en su cabeza.",
+    "El array puede acceder a la posición k directamente en tiempo constante bajo el modelo usual.",
+    "La lista enlazada requiere seguir enlaces hasta esa posición, tomando tiempo proporcional a k.",
+    "El índice del array es O(1), mientras que alcanzar la misma posición desde la cabeza de una lista toma O(k) de recorrido.",
+    "Un array debe seguir k nodos enlazados, mientras que cada posición de una lista enlazada es direccionable directamente en tiempo constante."
+  ],
+  [
+    "Dos claves diferentes hashan al mismo cubo. Define este evento y explica si un valor debe perderse.",
+    "Esto es una colisión de hash.",
+    "Un método de resolución de colisiones como la encadenamiento puede retener ambas entradas.",
+    "Las claves colisionan, pero almacenar una cadena o usar otro esquema de resolución preserva ambos mapeos.",
+    "Esto es prueba de que las claves son idénticas, por lo que un valor siempre debe eliminarse."
+  ],
+  [
+    "Para una tabla de hash convencional, contraste el tiempo de búsqueda esperado con un caso peor posible cuando muchas claves colisionan.",
+    "Con un hashing adecuado y una carga apropiada, la búsqueda esperada es O(1).",
+    "Una búsqueda en el peor caso puede ser O(n) si deben examinarse muchas entradas.",
+    "El acceso normal esperado es de tiempo constante, pero las colisiones patológicas pueden hacer que una búsqueda escanee un número lineal de entradas.",
+    "La búsqueda esperada siempre toma O(n al cuadrado), mientras que el caso peor está garantizado en O(0)."
+  ],
+  [
+    "¿Por qué la búsqueda lineal puede funcionar en una lista no ordenada, y cuál es su trabajo en el peor caso para n elementos?",
+    "Verifica los elementos individualmente sin depender del orden.",
+    "Puede examinar todos los n elementos, dando un trabajo en el peor caso de O(n).",
+    "La búsqueda prueba cada candidato independientemente del orden de clasificación y puede escanear toda la lista en el peor caso.",
+    "Solo funciona con entrada ordenada y siempre inspecciona exactamente un elemento."
+  ],
+  [
+    "Un ordenamiento clasifica registros por edad. ¿Qué garantiza la estabilidad y qué garantiza un ordenamiento correcto ordinario sin esa propiedad extra?",
+    "La estabilidad preserva el orden relativo original de los registros con edades iguales.",
+    "Un ordenamiento correcto por edad coloca las edades en el orden no decreciente o no creciente solicitado.",
+    "El ordenamiento estable mantiene los empates en su secuencia previa; el ordenamiento básico correcto requiere el orden de edad elegido.",
+    "La estabilidad mezcla aleatoriamente las edades iguales, y un ordenamiento correcto no necesita ordenar las edades en absoluto."
+  ],
+  [
+    "Durante el ordenamiento por inserción, un prefijo ordenado [2,5] está seguido por el siguiente elemento 3. Dé el nuevo prefijo e indique el invariante mantenido.",
+    "El nuevo prefijo es [2,3,5].",
+    "El prefijo procesado permanece ordenado después de cada inserción.",
+    "Insertar tres produce dos, tres, cinco, manteniendo la propiedad de que todos los elementos procesados forman un prefijo ordenado.",
+    "El prefijo se convierte en [5,2,3], y el invariante requiere que los elementos procesados permanezcan desordenados."
+  ],
+  [
+    "¿Por qué un algoritmo O(n log n) no necesariamente supera a un algoritmo O(n al cuadrado) en una entrada pequeña? Explique el alcance asintótico y un factor práctico.",
+    "La complejidad asintótica describe el crecimiento a medida que el tamaño de la entrada se vuelve grande.",
+    "Las constantes y el sobrecosto pueden dominar el tiempo de ejecución en entradas pequeñas.",
+    "La notación de tasa de crecimiento se refiere a n suficientemente grandes; los trabajos pequeños pueden estar determinados por costos de configuración o factores constantes.",
+    "La notación Big-O da el tiempo de ejecución exacto en segundos para cada entrada y excluye todo el sobrecosto de implementación."
+  ],
+  [
+    "Un bucle externo se ejecuta n veces y su bucle interno siempre se ejecuta exactamente tres veces. Dé el número total de iteraciones internas y la complejidad asintótica.",
+    "Hay 3n iteraciones internas.",
+    "El trabajo total del bucle es O(n), asumiendo un trabajo constante por iteración.",
+    "El cuerpo interno se ejecuta tres veces n, por lo que el trabajo de ejecución crece linealmente.",
+    "Hay n al cuadrado de iteraciones y el trabajo debe ser exponencial simplemente porque los bucles están anidados."
+  ],
+  [
+    "¿Por qué usar un conjunto visitado al recorrer un grafo finito con ciclos? Explique las visitas repetidas y la terminación.",
+    "El conjunto identifica los vértices que ya han sido procesados.",
+    "Saltar el procesamiento repetido evita ciclos indefinidos y permite que la travesía finita termine.",
+    "Recordar los vértices procesados permite que la travesía evite volver a visitarlos para siempre alrededor de un ciclo.",
+    "El conjunto visitado crea nuevos vértices indefinidamente y garantiza que cada ciclo se siga para siempre."
+  ],
+  [
+    "En un grafo no ponderado, ¿por qué el recorrido en anchura encuentra un camino con el menor número de aristas? Mencione el orden de exploración y los costos iguales de las aristas.",
+    "El recorrido en anchura explora los vértices en distancia creciente medida en número de aristas.",
+    "Con costos iguales de aristas, menos aristas también significa un camino más corto bajo ese modelo de costo.",
+    "Expande una capa de distancia de arista a la vez, y los pesos uniformes de las aristas hacen que el conteo mínimo de aristas sea el costo deseado del camino.",
+    "Sigue una rama más profunda primero, y los costos de aristas desiguales arbitrarios nunca importan."
+  ],
+  [
+    "Un grafo tiene una única arista dirigida A -> B. Indique la alcanzabilidad desde A hasta B y desde B hasta A usando solo esa arista.",
+    "B es alcanzable desde A.",
+    "A no es alcanzable desde B usando solo esa arista dirigida.",
+    "El viaje es posible desde A hasta B, pero el viaje inverso no tiene un camino dirigido aquí.",
+    "Solo B puede alcanzar A, porque las flechas siempre apuntan en la dirección opuesta a la permitida."
+  ],
+  [
+    "Un grafo no dirigido contiene las aristas A-B, B-C y C-A. Identifique el ciclo y explique por qué el grafo no es un árbol.",
+    "A-B-C-A forma un ciclo.",
+    "Un árbol no dirigido debe ser acíclico.",
+    "Seguir A a B a C y volver a A cierra un bucle, violando el requisito de sin ciclos de un árbol.",
+    "No hay ningún ciclo, y los árboles deben contener un triángulo."
+  ],
+  [
+    "Contraste una clave primaria con un índice de base de datos no único.",
+    "Una clave primaria identifica de manera única una fila y no permite valores nulos en la clave.",
+    "Un índice no único puede acelerar las búsquedas sin requerir que los valores indexados sean únicos.",
+    "La clave primaria es un identificador de fila único y sin nulos; un índice no único ordinario es una ayuda para la búsqueda que permite valores duplicados.",
+    "Una clave primaria debe contener duplicados, mientras que cada índice no único prohíbe todos los valores repetidos."
+  ],
+  [
+    "La clave foránea orders.customer_id referencia customers.id. Establezca su requisito de integridad y si un cliente puede existir sin ninguna orden que haga referencia a él.",
+    "El valor de clave foránea no nulo debe coincidir con una clave de cliente referenciada.",
+    "Un cliente puede existir sin ninguna orden que haga referencia a él.",
+    "Cada referencia no nula de cliente en una orden debe identificar a un cliente existente, pero se permite que un cliente no tenga órdenes.",
+    "Las órdenes pueden referenciar clientes inexistentes, y cada cliente debe tener al menos una orden."
+  ],
+  [
+    "Distinga entre WHERE y GROUP BY en una consulta de agregación básica.",
+    "WHERE filtra filas individuales de entrada mediante una condición.",
+    "GROUP BY agrupa filas en grupos utilizados para la agregación.",
+    "WHERE selecciona qué registros permanecen; GROUP BY organiza los registros restantes en grupos de agregación.",
+    "WHERE siempre crea un nuevo esquema de tabla, mientras que GROUP BY elimina todos los resultados de agregación."
+  ],
+  [
+    "Una clave de unión aparece dos veces en la tabla A y tres veces en la tabla B. ¿Cuántas parejas coincidentes produce una unión de igualdad para esa clave y por qué?",
+    "Produce seis filas coincidentes.",
+    "Cada una de las dos filas de A coincide con cada una de las tres filas de B.",
+    "Hay seis parejas porque la unión combina cada fila coincidente de un lado con cada fila coincidente del otro lado.",
+    "Siempre produce una fila porque las uniones eliminan automáticamente cada clave duplicada."
+  ],
+  [
+    "Una transferencia resta 10 a un saldo y suma 10 a otro. ¿Qué requiere la atomicidad de la transacción si falla el segundo paso?",
+    "La resta también debe deshacerse si la transferencia no puede confirmarse.",
+    "La atomicidad hace que la operación agrupada sea todo o nada.",
+    "Si falla el abono, debe deshacerse el débito, porque los cambios de la transacción se confirman todos juntos o no se confirma ninguno.",
+    "La atomicidad requiere mantener el débito y perder el dinero permanentemente cada vez que falla el crédito."
+  ],
+  [
+    "Dos trabajadores leen el contador 5, cada uno calcula 6 y luego escribe 6. ¿Cuál es el valor final y explica la actualización perdida.",
+    "El contador final es 6.",
+    "Una de las incrementaciones se pierde porque ambas escrituras se basaron en el mismo valor antiguo en lugar de incorporar la otra incrementación.",
+    "Termina en seis, ya que la segunda escritura obsoleta no preserva ambas incrementaciones independientes.",
+    "Termina en siete porque las escrituras obsoletas fusionan automáticamente cada operación aritmética."
+  ],
+  [
+    "¿La exclusión mutua por sí sola descarta el interbloqueo? Define su garantía y describe cómo dos bloqueos pueden producir un interbloqueo.",
+    "La exclusión mutua evita el acceso simultáneo a un recurso protegido por titulares competidores.",
+    "Dos tareas pueden bloquearse mutuamente si cada una mantiene un candado mientras espera el candado de la otra.",
+    "Se impide que varios poseedores accedan simultáneamente al mismo recurso, pero la espera circular entre varios bloqueos ya adquiridos aún puede dejar detenidas a ambas tareas.",
+    "La exclusión mutua significa que todas las tareas comparten cada candado simultáneamente, por lo que la espera circular es imposible por definición."
+  ],
+  [
+    "Un cliente reintenta una operación de prueba similar a un pago después de perder la respuesta. Explica cómo puede ocurrir un efecto duplicado y qué era incierto.",
+    "La primera solicitud ya puede haberse completado antes de que se perdiera su respuesta.",
+    "Repetir una operación no idempotente puede aplicar su efecto una segunda vez.",
+    "El servidor ya pudo haber actuado sobre la solicitud original a pesar de la respuesta faltante, por lo que ejecutar el reintento nuevamente puede duplicar el cambio.",
+    "Una respuesta faltante prueba que el servidor no hizo nada, por lo que los reintentos nunca pueden repetir un efecto."
+  ],
+  [
+    "¿Cómo ayuda una clave de idempotencia con dos envíos de la misma operación lógica? Indica el requisito de la clave y el comportamiento del servidor.",
+    "Los reintentos de una operación lógica usan la misma clave, mientras que las operaciones lógicas diferentes usan claves diferentes.",
+    "El servidor reconoce la clave repetida y reutiliza el resultado registrado en lugar de aplicar el efecto nuevamente.",
+    "Mantén un identificador para los reintentos de una operación y elige un identificador diferente para una operación diferente; el servidor devuelve el resultado guardado para un identificador repetido sin aplicar el cambio nuevamente.",
+    "Cada reintento debe usar una clave fresca, lo que instruye al servidor a ejecutar cada duplicado nuevamente."
+  ],
+  [
+    "Distingue entre autenticación y autorización.",
+    "La autenticación establece quién es el solicitante.",
+    "La autorización decide qué puede hacer ese solicitante.",
+    "El primero verifica la identidad; el segundo verifica el permiso para una acción o recurso.",
+    "La autenticación significa decidir el tamaño del disco, mientras que la autorización significa cambiar aleatoriamente la identidad de un usuario desconocido."
+  ],
+  [
+    "Explica cómo SQL parametrizado trata un valor no confiable y si un parámetro de valor vinculado ordinario puede sustituir un nombre de tabla.",
+    "La entrada se vincula como datos separados de la estructura de la instrucción SQL.",
+    "Un parámetro de valor vinculado ordinario no puede sustituir un nombre de tabla ni otro identificador SQL.",
+    "Los valores se proporcionan por separado de la estructura de consulta ejecutable; los marcadores de valor ordinarios no pueden elegir el nombre de la tabla.",
+    "Los parámetros insertan directamente los valores del usuario en SQL ejecutable, y un parámetro de valor vinculado ordinario puede reemplazar cualquier identificador de tabla."
+  ],
+  [
+    "Distingue el hashing criptográfico del cifrado reversible.",
+    "Un hash criptográfico está diseñado como un resumen de un solo sentido en lugar de una codificación reversible.",
+    "La encriptación está diseñada para recuperar el texto plano usando la clave adecuada.",
+    "El hashing produce un resumen sin un procedimiento de descifrado; los datos encriptados pueden descifrarse con la clave correcta.",
+    "Cada hash tiene una clave secreta de descifrado incorporada, mientras que la encriptación descarta permanentemente toda información recuperable."
+  ],
+  [
+    "¿Por qué dar a cada hash de contraseña almacenada una sal única? Explica contraseñas idénticas y ataques precalculados.",
+    "Sales diferentes hacen que contraseñas idénticas produzcan resultados de hash almacenados diferentes.",
+    "Las sales previenen el reutilizado de una tabla de hash precalculada a través de todos los registros salados.",
+    "Las sales por registro distinguen los hashes de contraseñas iguales y obligan a precalcular para tener en cuenta cada sal por separado.",
+    "Una sal es un secreto universal que hace que todos los hashes de contraseñas sean idénticos y permite una tabla de búsqueda para todos."
+  ],
+  [
+    "Distingue la encriptación en tránsito de la autorización en el servidor receptor.",
+    "La encriptación de transporte protege los datos mientras viajan entre puntos finales.",
+    "El servidor aún necesita verificar si el solicitante puede acceder o modificar el recurso.",
+    "La encriptación de transporte protege la ruta de comunicación, mientras que las verificaciones de permisos determinan lo que permite la aplicación receptora.",
+    "Una conexión encriptada otorga automáticamente acceso de administrador a cada solicitante y elimina la necesidad de todas las verificaciones de permisos."
+  ],
+  [
+    "¿Por qué la validación de entrada solo en el navegador es insuficiente para proteger un servidor? Menciona el origen de la solicitud y dónde deben hacerse cumplir las restricciones.",
+    "Un solicitante puede eludir la interfaz del navegador y enviar una solicitud personalizada.",
+    "El servidor debe validar y aplicar sus propias restricciones requeridas.",
+    "Las solicitudes no necesitan pasar por la UI proporcionada, por lo que el backend debe verificar las reglas por sí mismo.",
+    "Cada posible solicitud de red se fuerza a través del formulario del navegador exacto, por lo que los servidores deben confiar ciegamente en toda la entrada."
+  ],
+  [
+    "Contrasta un acierto en caché con una respuesta de origen que acaba de ser obtenida.",
+    "Un acierto en caché sirve una respuesta o valor previamente almacenado.",
+    "Una respuesta de origen fresca se obtiene del servicio fuente para esa solicitud.",
+    "La caché reutiliza contenido guardado, mientras que una solicitud al origen pide al servicio que proporcione una respuesta ahora.",
+    "Un acierto en caché siempre reconstruye la base de datos de la fuente, mientras que una respuesta de origen es necesariamente una copia local de hace años."
+  ],
+  [
+    "Un valor de origen cambia de 10 a 12 mientras que una caché sin actualizar sigue teniendo 10. Indica qué puede devolver la caché y por qué está obsoleta.",
+    "La caché puede devolver 10.",
+    "Su copia almacenada no se ha actualizado para reflejar el nuevo valor de origen.",
+    "Puede servir el diez antiguo porque la entrada en caché no ha dado cuenta del cambio de la fuente.",
+    "La caché debe devolver 12 al instante porque cada copia en caché se actualiza a sí misma sin comunicación."
+  ],
+  [
+    "Distingue entre latencia de red y rendimiento.",
+    "La latencia es el retraso para una comunicación o respuesta.",
+    "El rendimiento es la cantidad de datos transferidos por unidad de tiempo.",
+    "Uno mide cuánto tarda la comunicación en llegar; el otro mide la tasa de datos sostenida.",
+    "La latencia mide bytes por segundo, mientras que el rendimiento mide solo el tiempo de espera antes del primer byte."
+  ],
+  [
+    "Los paquetes A y B se envían en ese orden sobre una red genérica. Explica si se garantiza el orden de llegada y cómo un protocolo puede reconstruirlo.",
+    "El orden de llegada no está garantizado sin un mecanismo de ordenación.",
+    "Los números de secuencia pueden permitir que un protocolo reordene los datos recibidos.",
+    "B puede llegar antes que A; numerar los datos permite al receptor restaurar la secuencia prevista.",
+    "Cada red posible garantiza automáticamente el orden de envío, y los números de secuencia no contienen información de ordenación."
+  ],
+  [
+    "Se agota el tiempo de espera de un cliente que espera una operación del servidor. ¿Qué permite concluir ese vencimiento y qué deja incierto?",
+    "El cliente no recibió una respuesta dentro de su límite de espera.",
+    "No establece si el servidor realizó la operación.",
+    "La respuesta no se recibió a tiempo, pero el resultado del lado del servidor puede seguir siendo completado o incompleto.",
+    "Que se agote el tiempo de espera demuestra que el servidor nunca recibió la solicitud y garantiza que no ocurrió ningún cambio."
+  ],
+  [
+    "Distinguir el idioma de un texto de su codificación de caracteres.",
+    "El idioma es el sistema lingüístico, como el francés o el japonés.",
+    "La codificación especifica cómo se representan los caracteres como unidades de código o bytes, como UTF-8.",
+    "El francés identifica el idioma humano; UTF-8 describe una representación de su texto como bytes.",
+    "UTF-8 es un idioma hablado, mientras que el japonés es un algoritmo de compresión para bytes."
+  ],
+  [
+    "¿Por qué puede diferir el conteo de bytes de una cadena Unicode de su conteo de caracteres visibles? Mencione la longitud de la codificación y los caracteres de múltiples puntos de código.",
+    "Una codificación como UTF-8 puede usar múltiples bytes para un solo punto de código.",
+    "Un carácter visible puede consistir en múltiples puntos de código, como una letra base más una marca de combinación.",
+    "Los puntos de código no necesitan ocupar un byte cada uno, y un carácter mostrado puede combinar varios puntos de código.",
+    "Cada carácter Unicode visible es exactamente un byte y nunca puede contener una marca de combinación."
+  ],
+  [
+    "¿Por qué la suma binaria de punto flotante 0.1 + 0.2 puede diferir ligeramente del decimal exacto 0.3? Explique la representación y los efectos acumulados de la aritmética.",
+    "Muchas fracciones decimales finitas, incluido 0.1, no tienen una representación binaria finita.",
+    "Las operaciones sobre sus representaciones redondeadas pueden producir una pequeña discrepancia de redondeo.",
+    "El decimal 0.1 y 0.2 se repiten indefinidamente en binario, por lo que el punto flotante binario finito almacena aproximaciones redondeadas; la aritmética sobre esos valores redondeados puede dejar una pequeña discrepancia respecto al decimal exacto 0.3.",
+    "El punto flotante binario almacena exactamente cada fracción decimal, y cualquier discrepancia prueba que la suma no tiene significado matemático."
+  ],
+  [
+    "¿Por qué un conjunto de pruebas finito que pasa no demuestra que un programa general es correcto para cada entrada? Mencione la cobertura y un caso no probado.",
+    "Las pruebas ejercitan solo las entradas y condiciones seleccionadas.",
+    "Un defecto puede permanecer en una entrada o ruta que las pruebas no cubrieron.",
+    "El éxito es evidencia de los escenarios ejecutados, mientras que una entrada no examinada aún puede desencadenar un error.",
+    "Pasar un ejemplo agota exhaustivamente todos los programas posibles y garantiza que no hay entradas no probadas."
+  ],
+  [
+    "Una función devuelve el entero más grande en una lista no vacía y debe rechazar una lista vacía. Nombre el caso límite y su comportamiento requerido.",
+    "Una lista vacía es un caso límite.",
+    "La función debe informar un error o un rechazo explícito para esa entrada.",
+    "Pruebe cero elementos, esperando un rechazo en lugar de un máximo fabricado.",
+    "El límite es una lista no vacía larga ordinaria, y una lista vacía debe devolver silenciosamente un cero inventado."
+  ]
 ]

@@ -870,6 +870,13 @@ and are not sent back as LLM history.
    [2026-09-05 curated lab comparison](../pipeline/scripts/rag_eval/curated/REPORT.md),
    this instruction plus readable file locations raised complete-evidence answers
    from 14/20 to 19/20 held-out turns; missing-evidence wording remained imperfect.
+   The subsequent [public-data comparison](../pipeline/scripts/rag_eval/broad/REPORT.md)
+   used seven native source languages and scientific/argument retrieval. Both chat
+   conditions matched the expected core answer on 60/60 positive turns; supporting
+   every added claim and citing it remained weaker. The location change removed
+   rejected document reads. Its separate 360-query diagnostic favored dense over
+   current hybrid ranking overall, with task-specific tradeoffs; no ranking change
+   was selected from those evaluation scores.
 3. Every tool-capable model response is streamed. Text that arrives with tool
    calls is a narration block. The first completed response with text and no
    tools is the persisted answer. There is no unconditional second answer

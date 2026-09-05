@@ -1,52 +1,352 @@
 [
-  ["Distinguish weather from climate.", "Weather describes atmospheric conditions at a particular time and place.", "Climate describes long-term patterns and distributions of those conditions.", "Today's local atmospheric state is weather; its patterns over many years form the climate.", "Weather is a permanent century-long average, while climate means only today's rainfall."],
-  ["Explain how sunlight angle affects received energy per unit area and how day length affects daily solar energy.", "More oblique sunlight spreads the same incoming beam over a larger surface area.", "Longer daylight can increase the duration of solar energy receipt.", "A slanting beam distributes energy across more ground, while additional daylight hours extend the time available to receive sunlight.", "Oblique sunlight concentrates a beam into a smaller area, and a longer day always means less time receiving sunlight."],
-  ["Explain why the hemisphere tilted toward the Sun generally has summer, mentioning sunlight angle and day length.", "It generally receives sunlight more directly.", "It generally has longer daylight hours.", "Sunlight arrives at a less oblique angle and the daytime period lasts longer.", "Its sunlight is always more oblique and its days are shortest in summer."],
-  ["An unsaturated air parcel expands without heat exchange or condensation as it rises into lower pressure. Explain its temperature change and the expansion mechanism.", "The rising parcel cools.", "Expansion does work against surrounding air using the parcel's internal energy.", "Its temperature drops as expansion expends internal energy in work on its surroundings.", "The parcel heats indefinitely because expansion adds unlimited energy from nothing."],
-  ["Describe rain on a mountain's windward side and the usual rain-shadow effect on the leeward side.", "Moist air rises and cools on the windward slope, encouraging condensation and precipitation.", "Descending leeward air warms and is often drier, reducing precipitation.", "Uplift cools moist windward air enough to form rain; descent on the other side warms the air and favors drier conditions.", "Air always heats while rising on the windward slope and produces its heaviest rain only by becoming hotter and drier on descent."],
-  ["Two coasts at similar latitude differ because one is beside a warm ocean current. Explain a possible temperature effect and why latitude alone is insufficient.", "The warm current can transfer heat to nearby air and moderate coastal temperatures.", "Latitude does not capture influences such as ocean circulation.", "Heat supplied by the current can warm the coastal air, and latitude by itself leaves out the effect of circulating ocean water.", "Ocean currents can transfer no heat, and latitude determines every coastal temperature exactly."],
-  ["On a sunny day, land heats faster than nearby sea. Explain rising air over land and the resulting surface sea breeze.", "Air warmed over land rises, tending to lower surface pressure there relative to the sea.", "Cooler surface air moves from the sea toward the land.", "Heated land air rises and creates a relative surface pressure deficit, drawing lower-level air inland from the water.", "Air over land sinks because heating makes it infinitely dense, and the surface breeze must blow from land to sea in this scenario."],
-  ["Distinguish evaporation from condensation in the water cycle.", "Evaporation changes liquid water into water vapor.", "Condensation changes water vapor into liquid droplets.", "Liquid becomes gas during evaporation, while gaseous water becomes liquid during condensation.", "Evaporation turns gas into rock and condensation turns liquid into a vacuum."],
-  ["Replacing permeable ground with sealed pavement can affect storm runoff. Explain infiltration and the timing of runoff.", "Pavement reduces the area where water can infiltrate into soil.", "More rain can reach drains or streams rapidly as surface runoff.", "Less water soaks into the ground, and a larger share can move quickly over the surface into drainage channels.", "Sealing ground makes all rain soak instantly through concrete and eliminates surface runoff entirely."],
-  ["Distinguish infiltration from surface runoff.", "Infiltration is water entering the ground through the surface.", "Surface runoff is water flowing over the land surface.", "Water soaking into soil infiltrates; water traveling across the ground runs off.", "Infiltration means clouds moving upward, while surface runoff means groundwater freezing beneath bedrock."],
-  ["In an idealized meandering river, describe the usual outer-bank and inner-bank processes.", "Faster flow at the outer bank tends to cause erosion.", "Slower flow at the inner bank tends to encourage deposition.", "The outside of the bend is commonly scoured by faster water, while slower inside flow lays down sediment.", "The fastest outside water always deposits all sediment, while the slow inside water can never deposit anything."],
-  ["A river's flow energy falls as it enters a calm lake. Predict a sediment effect and explain the transport-capacity change.", "Some carried sediment is deposited.", "The slower, lower-energy flow can carry less sediment of a given size.", "Particles settle out as reduced flow energy limits the stream's ability to transport them.", "Every sediment grain accelerates upward because slower water gains unlimited carrying capacity."],
-  ["Distinguish physical weathering from chemical weathering.", "Physical weathering breaks rock into smaller pieces without necessarily changing its mineral composition.", "Chemical weathering changes minerals through chemical reactions.", "Mechanical breakup fragments rock; chemical processes alter the substances its minerals contain.", "Physical weathering always creates new elements, and chemical weathering never changes any mineral."],
-  ["Explain how plant roots can stabilize soil and also help break rock.", "Root networks can hold soil particles together and reduce their removal.", "Roots growing into cracks can exert pressure that widens them.", "Interwoven roots bind soil, while roots expanding in rock fissures can force those fissures wider.", "Roots cannot bind any soil, and growing into a crack always makes it narrower by removing all pressure."],
-  ["At an idealized oceanic divergent plate boundary, describe plate motion and the source of new crust.", "The plates move apart.", "Rising magma cools and solidifies to form new oceanic crust.", "The plates separate, with newly solidified upwelling molten material adding crust between them.", "The plates move together and new oceanic crust forms entirely from frozen rainwater."],
-  ["A dense oceanic plate converges with a less dense continental plate. Describe relative motion and the typical subduction pattern.", "The plates move toward one another.", "The oceanic plate typically descends beneath the continental plate.", "Convergence brings them together, and the denser oceanic plate usually sinks below the continent.", "They move apart while the less dense continent must always subduct above the ocean as a floating cloud."],
-  ["Distinguish earthquake magnitude from shaking intensity at a particular location.", "Magnitude measures the earthquake's overall size or released seismic energy using an appropriate scale.", "Intensity describes shaking effects at a location and can vary from place to place.", "Magnitude characterizes the event's size; intensity describes local effects and need not be the same everywhere.", "Magnitude is different for every house by definition, while intensity is only the earthquake's fixed total energy."],
-  ["For the same flood hazard, distinguish exposure from vulnerability.", "Exposure concerns people or assets present in the area that can be affected.", "Vulnerability concerns their susceptibility to harm, such as weak buildings or limited protection.", "Exposure asks who or what lies in the flood's reach; vulnerability asks how readily those exposed people or assets are damaged.", "Exposure means only wall strength, while vulnerability is simply the number of objects on a map regardless of susceptibility."],
-  ["On a 1:50,000 map, two points are 4 cm apart. Give the ground distance in kilometers and explain what 1 cm represents.", "The ground distance is 2 km.", "One map centimeter represents 50,000 ground centimeters, or 0.5 km.", "The separation is two kilometers, since each centimeter on the map stands for half a kilometer on the ground.", "The ground distance is 200 km because one map centimeter means 50 km."],
-  ["Map area A has closely spaced contours and area B has widely spaced contours. Both show adjacent contours labeled 100 m, 120 m and 140 m. Compare steepness and state the contour interval.", "Area A is steeper than area B.", "The contour interval is 20 meters.", "A has the steeper slope, and neighboring contour lines represent a twenty-meter height difference.", "A is flatter, and the contour interval is 100 meters."],
-  ["Distinguish absolute location from relative location using coordinates and nearby landmarks.", "Absolute location can specify a position using fixed coordinates.", "Relative location describes a position in relation to another place or landmark.", "Coordinates locate a point in a fixed reference system; describing it as north of a bridge gives a relative position.", "Absolute location means a personal opinion, while relative location forbids any reference to another place."],
-  ["Why does a flat world-map projection distort some properties? Name the geometric issue and one property that may be distorted.", "A curved spherical surface cannot be flattened into a plane while preserving all its geometric properties.", "Properties such as area, shape, distance, or direction may be distorted.", "Mapping a globe onto a plane cannot retain every geometric relationship, so something such as area or shape must change.", "A sphere and plane are geometrically identical, so every flat world map preserves every distance, angle and area exactly."],
-  ["Region A has 100 people in 10 square kilometers. Region B has 200 people in 100 square kilometers. Compare total population and population density.", "B has the larger total population.", "A has the higher density, 10 versus 2 people per square kilometer.", "B contains more people overall, but A is denser at ten per square kilometer compared with B's two.", "A has more people overall and B is denser at twenty people per square kilometer."],
-  ["A town records 50 births, 30 deaths, 20 arrivals and 10 departures. Calculate natural change and net migration.", "Natural population change is an increase of 20.", "Net migration is an increase of 10.", "Births minus deaths add twenty people, and arrivals minus departures add ten.", "Natural change is a loss of 20 and net migration is a loss of 10."],
-  ["A population diagram shows a large child age group. State a possible future implication and one reason it is not a certain forecast.", "It can indicate a large group approaching working or reproductive age later.", "Future mortality, migration, or fertility can change the outcome.", "Many children may later enter adult ages, but deaths, movement, and changing birth patterns make the future uncertain.", "The diagram guarantees no children will become adults and proves all future births and migration exactly."],
-  ["Define a renewable resource and explain why it can still be depleted by excessive use.", "A renewable resource can be replenished through natural processes on a relevant timescale.", "Being renewable does not mean its available supply cannot be depleted by excessive use.", "Nature can replace a renewable resource over time, but consumption can still reduce its stock if it exceeds renewal.", "Renewable means a resource can never be replaced and simultaneously guarantees unlimited extraction without depletion."],
-  ["A fish stock reproduces but catches exceed replenishment year after year. Predict the stock trend and state a condition supporting recovery.", "The stock tends to decline when removals exceed replenishment.", "Recovery can occur when additions exceed losses, for example after fishing pressure is reduced.", "Taking fish faster than replacement shrinks the stock; recovery needs a balance that allows new fish to outnumber losses.", "The stock must grow because any renewable resource is infinite, and recovery requires removing every breeding fish."],
-  ["Distinguish a water reservoir's stock from an inflow rate.", "The stock is the amount of water held at a given time.", "Inflow is the amount entering per unit time.", "Stored volume is a stock; incoming volume per second or day is a flow.", "Stock is measured only in liters per second, while inflow is simply the permanent amount stored with no time dimension."],
-  ["You can spend one free hour studying or working for 12 units of pay. If working is your best alternative, give the opportunity cost of studying and explain its basis.", "The opportunity cost is the forgone 12 units of pay.", "Opportunity cost values the best alternative given up by the choice.", "Studying costs the twelve units you could have earned, because opportunity cost measures the next-best forgone option.", "The opportunity cost is zero because time has no alternatives and forgone options never matter."],
-  ["You choose A instead of either B worth 10 units or C worth 7 units, and only one option is possible. Give the opportunity cost and explain why it is not 17.", "The opportunity cost is 10 units.", "B and C are mutually exclusive alternatives, so their values are not added.", "The best sacrificed option is worth ten; the two rejected options cannot both be taken, so summing them would overstate the cost.", "The cost is 17 because every rejected mutually exclusive option must be enjoyed simultaneously."],
-  ["Explain economic scarcity and why it can exist even for a wealthy person.", "Resources are limited relative to competing wants or uses.", "Even a wealthy person has only 24 hours in a day.", "Some competing uses exceed the available resources; a wealthy person still has only twenty-four hours in a day.", "Scarcity means only having no money, and wealthy people have infinitely many hours each day."],
-  ["Distinguish a change in quantity demanded caused by the good's own price from a shift in demand.", "An own-price change moves along a given demand curve.", "A change in another demand determinant can shift the demand curve.", "Changing the product's price selects a different point on the same curve, while another influencing factor can move the curve itself.", "Every own-price change shifts the entire curve, and changes in buyer preferences can never affect demand."],
-  ["Buyers' income rises while prices and other factors remain fixed. Predict the demand shift for a normal good and for an inferior good.", "For the normal good, demand shifts to the right.", "For the inferior good, demand shifts to the left.", "Higher income makes buyers want more of the normal good and less of the inferior good at the same prices.", "Higher income shifts the normal good's demand left and the inferior good's demand right."],
-  ["A production input becomes cheaper, other things equal. Predict the usual supply shift and explain the incentive.", "Supply tends to shift to the right.", "Lower production cost makes supplying a given quantity more profitable at an unchanged output price.", "The supply curve moves outward because producing units costs less while their selling price is held fixed.", "Supply necessarily disappears because cheaper inputs make each unit more costly to produce."],
-  ["A fictional market has a binding price ceiling of 5 currency units per item, below equilibrium. Quantity demanded is 100 items and quantity supplied is 60 at that price. Calculate the shortage and state the highest price sellers may legally charge under the ceiling.", "The shortage is 40 units.", "Sellers may legally charge at most 5 currency units per item.", "Buyers want forty more items than are available, and the legal unit-price cap is five.", "There is a surplus of 160 items, and the ceiling permits any price above 5."],
-  ["A fictional market has a binding price floor of 6 currency units per item, above equilibrium. Quantity supplied is 90 items and quantity demanded is 50. Calculate the surplus and state the lowest price sellers may legally charge under the floor.", "The surplus is 40 units.", "Sellers may legally charge at least 6 currency units per item.", "Forty offered items exceed what buyers want, and six is the minimum legal unit price.", "There is a shortage of 140 items, and the floor permits any price below 6."],
-  ["Initially price is 10 currency units and quantity demanded is 100 units. Price then rises by 10% and quantity demanded falls by 20%. Using the stated percentage-change approximation, give price elasticity's magnitude and total revenue after the change.", "The elasticity magnitude is 2.", "Total revenue after the change is 880 currency units.", "The absolute percentage-response ratio is two; the new price of eleven times eighty units gives revenue of eight hundred eighty.", "The elasticity magnitude is 0.1 and the new total revenue is 1320 currency units."],
-  ["In a fictional tax market, sellers remit a per-unit tax but can pass part of it to buyers through price. Distinguish remittance from economic incidence.", "Remittance identifies who sends the tax payment to the government.", "Economic incidence identifies who ultimately bears the burden through changed prices or returns.", "The seller may make the legal payment, while buyers and sellers can share the economic cost through price and income changes.", "Remitting a tax proves buyers bear no cost, and economic incidence means only the envelope used to send payment."],
-  ["Total cost is 100 for 10 units and 108 for 11 units. Give average cost at 10 units and marginal cost of the eleventh.", "Average cost at 10 units is 10 per unit.", "The marginal cost of the eleventh unit is 8.", "At ten units, cost averages ten each; producing one more adds eight to total cost.", "Average cost is 1000 per unit and the extra unit costs 108 on its own."],
-  ["A nonrefundable ticket that cannot be resold or transferred has already been paid for. Explain why that payment is sunk and what should guide a forward-looking attend-or-skip choice.", "The payment cannot be recovered by either current option.", "The decision should compare future benefits and costs that differ between attending and skipping.", "The past outlay is unrecoverable either way, so the choice turns on the remaining consequences of each option.", "Skipping automatically refunds the nonrefundable ticket, and only the past payment should matter regardless of future consequences."],
-  ["A fictional shop earns revenue of 100 and has accounting costs of 70. State revenue and accounting profit.", "Revenue is 100.", "Accounting profit is 30.", "Sales bring in one hundred, leaving thirty after the stated accounting costs.", "Revenue is 30 and accounting profit is 170."],
-  ["A fictional factory's smoke damages neighboring gardens without compensation. Identify the external cost and distinguish it from the factory's private cost.", "Garden damage is a cost imposed on third parties.", "That uncompensated damage is not included in the factory's own paid production costs.", "Neighbors bear a loss from smoke, and the factory does not pay for that loss in its private accounts.", "Garden damage is a benefit paid entirely to the neighbors, and the factory fully compensates it according to the scenario."],
-  ["A household plants flowers that provide nectar for a neighbor's bees without payment. Identify the external benefit and who receives it.", "The nectar supports bees beyond the planting household's own benefit.", "The neighboring beekeeper receives that benefit without paying the planter.", "The flowers create a spillover benefit for the bees, enjoyed by the neighbor without a payment to the household.", "The flowers provide no nectar, and the scenario says the neighbor pays for every benefit."],
-  ["A fictional activity gives its participant 10 units of benefit and neighbors 4 additional units, with no other effects. State private benefit and total social benefit.", "The participant's private benefit is 10.", "Total social benefit is 14.", "Ten units go to the participant personally; including the four-unit spillover gives fourteen overall.", "Private benefit is 4 and total social benefit is 6."],
-  ["Distinguish absolute advantage from comparative advantage.", "Absolute advantage means producing a good with fewer inputs or greater output per input.", "Comparative advantage means producing it at lower opportunity cost.", "Absolute advantage is making more with the same inputs; comparative advantage is giving up less alternative output for each unit produced.", "Absolute advantage means the highest opportunity cost, and comparative advantage means merely having the largest population."],
-  ["A gives up 2 units of cloth per unit of grain; B gives up 4. Who has comparative advantage in grain, and which trade rate could benefit both under these costs?", "A has comparative advantage in grain.", "A trade rate strictly between 2 and 4 units of cloth per grain can benefit both.", "A sacrifices less cloth to make grain; exchanging a grain for a cloth amount above two and below four offers scope for mutual gain.", "B has comparative advantage in grain and only a rate of ten cloth per grain can benefit both."],
-  ["A nominal income rises from 100 to 110 while the relevant price index rises from 100 to 110. State nominal change and the change in purchasing power.", "Nominal income rises by 10%.", "Purchasing power is unchanged under these stated prices.", "Money income increases one tenth, but prices rise by the same factor so real buying capacity stays constant.", "Nominal income falls by 10% and purchasing power doubles."],
-  ["Distinguish a basket-based price index from the price of a single product.", "The index combines prices for multiple items using specified weights.", "One product's price can move differently from the overall index.", "A weighted set of goods contributes to the index, so the movement of an individual item need not match the aggregate.", "Every basket index is exactly the price of one randomly chosen item and all other prices must change identically."],
-  ["A fictional economy's GDP rises from 200 to 210 in the same stated price units. Give the new GDP level and growth rate.", "The new GDP level is 210.", "The growth rate is 5%.", "GDP now stands at two hundred ten, which is a five-percent rise from two hundred.", "The new level is 5 and the growth rate is 210%."],
-  ["Two communities have the same mean income. Explain what the equality establishes and what it leaves unknown about inequality.", "Their total income divided by population is the same.", "Their distributions can still differ, including how unequal individual incomes are.", "Average income matches, but the spread and concentration of income among residents may be different.", "Equal means prove everyone in both communities earns exactly the same amount and make different distributions impossible."]
+  [
+    "Distinguish weather from climate.",
+    "Weather describes atmospheric conditions at a particular time and place.",
+    "Climate describes long-term patterns and distributions of those conditions.",
+    "Today's local atmospheric state is weather; its patterns over many years form the climate.",
+    "Weather is a permanent century-long average, while climate means only today's rainfall."
+  ],
+  [
+    "Explain how sunlight angle affects received energy per unit area and how day length affects daily solar energy.",
+    "More oblique sunlight spreads the same incoming beam over a larger surface area.",
+    "Longer daylight can increase the duration of solar energy receipt.",
+    "A slanting beam distributes energy across more ground, while additional daylight hours extend the time available to receive sunlight.",
+    "Oblique sunlight concentrates a beam into a smaller area, and a longer day always means less time receiving sunlight."
+  ],
+  [
+    "Explain why the hemisphere tilted toward the Sun generally has summer, mentioning sunlight angle and day length.",
+    "It generally receives sunlight more directly.",
+    "It generally has longer daylight hours.",
+    "Sunlight arrives at a less oblique angle and the daytime period lasts longer.",
+    "Its sunlight is always more oblique and its days are shortest in summer."
+  ],
+  [
+    "An unsaturated air parcel expands without heat exchange or condensation as it rises into lower pressure. Explain its temperature change and the expansion mechanism.",
+    "The rising parcel cools.",
+    "Expansion does work against surrounding air using the parcel's internal energy.",
+    "Its temperature drops as expansion expends internal energy in work on its surroundings.",
+    "The parcel heats indefinitely because expansion adds unlimited energy from nothing."
+  ],
+  [
+    "Describe rain on a mountain's windward side and the usual rain-shadow effect on the leeward side.",
+    "Moist air rises and cools on the windward slope, encouraging condensation and precipitation.",
+    "Descending leeward air warms and is often drier, reducing precipitation.",
+    "Uplift cools moist windward air enough to form rain; descent on the other side warms the air and favors drier conditions.",
+    "Air always heats while rising on the windward slope and produces its heaviest rain only by becoming hotter and drier on descent."
+  ],
+  [
+    "Two coasts at similar latitude differ because one is beside a warm ocean current. Explain a possible temperature effect and why latitude alone is insufficient.",
+    "The warm current can transfer heat to nearby air and moderate coastal temperatures.",
+    "Latitude does not capture influences such as ocean circulation.",
+    "Heat supplied by the current can warm the coastal air, and latitude by itself leaves out the effect of circulating ocean water.",
+    "Ocean currents can transfer no heat, and latitude determines every coastal temperature exactly."
+  ],
+  [
+    "On a sunny day, land heats faster than nearby sea. Explain rising air over land and the resulting surface sea breeze.",
+    "Air warmed over land rises, tending to lower surface pressure there relative to the sea.",
+    "Cooler surface air moves from the sea toward the land.",
+    "Heated land air rises and creates a relative surface pressure deficit, drawing lower-level air inland from the water.",
+    "Air over land sinks because heating makes it infinitely dense, and the surface breeze must blow from land to sea in this scenario."
+  ],
+  [
+    "Distinguish evaporation from condensation in the water cycle.",
+    "Evaporation changes liquid water into water vapor.",
+    "Condensation changes water vapor into liquid droplets.",
+    "Liquid becomes gas during evaporation, while gaseous water becomes liquid during condensation.",
+    "Evaporation turns gas into rock and condensation turns liquid into a vacuum."
+  ],
+  [
+    "Replacing permeable ground with sealed pavement can affect storm runoff. Explain infiltration and the timing of runoff.",
+    "Pavement reduces the area where water can infiltrate into soil.",
+    "More rain can reach drains or streams rapidly as surface runoff.",
+    "Less water soaks into the ground, and a larger share can move quickly over the surface into drainage channels.",
+    "Sealing ground makes all rain soak instantly through concrete and eliminates surface runoff entirely."
+  ],
+  [
+    "Distinguish infiltration from surface runoff.",
+    "Infiltration is water entering the ground through the surface.",
+    "Surface runoff is water flowing over the land surface.",
+    "Water soaking into soil infiltrates; water traveling across the ground runs off.",
+    "Infiltration means clouds moving upward, while surface runoff means groundwater freezing beneath bedrock."
+  ],
+  [
+    "In an idealized meandering river, describe the usual outer-bank and inner-bank processes.",
+    "Faster flow at the outer bank tends to cause erosion.",
+    "Slower flow at the inner bank tends to encourage deposition.",
+    "The outside of the bend is commonly scoured by faster water, while slower inside flow lays down sediment.",
+    "The fastest outside water always deposits all sediment, while the slow inside water can never deposit anything."
+  ],
+  [
+    "A river's flow energy falls as it enters a calm lake. Predict a sediment effect and explain the transport-capacity change.",
+    "Some carried sediment is deposited.",
+    "The slower, lower-energy flow can carry less sediment of a given size.",
+    "Particles settle out as reduced flow energy limits the stream's ability to transport them.",
+    "Every sediment grain accelerates upward because slower water gains unlimited carrying capacity."
+  ],
+  [
+    "Distinguish physical weathering from chemical weathering.",
+    "Physical weathering breaks rock into smaller pieces without necessarily changing its mineral composition.",
+    "Chemical weathering changes minerals through chemical reactions.",
+    "Mechanical breakup fragments rock; chemical processes alter the substances its minerals contain.",
+    "Physical weathering always creates new elements, and chemical weathering never changes any mineral."
+  ],
+  [
+    "Explain how plant roots can stabilize soil and also help break rock.",
+    "Root networks can hold soil particles together and reduce their removal.",
+    "Roots growing into cracks can exert pressure that widens them.",
+    "Interwoven roots bind soil, while roots expanding in rock fissures can force those fissures wider.",
+    "Roots cannot bind any soil, and growing into a crack always makes it narrower by removing all pressure."
+  ],
+  [
+    "At an idealized oceanic divergent plate boundary, describe plate motion and the source of new crust.",
+    "The plates move apart.",
+    "Rising magma cools and solidifies to form new oceanic crust.",
+    "The plates separate, with newly solidified upwelling molten material adding crust between them.",
+    "The plates move together and new oceanic crust forms entirely from frozen rainwater."
+  ],
+  [
+    "A dense oceanic plate converges with a less dense continental plate. Describe relative motion and the typical subduction pattern.",
+    "The plates move toward one another.",
+    "The oceanic plate typically descends beneath the continental plate.",
+    "Convergence brings them together, and the denser oceanic plate usually sinks below the continent.",
+    "They move apart while the less dense continent must always subduct above the ocean as a floating cloud."
+  ],
+  [
+    "Distinguish earthquake magnitude from shaking intensity at a particular location.",
+    "Magnitude measures the earthquake's overall size or released seismic energy using an appropriate scale.",
+    "Intensity describes shaking effects at a location and can vary from place to place.",
+    "Magnitude characterizes the event's size; intensity describes local effects and need not be the same everywhere.",
+    "Magnitude is different for every house by definition, while intensity is only the earthquake's fixed total energy."
+  ],
+  [
+    "For the same flood hazard, distinguish exposure from vulnerability.",
+    "Exposure concerns people or assets present in the area that can be affected.",
+    "Vulnerability concerns their susceptibility to harm, such as weak buildings or limited protection.",
+    "Exposure asks who or what lies in the flood's reach; vulnerability asks how readily those exposed people or assets are damaged.",
+    "Exposure means only wall strength, while vulnerability is simply the number of objects on a map regardless of susceptibility."
+  ],
+  [
+    "On a 1:50,000 map, two points are 4 cm apart. Give the ground distance in kilometers and explain what 1 cm represents.",
+    "The ground distance is 2 km.",
+    "One map centimeter represents 50,000 ground centimeters, or 0.5 km.",
+    "The separation is two kilometers, since each centimeter on the map stands for half a kilometer on the ground.",
+    "The ground distance is 200 km because one map centimeter means 50 km."
+  ],
+  [
+    "Map area A has closely spaced contours and area B has widely spaced contours. Both show adjacent contours labeled 100 m, 120 m and 140 m. Compare steepness and state the contour interval.",
+    "Area A is steeper than area B.",
+    "The contour interval is 20 meters.",
+    "A has the steeper slope, and neighboring contour lines represent a twenty-meter height difference.",
+    "A is flatter, and the contour interval is 100 meters."
+  ],
+  [
+    "Distinguish absolute location from relative location using coordinates and nearby landmarks.",
+    "Absolute location can specify a position using fixed coordinates.",
+    "Relative location describes a position in relation to another place or landmark.",
+    "Coordinates locate a point in a fixed reference system; describing it as north of a bridge gives a relative position.",
+    "Absolute location means a personal opinion, while relative location forbids any reference to another place."
+  ],
+  [
+    "Why does a flat world-map projection distort some properties? Name the geometric issue and one property that may be distorted.",
+    "A curved spherical surface cannot be flattened into a plane while preserving all its geometric properties.",
+    "Properties such as area, shape, distance, or direction may be distorted.",
+    "Mapping a globe onto a plane cannot retain every geometric relationship, so something such as area or shape must change.",
+    "A sphere and plane are geometrically identical, so every flat world map preserves every distance, angle and area exactly."
+  ],
+  [
+    "Region A has 100 people in 10 square kilometers. Region B has 200 people in 100 square kilometers. Compare total population and population density.",
+    "B has the larger total population.",
+    "A has the higher density, 10 versus 2 people per square kilometer.",
+    "B contains more people overall, but A is denser at ten per square kilometer compared with B's two.",
+    "A has more people overall and B is denser at twenty people per square kilometer."
+  ],
+  [
+    "A town records 50 births, 30 deaths, 20 arrivals and 10 departures. Calculate natural change and net migration.",
+    "Natural population change is an increase of 20.",
+    "Net migration is an increase of 10.",
+    "Births minus deaths add twenty people, and arrivals minus departures add ten.",
+    "Natural change is a loss of 20 and net migration is a loss of 10."
+  ],
+  [
+    "A population diagram shows a large child age group. State a possible future implication and one reason it is not a certain forecast.",
+    "It can indicate a large group approaching working or reproductive age later.",
+    "Future mortality, migration, or fertility can change the outcome.",
+    "Many children may later enter adult ages, but deaths, movement, and changing birth patterns make the future uncertain.",
+    "The diagram guarantees no children will become adults and proves all future births and migration exactly."
+  ],
+  [
+    "Define a renewable resource and explain why it can still be depleted by excessive use.",
+    "A renewable resource can be replenished through natural processes on a relevant timescale.",
+    "Being renewable does not mean its available supply cannot be depleted by excessive use.",
+    "Nature can replace a renewable resource over time, but consumption can still reduce its stock if it exceeds renewal.",
+    "Renewable means a resource can never be replaced and simultaneously guarantees unlimited extraction without depletion."
+  ],
+  [
+    "A fish stock reproduces but catches exceed replenishment year after year. Predict the stock trend and state a condition supporting recovery.",
+    "The stock tends to decline when removals exceed replenishment.",
+    "Recovery can occur when additions exceed losses, for example after fishing pressure is reduced.",
+    "Taking fish faster than replacement shrinks the stock; recovery needs a balance that allows new fish to outnumber losses.",
+    "The stock must grow because any renewable resource is infinite, and recovery requires removing every breeding fish."
+  ],
+  [
+    "Distinguish a water reservoir's stock from an inflow rate.",
+    "The stock is the amount of water held at a given time.",
+    "Inflow is the amount entering per unit time.",
+    "Stored volume is a stock; incoming volume per second or day is a flow.",
+    "Stock is measured only in liters per second, while inflow is simply the permanent amount stored with no time dimension."
+  ],
+  [
+    "You can spend one free hour studying or working for 12 units of pay. If working is your best alternative, give the opportunity cost of studying and explain its basis.",
+    "The opportunity cost is the forgone 12 units of pay.",
+    "Opportunity cost values the best alternative given up by the choice.",
+    "Studying costs the twelve units you could have earned, because opportunity cost measures the next-best forgone option.",
+    "The opportunity cost is zero because time has no alternatives and forgone options never matter."
+  ],
+  [
+    "You choose A instead of either B worth 10 units or C worth 7 units, and only one option is possible. Give the opportunity cost and explain why it is not 17.",
+    "The opportunity cost is 10 units.",
+    "B and C are mutually exclusive alternatives, so their values are not added.",
+    "The best sacrificed option is worth ten; the two rejected options cannot both be taken, so summing them would overstate the cost.",
+    "The cost is 17 because every rejected mutually exclusive option must be enjoyed simultaneously."
+  ],
+  [
+    "Explain economic scarcity and why it can exist even for a wealthy person.",
+    "Resources are limited relative to competing wants or uses.",
+    "Even a wealthy person has only 24 hours in a day.",
+    "Some competing uses exceed the available resources; a wealthy person still has only twenty-four hours in a day.",
+    "Scarcity means only having no money, and wealthy people have infinitely many hours each day."
+  ],
+  [
+    "Distinguish a change in quantity demanded caused by the good's own price from a shift in demand.",
+    "An own-price change moves along a given demand curve.",
+    "A change in another demand determinant can shift the demand curve.",
+    "Changing the product's price selects a different point on the same curve, while another influencing factor can move the curve itself.",
+    "Every own-price change shifts the entire curve, and changes in buyer preferences can never affect demand."
+  ],
+  [
+    "Buyers' income rises while prices and other factors remain fixed. Predict the demand shift for a normal good and for an inferior good.",
+    "For the normal good, demand shifts to the right.",
+    "For the inferior good, demand shifts to the left.",
+    "Higher income makes buyers want more of the normal good and less of the inferior good at the same prices.",
+    "Higher income shifts the normal good's demand left and the inferior good's demand right."
+  ],
+  [
+    "A production input becomes cheaper, other things equal. Predict the usual supply shift and explain the incentive.",
+    "Supply tends to shift to the right.",
+    "Lower production cost makes supplying a given quantity more profitable at an unchanged output price.",
+    "The supply curve moves outward because producing units costs less while their selling price is held fixed.",
+    "Supply necessarily disappears because cheaper inputs make each unit more costly to produce."
+  ],
+  [
+    "A fictional market has a binding price ceiling of 5 currency units per item, below equilibrium. Quantity demanded is 100 items and quantity supplied is 60 at that price. Calculate the shortage and state the highest price sellers may legally charge under the ceiling.",
+    "The shortage is 40 units.",
+    "Sellers may legally charge at most 5 currency units per item.",
+    "Buyers want forty more items than are available, and the legal unit-price cap is five.",
+    "There is a surplus of 160 items, and the ceiling permits any price above 5."
+  ],
+  [
+    "A fictional market has a binding price floor of 6 currency units per item, above equilibrium. Quantity supplied is 90 items and quantity demanded is 50. Calculate the surplus and state the lowest price sellers may legally charge under the floor.",
+    "The surplus is 40 units.",
+    "Sellers may legally charge at least 6 currency units per item.",
+    "Forty offered items exceed what buyers want, and six is the minimum legal unit price.",
+    "There is a shortage of 140 items, and the floor permits any price below 6."
+  ],
+  [
+    "Initially price is 10 currency units and quantity demanded is 100 units. Price then rises by 10% and quantity demanded falls by 20%. Using the stated percentage-change approximation, give price elasticity's magnitude and total revenue after the change.",
+    "The elasticity magnitude is 2.",
+    "Total revenue after the change is 880 currency units.",
+    "The absolute percentage-response ratio is two; the new price of eleven times eighty units gives revenue of eight hundred eighty.",
+    "The elasticity magnitude is 0.1 and the new total revenue is 1320 currency units."
+  ],
+  [
+    "In a fictional tax market, sellers remit a per-unit tax but can pass part of it to buyers through price. Distinguish remittance from economic incidence.",
+    "Remittance identifies who sends the tax payment to the government.",
+    "Economic incidence identifies who ultimately bears the burden through changed prices or returns.",
+    "The seller may make the legal payment, while buyers and sellers can share the economic cost through price and income changes.",
+    "Remitting a tax proves buyers bear no cost, and economic incidence means only the envelope used to send payment."
+  ],
+  [
+    "Total cost is 100 for 10 units and 108 for 11 units. Give average cost at 10 units and marginal cost of the eleventh.",
+    "Average cost at 10 units is 10 per unit.",
+    "The marginal cost of the eleventh unit is 8.",
+    "At ten units, cost averages ten each; producing one more adds eight to total cost.",
+    "Average cost is 1000 per unit and the extra unit costs 108 on its own."
+  ],
+  [
+    "A nonrefundable ticket that cannot be resold or transferred has already been paid for. Explain why that payment is sunk and what should guide a forward-looking attend-or-skip choice.",
+    "The payment cannot be recovered by either current option.",
+    "The decision should compare future benefits and costs that differ between attending and skipping.",
+    "The past outlay is unrecoverable either way, so the choice turns on the remaining consequences of each option.",
+    "Skipping automatically refunds the nonrefundable ticket, and only the past payment should matter regardless of future consequences."
+  ],
+  [
+    "A fictional shop earns revenue of 100 and has accounting costs of 70. State revenue and accounting profit.",
+    "Revenue is 100.",
+    "Accounting profit is 30.",
+    "Sales bring in one hundred, leaving thirty after the stated accounting costs.",
+    "Revenue is 30 and accounting profit is 170."
+  ],
+  [
+    "A fictional factory's smoke damages neighboring gardens without compensation. Identify the external cost and distinguish it from the factory's private cost.",
+    "Garden damage is a cost imposed on third parties.",
+    "That uncompensated damage is not included in the factory's own paid production costs.",
+    "Neighbors bear a loss from smoke, and the factory does not pay for that loss in its private accounts.",
+    "Garden damage is a benefit paid entirely to the neighbors, and the factory fully compensates it according to the scenario."
+  ],
+  [
+    "A household plants flowers that provide nectar for a neighbor's bees without payment. Identify the external benefit and who receives it.",
+    "The nectar supports bees beyond the planting household's own benefit.",
+    "The neighboring beekeeper receives that benefit without paying the planter.",
+    "The flowers create a spillover benefit for the bees, enjoyed by the neighbor without a payment to the household.",
+    "The flowers provide no nectar, and the scenario says the neighbor pays for every benefit."
+  ],
+  [
+    "A fictional activity gives its participant 10 units of benefit and neighbors 4 additional units, with no other effects. State private benefit and total social benefit.",
+    "The participant's private benefit is 10.",
+    "Total social benefit is 14.",
+    "Ten units go to the participant personally; including the four-unit spillover gives fourteen overall.",
+    "Private benefit is 4 and total social benefit is 6."
+  ],
+  [
+    "Distinguish absolute advantage from comparative advantage.",
+    "Absolute advantage means producing a good with fewer inputs or greater output per input.",
+    "Comparative advantage means producing it at lower opportunity cost.",
+    "Absolute advantage is making more with the same inputs; comparative advantage is giving up less alternative output for each unit produced.",
+    "Absolute advantage means the highest opportunity cost, and comparative advantage means merely having the largest population."
+  ],
+  [
+    "A gives up 2 units of cloth per unit of grain; B gives up 4. Who has comparative advantage in grain, and which trade rate could benefit both under these costs?",
+    "A has comparative advantage in grain.",
+    "A trade rate strictly between 2 and 4 units of cloth per grain can benefit both.",
+    "A sacrifices less cloth to make grain; exchanging a grain for a cloth amount above two and below four offers scope for mutual gain.",
+    "B has comparative advantage in grain and only a rate of ten cloth per grain can benefit both."
+  ],
+  [
+    "A nominal income rises from 100 to 110 while the relevant price index rises from 100 to 110. State nominal change and the change in purchasing power.",
+    "Nominal income rises by 10%.",
+    "Purchasing power is unchanged under these stated prices.",
+    "Money income increases one tenth, but prices rise by the same factor so real buying capacity stays constant.",
+    "Nominal income falls by 10% and purchasing power doubles."
+  ],
+  [
+    "Distinguish a basket-based price index from the price of a single product.",
+    "The index combines prices for multiple items using specified weights.",
+    "One product's price can move differently from the overall index.",
+    "A weighted set of goods contributes to the index, so the movement of an individual item need not match the aggregate.",
+    "Every basket index is exactly the price of one randomly chosen item and all other prices must change identically."
+  ],
+  [
+    "A fictional economy's GDP rises from 200 to 210 in the same stated price units. Give the new GDP level and growth rate.",
+    "The new GDP level is 210.",
+    "The growth rate is 5%.",
+    "GDP now stands at two hundred ten, which is a five-percent rise from two hundred.",
+    "The new level is 5 and the growth rate is 210%."
+  ],
+  [
+    "Two communities have the same mean income. Explain what the equality establishes and what it leaves unknown about inequality.",
+    "Their total income divided by population is the same.",
+    "Their distributions can still differ, including how unequal individual incomes are.",
+    "Average income matches, but the spread and concentration of income among residents may be different.",
+    "Equal means prove everyone in both communities earns exactly the same amount and make different distributions impossible."
+  ]
 ]

@@ -14,6 +14,7 @@ Here is what I want Capy Notebook to be:
 - a fast and performant application on all platforms, audits for performance regressions, latency testing, stress testing should be made frequently to ensure the user experience is smooth
 - offline-ready (an item to be worked on), certain features of the app should not always fail if requests to server fail.
 - a foundation for a future platform catering for an entire school's operations: teachers and students study in the platform together, move mundane tasks like sending notices, grading assignments, posting scores etc. into the platform. The current application should provide the capabilities to achieving that: Rag pipelines, storage, AI capabilities, file managements, orchestrations, etc.
+- Avoid retry mechanisms for endpoint calls that can be easily-retried by users. Some components which should have retries are e.g. parsing and ingest
 
 IMPORTANT:
 The Netcup ingest host runs parser and ingest workloads for production, UAT,

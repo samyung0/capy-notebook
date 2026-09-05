@@ -1,52 +1,352 @@
 [
-  ["Starting with 2 < 5, multiply both sides by -1. State the resulting comparison and explain why its direction reverses.", "The resulting comparison is -2 > -5.", "Multiplication by a negative number reverses positions on the number line, so the order reverses.", "Negative two is greater than negative five; reflecting both numbers across zero flips their order.", "The result is -2 < -5 because multiplying by any number preserves order."],
-  ["Expand (a + b)^2 and identify the term omitted by the claim that it equals a^2 + b^2.", "The expansion is a^2 + 2ab + b^2.", "The proposed expression omits the cross term 2ab.", "Multiplying the two brackets gives a squared plus b squared plus twice ab; the twice-ab part is missing from the claim.", "It expands to a^2 + b^2, and there is no omitted term."],
-  ["Squaring both sides of sqrt(x + 2) = x gives candidate roots 2 and -1. State which root is valid and explain why the other is rejected.", "Only x = 2 solves the original equation.", "At x = -1 the original left side is 1 and the right side is -1, so that candidate fails the original equation.", "Two is the solution. Negative one must be discarded because substitution gives one equals negative one.", "Both 2 and -1 are valid because every root of the squared equation solves the original equation."],
-  ["Simplify (x^2 - 1)/(x - 1) and state the domain restriction that must remain.", "The expression simplifies to x + 1 where the original expression is defined.", "The value x = 1 remains excluded because it makes the original denominator zero.", "It is x plus one, but only away from one; the original fraction has a zero denominator there.", "The expression becomes x - 1 and is defined for every real x."],
-  ["Classify 2x + 3 = 2x + 5 and 2x + 3 = 2x + 3 by their solution sets.", "The first equation has no solutions.", "The second equation is true for every real x.", "No number can satisfy the first equality, whereas any real number works in the second.", "Both equations have the unique solution x = 0."],
-  ["A price of 100 falls by 20% and then rises by 20%. Give the final price and explain why the changes do not cancel.", "The final price is 96.", "The increase is calculated from 80, a smaller base than the original 100.", "It ends at ninety-six because the rise is one fifth of eighty, not one fifth of the original hundred.", "It returns to 100 because equal percentage increases and decreases always cancel."],
-  ["Compare 3/4 and 5/8. State which is larger and show how to rewrite 3/4 with denominator 8.", "The fraction 3/4 is larger than 5/8.", "With denominator 8, 3/4 equals 6/8.", "Three quarters wins: written in eighths it is six eighths, compared with five eighths.", "Five eighths is larger because 5 is larger than 3, and 3/4 equals 3/8."],
-  ["A rate increases from 20% to 25%. Give the increase in percentage points and the relative percentage increase.", "The increase is 5 percentage points.", "The relative increase is 25% of the original rate.", "The rates differ by five points, and that five is one quarter of the original twenty percent.", "It rises by 25 percentage points, equivalent to a relative increase of 5%."],
-  ["A class of 10 students averages 60 and a class of 30 averages 80. Give the combined mean and explain the weighting.", "The combined mean is 75.", "The class means must be weighted by their respective student counts, 10 and 30.", "The overall average is seventy-five; the larger class contributes three times as much weight as the smaller one.", "The mean is 70 because each class must always have equal weight regardless of size."],
-  ["The data 2, 3, 4 become 2, 3, 100. State what happens to the mean and what happens to the median.", "The mean increases from 3 to 35.", "The median remains 3.", "The average jumps to thirty-five from three, but the middle value stays at three.", "Both the mean and median become 100."],
-  ["For events A and B with nonzero probabilities, distinguish independence from mutual exclusivity.", "Independence means knowing that one event occurred does not change the probability of the other.", "Mutual exclusivity means the two events cannot occur together.", "Independent events leave each other's chances unchanged; mutually exclusive events have no shared occurrence.", "Independent events can never occur together, whereas mutually exclusive events must always occur together."],
-  ["A group has 12 cyclists, including 3 who wear red, and 8 non-cyclists. Among cyclists, what is the probability of wearing red, and which group supplies the denominator?", "The conditional probability is 3/12, or 1/4.", "The denominator counts the 12 cyclists, because the condition restricts the group to cyclists.", "The chance is one quarter: we divide by the twelve cyclists rather than everyone in the group.", "The probability is 3/20 because conditioning never changes the denominator."],
-  ["An event rate changes from 1 in 1000 to 2 in 1000. Give the relative increase and the absolute increase in events per 1000.", "The relative increase is 100%.", "The absolute increase is 1 event per 1000.", "The rate doubles, so the relative rise is one hundred percent, while only one additional event occurs per thousand.", "The relative increase is 1%, and the absolute increase is 1000 events per 1000."],
-  ["A library estimates all residents' reading habits by surveying only people leaving the library. Identify the selection problem and its likely direction.", "The sample excludes residents who do not visit the library and is not representative of all residents.", "It is likely to overrepresent people who read or use library services frequently.", "Non-visitors are left out, so the responses can make frequent reading look more common than it is across all residents.", "The sample is representative because everyone was standing near the library, and it must underestimate reading."],
-  ["A survey finds that students who attend optional tutoring have higher scores. State what the survey establishes and one reason it does not prove tutoring caused the difference.", "The survey establishes an association between tutoring attendance and higher scores.", "Other differences, such as prior attainment or motivation, could account for the association.", "Attendance and marks vary together, but pre-existing ability or motivation could explain the gap.", "The survey proves tutoring caused every score increase because confounding factors cannot affect surveys."],
-  ["A claim says every prime number is odd. Explain what the example 2 shows and why one example suffices.", "The number 2 is prime and even, so the claim is false.", "A universal claim is disproved by one instance that violates it.", "Two is an even prime, which defeats the statement; an all-cases claim needs just one exception to fail.", "Two is odd, and disproving a universal claim requires checking every possible number."],
-  ["For integers, compare 'divisible by 4' with 'even'. State the implication that always holds and whether its converse holds.", "An integer divisible by 4 is always even.", "The converse fails because some even integers, such as 2, are not divisible by 4.", "A multiple of four must be even, but an even number need not be a multiple of four, as two demonstrates.", "Every even integer is divisible by 4, while multiples of 4 can be odd."],
-  ["Describe the two obligations in a proof by induction for a statement P(n) over integers n >= 1.", "The base case must establish P(1).", "The inductive step must establish P(k+1) assuming P(k) for an arbitrary integer k >= 1.", "First verify the statement at one; then show that its truth at any allowed k guarantees truth at the next integer.", "Testing P(1) alone proves all cases, and the next-case step must assume P(k+1) to prove itself."],
-  ["A taxi fare is F = 3d + 5, where d is distance in kilometres. Interpret the slope and the intercept.", "The fare increases by 3 currency units for each additional kilometre.", "The intercept 5 is the fare at zero distance, representing the fixed charge.", "Each extra kilometre adds three units, and five units are charged before any distance is traveled.", "The slope means a fixed charge of 3, and the intercept means 5 units per kilometre."],
-  ["Explain why the slope of a vertical line is undefined. State the change in x between two distinct points and the relevant rule about division.", "Two distinct points on a vertical line have zero change in x.", "Division by zero is undefined.", "The horizontal change is zero between distinct points, and dividing by that zero run has no defined result.", "The horizontal change is nonzero, and division by zero always gives zero."],
-  ["Compare the sequences 2, 5, 8, 11 and 2, 6, 18, 54 by stating the rule that makes each arithmetic or geometric.", "The first is arithmetic because consecutive terms differ by 3.", "The second is geometric because consecutive terms have ratio 3.", "Adding three produces each new term of the first sequence, while multiplying by three produces each new term of the second.", "The first is geometric because its ratio is 3, and the second is arithmetic because its difference is 3."],
-  ["A population is multiplied by 1.1 each year. State its proportional yearly change and explain why the numerical increase is not constant.", "The population grows by 10% each year.", "Each year's increase is calculated from a changing population base, so the added number changes.", "It rises by one tenth annually, and the number added grows because that tenth is taken from a larger population each year.", "It grows by exactly 1.1 individuals per year because multiplication by a fixed factor always adds a fixed number."],
-  ["Interpret log_2(8) = 3 as an exponential statement and state the domain restriction on the argument of a real logarithm.", "The corresponding exponential statement is 2^3 = 8.", "The argument of a real logarithm must be positive.", "Two raised to the third power gives eight; over the real numbers, a logarithm can take only a positive input.", "It means 3^2 = 8, and real logarithms allow zero and negative arguments."],
-  ["Let f(x) = x^2. Write f(x+h) and f(x)+h explicitly.", "The expression f(x+h) is x^2 + 2xh + h^2.", "The expression f(x)+h is x^2 + h.", "Applying f after adding h gives the square of x+h, namely x squared plus twice xh plus h squared; adding h after f gives x squared plus h.", "Both expressions equal x^2 + h^2."],
-  ["A function s(t) gives position in metres at time t in seconds. Interpret s'(t) and give its units.", "The derivative s'(t) is instantaneous velocity.", "Its units are metres per second.", "It tells the rate of position change at that instant, measured in m/s.", "It is total distance accumulated, measured in square metres."],
-  ["A differentiable function has f'(x) > 0 on (0, 2) and f'(x) < 0 on (2, 4). State its behavior on each interval.", "The function is increasing on (0, 2).", "The function is decreasing on (2, 4).", "As x increases through (0, 2), the function increases; as x increases through (2, 4), it decreases.", "It decreases on both intervals because the derivative changes sign."],
-  ["Use f(x) = x^3 to explain why f'(0) = 0 does not guarantee a local maximum or minimum.", "For this function, f'(0) equals 0.", "The function continues increasing through 0, so 0 is not a local extremum.", "The tangent is horizontal at zero, yet the cubic rises on both sides through the point, so it is neither a peak nor a trough.", "Its derivative at zero is 3, and the origin is a strict local maximum."],
-  ["A graph lies above the x-axis with area 7 and below it with area 3 over an interval. Give the signed definite integral and the total geometric area.", "The signed definite integral is 4.", "The total geometric area is 10.", "Net signed area is seven minus three, or four; total area counts both regions positively and equals ten.", "The integral is 10 and the total geometric area is 4."],
-  ["Differentiate (3x + 1)^2 and identify the inner-function factor supplied by the chain rule.", "The derivative is 6(3x + 1).", "The inner derivative contributes a factor of 3.", "The result is twice (3x+1) times three, giving six times (3x+1); three comes from differentiating the inside.", "The derivative is 2(3x+1), and the inner derivative contributes a factor of 1."],
-  ["Give the general indefinite integral of 2x and state what happens to its additive constant when differentiated.", "The general antiderivative is x^2 + C.", "Differentiating the additive constant gives zero.", "The integral is x squared plus an arbitrary constant, and that fixed number vanishes on differentiation.", "The integral is 2x^2 without a constant, and the derivative of C equals C."],
-  ["At x = 0, compare continuity and differentiability of f(x) = |x|.", "The function is continuous at 0.", "It is not differentiable at 0 because the left and right slopes differ.", "The graph has no break at the origin, but its corner gives different one-sided slopes, so no derivative exists there.", "It is discontinuous at 0 and has a derivative of 1 there."],
-  ["If the definite integral of f from a to b is 6, give the integral from b to a and explain the sign change.", "The integral from b to a is -6.", "Reversing the integration limits reverses the orientation of accumulation and hence the sign.", "It becomes negative six because the same accumulation is traversed in the opposite direction.", "It stays 6 because the order of definite-integral limits never matters."],
-  ["Two similar triangles have corresponding sides 3 and 9. A second side of the smaller triangle is 4. Give the scale factor and the matching larger side.", "The scale factor from the smaller triangle to the larger is 3.", "The matching larger side is 12.", "The large triangle is three times the small one in length, so the side paired with four has length twelve.", "The scale factor is 6 and the matching side is 10."],
-  ["Every length of a plane figure is multiplied by 3. State the area scale factor and explain why it is not 3.", "The area is multiplied by 9.", "Area involves two length dimensions, so the length factor is squared.", "Its area becomes nine times as large because both independent length directions are tripled.", "Area is multiplied by 3 because area depends on only one length dimension."],
-  ["Every length of a solid is doubled. State the volume scale factor and explain it using dimensions.", "The volume is multiplied by 8.", "Volume involves three length dimensions, so the length factor is cubed.", "There is eight times the volume because doubling each of three dimensions gives 2 times 2 times 2.", "The volume only doubles because a solid has one length dimension."],
-  ["A rectangle changes from 2 by 6 to 3 by 5. Compare the perimeters and the areas.", "Both rectangles have perimeter 16.", "The area increases from 12 to 15.", "The boundary length stays at sixteen, but the enclosed area grows from twelve to fifteen.", "The perimeter increases from 12 to 15 and the area stays 16."],
-  ["State the condition for using a^2 + b^2 = c^2 to find a triangle side, and state whether c is the longest or shortest side.", "The triangle must be right-angled.", "The side c is the longest side.", "This relation applies to a right triangle, with c labeling its longest side.", "It applies to every triangle, and c must be its shortest side."],
-  ["A circle has diameter 10. Give its radius and its area in terms of pi.", "The radius is 5.", "The area is 25 pi.", "The radius is half the diameter, or five, and pi times its square is twenty-five pi.", "The radius is 10 and the area is 100 pi."],
-  ["Convert 180 degrees to radians and explain radians using arc length and radius.", "An angle of 180 degrees is pi radians.", "An angle in radians equals the intercepted arc length divided by the radius.", "A half-turn measures pi radians; radian measure is arc length relative to the circle's radius.", "A half-turn is 2 pi radians, and radians equal radius divided by arc length."],
-  ["A vector has perpendicular components 3 and 4. Give its magnitude and explain why it is not the sum of the components.", "The vector magnitude is 5.", "Perpendicular components combine through the square root of the sum of squares, not ordinary addition.", "Its length is five, found from the hypotenuse of the component triangle rather than adding three and four.", "Its magnitude is 7 because perpendicular components must be added directly."],
-  ["Two nonzero Euclidean vectors have dot product zero. State their angle relationship and explain why the nonzero condition matters.", "The vectors are perpendicular.", "The zero vector has zero dot product with every vector but does not define a direction for this angle conclusion.", "They meet at a right angle; excluding the zero vector matters because it has no direction despite always giving a zero dot product.", "They must be parallel, and the zero vector has a unique direction perpendicular to all vectors."],
-  ["Let A be a rotation and B a stretch. Explain the order of applying AB to a column vector and whether AB must equal BA.", "In ABv, B acts on the vector first and A acts second.", "The products AB and BA need not be equal because transformation order can change the result.", "Stretch first and rotate afterward; swapping those steps can produce a different transformation.", "ABv applies A first, and all matrix transformations commute."],
-  ["A square matrix A is singular. State its determinant and the possible numbers of solutions of Ax = b.", "The determinant of A is zero.", "Depending on b, the system has no solutions or infinitely many solutions.", "Its determinant vanishes, and the right-hand side determines whether the system is inconsistent or has an infinite family of solutions.", "The determinant must equal 1, and every singular system has exactly one solution."],
-  ["Give the complex conjugate of 3 + 4i and the product of that number with its conjugate.", "The conjugate is 3 - 4i.", "The product is 25.", "Changing the imaginary part's sign gives three minus four i; multiplying the pair gives twenty-five.", "The conjugate is -3 + 4i, and their product is -25."],
-  ["A proposed speed formula is distance times time. Give the units of that expression and explain why they are not speed units.", "Distance times time has units of length multiplied by time, such as metre-seconds.", "Speed requires length divided by time, such as metres per second.", "Multiplication produces m s, whereas a speed must have m/s, so the formula's dimensions are wrong.", "Distance times time has units of m/s, which is why it is always a valid speed formula."],
-  ["To estimate 3 times 1/3, someone rounds 1/3 to 0.3 before multiplying. State the resulting error and how delaying rounding avoids it.", "Early rounding gives 0.9 rather than the exact result 1.", "Keeping the exact fraction until the final calculation avoids the accumulated rounding error in this example.", "Rounding first loses a tenth in the final result; retaining one third until multiplication yields exactly one.", "Rounding first gives exactly 1, and retaining exact fractions makes the result less accurate."],
-  ["Calculate 1/3 - 0.333 exactly and explain how 0.333 relates to the decimal expansion of 1/3.", "The exact difference is 1/3000.", "The decimal 0.333 is a finite approximation to the nonterminating recurring decimal for 1/3.", "One three-thousandth separates them; three decimal places only approximate the endlessly repeating expansion of one third.", "The difference is zero because every fraction has a terminating three-digit decimal expansion."],
-  ["Calculate (2/3) divided by (4/5) and state the reciprocal multiplication used.", "The result is 5/6.", "The calculation multiplies 2/3 by the reciprocal 5/4.", "Multiply two thirds by five quarters to get ten twelfths, or five sixths.", "The result is 8/15 because division by a fraction means multiplying by that same fraction."],
-  ["A bag contains 3 red and 2 blue balls. After drawing a red ball without replacement, give the next red probability and explain why the draws are dependent.", "The next red probability is 2/4, or 1/2.", "The first draw changes the bag's composition, so it changes the next draw's probability.", "The chance becomes one half because taking away a red ball changes what remains in the bag.", "It remains 3/5 because draws without replacement are always independent."],
-  ["Let f(x) = x + 1 for x < 2 and f(x) = 10 for x >= 2. Give f(2) and state which branch applies.", "The value f(2) is 10.", "The second branch applies because its condition includes equality at 2.", "At two the function returns ten, since two belongs to the greater-than-or-equal branch.", "The value is 3 because x < 2 includes x = 2."]
+  [
+    "Starting with 2 < 5, multiply both sides by -1. State the resulting comparison and explain why its direction reverses.",
+    "The resulting comparison is -2 > -5.",
+    "Multiplication by a negative number reverses positions on the number line, so the order reverses.",
+    "Negative two is greater than negative five; reflecting both numbers across zero flips their order.",
+    "The result is -2 < -5 because multiplying by any number preserves order."
+  ],
+  [
+    "Expand (a + b)^2 and identify the term omitted by the claim that it equals a^2 + b^2.",
+    "The expansion is a^2 + 2ab + b^2.",
+    "The proposed expression omits the cross term 2ab.",
+    "Multiplying the two brackets gives a squared plus b squared plus twice ab; the twice-ab part is missing from the claim.",
+    "It expands to a^2 + b^2, and there is no omitted term."
+  ],
+  [
+    "Squaring both sides of sqrt(x + 2) = x gives candidate roots 2 and -1. State which root is valid and explain why the other is rejected.",
+    "Only x = 2 solves the original equation.",
+    "At x = -1 the original left side is 1 and the right side is -1, so that candidate fails the original equation.",
+    "Two is the solution. Negative one must be discarded because substitution gives one equals negative one.",
+    "Both 2 and -1 are valid because every root of the squared equation solves the original equation."
+  ],
+  [
+    "Simplify (x^2 - 1)/(x - 1) and state the domain restriction that must remain.",
+    "The expression simplifies to x + 1 where the original expression is defined.",
+    "The value x = 1 remains excluded because it makes the original denominator zero.",
+    "It is x plus one, but only away from one; the original fraction has a zero denominator there.",
+    "The expression becomes x - 1 and is defined for every real x."
+  ],
+  [
+    "Classify 2x + 3 = 2x + 5 and 2x + 3 = 2x + 3 by their solution sets.",
+    "The first equation has no solutions.",
+    "The second equation is true for every real x.",
+    "No number can satisfy the first equality, whereas any real number works in the second.",
+    "Both equations have the unique solution x = 0."
+  ],
+  [
+    "A price of 100 falls by 20% and then rises by 20%. Give the final price and explain why the changes do not cancel.",
+    "The final price is 96.",
+    "The increase is calculated from 80, a smaller base than the original 100.",
+    "It ends at ninety-six because the rise is one fifth of eighty, not one fifth of the original hundred.",
+    "It returns to 100 because equal percentage increases and decreases always cancel."
+  ],
+  [
+    "Compare 3/4 and 5/8. State which is larger and show how to rewrite 3/4 with denominator 8.",
+    "The fraction 3/4 is larger than 5/8.",
+    "With denominator 8, 3/4 equals 6/8.",
+    "Three quarters wins: written in eighths it is six eighths, compared with five eighths.",
+    "Five eighths is larger because 5 is larger than 3, and 3/4 equals 3/8."
+  ],
+  [
+    "A rate increases from 20% to 25%. Give the increase in percentage points and the relative percentage increase.",
+    "The increase is 5 percentage points.",
+    "The relative increase is 25% of the original rate.",
+    "The rates differ by five points, and that five is one quarter of the original twenty percent.",
+    "It rises by 25 percentage points, equivalent to a relative increase of 5%."
+  ],
+  [
+    "A class of 10 students averages 60 and a class of 30 averages 80. Give the combined mean and explain the weighting.",
+    "The combined mean is 75.",
+    "The class means must be weighted by their respective student counts, 10 and 30.",
+    "The overall average is seventy-five; the larger class contributes three times as much weight as the smaller one.",
+    "The mean is 70 because each class must always have equal weight regardless of size."
+  ],
+  [
+    "The data 2, 3, 4 become 2, 3, 100. State what happens to the mean and what happens to the median.",
+    "The mean increases from 3 to 35.",
+    "The median remains 3.",
+    "The average jumps to thirty-five from three, but the middle value stays at three.",
+    "Both the mean and median become 100."
+  ],
+  [
+    "For events A and B with nonzero probabilities, distinguish independence from mutual exclusivity.",
+    "Independence means knowing that one event occurred does not change the probability of the other.",
+    "Mutual exclusivity means the two events cannot occur together.",
+    "Independent events leave each other's chances unchanged; mutually exclusive events have no shared occurrence.",
+    "Independent events can never occur together, whereas mutually exclusive events must always occur together."
+  ],
+  [
+    "A group has 12 cyclists, including 3 who wear red, and 8 non-cyclists. Among cyclists, what is the probability of wearing red, and which group supplies the denominator?",
+    "The conditional probability is 3/12, or 1/4.",
+    "The denominator counts the 12 cyclists, because the condition restricts the group to cyclists.",
+    "The chance is one quarter: we divide by the twelve cyclists rather than everyone in the group.",
+    "The probability is 3/20 because conditioning never changes the denominator."
+  ],
+  [
+    "An event rate changes from 1 in 1000 to 2 in 1000. Give the relative increase and the absolute increase in events per 1000.",
+    "The relative increase is 100%.",
+    "The absolute increase is 1 event per 1000.",
+    "The rate doubles, so the relative rise is one hundred percent, while only one additional event occurs per thousand.",
+    "The relative increase is 1%, and the absolute increase is 1000 events per 1000."
+  ],
+  [
+    "A library estimates all residents' reading habits by surveying only people leaving the library. Identify the selection problem and its likely direction.",
+    "The sample excludes residents who do not visit the library and is not representative of all residents.",
+    "It is likely to overrepresent people who read or use library services frequently.",
+    "Non-visitors are left out, so the responses can make frequent reading look more common than it is across all residents.",
+    "The sample is representative because everyone was standing near the library, and it must underestimate reading."
+  ],
+  [
+    "A survey finds that students who attend optional tutoring have higher scores. State what the survey establishes and one reason it does not prove tutoring caused the difference.",
+    "The survey establishes an association between tutoring attendance and higher scores.",
+    "Other differences, such as prior attainment or motivation, could account for the association.",
+    "Attendance and marks vary together, but pre-existing ability or motivation could explain the gap.",
+    "The survey proves tutoring caused every score increase because confounding factors cannot affect surveys."
+  ],
+  [
+    "A claim says every prime number is odd. Explain what the example 2 shows and why one example suffices.",
+    "The number 2 is prime and even, so the claim is false.",
+    "A universal claim is disproved by one instance that violates it.",
+    "Two is an even prime, which defeats the statement; an all-cases claim needs just one exception to fail.",
+    "Two is odd, and disproving a universal claim requires checking every possible number."
+  ],
+  [
+    "For integers, compare 'divisible by 4' with 'even'. State the implication that always holds and whether its converse holds.",
+    "An integer divisible by 4 is always even.",
+    "The converse fails because some even integers, such as 2, are not divisible by 4.",
+    "A multiple of four must be even, but an even number need not be a multiple of four, as two demonstrates.",
+    "Every even integer is divisible by 4, while multiples of 4 can be odd."
+  ],
+  [
+    "Describe the two obligations in a proof by induction for a statement P(n) over integers n >= 1.",
+    "The base case must establish P(1).",
+    "The inductive step must establish P(k+1) assuming P(k) for an arbitrary integer k >= 1.",
+    "First verify the statement at one; then show that its truth at any allowed k guarantees truth at the next integer.",
+    "Testing P(1) alone proves all cases, and the next-case step must assume P(k+1) to prove itself."
+  ],
+  [
+    "A taxi fare is F = 3d + 5, where d is distance in kilometres. Interpret the slope and the intercept.",
+    "The fare increases by 3 currency units for each additional kilometre.",
+    "The intercept 5 is the fare at zero distance, representing the fixed charge.",
+    "Each extra kilometre adds three units, and five units are charged before any distance is traveled.",
+    "The slope means a fixed charge of 3, and the intercept means 5 units per kilometre."
+  ],
+  [
+    "Explain why the slope of a vertical line is undefined. State the change in x between two distinct points and the relevant rule about division.",
+    "Two distinct points on a vertical line have zero change in x.",
+    "Division by zero is undefined.",
+    "The horizontal change is zero between distinct points, and dividing by that zero run has no defined result.",
+    "The horizontal change is nonzero, and division by zero always gives zero."
+  ],
+  [
+    "Compare the sequences 2, 5, 8, 11 and 2, 6, 18, 54 by stating the rule that makes each arithmetic or geometric.",
+    "The first is arithmetic because consecutive terms differ by 3.",
+    "The second is geometric because consecutive terms have ratio 3.",
+    "Adding three produces each new term of the first sequence, while multiplying by three produces each new term of the second.",
+    "The first is geometric because its ratio is 3, and the second is arithmetic because its difference is 3."
+  ],
+  [
+    "A population is multiplied by 1.1 each year. State its proportional yearly change and explain why the numerical increase is not constant.",
+    "The population grows by 10% each year.",
+    "Each year's increase is calculated from a changing population base, so the added number changes.",
+    "It rises by one tenth annually, and the number added grows because that tenth is taken from a larger population each year.",
+    "It grows by exactly 1.1 individuals per year because multiplication by a fixed factor always adds a fixed number."
+  ],
+  [
+    "Interpret log_2(8) = 3 as an exponential statement and state the domain restriction on the argument of a real logarithm.",
+    "The corresponding exponential statement is 2^3 = 8.",
+    "The argument of a real logarithm must be positive.",
+    "Two raised to the third power gives eight; over the real numbers, a logarithm can take only a positive input.",
+    "It means 3^2 = 8, and real logarithms allow zero and negative arguments."
+  ],
+  [
+    "Let f(x) = x^2. Write f(x+h) and f(x)+h explicitly.",
+    "The expression f(x+h) is x^2 + 2xh + h^2.",
+    "The expression f(x)+h is x^2 + h.",
+    "Applying f after adding h gives the square of x+h, namely x squared plus twice xh plus h squared; adding h after f gives x squared plus h.",
+    "Both expressions equal x^2 + h^2."
+  ],
+  [
+    "A function s(t) gives position in metres at time t in seconds. Interpret s'(t) and give its units.",
+    "The derivative s'(t) is instantaneous velocity.",
+    "Its units are metres per second.",
+    "It tells the rate of position change at that instant, measured in m/s.",
+    "It is total distance accumulated, measured in square metres."
+  ],
+  [
+    "A differentiable function has f'(x) > 0 on (0, 2) and f'(x) < 0 on (2, 4). State its behavior on each interval.",
+    "The function is increasing on (0, 2).",
+    "The function is decreasing on (2, 4).",
+    "As x increases through (0, 2), the function increases; as x increases through (2, 4), it decreases.",
+    "It decreases on both intervals because the derivative changes sign."
+  ],
+  [
+    "Use f(x) = x^3 to explain why f'(0) = 0 does not guarantee a local maximum or minimum.",
+    "For this function, f'(0) equals 0.",
+    "The function continues increasing through 0, so 0 is not a local extremum.",
+    "The tangent is horizontal at zero, yet the cubic rises on both sides through the point, so it is neither a peak nor a trough.",
+    "Its derivative at zero is 3, and the origin is a strict local maximum."
+  ],
+  [
+    "A graph lies above the x-axis with area 7 and below it with area 3 over an interval. Give the signed definite integral and the total geometric area.",
+    "The signed definite integral is 4.",
+    "The total geometric area is 10.",
+    "Net signed area is seven minus three, or four; total area counts both regions positively and equals ten.",
+    "The integral is 10 and the total geometric area is 4."
+  ],
+  [
+    "Differentiate (3x + 1)^2 and identify the inner-function factor supplied by the chain rule.",
+    "The derivative is 6(3x + 1).",
+    "The inner derivative contributes a factor of 3.",
+    "The result is twice (3x+1) times three, giving six times (3x+1); three comes from differentiating the inside.",
+    "The derivative is 2(3x+1), and the inner derivative contributes a factor of 1."
+  ],
+  [
+    "Give the general indefinite integral of 2x and state what happens to its additive constant when differentiated.",
+    "The general antiderivative is x^2 + C.",
+    "Differentiating the additive constant gives zero.",
+    "The integral is x squared plus an arbitrary constant, and that fixed number vanishes on differentiation.",
+    "The integral is 2x^2 without a constant, and the derivative of C equals C."
+  ],
+  [
+    "At x = 0, compare continuity and differentiability of f(x) = |x|.",
+    "The function is continuous at 0.",
+    "It is not differentiable at 0 because the left and right slopes differ.",
+    "The graph has no break at the origin, but its corner gives different one-sided slopes, so no derivative exists there.",
+    "It is discontinuous at 0 and has a derivative of 1 there."
+  ],
+  [
+    "If the definite integral of f from a to b is 6, give the integral from b to a and explain the sign change.",
+    "The integral from b to a is -6.",
+    "Reversing the integration limits reverses the orientation of accumulation and hence the sign.",
+    "It becomes negative six because the same accumulation is traversed in the opposite direction.",
+    "It stays 6 because the order of definite-integral limits never matters."
+  ],
+  [
+    "Two similar triangles have corresponding sides 3 and 9. A second side of the smaller triangle is 4. Give the scale factor and the matching larger side.",
+    "The scale factor from the smaller triangle to the larger is 3.",
+    "The matching larger side is 12.",
+    "The large triangle is three times the small one in length, so the side paired with four has length twelve.",
+    "The scale factor is 6 and the matching side is 10."
+  ],
+  [
+    "Every length of a plane figure is multiplied by 3. State the area scale factor and explain why it is not 3.",
+    "The area is multiplied by 9.",
+    "Area involves two length dimensions, so the length factor is squared.",
+    "Its area becomes nine times as large because both independent length directions are tripled.",
+    "Area is multiplied by 3 because area depends on only one length dimension."
+  ],
+  [
+    "Every length of a solid is doubled. State the volume scale factor and explain it using dimensions.",
+    "The volume is multiplied by 8.",
+    "Volume involves three length dimensions, so the length factor is cubed.",
+    "There is eight times the volume because doubling each of three dimensions gives 2 times 2 times 2.",
+    "The volume only doubles because a solid has one length dimension."
+  ],
+  [
+    "A rectangle changes from 2 by 6 to 3 by 5. Compare the perimeters and the areas.",
+    "Both rectangles have perimeter 16.",
+    "The area increases from 12 to 15.",
+    "The boundary length stays at sixteen, but the enclosed area grows from twelve to fifteen.",
+    "The perimeter increases from 12 to 15 and the area stays 16."
+  ],
+  [
+    "State the condition for using a^2 + b^2 = c^2 to find a triangle side, and state whether c is the longest or shortest side.",
+    "The triangle must be right-angled.",
+    "The side c is the longest side.",
+    "This relation applies to a right triangle, with c labeling its longest side.",
+    "It applies to every triangle, and c must be its shortest side."
+  ],
+  [
+    "A circle has diameter 10. Give its radius and its area in terms of pi.",
+    "The radius is 5.",
+    "The area is 25 pi.",
+    "The radius is half the diameter, or five, and pi times its square is twenty-five pi.",
+    "The radius is 10 and the area is 100 pi."
+  ],
+  [
+    "Convert 180 degrees to radians and explain radians using arc length and radius.",
+    "An angle of 180 degrees is pi radians.",
+    "An angle in radians equals the intercepted arc length divided by the radius.",
+    "A half-turn measures pi radians; radian measure is arc length relative to the circle's radius.",
+    "A half-turn is 2 pi radians, and radians equal radius divided by arc length."
+  ],
+  [
+    "A vector has perpendicular components 3 and 4. Give its magnitude and explain why it is not the sum of the components.",
+    "The vector magnitude is 5.",
+    "Perpendicular components combine through the square root of the sum of squares, not ordinary addition.",
+    "Its length is five, found from the hypotenuse of the component triangle rather than adding three and four.",
+    "Its magnitude is 7 because perpendicular components must be added directly."
+  ],
+  [
+    "Two nonzero Euclidean vectors have dot product zero. State their angle relationship and explain why the nonzero condition matters.",
+    "The vectors are perpendicular.",
+    "The zero vector has zero dot product with every vector but does not define a direction for this angle conclusion.",
+    "They meet at a right angle; excluding the zero vector matters because it has no direction despite always giving a zero dot product.",
+    "They must be parallel, and the zero vector has a unique direction perpendicular to all vectors."
+  ],
+  [
+    "Let A be a rotation and B a stretch. Explain the order of applying AB to a column vector and whether AB must equal BA.",
+    "In ABv, B acts on the vector first and A acts second.",
+    "The products AB and BA need not be equal because transformation order can change the result.",
+    "Stretch first and rotate afterward; swapping those steps can produce a different transformation.",
+    "ABv applies A first, and all matrix transformations commute."
+  ],
+  [
+    "A square matrix A is singular. State its determinant and the possible numbers of solutions of Ax = b.",
+    "The determinant of A is zero.",
+    "Depending on b, the system has no solutions or infinitely many solutions.",
+    "Its determinant vanishes, and the right-hand side determines whether the system is inconsistent or has an infinite family of solutions.",
+    "The determinant must equal 1, and every singular system has exactly one solution."
+  ],
+  [
+    "Give the complex conjugate of 3 + 4i and the product of that number with its conjugate.",
+    "The conjugate is 3 - 4i.",
+    "The product is 25.",
+    "Changing the imaginary part's sign gives three minus four i; multiplying the pair gives twenty-five.",
+    "The conjugate is -3 + 4i, and their product is -25."
+  ],
+  [
+    "A proposed speed formula is distance times time. Give the units of that expression and explain why they are not speed units.",
+    "Distance times time has units of length multiplied by time, such as metre-seconds.",
+    "Speed requires length divided by time, such as metres per second.",
+    "Multiplication produces m s, whereas a speed must have m/s, so the formula's dimensions are wrong.",
+    "Distance times time has units of m/s, which is why it is always a valid speed formula."
+  ],
+  [
+    "To estimate 3 times 1/3, someone rounds 1/3 to 0.3 before multiplying. State the resulting error and how delaying rounding avoids it.",
+    "Early rounding gives 0.9 rather than the exact result 1.",
+    "Keeping the exact fraction until the final calculation avoids the accumulated rounding error in this example.",
+    "Rounding first loses a tenth in the final result; retaining one third until multiplication yields exactly one.",
+    "Rounding first gives exactly 1, and retaining exact fractions makes the result less accurate."
+  ],
+  [
+    "Calculate 1/3 - 0.333 exactly and explain how 0.333 relates to the decimal expansion of 1/3.",
+    "The exact difference is 1/3000.",
+    "The decimal 0.333 is a finite approximation to the nonterminating recurring decimal for 1/3.",
+    "One three-thousandth separates them; three decimal places only approximate the endlessly repeating expansion of one third.",
+    "The difference is zero because every fraction has a terminating three-digit decimal expansion."
+  ],
+  [
+    "Calculate (2/3) divided by (4/5) and state the reciprocal multiplication used.",
+    "The result is 5/6.",
+    "The calculation multiplies 2/3 by the reciprocal 5/4.",
+    "Multiply two thirds by five quarters to get ten twelfths, or five sixths.",
+    "The result is 8/15 because division by a fraction means multiplying by that same fraction."
+  ],
+  [
+    "A bag contains 3 red and 2 blue balls. After drawing a red ball without replacement, give the next red probability and explain why the draws are dependent.",
+    "The next red probability is 2/4, or 1/2.",
+    "The first draw changes the bag's composition, so it changes the next draw's probability.",
+    "The chance becomes one half because taking away a red ball changes what remains in the bag.",
+    "It remains 3/5 because draws without replacement are always independent."
+  ],
+  [
+    "Let f(x) = x + 1 for x < 2 and f(x) = 10 for x >= 2. Give f(2) and state which branch applies.",
+    "The value f(2) is 10.",
+    "The second branch applies because its condition includes equality at 2.",
+    "At two the function returns ten, since two belongs to the greater-than-or-equal branch.",
+    "The value is 3 because x < 2 includes x = 2."
+  ]
 ]

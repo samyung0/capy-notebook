@@ -1,52 +1,352 @@
 [
-  ["Classify an O2 particle and a Na+ particle.", "O2 is a molecule made of two bonded oxygen atoms.", "Na+ is a positively charged ion.", "Two oxygen atoms joined together form the O2 molecule; sodium with a positive charge is an ion.", "O2 is a single atom and Na+ is an uncharged molecule."],
-  ["Carbon-12 and carbon-14 are isotopes. Compare their proton and neutron counts.", "Both have six protons.", "Carbon-12 has six neutrons and carbon-14 has eight.", "Each nucleus contains 6 protons, but the neutron counts are 6 and 8 respectively.", "They have different proton counts and the same neutron count."],
-  ["An atom has 11 protons and 12 neutrons. State its atomic number and mass number.", "Its atomic number is 11.", "Its mass number is 23.", "Z is eleven; adding the nucleons gives A equal to twenty-three.", "The atomic number is 12 and the mass number is 11."],
-  ["A neutral magnesium atom loses two electrons. State the resulting charge and what happens to its proton count.", "The resulting ion has charge +2.", "Its proton count is unchanged.", "It becomes Mg2+, while the nucleus retains the same number of protons.", "It becomes negatively charged because two protons disappear."],
-  ["Contrast a compound with a mixture in terms of bonding and composition.", "A compound contains elements chemically bonded together in a fixed ratio.", "A mixture's components can be present in variable proportions.", "A compound has a set chemical combining ratio, whereas the relative quantities of components in a mixture can vary.", "Compounds have arbitrary composition, while every mixture has a fixed chemical formula."],
-  ["Why will filtering water not produce hydrogen and oxygen, and what kind of change could separate these elements?", "Filtration does not break the chemical bonds in water molecules.", "Separating water into its elements requires a chemical change, such as electrolysis.", "A filter cannot sever water's bonds; decomposition by an electrical chemical process can produce the elements.", "A fine enough filter separates hydrogen because oxygen atoms are always larger than its pores."],
-  ["Balance H2 + O2 -> H2O and state why changing H2O to H2O2 is not a valid balancing step.", "The balanced equation is 2 H2 + O2 -> 2 H2O.", "Changing a subscript changes the substance's identity.", "Use coefficients two, one, two; altering the formula would describe a different chemical substance.", "H2 + O2 -> H2O2 balances the equation without changing the product."],
-  ["A reaction releases gas from an open beaker and its measured mass falls. Explain the fall and whether total mass is destroyed.", "Some gaseous product leaves the measured beaker.", "Total mass remains conserved when the escaped material is included.", "The balance no longer measures the gas that escaped; counting it with the remaining contents preserves the original mass.", "The gas has no mass, so the reaction destroys mass."],
-  ["For 2 H2 + O2 -> 2 H2O, start with 3 mol H2 and 2 mol O2. Identify the limiting reactant and maximum water amount.", "Hydrogen is the limiting reactant.", "At most 3 mol of water can form.", "H2 runs out first, allowing a theoretical production of three moles of H2O.", "Oxygen limits the reaction and four moles of water form."],
-  ["The theoretical product yield is 10 g but 8 g is collected. State the percentage yield and explain what the theoretical yield means.", "The percentage yield is 80%.", "The theoretical yield is the maximum predicted by stoichiometry from the limiting reactant.", "The collected fraction is eighty percent; the ten-gram target is the amount calculated for complete conversion of the limiting reagent.", "The yield is 125%, and theoretical yield means the amount actually collected."],
-  ["Using Avogadro's constant 6.02 x 10^23 mol^-1, give the number of molecules in 2 mol of CO2 and the meaning of one mole.", "Two moles contain 1.204 x 10^24 CO2 molecules.", "One mole contains Avogadro's number of specified entities.", "There are 1.204 times ten to the twenty-fourth molecules; a mole is a count of 6.02 times ten to the twenty-third entities here.", "There are two molecules, since a mole is the mass of one molecule."],
-  ["Compare moles in 18 g of water, molar mass 18 g/mol, and 18 g of CO2, molar mass 44 g/mol. Give both amounts.", "The water amount is 1 mol.", "The CO2 amount is 18/44 mol, about 0.409 mol.", "Water gives one mole, while carbon dioxide gives 18/44 mol, approximately 0.409 mol.", "Both amounts are 18 mol because their masses match."],
-  ["Glucose has molecular formula C6H12O6. State its empirical formula and explain what a molecular formula specifies.", "Its empirical formula is CH2O.", "A molecular formula gives the actual number of each atom in one molecule.", "The simplest ratio is CH2O; the molecular notation counts the atoms within an individual molecule.", "The empirical formula is C6H12O6 and the molecular formula only gives the simplest ratio."],
-  ["Water is added to 100 mL of 2 mol/L solution until its volume is 200 mL. State the solute amount and final concentration.", "The solute amount stays at 0.2 mol.", "The final concentration is 1 mol/L.", "No solute is added or removed, leaving two-tenths of a mole in a one-molar solution.", "The solute doubles to 0.4 mol and concentration stays at 2 mol/L."],
-  ["Two solutions are both 0.5 mol/L, with volumes 1 L and 3 L. Compare their concentrations and their solute amounts.", "Their concentrations are equal.", "The 3 L solution contains three times as much solute.", "Both have the same molarity; the larger volume contains triple the moles.", "The larger solution is three times as concentrated but contains the same solute amount."],
-  ["At fixed temperature a saturated solution remains in contact with excess solid solute. Explain saturation and what happens to a little more added solid.", "The dissolved concentration is at the equilibrium solubility limit for that temperature.", "Additional solid does not produce a net increase in the amount dissolved under these unchanged conditions.", "The solution has reached its equilibrium dissolved concentration, so more crystals leave the net dissolved amount unchanged.", "Saturated means no solvent remains, so every extra crystal must dissolve."],
-  ["Distinguish the solubility of a solid from its rate of dissolving.", "Solubility is the equilibrium amount that can dissolve under specified conditions.", "Dissolution rate describes how quickly material enters solution.", "One quantity sets the eventual dissolved amount; the other measures the speed of the process.", "Solubility means stirring speed, and dissolution rate means the final equilibrium mass."],
-  ["Stirring makes sugar dissolve faster at unchanged temperature. Explain the rate effect and the effect on equilibrium solubility.", "Stirring brings less concentrated solvent to the sugar surface and improves transport away from it.", "Stirring alone need not change equilibrium solubility.", "Mixing refreshes liquid at the surface, but the equilibrium capacity of the solvent remains the same at that temperature.", "Stirring breaks sugar into new elements and permanently doubles its equilibrium solubility."],
-  ["Contrast ionic bonding in sodium chloride and covalent bonding in a hydrogen molecule.", "Ionic bonding is electrostatic attraction between oppositely charged ions.", "A covalent bond involves a shared pair of electrons between atoms.", "Salt holds positive and negative ions together by attraction; H2 joins atoms through electron sharing.", "Ionic bonds share neutral protons, while covalent bonds are attractions between free neutrons."],
-  ["Why does molten sodium chloride conduct electricity while solid sodium chloride does not? Give the state of charge carriers in each.", "In the melt, ions can move and carry charge.", "In the solid, ions are held in fixed lattice positions and cannot carry charge through the material.", "Mobile ions transport charge in the liquid; the crystalline arrangement immobilizes them in solid salt.", "The liquid conducts because its molecules have no charges, and the solid conducts through moving neutrons."],
-  ["When water boils, distinguish the interactions overcome from the bonds that remain within a water molecule.", "Boiling overcomes intermolecular attractions between water molecules.", "The covalent O-H bonds within individual water molecules remain intact in ordinary boiling.", "Molecules separate by overcoming attractions to neighboring molecules, while each molecule retains its oxygen-hydrogen covalent bonds.", "Boiling splits the O-H bonds into hydrogen and oxygen while all intermolecular attractions remain unchanged."],
-  ["Liquids A and B have similar molecular size; only A forms strong hydrogen bonds. Predict the higher boiling point and explain the energy difference.", "A is expected to have the higher boiling point.", "More energy is needed to overcome its stronger intermolecular attractions.", "A should boil at a higher temperature because separating its molecules requires a greater energy input.", "B has the higher boiling point because weaker attractions always require more energy to overcome."],
-  ["For linear symmetric CO2, state its overall polarity and the polarity of each carbon-oxygen bond.", "CO2 is overall nonpolar.", "Each C=O bond is polar.", "CO2 has no overall molecular dipole even though its individual carbon-oxygen bonds are polar.", "CO2 is strongly polar and its C=O bonds are nonpolar."],
-  ["For an ionic salt that dissolves in water, name the solvent-solute attraction and explain how hydration stabilizes the separated ions.", "Polar water molecules form ion-dipole attractions with the ions.", "A surrounding hydration shell stabilizes dispersed ions in solution.", "Water's charged ends attract the ions, and the surrounding water molecules help keep each dissolved ion stable.", "Water repels all charged particles and dissolves salt by removing all electrical charge from it."],
-  ["Explain electrical conduction in a metal and say what happens to the metal ions during this conduction.", "Delocalized electrons move through the metal carrying charge.", "The metal ions remain approximately in their lattice positions rather than flowing through the wire.", "Mobile electrons provide the current, while the positive lattice does not travel along the wire.", "Metal conducts by streaming positive nuclei through the wire while every electron stays fixed."],
-  ["In HCl + H2O -> H3O+ + Cl-, identify the proton donor and proton acceptor.", "HCl is the proton donor, the acid.", "H2O is the proton acceptor, the base.", "Hydrogen chloride supplies H+, and water receives it.", "Water donates the proton to chloride, while HCl is the proton acceptor."],
-  ["Distinguish a strong acid from a concentrated acid.", "A strong acid ionizes essentially completely in water under the stated usual dilute conditions.", "A concentrated acid solution contains a large amount of acid per unit volume.", "In the usual dilute aqueous conditions, a strong acid is almost fully ionized; a concentrated acid solution has a large amount of acid per unit volume.", "Strong means lots of acid per liter, while concentrated means complete ionization."],
-  ["For ideal dilute solutions, compare hydrogen-ion concentration at pH 3 and pH 4 and give its absolute concentration at pH 3.", "The pH 3 solution has ten times the hydrogen-ion concentration of the pH 4 solution.", "At pH 3, the hydrogen-ion concentration is 0.001 mol/L.", "The pH-three solution contains one thousandth of a mole of H+ per litre, ten times the concentration at pH four.", "pH 4 has ten times more hydrogen ions, and pH 3 means 3 mol/L of hydrogen ions."],
-  ["What change does a buffer resist, and why can a sufficiently large addition of acid overwhelm it?", "A buffer resists pH change from small additions of acid or base.", "Its acid-consuming component has a finite amount and can be used up.", "It limits small pH shifts, but enough added acid exhausts the available neutralizing component.", "A buffer prevents all temperature changes because it contains an unlimited acid-removing substance."],
-  ["An acid and base react but acid remains in excess. Describe neutralization and explain why the final pH need not be 7.", "Neutralization consumes acid and base through their reaction.", "Excess acid remains, so the final solution can be acidic.", "The reactants neutralize some of one another, yet the leftover acid can keep the final pH below seven.", "Neutralization creates only more acid, and every acid-base mixture automatically finishes at pH 7."],
-  ["Define oxidation and reduction in terms of electron transfer.", "Oxidation is loss of electrons.", "Reduction is gain of electrons.", "An oxidized species gives electrons away; a reduced species receives them.", "Oxidation gains electrons and reduction loses them."],
-  ["In Zn + Cu2+ -> Zn2+ + Cu, identify the reducing agent and oxidizing agent.", "Zinc is the reducing agent.", "Cu2+ is the oxidizing agent.", "Zn provides the reducing action, while copper(II) ions provide the oxidizing action.", "Copper metal is the reducing agent and Zn2+ is the oxidizing agent."],
-  ["Copper ions deposit as copper on a cathode during electrolysis. Explain the electron change and electrode mass change.", "Cu2+ gains two electrons to form copper metal.", "The deposited copper increases the cathode's mass.", "Copper(II) is reduced by taking two electrons, and the accumulating metal makes the cathode heavier.", "Copper ions lose electrons, making the cathode lighter as metal evaporates."],
-  ["In a working galvanic cell, distinguish charge transport in the external wire from that in the electrolyte.", "Electrons carry charge through the external wire.", "Ions move within the electrolyte to carry charge and maintain charge balance.", "The wire current uses electrons; ionic motion through the solution completes charge transport.", "Ions travel through the metal wire, while protons become uncharged and carry no current in solution."],
-  ["Contrast an exothermic reaction with an endothermic reaction in terms of heat transfer to or from surroundings.", "An exothermic reaction releases heat to its surroundings.", "An endothermic reaction absorbs heat from its surroundings.", "One sends thermal energy outward; the other takes thermal energy in from outside the reacting system.", "Exothermic means absorbing heat, while endothermic means releasing heat."],
-  ["Describe the energy change for breaking a chemical bond and the opposite change for forming that bond.", "Breaking a bond requires energy input.", "Forming the bond releases energy.", "Energy must be supplied to separate bonded atoms, and their bonding returns energy to the surroundings.", "Breaking a bond releases energy, while forming the same bond always consumes it."],
-  ["A reaction requires 500 kJ to break bonds and releases 650 kJ as new bonds form. Give the net enthalpy change and explain the energy direction for bond breaking and bond formation.", "The net enthalpy change is -150 kJ.", "Breaking bonds takes in energy, while forming bonds releases energy.", "The net change is minus 150 kJ; separating bonded atoms consumes energy, and making new bonds releases it.", "The net change is +1150 kJ; breaking bonds releases energy and forming bonds consumes it."],
-  ["Explain activation energy and how a catalyst changes the reaction pathway.", "Activation energy is the energy barrier that reacting particles must overcome.", "A catalyst provides an alternative pathway with a lower activation energy.", "Particles need enough energy to cross a reaction barrier; catalysis offers a route with a smaller barrier.", "Activation energy is the final product mass, and a catalyst works by raising the barrier."],
-  ["At fixed temperature, why does a catalyst not change an equilibrium constant? State its effect on forward and reverse reaction rates.", "A catalyst does not change the free-energy difference between reactants and products.", "It speeds both forward and reverse reactions.", "The reactant-product thermodynamic difference stays the same, while reaction in each direction becomes faster.", "A catalyst changes the thermodynamic energy difference and accelerates only the forward reaction."],
-  ["Describe dynamic equilibrium using reaction rates and concentrations.", "Forward and reverse reaction rates are equal and nonzero.", "Macroscopic reactant and product concentrations remain constant over time.", "Reaction continues equally in both directions, leaving the measured concentrations unchanged.", "All reactions stop, and reactant and product concentrations must each be zero."],
-  ["For A <-> B at equilibrium, more A is added at fixed temperature and volume. Predict the initial net reaction direction and the effect on the equilibrium constant.", "The initial net reaction shifts toward forming B.", "The equilibrium constant remains unchanged at the same temperature.", "There is net conversion toward B until equilibrium is restored; the value of K does not change.", "The system initially forms more A, and adding reactant permanently increases K."],
-  ["Explain two collision-theory effects of raising temperature on a typical reaction rate.", "Particles have a greater average kinetic energy.", "A larger fraction of collisions can overcome the activation energy barrier.", "The average motion is more energetic, and more collisions have enough energy to react.", "Particles lose kinetic energy and fewer collisions reach the reaction threshold."],
-  ["Equal masses of marble powder and marble chips react with excess acid. Explain the powder's initial rate advantage and compare total gas yield after complete reaction.", "The powder exposes more surface area to the acid, increasing the initial rate.", "Both produce the same total gas amount if composition and completeness are the same.", "More exposed contact area lets powder react faster initially; complete reaction of equal amounts yields equal total gas.", "Powder reacts slower because less surface is exposed, and it must produce less total gas."],
-  ["Distinguish reaction rate from equilibrium yield.", "Reaction rate describes how quickly reactants or products change.", "Equilibrium yield describes the amount or proportion of product present at equilibrium.", "Rate measures speed of conversion; equilibrium yield measures the final equilibrium product quantity.", "Rate means final product quantity, while equilibrium yield means seconds per collision."],
-  ["Explain chromatography using a stationary phase and a mobile phase.", "The mobile phase carries sample components through or along the stationary phase.", "Components separate because their relative affinities for the two phases differ.", "One phase transports the sample, while differing attraction to that phase and the fixed phase gives different travel distances.", "Every component moves at the same speed because chromatography converts all substances into the same molecule."],
-  ["How can simple distillation recover water from a nonvolatile dissolved salt? Include the roles of boiling and cooling.", "Water vaporizes while the nonvolatile salt remains in the original vessel.", "Cooling the vapor condenses it into collected liquid water.", "Heating sends water off as vapor without carrying the salt; a condenser then turns that vapor back into liquid.", "The salt evaporates first and cooling turns the salt vapor into pure water."],
-  ["A mixture contains salt solution and insoluble sand. State how to remove the sand and then recover solid salt.", "Filtration separates the insoluble sand.", "Evaporating water from the filtrate recovers the dissolved salt.", "Pass the mixture through a filter to retain sand, then remove the filtrate's water by evaporation to leave salt.", "A filter removes dissolved salt, while magnets extract the sand from water."],
-  ["Define structural isomers and explain why merely rotating a drawing does not create one.", "Structural isomers have the same molecular formula but different atom connectivity.", "Rotating a drawing without changing connectivity represents the same structure.", "Isomers here differ in which atoms are linked despite matching formulas; turning the page does not alter those links.", "Any rotated drawing is a new structural isomer, even when its formula and connections are unchanged."],
-  ["Describe what happens to ethene's double bond in addition polymerization and whether a small molecule is eliminated at each addition.", "The carbon-carbon double bond opens to allow links in a polymer chain.", "No small molecule is eliminated in ordinary addition polymerization of ethene.", "Ethene units join through opening their double bonds; their addition does not release water or another small by-product.", "Each double bond remains intact and every joining step necessarily releases a water molecule."],
-  ["Distinguish a polymer made from renewable feedstock from a biodegradable polymer.", "Renewable feedstock describes an input source that can be replenished on a relevant timescale.", "Biodegradability describes breakdown by biological processes under specified conditions.", "One term concerns replacement of the raw-material source, while the other concerns organisms breaking the material down in suitable conditions.", "Renewable means microbes always digest it immediately, while biodegradable means its raw material comes from fossil oil."]
+  [
+    "Classify an O2 particle and a Na+ particle.",
+    "O2 is a molecule made of two bonded oxygen atoms.",
+    "Na+ is a positively charged ion.",
+    "Two oxygen atoms joined together form the O2 molecule; sodium with a positive charge is an ion.",
+    "O2 is a single atom and Na+ is an uncharged molecule."
+  ],
+  [
+    "Carbon-12 and carbon-14 are isotopes. Compare their proton and neutron counts.",
+    "Both have six protons.",
+    "Carbon-12 has six neutrons and carbon-14 has eight.",
+    "Each nucleus contains 6 protons, but the neutron counts are 6 and 8 respectively.",
+    "They have different proton counts and the same neutron count."
+  ],
+  [
+    "An atom has 11 protons and 12 neutrons. State its atomic number and mass number.",
+    "Its atomic number is 11.",
+    "Its mass number is 23.",
+    "Z is eleven; adding the nucleons gives A equal to twenty-three.",
+    "The atomic number is 12 and the mass number is 11."
+  ],
+  [
+    "A neutral magnesium atom loses two electrons. State the resulting charge and what happens to its proton count.",
+    "The resulting ion has charge +2.",
+    "Its proton count is unchanged.",
+    "It becomes Mg2+, while the nucleus retains the same number of protons.",
+    "It becomes negatively charged because two protons disappear."
+  ],
+  [
+    "Contrast a compound with a mixture in terms of bonding and composition.",
+    "A compound contains elements chemically bonded together in a fixed ratio.",
+    "A mixture's components can be present in variable proportions.",
+    "A compound has a set chemical combining ratio, whereas the relative quantities of components in a mixture can vary.",
+    "Compounds have arbitrary composition, while every mixture has a fixed chemical formula."
+  ],
+  [
+    "Why will filtering water not produce hydrogen and oxygen, and what kind of change could separate these elements?",
+    "Filtration does not break the chemical bonds in water molecules.",
+    "Separating water into its elements requires a chemical change, such as electrolysis.",
+    "A filter cannot sever water's bonds; decomposition by an electrical chemical process can produce the elements.",
+    "A fine enough filter separates hydrogen because oxygen atoms are always larger than its pores."
+  ],
+  [
+    "Balance H2 + O2 -> H2O and state why changing H2O to H2O2 is not a valid balancing step.",
+    "The balanced equation is 2 H2 + O2 -> 2 H2O.",
+    "Changing a subscript changes the substance's identity.",
+    "Use coefficients two, one, two; altering the formula would describe a different chemical substance.",
+    "H2 + O2 -> H2O2 balances the equation without changing the product."
+  ],
+  [
+    "A reaction releases gas from an open beaker and its measured mass falls. Explain the fall and whether total mass is destroyed.",
+    "Some gaseous product leaves the measured beaker.",
+    "Total mass remains conserved when the escaped material is included.",
+    "The balance no longer measures the gas that escaped; counting it with the remaining contents preserves the original mass.",
+    "The gas has no mass, so the reaction destroys mass."
+  ],
+  [
+    "For 2 H2 + O2 -> 2 H2O, start with 3 mol H2 and 2 mol O2. Identify the limiting reactant and maximum water amount.",
+    "Hydrogen is the limiting reactant.",
+    "At most 3 mol of water can form.",
+    "H2 runs out first, allowing a theoretical production of three moles of H2O.",
+    "Oxygen limits the reaction and four moles of water form."
+  ],
+  [
+    "The theoretical product yield is 10 g but 8 g is collected. State the percentage yield and explain what the theoretical yield means.",
+    "The percentage yield is 80%.",
+    "The theoretical yield is the maximum predicted by stoichiometry from the limiting reactant.",
+    "The collected fraction is eighty percent; the ten-gram target is the amount calculated for complete conversion of the limiting reagent.",
+    "The yield is 125%, and theoretical yield means the amount actually collected."
+  ],
+  [
+    "Using Avogadro's constant 6.02 x 10^23 mol^-1, give the number of molecules in 2 mol of CO2 and the meaning of one mole.",
+    "Two moles contain 1.204 x 10^24 CO2 molecules.",
+    "One mole contains Avogadro's number of specified entities.",
+    "There are 1.204 times ten to the twenty-fourth molecules; a mole is a count of 6.02 times ten to the twenty-third entities here.",
+    "There are two molecules, since a mole is the mass of one molecule."
+  ],
+  [
+    "Compare moles in 18 g of water, molar mass 18 g/mol, and 18 g of CO2, molar mass 44 g/mol. Give both amounts.",
+    "The water amount is 1 mol.",
+    "The CO2 amount is 18/44 mol, about 0.409 mol.",
+    "Water gives one mole, while carbon dioxide gives 18/44 mol, approximately 0.409 mol.",
+    "Both amounts are 18 mol because their masses match."
+  ],
+  [
+    "Glucose has molecular formula C6H12O6. State its empirical formula and explain what a molecular formula specifies.",
+    "Its empirical formula is CH2O.",
+    "A molecular formula gives the actual number of each atom in one molecule.",
+    "The simplest ratio is CH2O; the molecular notation counts the atoms within an individual molecule.",
+    "The empirical formula is C6H12O6 and the molecular formula only gives the simplest ratio."
+  ],
+  [
+    "Water is added to 100 mL of 2 mol/L solution until its volume is 200 mL. State the solute amount and final concentration.",
+    "The solute amount stays at 0.2 mol.",
+    "The final concentration is 1 mol/L.",
+    "No solute is added or removed, leaving two-tenths of a mole in a one-molar solution.",
+    "The solute doubles to 0.4 mol and concentration stays at 2 mol/L."
+  ],
+  [
+    "Two solutions are both 0.5 mol/L, with volumes 1 L and 3 L. Compare their concentrations and their solute amounts.",
+    "Their concentrations are equal.",
+    "The 3 L solution contains three times as much solute.",
+    "Both have the same molarity; the larger volume contains triple the moles.",
+    "The larger solution is three times as concentrated but contains the same solute amount."
+  ],
+  [
+    "At fixed temperature a saturated solution remains in contact with excess solid solute. Explain saturation and what happens to a little more added solid.",
+    "The dissolved concentration is at the equilibrium solubility limit for that temperature.",
+    "Additional solid does not produce a net increase in the amount dissolved under these unchanged conditions.",
+    "The solution has reached its equilibrium dissolved concentration, so more crystals leave the net dissolved amount unchanged.",
+    "Saturated means no solvent remains, so every extra crystal must dissolve."
+  ],
+  [
+    "Distinguish the solubility of a solid from its rate of dissolving.",
+    "Solubility is the equilibrium amount that can dissolve under specified conditions.",
+    "Dissolution rate describes how quickly material enters solution.",
+    "One quantity sets the eventual dissolved amount; the other measures the speed of the process.",
+    "Solubility means stirring speed, and dissolution rate means the final equilibrium mass."
+  ],
+  [
+    "Stirring makes sugar dissolve faster at unchanged temperature. Explain the rate effect and the effect on equilibrium solubility.",
+    "Stirring brings less concentrated solvent to the sugar surface and improves transport away from it.",
+    "Stirring alone need not change equilibrium solubility.",
+    "Mixing refreshes liquid at the surface, but the equilibrium capacity of the solvent remains the same at that temperature.",
+    "Stirring breaks sugar into new elements and permanently doubles its equilibrium solubility."
+  ],
+  [
+    "Contrast ionic bonding in sodium chloride and covalent bonding in a hydrogen molecule.",
+    "Ionic bonding is electrostatic attraction between oppositely charged ions.",
+    "A covalent bond involves a shared pair of electrons between atoms.",
+    "Salt holds positive and negative ions together by attraction; H2 joins atoms through electron sharing.",
+    "Ionic bonds share neutral protons, while covalent bonds are attractions between free neutrons."
+  ],
+  [
+    "Why does molten sodium chloride conduct electricity while solid sodium chloride does not? Give the state of charge carriers in each.",
+    "In the melt, ions can move and carry charge.",
+    "In the solid, ions are held in fixed lattice positions and cannot carry charge through the material.",
+    "Mobile ions transport charge in the liquid; the crystalline arrangement immobilizes them in solid salt.",
+    "The liquid conducts because its molecules have no charges, and the solid conducts through moving neutrons."
+  ],
+  [
+    "When water boils, distinguish the interactions overcome from the bonds that remain within a water molecule.",
+    "Boiling overcomes intermolecular attractions between water molecules.",
+    "The covalent O-H bonds within individual water molecules remain intact in ordinary boiling.",
+    "Molecules separate by overcoming attractions to neighboring molecules, while each molecule retains its oxygen-hydrogen covalent bonds.",
+    "Boiling splits the O-H bonds into hydrogen and oxygen while all intermolecular attractions remain unchanged."
+  ],
+  [
+    "Liquids A and B have similar molecular size; only A forms strong hydrogen bonds. Predict the higher boiling point and explain the energy difference.",
+    "A is expected to have the higher boiling point.",
+    "More energy is needed to overcome its stronger intermolecular attractions.",
+    "A should boil at a higher temperature because separating its molecules requires a greater energy input.",
+    "B has the higher boiling point because weaker attractions always require more energy to overcome."
+  ],
+  [
+    "For linear symmetric CO2, state its overall polarity and the polarity of each carbon-oxygen bond.",
+    "CO2 is overall nonpolar.",
+    "Each C=O bond is polar.",
+    "CO2 has no overall molecular dipole even though its individual carbon-oxygen bonds are polar.",
+    "CO2 is strongly polar and its C=O bonds are nonpolar."
+  ],
+  [
+    "For an ionic salt that dissolves in water, name the solvent-solute attraction and explain how hydration stabilizes the separated ions.",
+    "Polar water molecules form ion-dipole attractions with the ions.",
+    "A surrounding hydration shell stabilizes dispersed ions in solution.",
+    "Water's charged ends attract the ions, and the surrounding water molecules help keep each dissolved ion stable.",
+    "Water repels all charged particles and dissolves salt by removing all electrical charge from it."
+  ],
+  [
+    "Explain electrical conduction in a metal and say what happens to the metal ions during this conduction.",
+    "Delocalized electrons move through the metal carrying charge.",
+    "The metal ions remain approximately in their lattice positions rather than flowing through the wire.",
+    "Mobile electrons provide the current, while the positive lattice does not travel along the wire.",
+    "Metal conducts by streaming positive nuclei through the wire while every electron stays fixed."
+  ],
+  [
+    "In HCl + H2O -> H3O+ + Cl-, identify the proton donor and proton acceptor.",
+    "HCl is the proton donor, the acid.",
+    "H2O is the proton acceptor, the base.",
+    "Hydrogen chloride supplies H+, and water receives it.",
+    "Water donates the proton to chloride, while HCl is the proton acceptor."
+  ],
+  [
+    "Distinguish a strong acid from a concentrated acid.",
+    "A strong acid ionizes essentially completely in water under the stated usual dilute conditions.",
+    "A concentrated acid solution contains a large amount of acid per unit volume.",
+    "In the usual dilute aqueous conditions, a strong acid is almost fully ionized; a concentrated acid solution has a large amount of acid per unit volume.",
+    "Strong means lots of acid per liter, while concentrated means complete ionization."
+  ],
+  [
+    "For ideal dilute solutions, compare hydrogen-ion concentration at pH 3 and pH 4 and give its absolute concentration at pH 3.",
+    "The pH 3 solution has ten times the hydrogen-ion concentration of the pH 4 solution.",
+    "At pH 3, the hydrogen-ion concentration is 0.001 mol/L.",
+    "The pH-three solution contains one thousandth of a mole of H+ per litre, ten times the concentration at pH four.",
+    "pH 4 has ten times more hydrogen ions, and pH 3 means 3 mol/L of hydrogen ions."
+  ],
+  [
+    "What change does a buffer resist, and why can a sufficiently large addition of acid overwhelm it?",
+    "A buffer resists pH change from small additions of acid or base.",
+    "Its acid-consuming component has a finite amount and can be used up.",
+    "It limits small pH shifts, but enough added acid exhausts the available neutralizing component.",
+    "A buffer prevents all temperature changes because it contains an unlimited acid-removing substance."
+  ],
+  [
+    "An acid and base react but acid remains in excess. Describe neutralization and explain why the final pH need not be 7.",
+    "Neutralization consumes acid and base through their reaction.",
+    "Excess acid remains, so the final solution can be acidic.",
+    "The reactants neutralize some of one another, yet the leftover acid can keep the final pH below seven.",
+    "Neutralization creates only more acid, and every acid-base mixture automatically finishes at pH 7."
+  ],
+  [
+    "Define oxidation and reduction in terms of electron transfer.",
+    "Oxidation is loss of electrons.",
+    "Reduction is gain of electrons.",
+    "An oxidized species gives electrons away; a reduced species receives them.",
+    "Oxidation gains electrons and reduction loses them."
+  ],
+  [
+    "In Zn + Cu2+ -> Zn2+ + Cu, identify the reducing agent and oxidizing agent.",
+    "Zinc is the reducing agent.",
+    "Cu2+ is the oxidizing agent.",
+    "Zn provides the reducing action, while copper(II) ions provide the oxidizing action.",
+    "Copper metal is the reducing agent and Zn2+ is the oxidizing agent."
+  ],
+  [
+    "Copper ions deposit as copper on a cathode during electrolysis. Explain the electron change and electrode mass change.",
+    "Cu2+ gains two electrons to form copper metal.",
+    "The deposited copper increases the cathode's mass.",
+    "Copper(II) is reduced by taking two electrons, and the accumulating metal makes the cathode heavier.",
+    "Copper ions lose electrons, making the cathode lighter as metal evaporates."
+  ],
+  [
+    "In a working galvanic cell, distinguish charge transport in the external wire from that in the electrolyte.",
+    "Electrons carry charge through the external wire.",
+    "Ions move within the electrolyte to carry charge and maintain charge balance.",
+    "The wire current uses electrons; ionic motion through the solution completes charge transport.",
+    "Ions travel through the metal wire, while protons become uncharged and carry no current in solution."
+  ],
+  [
+    "Contrast an exothermic reaction with an endothermic reaction in terms of heat transfer to or from surroundings.",
+    "An exothermic reaction releases heat to its surroundings.",
+    "An endothermic reaction absorbs heat from its surroundings.",
+    "One sends thermal energy outward; the other takes thermal energy in from outside the reacting system.",
+    "Exothermic means absorbing heat, while endothermic means releasing heat."
+  ],
+  [
+    "Describe the energy change for breaking a chemical bond and the opposite change for forming that bond.",
+    "Breaking a bond requires energy input.",
+    "Forming the bond releases energy.",
+    "Energy must be supplied to separate bonded atoms, and their bonding returns energy to the surroundings.",
+    "Breaking a bond releases energy, while forming the same bond always consumes it."
+  ],
+  [
+    "A reaction requires 500 kJ to break bonds and releases 650 kJ as new bonds form. Give the net enthalpy change and explain the energy direction for bond breaking and bond formation.",
+    "The net enthalpy change is -150 kJ.",
+    "Breaking bonds takes in energy, while forming bonds releases energy.",
+    "The net change is minus 150 kJ; separating bonded atoms consumes energy, and making new bonds releases it.",
+    "The net change is +1150 kJ; breaking bonds releases energy and forming bonds consumes it."
+  ],
+  [
+    "Explain activation energy and how a catalyst changes the reaction pathway.",
+    "Activation energy is the energy barrier that reacting particles must overcome.",
+    "A catalyst provides an alternative pathway with a lower activation energy.",
+    "Particles need enough energy to cross a reaction barrier; catalysis offers a route with a smaller barrier.",
+    "Activation energy is the final product mass, and a catalyst works by raising the barrier."
+  ],
+  [
+    "At fixed temperature, why does a catalyst not change an equilibrium constant? State its effect on forward and reverse reaction rates.",
+    "A catalyst does not change the free-energy difference between reactants and products.",
+    "It speeds both forward and reverse reactions.",
+    "The reactant-product thermodynamic difference stays the same, while reaction in each direction becomes faster.",
+    "A catalyst changes the thermodynamic energy difference and accelerates only the forward reaction."
+  ],
+  [
+    "Describe dynamic equilibrium using reaction rates and concentrations.",
+    "Forward and reverse reaction rates are equal and nonzero.",
+    "Macroscopic reactant and product concentrations remain constant over time.",
+    "Reaction continues equally in both directions, leaving the measured concentrations unchanged.",
+    "All reactions stop, and reactant and product concentrations must each be zero."
+  ],
+  [
+    "For A <-> B at equilibrium, more A is added at fixed temperature and volume. Predict the initial net reaction direction and the effect on the equilibrium constant.",
+    "The initial net reaction shifts toward forming B.",
+    "The equilibrium constant remains unchanged at the same temperature.",
+    "There is net conversion toward B until equilibrium is restored; the value of K does not change.",
+    "The system initially forms more A, and adding reactant permanently increases K."
+  ],
+  [
+    "Explain two collision-theory effects of raising temperature on a typical reaction rate.",
+    "Particles have a greater average kinetic energy.",
+    "A larger fraction of collisions can overcome the activation energy barrier.",
+    "The average motion is more energetic, and more collisions have enough energy to react.",
+    "Particles lose kinetic energy and fewer collisions reach the reaction threshold."
+  ],
+  [
+    "Equal masses of marble powder and marble chips react with excess acid. Explain the powder's initial rate advantage and compare total gas yield after complete reaction.",
+    "The powder exposes more surface area to the acid, increasing the initial rate.",
+    "Both produce the same total gas amount if composition and completeness are the same.",
+    "More exposed contact area lets powder react faster initially; complete reaction of equal amounts yields equal total gas.",
+    "Powder reacts slower because less surface is exposed, and it must produce less total gas."
+  ],
+  [
+    "Distinguish reaction rate from equilibrium yield.",
+    "Reaction rate describes how quickly reactants or products change.",
+    "Equilibrium yield describes the amount or proportion of product present at equilibrium.",
+    "Rate measures speed of conversion; equilibrium yield measures the final equilibrium product quantity.",
+    "Rate means final product quantity, while equilibrium yield means seconds per collision."
+  ],
+  [
+    "Explain chromatography using a stationary phase and a mobile phase.",
+    "The mobile phase carries sample components through or along the stationary phase.",
+    "Components separate because their relative affinities for the two phases differ.",
+    "One phase transports the sample, while differing attraction to that phase and the fixed phase gives different travel distances.",
+    "Every component moves at the same speed because chromatography converts all substances into the same molecule."
+  ],
+  [
+    "How can simple distillation recover water from a nonvolatile dissolved salt? Include the roles of boiling and cooling.",
+    "Water vaporizes while the nonvolatile salt remains in the original vessel.",
+    "Cooling the vapor condenses it into collected liquid water.",
+    "Heating sends water off as vapor without carrying the salt; a condenser then turns that vapor back into liquid.",
+    "The salt evaporates first and cooling turns the salt vapor into pure water."
+  ],
+  [
+    "A mixture contains salt solution and insoluble sand. State how to remove the sand and then recover solid salt.",
+    "Filtration separates the insoluble sand.",
+    "Evaporating water from the filtrate recovers the dissolved salt.",
+    "Pass the mixture through a filter to retain sand, then remove the filtrate's water by evaporation to leave salt.",
+    "A filter removes dissolved salt, while magnets extract the sand from water."
+  ],
+  [
+    "Define structural isomers and explain why merely rotating a drawing does not create one.",
+    "Structural isomers have the same molecular formula but different atom connectivity.",
+    "Rotating a drawing without changing connectivity represents the same structure.",
+    "Isomers here differ in which atoms are linked despite matching formulas; turning the page does not alter those links.",
+    "Any rotated drawing is a new structural isomer, even when its formula and connections are unchanged."
+  ],
+  [
+    "Describe what happens to ethene's double bond in addition polymerization and whether a small molecule is eliminated at each addition.",
+    "The carbon-carbon double bond opens to allow links in a polymer chain.",
+    "No small molecule is eliminated in ordinary addition polymerization of ethene.",
+    "Ethene units join through opening their double bonds; their addition does not release water or another small by-product.",
+    "Each double bond remains intact and every joining step necessarily releases a water molecule."
+  ],
+  [
+    "Distinguish a polymer made from renewable feedstock from a biodegradable polymer.",
+    "Renewable feedstock describes an input source that can be replenished on a relevant timescale.",
+    "Biodegradability describes breakdown by biological processes under specified conditions.",
+    "One term concerns replacement of the raw-material source, while the other concerns organisms breaking the material down in suitable conditions.",
+    "Renewable means microbes always digest it immediately, while biodegradable means its raw material comes from fossil oil."
+  ]
 ]

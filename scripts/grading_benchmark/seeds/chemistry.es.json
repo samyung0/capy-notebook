@@ -1,52 +1,352 @@
 [
-  ["Clasifica una partícula de O2 y una partícula de Na+.", "O2 es una molécula formada por dos átomos de oxígeno unidos.", "Na+ es un ion con carga positiva.", "Dos átomos de oxígeno unidos forman la molécula O2; el sodio con carga positiva es un ion.", "O2 es un átomo individual y Na+ es una molécula sin carga."],
-  ["El carbono-12 y el carbono-14 son isótopos. Compara sus conteos de protones y neutrones.", "Ambos tienen seis protones.", "El carbono-12 tiene seis neutrones y el carbono-14 tiene ocho.", "Cada núcleo contiene 6 protones, pero los conteos de neutrones son 6 y 8 respectivamente.", "Tienen conteos de protones diferentes y el mismo conteo de neutrones."],
-  ["Un átomo tiene 11 protones y 12 neutrones. Indica su número atómico y su número másico.", "Su número atómico es 11.", "Su número másico es 23.", "Z es once; al sumar los nucleones se obtiene A igual a veintitrés.", "El número atómico es 12 y el número másico es 11."],
-  ["Un átomo neutro de magnesio pierde dos electrones. Indica la carga resultante y qué sucede con su conteo de protones.", "El ion resultante tiene carga +2.", "Su conteo de protones permanece sin cambios.", "Se convierte en Mg2+, mientras que el núcleo mantiene el mismo número de protones.", "Se vuelve cargado negativamente porque desaparecen dos protones."],
-  ["Contrasta un compuesto con una mezcla en términos de enlace y composición.", "Un compuesto contiene elementos químicamente unidos en una proporción fija.", "Los componentes de una mezcla pueden estar presentes en proporciones variables.", "Un compuesto tiene una proporción química fija de combinación, mientras que las cantidades relativas de los componentes en una mezcla pueden variar.", "Los compuestos tienen composición arbitraria, mientras que cada mezcla tiene una fórmula química fija."],
-  ["¿Por qué filtrar agua no produce hidrógeno y oxígeno, y qué tipo de cambio podría separar estos elementos?", "La filtración no rompe los enlaces químicos en las moléculas de agua.", "Separar el agua en sus elementos requiere un cambio químico, como la electrólisis.", "Un filtro no puede cortar los enlaces del agua; un proceso químico eléctrico puede producir los elementos.", "Un filtro lo suficientemente fino separa el hidrógeno porque los átomos de oxígeno son siempre más grandes que sus poros."],
-  ["Balancea H2 + O2 -> H2O y explica por qué cambiar H2O a H2O2 no es un paso válido de balanceo.", "La ecuación balanceada es 2 H2 + O2 -> 2 H2O.", "Cambiar un subíndice cambia la identidad de la sustancia.", "Usa coeficientes dos, uno, dos; alterar la fórmula describiría una sustancia química diferente.", "H2 + O2 -> H2O2 balancea la ecuación sin cambiar el producto."],
-  ["Una reacción libera gas de un vaso de precipitados abierto y su masa medida disminuye. Explica la disminución y si se destruye masa total.", "Parte del producto gaseoso sale del vaso de precipitados cuya masa se mide.", "La masa total se conserva cuando se incluye el material escapado.", "La balanza ya no mide el gas que escapó; contarlo con el contenido restante preserva la masa original.", "El gas no tiene masa, por lo que la reacción destruye la masa."],
-  ["Para 2 H2 + O2 -> 2 H2O, comienza con 3 mol de H2 y 2 mol de O2. Identifica el reactivo limitante y la cantidad máxima de agua.", "El hidrógeno es el reactivo limitante.", "Como máximo se pueden formar 3 mol de agua.", "El H2 se agota primero, permitiendo una producción teórica de tres moles de H2O.", "El oxígeno limita la reacción y se forman cuatro moles de agua."],
-  ["El rendimiento teórico del producto es 10 g, pero se recogen 8 g. Indica el porcentaje de rendimiento y explica qué significa el rendimiento teórico.", "El porcentaje de rendimiento es 80%.", "El rendimiento teórico es el máximo predicho por la estequiometría a partir del reactivo limitante.", "La fracción recogida es el ochenta por ciento; el objetivo de diez gramos es la cantidad calculada para la conversión completa del reactivo limitante.", "El rendimiento es 125%, y el rendimiento teórico significa la cantidad realmente recogida."],
-  ["Usando la constante de Avogadro 6.02 x 10^23 mol^-1, indique el número de moléculas en 2 mol de CO2 y el significado de un mol.", "Dos moles contienen 1.204 x 10^24 moléculas de CO2.", "Un mol contiene el número de Avogadro de entidades especificadas.", "Hay 1.204 por 10 elevado a 24 moléculas; aquí un mol corresponde a 6.02 por 10 elevado a 23 entidades.", "Hay dos moléculas, ya que un mol es la masa de una molécula."],
-  ["Compare los moles en 18 g de agua, masa molar 18 g/mol, y 18 g de CO2, masa molar 44 g/mol. Indique ambas cantidades.", "La cantidad de agua es 1 mol.", "La cantidad de CO2 es 18/44 mol, aproximadamente 0.409 mol.", "El agua da un mol, mientras que el dióxido de carbono da 18/44 mol, aproximadamente 0.409 mol.", "Ambas cantidades son 18 mol porque sus masas coinciden."],
-  ["La glucosa tiene la fórmula molecular C6H12O6. Indique su fórmula empírica y explique qué especifica una fórmula molecular.", "Su fórmula empírica es CH2O.", "Una fórmula molecular da el número real de cada átomo en una molécula.", "La razón más simple es CH2O; la notación molecular cuenta los átomos dentro de una molécula individual.", "La fórmula empírica es C6H12O6 y la fórmula molecular solo da la razón más simple."],
-  ["Se añade agua a 100 mL de solución 2 mol/L hasta que su volumen sea 200 mL. Indique la cantidad de soluto y la concentración final.", "La cantidad de soluto se mantiene en 0.2 mol.", "La concentración final es 1 mol/L.", "No se añade ni se elimina soluto: quedan dos décimas de mol en una solución de concentración 1 mol/L.", "El soluto se duplica a 0.4 mol y la concentración se mantiene en 2 mol/L."],
-  ["Dos soluciones son ambas 0.5 mol/L, con volúmenes 1 L y 3 L. Compare sus concentraciones y sus cantidades de soluto.", "Sus concentraciones son iguales.", "La solución de 3 L contiene tres veces más soluto.", "Ambas tienen la misma molaridad; el volumen mayor contiene el triple de moles.", "La solución mayor es tres veces más concentrada pero contiene la misma cantidad de soluto."],
-  ["A una temperatura fija, una solución saturada permanece en contacto con un exceso de soluto sólido. Explique la saturación y qué ocurre con un poco más de sólido añadido.", "La concentración disuelta está en el límite de solubilidad de equilibrio para esa temperatura.", "El sólido adicional no produce un aumento neto en la cantidad disuelta bajo estas condiciones invariables.", "La solución ha alcanzado su concentración disuelta de equilibrio, por lo que más cristales dejan invariable la cantidad disuelta neta.", "Saturado significa que no queda disolvente, por lo que cada cristal extra debe disolverse."],
-  ["Distinga la solubilidad de un sólido de su velocidad de disolución.", "La solubilidad es la cantidad de equilibrio que puede disolverse bajo condiciones especificadas.", "La velocidad de disolución describe lo rápido que el material entra en solución.", "Una cantidad establece cuánto puede quedar disuelto en el equilibrio; la otra mide la rapidez del proceso.", "La solubilidad significa velocidad de agitación, y la velocidad de disolución significa la masa final de equilibrio."],
-  ["Agitar hace que el azúcar se disuelva más rápido sin cambiar la temperatura. Explica el efecto sobre la velocidad de disolución y sobre la solubilidad de equilibrio.", "Agitar lleva disolvente menos concentrado a la superficie del azúcar y facilita el transporte de soluto desde ella.", "La agitación por sí sola no tiene por qué cambiar la solubilidad de equilibrio.", "Mezclar renueva líquido en la superficie, pero la capacidad de equilibrio del disolvente permanece igual a esa temperatura.", "Agitar rompe el azúcar en nuevos elementos y duplica permanentemente su solubilidad de equilibrio."],
-  ["Contraste el enlace iónico en el cloruro de sodio y el enlace covalente en una molécula de hidrógeno.", "El enlace iónico es atracción electrostática entre iones de carga opuesta.", "Un enlace covalente implica un par compartido de electrones entre átomos.", "La sal mantiene unidos iones positivos y negativos por atracción; H2 une átomos mediante compartir electrones.", "Los enlaces iónicos comparten protones neutros, mientras que los enlaces covalentes son atracciones entre neutrones libres."],
-  ["¿Por qué el cloruro de sodio fundido conduce electricidad mientras el cloruro de sodio sólido no? Dé el estado de los portadores de carga en cada uno.", "En el fundido, los iones pueden moverse y llevar carga.", "En el sólido, los iones están mantenidos en posiciones de red fijas y no pueden llevar carga a través del material.", "Los iones móviles transportan carga en el líquido; la disposición cristalina los inmoviliza en la sal sólida.", "El líquido conduce porque sus moléculas no tienen cargas, y el sólido conduce a través de neutrones móviles."],
-  ["Cuando el agua hierve, distingue las interacciones que se superan de los enlaces que permanecen dentro de una molécula de agua.", "Hervir supera las atracciones intermoleculares entre las moléculas de agua.", "Los enlaces covalentes O-H dentro de cada molécula de agua permanecen intactos durante la ebullición ordinaria.", "Las moléculas se separan al superar las atracciones hacia las moléculas vecinas, mientras que cada molécula conserva sus enlaces covalentes oxígeno-hidrógeno.", "Hervir rompe los enlaces O-H en hidrógeno y oxígeno mientras todas las atracciones intermoleculares permanecen sin cambios."],
-  ["Los líquidos A y B tienen un tamaño molecular similar; solo A forma fuertes enlaces de hidrógeno. Predice cuál tiene el punto de ebullición más alto y explica la diferencia de energía.", "Se espera que A tenga el punto de ebullición más alto.", "Se necesita más energía para superar sus atracciones intermoleculares más fuertes.", "A debería hervir a una temperatura más alta porque separar sus moléculas requiere una mayor entrada de energía.", "B tiene el punto de ebullición más alto porque las atracciones más débiles siempre requieren más energía para ser superadas."],
-  ["Para el CO2 lineal y simétrico, indica su polaridad general y la polaridad de cada enlace carbono-oxígeno.", "El CO2 es globalmente no polar.", "Cada enlace C=O es polar.", "El CO2 no tiene un dipolo molecular general a pesar de que sus enlaces individuales carbono-oxígeno son polares.", "El CO2 es fuertemente polar y sus enlaces C=O son no polares."],
-  ["Para una sal iónica que se disuelve en agua, nombra la atracción disolvente-soluto y explica cómo la hidratación estabiliza los iones separados.", "Las moléculas polares de agua forman atracciones ión-dipolo con los iones.", "Una capa de hidratación circundante estabiliza los iones dispersos en la solución.", "Los extremos cargados del agua atraen a los iones, y las moléculas de agua circundantes ayudan a mantener estable a cada ion disuelto.", "El agua repele todas las partículas cargadas y disuelve la sal eliminando toda la carga eléctrica de ella."],
-  ["Explica la conducción eléctrica en un metal y di qué sucede con los iones metálicos durante esta conducción.", "Los electrones deslocalizados se mueven a través del metal transportando la carga.", "Los iones metálicos permanecen aproximadamente en sus posiciones de la red en lugar de fluir a través del alambre.", "Los electrones móviles proporcionan la corriente, mientras que la red positiva no viaja a lo largo del alambre.", "El metal conduce haciendo fluir los núcleos positivos a través del alambre mientras cada electrón permanece fijo."],
-  ["En HCl + H2O -> H3O+ + Cl-, identifica el donante de protones y el aceptor de protones.", "El HCl es el donante de protones, el ácido.", "El H2O es el aceptor de protones, la base.", "El cloruro de hidrógeno suministra H+, y el agua lo recibe.", "El agua dona el protón al cloruro, mientras que el HCl es el aceptor de protones."],
-  ["Distingue un ácido fuerte de un ácido concentrado.", "Un ácido fuerte se ioniza esencialmente completamente en agua bajo las condiciones diluidas usuales.", "Una solución de ácido concentrado contiene una gran cantidad de ácido por unidad de volumen.", "Bajo las condiciones acuosas diluidas usuales, un ácido fuerte está casi totalmente ionizado; una solución de ácido concentrado tiene una gran cantidad de ácido por unidad de volumen.", "Fuerte significa mucha cantidad de ácido por litro, mientras que concentrado significa ionización completa."],
-  ["Para soluciones diluidas ideales, compara la concentración de iones hidrógeno a pH 3 y pH 4 y da su concentración absoluta a pH 3.", "La solución de pH 3 tiene diez veces la concentración de iones hidrógeno de la solución de pH 4.", "A pH 3, la concentración de iones hidrógeno es 0.001 mol/L.", "La solución de pH tres contiene una milésima de mol de H+ por litro, diez veces la concentración a pH cuatro.", "El pH 4 tiene diez veces más iones de hidrógeno, y el pH 3 significa 3 mol/L de iones de hidrógeno."],
-  ["¿Qué cambio resiste un tampón y por qué una adición suficientemente grande de ácido puede superarlo?", "Un tampón resiste el cambio de pH ante pequeñas adiciones de ácido o base.", "Su componente consumidor de ácido tiene una cantidad finita y puede agotarse.", "Limita pequeños cambios de pH, pero suficiente ácido añadido agota el componente neutralizante disponible.", "Un tampón previene todos los cambios de temperatura porque contiene una sustancia ilimitada para eliminar ácido."],
-  ["Un ácido y una base reaccionan, pero queda ácido en exceso. Describe la neutralización y explica por qué el pH final no tiene por qué ser 7.", "La neutralización consume ácido y base a través de su reacción.", "Queda ácido en exceso, por lo que la solución final puede ser ácida.", "Los reactivos neutralizan parte uno del otro, pero el ácido sobrante puede mantener el pH final por debajo de siete.", "La neutralización crea solo más ácido, y cada mezcla ácido-base termina automáticamente en pH 7."],
-  ["Defina oxidación y reducción en términos de transferencia de electrones.", "La oxidación es pérdida de electrones.", "La reducción es ganancia de electrones.", "Una especie oxidada cede electrones; una especie reducida los recibe.", "La oxidación gana electrones y la reducción los pierde."],
-  ["En Zn + Cu2+ -> Zn2+ + Cu, identifique el agente reductor y el agente oxidante.", "El zinc es el agente reductor.", "El Cu2+ es el agente oxidante.", "El Zn proporciona la acción reductora, mientras que los iones de cobre(II) proporcionan la acción oxidante.", "El metal de cobre es el agente reductor y el Zn2+ es el agente oxidante."],
-  ["Los iones de cobre se depositan como cobre en un cátodo durante la electrólisis. Explique el cambio de electrones y el cambio de masa del electrodo.", "El Cu2+ gana dos electrones para formar metal de cobre.", "El cobre depositado aumenta la masa del cátodo.", "El cobre(II) se reduce al tomar dos electrones, y el metal acumulado hace que el cátodo sea más pesado.", "Los iones de cobre pierden electrones, haciendo que el cátodo sea más ligero a medida que el metal se evapora."],
-  ["En una celda galvánica en funcionamiento, distinga el transporte de carga en el cable externo del que ocurre en el electrolito.", "Los electrones transportan la carga a través del cable externo.", "Los iones se mueven dentro del electrolito para transportar la carga y mantener el equilibrio de carga.", "La corriente en el cable utiliza electrones; el movimiento iónico a través de la solución completa el transporte de carga.", "Los iones viajan a través del cable metálico, mientras que los protones se vuelven neutros y no transportan corriente en la solución."],
-  ["Contraste una reacción exotérmica con una endotérmica en términos de transferencia de calor hacia o desde el entorno.", "Una reacción exotérmica libera calor hacia su entorno.", "Una reacción endotérmica absorbe calor desde su entorno.", "Una envía energía térmica hacia afuera; la otra toma energía térmica desde el exterior del sistema reactivo.", "Exotérmico significa absorber calor, mientras que endotérmico significa liberar calor."],
-  ["Describa el cambio de energía para romper un enlace químico y el cambio opuesto para formar ese enlace.", "Romper un enlace requiere aporte de energía.", "Formar el enlace libera energía.", "Se debe suministrar energía para separar los átomos enlazados, y su enlace devuelve energía al entorno.", "Romper un enlace libera energía, mientras que formar el mismo enlace siempre la consume."],
-  ["Una reacción requiere 500 kJ para romper enlaces y libera 650 kJ cuando se forman nuevos enlaces. Indique el cambio neto de entalpía y explique la dirección de la energía para la ruptura y formación de enlaces.", "El cambio neto de entalpía es -150 kJ.", "Romper enlaces absorbe energía, mientras que formar enlaces libera energía.", "El cambio neto es menos 150 kJ; separar átomos enlazados consume energía y crear nuevos enlaces la libera.", "El cambio neto es +1150 kJ; romper enlaces libera energía y formar enlaces la consume."],
-  ["Explique la energía de activación y cómo un catalizador modifica la trayectoria de la reacción.", "La energía de activación es la barrera energética que deben superar las partículas reaccionantes.", "Un catalizador proporciona una trayectoria alternativa con menor energía de activación.", "Las partículas necesitan suficiente energía para cruzar una barrera de reacción; la catálisis ofrece una ruta con una barrera más pequeña.", "La energía de activación es la masa del producto final, y un catalizador funciona elevando la barrera."],
-  ["A temperatura fija, ¿por qué un catalizador no cambia la constante de equilibrio? Indique su efecto en las velocidades de las reacciones directa e inversa.", "Un catalizador no cambia la diferencia de energía libre entre reactivos y productos.", "Acelera tanto la reacción directa como la inversa.", "La diferencia termodinámica entre reactivos y productos permanece igual, mientras que la reacción en cada dirección se vuelve más rápida.", "Un catalizador cambia la diferencia de energía termodinámica y acelera solo la reacción directa."],
-  ["Describa el equilibrio dinámico utilizando las velocidades de reacción y las concentraciones.", "Las velocidades de las reacciones directa e inversa son iguales y no nulas.", "Las concentraciones macroscópicas de reactivos y productos permanecen constantes con el tiempo.", "La reacción continúa a igual velocidad en ambas direcciones, de modo que las concentraciones medidas no cambian.", "Todas las reacciones se detienen, y las concentraciones de reactivos y productos deben ser cero."],
-  ["Para A <-> B en equilibrio, se añade más A a temperatura y volumen fijos. Prediga la dirección neta inicial de la reacción y el efecto sobre la constante de equilibrio.", "La dirección neta inicial de la reacción se desplaza hacia la formación de B.", "La constante de equilibrio permanece inalterada a la misma temperatura.", "Hay una conversión neta hacia B hasta que se restablece el equilibrio; el valor de K no cambia.", "El sistema inicialmente forma más A, y añadir reactante aumenta permanentemente K."],
-  ["Explique dos efectos de la teoría de colisiones de elevar la temperatura sobre la velocidad de una reacción típica.", "Las partículas tienen una energía cinética promedio mayor.", "Una fracción más grande de colisiones puede superar la barrera de energía de activación.", "El movimiento promedio es más energético, y más colisiones tienen suficiente energía para reaccionar.", "Las partículas pierden energía cinética y menos colisiones alcanzan el umbral de reacción."],
-  ["Masas iguales de mármol en polvo y en trozos reaccionan con ácido en exceso. Explica por qué el polvo reacciona inicialmente más rápido y compara la cantidad total de gas producida tras la reacción completa.", "El polvo expone más superficie al ácido, aumentando la velocidad inicial.", "Ambos producen la misma cantidad total de gas si tienen la misma composición y reaccionan por completo.", "Más área de contacto expuesta permite que el polvo reaccione más rápido inicialmente; la reacción completa de cantidades iguales produce igual gas total.", "El polvo reacciona más lento porque se expone menos superficie, y debe producir menos gas total."],
-  ["Distinga entre velocidad de reacción y rendimiento de equilibrio.", "La velocidad de reacción describe lo rápido que cambian los reactivos o productos.", "El rendimiento de equilibrio describe la cantidad o proporción de producto presente en el equilibrio.", "La velocidad mide la rapidez de conversión; el rendimiento de equilibrio mide la cantidad final de producto en el equilibrio.", "La velocidad significa cantidad final de producto, mientras que el rendimiento de equilibrio significa segundos por colisión."],
-  ["Explique la cromatografía usando una fase estacionaria y una fase móvil.", "La fase móvil transporta los componentes de la muestra a través o junto a la fase estacionaria.", "Los componentes se separan porque sus afinidades relativas para las dos fases difieren.", "Una fase transporta la muestra, mientras que la atracción diferente a esa fase y a la fase fija da distancias de viaje diferentes.", "Cada componente se mueve a la misma velocidad porque la cromatografía convierte todas las sustancias en la misma molécula."],
-  ["¿Cómo puede la destilación simple recuperar agua de una sal disuelta no volátil? Incluya los roles de la ebullición y el enfriamiento.", "El agua se vaporiza mientras la sal no volátil permanece en el recipiente original.", "El enfriamiento del vapor lo condensa en agua líquida recolectada.", "El calentamiento envía el agua como vapor sin arrastrar la sal; un condensador convierte luego ese vapor en líquido.", "La sal se evapora primero y el enfriamiento convierte el vapor de sal en agua pura."],
-  ["Una mezcla contiene solución salina y arena insoluble. Indique cómo eliminar la arena y luego recuperar la sal sólida.", "La filtración separa la arena insoluble.", "Evaporar el agua del filtrado recupera la sal disuelta.", "Pase la mezcla a través de un filtro para retener la arena, luego elimine el agua del filtrado por evaporación para dejar la sal.", "Un filtro elimina la sal disuelta, mientras que los imanes extraen la arena del agua."],
-  ["Defina los isómeros estructurales y explique por qué simplemente rotar un dibujo no crea uno.", "Los isómeros estructurales tienen la misma fórmula molecular pero diferente conectividad de átomos.", "Rotar un dibujo sin cambiar la conectividad representa la misma estructura.", "Aquí los isómeros difieren en qué átomos están enlazados a pesar de tener fórmulas coincidentes; girar la página no altera esos enlaces.", "Cualquier dibujo rotado es un nuevo isómero estructural, incluso cuando su fórmula y conexiones permanecen sin cambios."],
-  ["Describa qué sucede con el doble enlace del eteno en la polimerización por adición y si se elimina una pequeña molécula en cada adición.", "El doble enlace carbono-carbono se abre para permitir enlaces en una cadena polimérica.", "No se elimina una pequeña molécula en la polimerización por adición ordinaria del eteno.", "Las unidades de eteno se unen abriendo sus dobles enlaces; su adición no libera agua ni otro subproducto pequeño.", "Cada doble enlace permanece intacto y cada paso de unión libera necesariamente una molécula de agua."],
-  ["Distinga un polímero hecho a partir de materia prima renovable de un polímero biodegradable.", "La materia prima renovable describe una fuente de entrada que puede reponerse en una escala de tiempo relevante.", "La biodegradabilidad describe la descomposición por procesos biológicos bajo condiciones especificadas.", "Un término se refiere al reemplazo de la fuente de materia prima, mientras que el otro se refiere a que los organismos descomponen el material en condiciones adecuadas.", "Renovable significa que los microorganismos siempre lo digieren inmediatamente, mientras que biodegradable significa que su materia prima proviene de petróleo fósil."]
+  [
+    "Clasifica una partícula de O2 y una partícula de Na+.",
+    "O2 es una molécula formada por dos átomos de oxígeno unidos.",
+    "Na+ es un ion con carga positiva.",
+    "Dos átomos de oxígeno unidos forman la molécula O2; el sodio con carga positiva es un ion.",
+    "O2 es un átomo individual y Na+ es una molécula sin carga."
+  ],
+  [
+    "El carbono-12 y el carbono-14 son isótopos. Compara sus conteos de protones y neutrones.",
+    "Ambos tienen seis protones.",
+    "El carbono-12 tiene seis neutrones y el carbono-14 tiene ocho.",
+    "Cada núcleo contiene 6 protones, pero los conteos de neutrones son 6 y 8 respectivamente.",
+    "Tienen conteos de protones diferentes y el mismo conteo de neutrones."
+  ],
+  [
+    "Un átomo tiene 11 protones y 12 neutrones. Indica su número atómico y su número másico.",
+    "Su número atómico es 11.",
+    "Su número másico es 23.",
+    "Z es once; al sumar los nucleones se obtiene A igual a veintitrés.",
+    "El número atómico es 12 y el número másico es 11."
+  ],
+  [
+    "Un átomo neutro de magnesio pierde dos electrones. Indica la carga resultante y qué sucede con su conteo de protones.",
+    "El ion resultante tiene carga +2.",
+    "Su conteo de protones permanece sin cambios.",
+    "Se convierte en Mg2+, mientras que el núcleo mantiene el mismo número de protones.",
+    "Se vuelve cargado negativamente porque desaparecen dos protones."
+  ],
+  [
+    "Contrasta un compuesto con una mezcla en términos de enlace y composición.",
+    "Un compuesto contiene elementos químicamente unidos en una proporción fija.",
+    "Los componentes de una mezcla pueden estar presentes en proporciones variables.",
+    "Un compuesto tiene una proporción química fija de combinación, mientras que las cantidades relativas de los componentes en una mezcla pueden variar.",
+    "Los compuestos tienen composición arbitraria, mientras que cada mezcla tiene una fórmula química fija."
+  ],
+  [
+    "¿Por qué filtrar agua no produce hidrógeno y oxígeno, y qué tipo de cambio podría separar estos elementos?",
+    "La filtración no rompe los enlaces químicos en las moléculas de agua.",
+    "Separar el agua en sus elementos requiere un cambio químico, como la electrólisis.",
+    "Un filtro no puede cortar los enlaces del agua; un proceso químico eléctrico puede producir los elementos.",
+    "Un filtro lo suficientemente fino separa el hidrógeno porque los átomos de oxígeno son siempre más grandes que sus poros."
+  ],
+  [
+    "Balancea H2 + O2 -> H2O y explica por qué cambiar H2O a H2O2 no es un paso válido de balanceo.",
+    "La ecuación balanceada es 2 H2 + O2 -> 2 H2O.",
+    "Cambiar un subíndice cambia la identidad de la sustancia.",
+    "Usa coeficientes dos, uno, dos; alterar la fórmula describiría una sustancia química diferente.",
+    "H2 + O2 -> H2O2 balancea la ecuación sin cambiar el producto."
+  ],
+  [
+    "Una reacción libera gas de un vaso de precipitados abierto y su masa medida disminuye. Explica la disminución y si se destruye masa total.",
+    "Parte del producto gaseoso sale del vaso de precipitados cuya masa se mide.",
+    "La masa total se conserva cuando se incluye el material escapado.",
+    "La balanza ya no mide el gas que escapó; contarlo con el contenido restante preserva la masa original.",
+    "El gas no tiene masa, por lo que la reacción destruye la masa."
+  ],
+  [
+    "Para 2 H2 + O2 -> 2 H2O, comienza con 3 mol de H2 y 2 mol de O2. Identifica el reactivo limitante y la cantidad máxima de agua.",
+    "El hidrógeno es el reactivo limitante.",
+    "Como máximo se pueden formar 3 mol de agua.",
+    "El H2 se agota primero, permitiendo una producción teórica de tres moles de H2O.",
+    "El oxígeno limita la reacción y se forman cuatro moles de agua."
+  ],
+  [
+    "El rendimiento teórico del producto es 10 g, pero se recogen 8 g. Indica el porcentaje de rendimiento y explica qué significa el rendimiento teórico.",
+    "El porcentaje de rendimiento es 80%.",
+    "El rendimiento teórico es el máximo predicho por la estequiometría a partir del reactivo limitante.",
+    "La fracción recogida es el ochenta por ciento; el objetivo de diez gramos es la cantidad calculada para la conversión completa del reactivo limitante.",
+    "El rendimiento es 125%, y el rendimiento teórico significa la cantidad realmente recogida."
+  ],
+  [
+    "Usando la constante de Avogadro 6.02 x 10^23 mol^-1, indique el número de moléculas en 2 mol de CO2 y el significado de un mol.",
+    "Dos moles contienen 1.204 x 10^24 moléculas de CO2.",
+    "Un mol contiene el número de Avogadro de entidades especificadas.",
+    "Hay 1.204 por 10 elevado a 24 moléculas; aquí un mol corresponde a 6.02 por 10 elevado a 23 entidades.",
+    "Hay dos moléculas, ya que un mol es la masa de una molécula."
+  ],
+  [
+    "Compare los moles en 18 g de agua, masa molar 18 g/mol, y 18 g de CO2, masa molar 44 g/mol. Indique ambas cantidades.",
+    "La cantidad de agua es 1 mol.",
+    "La cantidad de CO2 es 18/44 mol, aproximadamente 0.409 mol.",
+    "El agua da un mol, mientras que el dióxido de carbono da 18/44 mol, aproximadamente 0.409 mol.",
+    "Ambas cantidades son 18 mol porque sus masas coinciden."
+  ],
+  [
+    "La glucosa tiene la fórmula molecular C6H12O6. Indique su fórmula empírica y explique qué especifica una fórmula molecular.",
+    "Su fórmula empírica es CH2O.",
+    "Una fórmula molecular da el número real de cada átomo en una molécula.",
+    "La razón más simple es CH2O; la notación molecular cuenta los átomos dentro de una molécula individual.",
+    "La fórmula empírica es C6H12O6 y la fórmula molecular solo da la razón más simple."
+  ],
+  [
+    "Se añade agua a 100 mL de solución 2 mol/L hasta que su volumen sea 200 mL. Indique la cantidad de soluto y la concentración final.",
+    "La cantidad de soluto se mantiene en 0.2 mol.",
+    "La concentración final es 1 mol/L.",
+    "No se añade ni se elimina soluto: quedan dos décimas de mol en una solución de concentración 1 mol/L.",
+    "El soluto se duplica a 0.4 mol y la concentración se mantiene en 2 mol/L."
+  ],
+  [
+    "Dos soluciones son ambas 0.5 mol/L, con volúmenes 1 L y 3 L. Compare sus concentraciones y sus cantidades de soluto.",
+    "Sus concentraciones son iguales.",
+    "La solución de 3 L contiene tres veces más soluto.",
+    "Ambas tienen la misma molaridad; el volumen mayor contiene el triple de moles.",
+    "La solución mayor es tres veces más concentrada pero contiene la misma cantidad de soluto."
+  ],
+  [
+    "A una temperatura fija, una solución saturada permanece en contacto con un exceso de soluto sólido. Explique la saturación y qué ocurre con un poco más de sólido añadido.",
+    "La concentración disuelta está en el límite de solubilidad de equilibrio para esa temperatura.",
+    "El sólido adicional no produce un aumento neto en la cantidad disuelta bajo estas condiciones invariables.",
+    "La solución ha alcanzado su concentración disuelta de equilibrio, por lo que más cristales dejan invariable la cantidad disuelta neta.",
+    "Saturado significa que no queda disolvente, por lo que cada cristal extra debe disolverse."
+  ],
+  [
+    "Distinga la solubilidad de un sólido de su velocidad de disolución.",
+    "La solubilidad es la cantidad de equilibrio que puede disolverse bajo condiciones especificadas.",
+    "La velocidad de disolución describe lo rápido que el material entra en solución.",
+    "Una cantidad establece cuánto puede quedar disuelto en el equilibrio; la otra mide la rapidez del proceso.",
+    "La solubilidad significa velocidad de agitación, y la velocidad de disolución significa la masa final de equilibrio."
+  ],
+  [
+    "Agitar hace que el azúcar se disuelva más rápido sin cambiar la temperatura. Explica el efecto sobre la velocidad de disolución y sobre la solubilidad de equilibrio.",
+    "Agitar lleva disolvente menos concentrado a la superficie del azúcar y facilita el transporte de soluto desde ella.",
+    "La agitación por sí sola no tiene por qué cambiar la solubilidad de equilibrio.",
+    "Mezclar renueva líquido en la superficie, pero la capacidad de equilibrio del disolvente permanece igual a esa temperatura.",
+    "Agitar rompe el azúcar en nuevos elementos y duplica permanentemente su solubilidad de equilibrio."
+  ],
+  [
+    "Contraste el enlace iónico en el cloruro de sodio y el enlace covalente en una molécula de hidrógeno.",
+    "El enlace iónico es atracción electrostática entre iones de carga opuesta.",
+    "Un enlace covalente implica un par compartido de electrones entre átomos.",
+    "La sal mantiene unidos iones positivos y negativos por atracción; H2 une átomos mediante compartir electrones.",
+    "Los enlaces iónicos comparten protones neutros, mientras que los enlaces covalentes son atracciones entre neutrones libres."
+  ],
+  [
+    "¿Por qué el cloruro de sodio fundido conduce electricidad mientras el cloruro de sodio sólido no? Dé el estado de los portadores de carga en cada uno.",
+    "En el fundido, los iones pueden moverse y llevar carga.",
+    "En el sólido, los iones están mantenidos en posiciones de red fijas y no pueden llevar carga a través del material.",
+    "Los iones móviles transportan carga en el líquido; la disposición cristalina los inmoviliza en la sal sólida.",
+    "El líquido conduce porque sus moléculas no tienen cargas, y el sólido conduce a través de neutrones móviles."
+  ],
+  [
+    "Cuando el agua hierve, distingue las interacciones que se superan de los enlaces que permanecen dentro de una molécula de agua.",
+    "Hervir supera las atracciones intermoleculares entre las moléculas de agua.",
+    "Los enlaces covalentes O-H dentro de cada molécula de agua permanecen intactos durante la ebullición ordinaria.",
+    "Las moléculas se separan al superar las atracciones hacia las moléculas vecinas, mientras que cada molécula conserva sus enlaces covalentes oxígeno-hidrógeno.",
+    "Hervir rompe los enlaces O-H en hidrógeno y oxígeno mientras todas las atracciones intermoleculares permanecen sin cambios."
+  ],
+  [
+    "Los líquidos A y B tienen un tamaño molecular similar; solo A forma fuertes enlaces de hidrógeno. Predice cuál tiene el punto de ebullición más alto y explica la diferencia de energía.",
+    "Se espera que A tenga el punto de ebullición más alto.",
+    "Se necesita más energía para superar sus atracciones intermoleculares más fuertes.",
+    "A debería hervir a una temperatura más alta porque separar sus moléculas requiere una mayor entrada de energía.",
+    "B tiene el punto de ebullición más alto porque las atracciones más débiles siempre requieren más energía para ser superadas."
+  ],
+  [
+    "Para el CO2 lineal y simétrico, indica su polaridad general y la polaridad de cada enlace carbono-oxígeno.",
+    "El CO2 es globalmente no polar.",
+    "Cada enlace C=O es polar.",
+    "El CO2 no tiene un dipolo molecular general a pesar de que sus enlaces individuales carbono-oxígeno son polares.",
+    "El CO2 es fuertemente polar y sus enlaces C=O son no polares."
+  ],
+  [
+    "Para una sal iónica que se disuelve en agua, nombra la atracción disolvente-soluto y explica cómo la hidratación estabiliza los iones separados.",
+    "Las moléculas polares de agua forman atracciones ión-dipolo con los iones.",
+    "Una capa de hidratación circundante estabiliza los iones dispersos en la solución.",
+    "Los extremos cargados del agua atraen a los iones, y las moléculas de agua circundantes ayudan a mantener estable a cada ion disuelto.",
+    "El agua repele todas las partículas cargadas y disuelve la sal eliminando toda la carga eléctrica de ella."
+  ],
+  [
+    "Explica la conducción eléctrica en un metal y di qué sucede con los iones metálicos durante esta conducción.",
+    "Los electrones deslocalizados se mueven a través del metal transportando la carga.",
+    "Los iones metálicos permanecen aproximadamente en sus posiciones de la red en lugar de fluir a través del alambre.",
+    "Los electrones móviles proporcionan la corriente, mientras que la red positiva no viaja a lo largo del alambre.",
+    "El metal conduce haciendo fluir los núcleos positivos a través del alambre mientras cada electrón permanece fijo."
+  ],
+  [
+    "En HCl + H2O -> H3O+ + Cl-, identifica el donante de protones y el aceptor de protones.",
+    "El HCl es el donante de protones, el ácido.",
+    "El H2O es el aceptor de protones, la base.",
+    "El cloruro de hidrógeno suministra H+, y el agua lo recibe.",
+    "El agua dona el protón al cloruro, mientras que el HCl es el aceptor de protones."
+  ],
+  [
+    "Distingue un ácido fuerte de un ácido concentrado.",
+    "Un ácido fuerte se ioniza esencialmente completamente en agua bajo las condiciones diluidas usuales.",
+    "Una solución de ácido concentrado contiene una gran cantidad de ácido por unidad de volumen.",
+    "Bajo las condiciones acuosas diluidas usuales, un ácido fuerte está casi totalmente ionizado; una solución de ácido concentrado tiene una gran cantidad de ácido por unidad de volumen.",
+    "Fuerte significa mucha cantidad de ácido por litro, mientras que concentrado significa ionización completa."
+  ],
+  [
+    "Para soluciones diluidas ideales, compara la concentración de iones hidrógeno a pH 3 y pH 4 y da su concentración absoluta a pH 3.",
+    "La solución de pH 3 tiene diez veces la concentración de iones hidrógeno de la solución de pH 4.",
+    "A pH 3, la concentración de iones hidrógeno es 0.001 mol/L.",
+    "La solución de pH tres contiene una milésima de mol de H+ por litro, diez veces la concentración a pH cuatro.",
+    "El pH 4 tiene diez veces más iones de hidrógeno, y el pH 3 significa 3 mol/L de iones de hidrógeno."
+  ],
+  [
+    "¿Qué cambio resiste un tampón y por qué una adición suficientemente grande de ácido puede superarlo?",
+    "Un tampón resiste el cambio de pH ante pequeñas adiciones de ácido o base.",
+    "Su componente consumidor de ácido tiene una cantidad finita y puede agotarse.",
+    "Limita pequeños cambios de pH, pero suficiente ácido añadido agota el componente neutralizante disponible.",
+    "Un tampón previene todos los cambios de temperatura porque contiene una sustancia ilimitada para eliminar ácido."
+  ],
+  [
+    "Un ácido y una base reaccionan, pero queda ácido en exceso. Describe la neutralización y explica por qué el pH final no tiene por qué ser 7.",
+    "La neutralización consume ácido y base a través de su reacción.",
+    "Queda ácido en exceso, por lo que la solución final puede ser ácida.",
+    "Los reactivos neutralizan parte uno del otro, pero el ácido sobrante puede mantener el pH final por debajo de siete.",
+    "La neutralización crea solo más ácido, y cada mezcla ácido-base termina automáticamente en pH 7."
+  ],
+  [
+    "Defina oxidación y reducción en términos de transferencia de electrones.",
+    "La oxidación es pérdida de electrones.",
+    "La reducción es ganancia de electrones.",
+    "Una especie oxidada cede electrones; una especie reducida los recibe.",
+    "La oxidación gana electrones y la reducción los pierde."
+  ],
+  [
+    "En Zn + Cu2+ -> Zn2+ + Cu, identifique el agente reductor y el agente oxidante.",
+    "El zinc es el agente reductor.",
+    "El Cu2+ es el agente oxidante.",
+    "El Zn proporciona la acción reductora, mientras que los iones de cobre(II) proporcionan la acción oxidante.",
+    "El metal de cobre es el agente reductor y el Zn2+ es el agente oxidante."
+  ],
+  [
+    "Los iones de cobre se depositan como cobre en un cátodo durante la electrólisis. Explique el cambio de electrones y el cambio de masa del electrodo.",
+    "El Cu2+ gana dos electrones para formar metal de cobre.",
+    "El cobre depositado aumenta la masa del cátodo.",
+    "El cobre(II) se reduce al tomar dos electrones, y el metal acumulado hace que el cátodo sea más pesado.",
+    "Los iones de cobre pierden electrones, haciendo que el cátodo sea más ligero a medida que el metal se evapora."
+  ],
+  [
+    "En una celda galvánica en funcionamiento, distinga el transporte de carga en el cable externo del que ocurre en el electrolito.",
+    "Los electrones transportan la carga a través del cable externo.",
+    "Los iones se mueven dentro del electrolito para transportar la carga y mantener el equilibrio de carga.",
+    "La corriente en el cable utiliza electrones; el movimiento iónico a través de la solución completa el transporte de carga.",
+    "Los iones viajan a través del cable metálico, mientras que los protones se vuelven neutros y no transportan corriente en la solución."
+  ],
+  [
+    "Contraste una reacción exotérmica con una endotérmica en términos de transferencia de calor hacia o desde el entorno.",
+    "Una reacción exotérmica libera calor hacia su entorno.",
+    "Una reacción endotérmica absorbe calor desde su entorno.",
+    "Una envía energía térmica hacia afuera; la otra toma energía térmica desde el exterior del sistema reactivo.",
+    "Exotérmico significa absorber calor, mientras que endotérmico significa liberar calor."
+  ],
+  [
+    "Describa el cambio de energía para romper un enlace químico y el cambio opuesto para formar ese enlace.",
+    "Romper un enlace requiere aporte de energía.",
+    "Formar el enlace libera energía.",
+    "Se debe suministrar energía para separar los átomos enlazados, y su enlace devuelve energía al entorno.",
+    "Romper un enlace libera energía, mientras que formar el mismo enlace siempre la consume."
+  ],
+  [
+    "Una reacción requiere 500 kJ para romper enlaces y libera 650 kJ cuando se forman nuevos enlaces. Indique el cambio neto de entalpía y explique la dirección de la energía para la ruptura y formación de enlaces.",
+    "El cambio neto de entalpía es -150 kJ.",
+    "Romper enlaces absorbe energía, mientras que formar enlaces libera energía.",
+    "El cambio neto es menos 150 kJ; separar átomos enlazados consume energía y crear nuevos enlaces la libera.",
+    "El cambio neto es +1150 kJ; romper enlaces libera energía y formar enlaces la consume."
+  ],
+  [
+    "Explique la energía de activación y cómo un catalizador modifica la trayectoria de la reacción.",
+    "La energía de activación es la barrera energética que deben superar las partículas reaccionantes.",
+    "Un catalizador proporciona una trayectoria alternativa con menor energía de activación.",
+    "Las partículas necesitan suficiente energía para cruzar una barrera de reacción; la catálisis ofrece una ruta con una barrera más pequeña.",
+    "La energía de activación es la masa del producto final, y un catalizador funciona elevando la barrera."
+  ],
+  [
+    "A temperatura fija, ¿por qué un catalizador no cambia la constante de equilibrio? Indique su efecto en las velocidades de las reacciones directa e inversa.",
+    "Un catalizador no cambia la diferencia de energía libre entre reactivos y productos.",
+    "Acelera tanto la reacción directa como la inversa.",
+    "La diferencia termodinámica entre reactivos y productos permanece igual, mientras que la reacción en cada dirección se vuelve más rápida.",
+    "Un catalizador cambia la diferencia de energía termodinámica y acelera solo la reacción directa."
+  ],
+  [
+    "Describa el equilibrio dinámico utilizando las velocidades de reacción y las concentraciones.",
+    "Las velocidades de las reacciones directa e inversa son iguales y no nulas.",
+    "Las concentraciones macroscópicas de reactivos y productos permanecen constantes con el tiempo.",
+    "La reacción continúa a igual velocidad en ambas direcciones, de modo que las concentraciones medidas no cambian.",
+    "Todas las reacciones se detienen, y las concentraciones de reactivos y productos deben ser cero."
+  ],
+  [
+    "Para A <-> B en equilibrio, se añade más A a temperatura y volumen fijos. Prediga la dirección neta inicial de la reacción y el efecto sobre la constante de equilibrio.",
+    "La dirección neta inicial de la reacción se desplaza hacia la formación de B.",
+    "La constante de equilibrio permanece inalterada a la misma temperatura.",
+    "Hay una conversión neta hacia B hasta que se restablece el equilibrio; el valor de K no cambia.",
+    "El sistema inicialmente forma más A, y añadir reactante aumenta permanentemente K."
+  ],
+  [
+    "Explique dos efectos de la teoría de colisiones de elevar la temperatura sobre la velocidad de una reacción típica.",
+    "Las partículas tienen una energía cinética promedio mayor.",
+    "Una fracción más grande de colisiones puede superar la barrera de energía de activación.",
+    "El movimiento promedio es más energético, y más colisiones tienen suficiente energía para reaccionar.",
+    "Las partículas pierden energía cinética y menos colisiones alcanzan el umbral de reacción."
+  ],
+  [
+    "Masas iguales de mármol en polvo y en trozos reaccionan con ácido en exceso. Explica por qué el polvo reacciona inicialmente más rápido y compara la cantidad total de gas producida tras la reacción completa.",
+    "El polvo expone más superficie al ácido, aumentando la velocidad inicial.",
+    "Ambos producen la misma cantidad total de gas si tienen la misma composición y reaccionan por completo.",
+    "Más área de contacto expuesta permite que el polvo reaccione más rápido inicialmente; la reacción completa de cantidades iguales produce igual gas total.",
+    "El polvo reacciona más lento porque se expone menos superficie, y debe producir menos gas total."
+  ],
+  [
+    "Distinga entre velocidad de reacción y rendimiento de equilibrio.",
+    "La velocidad de reacción describe lo rápido que cambian los reactivos o productos.",
+    "El rendimiento de equilibrio describe la cantidad o proporción de producto presente en el equilibrio.",
+    "La velocidad mide la rapidez de conversión; el rendimiento de equilibrio mide la cantidad final de producto en el equilibrio.",
+    "La velocidad significa cantidad final de producto, mientras que el rendimiento de equilibrio significa segundos por colisión."
+  ],
+  [
+    "Explique la cromatografía usando una fase estacionaria y una fase móvil.",
+    "La fase móvil transporta los componentes de la muestra a través o junto a la fase estacionaria.",
+    "Los componentes se separan porque sus afinidades relativas para las dos fases difieren.",
+    "Una fase transporta la muestra, mientras que la atracción diferente a esa fase y a la fase fija da distancias de viaje diferentes.",
+    "Cada componente se mueve a la misma velocidad porque la cromatografía convierte todas las sustancias en la misma molécula."
+  ],
+  [
+    "¿Cómo puede la destilación simple recuperar agua de una sal disuelta no volátil? Incluya los roles de la ebullición y el enfriamiento.",
+    "El agua se vaporiza mientras la sal no volátil permanece en el recipiente original.",
+    "El enfriamiento del vapor lo condensa en agua líquida recolectada.",
+    "El calentamiento envía el agua como vapor sin arrastrar la sal; un condensador convierte luego ese vapor en líquido.",
+    "La sal se evapora primero y el enfriamiento convierte el vapor de sal en agua pura."
+  ],
+  [
+    "Una mezcla contiene solución salina y arena insoluble. Indique cómo eliminar la arena y luego recuperar la sal sólida.",
+    "La filtración separa la arena insoluble.",
+    "Evaporar el agua del filtrado recupera la sal disuelta.",
+    "Pase la mezcla a través de un filtro para retener la arena, luego elimine el agua del filtrado por evaporación para dejar la sal.",
+    "Un filtro elimina la sal disuelta, mientras que los imanes extraen la arena del agua."
+  ],
+  [
+    "Defina los isómeros estructurales y explique por qué simplemente rotar un dibujo no crea uno.",
+    "Los isómeros estructurales tienen la misma fórmula molecular pero diferente conectividad de átomos.",
+    "Rotar un dibujo sin cambiar la conectividad representa la misma estructura.",
+    "Aquí los isómeros difieren en qué átomos están enlazados a pesar de tener fórmulas coincidentes; girar la página no altera esos enlaces.",
+    "Cualquier dibujo rotado es un nuevo isómero estructural, incluso cuando su fórmula y conexiones permanecen sin cambios."
+  ],
+  [
+    "Describa qué sucede con el doble enlace del eteno en la polimerización por adición y si se elimina una pequeña molécula en cada adición.",
+    "El doble enlace carbono-carbono se abre para permitir enlaces en una cadena polimérica.",
+    "No se elimina una pequeña molécula en la polimerización por adición ordinaria del eteno.",
+    "Las unidades de eteno se unen abriendo sus dobles enlaces; su adición no libera agua ni otro subproducto pequeño.",
+    "Cada doble enlace permanece intacto y cada paso de unión libera necesariamente una molécula de agua."
+  ],
+  [
+    "Distinga un polímero hecho a partir de materia prima renovable de un polímero biodegradable.",
+    "La materia prima renovable describe una fuente de entrada que puede reponerse en una escala de tiempo relevante.",
+    "La biodegradabilidad describe la descomposición por procesos biológicos bajo condiciones especificadas.",
+    "Un término se refiere al reemplazo de la fuente de materia prima, mientras que el otro se refiere a que los organismos descomponen el material en condiciones adecuadas.",
+    "Renovable significa que los microorganismos siempre lo digieren inmediatamente, mientras que biodegradable significa que su materia prima proviene de petróleo fósil."
+  ]
 ]

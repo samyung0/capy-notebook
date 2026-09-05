@@ -3,13 +3,93 @@
   "author": "Codex",
   "sources": ["https://www.dictionnaire-academie.fr/article/A9C1757"],
   "rows": [
-    {"row": 5, "topic": "native idiom in context", "values": ["Pendant un jeu de devinettes, Léa ne trouve pas la réponse et dit : « Je donne ma langue au chat. » Explique cette expression et précise dans quelle activité elle est employée ici.", "Elle signifie que Léa renonce à trouver la réponse ou avoue ne pas la connaître.", "Elle est employée pendant un jeu de devinettes.", "Léa reconnaît qu'elle ne sait pas répondre; elle participe alors à un jeu de devinettes.", "Léa affirme avoir trouvé toutes les réponses et se trouve dans un cours de natation, sans aucun jeu."]},
-    {"row": 10, "topic": "French direct-address comma", "values": ["Dans « Merci, Lucie ! », indique à qui l'on s'adresse et quel signe sépare le remerciement du prénom.", "On s'adresse à Lucie.", "Une virgule sépare Merci du prénom.", "Lucie est la destinataire du remerciement, et son prénom est précédé d'une virgule.", "On s'adresse uniquement à Marc et aucun signe de ponctuation ne précède le prénom."]},
-    {"row": 27, "topic": "French alliteration", "values": ["Dans « Sophie sourit souvent », nomme le procédé de répétition consonantique et indique le son initial répété.", "Le procédé est une allitération.", "Le son /s/ est répété au début des mots.", "C'est une allitération fondée sur les sons s initiaux.", "C'est une rime parce que tous les mots se terminent par le son /r/."]},
-    {"row": 41, "topic": "French register", "values": ["Compare « Veuillez me communiquer votre décision » et « Dis-moi ce que tu choisis ». Indique la formulation la plus soutenue et si les deux demandent la même action.", "Veuillez me communiquer votre décision est la formulation la plus soutenue.", "Les deux demandent à l'autre personne de faire connaître sa décision.", "La tournure avec veuillez est plus formelle; dans les deux cas, il faut dire ce que l'on décide.", "Les deux phrases sont identiques mot pour mot et aucune ne demande de communiquer une décision."]},
-    {"row": 43, "topic": "French verb agreement", "values": ["Corrige « Elles travaille chaque jour » en français standard et indique la personne et le nombre du sujet.", "La phrase corrigée est Elles travaillent chaque jour.", "Elles est un sujet à la troisième personne du pluriel.", "Il faut écrire Elles travaillent chaque jour; le sujet est au pluriel, à la troisième personne.", "La correction est Elles travaille chaque jour, et elles est à la première personne du singulier."]},
-    {"row": 44, "topic": "French subject head", "values": ["Choisis « est » ou « sont » dans « La liste des noms ___ sur la table » et indique le noyau du sujet qui commande l'accord.", "Le bon choix est est.", "Liste est le noyau singulier du sujet.", "On emploie est, car le noyau du sujet est liste, au singulier.", "On emploie sont parce que table est le noyau pluriel du sujet."]},
-    {"row": 45, "topic": "French polite request", "values": ["Compare « Ferme la fenêtre » et « Pourrais-tu fermer la fenêtre, s'il te plaît ? ». Indique l'action demandée dans les deux cas et la différence de politesse dans la formulation.", "Les deux demandent de fermer la fenêtre.", "La seconde formule la demande de manière plus polie ou indirecte.", "Il s'agit chaque fois de fermer la fenêtre, mais la question avec s'il te plaît adoucit la demande.", "La première demande d'ouvrir la fenêtre et la seconde interdit de la fermer tout en constituant forcément une insulte."]},
-    {"row": 46, "topic": "French figurative and literal meaning", "values": ["Pour l'expression « donner sa langue au chat », distingue le sens idiomatique de l'image littérale.", "Le sens idiomatique est de renoncer à répondre ou d'avouer qu'on ne connaît pas la réponse.", "L'image littérale est celle d'une personne donnant sa langue à un chat.", "On avoue ne pas savoir répondre, alors que les mots évoquent un don de sa langue à un félin.", "L'expression signifie connaître toutes les réponses et décrit littéralement la construction d'un mur."]}
+    {
+      "row": 5,
+      "topic": "native idiom in context",
+      "values": [
+        "Pendant un jeu de devinettes, Léa ne trouve pas la réponse et dit : « Je donne ma langue au chat. » Explique cette expression et précise dans quelle activité elle est employée ici.",
+        "Elle signifie que Léa renonce à trouver la réponse ou avoue ne pas la connaître.",
+        "Elle est employée pendant un jeu de devinettes.",
+        "Léa reconnaît qu'elle ne sait pas répondre; elle participe alors à un jeu de devinettes.",
+        "Léa affirme avoir trouvé toutes les réponses et se trouve dans un cours de natation, sans aucun jeu."
+      ]
+    },
+    {
+      "row": 10,
+      "topic": "French direct-address comma",
+      "values": [
+        "Dans « Merci, Lucie ! », indique à qui l'on s'adresse et quel signe sépare le remerciement du prénom.",
+        "On s'adresse à Lucie.",
+        "Une virgule sépare Merci du prénom.",
+        "Lucie est la destinataire du remerciement, et son prénom est précédé d'une virgule.",
+        "On s'adresse uniquement à Marc et aucun signe de ponctuation ne précède le prénom."
+      ]
+    },
+    {
+      "row": 27,
+      "topic": "French alliteration",
+      "values": [
+        "Dans « Sophie sourit souvent », nomme le procédé de répétition consonantique et indique le son initial répété.",
+        "Le procédé est une allitération.",
+        "Le son /s/ est répété au début des mots.",
+        "C'est une allitération fondée sur les sons s initiaux.",
+        "C'est une rime parce que tous les mots se terminent par le son /r/."
+      ]
+    },
+    {
+      "row": 41,
+      "topic": "French register",
+      "values": [
+        "Compare « Veuillez me communiquer votre décision » et « Dis-moi ce que tu choisis ». Indique la formulation la plus soutenue et si les deux demandent la même action.",
+        "Veuillez me communiquer votre décision est la formulation la plus soutenue.",
+        "Les deux demandent à l'autre personne de faire connaître sa décision.",
+        "La tournure avec veuillez est plus formelle; dans les deux cas, il faut dire ce que l'on décide.",
+        "Les deux phrases sont identiques mot pour mot et aucune ne demande de communiquer une décision."
+      ]
+    },
+    {
+      "row": 43,
+      "topic": "French verb agreement",
+      "values": [
+        "Corrige « Elles travaille chaque jour » en français standard et indique la personne et le nombre du sujet.",
+        "La phrase corrigée est Elles travaillent chaque jour.",
+        "Elles est un sujet à la troisième personne du pluriel.",
+        "Il faut écrire Elles travaillent chaque jour; le sujet est au pluriel, à la troisième personne.",
+        "La correction est Elles travaille chaque jour, et elles est à la première personne du singulier."
+      ]
+    },
+    {
+      "row": 44,
+      "topic": "French subject head",
+      "values": [
+        "Choisis « est » ou « sont » dans « La liste des noms ___ sur la table » et indique le noyau du sujet qui commande l'accord.",
+        "Le bon choix est est.",
+        "Liste est le noyau singulier du sujet.",
+        "On emploie est, car le noyau du sujet est liste, au singulier.",
+        "On emploie sont parce que table est le noyau pluriel du sujet."
+      ]
+    },
+    {
+      "row": 45,
+      "topic": "French polite request",
+      "values": [
+        "Compare « Ferme la fenêtre » et « Pourrais-tu fermer la fenêtre, s'il te plaît ? ». Indique l'action demandée dans les deux cas et la différence de politesse dans la formulation.",
+        "Les deux demandent de fermer la fenêtre.",
+        "La seconde formule la demande de manière plus polie ou indirecte.",
+        "Il s'agit chaque fois de fermer la fenêtre, mais la question avec s'il te plaît adoucit la demande.",
+        "La première demande d'ouvrir la fenêtre et la seconde interdit de la fermer tout en constituant forcément une insulte."
+      ]
+    },
+    {
+      "row": 46,
+      "topic": "French figurative and literal meaning",
+      "values": [
+        "Pour l'expression « donner sa langue au chat », distingue le sens idiomatique de l'image littérale.",
+        "Le sens idiomatique est de renoncer à répondre ou d'avouer qu'on ne connaît pas la réponse.",
+        "L'image littérale est celle d'une personne donnant sa langue à un chat.",
+        "On avoue ne pas savoir répondre, alors que les mots évoquent un don de sa langue à un félin.",
+        "L'expression signifie connaître toutes les réponses et décrit littéralement la construction d'un mur."
+      ]
+    }
   ]
 }

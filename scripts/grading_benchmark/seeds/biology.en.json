@@ -1,52 +1,352 @@
 [
-  ["Describe selective permeability and one way it helps a cell maintain its internal conditions.", "The membrane allows some substances to cross more readily than others.", "Controlling movement helps regulate the cell's internal composition.", "Different substances pass with different ease, letting the cell control what is present inside.", "The membrane lets every substance through equally and cannot affect the cell's contents."],
-  ["Contrast diffusion with active transport in terms of concentration gradients and energy.", "Diffusion produces net movement down a concentration gradient without a direct cellular energy supply.", "Active transport can move substances against a gradient using energy.", "Diffusion goes from higher toward lower concentration passively; active transport uses energy to move uphill against a gradient.", "Diffusion requires ATP to move uphill, while active transport only moves downhill without energy."],
-  ["Define osmosis by naming the moving substance and the required membrane property.", "Water moves net from higher water potential toward lower water potential.", "A selectively permeable membrane separates the two regions.", "Net water flow follows decreasing water potential across a membrane that is permeable selectively.", "Osmosis is solute flowing from low to high concentration through a completely impermeable wall."],
-  ["An animal cell is put in a solution with lower nonpenetrating solute concentration than its cytoplasm. Predict water movement and the cell's response.", "Water moves into the cell by osmosis.", "The cell swells and may burst because it lacks a rigid cell wall.", "Osmotic inflow adds water, causing the animal cell to swell and possibly burst because it has no rigid cell wall.", "Water leaves the cell and it shrinks because an animal cell has a thick rigid wall."],
-  ["A plant cell gains water and becomes turgid. Explain the wall's mechanical role and one benefit to the plant.", "The cell wall resists expansion and helps prevent the cell from bursting.", "Turgor helps support nonwoody plant tissues.", "A resisting wall limits swelling; the pressure in these cells provides structural support to soft plant parts.", "The wall pumps all water out, and turgor makes stems collapse."],
-  ["As a roughly spherical cell grows, what happens to its surface-area-to-volume ratio and why can this limit exchange?", "Its surface-area-to-volume ratio decreases.", "Exchange capacity depends on membrane area, while metabolic demand depends on the amount of cytoplasm.", "The surface-area-to-volume ratio falls; membrane area determines exchange capacity, while the amount of cytoplasm determines metabolic demand.", "The ratio increases without limit, and exchange capacity has no relationship to membrane area."],
-  ["Contrast the location of DNA in typical prokaryotic and eukaryotic cells.", "Prokaryotic cells lack a membrane-bound nucleus and keep their main DNA in a nucleoid region.", "Eukaryotic cells contain nuclear DNA within a membrane-bound nucleus.", "The main prokaryotic DNA lies in a nucleoid without a surrounding nuclear membrane; eukaryotic nuclear chromosomes are enclosed within a nucleus.", "Prokaryotes keep all DNA inside a nucleus, while eukaryotes contain no DNA."],
-  ["Explain enzyme specificity using the active site and the effect on substrate binding.", "An enzyme's active site has a particular three-dimensional shape and chemical properties.", "Only compatible substrates bind effectively and can be catalyzed there.", "The binding pocket has a characteristic structure and chemistry, which limits effective binding and catalysis to suitable substrates.", "Every active site is an identical empty hole, so every enzyme acts equally on every substrate."],
-  ["Why can excessive heat reduce enzyme activity? Describe the structural change and its consequence.", "High temperature can disrupt interactions maintaining the enzyme's folded structure.", "The altered active site may no longer bind the substrate effectively.", "Heat can unfold the protein, deforming its binding pocket so that substrate binding becomes ineffective.", "Excessive heat permanently turns the enzyme into extra substrate and always improves binding."],
-  ["Contrast competitive inhibition with simply reducing the amount of enzyme.", "A competitive inhibitor competes with substrate for the active site.", "Reducing enzyme concentration lowers the number of available catalytic sites.", "Competitive inhibition involves competing occupancy of a binding site; using less enzyme leaves fewer sites in total.", "Competitive inhibitors create new active sites, while removing enzyme increases their total number."],
-  ["Name the carbon-containing input to photosynthesis and the source of the oxygen atoms in released O2.", "Carbon dioxide supplies the carbon used to build carbohydrates.", "Released oxygen gas comes from water molecules.", "Plants obtain the carbohydrate carbon from CO2, while splitting water supplies the oxygen that is released.", "All carbohydrate carbon comes from soil minerals, and released oxygen is made from nitrogen gas."],
-  ["Contrast photosynthesis with cellular respiration in a plant in terms of energy conversion.", "Photosynthesis uses light energy to build energy-rich organic compounds.", "Respiration transfers energy from organic compounds into ATP for cellular use.", "Light powers the construction of stored chemical fuel, whereas respiration uses that fuel to supply ATP.", "Photosynthesis only destroys ATP in darkness, while respiration uses sunlight to make chlorophyll."],
-  ["Why can a plant respire in darkness? Name its fuel source and explain why light is unnecessary for this process.", "It can use organic compounds such as sugars stored earlier.", "Cellular respiration releases chemical energy without directly requiring light.", "Previously made sugars provide fuel, and their chemical energy can be transferred through respiration without illumination.", "Plants stop all energy use in darkness because respiration requires incoming sunlight."],
-  ["State two consequences of opening stomata for a leaf, one involving carbon and one involving water.", "Opening permits carbon dioxide to diffuse into the leaf for photosynthesis.", "Opening also allows water vapor to escape through transpiration.", "Open pores admit CO2 but also let the leaf lose water vapor.", "Open stomata block carbon dioxide and stop all water loss."],
-  ["Explain transpiration pull using evaporation and the connected water column in xylem.", "Evaporation from leaves creates tension that pulls water upward.", "Cohesion between water molecules helps maintain a continuous column in the xylem.", "Leaf water loss generates a pulling tension, transmitted through water that stays connected by molecular cohesion.", "Leaves push dry air down the xylem, and water rises because its molecules repel each other completely."],
-  ["Distinguish the main materials transported by xylem and phloem.", "Xylem primarily transports water and dissolved mineral ions.", "Phloem transports organic assimilates such as sucrose between sources and sinks.", "Water with mineral nutrients travels in xylem; sugars and other assimilates move through phloem to where they are needed or stored.", "Xylem carries only DNA, while phloem carries only oxygen gas."],
-  ["Describe oxygen's role at the end of the aerobic electron transport chain and the resulting product.", "Oxygen acts as the final electron acceptor.", "Oxygen combines with electrons and protons to form water.", "At the chain's end oxygen receives electrons, then its combination with those electrons and hydrogen ions produces water.", "Oxygen donates all initial electrons and is converted directly into glucose."],
-  ["Contrast ATP's role with that of long-term energy stores such as fat.", "ATP transfers energy for immediate cellular processes.", "Fat can store a large reserve of chemical energy for later use.", "Cells use ATP for readily coupled work, while lipids hold energy reserves over longer periods.", "ATP is exclusively a lifelong storage tissue, while fat is a nucleotide consumed directly by every enzyme."],
-  ["Why does digestion usually precede absorption of proteins and starch? Describe the chemical change and its effect on passage across the intestinal wall.", "Digestion breaks large molecules into smaller units such as amino acids and simple sugars.", "These smaller units can be transported across the intestinal epithelium more readily.", "Large food polymers are split into small building blocks that intestinal transport mechanisms can absorb.", "Digestion combines food into giant crystals, which pass through membranes more easily because they are larger."],
-  ["Explain how intestinal villi aid absorption through surface area and transport away from the gut.", "Villi increase the surface area available for absorption.", "Their blood and lymphatic supply carries absorbed nutrients away.", "The projections expose more absorptive surface, and underlying vessels transport nutrients onward.", "Villi eliminate the absorptive surface and permanently trap every nutrient in the gut lumen."],
-  ["Distinguish ventilation from gas exchange in the lungs.", "Ventilation moves air into and out of the lungs.", "Gas exchange transfers oxygen and carbon dioxide between alveolar air and blood.", "Breathing refreshes lung air; exchange crosses the alveolar-blood boundary to move respiratory gases.", "Ventilation means making blood cells, while gas exchange means moving whole lungs out of the body."],
-  ["Explain oxygen movement from alveolar air into blood using its gradient and the barrier thickness.", "Oxygen diffuses down its partial-pressure gradient from alveolar air into blood.", "The thin alveolar-capillary barrier provides a short diffusion distance.", "A higher oxygen partial pressure in the alveoli drives diffusion toward the blood across a very short path.", "Oxygen is actively pumped from low to high partial pressure through a thick bone barrier."],
-  ["Define arteries and veins by the direction of blood flow relative to the heart.", "Arteries carry blood away from the heart.", "Veins carry blood toward the heart.", "The outward vessels are arteries; the returning vessels are veins.", "Arteries always carry blood toward the heart, while veins always carry it away."],
-  ["Explain heart valves in terms of flow direction and how pressure opens or closes them.", "Valves prevent backward blood flow and help maintain one-way movement.", "Pressure differences on their two sides cause them to open or close.", "They stop reverse flow, with the prevailing pressure difference determining whether their flaps open or shut.", "Valves pump blood equally in both directions and open only when nerves manually lift each flap."],
-  ["How does a capillary's wall aid exchange, and why can this help surrounding cells?", "A very thin wall creates a short diffusion distance.", "Exchange delivers needed substances and removes metabolic wastes from tissues.", "The small barrier thickness shortens the path, helping supply nearby cells and take away their waste products.", "Capillaries have thick impermeable walls so nearby tissues never exchange any substances."],
-  ["In a temperature-control system, rising body temperature triggers sweating. Identify the response's effect and explain why this is negative feedback.", "Evaporation of sweat helps cool the body.", "The response opposes the initial temperature rise.", "Sweat evaporation removes heat, so the response counteracts the original warming.", "Sweat evaporation heats the body, amplifying the original rise as negative feedback requires."],
-  ["Distinguish a receptor from an effector in a withdrawal reflex.", "A receptor detects a stimulus such as harmful heat.", "An effector, such as a muscle, produces the response.", "The sensory detector notices the stimulus; the responding muscle carries out the withdrawal.", "The receptor is the contracting muscle, while the effector only records light without acting."],
-  ["Explain the usual direction of transmission across a chemical synapse using release and receptor locations.", "The presynaptic terminal releases neurotransmitter.", "Receptors on the postsynaptic membrane receive the signal.", "Chemical messenger leaves the sending terminal and binds receptors on the receiving membrane.", "The postsynaptic cell always releases the messenger backward into a presynaptic nucleus."],
-  ["A hormone circulates widely in blood but only some cells respond. Explain its transport and the basis of target specificity.", "The bloodstream carries the hormone to many tissues.", "A cell responds when it has an appropriate receptor and response machinery.", "Blood distributes the messenger broadly, while compatible receptors and cellular signaling determine which cells react.", "Hormones travel only through bones, and every cell must respond identically without any receptor."],
-  ["Explain how an antibody recognizes an antigen and why different antigens may require different antibodies.", "An antibody's binding region is complementary to a particular antigenic site.", "Different antigenic sites can have different shapes and chemical properties.", "Binding depends on a matching site on the antibody, and antigen sites vary in their structure and chemistry.", "All antibodies bind only through identical nonspecific magnets, so all antigen sites are chemically identical."],
-  ["Contrast immune memory with the immediate barrier function of intact skin.", "Immune memory can enable a faster specific response on later exposure to an antigen.", "Intact skin physically blocks entry of many pathogens.", "Immune memory enables a faster, antigen-specific response on later exposure; intact skin physically blocks entry of many pathogens.", "Immune memory is a solid layer of skin, and skin works only by remembering earlier antibody sequences."],
-  ["Why does a virus depend on a host cell to produce new viral proteins? Name the missing machinery and the consequence.", "Viruses lack their own ribosomes and complete protein-synthesis machinery.", "They use host-cell machinery to translate viral proteins needed for reproduction.", "Viruses lack their own ribosomes and a complete translation system, so they use host machinery to make proteins for new viral particles.", "Viruses reproduce by photosynthesis with their own chloroplasts and never use cellular machinery."],
-  ["Distinguish the origin of a resistance mutation from selection by an antibiotic in a bacterial population.", "Resistance mutations can arise without being directed by the bacteria's need to survive the drug.", "Antibiotic exposure favors survival and reproduction of resistant variants.", "Mutation is not a purposeful response to need; treatment then gives resistant bacteria a reproductive advantage.", "Every bacterium consciously changes the same gene on demand, and antibiotics preferentially kill only resistant variants."],
-  ["Explain the role of heritable variation and differential reproduction in natural selection.", "Individuals differ in traits that can be passed to offspring.", "Variants with greater reproductive success become more common across generations.", "Inherited differences exist, and traits associated with leaving more descendants tend to spread over generations.", "Natural selection requires every individual to be genetically identical and prevents any difference in reproduction."],
-  ["Distinguish evolutionary adaptation from individual acclimation.", "Evolutionary adaptation involves heritable population change over generations.", "Acclimation is an individual's adjustment during its lifetime.", "Adaptation evolves through inherited changes across generations; acclimation happens within one organism's life.", "Adaptation is any momentary thought, while acclimation requires a new species to evolve over many generations."],
-  ["Describe the relationship of genes to DNA and of DNA to chromosomes.", "A gene is a functional stretch of DNA sequence.", "Chromosomes organize long DNA molecules together with associated proteins.", "Genes are functional DNA regions, and a chromosome packages a long DNA molecule with proteins.", "Genes are tiny bones, and chromosomes are made entirely of free glucose with no DNA."],
-  ["Contrast transcription with translation.", "Transcription produces an RNA copy from a DNA template.", "Translation uses an mRNA sequence to assemble an amino-acid chain.", "First, RNA is synthesized using DNA; translation then reads messenger RNA to build a polypeptide.", "Transcription assembles amino acids directly from fat, while translation copies proteins into chromosomes."],
-  ["GAA changes to GAG, and both codons encode glutamate. State the amino acid after this change and explain why other substitutions can change a protein sequence.", "The amino acid remains glutamate.", "A different substitution may produce a codon specifying a different amino acid.", "Glutamate is still encoded here, but another base change could make a codon that encodes a different amino acid.", "It becomes glycine, and no base substitution can ever alter an amino-acid sequence."],
-  ["Distinguish allele dominance from allele frequency in a population.", "Dominance describes how alleles affect phenotype in a heterozygote under the specified trait model.", "Frequency describes how common an allele is in the population.", "Dominance concerns expression when unlike alleles occur together; frequency counts how prevalent an allele is.", "Dominant means present in everyone, while frequency measures the physical size of a chromosome."],
-  ["For a single gene with complete dominance, cross Aa with Aa. State the probability of aa and the probability of the dominant phenotype.", "The probability of aa is 1/4.", "The probability of the dominant phenotype is 3/4.", "A quarter of offspring are expected to be aa, and three quarters show the dominant trait.", "All offspring are aa and none can have the dominant phenotype."],
-  ["Contrast typical mitosis with meiosis in a diploid organism by chromosome number in daughter cells.", "Mitosis preserves the parental chromosome number in daughter cells.", "Meiosis halves the chromosome number to produce haploid products.", "Mitotic daughters retain the original chromosome count, whereas meiotic products have one set instead of two.", "Mitosis always halves chromosome number, while meiosis doubles it every division."],
-  ["Explain one way meiosis and one way fertilization contribute to genetic variation.", "Meiosis creates different allele combinations through independent assortment or crossing over.", "Fertilization combines genetic material from two gametes.", "Chromosome assortment or recombination reshuffles alleles in meiosis, and joining two gametes combines their genetic contributions.", "Meiosis copies every allele combination without any change, and fertilization removes both parents' DNA."],
-  ["Distinguish genotype from phenotype, including the role of environment.", "Genotype is the organism's genetic constitution.", "Phenotype consists of expressed traits influenced by genotype and environment.", "The inherited genetic makeup is the genotype; observable or measurable traits arise from that makeup interacting with conditions.", "Genotype is current weather, and phenotype is only a list of DNA bases with no environmental influence."],
-  ["Identical twins can differ in height or health despite closely matching genomes. Explain a source of difference and what this shows about phenotype.", "They can experience different nutrition, environments, or developmental conditions.", "Phenotype is influenced by factors beyond inherited DNA sequence alone.", "Different life conditions can affect development, showing that genetic sequence is not the sole determinant of expressed traits.", "Identical twins must always have identical environments, and all phenotypic differences are impossible."],
-  ["Why is less chemical energy generally available at a higher trophic level? Give two routes by which energy fails to transfer as new consumer biomass.", "Some energy is used in respiration and dissipated as heat.", "Some material is not eaten or is not assimilated by the consumer.", "Metabolism releases heat, and uneaten or unabsorbed material also prevents all the previous level's energy becoming consumer tissue.", "All consumed energy becomes new biomass, and organisms create unlimited new chemical energy from nothing."],
-  ["Contrast energy flow with nutrient cycling in an ecosystem.", "Energy flows through the system and is progressively dissipated as heat, requiring continued input.", "Nutrient atoms can be reused through cycles between organisms and their environment.", "Useful energy needs replenishment because it spreads as heat, while matter such as nutrient elements can circulate and be reused.", "Energy atoms circulate forever without any input, while all nutrient matter is destroyed after a single meal."],
-  ["Explain decomposers' role in processing dead material and nutrient availability.", "Decomposers break down dead organisms and organic wastes.", "This releases nutrients into forms that can re-enter ecosystem cycles and be taken up again.", "They digest remains and wastes, returning nutrient materials to the environment for further biological use.", "Decomposers turn all matter into nothing and permanently remove every nutrient from the ecosystem."],
-  ["Distinguish a food chain from a food web.", "A food chain shows one sequence of feeding relationships.", "A food web connects multiple feeding pathways among organisms.", "One chain traces a single feeding route; a web joins several such routes into a network.", "A food chain lists no feeding links, while a food web requires every organism to eat exactly one species."],
-  ["To test a fertilizer's effect on plant growth, identify a suitable control group and one variable to hold constant.", "Use otherwise comparable plants receiving no added fertilizer as the control.", "Keep a relevant condition such as light exposure, water, or plant variety the same across groups.", "Compare fertilized plants with similar unfertilized ones while holding a factor such as watering constant.", "Use only fertilized plants and deliberately change every other growth condition between groups."],
-  ["Plants near a lamp grow faster in one observation. State what the observation supports and why it does not by itself establish the mechanism.", "It supports an association between lamp proximity and growth in the observed plants.", "Other differences or confounding factors have not been ruled out, so the causal mechanism needs further evidence.", "The recorded plants show an association, but uncontrolled differences prevent concluding from that alone whether the lamp caused the growth difference or through what mechanism.", "One observation proves light has no relationship to growth and excludes every possible confounding factor."]
+  [
+    "Describe selective permeability and one way it helps a cell maintain its internal conditions.",
+    "The membrane allows some substances to cross more readily than others.",
+    "Controlling movement helps regulate the cell's internal composition.",
+    "Different substances pass with different ease, letting the cell control what is present inside.",
+    "The membrane lets every substance through equally and cannot affect the cell's contents."
+  ],
+  [
+    "Contrast diffusion with active transport in terms of concentration gradients and energy.",
+    "Diffusion produces net movement down a concentration gradient without a direct cellular energy supply.",
+    "Active transport can move substances against a gradient using energy.",
+    "Diffusion goes from higher toward lower concentration passively; active transport uses energy to move uphill against a gradient.",
+    "Diffusion requires ATP to move uphill, while active transport only moves downhill without energy."
+  ],
+  [
+    "Define osmosis by naming the moving substance and the required membrane property.",
+    "Water moves net from higher water potential toward lower water potential.",
+    "A selectively permeable membrane separates the two regions.",
+    "Net water flow follows decreasing water potential across a membrane that is permeable selectively.",
+    "Osmosis is solute flowing from low to high concentration through a completely impermeable wall."
+  ],
+  [
+    "An animal cell is put in a solution with lower nonpenetrating solute concentration than its cytoplasm. Predict water movement and the cell's response.",
+    "Water moves into the cell by osmosis.",
+    "The cell swells and may burst because it lacks a rigid cell wall.",
+    "Osmotic inflow adds water, causing the animal cell to swell and possibly burst because it has no rigid cell wall.",
+    "Water leaves the cell and it shrinks because an animal cell has a thick rigid wall."
+  ],
+  [
+    "A plant cell gains water and becomes turgid. Explain the wall's mechanical role and one benefit to the plant.",
+    "The cell wall resists expansion and helps prevent the cell from bursting.",
+    "Turgor helps support nonwoody plant tissues.",
+    "A resisting wall limits swelling; the pressure in these cells provides structural support to soft plant parts.",
+    "The wall pumps all water out, and turgor makes stems collapse."
+  ],
+  [
+    "As a roughly spherical cell grows, what happens to its surface-area-to-volume ratio and why can this limit exchange?",
+    "Its surface-area-to-volume ratio decreases.",
+    "Exchange capacity depends on membrane area, while metabolic demand depends on the amount of cytoplasm.",
+    "The surface-area-to-volume ratio falls; membrane area determines exchange capacity, while the amount of cytoplasm determines metabolic demand.",
+    "The ratio increases without limit, and exchange capacity has no relationship to membrane area."
+  ],
+  [
+    "Contrast the location of DNA in typical prokaryotic and eukaryotic cells.",
+    "Prokaryotic cells lack a membrane-bound nucleus and keep their main DNA in a nucleoid region.",
+    "Eukaryotic cells contain nuclear DNA within a membrane-bound nucleus.",
+    "The main prokaryotic DNA lies in a nucleoid without a surrounding nuclear membrane; eukaryotic nuclear chromosomes are enclosed within a nucleus.",
+    "Prokaryotes keep all DNA inside a nucleus, while eukaryotes contain no DNA."
+  ],
+  [
+    "Explain enzyme specificity using the active site and the effect on substrate binding.",
+    "An enzyme's active site has a particular three-dimensional shape and chemical properties.",
+    "Only compatible substrates bind effectively and can be catalyzed there.",
+    "The binding pocket has a characteristic structure and chemistry, which limits effective binding and catalysis to suitable substrates.",
+    "Every active site is an identical empty hole, so every enzyme acts equally on every substrate."
+  ],
+  [
+    "Why can excessive heat reduce enzyme activity? Describe the structural change and its consequence.",
+    "High temperature can disrupt interactions maintaining the enzyme's folded structure.",
+    "The altered active site may no longer bind the substrate effectively.",
+    "Heat can unfold the protein, deforming its binding pocket so that substrate binding becomes ineffective.",
+    "Excessive heat permanently turns the enzyme into extra substrate and always improves binding."
+  ],
+  [
+    "Contrast competitive inhibition with simply reducing the amount of enzyme.",
+    "A competitive inhibitor competes with substrate for the active site.",
+    "Reducing enzyme concentration lowers the number of available catalytic sites.",
+    "Competitive inhibition involves competing occupancy of a binding site; using less enzyme leaves fewer sites in total.",
+    "Competitive inhibitors create new active sites, while removing enzyme increases their total number."
+  ],
+  [
+    "Name the carbon-containing input to photosynthesis and the source of the oxygen atoms in released O2.",
+    "Carbon dioxide supplies the carbon used to build carbohydrates.",
+    "Released oxygen gas comes from water molecules.",
+    "Plants obtain the carbohydrate carbon from CO2, while splitting water supplies the oxygen that is released.",
+    "All carbohydrate carbon comes from soil minerals, and released oxygen is made from nitrogen gas."
+  ],
+  [
+    "Contrast photosynthesis with cellular respiration in a plant in terms of energy conversion.",
+    "Photosynthesis uses light energy to build energy-rich organic compounds.",
+    "Respiration transfers energy from organic compounds into ATP for cellular use.",
+    "Light powers the construction of stored chemical fuel, whereas respiration uses that fuel to supply ATP.",
+    "Photosynthesis only destroys ATP in darkness, while respiration uses sunlight to make chlorophyll."
+  ],
+  [
+    "Why can a plant respire in darkness? Name its fuel source and explain why light is unnecessary for this process.",
+    "It can use organic compounds such as sugars stored earlier.",
+    "Cellular respiration releases chemical energy without directly requiring light.",
+    "Previously made sugars provide fuel, and their chemical energy can be transferred through respiration without illumination.",
+    "Plants stop all energy use in darkness because respiration requires incoming sunlight."
+  ],
+  [
+    "State two consequences of opening stomata for a leaf, one involving carbon and one involving water.",
+    "Opening permits carbon dioxide to diffuse into the leaf for photosynthesis.",
+    "Opening also allows water vapor to escape through transpiration.",
+    "Open pores admit CO2 but also let the leaf lose water vapor.",
+    "Open stomata block carbon dioxide and stop all water loss."
+  ],
+  [
+    "Explain transpiration pull using evaporation and the connected water column in xylem.",
+    "Evaporation from leaves creates tension that pulls water upward.",
+    "Cohesion between water molecules helps maintain a continuous column in the xylem.",
+    "Leaf water loss generates a pulling tension, transmitted through water that stays connected by molecular cohesion.",
+    "Leaves push dry air down the xylem, and water rises because its molecules repel each other completely."
+  ],
+  [
+    "Distinguish the main materials transported by xylem and phloem.",
+    "Xylem primarily transports water and dissolved mineral ions.",
+    "Phloem transports organic assimilates such as sucrose between sources and sinks.",
+    "Water with mineral nutrients travels in xylem; sugars and other assimilates move through phloem to where they are needed or stored.",
+    "Xylem carries only DNA, while phloem carries only oxygen gas."
+  ],
+  [
+    "Describe oxygen's role at the end of the aerobic electron transport chain and the resulting product.",
+    "Oxygen acts as the final electron acceptor.",
+    "Oxygen combines with electrons and protons to form water.",
+    "At the chain's end oxygen receives electrons, then its combination with those electrons and hydrogen ions produces water.",
+    "Oxygen donates all initial electrons and is converted directly into glucose."
+  ],
+  [
+    "Contrast ATP's role with that of long-term energy stores such as fat.",
+    "ATP transfers energy for immediate cellular processes.",
+    "Fat can store a large reserve of chemical energy for later use.",
+    "Cells use ATP for readily coupled work, while lipids hold energy reserves over longer periods.",
+    "ATP is exclusively a lifelong storage tissue, while fat is a nucleotide consumed directly by every enzyme."
+  ],
+  [
+    "Why does digestion usually precede absorption of proteins and starch? Describe the chemical change and its effect on passage across the intestinal wall.",
+    "Digestion breaks large molecules into smaller units such as amino acids and simple sugars.",
+    "These smaller units can be transported across the intestinal epithelium more readily.",
+    "Large food polymers are split into small building blocks that intestinal transport mechanisms can absorb.",
+    "Digestion combines food into giant crystals, which pass through membranes more easily because they are larger."
+  ],
+  [
+    "Explain how intestinal villi aid absorption through surface area and transport away from the gut.",
+    "Villi increase the surface area available for absorption.",
+    "Their blood and lymphatic supply carries absorbed nutrients away.",
+    "The projections expose more absorptive surface, and underlying vessels transport nutrients onward.",
+    "Villi eliminate the absorptive surface and permanently trap every nutrient in the gut lumen."
+  ],
+  [
+    "Distinguish ventilation from gas exchange in the lungs.",
+    "Ventilation moves air into and out of the lungs.",
+    "Gas exchange transfers oxygen and carbon dioxide between alveolar air and blood.",
+    "Breathing refreshes lung air; exchange crosses the alveolar-blood boundary to move respiratory gases.",
+    "Ventilation means making blood cells, while gas exchange means moving whole lungs out of the body."
+  ],
+  [
+    "Explain oxygen movement from alveolar air into blood using its gradient and the barrier thickness.",
+    "Oxygen diffuses down its partial-pressure gradient from alveolar air into blood.",
+    "The thin alveolar-capillary barrier provides a short diffusion distance.",
+    "A higher oxygen partial pressure in the alveoli drives diffusion toward the blood across a very short path.",
+    "Oxygen is actively pumped from low to high partial pressure through a thick bone barrier."
+  ],
+  [
+    "Define arteries and veins by the direction of blood flow relative to the heart.",
+    "Arteries carry blood away from the heart.",
+    "Veins carry blood toward the heart.",
+    "The outward vessels are arteries; the returning vessels are veins.",
+    "Arteries always carry blood toward the heart, while veins always carry it away."
+  ],
+  [
+    "Explain heart valves in terms of flow direction and how pressure opens or closes them.",
+    "Valves prevent backward blood flow and help maintain one-way movement.",
+    "Pressure differences on their two sides cause them to open or close.",
+    "They stop reverse flow, with the prevailing pressure difference determining whether their flaps open or shut.",
+    "Valves pump blood equally in both directions and open only when nerves manually lift each flap."
+  ],
+  [
+    "How does a capillary's wall aid exchange, and why can this help surrounding cells?",
+    "A very thin wall creates a short diffusion distance.",
+    "Exchange delivers needed substances and removes metabolic wastes from tissues.",
+    "The small barrier thickness shortens the path, helping supply nearby cells and take away their waste products.",
+    "Capillaries have thick impermeable walls so nearby tissues never exchange any substances."
+  ],
+  [
+    "In a temperature-control system, rising body temperature triggers sweating. Identify the response's effect and explain why this is negative feedback.",
+    "Evaporation of sweat helps cool the body.",
+    "The response opposes the initial temperature rise.",
+    "Sweat evaporation removes heat, so the response counteracts the original warming.",
+    "Sweat evaporation heats the body, amplifying the original rise as negative feedback requires."
+  ],
+  [
+    "Distinguish a receptor from an effector in a withdrawal reflex.",
+    "A receptor detects a stimulus such as harmful heat.",
+    "An effector, such as a muscle, produces the response.",
+    "The sensory detector notices the stimulus; the responding muscle carries out the withdrawal.",
+    "The receptor is the contracting muscle, while the effector only records light without acting."
+  ],
+  [
+    "Explain the usual direction of transmission across a chemical synapse using release and receptor locations.",
+    "The presynaptic terminal releases neurotransmitter.",
+    "Receptors on the postsynaptic membrane receive the signal.",
+    "Chemical messenger leaves the sending terminal and binds receptors on the receiving membrane.",
+    "The postsynaptic cell always releases the messenger backward into a presynaptic nucleus."
+  ],
+  [
+    "A hormone circulates widely in blood but only some cells respond. Explain its transport and the basis of target specificity.",
+    "The bloodstream carries the hormone to many tissues.",
+    "A cell responds when it has an appropriate receptor and response machinery.",
+    "Blood distributes the messenger broadly, while compatible receptors and cellular signaling determine which cells react.",
+    "Hormones travel only through bones, and every cell must respond identically without any receptor."
+  ],
+  [
+    "Explain how an antibody recognizes an antigen and why different antigens may require different antibodies.",
+    "An antibody's binding region is complementary to a particular antigenic site.",
+    "Different antigenic sites can have different shapes and chemical properties.",
+    "Binding depends on a matching site on the antibody, and antigen sites vary in their structure and chemistry.",
+    "All antibodies bind only through identical nonspecific magnets, so all antigen sites are chemically identical."
+  ],
+  [
+    "Contrast immune memory with the immediate barrier function of intact skin.",
+    "Immune memory can enable a faster specific response on later exposure to an antigen.",
+    "Intact skin physically blocks entry of many pathogens.",
+    "Immune memory enables a faster, antigen-specific response on later exposure; intact skin physically blocks entry of many pathogens.",
+    "Immune memory is a solid layer of skin, and skin works only by remembering earlier antibody sequences."
+  ],
+  [
+    "Why does a virus depend on a host cell to produce new viral proteins? Name the missing machinery and the consequence.",
+    "Viruses lack their own ribosomes and complete protein-synthesis machinery.",
+    "They use host-cell machinery to translate viral proteins needed for reproduction.",
+    "Viruses lack their own ribosomes and a complete translation system, so they use host machinery to make proteins for new viral particles.",
+    "Viruses reproduce by photosynthesis with their own chloroplasts and never use cellular machinery."
+  ],
+  [
+    "Distinguish the origin of a resistance mutation from selection by an antibiotic in a bacterial population.",
+    "Resistance mutations can arise without being directed by the bacteria's need to survive the drug.",
+    "Antibiotic exposure favors survival and reproduction of resistant variants.",
+    "Mutation is not a purposeful response to need; treatment then gives resistant bacteria a reproductive advantage.",
+    "Every bacterium consciously changes the same gene on demand, and antibiotics preferentially kill only resistant variants."
+  ],
+  [
+    "Explain the role of heritable variation and differential reproduction in natural selection.",
+    "Individuals differ in traits that can be passed to offspring.",
+    "Variants with greater reproductive success become more common across generations.",
+    "Inherited differences exist, and traits associated with leaving more descendants tend to spread over generations.",
+    "Natural selection requires every individual to be genetically identical and prevents any difference in reproduction."
+  ],
+  [
+    "Distinguish evolutionary adaptation from individual acclimation.",
+    "Evolutionary adaptation involves heritable population change over generations.",
+    "Acclimation is an individual's adjustment during its lifetime.",
+    "Adaptation evolves through inherited changes across generations; acclimation happens within one organism's life.",
+    "Adaptation is any momentary thought, while acclimation requires a new species to evolve over many generations."
+  ],
+  [
+    "Describe the relationship of genes to DNA and of DNA to chromosomes.",
+    "A gene is a functional stretch of DNA sequence.",
+    "Chromosomes organize long DNA molecules together with associated proteins.",
+    "Genes are functional DNA regions, and a chromosome packages a long DNA molecule with proteins.",
+    "Genes are tiny bones, and chromosomes are made entirely of free glucose with no DNA."
+  ],
+  [
+    "Contrast transcription with translation.",
+    "Transcription produces an RNA copy from a DNA template.",
+    "Translation uses an mRNA sequence to assemble an amino-acid chain.",
+    "First, RNA is synthesized using DNA; translation then reads messenger RNA to build a polypeptide.",
+    "Transcription assembles amino acids directly from fat, while translation copies proteins into chromosomes."
+  ],
+  [
+    "GAA changes to GAG, and both codons encode glutamate. State the amino acid after this change and explain why other substitutions can change a protein sequence.",
+    "The amino acid remains glutamate.",
+    "A different substitution may produce a codon specifying a different amino acid.",
+    "Glutamate is still encoded here, but another base change could make a codon that encodes a different amino acid.",
+    "It becomes glycine, and no base substitution can ever alter an amino-acid sequence."
+  ],
+  [
+    "Distinguish allele dominance from allele frequency in a population.",
+    "Dominance describes how alleles affect phenotype in a heterozygote under the specified trait model.",
+    "Frequency describes how common an allele is in the population.",
+    "Dominance concerns expression when unlike alleles occur together; frequency counts how prevalent an allele is.",
+    "Dominant means present in everyone, while frequency measures the physical size of a chromosome."
+  ],
+  [
+    "For a single gene with complete dominance, cross Aa with Aa. State the probability of aa and the probability of the dominant phenotype.",
+    "The probability of aa is 1/4.",
+    "The probability of the dominant phenotype is 3/4.",
+    "A quarter of offspring are expected to be aa, and three quarters show the dominant trait.",
+    "All offspring are aa and none can have the dominant phenotype."
+  ],
+  [
+    "Contrast typical mitosis with meiosis in a diploid organism by chromosome number in daughter cells.",
+    "Mitosis preserves the parental chromosome number in daughter cells.",
+    "Meiosis halves the chromosome number to produce haploid products.",
+    "Mitotic daughters retain the original chromosome count, whereas meiotic products have one set instead of two.",
+    "Mitosis always halves chromosome number, while meiosis doubles it every division."
+  ],
+  [
+    "Explain one way meiosis and one way fertilization contribute to genetic variation.",
+    "Meiosis creates different allele combinations through independent assortment or crossing over.",
+    "Fertilization combines genetic material from two gametes.",
+    "Chromosome assortment or recombination reshuffles alleles in meiosis, and joining two gametes combines their genetic contributions.",
+    "Meiosis copies every allele combination without any change, and fertilization removes both parents' DNA."
+  ],
+  [
+    "Distinguish genotype from phenotype, including the role of environment.",
+    "Genotype is the organism's genetic constitution.",
+    "Phenotype consists of expressed traits influenced by genotype and environment.",
+    "The inherited genetic makeup is the genotype; observable or measurable traits arise from that makeup interacting with conditions.",
+    "Genotype is current weather, and phenotype is only a list of DNA bases with no environmental influence."
+  ],
+  [
+    "Identical twins can differ in height or health despite closely matching genomes. Explain a source of difference and what this shows about phenotype.",
+    "They can experience different nutrition, environments, or developmental conditions.",
+    "Phenotype is influenced by factors beyond inherited DNA sequence alone.",
+    "Different life conditions can affect development, showing that genetic sequence is not the sole determinant of expressed traits.",
+    "Identical twins must always have identical environments, and all phenotypic differences are impossible."
+  ],
+  [
+    "Why is less chemical energy generally available at a higher trophic level? Give two routes by which energy fails to transfer as new consumer biomass.",
+    "Some energy is used in respiration and dissipated as heat.",
+    "Some material is not eaten or is not assimilated by the consumer.",
+    "Metabolism releases heat, and uneaten or unabsorbed material also prevents all the previous level's energy becoming consumer tissue.",
+    "All consumed energy becomes new biomass, and organisms create unlimited new chemical energy from nothing."
+  ],
+  [
+    "Contrast energy flow with nutrient cycling in an ecosystem.",
+    "Energy flows through the system and is progressively dissipated as heat, requiring continued input.",
+    "Nutrient atoms can be reused through cycles between organisms and their environment.",
+    "Useful energy needs replenishment because it spreads as heat, while matter such as nutrient elements can circulate and be reused.",
+    "Energy atoms circulate forever without any input, while all nutrient matter is destroyed after a single meal."
+  ],
+  [
+    "Explain decomposers' role in processing dead material and nutrient availability.",
+    "Decomposers break down dead organisms and organic wastes.",
+    "This releases nutrients into forms that can re-enter ecosystem cycles and be taken up again.",
+    "They digest remains and wastes, returning nutrient materials to the environment for further biological use.",
+    "Decomposers turn all matter into nothing and permanently remove every nutrient from the ecosystem."
+  ],
+  [
+    "Distinguish a food chain from a food web.",
+    "A food chain shows one sequence of feeding relationships.",
+    "A food web connects multiple feeding pathways among organisms.",
+    "One chain traces a single feeding route; a web joins several such routes into a network.",
+    "A food chain lists no feeding links, while a food web requires every organism to eat exactly one species."
+  ],
+  [
+    "To test a fertilizer's effect on plant growth, identify a suitable control group and one variable to hold constant.",
+    "Use otherwise comparable plants receiving no added fertilizer as the control.",
+    "Keep a relevant condition such as light exposure, water, or plant variety the same across groups.",
+    "Compare fertilized plants with similar unfertilized ones while holding a factor such as watering constant.",
+    "Use only fertilized plants and deliberately change every other growth condition between groups."
+  ],
+  [
+    "Plants near a lamp grow faster in one observation. State what the observation supports and why it does not by itself establish the mechanism.",
+    "It supports an association between lamp proximity and growth in the observed plants.",
+    "Other differences or confounding factors have not been ruled out, so the causal mechanism needs further evidence.",
+    "The recorded plants show an association, but uncontrolled differences prevent concluding from that alone whether the lamp caused the growth difference or through what mechanism.",
+    "One observation proves light has no relationship to growth and excludes every possible confounding factor."
+  ]
 ]

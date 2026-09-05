@@ -1,52 +1,352 @@
 [
-  ["Describa la permeabilidad selectiva y una forma en que ayuda a una célula a mantener sus condiciones internas.", "La membrana permite que algunas sustancias crucen más fácilmente que otras.", "Controlar el movimiento ayuda a regular la composición interna de la célula.", "Diferentes sustancias pasan con distinta facilidad, permitiendo a la célula controlar qué hay dentro.", "La membrana deja pasar todas las sustancias por igual y no puede afectar el contenido de la célula."],
-  ["Contraste la difusión con el transporte activo en términos de gradientes de concentración y energía.", "La difusión produce un movimiento neto hacia abajo a lo largo de un gradiente de concentración sin un suministro directo de energía celular.", "El transporte activo puede mover sustancias contra un gradiente utilizando energía.", "La difusión produce un movimiento neto pasivo de mayor a menor concentración; el transporte activo usa energía para mover sustancias contra el gradiente.", "La difusión requiere ATP para moverse hacia arriba, mientras que el transporte activo solo se mueve hacia abajo sin energía."],
-  ["Defina la ósmosis nombrando la sustancia que se mueve y la propiedad requerida de la membrana.", "El agua se mueve netamente desde un mayor potencial hídrico hacia un menor potencial hídrico.", "Una membrana semipermeable separa las dos regiones.", "El flujo neto de agua sigue la disminución del potencial hídrico a través de una membrana que es permeable selectivamente.", "La ósmosis es el flujo de soluto desde baja a alta concentración a través de una pared completamente impermeable."],
-  ["Se coloca una célula animal en una solución con una concentración de solutos no penetrantes menor que la de su citoplasma. Prediga el movimiento del agua y la respuesta de la célula.", "El agua entra en la célula por ósmosis.", "La célula se hincha y puede estallar porque carece de una pared celular rígida.", "La entrada osmótica añade agua, causando que la célula animal se hinche y posiblemente estalle porque no tiene una pared celular rígida.", "El agua sale de la célula y esta se encoge porque una célula animal tiene una pared rígida gruesa."],
-  ["Una célula vegetal gana agua y se vuelve turgente. Explique el papel mecánico de la pared y un beneficio para la planta.", "La pared celular resiste la expansión y ayuda a prevenir que la célula estalle.", "La turgencia ayuda a sostener los tejidos no leñosos de la planta.", "Una pared resistente limita la hinchazón; la presión en estas células proporciona soporte estructural a las partes blandas de la planta.", "La pared bombea toda el agua hacia afuera y la turgencia hace que los tallos colapsen."],
-  ["A medida que una célula aproximadamente esférica crece, ¿qué sucede con su relación superficie-volumen y por qué esto puede limitar el intercambio?", "Su relación superficie-volumen disminuye.", "La capacidad de intercambio depende del área de la membrana, mientras que la demanda metabólica depende de la cantidad de citoplasma.", "La relación superficie-volumen disminuye; el área de la membrana determina la capacidad de intercambio, mientras que la cantidad de citoplasma determina la demanda metabólica.", "La relación aumenta sin límite y la capacidad de intercambio no tiene relación con el área de la membrana."],
-  ["Contraste la ubicación del ADN en células procariotas típicas y eucariotas.", "Las células procariotas carecen de un núcleo delimitado por membrana y mantienen su ADN principal en una región llamada nucleoide.", "Las células eucariotas contienen ADN nuclear dentro de un núcleo delimitado por membrana.", "El ADN principal procariota se encuentra en un nucleoide sin membrana nuclear circundante; los cromosomas nucleares eucariotas están encerrados dentro de un núcleo.", "Los procariotas mantienen todo el ADN dentro de un núcleo, mientras que los eucariotas no contienen ningún ADN."],
-  ["Explica la especificidad enzimática utilizando el sitio activo y el efecto en la unión del sustrato.", "El sitio activo de una enzima tiene una forma tridimensional particular y propiedades químicas.", "Solo los sustratos compatibles se unen eficazmente y pueden ser catalizados allí.", "La bolsa de unión tiene una estructura y química características, lo que limita la unión y catálisis eficaces a sustratos adecuados.", "Cada sitio activo es un hueco idéntico y vacío, por lo que cada enzima actúa igual sobre cada sustrato."],
-  ["¿Por qué el calor excesivo puede reducir la actividad enzimática? Describe el cambio estructural y su consecuencia.", "Las altas temperaturas pueden alterar las interacciones que mantienen la estructura plegada de la enzima.", "El sitio activo alterado puede dejar de unir el sustrato eficazmente.", "El calor puede desnaturalizar la proteína, deformando su bolsa de unión de modo que la unión del sustrato se vuelve ineficaz.", "El calor excesivo convierte permanentemente la enzima en sustrato adicional y siempre mejora la unión."],
-  ["Contraste la inhibición competitiva con simplemente reducir la cantidad de enzima.", "Un inhibidor competitivo compite con el sustrato por el sitio activo.", "Reducir la concentración enzimática disminuye el número de sitios catalíticos disponibles.", "La inhibición competitiva implica ocupación competitiva de un sitio de unión; usar menos enzima deja menos sitios en total.", "Los inhibidores competitivos crean nuevos sitios activos, mientras que eliminar la enzima aumenta su número total."],
-  ["Nombra la entrada que contiene carbono para la fotosíntesis y la fuente de los átomos de oxígeno en el O2 liberado.", "El dióxido de carbono suministra el carbono utilizado para construir carbohidratos.", "El gas oxígeno liberado proviene de las moléculas de agua.", "Las plantas toman del CO2 el carbono con el que forman carbohidratos, mientras que la ruptura de moléculas de agua aporta el oxígeno liberado.", "Todo el carbono de los carbohidratos proviene de minerales del suelo, y el oxígeno liberado se fabrica a partir de gas nitrógeno."],
-  ["Contrasta la fotosíntesis con la respiración celular en una planta en términos de conversión de energía.", "La fotosíntesis usa energía lumínica para construir compuestos orgánicos ricos en energía.", "La respiración transfiere energía desde compuestos orgánicos hacia ATP para el uso celular.", "La luz impulsa la construcción de combustible químico almacenado, mientras que la respiración usa ese combustible para suministrar ATP.", "La fotosíntesis solo destruye ATP en la oscuridad, mientras que la respiración usa la luz solar para fabricar clorofila."],
-  ["¿Por qué puede una planta respirar en la oscuridad? Nombra su fuente de combustible y explica por qué la luz es innecesaria para este proceso.", "Puede usar compuestos orgánicos como azúcares almacenados anteriormente.", "La respiración celular libera energía química sin requerir directamente la luz.", "Los azúcares fabricados previamente proporcionan combustible, y su energía química puede transferirse mediante la respiración sin iluminación.", "Las plantas detienen todo uso de energía en la oscuridad porque la respiración requiere luz solar entrante."],
-  ["Establece dos consecuencias de abrir los estomas para una hoja, una involucrando carbono y otra involucrando agua.", "Abrirlos permite que el dióxido de carbono difunda hacia el interior de la hoja para la fotosíntesis.", "Abrirlos también permite que el vapor de agua escape mediante la transpiración.", "Los poros abiertos admiten CO2 pero también permiten que la hoja pierda vapor de agua.", "Los estomas abiertos bloquean el dióxido de carbono y detienen toda pérdida de agua."],
-  ["Explica la succión por transpiración usando la evaporación y la columna de agua conectada en el xilema.", "La evaporación desde las hojas crea tensión que arrastra el agua hacia arriba.", "La cohesión entre moléculas de agua ayuda a mantener una columna continua en el xilema.", "La pérdida de agua en las hojas genera una tensión de tracción, transmitida a través del agua que permanece conectada por cohesión molecular.", "Las hojas empujan aire seco hacia abajo por el xilema, y el agua sube porque sus moléculas se repelen completamente."],
-  ["Distinguir los principales materiales transportados por el xilema y el floema.", "El xilema transporta principalmente agua y iones minerales disueltos.", "El floema transporta asimilados orgánicos como la sacarosa entre fuentes y sumideros.", "El agua con nutrientes minerales viaja por el xilema; los azúcares y otros asimilados se mueven por el floema hacia donde se necesitan o almacenan.", "El xilema lleva solo ADN, mientras que el floema lleva solo gas oxígeno."],
-  ["Describir el papel del oxígeno al final de la cadena de transporte de electrones aeróbica y el producto resultante.", "El oxígeno actúa como aceptor final de electrones.", "El oxígeno se combina con electrones y protones para formar agua.", "Al final de la cadena, el oxígeno recibe electrones y luego su combinación con esos electrones e iones de hidrógeno produce agua.", "El oxígeno dona todos los electrones iniciales y se convierte directamente en glucosa."],
-  ["Contrastar el papel del ATP con el de reservas de energía a largo plazo como la grasa.", "El ATP transfiere energía para procesos celulares inmediatos.", "La grasa puede almacenar una gran reserva de energía química para un uso posterior.", "Las células usan ATP para transferir energía a trabajos inmediatos que pueden acoplarse a su utilización, mientras que los lípidos conservan reservas energéticas durante periodos más largos.", "El ATP es exclusivamente un tejido de almacenamiento vitalicio, mientras que la grasa es un nucleótido consumido directamente por cada enzima."],
-  ["¿Por qué la digestión precede usualmente la absorción de proteínas y almidón? Describir el cambio químico y su efecto en el paso a través de la pared intestinal.", "La digestión rompe moléculas grandes en unidades más pequeñas como aminoácidos y azúcares simples.", "Estas unidades más pequeñas pueden transportarse a través del epitelio intestinal más fácilmente.", "Los polímeros alimenticios grandes se dividen en bloques de construcción pequeños que los mecanismos de transporte intestinal pueden absorber.", "La digestión combina alimentos en cristales gigantes, que pasan a través de membranas más fácilmente porque son más grandes."],
-  ["Explica cómo las vellosidades intestinales ayudan a la absorción mediante el aumento de superficie y el transporte de nutrientes desde el intestino.", "Las vellosidades aumentan la superficie disponible para la absorción.", "La circulación sanguínea y linfática de las vellosidades retira los nutrientes absorbidos.", "Estas proyecciones exponen más superficie absorbente, y sus vasos sanguíneos y linfáticos transportan los nutrientes a otros lugares.", "Las vellosidades eliminan la superficie absorbente y atrapan permanentemente cada nutriente en la luz intestinal."],
-  ["Distinguir la ventilación del intercambio gaseoso en los pulmones.", "La ventilación mueve el aire hacia dentro y hacia fuera de los pulmones.", "El intercambio gaseoso transfiere oxígeno y dióxido de carbono entre el aire alveolar y la sangre.", "La respiración renueva el aire pulmonar; el intercambio cruza la frontera alveolo-sanguínea para mover los gases respiratorios.", "La ventilación significa fabricar células sanguíneas, mientras que el intercambio gaseoso significa sacar los pulmones enteros del cuerpo."],
-  ["Explicar el movimiento de oxígeno desde el aire alveolar hacia la sangre usando su gradiente y el grosor de la barrera.", "El oxígeno se difunde siguiendo su gradiente de presión parcial desde el aire alveolar hacia la sangre.", "La barrera alveolo-capilar delgada proporciona una distancia de difusión corta.", "Una presión parcial de oxígeno más alta en los alvéolos impulsa la difusión hacia la sangre a través de un camino muy corto.", "El oxígeno es bombeado activamente desde baja a alta presión parcial a través de una barrera ósea gruesa."],
-  ["Definir arterias y venas por la dirección del flujo sanguíneo relativo al corazón.", "Las arterias llevan sangre lejos del corazón.", "Las venas llevan sangre hacia el corazón.", "Los vasos que salen son arterias; los vasos que regresan son venas.", "Las arterias siempre llevan sangre hacia el corazón, mientras que las venas siempre la llevan lejos."],
-  ["Explicar las válvulas cardíacas en términos de dirección del flujo y cómo la presión las abre o cierra.", "Las válvulas evitan el flujo sanguíneo hacia atrás y ayudan a mantener el movimiento de un solo sentido.", "Las diferencias de presión en sus dos lados causan que se abran o se cierren.", "Evitan el flujo inverso, con la diferencia de presión predominante determinando si sus láminas se abren o se cierran.", "Las válvulas bombean sangre por igual en ambas direcciones y solo se abren cuando los nervios levantan manualmente cada lámina."],
-  ["¿Cómo ayuda la pared de un capilar al intercambio y por qué esto puede ayudar a las células circundantes?", "Una pared muy delgada crea una distancia de difusión corta.", "El intercambio entrega sustancias necesarias y elimina desechos metabólicos de los tejidos.", "El pequeño grosor de la barrera acorta el camino, ayudando a suministrar células cercanas y a retirar sus productos de desecho.", "Los capilares tienen paredes gruesas e impermeables para que los tejidos cercanos nunca intercambien ninguna sustancia."],
-  ["En un sistema de control de temperatura, el aumento de la temperatura corporal desencadena la sudoración. Identifica el efecto de la respuesta y explica por qué es un ejemplo de retroalimentación negativa.", "La evaporación del sudor ayuda a enfriar el cuerpo.", "La respuesta se opone al aumento inicial de temperatura.", "La evaporación del sudor elimina calor, por lo que la respuesta contrarresta el calentamiento original.", "La evaporación del sudor calienta el cuerpo, amplificando el aumento original ya que la retroalimentación negativa requiere esto."],
-  ["Distingue un receptor de un efector en un reflejo de retirada.", "Un receptor detecta un estímulo como el calor dañino.", "Un efector, como un músculo, produce la respuesta.", "El detector sensorial percibe el estímulo; el músculo que responde ejecuta la retirada.", "El receptor es el músculo que se contrae, mientras que el efector solo registra luz sin actuar."],
-  ["Explica la dirección usual de transmisión a través de una sinapsis química usando las ubicaciones de liberación y receptores.", "El terminal presináptico libera neurotransmisor.", "Los receptores en la membrana postsináptica reciben la señal.", "El mensajero químico sale del terminal emisor y se une a receptores en la membrana receptora.", "La célula postsináptica siempre libera el mensajero hacia atrás en un núcleo presináptico."],
-  ["Una hormona circula ampliamente en la sangre pero solo algunas células responden. Explica su transporte y la base de la especificidad de la diana.", "El torrente sanguíneo transporta la hormona a muchos tejidos.", "Una célula responde cuando tiene un receptor adecuado y maquinaria de respuesta.", "La sangre distribuye el mensajero ampliamente, mientras que receptores compatibles y señalización celular determinan qué células reaccionan.", "Las hormonas viajan solo a través de los huesos, y todas las células deben responder idénticamente sin ningún receptor."],
-  ["Explica cómo un anticuerpo reconoce un antígeno y por qué diferentes antígenos pueden requerir diferentes anticuerpos.", "La región de unión de un anticuerpo es complementaria a un sitio antigénico particular.", "Los sitios antigénicos diferentes pueden tener formas y propiedades químicas distintas.", "La unión depende de un sitio coincidente en el anticuerpo, y los sitios de antígeno varían en su estructura y química.", "Todos los anticuerpos se unen solo a través de imanes idénticos no específicos, por lo que todos los sitios de antígeno son químicamente idénticos."],
-  ["Contraste la memoria inmunológica con la función de barrera inmediata de la piel intacta.", "La memoria inmunológica puede permitir una respuesta específica más rápida en exposiciones posteriores a un antígeno.", "La piel intacta bloquea físicamente la entrada de muchos patógenos.", "Tras un encuentro anterior con un antígeno, la memoria permite responder a él con mayor rapidez y especificidad; una piel sin lesiones impide físicamente la entrada de numerosos patógenos.", "La memoria inmunológica es una capa sólida de piel y la piel funciona solo recordando secuencias anteriores de anticuerpos."],
-  ["¿Por qué un virus depende de una célula huésped para producir nuevas proteínas virales? Nombra el equipo faltante y la consecuencia.", "Los virus carecen de sus propios ribosomas y del equipo completo de síntesis de proteínas.", "Utilizan el equipo de la célula huésped para traducir las proteínas virales necesarias para la reproducción.", "Los virus carecen de sus propios ribosomas y de un sistema de traducción completo, por lo que utilizan el equipo de la célula huésped para producir proteínas para nuevas partículas virales.", "Los virus se reproducen mediante fotosíntesis con sus propios cloroplastos y nunca utilizan maquinaria celular."],
-  ["Distingue el origen de una mutación de resistencia de la selección por un antibiótico en una población bacteriana.", "Las mutaciones de resistencia pueden surgir sin ser dirigidas por la necesidad de supervivencia de las bacterias frente al fármaco.", "La exposición al antibiótico favorece la supervivencia y reproducción de las variantes resistentes.", "La mutación no es una respuesta intencional a una necesidad; el tratamiento luego otorga una ventaja reproductiva a las bacterias resistentes.", "Cada bacteria cambia conscientemente el mismo gen bajo demanda, y los antibióticos eliminan preferentemente solo las variantes resistentes."],
-  ["Explica el papel de la variación heredable y la reproducción diferencial en la selección natural.", "Los individuos difieren en rasgos que pueden transmitirse a la descendencia.", "Las variantes con mayor éxito reproductivo se vuelven más comunes a lo largo de las generaciones.", "Existen diferencias heredables, y los rasgos asociados con dejar más descendientes tienden a propagarse a lo largo de las generaciones.", "La selección natural requiere que cada individuo sea genéticamente idéntico e impide cualquier diferencia en la reproducción."],
-  ["Distingue la adaptación evolutiva de la aclimatación individual.", "La adaptación evolutiva implica cambios heredables en la población a lo largo de generaciones.", "La aclimatación es el ajuste de un individuo durante su vida.", "La adaptación evoluciona mediante cambios heredables a través de generaciones; la aclimatación ocurre dentro de la vida de un solo organismo.", "La adaptación es cualquier pensamiento momentáneo, mientras que la aclimatación requiere que evolucione una nueva especie a lo largo de muchas generaciones."],
-  ["Describa la relación entre los genes y el ADN, y entre el ADN y los cromosomas.", "Un gen es un tramo funcional de secuencia de ADN.", "Los cromosomas organizan largas moléculas de ADN junto con proteínas asociadas.", "Los genes son regiones funcionales de ADN, y un cromosoma empaqueta una larga molécula de ADN con proteínas.", "Los genes son huesos diminutos, y los cromosomas están hechos enteramente de glucosa libre sin ADN."],
-  ["Contraste la transcripción con la traducción.", "La transcripción produce una copia de ARN a partir de una plantilla de ADN.", "La traducción utiliza una secuencia de ARNm para ensamblar una cadena de aminoácidos.", "Primero, se sintetiza ARN usando ADN; luego, la traducción lee el ARN mensajero para construir un polipéptido.", "La transcripción ensambla aminoácidos directamente de grasa, mientras que la traducción copia proteínas en cromosomas."],
-  ["GAA cambia a GAG, y ambos codones codifican glutamato. Indique el aminoácido después de este cambio y explique por qué otras sustituciones pueden alterar la secuencia de una proteína.", "El aminoácido sigue siendo glutamato.", "Una sustitución diferente podría producir un codón que especifique un aminoácido distinto.", "El glutamato sigue codificándose aquí, pero otro cambio de base podría hacer que un codón codifique un aminoácido diferente.", "Se convierte en glicina, y ninguna sustitución de base puede alterar nunca una secuencia de aminoácidos."],
-  ["Distinga la dominancia alélica de la frecuencia alélica en una población.", "La dominancia describe cómo los alelos afectan el fenotipo en un heterocigoto bajo el modelo de rasgo especificado.", "La frecuencia describe qué tan común es un alelo en la población.", "La dominancia se refiere a la expresión cuando ocurren juntos alelos diferentes; la frecuencia cuenta qué tan prevalente es un alelo.", "Dominante significa estar presente en todos, mientras que la frecuencia mide el tamaño físico de un cromosoma."],
-  ["Para un solo gen con dominancia completa, cruce Aa con Aa. Indique la probabilidad de aa y la probabilidad del fenotipo dominante.", "La probabilidad de aa es 1/4.", "La probabilidad del fenotipo dominante es 3/4.", "Se espera que una cuarta parte de la descendencia sea aa, y tres cuartas partes muestren el rasgo dominante.", "Toda la descendencia es aa y ninguna puede tener el fenotipo dominante."],
-  ["Contraste la mitosis típica con la meiosis en un organismo diploide mediante el número de cromosomas en las células hijas.", "La mitosis conserva el número parental de cromosomas en las células hijas.", "La meiosis reduce a la mitad el número de cromosomas para producir productos haploides.", "Las células hijas mitóticas mantienen el conteo original de cromosomas, mientras que los productos meióticos tienen un conjunto en lugar de dos.", "La mitosis siempre reduce a la mitad el número de cromosomas, mientras que la meiosis lo duplica en cada división."],
-  ["Explica una forma en que la meiosis y una forma en que la fecundación contribuyen a la variación genética.", "La meiosis crea combinaciones diferentes de alelos mediante la segregación independiente o el entrecruzamiento.", "La fecundación combina el material genético de dos gametos.", "La segregación de cromosomas o la recombinación reordenan los alelos en la meiosis, y la unión de dos gametos combina sus contribuciones genéticas.", "La meiosis copia cada combinación de alelos sin cambios, y la fecundación elimina el ADN de ambos padres."],
-  ["Distingue genotipo de fenotipo, incluyendo el papel del ambiente.", "El genotipo es la constitución genética del organismo.", "El fenotipo consiste en rasgos expresados influenciados por el genotipo y el ambiente.", "La composición genética heredada es el genotipo; los rasgos observables o medibles surgen de esa composición interactuando con las condiciones.", "El genotipo es el clima actual, y el fenotipo es solo una lista de bases de ADN sin influencia ambiental."],
-  ["Los gemelos idénticos pueden diferir en altura o salud a pesar de tener genomas muy similares. Explica una fuente de diferencia y qué esto muestra sobre el fenotipo.", "Pueden experimentar nutrición, entornos o condiciones de desarrollo diferentes.", "El fenotipo está influenciado por factores más allá de la secuencia de ADN heredada.", "Las diferentes condiciones de vida pueden afectar el desarrollo, mostrando que la secuencia genética no es el único determinante de los rasgos expresados.", "Los gemelos idénticos siempre deben tener entornos idénticos, y todas las diferencias fenotípicas son imposibles."],
-  ["¿Por qué generalmente hay menos energía química disponible en un nivel trófico más alto? Da dos rutas por las que la energía falla en transferirse como nueva biomasa de consumidor.", "Alguna energía se usa en la respiración y se disipa como calor.", "Parte del material no es ingerido o no es asimilado por el consumidor.", "El metabolismo libera calor, y el material no comido o no absorbido también impide que toda la energía del nivel anterior se convierta en tejido de consumidor.", "Toda la energía consumida se convierte en nueva biomasa, y los organismos crean energía química ilimitada desde la nada."],
-  ["Contraste el flujo de energía con el ciclo de nutrientes en un ecosistema.", "La energía fluye a través del sistema y se disipa progresivamente como calor, requiriendo un suministro continuo.", "Los átomos de elementos nutritivos pueden reutilizarse mediante ciclos entre los organismos y su entorno.", "La energía útil necesita reposición porque se dispersa como calor, mientras que la materia como los elementos nutritivos puede circular y reutilizarse.", "Los átomos de energía circulan para siempre sin necesidad de entrada, mientras que toda la materia nutritiva se destruye después de una sola comida."],
-  ["Explica el papel de los descomponedores en el procesamiento de material muerto y la disponibilidad de nutrientes.", "Los descomponedores descomponen organismos muertos y residuos orgánicos.", "Esto libera nutrientes en formas que pueden reingresar a los ciclos del ecosistema y ser absorbidas nuevamente.", "Digieren restos y residuos, devolviendo materiales nutritivos al entorno para un uso biológico adicional.", "Los descomponedores convierten toda la materia en nada y eliminan permanentemente cada nutriente del ecosistema."],
-  ["Distingue una cadena alimenticia de una red alimenticia.", "Una cadena alimenticia muestra una secuencia de relaciones de alimentación.", "Una red alimenticia conecta múltiples vías de alimentación entre organismos.", "Una cadena traza una sola ruta de alimentación; una red une varias de estas rutas en una red.", "Una cadena alimenticia no lista ningún vínculo de alimentación, mientras que una red alimenticia requiere que cada organismo coma exactamente una especie."],
-  ["Para probar el efecto de un fertilizante en el crecimiento de las plantas, identifica un grupo de control adecuado y una variable a mantener constante.", "Utiliza plantas de otro modo comparables que no reciban fertilizante añadido como control.", "Mantén una condición relevante, como la exposición a la luz, el agua o la variedad de planta, la misma en todos los grupos.", "Compara plantas fertilizadas con unas no fertilizadas similares mientras se mantiene constante un factor como el riego.", "Utiliza solo plantas fertilizadas y cambia deliberadamente todas las demás condiciones de crecimiento entre los grupos."],
-  ["En una observación, las plantas cercanas a una lámpara crecen más rápido. Indica qué respalda esta observación y por qué no establece por sí sola el mecanismo.", "Apoya una asociación entre la proximidad a la lámpara y el crecimiento en las plantas observadas.", "No se han descartado otras diferencias o factores de confusión, por lo que el mecanismo causal requiere más evidencia.", "Las plantas registradas muestran una asociación, pero las diferencias no controladas impiden concluir de eso solo si la lámpara causó la diferencia de crecimiento o a través de qué mecanismo.", "Una sola observación demuestra que la luz no tiene relación con el crecimiento y excluye todos los posibles factores de confusión."]
+  [
+    "Describa la permeabilidad selectiva y una forma en que ayuda a una célula a mantener sus condiciones internas.",
+    "La membrana permite que algunas sustancias crucen más fácilmente que otras.",
+    "Controlar el movimiento ayuda a regular la composición interna de la célula.",
+    "Diferentes sustancias pasan con distinta facilidad, permitiendo a la célula controlar qué hay dentro.",
+    "La membrana deja pasar todas las sustancias por igual y no puede afectar el contenido de la célula."
+  ],
+  [
+    "Contraste la difusión con el transporte activo en términos de gradientes de concentración y energía.",
+    "La difusión produce un movimiento neto hacia abajo a lo largo de un gradiente de concentración sin un suministro directo de energía celular.",
+    "El transporte activo puede mover sustancias contra un gradiente utilizando energía.",
+    "La difusión produce un movimiento neto pasivo de mayor a menor concentración; el transporte activo usa energía para mover sustancias contra el gradiente.",
+    "La difusión requiere ATP para moverse hacia arriba, mientras que el transporte activo solo se mueve hacia abajo sin energía."
+  ],
+  [
+    "Defina la ósmosis nombrando la sustancia que se mueve y la propiedad requerida de la membrana.",
+    "El agua se mueve netamente desde un mayor potencial hídrico hacia un menor potencial hídrico.",
+    "Una membrana semipermeable separa las dos regiones.",
+    "El flujo neto de agua sigue la disminución del potencial hídrico a través de una membrana que es permeable selectivamente.",
+    "La ósmosis es el flujo de soluto desde baja a alta concentración a través de una pared completamente impermeable."
+  ],
+  [
+    "Se coloca una célula animal en una solución con una concentración de solutos no penetrantes menor que la de su citoplasma. Prediga el movimiento del agua y la respuesta de la célula.",
+    "El agua entra en la célula por ósmosis.",
+    "La célula se hincha y puede estallar porque carece de una pared celular rígida.",
+    "La entrada osmótica añade agua, causando que la célula animal se hinche y posiblemente estalle porque no tiene una pared celular rígida.",
+    "El agua sale de la célula y esta se encoge porque una célula animal tiene una pared rígida gruesa."
+  ],
+  [
+    "Una célula vegetal gana agua y se vuelve turgente. Explique el papel mecánico de la pared y un beneficio para la planta.",
+    "La pared celular resiste la expansión y ayuda a prevenir que la célula estalle.",
+    "La turgencia ayuda a sostener los tejidos no leñosos de la planta.",
+    "Una pared resistente limita la hinchazón; la presión en estas células proporciona soporte estructural a las partes blandas de la planta.",
+    "La pared bombea toda el agua hacia afuera y la turgencia hace que los tallos colapsen."
+  ],
+  [
+    "A medida que una célula aproximadamente esférica crece, ¿qué sucede con su relación superficie-volumen y por qué esto puede limitar el intercambio?",
+    "Su relación superficie-volumen disminuye.",
+    "La capacidad de intercambio depende del área de la membrana, mientras que la demanda metabólica depende de la cantidad de citoplasma.",
+    "La relación superficie-volumen disminuye; el área de la membrana determina la capacidad de intercambio, mientras que la cantidad de citoplasma determina la demanda metabólica.",
+    "La relación aumenta sin límite y la capacidad de intercambio no tiene relación con el área de la membrana."
+  ],
+  [
+    "Contraste la ubicación del ADN en células procariotas típicas y eucariotas.",
+    "Las células procariotas carecen de un núcleo delimitado por membrana y mantienen su ADN principal en una región llamada nucleoide.",
+    "Las células eucariotas contienen ADN nuclear dentro de un núcleo delimitado por membrana.",
+    "El ADN principal procariota se encuentra en un nucleoide sin membrana nuclear circundante; los cromosomas nucleares eucariotas están encerrados dentro de un núcleo.",
+    "Los procariotas mantienen todo el ADN dentro de un núcleo, mientras que los eucariotas no contienen ningún ADN."
+  ],
+  [
+    "Explica la especificidad enzimática utilizando el sitio activo y el efecto en la unión del sustrato.",
+    "El sitio activo de una enzima tiene una forma tridimensional particular y propiedades químicas.",
+    "Solo los sustratos compatibles se unen eficazmente y pueden ser catalizados allí.",
+    "La bolsa de unión tiene una estructura y química características, lo que limita la unión y catálisis eficaces a sustratos adecuados.",
+    "Cada sitio activo es un hueco idéntico y vacío, por lo que cada enzima actúa igual sobre cada sustrato."
+  ],
+  [
+    "¿Por qué el calor excesivo puede reducir la actividad enzimática? Describe el cambio estructural y su consecuencia.",
+    "Las altas temperaturas pueden alterar las interacciones que mantienen la estructura plegada de la enzima.",
+    "El sitio activo alterado puede dejar de unir el sustrato eficazmente.",
+    "El calor puede desnaturalizar la proteína, deformando su bolsa de unión de modo que la unión del sustrato se vuelve ineficaz.",
+    "El calor excesivo convierte permanentemente la enzima en sustrato adicional y siempre mejora la unión."
+  ],
+  [
+    "Contraste la inhibición competitiva con simplemente reducir la cantidad de enzima.",
+    "Un inhibidor competitivo compite con el sustrato por el sitio activo.",
+    "Reducir la concentración enzimática disminuye el número de sitios catalíticos disponibles.",
+    "La inhibición competitiva implica ocupación competitiva de un sitio de unión; usar menos enzima deja menos sitios en total.",
+    "Los inhibidores competitivos crean nuevos sitios activos, mientras que eliminar la enzima aumenta su número total."
+  ],
+  [
+    "Nombra la entrada que contiene carbono para la fotosíntesis y la fuente de los átomos de oxígeno en el O2 liberado.",
+    "El dióxido de carbono suministra el carbono utilizado para construir carbohidratos.",
+    "El gas oxígeno liberado proviene de las moléculas de agua.",
+    "Las plantas toman del CO2 el carbono con el que forman carbohidratos, mientras que la ruptura de moléculas de agua aporta el oxígeno liberado.",
+    "Todo el carbono de los carbohidratos proviene de minerales del suelo, y el oxígeno liberado se fabrica a partir de gas nitrógeno."
+  ],
+  [
+    "Contrasta la fotosíntesis con la respiración celular en una planta en términos de conversión de energía.",
+    "La fotosíntesis usa energía lumínica para construir compuestos orgánicos ricos en energía.",
+    "La respiración transfiere energía desde compuestos orgánicos hacia ATP para el uso celular.",
+    "La luz impulsa la construcción de combustible químico almacenado, mientras que la respiración usa ese combustible para suministrar ATP.",
+    "La fotosíntesis solo destruye ATP en la oscuridad, mientras que la respiración usa la luz solar para fabricar clorofila."
+  ],
+  [
+    "¿Por qué puede una planta respirar en la oscuridad? Nombra su fuente de combustible y explica por qué la luz es innecesaria para este proceso.",
+    "Puede usar compuestos orgánicos como azúcares almacenados anteriormente.",
+    "La respiración celular libera energía química sin requerir directamente la luz.",
+    "Los azúcares fabricados previamente proporcionan combustible, y su energía química puede transferirse mediante la respiración sin iluminación.",
+    "Las plantas detienen todo uso de energía en la oscuridad porque la respiración requiere luz solar entrante."
+  ],
+  [
+    "Establece dos consecuencias de abrir los estomas para una hoja, una involucrando carbono y otra involucrando agua.",
+    "Abrirlos permite que el dióxido de carbono difunda hacia el interior de la hoja para la fotosíntesis.",
+    "Abrirlos también permite que el vapor de agua escape mediante la transpiración.",
+    "Los poros abiertos admiten CO2 pero también permiten que la hoja pierda vapor de agua.",
+    "Los estomas abiertos bloquean el dióxido de carbono y detienen toda pérdida de agua."
+  ],
+  [
+    "Explica la succión por transpiración usando la evaporación y la columna de agua conectada en el xilema.",
+    "La evaporación desde las hojas crea tensión que arrastra el agua hacia arriba.",
+    "La cohesión entre moléculas de agua ayuda a mantener una columna continua en el xilema.",
+    "La pérdida de agua en las hojas genera una tensión de tracción, transmitida a través del agua que permanece conectada por cohesión molecular.",
+    "Las hojas empujan aire seco hacia abajo por el xilema, y el agua sube porque sus moléculas se repelen completamente."
+  ],
+  [
+    "Distinguir los principales materiales transportados por el xilema y el floema.",
+    "El xilema transporta principalmente agua y iones minerales disueltos.",
+    "El floema transporta asimilados orgánicos como la sacarosa entre fuentes y sumideros.",
+    "El agua con nutrientes minerales viaja por el xilema; los azúcares y otros asimilados se mueven por el floema hacia donde se necesitan o almacenan.",
+    "El xilema lleva solo ADN, mientras que el floema lleva solo gas oxígeno."
+  ],
+  [
+    "Describir el papel del oxígeno al final de la cadena de transporte de electrones aeróbica y el producto resultante.",
+    "El oxígeno actúa como aceptor final de electrones.",
+    "El oxígeno se combina con electrones y protones para formar agua.",
+    "Al final de la cadena, el oxígeno recibe electrones y luego su combinación con esos electrones e iones de hidrógeno produce agua.",
+    "El oxígeno dona todos los electrones iniciales y se convierte directamente en glucosa."
+  ],
+  [
+    "Contrastar el papel del ATP con el de reservas de energía a largo plazo como la grasa.",
+    "El ATP transfiere energía para procesos celulares inmediatos.",
+    "La grasa puede almacenar una gran reserva de energía química para un uso posterior.",
+    "Las células usan ATP para transferir energía a trabajos inmediatos que pueden acoplarse a su utilización, mientras que los lípidos conservan reservas energéticas durante periodos más largos.",
+    "El ATP es exclusivamente un tejido de almacenamiento vitalicio, mientras que la grasa es un nucleótido consumido directamente por cada enzima."
+  ],
+  [
+    "¿Por qué la digestión precede usualmente la absorción de proteínas y almidón? Describir el cambio químico y su efecto en el paso a través de la pared intestinal.",
+    "La digestión rompe moléculas grandes en unidades más pequeñas como aminoácidos y azúcares simples.",
+    "Estas unidades más pequeñas pueden transportarse a través del epitelio intestinal más fácilmente.",
+    "Los polímeros alimenticios grandes se dividen en bloques de construcción pequeños que los mecanismos de transporte intestinal pueden absorber.",
+    "La digestión combina alimentos en cristales gigantes, que pasan a través de membranas más fácilmente porque son más grandes."
+  ],
+  [
+    "Explica cómo las vellosidades intestinales ayudan a la absorción mediante el aumento de superficie y el transporte de nutrientes desde el intestino.",
+    "Las vellosidades aumentan la superficie disponible para la absorción.",
+    "La circulación sanguínea y linfática de las vellosidades retira los nutrientes absorbidos.",
+    "Estas proyecciones exponen más superficie absorbente, y sus vasos sanguíneos y linfáticos transportan los nutrientes a otros lugares.",
+    "Las vellosidades eliminan la superficie absorbente y atrapan permanentemente cada nutriente en la luz intestinal."
+  ],
+  [
+    "Distinguir la ventilación del intercambio gaseoso en los pulmones.",
+    "La ventilación mueve el aire hacia dentro y hacia fuera de los pulmones.",
+    "El intercambio gaseoso transfiere oxígeno y dióxido de carbono entre el aire alveolar y la sangre.",
+    "La respiración renueva el aire pulmonar; el intercambio cruza la frontera alveolo-sanguínea para mover los gases respiratorios.",
+    "La ventilación significa fabricar células sanguíneas, mientras que el intercambio gaseoso significa sacar los pulmones enteros del cuerpo."
+  ],
+  [
+    "Explicar el movimiento de oxígeno desde el aire alveolar hacia la sangre usando su gradiente y el grosor de la barrera.",
+    "El oxígeno se difunde siguiendo su gradiente de presión parcial desde el aire alveolar hacia la sangre.",
+    "La barrera alveolo-capilar delgada proporciona una distancia de difusión corta.",
+    "Una presión parcial de oxígeno más alta en los alvéolos impulsa la difusión hacia la sangre a través de un camino muy corto.",
+    "El oxígeno es bombeado activamente desde baja a alta presión parcial a través de una barrera ósea gruesa."
+  ],
+  [
+    "Definir arterias y venas por la dirección del flujo sanguíneo relativo al corazón.",
+    "Las arterias llevan sangre lejos del corazón.",
+    "Las venas llevan sangre hacia el corazón.",
+    "Los vasos que salen son arterias; los vasos que regresan son venas.",
+    "Las arterias siempre llevan sangre hacia el corazón, mientras que las venas siempre la llevan lejos."
+  ],
+  [
+    "Explicar las válvulas cardíacas en términos de dirección del flujo y cómo la presión las abre o cierra.",
+    "Las válvulas evitan el flujo sanguíneo hacia atrás y ayudan a mantener el movimiento de un solo sentido.",
+    "Las diferencias de presión en sus dos lados causan que se abran o se cierren.",
+    "Evitan el flujo inverso, con la diferencia de presión predominante determinando si sus láminas se abren o se cierran.",
+    "Las válvulas bombean sangre por igual en ambas direcciones y solo se abren cuando los nervios levantan manualmente cada lámina."
+  ],
+  [
+    "¿Cómo ayuda la pared de un capilar al intercambio y por qué esto puede ayudar a las células circundantes?",
+    "Una pared muy delgada crea una distancia de difusión corta.",
+    "El intercambio entrega sustancias necesarias y elimina desechos metabólicos de los tejidos.",
+    "El pequeño grosor de la barrera acorta el camino, ayudando a suministrar células cercanas y a retirar sus productos de desecho.",
+    "Los capilares tienen paredes gruesas e impermeables para que los tejidos cercanos nunca intercambien ninguna sustancia."
+  ],
+  [
+    "En un sistema de control de temperatura, el aumento de la temperatura corporal desencadena la sudoración. Identifica el efecto de la respuesta y explica por qué es un ejemplo de retroalimentación negativa.",
+    "La evaporación del sudor ayuda a enfriar el cuerpo.",
+    "La respuesta se opone al aumento inicial de temperatura.",
+    "La evaporación del sudor elimina calor, por lo que la respuesta contrarresta el calentamiento original.",
+    "La evaporación del sudor calienta el cuerpo, amplificando el aumento original ya que la retroalimentación negativa requiere esto."
+  ],
+  [
+    "Distingue un receptor de un efector en un reflejo de retirada.",
+    "Un receptor detecta un estímulo como el calor dañino.",
+    "Un efector, como un músculo, produce la respuesta.",
+    "El detector sensorial percibe el estímulo; el músculo que responde ejecuta la retirada.",
+    "El receptor es el músculo que se contrae, mientras que el efector solo registra luz sin actuar."
+  ],
+  [
+    "Explica la dirección usual de transmisión a través de una sinapsis química usando las ubicaciones de liberación y receptores.",
+    "El terminal presináptico libera neurotransmisor.",
+    "Los receptores en la membrana postsináptica reciben la señal.",
+    "El mensajero químico sale del terminal emisor y se une a receptores en la membrana receptora.",
+    "La célula postsináptica siempre libera el mensajero hacia atrás en un núcleo presináptico."
+  ],
+  [
+    "Una hormona circula ampliamente en la sangre pero solo algunas células responden. Explica su transporte y la base de la especificidad de la diana.",
+    "El torrente sanguíneo transporta la hormona a muchos tejidos.",
+    "Una célula responde cuando tiene un receptor adecuado y maquinaria de respuesta.",
+    "La sangre distribuye el mensajero ampliamente, mientras que receptores compatibles y señalización celular determinan qué células reaccionan.",
+    "Las hormonas viajan solo a través de los huesos, y todas las células deben responder idénticamente sin ningún receptor."
+  ],
+  [
+    "Explica cómo un anticuerpo reconoce un antígeno y por qué diferentes antígenos pueden requerir diferentes anticuerpos.",
+    "La región de unión de un anticuerpo es complementaria a un sitio antigénico particular.",
+    "Los sitios antigénicos diferentes pueden tener formas y propiedades químicas distintas.",
+    "La unión depende de un sitio coincidente en el anticuerpo, y los sitios de antígeno varían en su estructura y química.",
+    "Todos los anticuerpos se unen solo a través de imanes idénticos no específicos, por lo que todos los sitios de antígeno son químicamente idénticos."
+  ],
+  [
+    "Contraste la memoria inmunológica con la función de barrera inmediata de la piel intacta.",
+    "La memoria inmunológica puede permitir una respuesta específica más rápida en exposiciones posteriores a un antígeno.",
+    "La piel intacta bloquea físicamente la entrada de muchos patógenos.",
+    "Tras un encuentro anterior con un antígeno, la memoria permite responder a él con mayor rapidez y especificidad; una piel sin lesiones impide físicamente la entrada de numerosos patógenos.",
+    "La memoria inmunológica es una capa sólida de piel y la piel funciona solo recordando secuencias anteriores de anticuerpos."
+  ],
+  [
+    "¿Por qué un virus depende de una célula huésped para producir nuevas proteínas virales? Nombra el equipo faltante y la consecuencia.",
+    "Los virus carecen de sus propios ribosomas y del equipo completo de síntesis de proteínas.",
+    "Utilizan el equipo de la célula huésped para traducir las proteínas virales necesarias para la reproducción.",
+    "Los virus carecen de sus propios ribosomas y de un sistema de traducción completo, por lo que utilizan el equipo de la célula huésped para producir proteínas para nuevas partículas virales.",
+    "Los virus se reproducen mediante fotosíntesis con sus propios cloroplastos y nunca utilizan maquinaria celular."
+  ],
+  [
+    "Distingue el origen de una mutación de resistencia de la selección por un antibiótico en una población bacteriana.",
+    "Las mutaciones de resistencia pueden surgir sin ser dirigidas por la necesidad de supervivencia de las bacterias frente al fármaco.",
+    "La exposición al antibiótico favorece la supervivencia y reproducción de las variantes resistentes.",
+    "La mutación no es una respuesta intencional a una necesidad; el tratamiento luego otorga una ventaja reproductiva a las bacterias resistentes.",
+    "Cada bacteria cambia conscientemente el mismo gen bajo demanda, y los antibióticos eliminan preferentemente solo las variantes resistentes."
+  ],
+  [
+    "Explica el papel de la variación heredable y la reproducción diferencial en la selección natural.",
+    "Los individuos difieren en rasgos que pueden transmitirse a la descendencia.",
+    "Las variantes con mayor éxito reproductivo se vuelven más comunes a lo largo de las generaciones.",
+    "Existen diferencias heredables, y los rasgos asociados con dejar más descendientes tienden a propagarse a lo largo de las generaciones.",
+    "La selección natural requiere que cada individuo sea genéticamente idéntico e impide cualquier diferencia en la reproducción."
+  ],
+  [
+    "Distingue la adaptación evolutiva de la aclimatación individual.",
+    "La adaptación evolutiva implica cambios heredables en la población a lo largo de generaciones.",
+    "La aclimatación es el ajuste de un individuo durante su vida.",
+    "La adaptación evoluciona mediante cambios heredables a través de generaciones; la aclimatación ocurre dentro de la vida de un solo organismo.",
+    "La adaptación es cualquier pensamiento momentáneo, mientras que la aclimatación requiere que evolucione una nueva especie a lo largo de muchas generaciones."
+  ],
+  [
+    "Describa la relación entre los genes y el ADN, y entre el ADN y los cromosomas.",
+    "Un gen es un tramo funcional de secuencia de ADN.",
+    "Los cromosomas organizan largas moléculas de ADN junto con proteínas asociadas.",
+    "Los genes son regiones funcionales de ADN, y un cromosoma empaqueta una larga molécula de ADN con proteínas.",
+    "Los genes son huesos diminutos, y los cromosomas están hechos enteramente de glucosa libre sin ADN."
+  ],
+  [
+    "Contraste la transcripción con la traducción.",
+    "La transcripción produce una copia de ARN a partir de una plantilla de ADN.",
+    "La traducción utiliza una secuencia de ARNm para ensamblar una cadena de aminoácidos.",
+    "Primero, se sintetiza ARN usando ADN; luego, la traducción lee el ARN mensajero para construir un polipéptido.",
+    "La transcripción ensambla aminoácidos directamente de grasa, mientras que la traducción copia proteínas en cromosomas."
+  ],
+  [
+    "GAA cambia a GAG, y ambos codones codifican glutamato. Indique el aminoácido después de este cambio y explique por qué otras sustituciones pueden alterar la secuencia de una proteína.",
+    "El aminoácido sigue siendo glutamato.",
+    "Una sustitución diferente podría producir un codón que especifique un aminoácido distinto.",
+    "El glutamato sigue codificándose aquí, pero otro cambio de base podría hacer que un codón codifique un aminoácido diferente.",
+    "Se convierte en glicina, y ninguna sustitución de base puede alterar nunca una secuencia de aminoácidos."
+  ],
+  [
+    "Distinga la dominancia alélica de la frecuencia alélica en una población.",
+    "La dominancia describe cómo los alelos afectan el fenotipo en un heterocigoto bajo el modelo de rasgo especificado.",
+    "La frecuencia describe qué tan común es un alelo en la población.",
+    "La dominancia se refiere a la expresión cuando ocurren juntos alelos diferentes; la frecuencia cuenta qué tan prevalente es un alelo.",
+    "Dominante significa estar presente en todos, mientras que la frecuencia mide el tamaño físico de un cromosoma."
+  ],
+  [
+    "Para un solo gen con dominancia completa, cruce Aa con Aa. Indique la probabilidad de aa y la probabilidad del fenotipo dominante.",
+    "La probabilidad de aa es 1/4.",
+    "La probabilidad del fenotipo dominante es 3/4.",
+    "Se espera que una cuarta parte de la descendencia sea aa, y tres cuartas partes muestren el rasgo dominante.",
+    "Toda la descendencia es aa y ninguna puede tener el fenotipo dominante."
+  ],
+  [
+    "Contraste la mitosis típica con la meiosis en un organismo diploide mediante el número de cromosomas en las células hijas.",
+    "La mitosis conserva el número parental de cromosomas en las células hijas.",
+    "La meiosis reduce a la mitad el número de cromosomas para producir productos haploides.",
+    "Las células hijas mitóticas mantienen el conteo original de cromosomas, mientras que los productos meióticos tienen un conjunto en lugar de dos.",
+    "La mitosis siempre reduce a la mitad el número de cromosomas, mientras que la meiosis lo duplica en cada división."
+  ],
+  [
+    "Explica una forma en que la meiosis y una forma en que la fecundación contribuyen a la variación genética.",
+    "La meiosis crea combinaciones diferentes de alelos mediante la segregación independiente o el entrecruzamiento.",
+    "La fecundación combina el material genético de dos gametos.",
+    "La segregación de cromosomas o la recombinación reordenan los alelos en la meiosis, y la unión de dos gametos combina sus contribuciones genéticas.",
+    "La meiosis copia cada combinación de alelos sin cambios, y la fecundación elimina el ADN de ambos padres."
+  ],
+  [
+    "Distingue genotipo de fenotipo, incluyendo el papel del ambiente.",
+    "El genotipo es la constitución genética del organismo.",
+    "El fenotipo consiste en rasgos expresados influenciados por el genotipo y el ambiente.",
+    "La composición genética heredada es el genotipo; los rasgos observables o medibles surgen de esa composición interactuando con las condiciones.",
+    "El genotipo es el clima actual, y el fenotipo es solo una lista de bases de ADN sin influencia ambiental."
+  ],
+  [
+    "Los gemelos idénticos pueden diferir en altura o salud a pesar de tener genomas muy similares. Explica una fuente de diferencia y qué esto muestra sobre el fenotipo.",
+    "Pueden experimentar nutrición, entornos o condiciones de desarrollo diferentes.",
+    "El fenotipo está influenciado por factores más allá de la secuencia de ADN heredada.",
+    "Las diferentes condiciones de vida pueden afectar el desarrollo, mostrando que la secuencia genética no es el único determinante de los rasgos expresados.",
+    "Los gemelos idénticos siempre deben tener entornos idénticos, y todas las diferencias fenotípicas son imposibles."
+  ],
+  [
+    "¿Por qué generalmente hay menos energía química disponible en un nivel trófico más alto? Da dos rutas por las que la energía falla en transferirse como nueva biomasa de consumidor.",
+    "Alguna energía se usa en la respiración y se disipa como calor.",
+    "Parte del material no es ingerido o no es asimilado por el consumidor.",
+    "El metabolismo libera calor, y el material no comido o no absorbido también impide que toda la energía del nivel anterior se convierta en tejido de consumidor.",
+    "Toda la energía consumida se convierte en nueva biomasa, y los organismos crean energía química ilimitada desde la nada."
+  ],
+  [
+    "Contraste el flujo de energía con el ciclo de nutrientes en un ecosistema.",
+    "La energía fluye a través del sistema y se disipa progresivamente como calor, requiriendo un suministro continuo.",
+    "Los átomos de elementos nutritivos pueden reutilizarse mediante ciclos entre los organismos y su entorno.",
+    "La energía útil necesita reposición porque se dispersa como calor, mientras que la materia como los elementos nutritivos puede circular y reutilizarse.",
+    "Los átomos de energía circulan para siempre sin necesidad de entrada, mientras que toda la materia nutritiva se destruye después de una sola comida."
+  ],
+  [
+    "Explica el papel de los descomponedores en el procesamiento de material muerto y la disponibilidad de nutrientes.",
+    "Los descomponedores descomponen organismos muertos y residuos orgánicos.",
+    "Esto libera nutrientes en formas que pueden reingresar a los ciclos del ecosistema y ser absorbidas nuevamente.",
+    "Digieren restos y residuos, devolviendo materiales nutritivos al entorno para un uso biológico adicional.",
+    "Los descomponedores convierten toda la materia en nada y eliminan permanentemente cada nutriente del ecosistema."
+  ],
+  [
+    "Distingue una cadena alimenticia de una red alimenticia.",
+    "Una cadena alimenticia muestra una secuencia de relaciones de alimentación.",
+    "Una red alimenticia conecta múltiples vías de alimentación entre organismos.",
+    "Una cadena traza una sola ruta de alimentación; una red une varias de estas rutas en una red.",
+    "Una cadena alimenticia no lista ningún vínculo de alimentación, mientras que una red alimenticia requiere que cada organismo coma exactamente una especie."
+  ],
+  [
+    "Para probar el efecto de un fertilizante en el crecimiento de las plantas, identifica un grupo de control adecuado y una variable a mantener constante.",
+    "Utiliza plantas de otro modo comparables que no reciban fertilizante añadido como control.",
+    "Mantén una condición relevante, como la exposición a la luz, el agua o la variedad de planta, la misma en todos los grupos.",
+    "Compara plantas fertilizadas con unas no fertilizadas similares mientras se mantiene constante un factor como el riego.",
+    "Utiliza solo plantas fertilizadas y cambia deliberadamente todas las demás condiciones de crecimiento entre los grupos."
+  ],
+  [
+    "En una observación, las plantas cercanas a una lámpara crecen más rápido. Indica qué respalda esta observación y por qué no establece por sí sola el mecanismo.",
+    "Apoya una asociación entre la proximidad a la lámpara y el crecimiento en las plantas observadas.",
+    "No se han descartado otras diferencias o factores de confusión, por lo que el mecanismo causal requiere más evidencia.",
+    "Las plantas registradas muestran una asociación, pero las diferencias no controladas impiden concluir de eso solo si la lámpara causó la diferencia de crecimiento o a través de qué mecanismo.",
+    "Una sola observación demuestra que la luz no tiene relación con el crecimiento y excluye todos los posibles factores de confusión."
+  ]
 ]

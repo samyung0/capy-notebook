@@ -1,52 +1,352 @@
 [
-  ["Comenzando con 2 < 5, multiplica ambos lados por -1. Indica la comparación resultante y explica por qué su dirección se invierte.", "La comparación resultante es -2 > -5.", "La multiplicación por un número negativo invierte las posiciones en la recta numérica, por lo que el orden se invierte.", "Menos dos es mayor que menos cinco; reflejar ambos números respecto de cero invierte su orden.", "El resultado es -2 < -5 porque multiplicar por cualquier número preserva el orden."],
-  ["Desarrolla (a + b)^2 e identifica el término omitido por la afirmación de que es igual a a^2 + b^2.", "El desarrollo es a^2 + 2ab + b^2.", "La expresión propuesta omite el término cruzado 2ab.", "Multiplicar los dos factores da a al cuadrado más b al cuadrado más dos veces ab; la parte de dos veces ab falta en la afirmación.", "Se desarrolla a a^2 + b^2 y no hay ningún término omitido."],
-  ["Elevar al cuadrado ambos lados de sqrt(x + 2) = x da raíces candidatas 2 y -1. Indica cuál raíz es válida y explica por qué la otra se rechaza.", "Solo x = 2 resuelve la ecuación original.", "Para x = -1, el lado izquierdo de la ecuación original es 1 y el derecho es -1, por lo que esa raíz candidata no satisface la ecuación original.", "Dos es la solución. Hay que descartar menos uno porque al sustituirlo se obtiene uno igual a menos uno.", "Tanto 2 como -1 son válidos, porque cada raíz de la ecuación obtenida al elevar al cuadrado resuelve la ecuación original."],
-  ["Simplifica (x^2 - 1)/(x - 1) e indica la restricción de dominio que debe mantenerse.", "La expresión se simplifica a x + 1 donde la expresión original está definida.", "El valor x = 1 permanece excluido porque hace que el denominador original sea cero.", "Es x más uno, pero solo si x es distinto de uno; en x = 1, el denominador de la fracción original es cero.", "La expresión se convierte en x - 1 y está definida para todo x real."],
-  ["Clasifica 2x + 3 = 2x + 5 y 2x + 3 = 2x + 3 por sus conjuntos de soluciones.", "La primera ecuación no tiene soluciones.", "La segunda ecuación es verdadera para todo x real.", "Ningún número puede satisfacer la primera igualdad, mientras que cualquier número real funciona en la segunda.", "Ambas ecuaciones tienen la solución única x = 0."],
-  ["El precio de 100 cae un 20% y luego sube un 20%. Da el precio final y explica por qué los cambios no se cancelan.", "El precio final es 96.", "El aumento se calcula sobre 80, una base menor que el original 100.", "Termina en noventa y seis porque el aumento es una quinta parte de ochenta, no una quinta parte del cien original.", "Regresa a 100 porque aumentos y disminuciones porcentuales iguales siempre se cancelan."],
-  ["Compara 3/4 y 5/8. Indica cuál es mayor y muestra cómo reescribir 3/4 con denominador 8.", "La fracción 3/4 es mayor que 5/8.", "Con denominador 8, 3/4 es igual a 6/8.", "Tres cuartos gana: escrito en octavos es seis octavos, comparado con cinco octavos.", "Cinco octavos es mayor porque 5 es mayor que 3, y 3/4 es igual a 3/8."],
-  ["Una tasa aumenta del 20% al 25%. Da el aumento en puntos porcentuales y el aumento porcentual relativo.", "El aumento es de 5 puntos porcentuales.", "El aumento relativo es el 25% de la tasa original.", "Las tasas difieren en cinco puntos, y ese cinco es una cuarta parte del veinte por ciento original.", "Sube 25 puntos porcentuales, equivalente a un aumento relativo del 5%."],
-  ["Una clase de 10 estudiantes tiene promedio 60 y una clase de 30 tiene promedio 80. Da la media combinada y explica la ponderación.", "La media combinada es 75.", "Las medias de las clases deben ponderarse por sus respectivos conteos de estudiantes, 10 y 30.", "El promedio general es setenta y cinco; la clase más grande aporta el triple de peso que la más pequeña.", "La media es 70 porque cada clase siempre debe tener peso igual independientemente del tamaño."],
-  ["Los datos 2, 3, 4 se convierten en 2, 3, 100. Indica qué pasa con la media y qué pasa con la mediana.", "La media aumenta de 3 a 35.", "La mediana permanece en 3.", "El promedio salta a treinta y cinco desde tres, pero el valor central se queda en tres.", "Tanto la media como la mediana se convierten en 100."],
-  ["Para eventos A y B con probabilidades no nulas, distingue entre independencia y exclusividad mutua.", "La independencia significa que saber que ocurrió un evento no cambia la probabilidad del otro.", "La exclusividad mutua significa que los dos eventos no pueden ocurrir juntos.", "Los eventos independientes dejan sin cambiar las probabilidades del otro; los eventos mutuamente excluyentes no tienen ocurrencia compartida.", "Los eventos independientes nunca pueden ocurrir juntos, mientras que los eventos mutuamente excluyentes siempre deben ocurrir juntos."],
-  ["Un grupo tiene 12 ciclistas, incluidos 3 que usan rojo, y 8 no ciclistas. Entre los ciclistas, ¿cuál es la probabilidad de usar rojo y qué grupo proporciona el denominador?", "La probabilidad condicional es 3/12, o 1/4.", "El denominador cuenta los 12 ciclistas, porque la condición restringe el grupo a ciclistas.", "La probabilidad es una cuarta parte: dividimos por los doce ciclistas en lugar de todos en el grupo.", "La probabilidad es 3/20 porque la condición nunca cambia el denominador."],
-  ["Una tasa de evento cambia de 1 en 1000 a 2 en 1000. Da el aumento relativo y el aumento absoluto en eventos por 1000.", "El aumento relativo es 100%.", "El aumento absoluto es 1 evento por 1000.", "La tasa se duplica, por lo que el aumento relativo es cien por ciento, mientras que solo ocurre un evento adicional por mil.", "El aumento relativo es 1%, y el aumento absoluto es 1000 eventos por 1000."],
-  ["Una biblioteca estima los hábitos de lectura de todos los residentes encuestando solo a las personas que salen de la biblioteca. Identifica el problema de selección y su dirección probable.", "La muestra excluye a los residentes que no visitan la biblioteca y no es representativa de todos los residentes.", "Es probable que sobrerrepresente a las personas que leen o usan los servicios de la biblioteca con frecuencia.", "Los no visitantes quedan fuera, por lo que las respuestas pueden hacer que la lectura frecuente parezca más común de lo que es entre todos los residentes.", "La muestra es representativa porque todos estaban cerca de la biblioteca, y debe subestimar la lectura."],
-  ["Una encuesta encuentra que los estudiantes que asisten a tutoría opcional tienen calificaciones más altas. Establece qué demuestra la encuesta y una razón por la que no prueba que la tutoría causó la diferencia.", "La encuesta establece una asociación entre la asistencia a tutoría y calificaciones más altas.", "Otras diferencias, como el rendimiento previo o la motivación, podrían explicar la asociación.", "La asistencia y las calificaciones varían juntas, pero la capacidad preexistente o la motivación podrían explicar la brecha.", "La encuesta prueba que la tutoría causó cada aumento de calificación porque los factores de confusión no pueden afectar las encuestas."],
-  ["Una afirmación dice que todo número primo es impar. Explica qué muestra el ejemplo 2 y por qué un solo ejemplo basta.", "El número 2 es primo y par, por lo que la afirmación es falsa.", "Una afirmación universal se refuta con un solo caso que la viola.", "El dos es un primo par, lo cual invalida la declaración; una afirmación de todos los casos necesita solo una excepción para fallar.", "El dos es impar, y refutar una afirmación universal requiere verificar cada número posible."],
-  ["Para los enteros, compara 'divisible por 4' con 'par'. Establece la implicación que siempre se cumple y si su recíproca se cumple.", "Un entero divisible por 4 siempre es par.", "La recíproca falla porque algunos enteros pares, como 2, no son divisibles por 4.", "Un múltiplo de cuatro debe ser par, pero un número par no necesariamente es un múltiplo de cuatro, como lo demuestra dos.", "Cada entero par es divisible por 4, mientras que los múltiplos de 4 pueden ser impares."],
-  ["Describe las dos obligaciones en una demostración por inducción para una afirmación P(n) sobre enteros n >= 1.", "El caso base debe establecer P(1).", "El paso inductivo debe establecer P(k+1) asumiendo P(k) para un entero arbitrario k >= 1.", "Primero verifica la afirmación en uno; luego muestra que su verdad en cualquier k permitido garantiza la verdad en el siguiente entero.", "Probar P(1) por sí solo demuestra todos los casos, y el paso del caso siguiente debe asumir P(k+1) para probarse a sí mismo."],
-  ["El costo de un taxi es F = 3d + 5, donde d es la distancia en kilómetros. Interpreta la pendiente y la ordenada en el origen.", "El costo aumenta en 3 unidades monetarias por cada kilómetro adicional.", "La ordenada en el origen, 5, es el costo a distancia cero y representa la tarifa fija.", "Cada kilómetro extra agrega tres unidades, y cinco unidades se cobran antes de viajar cualquier distancia.", "La pendiente significa una tarifa fija de 3, y la ordenada en el origen significa 5 unidades por kilómetro."],
-  ["Explica por qué la pendiente de una línea vertical es indefinida. Establece el cambio en x entre dos puntos distintos y la regla relevante sobre la división.", "Dos puntos distintos en una línea vertical tienen un cambio de cero en x.", "La división por cero es indefinida.", "El cambio horizontal es cero entre puntos distintos, y dividir por ese recorrido cero no tiene un resultado definido.", "El cambio horizontal es no nulo, y la división por cero siempre da cero."],
-  ["Compare las secuencias 2, 5, 8, 11 y 2, 6, 18, 54 indicando la regla que hace que cada una sea aritmética o geométrica.", "La primera es aritmética porque los términos consecutivos difieren en 3.", "La segunda es geométrica porque los términos consecutivos tienen una razón de 3.", "Sumar tres produce cada nuevo término de la primera secuencia, mientras que multiplicar por tres produce cada nuevo término de la segunda.", "La primera es geométrica porque su razón es 3, y la segunda es aritmética porque su diferencia es 3."],
-  ["Una población se multiplica por 1.1 cada año. Indica su cambio proporcional anual y explica por qué el aumento numérico no es constante.", "La población crece un 10% cada año.", "El aumento de cada año se calcula a partir de una base de población cambiante, por lo que el número añadido varía.", "Sube una décima parte anualmente, y el número añadido crece porque esa décima se toma de una población más grande cada año.", "Crece exactamente 1.1 individuos por año porque multiplicar por un factor fijo siempre suma un número fijo."],
-  ["Interpreta log_2(8) = 3 como una igualdad exponencial e indica la restricción de dominio del argumento de un logaritmo real.", "La declaración exponencial correspondiente es 2^3 = 8.", "El argumento de un logaritmo real debe ser positivo.", "Dos elevado a la tercera potencia da ocho; sobre los números reales, un logaritmo solo puede tomar una entrada positiva.", "Significa que 3^2 = 8, y los logaritmos reales permiten argumentos cero y negativos."],
-  ["Sea f(x) = x^2. Escriba f(x+h) y f(x)+h explícitamente.", "La expresión f(x+h) es x^2 + 2xh + h^2.", "La expresión f(x)+h es x^2 + h.", "Aplicar f después de sumar h da el cuadrado de x+h, es decir, x al cuadrado más dos veces xh más h al cuadrado; sumar h después de f da x al cuadrado más h.", "Ambas expresiones son iguales a x^2 + h^2."],
-  ["Una función s(t) da la posición en metros en el tiempo t en segundos. Interprete s'(t) y dé sus unidades.", "La derivada s'(t) es la velocidad instantánea.", "Sus unidades son metros por segundo.", "Indica la tasa de cambio de la posición en ese instante, medida en m/s.", "Es la distancia total acumulada, medida en metros cuadrados."],
-  ["Una función diferenciable tiene f'(x) > 0 en (0, 2) y f'(x) < 0 en (2, 4). Describa su comportamiento en cada intervalo.", "La función es creciente en (0, 2).", "La función es decreciente en (2, 4).", "A medida que x aumenta a través de (0, 2), la función crece; a medida que x aumenta a través de (2, 4), decrece.", "Decrece en ambos intervalos porque la derivada cambia de signo."],
-  ["Use f(x) = x^3 para explicar por qué f'(0) = 0 no garantiza un máximo o mínimo local.", "Para esta función, f'(0) es igual a 0.", "La función sigue aumentando a través de 0, por lo que 0 no es un extremo local.", "La tangente es horizontal en cero, pero la función cúbica sigue creciendo al pasar por ese punto, por lo que allí no hay ni un máximo ni un mínimo local.", "Su derivada en cero es 3 y el origen es un máximo local estricto."],
-  ["Un gráfico está por encima del eje x con área 7 y por debajo con área 3 en un intervalo. Dé la integral definida con signo y el área geométrica total.", "La integral definida con signo es 4.", "El área geométrica total es 10.", "El área neta con signo es siete menos tres, o cuatro; el área total cuenta ambas regiones positivamente y es diez.", "La integral es 10 y el área geométrica total es 4."],
-  ["Derive (3x + 1)^2 e identifique el factor de la función interna proporcionado por la regla de la cadena.", "La derivada es 6(3x + 1).", "La derivada interna aporta un factor de 3.", "El resultado es el doble de (3x+1) multiplicado por tres, dando seis veces (3x+1); tres proviene de derivar el interior.", "La derivada es 2(3x+1) y la derivada interna aporta un factor de 1."],
-  ["Dé la integral indefinida general de 2x y diga qué sucede con su constante aditiva al derivar.", "La antiderivada general es x^2 + C.", "Derivar la constante aditiva da cero.", "La integral es x al cuadrado más una constante arbitraria, y ese número fijo desaparece al derivar.", "La integral es 2x^2 sin constante, y la derivada de C es igual a C."],
-  ["En x = 0, compara la continuidad y la diferenciabilidad de f(x) = |x|.", "La función es continua en 0.", "No es diferenciable en 0 porque las pendientes izquierda y derecha difieren.", "El gráfico no tiene interrupción en el origen, pero su esquina da pendientes unilaterales distintas, por lo que no existe derivada allí.", "Es discontinua en 0 y tiene una derivada de 1 allí."],
-  ["Si la integral definida de f desde a hasta b es 6, da la integral desde b hasta a y explica el cambio de signo.", "La integral desde b hasta a es -6.", "Invertir los límites de integración invierte la orientación de la acumulación y por tanto el signo.", "Se vuelve menos seis porque la misma acumulación se recorre en dirección opuesta.", "Se mantiene 6 porque el orden de los límites de la integral definida nunca importa."],
-  ["Dos triángulos semejantes tienen lados correspondientes 3 y 9. Un segundo lado del triángulo menor es 4. Da el factor de escala y el lado mayor correspondiente.", "El factor de escala del triángulo menor al mayor es 3.", "El lado mayor correspondiente es 12.", "Las longitudes del triángulo grande son el triple de las del pequeño, por lo que el lado correspondiente al de longitud cuatro mide doce.", "El factor de escala es 6 y el lado correspondiente es 10."],
-  ["Cada longitud de una figura plana se multiplica por 3. Indica el factor de escala del área y explica por qué no es 3.", "El área se multiplica por 9.", "El área involucra dos dimensiones de longitud, por lo que el factor de longitud se eleva al cuadrado.", "Su área pasa a ser nueve veces la original porque las dos dimensiones lineales independientes se triplican.", "El área se multiplica por 3 porque el área depende de solo una dimensión de longitud."],
-  ["Cada longitud de un sólido se duplica. Indica el factor de escala del volumen y explícalo usando dimensiones.", "El volumen se multiplica por 8.", "El volumen involucra tres dimensiones de longitud, por lo que el factor de longitud se eleva al cubo.", "Hay ocho veces el volumen porque duplicar cada una de las tres dimensiones da 2 por 2 por 2.", "El volumen solo se duplica porque un sólido tiene una dimensión de longitud."],
-  ["Un rectángulo cambia de 2 por 6 a 3 por 5. Compara los perímetros y las áreas.", "Ambos rectángulos tienen perímetro 16.", "El área aumenta de 12 a 15.", "La longitud del borde se mantiene en dieciséis, pero el área encerrada crece de doce a quince.", "El perímetro aumenta de 12 a 15 y el área se mantiene en 16."],
-  ["Establece la condición para usar a^2 + b^2 = c^2 para encontrar un lado de un triángulo, y indica si c es el lado más largo o el más corto.", "El triángulo debe ser rectángulo.", "El lado c es el lado más largo.", "Esta relación se aplica a un triángulo rectángulo, con c etiquetando su lado más largo.", "Se aplica a todo triángulo, y c debe ser su lado más corto."],
-  ["Un círculo tiene diámetro 10. Da su radio y su área en términos de pi.", "El radio es 5.", "El área es 25 pi.", "El radio es la mitad del diámetro, o cinco, y pi multiplicado por su cuadrado es veinticinco pi.", "El radio es 10 y el área es 100 pi."],
-  ["Convierte 180 grados a radianes y explica los radianes usando la longitud del arco y el radio.", "Un ángulo de 180 grados es pi radianes.", "Un ángulo en radianes es igual a la longitud del arco interceptado dividida por el radio.", "Un giro de medio círculo mide pi radianes; la medida en radianes es la longitud del arco relativa al radio del círculo.", "Un giro de medio círculo es 2 pi radianes, y los radianes son el radio dividido por la longitud del arco."],
-  ["Un vector tiene componentes perpendiculares 3 y 4. Da su magnitud y explica por qué no es la suma de los componentes.", "La magnitud del vector es 5.", "Las componentes perpendiculares se combinan mediante la raíz cuadrada de la suma de los cuadrados, no mediante una suma ordinaria.", "Su longitud es cinco, encontrada desde la hipotenusa del triángulo de los componentes en lugar de sumar tres y cuatro.", "Su magnitud es 7 porque las componentes perpendiculares deben sumarse directamente."],
-  ["Dos vectores euclidianos no nulos tienen producto punto cero. Indica su relación angular y explica por qué importa que los vectores no sean nulos.", "Los vectores son perpendiculares.", "El vector cero tiene producto punto cero con todo vector pero no define una dirección para esta conclusión angular.", "Se encuentran en un ángulo recto; excluir el vector cero importa porque no tiene dirección a pesar de dar siempre producto punto cero.", "Deben ser paralelos, y el vector cero tiene una dirección única perpendicular a todos los vectores."],
-  ["Sea A una rotación y B un estiramiento. Explica el orden de aplicar AB a un vector columna y si AB debe ser igual a BA.", "En ABv, B actúa sobre el vector primero y A actúa segundo.", "Los productos AB y BA no necesitan ser iguales porque el orden de las transformaciones puede cambiar el resultado.", "Estirar primero y rotar después; intercambiar esos pasos puede producir una transformación diferente.", "ABv aplica A primero, y todas las transformaciones matriciales conmutan."],
-  ["Una matriz cuadrada A es singular. Indica su determinante y cuántas soluciones puede tener Ax = b.", "El determinante de A es cero.", "Dependiendo de b, el sistema no tiene soluciones o tiene infinitas soluciones.", "Su determinante se anula, y el lado derecho determina si el sistema es inconsistente o tiene una familia infinita de soluciones.", "El determinante debe ser igual a 1, y todo sistema singular tiene exactamente una solución."],
-  ["Da el conjugado complejo de 3 + 4i y el producto de ese número con su conjugado.", "El conjugado es 3 - 4i.", "El producto es 25.", "Cambiar el signo de la parte imaginaria da tres menos cuatro i; multiplicar el par da veinticinco.", "El conjugado es -3 + 4i, y su producto es -25."],
-  ["Una fórmula propuesta de velocidad es distancia por tiempo. Da las unidades de esa expresión y explica por qué no son unidades de velocidad.", "Distancia por tiempo tiene unidades de longitud multiplicada por tiempo, como metro-segundos.", "La velocidad requiere longitud dividida por tiempo, como metros por segundo.", "La multiplicación produce m s, mientras que una velocidad debe tener m/s, por lo que las dimensiones de la fórmula están mal.", "Distancia por tiempo tiene unidades de m/s, por lo que siempre es una fórmula de velocidad válida."],
-  ["Para estimar 3 veces 1/3, alguien redondea 1/3 a 0.3 antes de multiplicar. Indique el error resultante y cómo evitarlo retrasando el redondeo.", "El redondeo temprano da 0.9 en lugar del resultado exacto 1.", "Mantener la fracción exacta hasta el cálculo final evita el error de redondeo acumulado en este ejemplo.", "Redondear primero pierde una décima en el resultado final; retener un tercio hasta la multiplicación da exactamente uno.", "Redondear primero da exactamente 1, y retener fracciones exactas hace que el resultado sea menos preciso."],
-  ["Calcule 1/3 - 0.333 exactamente y explique cómo 0.333 se relaciona con la expansión decimal de 1/3.", "La diferencia exacta es 1/3000.", "El decimal 0.333 es una aproximación finita a la expansión decimal no terminante y recurrente de 1/3.", "Los separa una diferencia de 1/3000; tres cifras decimales solo aproximan la expansión decimal de un tercio, que se repite sin fin.", "La diferencia es cero porque cada fracción tiene una expansión decimal de tres dígitos que termina."],
-  ["Calcule (2/3) dividido por (4/5) y indique la multiplicación por el recíproco utilizada.", "El resultado es 5/6.", "El cálculo multiplica 2/3 por el recíproco 5/4.", "Multiplique dos tercios por cinco cuartos para obtener diez doceavos, o cinco sextos.", "El resultado es 8/15 porque dividir por una fracción significa multiplicar por esa misma fracción."],
-  ["Una bolsa contiene 3 bolas rojas y 2 azules. Después de sacar una bola roja sin reemplazo, dé la probabilidad de la siguiente roja y explique por qué los sorteos son dependientes.", "La probabilidad de la siguiente roja es 2/4, o 1/2.", "El primer sorteo cambia la composición de la bolsa, por lo que cambia la probabilidad del siguiente sorteo.", "La probabilidad pasa a ser un medio porque sacar una bola roja cambia lo que queda en la bolsa.", "Se mantiene 3/5 porque los sorteos sin reemplazo siempre son independientes."],
-  ["Sea f(x) = x + 1 para x < 2 y f(x) = 10 para x >= 2. Dé f(2) e indique qué rama aplica.", "El valor f(2) es 10.", "La segunda rama aplica porque su condición incluye la igualdad en 2.", "En dos la función devuelve diez, ya que dos pertenece a la rama de mayor o igual.", "El valor es 3 porque x < 2 incluye x = 2."]
+  [
+    "Comenzando con 2 < 5, multiplica ambos lados por -1. Indica la comparación resultante y explica por qué su dirección se invierte.",
+    "La comparación resultante es -2 > -5.",
+    "La multiplicación por un número negativo invierte las posiciones en la recta numérica, por lo que el orden se invierte.",
+    "Menos dos es mayor que menos cinco; reflejar ambos números respecto de cero invierte su orden.",
+    "El resultado es -2 < -5 porque multiplicar por cualquier número preserva el orden."
+  ],
+  [
+    "Desarrolla (a + b)^2 e identifica el término omitido por la afirmación de que es igual a a^2 + b^2.",
+    "El desarrollo es a^2 + 2ab + b^2.",
+    "La expresión propuesta omite el término cruzado 2ab.",
+    "Multiplicar los dos factores da a al cuadrado más b al cuadrado más dos veces ab; la parte de dos veces ab falta en la afirmación.",
+    "Se desarrolla a a^2 + b^2 y no hay ningún término omitido."
+  ],
+  [
+    "Elevar al cuadrado ambos lados de sqrt(x + 2) = x da raíces candidatas 2 y -1. Indica cuál raíz es válida y explica por qué la otra se rechaza.",
+    "Solo x = 2 resuelve la ecuación original.",
+    "Para x = -1, el lado izquierdo de la ecuación original es 1 y el derecho es -1, por lo que esa raíz candidata no satisface la ecuación original.",
+    "Dos es la solución. Hay que descartar menos uno porque al sustituirlo se obtiene uno igual a menos uno.",
+    "Tanto 2 como -1 son válidos, porque cada raíz de la ecuación obtenida al elevar al cuadrado resuelve la ecuación original."
+  ],
+  [
+    "Simplifica (x^2 - 1)/(x - 1) e indica la restricción de dominio que debe mantenerse.",
+    "La expresión se simplifica a x + 1 donde la expresión original está definida.",
+    "El valor x = 1 permanece excluido porque hace que el denominador original sea cero.",
+    "Es x más uno, pero solo si x es distinto de uno; en x = 1, el denominador de la fracción original es cero.",
+    "La expresión se convierte en x - 1 y está definida para todo x real."
+  ],
+  [
+    "Clasifica 2x + 3 = 2x + 5 y 2x + 3 = 2x + 3 por sus conjuntos de soluciones.",
+    "La primera ecuación no tiene soluciones.",
+    "La segunda ecuación es verdadera para todo x real.",
+    "Ningún número puede satisfacer la primera igualdad, mientras que cualquier número real funciona en la segunda.",
+    "Ambas ecuaciones tienen la solución única x = 0."
+  ],
+  [
+    "El precio de 100 cae un 20% y luego sube un 20%. Da el precio final y explica por qué los cambios no se cancelan.",
+    "El precio final es 96.",
+    "El aumento se calcula sobre 80, una base menor que el original 100.",
+    "Termina en noventa y seis porque el aumento es una quinta parte de ochenta, no una quinta parte del cien original.",
+    "Regresa a 100 porque aumentos y disminuciones porcentuales iguales siempre se cancelan."
+  ],
+  [
+    "Compara 3/4 y 5/8. Indica cuál es mayor y muestra cómo reescribir 3/4 con denominador 8.",
+    "La fracción 3/4 es mayor que 5/8.",
+    "Con denominador 8, 3/4 es igual a 6/8.",
+    "Tres cuartos gana: escrito en octavos es seis octavos, comparado con cinco octavos.",
+    "Cinco octavos es mayor porque 5 es mayor que 3, y 3/4 es igual a 3/8."
+  ],
+  [
+    "Una tasa aumenta del 20% al 25%. Da el aumento en puntos porcentuales y el aumento porcentual relativo.",
+    "El aumento es de 5 puntos porcentuales.",
+    "El aumento relativo es el 25% de la tasa original.",
+    "Las tasas difieren en cinco puntos, y ese cinco es una cuarta parte del veinte por ciento original.",
+    "Sube 25 puntos porcentuales, equivalente a un aumento relativo del 5%."
+  ],
+  [
+    "Una clase de 10 estudiantes tiene promedio 60 y una clase de 30 tiene promedio 80. Da la media combinada y explica la ponderación.",
+    "La media combinada es 75.",
+    "Las medias de las clases deben ponderarse por sus respectivos conteos de estudiantes, 10 y 30.",
+    "El promedio general es setenta y cinco; la clase más grande aporta el triple de peso que la más pequeña.",
+    "La media es 70 porque cada clase siempre debe tener peso igual independientemente del tamaño."
+  ],
+  [
+    "Los datos 2, 3, 4 se convierten en 2, 3, 100. Indica qué pasa con la media y qué pasa con la mediana.",
+    "La media aumenta de 3 a 35.",
+    "La mediana permanece en 3.",
+    "El promedio salta a treinta y cinco desde tres, pero el valor central se queda en tres.",
+    "Tanto la media como la mediana se convierten en 100."
+  ],
+  [
+    "Para eventos A y B con probabilidades no nulas, distingue entre independencia y exclusividad mutua.",
+    "La independencia significa que saber que ocurrió un evento no cambia la probabilidad del otro.",
+    "La exclusividad mutua significa que los dos eventos no pueden ocurrir juntos.",
+    "Los eventos independientes dejan sin cambiar las probabilidades del otro; los eventos mutuamente excluyentes no tienen ocurrencia compartida.",
+    "Los eventos independientes nunca pueden ocurrir juntos, mientras que los eventos mutuamente excluyentes siempre deben ocurrir juntos."
+  ],
+  [
+    "Un grupo tiene 12 ciclistas, incluidos 3 que usan rojo, y 8 no ciclistas. Entre los ciclistas, ¿cuál es la probabilidad de usar rojo y qué grupo proporciona el denominador?",
+    "La probabilidad condicional es 3/12, o 1/4.",
+    "El denominador cuenta los 12 ciclistas, porque la condición restringe el grupo a ciclistas.",
+    "La probabilidad es una cuarta parte: dividimos por los doce ciclistas en lugar de todos en el grupo.",
+    "La probabilidad es 3/20 porque la condición nunca cambia el denominador."
+  ],
+  [
+    "Una tasa de evento cambia de 1 en 1000 a 2 en 1000. Da el aumento relativo y el aumento absoluto en eventos por 1000.",
+    "El aumento relativo es 100%.",
+    "El aumento absoluto es 1 evento por 1000.",
+    "La tasa se duplica, por lo que el aumento relativo es cien por ciento, mientras que solo ocurre un evento adicional por mil.",
+    "El aumento relativo es 1%, y el aumento absoluto es 1000 eventos por 1000."
+  ],
+  [
+    "Una biblioteca estima los hábitos de lectura de todos los residentes encuestando solo a las personas que salen de la biblioteca. Identifica el problema de selección y su dirección probable.",
+    "La muestra excluye a los residentes que no visitan la biblioteca y no es representativa de todos los residentes.",
+    "Es probable que sobrerrepresente a las personas que leen o usan los servicios de la biblioteca con frecuencia.",
+    "Los no visitantes quedan fuera, por lo que las respuestas pueden hacer que la lectura frecuente parezca más común de lo que es entre todos los residentes.",
+    "La muestra es representativa porque todos estaban cerca de la biblioteca, y debe subestimar la lectura."
+  ],
+  [
+    "Una encuesta encuentra que los estudiantes que asisten a tutoría opcional tienen calificaciones más altas. Establece qué demuestra la encuesta y una razón por la que no prueba que la tutoría causó la diferencia.",
+    "La encuesta establece una asociación entre la asistencia a tutoría y calificaciones más altas.",
+    "Otras diferencias, como el rendimiento previo o la motivación, podrían explicar la asociación.",
+    "La asistencia y las calificaciones varían juntas, pero la capacidad preexistente o la motivación podrían explicar la brecha.",
+    "La encuesta prueba que la tutoría causó cada aumento de calificación porque los factores de confusión no pueden afectar las encuestas."
+  ],
+  [
+    "Una afirmación dice que todo número primo es impar. Explica qué muestra el ejemplo 2 y por qué un solo ejemplo basta.",
+    "El número 2 es primo y par, por lo que la afirmación es falsa.",
+    "Una afirmación universal se refuta con un solo caso que la viola.",
+    "El dos es un primo par, lo cual invalida la declaración; una afirmación de todos los casos necesita solo una excepción para fallar.",
+    "El dos es impar, y refutar una afirmación universal requiere verificar cada número posible."
+  ],
+  [
+    "Para los enteros, compara 'divisible por 4' con 'par'. Establece la implicación que siempre se cumple y si su recíproca se cumple.",
+    "Un entero divisible por 4 siempre es par.",
+    "La recíproca falla porque algunos enteros pares, como 2, no son divisibles por 4.",
+    "Un múltiplo de cuatro debe ser par, pero un número par no necesariamente es un múltiplo de cuatro, como lo demuestra dos.",
+    "Cada entero par es divisible por 4, mientras que los múltiplos de 4 pueden ser impares."
+  ],
+  [
+    "Describe las dos obligaciones en una demostración por inducción para una afirmación P(n) sobre enteros n >= 1.",
+    "El caso base debe establecer P(1).",
+    "El paso inductivo debe establecer P(k+1) asumiendo P(k) para un entero arbitrario k >= 1.",
+    "Primero verifica la afirmación en uno; luego muestra que su verdad en cualquier k permitido garantiza la verdad en el siguiente entero.",
+    "Probar P(1) por sí solo demuestra todos los casos, y el paso del caso siguiente debe asumir P(k+1) para probarse a sí mismo."
+  ],
+  [
+    "El costo de un taxi es F = 3d + 5, donde d es la distancia en kilómetros. Interpreta la pendiente y la ordenada en el origen.",
+    "El costo aumenta en 3 unidades monetarias por cada kilómetro adicional.",
+    "La ordenada en el origen, 5, es el costo a distancia cero y representa la tarifa fija.",
+    "Cada kilómetro extra agrega tres unidades, y cinco unidades se cobran antes de viajar cualquier distancia.",
+    "La pendiente significa una tarifa fija de 3, y la ordenada en el origen significa 5 unidades por kilómetro."
+  ],
+  [
+    "Explica por qué la pendiente de una línea vertical es indefinida. Establece el cambio en x entre dos puntos distintos y la regla relevante sobre la división.",
+    "Dos puntos distintos en una línea vertical tienen un cambio de cero en x.",
+    "La división por cero es indefinida.",
+    "El cambio horizontal es cero entre puntos distintos, y dividir por ese recorrido cero no tiene un resultado definido.",
+    "El cambio horizontal es no nulo, y la división por cero siempre da cero."
+  ],
+  [
+    "Compare las secuencias 2, 5, 8, 11 y 2, 6, 18, 54 indicando la regla que hace que cada una sea aritmética o geométrica.",
+    "La primera es aritmética porque los términos consecutivos difieren en 3.",
+    "La segunda es geométrica porque los términos consecutivos tienen una razón de 3.",
+    "Sumar tres produce cada nuevo término de la primera secuencia, mientras que multiplicar por tres produce cada nuevo término de la segunda.",
+    "La primera es geométrica porque su razón es 3, y la segunda es aritmética porque su diferencia es 3."
+  ],
+  [
+    "Una población se multiplica por 1.1 cada año. Indica su cambio proporcional anual y explica por qué el aumento numérico no es constante.",
+    "La población crece un 10% cada año.",
+    "El aumento de cada año se calcula a partir de una base de población cambiante, por lo que el número añadido varía.",
+    "Sube una décima parte anualmente, y el número añadido crece porque esa décima se toma de una población más grande cada año.",
+    "Crece exactamente 1.1 individuos por año porque multiplicar por un factor fijo siempre suma un número fijo."
+  ],
+  [
+    "Interpreta log_2(8) = 3 como una igualdad exponencial e indica la restricción de dominio del argumento de un logaritmo real.",
+    "La declaración exponencial correspondiente es 2^3 = 8.",
+    "El argumento de un logaritmo real debe ser positivo.",
+    "Dos elevado a la tercera potencia da ocho; sobre los números reales, un logaritmo solo puede tomar una entrada positiva.",
+    "Significa que 3^2 = 8, y los logaritmos reales permiten argumentos cero y negativos."
+  ],
+  [
+    "Sea f(x) = x^2. Escriba f(x+h) y f(x)+h explícitamente.",
+    "La expresión f(x+h) es x^2 + 2xh + h^2.",
+    "La expresión f(x)+h es x^2 + h.",
+    "Aplicar f después de sumar h da el cuadrado de x+h, es decir, x al cuadrado más dos veces xh más h al cuadrado; sumar h después de f da x al cuadrado más h.",
+    "Ambas expresiones son iguales a x^2 + h^2."
+  ],
+  [
+    "Una función s(t) da la posición en metros en el tiempo t en segundos. Interprete s'(t) y dé sus unidades.",
+    "La derivada s'(t) es la velocidad instantánea.",
+    "Sus unidades son metros por segundo.",
+    "Indica la tasa de cambio de la posición en ese instante, medida en m/s.",
+    "Es la distancia total acumulada, medida en metros cuadrados."
+  ],
+  [
+    "Una función diferenciable tiene f'(x) > 0 en (0, 2) y f'(x) < 0 en (2, 4). Describa su comportamiento en cada intervalo.",
+    "La función es creciente en (0, 2).",
+    "La función es decreciente en (2, 4).",
+    "A medida que x aumenta a través de (0, 2), la función crece; a medida que x aumenta a través de (2, 4), decrece.",
+    "Decrece en ambos intervalos porque la derivada cambia de signo."
+  ],
+  [
+    "Use f(x) = x^3 para explicar por qué f'(0) = 0 no garantiza un máximo o mínimo local.",
+    "Para esta función, f'(0) es igual a 0.",
+    "La función sigue aumentando a través de 0, por lo que 0 no es un extremo local.",
+    "La tangente es horizontal en cero, pero la función cúbica sigue creciendo al pasar por ese punto, por lo que allí no hay ni un máximo ni un mínimo local.",
+    "Su derivada en cero es 3 y el origen es un máximo local estricto."
+  ],
+  [
+    "Un gráfico está por encima del eje x con área 7 y por debajo con área 3 en un intervalo. Dé la integral definida con signo y el área geométrica total.",
+    "La integral definida con signo es 4.",
+    "El área geométrica total es 10.",
+    "El área neta con signo es siete menos tres, o cuatro; el área total cuenta ambas regiones positivamente y es diez.",
+    "La integral es 10 y el área geométrica total es 4."
+  ],
+  [
+    "Derive (3x + 1)^2 e identifique el factor de la función interna proporcionado por la regla de la cadena.",
+    "La derivada es 6(3x + 1).",
+    "La derivada interna aporta un factor de 3.",
+    "El resultado es el doble de (3x+1) multiplicado por tres, dando seis veces (3x+1); tres proviene de derivar el interior.",
+    "La derivada es 2(3x+1) y la derivada interna aporta un factor de 1."
+  ],
+  [
+    "Dé la integral indefinida general de 2x y diga qué sucede con su constante aditiva al derivar.",
+    "La antiderivada general es x^2 + C.",
+    "Derivar la constante aditiva da cero.",
+    "La integral es x al cuadrado más una constante arbitraria, y ese número fijo desaparece al derivar.",
+    "La integral es 2x^2 sin constante, y la derivada de C es igual a C."
+  ],
+  [
+    "En x = 0, compara la continuidad y la diferenciabilidad de f(x) = |x|.",
+    "La función es continua en 0.",
+    "No es diferenciable en 0 porque las pendientes izquierda y derecha difieren.",
+    "El gráfico no tiene interrupción en el origen, pero su esquina da pendientes unilaterales distintas, por lo que no existe derivada allí.",
+    "Es discontinua en 0 y tiene una derivada de 1 allí."
+  ],
+  [
+    "Si la integral definida de f desde a hasta b es 6, da la integral desde b hasta a y explica el cambio de signo.",
+    "La integral desde b hasta a es -6.",
+    "Invertir los límites de integración invierte la orientación de la acumulación y por tanto el signo.",
+    "Se vuelve menos seis porque la misma acumulación se recorre en dirección opuesta.",
+    "Se mantiene 6 porque el orden de los límites de la integral definida nunca importa."
+  ],
+  [
+    "Dos triángulos semejantes tienen lados correspondientes 3 y 9. Un segundo lado del triángulo menor es 4. Da el factor de escala y el lado mayor correspondiente.",
+    "El factor de escala del triángulo menor al mayor es 3.",
+    "El lado mayor correspondiente es 12.",
+    "Las longitudes del triángulo grande son el triple de las del pequeño, por lo que el lado correspondiente al de longitud cuatro mide doce.",
+    "El factor de escala es 6 y el lado correspondiente es 10."
+  ],
+  [
+    "Cada longitud de una figura plana se multiplica por 3. Indica el factor de escala del área y explica por qué no es 3.",
+    "El área se multiplica por 9.",
+    "El área involucra dos dimensiones de longitud, por lo que el factor de longitud se eleva al cuadrado.",
+    "Su área pasa a ser nueve veces la original porque las dos dimensiones lineales independientes se triplican.",
+    "El área se multiplica por 3 porque el área depende de solo una dimensión de longitud."
+  ],
+  [
+    "Cada longitud de un sólido se duplica. Indica el factor de escala del volumen y explícalo usando dimensiones.",
+    "El volumen se multiplica por 8.",
+    "El volumen involucra tres dimensiones de longitud, por lo que el factor de longitud se eleva al cubo.",
+    "Hay ocho veces el volumen porque duplicar cada una de las tres dimensiones da 2 por 2 por 2.",
+    "El volumen solo se duplica porque un sólido tiene una dimensión de longitud."
+  ],
+  [
+    "Un rectángulo cambia de 2 por 6 a 3 por 5. Compara los perímetros y las áreas.",
+    "Ambos rectángulos tienen perímetro 16.",
+    "El área aumenta de 12 a 15.",
+    "La longitud del borde se mantiene en dieciséis, pero el área encerrada crece de doce a quince.",
+    "El perímetro aumenta de 12 a 15 y el área se mantiene en 16."
+  ],
+  [
+    "Establece la condición para usar a^2 + b^2 = c^2 para encontrar un lado de un triángulo, y indica si c es el lado más largo o el más corto.",
+    "El triángulo debe ser rectángulo.",
+    "El lado c es el lado más largo.",
+    "Esta relación se aplica a un triángulo rectángulo, con c etiquetando su lado más largo.",
+    "Se aplica a todo triángulo, y c debe ser su lado más corto."
+  ],
+  [
+    "Un círculo tiene diámetro 10. Da su radio y su área en términos de pi.",
+    "El radio es 5.",
+    "El área es 25 pi.",
+    "El radio es la mitad del diámetro, o cinco, y pi multiplicado por su cuadrado es veinticinco pi.",
+    "El radio es 10 y el área es 100 pi."
+  ],
+  [
+    "Convierte 180 grados a radianes y explica los radianes usando la longitud del arco y el radio.",
+    "Un ángulo de 180 grados es pi radianes.",
+    "Un ángulo en radianes es igual a la longitud del arco interceptado dividida por el radio.",
+    "Un giro de medio círculo mide pi radianes; la medida en radianes es la longitud del arco relativa al radio del círculo.",
+    "Un giro de medio círculo es 2 pi radianes, y los radianes son el radio dividido por la longitud del arco."
+  ],
+  [
+    "Un vector tiene componentes perpendiculares 3 y 4. Da su magnitud y explica por qué no es la suma de los componentes.",
+    "La magnitud del vector es 5.",
+    "Las componentes perpendiculares se combinan mediante la raíz cuadrada de la suma de los cuadrados, no mediante una suma ordinaria.",
+    "Su longitud es cinco, encontrada desde la hipotenusa del triángulo de los componentes en lugar de sumar tres y cuatro.",
+    "Su magnitud es 7 porque las componentes perpendiculares deben sumarse directamente."
+  ],
+  [
+    "Dos vectores euclidianos no nulos tienen producto punto cero. Indica su relación angular y explica por qué importa que los vectores no sean nulos.",
+    "Los vectores son perpendiculares.",
+    "El vector cero tiene producto punto cero con todo vector pero no define una dirección para esta conclusión angular.",
+    "Se encuentran en un ángulo recto; excluir el vector cero importa porque no tiene dirección a pesar de dar siempre producto punto cero.",
+    "Deben ser paralelos, y el vector cero tiene una dirección única perpendicular a todos los vectores."
+  ],
+  [
+    "Sea A una rotación y B un estiramiento. Explica el orden de aplicar AB a un vector columna y si AB debe ser igual a BA.",
+    "En ABv, B actúa sobre el vector primero y A actúa segundo.",
+    "Los productos AB y BA no necesitan ser iguales porque el orden de las transformaciones puede cambiar el resultado.",
+    "Estirar primero y rotar después; intercambiar esos pasos puede producir una transformación diferente.",
+    "ABv aplica A primero, y todas las transformaciones matriciales conmutan."
+  ],
+  [
+    "Una matriz cuadrada A es singular. Indica su determinante y cuántas soluciones puede tener Ax = b.",
+    "El determinante de A es cero.",
+    "Dependiendo de b, el sistema no tiene soluciones o tiene infinitas soluciones.",
+    "Su determinante se anula, y el lado derecho determina si el sistema es inconsistente o tiene una familia infinita de soluciones.",
+    "El determinante debe ser igual a 1, y todo sistema singular tiene exactamente una solución."
+  ],
+  [
+    "Da el conjugado complejo de 3 + 4i y el producto de ese número con su conjugado.",
+    "El conjugado es 3 - 4i.",
+    "El producto es 25.",
+    "Cambiar el signo de la parte imaginaria da tres menos cuatro i; multiplicar el par da veinticinco.",
+    "El conjugado es -3 + 4i, y su producto es -25."
+  ],
+  [
+    "Una fórmula propuesta de velocidad es distancia por tiempo. Da las unidades de esa expresión y explica por qué no son unidades de velocidad.",
+    "Distancia por tiempo tiene unidades de longitud multiplicada por tiempo, como metro-segundos.",
+    "La velocidad requiere longitud dividida por tiempo, como metros por segundo.",
+    "La multiplicación produce m s, mientras que una velocidad debe tener m/s, por lo que las dimensiones de la fórmula están mal.",
+    "Distancia por tiempo tiene unidades de m/s, por lo que siempre es una fórmula de velocidad válida."
+  ],
+  [
+    "Para estimar 3 veces 1/3, alguien redondea 1/3 a 0.3 antes de multiplicar. Indique el error resultante y cómo evitarlo retrasando el redondeo.",
+    "El redondeo temprano da 0.9 en lugar del resultado exacto 1.",
+    "Mantener la fracción exacta hasta el cálculo final evita el error de redondeo acumulado en este ejemplo.",
+    "Redondear primero pierde una décima en el resultado final; retener un tercio hasta la multiplicación da exactamente uno.",
+    "Redondear primero da exactamente 1, y retener fracciones exactas hace que el resultado sea menos preciso."
+  ],
+  [
+    "Calcule 1/3 - 0.333 exactamente y explique cómo 0.333 se relaciona con la expansión decimal de 1/3.",
+    "La diferencia exacta es 1/3000.",
+    "El decimal 0.333 es una aproximación finita a la expansión decimal no terminante y recurrente de 1/3.",
+    "Los separa una diferencia de 1/3000; tres cifras decimales solo aproximan la expansión decimal de un tercio, que se repite sin fin.",
+    "La diferencia es cero porque cada fracción tiene una expansión decimal de tres dígitos que termina."
+  ],
+  [
+    "Calcule (2/3) dividido por (4/5) y indique la multiplicación por el recíproco utilizada.",
+    "El resultado es 5/6.",
+    "El cálculo multiplica 2/3 por el recíproco 5/4.",
+    "Multiplique dos tercios por cinco cuartos para obtener diez doceavos, o cinco sextos.",
+    "El resultado es 8/15 porque dividir por una fracción significa multiplicar por esa misma fracción."
+  ],
+  [
+    "Una bolsa contiene 3 bolas rojas y 2 azules. Después de sacar una bola roja sin reemplazo, dé la probabilidad de la siguiente roja y explique por qué los sorteos son dependientes.",
+    "La probabilidad de la siguiente roja es 2/4, o 1/2.",
+    "El primer sorteo cambia la composición de la bolsa, por lo que cambia la probabilidad del siguiente sorteo.",
+    "La probabilidad pasa a ser un medio porque sacar una bola roja cambia lo que queda en la bolsa.",
+    "Se mantiene 3/5 porque los sorteos sin reemplazo siempre son independientes."
+  ],
+  [
+    "Sea f(x) = x + 1 para x < 2 y f(x) = 10 para x >= 2. Dé f(2) e indique qué rama aplica.",
+    "El valor f(2) es 10.",
+    "La segunda rama aplica porque su condición incluye la igualdad en 2.",
+    "En dos la función devuelve diez, ya que dos pertenece a la rama de mayor o igual.",
+    "El valor es 3 porque x < 2 incluye x = 2."
+  ]
 ]

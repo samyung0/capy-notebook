@@ -24,6 +24,9 @@ credentials remain in the existing lab environment.
 `fetch_data.py` records Hugging Face commit IDs and archive digests. It reads
 Parquet and known archive members without executing dataset loader code.
 Question selection uses SHA-256 with seed `capy-broad-20260905-v1`.
+For a byte-identical rerun, use the retained raw cache and metadata, or fetch the
+exact upstream revisions recorded in `results.json`. A fresh metadata download
+can resolve a newer upstream revision.
 
 The 360-query retrieval test retains upstream relevance labels. Unjudged
 documents receive zero relevance, so incomplete judgments can understate useful

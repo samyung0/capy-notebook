@@ -22,7 +22,8 @@
       "!!**/public/mockServiceWorker.js",
       "!!**/src/styles/tailwind.css",
       "!!**/litellm_catalog.json",
-      "!!artifacts/architecture"
+      "!!artifacts/architecture",
+      "!!scripts/grading_benchmark"
     ]
   },
   "linter": {

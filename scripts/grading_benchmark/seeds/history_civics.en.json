@@ -1,52 +1,352 @@
 [
-  ["Classify a letter written during an event and a historian's analysis written a century later as sources for that event.", "The contemporary letter is a primary source.", "The later historical analysis is a secondary source.", "The letter is evidence produced at the time; the historian's later interpretation is secondary evidence.", "The letter is secondary merely because it is handwritten, while every later analysis is automatically primary."],
-  ["Two witnesses give different accounts of one incident. Give one observation-related and one memory-related explanation that does not require fabrication.", "They may have observed the incident from different positions or at different moments.", "Their recollection may differ because memory is incomplete or changes over time.", "Different viewpoints can expose different details, and imperfect later recall can also produce disagreement.", "Every witness sees all details from the same position and human memory is always a perfect permanent recording."],
-  ["An original signed letter is authenticated. Distinguish what authenticity establishes from what it does not establish about the letter's claims.", "Authenticity supports that the document is what it purports to be in origin.", "Its author can still be mistaken, biased, or deceptive about events.", "The letter can be genuine as an artifact while still containing errors or misleading claims by its writer.", "Authenticity proves every statement true and means the document was created by any author at any time."],
-  ["Explain one use and one limitation of a historical population census.", "It can provide organized evidence about the population categories and counts recorded.", "People may be missed or categorized in ways that limit interpretation.", "The census offers systematic recorded counts, but omissions or classification choices can distort the picture.", "A census contains no population information and necessarily records every person perfectly without categories."],
-  ["A mayor writes a campaign leaflet addressed to voters. Identify the audience and one likely effect on wording.", "The intended audience is the electorate or voters.", "The wording may emphasize achievements to persuade readers to support the mayor.", "It addresses people who vote and may present the mayor's record favorably to win their backing.", "The audience is only the mayor's private diary, so the leaflet cannot have any persuasive purpose."],
-  ["Why can a biased propaganda poster still be useful historical evidence? State what it can reveal and a limit on treating its claims as fact.", "It can reveal messages, goals, or attitudes its producer wanted to promote.", "Its factual claims require critical checking rather than automatic acceptance.", "The poster shows the ideas its makers tried to spread, while independent checking is needed before trusting its assertions.", "Bias makes a poster reveal nothing at all, and propaganda claims should always be accepted without checking."],
-  ["A diary says the writer believed a comet caused a crop failure. Distinguish evidence about belief from evidence about causation.", "The diary is evidence that the writer expressed that belief.", "The statement alone does not demonstrate that the comet caused the crop failure.", "It records the author's expressed conviction, but it is insufficient to prove the proposed causal connection.", "The diary proves the comet caused the failure and shows that the writer never held that belief."],
-  ["Two independently produced records report the same event detail. Explain corroboration and why independence matters.", "Agreement can strengthen support for that detail.", "Independent production reduces the chance that agreement merely repeats one source's error.", "Matching accounts lend support to the claim, and separate origins make simple copying of the same mistake less likely.", "Agreement always weakens evidence, and independence means one record was copied directly from the other."],
-  ["Two newspapers copied the same wire report. Identify their shared source and suggest one kind of independent evidence that would help check the report.", "Both claims derive from the same original report.", "An independently recorded firsthand account could help check the report.", "Both articles repeat a single wire report; a separately recorded witness account would provide an additional check.", "Copying creates a new eyewitness at each newspaper and guarantees every copied claim is correct."],
-  ["No surviving record mentions a village festival. Explain a possible preservation issue and the justified limit of a conclusion.", "Relevant records may have been lost or never created.", "The surviving silence alone does not prove the festival never happened.", "Documentation may be missing or unwritten, so absence from surviving sources cannot by itself establish nonoccurrence.", "All past events were perfectly recorded forever, so lack of a record proves the festival was impossible."],
-  ["A strike occurred before a factory closed. Distinguish the established sequence from the additional causal claim.", "The strike preceded the closure.", "That sequence alone does not show that the strike caused the closure.", "The strike came earlier, but timing by itself is insufficient evidence that it brought about the shutdown.", "The closure came first, and mere timing proves the factory could have had no other reason to close."],
-  ["In a fictional account, years of crop failures create discontent, and a new tax announcement sparks a revolt. Identify the longer-term condition and immediate trigger.", "The repeated crop failures are a longer-term condition.", "The new tax announcement is the immediate trigger in the account.", "Years of failed harvests form the background, while the tax announcement sparks the revolt at that moment.", "The tax announcement lasted for years, and the crop failures first began after the revolt ended."],
-  ["Before a reform, a town council has six appointed members. Afterward it has six elected members. Identify one continuity and one change.", "The council still has six members.", "Selection changes from appointment to election.", "Its size stays at six, but voters now choose the members instead of their being appointed.", "The membership doubles to twelve and appointment remains the selection method."],
-  ["In a fictional account, a drought reduces the harvest, which causes food prices to rise. Identify the stated cause of the poor harvest and one consequence of that poor harvest.", "Drought is the stated cause of the reduced harvest.", "Higher food prices are a later consequence described in the account.", "Dry conditions lowered crop output, and the smaller harvest caused food prices to rise.", "Higher prices caused rainfall, and the account says the harvest increased."],
-  ["In a fictional region, job losses increase public discontent, which leaders use to recruit supporters. Explain the economic factor and the political response.", "Loss of employment contributes to discontent.", "Leaders use that discontent to build political support.", "Unemployment fuels dissatisfaction, and political organizers recruit by responding to or exploiting it.", "Employment rose for everyone, and the leaders deliberately refused to seek any supporters."],
-  ["An essay claims an ancient ruler learned of a distant battle by smartphone. Identify the anachronism and a better way to assess possible communication.", "It attributes a modern smartphone to an ancient setting.", "Assessment should use communication technologies available in that historical period.", "The phone belongs to a much later era; the explanation should consider the period's actual communication methods.", "Smartphones were universal in every ancient society, so the period's available technology is irrelevant."],
-  ["Why can applying a modern occupational category directly to an old tax record distort interpretation? Mention changed meanings and an appropriate check.", "The older category may have had a different meaning or scope.", "Its meaning should be examined in the source's historical context.", "The old label may cover different activities, so usage at the time of the record and its historical context must guide interpretation.", "Every word has always had exactly its current meaning, and historical context should be ignored."],
-  ["One village's records show women owning shops. State a supported local conclusion and a limit on national generalization.", "Some women in that village owned shops according to the records.", "That single local example does not establish the same pattern everywhere in the country.", "The evidence supports female shop ownership there, but cannot alone prove a nationwide pattern.", "No women there owned shops, and one village automatically represents every place in the country."],
-  ["Event A lasts from year 10 through year 20, and B from year 15 through year 25. State their overlap and which starts first.", "They overlap from year 15 through year 20.", "Event A starts first.", "Both are underway during years fifteen to twenty, with A beginning before B.", "They never overlap and B starts before A."],
-  ["How can archaeological objects complement a written account? Give a material-evidence use and a possible comparison with the text.", "Objects can provide evidence of material practices such as tools, buildings, or trade.", "Comparing them with the text can support or challenge the written account.", "Physical remains reveal aspects of daily material life and can be checked against documentary claims for agreement or tension.", "Objects can reveal no past activity and must never be compared with written sources."],
-  ["Give one value and one limitation of an oral-history interview about events decades earlier.", "It can preserve a participant's experiences or perspectives missing from written records.", "Memory and later interpretation can alter recalled details.", "An interview can recover an individual's otherwise undocumented perspective, but recollection may change with time and later understanding.", "Oral history cannot contain any personal experience and decades-old memory is always exact."],
-  ["A historical title has no exact equivalent in the translator's language. Explain a translation risk and one way to make it visible.", "A single translated word may omit part of the original title's meaning or social role.", "A note explaining the original term and context can expose that limitation.", "The replacement label may lose contextual meaning, so an explanatory note can clarify the original role and the translation's limits.", "Every title has an exact identical equivalent in every language, so context can never help a reader."],
-  ["An old map colors a territory as belonging to a kingdom. Distinguish the map's claim from evidence of actual control.", "The coloring records the mapmaker's represented or claimed boundary.", "Actual administration or control requires additional supporting evidence.", "The map depicts an asserted territory, but proof that officials really governed it needs other evidence.", "Color on a map guarantees perfect control over every resident and never expresses a mapmaker's claim."],
-  ["A law banned an activity in a historical city. What does the text establish, and what further issue must be investigated?", "It establishes the rule formally stated in that law.", "Its actual enforcement and compliance must be investigated separately.", "The written ban records a formal requirement; evidence of whether people followed it or officials enforced it is a separate matter.", "Writing a law proves no one ever broke it and tells us nothing about the stated rule."],
-  ["A ruler announces a road to help trade, but the account says it also lets soldiers move faster. Identify the announced aim and another stated consequence.", "Helping trade is the announced aim.", "Faster troop movement is another consequence described.", "The ruler says the road serves commerce, while it also improves military movement in the account.", "The announced aim was to stop all trade, and soldiers became unable to travel on it."],
-  ["In a fictional constitution, each district elects one delegate who votes in an assembly. Explain how a district is represented and where the delegate exercises the vote.", "The district chooses its delegate by election.", "The delegate votes in the assembly on the district's behalf.", "Voters select one representative for their district, and that representative casts votes in the common assembly.", "The district has no election, and its delegate is prohibited from voting in the assembly."],
-  ["In a fictional system, the assembly writes rules and a court interprets them. Identify the distinct functions of the two branches.", "The assembly makes the rules.", "The court interprets the rules in the stated system.", "Rulemaking belongs to the assembly, while interpretation belongs to the court.", "The court alone writes every rule and the assembly's sole function is interpreting court cases."],
-  ["In a fictional system a governor can veto a bill, and two-thirds of the assembly can override. Identify one check on each institution.", "The governor's veto checks the assembly's bill-making power.", "The assembly's override checks the governor's veto power.", "A veto can block the assembly, but a two-thirds override can overcome the governor's block.", "The governor can never block a bill and the assembly can never overcome a veto."],
-  ["A fictional charter protects each club's meeting right even when most residents dislike it. Distinguish majority preference from the protected right.", "Most residents may prefer that the club not meet.", "The stated charter still protects the club's meeting right.", "Majority opinion can oppose the meetings, yet the charter's protection continues to apply to that club.", "Dislike automatically removes every charter right, and the scenario says all residents support the club."],
-  ["A fictional hearing rule requires notice of an allegation and a chance to respond. State those two procedural protections.", "The person must be informed of the allegation.", "The person must have an opportunity to answer it.", "They receive notice of the claim and are allowed to present a response before the decision.", "The claim must be hidden from the person, who must never be allowed to respond."],
-  ["Distinguish an allegation from an evidence-supported finding in a fictional review process.", "An allegation is a claim that something happened or a rule was broken.", "A finding is the review's conclusion based on its assessed evidence.", "The allegation asserts an event; the finding follows the examination and assessment of evidence.", "Every allegation is automatically a proven finding, even when no evidence has been considered."],
-  ["A committee member helps choose a contractor while secretly owning one bidding firm. Identify the conflicting interest and its relevance.", "The member has a private financial interest in a bidder's success.", "That interest can compromise impartial selection of the contractor.", "Their ownership creates a personal stake, which may bias the supposedly impartial contract decision.", "Owning a bidder removes every private interest and guarantees complete impartiality."],
-  ["A fictional council publishes its spending decisions but redacts residents' private identifiers. Explain the transparency function and the privacy protection.", "Publishing decisions helps the public scrutinize how money is used.", "Redacting private identifiers limits unnecessary disclosure of personal information.", "People can examine spending choices while residents' identifying details are withheld to protect privacy.", "Transparency requires concealing every decision and publishing all private identifiers without restriction."],
-  ["A fictional decision process records reasons and allows an appeal. Explain the role of the written reasons and the appeal.", "Written reasons let others examine the basis of the decision.", "An appeal provides a route to challenge or review the decision.", "The explanation makes the decision's basis inspectable, and the appeal offers a way to contest it.", "Written reasons prevent anyone understanding the basis, and an appeal means the decision can never be examined again."],
-  ["Under fictional rules, a consultation collects advice while a referendum result binds the council. Distinguish their effects.", "Consultation responses inform the council without automatically deciding the outcome.", "The referendum result determines the outcome under the stated binding rule.", "Consultation is advisory; the council must follow the referendum result under these rules.", "Every consultation vote is binding, while this referendum can always be ignored by the council."],
-  ["Of 1,000 eligible voters, 600 vote and 240 vote for A. Calculate turnout and A's share of votes cast.", "Turnout is 60%.", "A receives 40% of votes cast.", "Six tenths of eligible voters participate, and A wins four tenths of the ballots cast.", "Turnout is 24% and A's vote share is 60%."],
-  ["Candidates receive 40%, 35%, and 25% of votes. Does the first candidate have a plurality and an absolute majority?", "The first candidate has a plurality because their share is the largest.", "They do not have an absolute majority because 40% is not more than half.", "Forty percent leads the field, but it is below the threshold of over fifty percent.", "Forty percent is not the largest share and it exceeds half of all votes."],
-  ["A fictional proportional rule gives 10 seats exactly according to vote shares of 60% for A and 40% for B. Allocate seats to each.", "A receives 6 seats.", "B receives 4 seats.", "Six of the ten seats go to A and the remaining four go to B.", "A receives all ten seats and B receives six additional seats."],
-  ["A prefers a park and B prefers a library; they agree on the budget. Contrast their disagreement with contradictory claims about the budget number.", "Their park-versus-library disagreement can concern different priorities or values.", "Incompatible claims about one specified budget figure concern factual accuracy.", "The preference dispute is about what to prioritize, whereas different asserted amounts for the same budget require checking facts.", "Different preferences cannot coexist, and every budget number is merely a personal taste that evidence cannot address."],
-  ["In 'The plan costs 20 units and is the fairest option,' identify the factual claim and the value judgment.", "The claim that the plan costs 20 units is factual and can be checked.", "Calling it the fairest option is a value judgment.", "The twenty-unit price is a checkable assertion; judging the option fairest expresses an evaluation.", "The cost is only an uncheckable preference, while fairness is the stated exact price."],
-  ["A fictional town invites residents to submit proposals at open meetings between elections. Name this participation route and one way it can affect discussion.", "Residents can attend the open meetings and submit proposals.", "Their proposals can place concerns or alternatives before decision-makers.", "They participate through meeting submissions, which bring their issues or suggested options into public consideration.", "The town prohibits all participation between elections and residents cannot raise any concern."],
-  ["A fictional community encourages litter pickup but has no rule requiring it. Distinguish the encouraged civic action from a legal obligation under these facts.", "Litter pickup is encouraged as a community contribution.", "It is not a legal requirement under the stated rules.", "Helping clean is promoted as a civic contribution, but the scenario supplies no law compelling it.", "Litter pickup is a mandatory criminal penalty here and is explicitly discouraged by the community."],
-  ["A freely accessible public path is maintained by voluntary contributions. Explain the possible benefit to noncontributors and the resulting free-rider problem.", "People may use the path without contributing to its maintenance.", "If many rely on others to pay, contributions may be insufficient to maintain it.", "Nonpayers can still enjoy the path, creating an incentive to leave funding to others and risking underfunding.", "Only contributors can ever access the freely accessible path, and refusing to contribute automatically increases maintenance funding."],
-  ["A building has stairs at its only entrance, excluding wheelchair users. Explain equal nominal access and one accommodation addressing the barrier.", "Permission for everyone to enter does not remove the physical stair barrier.", "An accessible ramp or lift can provide a usable entrance for wheelchair users.", "The same invitation leaves the stairs unusable for some people; a suitable ramp or lift addresses that obstacle.", "Stairs are automatically usable by every wheelchair, so adding more stairs removes the access barrier."],
-  ["A town survey is answered only by volunteers. Explain a selection issue and suggest a different recruitment method that can reduce reliance on self-selection.", "People who volunteer may differ systematically from those who do not.", "Invite a randomly selected sample of town residents rather than relying only on volunteers.", "Volunteers may be a distinctive group; randomly selecting residents to invite reduces reliance on people choosing themselves.", "Volunteering guarantees a random sample of every resident and removes all possible selection bias."],
-  ["A fictional budget allocates 40 units to schools, 30 to roads and 30 to parks. State the total and the schools' share.", "The total is 100 units.", "Schools receive 40% of the total.", "The allocations add to one hundred, with schools taking two-fifths of it.", "The total is 70 and schools receive 70% of it."],
-  ["A fictional fee reduces car use as intended but also reduces visits to small shops. Identify the intended effect and the other reported effect.", "Reduced car use is the intended effect.", "Reduced visits to small shops are another reported effect.", "The fee aims to cut driving, while the account also reports fewer shop visits.", "The intended effect is more driving, and the account reports a rise in shop visits."],
-  ["Crime falls after a fictional policy starts. Give one reason timing is insufficient to show causation and one useful comparison.", "Other changes could explain the fall.", "A suitable comparison with similar places or periods without the policy can help assess its effect.", "An alternative cause may account for the decline; comparison with a relevant untreated setting can improve the evidence.", "Timing alone excludes every other cause, so comparison data can never be useful."],
-  ["A map shades districts by average income. State what the shading summarizes and why it does not establish each resident's income.", "It summarizes the district-level average income.", "Individual incomes can vary within a district.", "The color represents an area average, while residents within that area may earn very different amounts.", "Every resident has exactly the shaded average and district averages contain no area-level information."],
-  ["One record reports 20 attendees, another reports 30, and neither can be preferred. Give a cautious conclusion and identify the remaining uncertainty.", "The sources agree that the event had attendees, while reporting different counts.", "The exact attendance cannot be settled from these two conflicting records alone.", "Both accounts indicate attendance, but their disagreement leaves the precise number unresolved.", "The evidence proves exactly 50 attended because the two reports must be added together."]
+  [
+    "Classify a letter written during an event and a historian's analysis written a century later as sources for that event.",
+    "The contemporary letter is a primary source.",
+    "The later historical analysis is a secondary source.",
+    "The letter is evidence produced at the time; the historian's later interpretation is secondary evidence.",
+    "The letter is secondary merely because it is handwritten, while every later analysis is automatically primary."
+  ],
+  [
+    "Two witnesses give different accounts of one incident. Give one observation-related and one memory-related explanation that does not require fabrication.",
+    "They may have observed the incident from different positions or at different moments.",
+    "Their recollection may differ because memory is incomplete or changes over time.",
+    "Different viewpoints can expose different details, and imperfect later recall can also produce disagreement.",
+    "Every witness sees all details from the same position and human memory is always a perfect permanent recording."
+  ],
+  [
+    "An original signed letter is authenticated. Distinguish what authenticity establishes from what it does not establish about the letter's claims.",
+    "Authenticity supports that the document is what it purports to be in origin.",
+    "Its author can still be mistaken, biased, or deceptive about events.",
+    "The letter can be genuine as an artifact while still containing errors or misleading claims by its writer.",
+    "Authenticity proves every statement true and means the document was created by any author at any time."
+  ],
+  [
+    "Explain one use and one limitation of a historical population census.",
+    "It can provide organized evidence about the population categories and counts recorded.",
+    "People may be missed or categorized in ways that limit interpretation.",
+    "The census offers systematic recorded counts, but omissions or classification choices can distort the picture.",
+    "A census contains no population information and necessarily records every person perfectly without categories."
+  ],
+  [
+    "A mayor writes a campaign leaflet addressed to voters. Identify the audience and one likely effect on wording.",
+    "The intended audience is the electorate or voters.",
+    "The wording may emphasize achievements to persuade readers to support the mayor.",
+    "It addresses people who vote and may present the mayor's record favorably to win their backing.",
+    "The audience is only the mayor's private diary, so the leaflet cannot have any persuasive purpose."
+  ],
+  [
+    "Why can a biased propaganda poster still be useful historical evidence? State what it can reveal and a limit on treating its claims as fact.",
+    "It can reveal messages, goals, or attitudes its producer wanted to promote.",
+    "Its factual claims require critical checking rather than automatic acceptance.",
+    "The poster shows the ideas its makers tried to spread, while independent checking is needed before trusting its assertions.",
+    "Bias makes a poster reveal nothing at all, and propaganda claims should always be accepted without checking."
+  ],
+  [
+    "A diary says the writer believed a comet caused a crop failure. Distinguish evidence about belief from evidence about causation.",
+    "The diary is evidence that the writer expressed that belief.",
+    "The statement alone does not demonstrate that the comet caused the crop failure.",
+    "It records the author's expressed conviction, but it is insufficient to prove the proposed causal connection.",
+    "The diary proves the comet caused the failure and shows that the writer never held that belief."
+  ],
+  [
+    "Two independently produced records report the same event detail. Explain corroboration and why independence matters.",
+    "Agreement can strengthen support for that detail.",
+    "Independent production reduces the chance that agreement merely repeats one source's error.",
+    "Matching accounts lend support to the claim, and separate origins make simple copying of the same mistake less likely.",
+    "Agreement always weakens evidence, and independence means one record was copied directly from the other."
+  ],
+  [
+    "Two newspapers copied the same wire report. Identify their shared source and suggest one kind of independent evidence that would help check the report.",
+    "Both claims derive from the same original report.",
+    "An independently recorded firsthand account could help check the report.",
+    "Both articles repeat a single wire report; a separately recorded witness account would provide an additional check.",
+    "Copying creates a new eyewitness at each newspaper and guarantees every copied claim is correct."
+  ],
+  [
+    "No surviving record mentions a village festival. Explain a possible preservation issue and the justified limit of a conclusion.",
+    "Relevant records may have been lost or never created.",
+    "The surviving silence alone does not prove the festival never happened.",
+    "Documentation may be missing or unwritten, so absence from surviving sources cannot by itself establish nonoccurrence.",
+    "All past events were perfectly recorded forever, so lack of a record proves the festival was impossible."
+  ],
+  [
+    "A strike occurred before a factory closed. Distinguish the established sequence from the additional causal claim.",
+    "The strike preceded the closure.",
+    "That sequence alone does not show that the strike caused the closure.",
+    "The strike came earlier, but timing by itself is insufficient evidence that it brought about the shutdown.",
+    "The closure came first, and mere timing proves the factory could have had no other reason to close."
+  ],
+  [
+    "In a fictional account, years of crop failures create discontent, and a new tax announcement sparks a revolt. Identify the longer-term condition and immediate trigger.",
+    "The repeated crop failures are a longer-term condition.",
+    "The new tax announcement is the immediate trigger in the account.",
+    "Years of failed harvests form the background, while the tax announcement sparks the revolt at that moment.",
+    "The tax announcement lasted for years, and the crop failures first began after the revolt ended."
+  ],
+  [
+    "Before a reform, a town council has six appointed members. Afterward it has six elected members. Identify one continuity and one change.",
+    "The council still has six members.",
+    "Selection changes from appointment to election.",
+    "Its size stays at six, but voters now choose the members instead of their being appointed.",
+    "The membership doubles to twelve and appointment remains the selection method."
+  ],
+  [
+    "In a fictional account, a drought reduces the harvest, which causes food prices to rise. Identify the stated cause of the poor harvest and one consequence of that poor harvest.",
+    "Drought is the stated cause of the reduced harvest.",
+    "Higher food prices are a later consequence described in the account.",
+    "Dry conditions lowered crop output, and the smaller harvest caused food prices to rise.",
+    "Higher prices caused rainfall, and the account says the harvest increased."
+  ],
+  [
+    "In a fictional region, job losses increase public discontent, which leaders use to recruit supporters. Explain the economic factor and the political response.",
+    "Loss of employment contributes to discontent.",
+    "Leaders use that discontent to build political support.",
+    "Unemployment fuels dissatisfaction, and political organizers recruit by responding to or exploiting it.",
+    "Employment rose for everyone, and the leaders deliberately refused to seek any supporters."
+  ],
+  [
+    "An essay claims an ancient ruler learned of a distant battle by smartphone. Identify the anachronism and a better way to assess possible communication.",
+    "It attributes a modern smartphone to an ancient setting.",
+    "Assessment should use communication technologies available in that historical period.",
+    "The phone belongs to a much later era; the explanation should consider the period's actual communication methods.",
+    "Smartphones were universal in every ancient society, so the period's available technology is irrelevant."
+  ],
+  [
+    "Why can applying a modern occupational category directly to an old tax record distort interpretation? Mention changed meanings and an appropriate check.",
+    "The older category may have had a different meaning or scope.",
+    "Its meaning should be examined in the source's historical context.",
+    "The old label may cover different activities, so usage at the time of the record and its historical context must guide interpretation.",
+    "Every word has always had exactly its current meaning, and historical context should be ignored."
+  ],
+  [
+    "One village's records show women owning shops. State a supported local conclusion and a limit on national generalization.",
+    "Some women in that village owned shops according to the records.",
+    "That single local example does not establish the same pattern everywhere in the country.",
+    "The evidence supports female shop ownership there, but cannot alone prove a nationwide pattern.",
+    "No women there owned shops, and one village automatically represents every place in the country."
+  ],
+  [
+    "Event A lasts from year 10 through year 20, and B from year 15 through year 25. State their overlap and which starts first.",
+    "They overlap from year 15 through year 20.",
+    "Event A starts first.",
+    "Both are underway during years fifteen to twenty, with A beginning before B.",
+    "They never overlap and B starts before A."
+  ],
+  [
+    "How can archaeological objects complement a written account? Give a material-evidence use and a possible comparison with the text.",
+    "Objects can provide evidence of material practices such as tools, buildings, or trade.",
+    "Comparing them with the text can support or challenge the written account.",
+    "Physical remains reveal aspects of daily material life and can be checked against documentary claims for agreement or tension.",
+    "Objects can reveal no past activity and must never be compared with written sources."
+  ],
+  [
+    "Give one value and one limitation of an oral-history interview about events decades earlier.",
+    "It can preserve a participant's experiences or perspectives missing from written records.",
+    "Memory and later interpretation can alter recalled details.",
+    "An interview can recover an individual's otherwise undocumented perspective, but recollection may change with time and later understanding.",
+    "Oral history cannot contain any personal experience and decades-old memory is always exact."
+  ],
+  [
+    "A historical title has no exact equivalent in the translator's language. Explain a translation risk and one way to make it visible.",
+    "A single translated word may omit part of the original title's meaning or social role.",
+    "A note explaining the original term and context can expose that limitation.",
+    "The replacement label may lose contextual meaning, so an explanatory note can clarify the original role and the translation's limits.",
+    "Every title has an exact identical equivalent in every language, so context can never help a reader."
+  ],
+  [
+    "An old map colors a territory as belonging to a kingdom. Distinguish the map's claim from evidence of actual control.",
+    "The coloring records the mapmaker's represented or claimed boundary.",
+    "Actual administration or control requires additional supporting evidence.",
+    "The map depicts an asserted territory, but proof that officials really governed it needs other evidence.",
+    "Color on a map guarantees perfect control over every resident and never expresses a mapmaker's claim."
+  ],
+  [
+    "A law banned an activity in a historical city. What does the text establish, and what further issue must be investigated?",
+    "It establishes the rule formally stated in that law.",
+    "Its actual enforcement and compliance must be investigated separately.",
+    "The written ban records a formal requirement; evidence of whether people followed it or officials enforced it is a separate matter.",
+    "Writing a law proves no one ever broke it and tells us nothing about the stated rule."
+  ],
+  [
+    "A ruler announces a road to help trade, but the account says it also lets soldiers move faster. Identify the announced aim and another stated consequence.",
+    "Helping trade is the announced aim.",
+    "Faster troop movement is another consequence described.",
+    "The ruler says the road serves commerce, while it also improves military movement in the account.",
+    "The announced aim was to stop all trade, and soldiers became unable to travel on it."
+  ],
+  [
+    "In a fictional constitution, each district elects one delegate who votes in an assembly. Explain how a district is represented and where the delegate exercises the vote.",
+    "The district chooses its delegate by election.",
+    "The delegate votes in the assembly on the district's behalf.",
+    "Voters select one representative for their district, and that representative casts votes in the common assembly.",
+    "The district has no election, and its delegate is prohibited from voting in the assembly."
+  ],
+  [
+    "In a fictional system, the assembly writes rules and a court interprets them. Identify the distinct functions of the two branches.",
+    "The assembly makes the rules.",
+    "The court interprets the rules in the stated system.",
+    "Rulemaking belongs to the assembly, while interpretation belongs to the court.",
+    "The court alone writes every rule and the assembly's sole function is interpreting court cases."
+  ],
+  [
+    "In a fictional system a governor can veto a bill, and two-thirds of the assembly can override. Identify one check on each institution.",
+    "The governor's veto checks the assembly's bill-making power.",
+    "The assembly's override checks the governor's veto power.",
+    "A veto can block the assembly, but a two-thirds override can overcome the governor's block.",
+    "The governor can never block a bill and the assembly can never overcome a veto."
+  ],
+  [
+    "A fictional charter protects each club's meeting right even when most residents dislike it. Distinguish majority preference from the protected right.",
+    "Most residents may prefer that the club not meet.",
+    "The stated charter still protects the club's meeting right.",
+    "Majority opinion can oppose the meetings, yet the charter's protection continues to apply to that club.",
+    "Dislike automatically removes every charter right, and the scenario says all residents support the club."
+  ],
+  [
+    "A fictional hearing rule requires notice of an allegation and a chance to respond. State those two procedural protections.",
+    "The person must be informed of the allegation.",
+    "The person must have an opportunity to answer it.",
+    "They receive notice of the claim and are allowed to present a response before the decision.",
+    "The claim must be hidden from the person, who must never be allowed to respond."
+  ],
+  [
+    "Distinguish an allegation from an evidence-supported finding in a fictional review process.",
+    "An allegation is a claim that something happened or a rule was broken.",
+    "A finding is the review's conclusion based on its assessed evidence.",
+    "The allegation asserts an event; the finding follows the examination and assessment of evidence.",
+    "Every allegation is automatically a proven finding, even when no evidence has been considered."
+  ],
+  [
+    "A committee member helps choose a contractor while secretly owning one bidding firm. Identify the conflicting interest and its relevance.",
+    "The member has a private financial interest in a bidder's success.",
+    "That interest can compromise impartial selection of the contractor.",
+    "Their ownership creates a personal stake, which may bias the supposedly impartial contract decision.",
+    "Owning a bidder removes every private interest and guarantees complete impartiality."
+  ],
+  [
+    "A fictional council publishes its spending decisions but redacts residents' private identifiers. Explain the transparency function and the privacy protection.",
+    "Publishing decisions helps the public scrutinize how money is used.",
+    "Redacting private identifiers limits unnecessary disclosure of personal information.",
+    "People can examine spending choices while residents' identifying details are withheld to protect privacy.",
+    "Transparency requires concealing every decision and publishing all private identifiers without restriction."
+  ],
+  [
+    "A fictional decision process records reasons and allows an appeal. Explain the role of the written reasons and the appeal.",
+    "Written reasons let others examine the basis of the decision.",
+    "An appeal provides a route to challenge or review the decision.",
+    "The explanation makes the decision's basis inspectable, and the appeal offers a way to contest it.",
+    "Written reasons prevent anyone understanding the basis, and an appeal means the decision can never be examined again."
+  ],
+  [
+    "Under fictional rules, a consultation collects advice while a referendum result binds the council. Distinguish their effects.",
+    "Consultation responses inform the council without automatically deciding the outcome.",
+    "The referendum result determines the outcome under the stated binding rule.",
+    "Consultation is advisory; the council must follow the referendum result under these rules.",
+    "Every consultation vote is binding, while this referendum can always be ignored by the council."
+  ],
+  [
+    "Of 1,000 eligible voters, 600 vote and 240 vote for A. Calculate turnout and A's share of votes cast.",
+    "Turnout is 60%.",
+    "A receives 40% of votes cast.",
+    "Six tenths of eligible voters participate, and A wins four tenths of the ballots cast.",
+    "Turnout is 24% and A's vote share is 60%."
+  ],
+  [
+    "Candidates receive 40%, 35%, and 25% of votes. Does the first candidate have a plurality and an absolute majority?",
+    "The first candidate has a plurality because their share is the largest.",
+    "They do not have an absolute majority because 40% is not more than half.",
+    "Forty percent leads the field, but it is below the threshold of over fifty percent.",
+    "Forty percent is not the largest share and it exceeds half of all votes."
+  ],
+  [
+    "A fictional proportional rule gives 10 seats exactly according to vote shares of 60% for A and 40% for B. Allocate seats to each.",
+    "A receives 6 seats.",
+    "B receives 4 seats.",
+    "Six of the ten seats go to A and the remaining four go to B.",
+    "A receives all ten seats and B receives six additional seats."
+  ],
+  [
+    "A prefers a park and B prefers a library; they agree on the budget. Contrast their disagreement with contradictory claims about the budget number.",
+    "Their park-versus-library disagreement can concern different priorities or values.",
+    "Incompatible claims about one specified budget figure concern factual accuracy.",
+    "The preference dispute is about what to prioritize, whereas different asserted amounts for the same budget require checking facts.",
+    "Different preferences cannot coexist, and every budget number is merely a personal taste that evidence cannot address."
+  ],
+  [
+    "In 'The plan costs 20 units and is the fairest option,' identify the factual claim and the value judgment.",
+    "The claim that the plan costs 20 units is factual and can be checked.",
+    "Calling it the fairest option is a value judgment.",
+    "The twenty-unit price is a checkable assertion; judging the option fairest expresses an evaluation.",
+    "The cost is only an uncheckable preference, while fairness is the stated exact price."
+  ],
+  [
+    "A fictional town invites residents to submit proposals at open meetings between elections. Name this participation route and one way it can affect discussion.",
+    "Residents can attend the open meetings and submit proposals.",
+    "Their proposals can place concerns or alternatives before decision-makers.",
+    "They participate through meeting submissions, which bring their issues or suggested options into public consideration.",
+    "The town prohibits all participation between elections and residents cannot raise any concern."
+  ],
+  [
+    "A fictional community encourages litter pickup but has no rule requiring it. Distinguish the encouraged civic action from a legal obligation under these facts.",
+    "Litter pickup is encouraged as a community contribution.",
+    "It is not a legal requirement under the stated rules.",
+    "Helping clean is promoted as a civic contribution, but the scenario supplies no law compelling it.",
+    "Litter pickup is a mandatory criminal penalty here and is explicitly discouraged by the community."
+  ],
+  [
+    "A freely accessible public path is maintained by voluntary contributions. Explain the possible benefit to noncontributors and the resulting free-rider problem.",
+    "People may use the path without contributing to its maintenance.",
+    "If many rely on others to pay, contributions may be insufficient to maintain it.",
+    "Nonpayers can still enjoy the path, creating an incentive to leave funding to others and risking underfunding.",
+    "Only contributors can ever access the freely accessible path, and refusing to contribute automatically increases maintenance funding."
+  ],
+  [
+    "A building has stairs at its only entrance, excluding wheelchair users. Explain equal nominal access and one accommodation addressing the barrier.",
+    "Permission for everyone to enter does not remove the physical stair barrier.",
+    "An accessible ramp or lift can provide a usable entrance for wheelchair users.",
+    "The same invitation leaves the stairs unusable for some people; a suitable ramp or lift addresses that obstacle.",
+    "Stairs are automatically usable by every wheelchair, so adding more stairs removes the access barrier."
+  ],
+  [
+    "A town survey is answered only by volunteers. Explain a selection issue and suggest a different recruitment method that can reduce reliance on self-selection.",
+    "People who volunteer may differ systematically from those who do not.",
+    "Invite a randomly selected sample of town residents rather than relying only on volunteers.",
+    "Volunteers may be a distinctive group; randomly selecting residents to invite reduces reliance on people choosing themselves.",
+    "Volunteering guarantees a random sample of every resident and removes all possible selection bias."
+  ],
+  [
+    "A fictional budget allocates 40 units to schools, 30 to roads and 30 to parks. State the total and the schools' share.",
+    "The total is 100 units.",
+    "Schools receive 40% of the total.",
+    "The allocations add to one hundred, with schools taking two-fifths of it.",
+    "The total is 70 and schools receive 70% of it."
+  ],
+  [
+    "A fictional fee reduces car use as intended but also reduces visits to small shops. Identify the intended effect and the other reported effect.",
+    "Reduced car use is the intended effect.",
+    "Reduced visits to small shops are another reported effect.",
+    "The fee aims to cut driving, while the account also reports fewer shop visits.",
+    "The intended effect is more driving, and the account reports a rise in shop visits."
+  ],
+  [
+    "Crime falls after a fictional policy starts. Give one reason timing is insufficient to show causation and one useful comparison.",
+    "Other changes could explain the fall.",
+    "A suitable comparison with similar places or periods without the policy can help assess its effect.",
+    "An alternative cause may account for the decline; comparison with a relevant untreated setting can improve the evidence.",
+    "Timing alone excludes every other cause, so comparison data can never be useful."
+  ],
+  [
+    "A map shades districts by average income. State what the shading summarizes and why it does not establish each resident's income.",
+    "It summarizes the district-level average income.",
+    "Individual incomes can vary within a district.",
+    "The color represents an area average, while residents within that area may earn very different amounts.",
+    "Every resident has exactly the shaded average and district averages contain no area-level information."
+  ],
+  [
+    "One record reports 20 attendees, another reports 30, and neither can be preferred. Give a cautious conclusion and identify the remaining uncertainty.",
+    "The sources agree that the event had attendees, while reporting different counts.",
+    "The exact attendance cannot be settled from these two conflicting records alone.",
+    "Both accounts indicate attendance, but their disagreement leaves the precise number unresolved.",
+    "The evidence proves exactly 50 attended because the two reports must be added together."
+  ]
 ]

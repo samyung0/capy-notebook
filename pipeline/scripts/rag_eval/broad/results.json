@@ -1,0 +1,1563 @@
+{
+  "date": "2026-09-05",
+  "baseline_revision": "a903b8e917144701186b9c6cd2a6bbeea1bd15f9",
+  "lab_root": "/opt/capy-rag-curated-20260905/broad",
+  "purpose": "Evaluate the previously selected reference-following instruction and document locations on fresh public data; no new production settings selected.",
+  "counts": {
+    "retrieval_queries": 360,
+    "retrieval_lookups": 1080,
+    "indexed_documents": 16844,
+    "indexed_canonical_chunks": 19289,
+    "chat_questions": 36,
+    "chat_attempts": 144,
+    "chat_completed": 143,
+    "normal_upload_unique_sources": 113,
+    "normal_upload_logical_files": 143
+  },
+  "retrieval_freeze": {
+    "created_utc": "2026-09-05T13:26:40Z",
+    "files": {
+      "PLAN.md": "bfa8557797c16983f9b81c33ea5e8331d81836498c2e0675607e539b76240abf",
+      "fetch_data.py": "dbce18694f08579f743dce181018dd56336c6cc2f85163c8a1ba9494d01533d2",
+      "index_corpus.py": "57cb4a2c1cc975086abf09716966fc23f20ac7dfb4ecb56a963df7f6b62b86ef",
+      "run_retrieval.py": "da679771e4fde567900cc7db444a6424af360c61d9485ef0e37e84ed714f9846",
+      "miracl.json": "dc5fbfde4b3653afb53b17b2ffe30d8a9b3085a78c3ba9c18c6c1b597db5fe0e",
+      "beir.json": "e1da15aed9e55e788e4a0e58a11a13440b7a3a3a8b8fb1a8d9902bc8fa0c53d6",
+      "retrieval-workspaces.json": "14fa9ebc379d542b0ebf0e3b63a826336952b02475859f9173ee5fe7672b7fb2"
+    },
+    "chunker": "v5",
+    "top_k": 5,
+    "per_file_cap": 4,
+    "candidates": 40,
+    "lex_weight": 0.5,
+    "source_count": 9,
+    "query_count": 360,
+    "arms": ["hybrid", "dense", "exact_dense"],
+    "runtime_sources": {
+      "pipeline.retrieval.chunking": "6c3d7ccf9d241c704a3ad54b066ece0023c555cab787724c7f624afd5604ef19",
+      "pipeline.retrieval.lang": "f47eb1ee2c5e4a48808feeacbd112978a4d543105b5980f020af37a5b2200489",
+      "pipeline.retrieval.models": "886c42e1b9c43efae848a84b46f767756c4366a1539888fa601ec7857121fb7c",
+      "pipeline.retrieval.search": "e576562e8a628b3df77c386abbf392a1b9e7390b030346a57bbadfed3200f46c",
+      "pipeline.retrieval.store": "4386d87a62324d3d93f760565eca8fff70a759bdb4371cb601de2be0faa441a2"
+    },
+    "index_state": [
+      ["ws_2ad2592f96", 406, "6b2fc45415edf5006d15c535e4b9e676"],
+      ["ws_33898d4e05", 283, "df4f09d8831e750a65bb639231a5733a"],
+      ["ws_3662d0431f", 249, "5b17d0f0498880e9ba9d3773a1bbda8d"],
+      ["ws_497940574f", 6700, "cf4a2aa5fd9cf75a4b0cbb11179ec2aa"],
+      ["ws_4fe3836e2e", 625, "963485a82e0780369826fbc492b31154"],
+      ["ws_5ffac21b64", 9485, "a7d110a3867abc67c284db0281e4d932"],
+      ["ws_6498a751ef", 414, "fb956f42240a2db3df2840c6345555d8"],
+      ["ws_aa70d5413b", 403, "2a17d2cd2abe0d2613a07bad17467725"],
+      ["ws_c188ab6c38", 426, "35a3cf94803bde688ae2b72d52c8dc2f"],
+      ["ws_c523c4aed3", 426, "285456b42944a9780839855fb3dd00b9"],
+      ["ws_ca6d3c6d56", 404, "1d267d7cbacf380215f97f2b20d90f90"]
+    ],
+    "postgres": "PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit",
+    "vector_extension": "0.8.6",
+    "index_definitions": [
+      [
+        "rag_chunk_vectors_2560_embedding_idx",
+        "CREATE INDEX rag_chunk_vectors_2560_embedding_idx ON public.rag_chunk_vectors_2560 USING hnsw (embedding halfvec_cosine_ops)"
+      ],
+      [
+        "rag_chunk_vectors_2560_pkey",
+        "CREATE UNIQUE INDEX rag_chunk_vectors_2560_pkey ON public.rag_chunk_vectors_2560 USING btree (chunk_id)"
+      ],
+      [
+        "rag_chunk_vectors_2560_ws_idx",
+        "CREATE INDEX rag_chunk_vectors_2560_ws_idx ON public.rag_chunk_vectors_2560 USING btree (workspace_id)"
+      ],
+      [
+        "rag_chunks_content_id_chunk_idx_key",
+        "CREATE UNIQUE INDEX rag_chunks_content_id_chunk_idx_key ON public.rag_chunks USING btree (content_id, chunk_idx)"
+      ],
+      [
+        "rag_chunks_content_idx",
+        "CREATE INDEX rag_chunks_content_idx ON public.rag_chunks USING btree (content_id)"
+      ],
+      [
+        "rag_chunks_pkey",
+        "CREATE UNIQUE INDEX rag_chunks_pkey ON public.rag_chunks USING btree (id)"
+      ],
+      [
+        "rag_chunks_search_idx",
+        "CREATE INDEX rag_chunks_search_idx ON public.rag_chunks USING gin (search)"
+      ],
+      [
+        "rag_chunks_ws_idx",
+        "CREATE INDEX rag_chunks_ws_idx ON public.rag_chunks USING btree (workspace_id)"
+      ],
+      [
+        "rag_content_summaries_pkey",
+        "CREATE UNIQUE INDEX rag_content_summaries_pkey ON public.rag_content_summaries USING btree (content_id)"
+      ],
+      [
+        "rag_content_summaries_ws_idx",
+        "CREATE INDEX rag_content_summaries_ws_idx ON public.rag_content_summaries USING btree (workspace_id)"
+      ],
+      [
+        "rag_contents_claim_idx",
+        "CREATE INDEX rag_contents_claim_idx ON public.rag_contents USING btree (claim_job_id) WHERE (status = 'processing'::text)"
+      ],
+      [
+        "rag_contents_donor_idx",
+        "CREATE INDEX rag_contents_donor_idx ON public.rag_contents USING btree (source_sha256, pipeline_identity) WHERE (status = 'ready'::text)"
+      ],
+      [
+        "rag_contents_id_workspace_id_key",
+        "CREATE UNIQUE INDEX rag_contents_id_workspace_id_key ON public.rag_contents USING btree (id, workspace_id)"
+      ],
+      [
+        "rag_contents_pkey",
+        "CREATE UNIQUE INDEX rag_contents_pkey ON public.rag_contents USING btree (id)"
+      ],
+      [
+        "rag_contents_workspace_id_content_hash_key",
+        "CREATE UNIQUE INDEX rag_contents_workspace_id_content_hash_key ON public.rag_contents USING btree (workspace_id, content_hash)"
+      ],
+      [
+        "rag_file_contents_content_idx",
+        "CREATE INDEX rag_file_contents_content_idx ON public.rag_file_contents USING btree (content_id)"
+      ],
+      [
+        "rag_file_contents_pkey",
+        "CREATE UNIQUE INDEX rag_file_contents_pkey ON public.rag_file_contents USING btree (file_id)"
+      ],
+      [
+        "rag_search_events_created_idx",
+        "CREATE INDEX rag_search_events_created_idx ON public.rag_search_events USING btree (created_at)"
+      ],
+      [
+        "rag_search_events_pkey",
+        "CREATE UNIQUE INDEX rag_search_events_pkey ON public.rag_search_events USING btree (id)"
+      ],
+      [
+        "rag_search_events_ws_idx",
+        "CREATE INDEX rag_search_events_ws_idx ON public.rag_search_events USING btree (workspace_id, created_at)"
+      ]
+    ]
+  },
+  "chat_freeze": {
+    "created_utc": "2026-09-05T13:39:20Z",
+    "files": {
+      "PLAN.md": "bfa8557797c16983f9b81c33ea5e8331d81836498c2e0675607e539b76240abf",
+      "build_agent.py": "2b8056e04299f24262c0628fe74b9eece46179d9765063d5d250c17f09493ee0",
+      "upload_agent.py": "981ac5ef0a8306dddd80c79ada2593378cab139b4bd1eb6f925d5d2fbbae0f1c",
+      "run_chat.py": "6ee389833277509992cc83ff60806d2dbf4b9f0b5a5e6996377d2e4e4d40548d",
+      "serve.py": "50ee3bb80e3c417654c7bad3db29f41717ca572a2e856260531492e2bfb58d3b",
+      "corpus/questions.json": "8c7d0cb64cad520e6728a6ae72a32b36f1744a083133fe8e8288c9e58dcccbb4",
+      "corpus/manifest.json": "c2645632219239376d5e798569e50fae86c761732eb594ef7b32c51c31f9ba7c",
+      "corpus/workspaces.json": "2a78b64589634f015e45fc9f2f4f87e97142c20f4d1bbace5db319be140aee19",
+      "chat-index.json": "f7edfee14682e6a964650f275b3c9612ea74c541fba404e45e0109c080397065"
+    },
+    "recorder_sha256": "a4ed2cd5569d576e012bf5ba1ceeb5dee82145b0d20295314c67c5ab44b6d161",
+    "lab_server_sha256": "03c2c83b9fdfabe7924c91978cec5b8042cf819b6eed73bfa5b1c29a91fe6279",
+    "models": [
+      {
+        "provider_slug": "deepinfra",
+        "model_slug": "Qwen/Qwen3-Embedding-4B",
+        "version": 1,
+        "is_default_for": ["retrieval"]
+      },
+      {
+        "provider_slug": "deepseek",
+        "model_slug": "deepseek-v4-flash-vision-exp",
+        "version": 1,
+        "is_default_for": ["chat", "generate", "editor", "quiz", "ingest"]
+      },
+      {
+        "provider_slug": "zai",
+        "model_slug": "glm-5.3-flash",
+        "version": 1,
+        "is_default_for": ["captioning"]
+      }
+    ],
+    "workspace_pins": [
+      {
+        "id": "ws_1f028f7095",
+        "embedding_provider_slug": "deepinfra",
+        "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+        "embedding_model_version": 1,
+        "embedding_dim": 2560
+      },
+      {
+        "id": "ws_2263f55dab",
+        "embedding_provider_slug": "deepinfra",
+        "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+        "embedding_model_version": 1,
+        "embedding_dim": 2560
+      },
+      {
+        "id": "ws_2ad2592f96",
+        "embedding_provider_slug": "deepinfra",
+        "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+        "embedding_model_version": 1,
+        "embedding_dim": 2560
+      },
+      {
+        "id": "ws_4ca674859d",
+        "embedding_provider_slug": "deepinfra",
+        "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+        "embedding_model_version": 1,
+        "embedding_dim": 2560
+      },
+      {
+        "id": "ws_4fe3836e2e",
+        "embedding_provider_slug": "deepinfra",
+        "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+        "embedding_model_version": 1,
+        "embedding_dim": 2560
+      },
+      {
+        "id": "ws_6498a751ef",
+        "embedding_provider_slug": "deepinfra",
+        "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+        "embedding_model_version": 1,
+        "embedding_dim": 2560
+      },
+      {
+        "id": "ws_660fbfec47",
+        "embedding_provider_slug": "deepinfra",
+        "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+        "embedding_model_version": 1,
+        "embedding_dim": 2560
+      },
+      {
+        "id": "ws_8f19f5b78d",
+        "embedding_provider_slug": "deepinfra",
+        "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+        "embedding_model_version": 1,
+        "embedding_dim": 2560
+      },
+      {
+        "id": "ws_955f49cecc",
+        "embedding_provider_slug": "deepinfra",
+        "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+        "embedding_model_version": 1,
+        "embedding_dim": 2560
+      },
+      {
+        "id": "ws_aa70d5413b",
+        "embedding_provider_slug": "deepinfra",
+        "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+        "embedding_model_version": 1,
+        "embedding_dim": 2560
+      },
+      {
+        "id": "ws_abb2303c43",
+        "embedding_provider_slug": "deepinfra",
+        "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+        "embedding_model_version": 1,
+        "embedding_dim": 2560
+      },
+      {
+        "id": "ws_b15cf4eb8c",
+        "embedding_provider_slug": "deepinfra",
+        "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+        "embedding_model_version": 1,
+        "embedding_dim": 2560
+      },
+      {
+        "id": "ws_b4a1d88f06",
+        "embedding_provider_slug": "deepinfra",
+        "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+        "embedding_model_version": 1,
+        "embedding_dim": 2560
+      },
+      {
+        "id": "ws_c188ab6c38",
+        "embedding_provider_slug": "deepinfra",
+        "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+        "embedding_model_version": 1,
+        "embedding_dim": 2560
+      },
+      {
+        "id": "ws_c523c4aed3",
+        "embedding_provider_slug": "deepinfra",
+        "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+        "embedding_model_version": 1,
+        "embedding_dim": 2560
+      },
+      {
+        "id": "ws_ca6d3c6d56",
+        "embedding_provider_slug": "deepinfra",
+        "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+        "embedding_model_version": 1,
+        "embedding_dim": 2560
+      },
+      {
+        "id": "ws_d1586f02d3",
+        "embedding_provider_slug": "deepinfra",
+        "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+        "embedding_model_version": 1,
+        "embedding_dim": 2560
+      },
+      {
+        "id": "ws_dcca705629",
+        "embedding_provider_slug": "deepinfra",
+        "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+        "embedding_model_version": 1,
+        "embedding_dim": 2560
+      },
+      {
+        "id": "ws_e464474f5f",
+        "embedding_provider_slug": "deepinfra",
+        "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+        "embedding_model_version": 1,
+        "embedding_dim": 2560
+      },
+      {
+        "id": "ws_e9e10682ac",
+        "embedding_provider_slug": "deepinfra",
+        "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+        "embedding_model_version": 1,
+        "embedding_dim": 2560
+      },
+      {
+        "id": "ws_ec2e386e64",
+        "embedding_provider_slug": "deepinfra",
+        "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+        "embedding_model_version": 1,
+        "embedding_dim": 2560
+      },
+      {
+        "id": "ws_eebdd2d74a",
+        "embedding_provider_slug": "deepinfra",
+        "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+        "embedding_model_version": 1,
+        "embedding_dim": 2560
+      }
+    ],
+    "baseline_runtime": {
+      "pipeline.retrieval.agent": "77c07d9bce7b1c0204b72b725f9384b71efffd3d3b8d6218eb4581f198ad5e5e",
+      "pipeline.retrieval.tools": "de03e655e3c31ced7656784b452de47bb86e59da0cc09cd50583860c6508a530"
+    },
+    "variants": ["baseline", "follow_links_ids"],
+    "repeats": 2,
+    "cases": 36
+  },
+  "completion_audit": {
+    "verified_utc": "2026-09-05T14:00:28Z",
+    "attempts": 144,
+    "completed": 143,
+    "errors": [
+      {
+        "id": "missing-2",
+        "variant": "follow_links_ids",
+        "repeat": 1,
+        "message_id": "m_a5dfdb6485"
+      }
+    ],
+    "chat_index_unchanged": true,
+    "all_original_curated_raw_runs_unchanged": true,
+    "raw_sha256": {
+      "retrieval.jsonl": "c86f393806c7410c14ee783db0767276744b531ddbb282489c36d94983624a95",
+      "retrieval-freeze.json": "b12fd716a38303b9bff3c9ad80fc94d7ff10c42dad5217d04833ab0080393028",
+      "retrieval-completion.json": "784ec663edae2b774d6d79da527310de0704064357c5e85b52d891c0e12a8578",
+      "retrieval-plans.json": "2c26e5ee78dcd0e7a471141cf929d4ccfc0a44a81058d89fab6a47a0a49c8b26",
+      "chat.jsonl": "bd784ee5d456788245bca15f2484fd16853574ec5b84c86a371b361cf8bb7197",
+      "chat-freeze.json": "e2a0c1a1ce2502ab9fdeda8f854e188b88e9e934f7664530e5fb60b561a9a07d",
+      "chat-index.json": "f7edfee14682e6a964650f275b3c9612ea74c541fba404e45e0109c080397065",
+      "tool-evidence.jsonl": "5e275e08e671dba7b4523263ff2a022816da5b62f29db06709583764b7034144",
+      "resume-amendments.jsonl": "62bf3187d75b8ed92da7d21f87b55cb6ba8f7223614aed3bc5b8e4a659d00302",
+      "recorder-initial.py": "a4ed2cd5569d576e012bf5ba1ceeb5dee82145b0d20295314c67c5ab44b6d161",
+      "corpus/questions.json": "8c7d0cb64cad520e6728a6ae72a32b36f1744a083133fe8e8288c9e58dcccbb4",
+      "corpus/manifest.json": "c2645632219239376d5e798569e50fae86c761732eb594ef7b32c51c31f9ba7c",
+      "corpus/workspaces.json": "2a78b64589634f015e45fc9f2f4f87e97142c20f4d1bbace5db319be140aee19"
+    },
+    "source_provenance": {
+      "miracl": {
+        "topics": "5be20db9509754dadad47689368639fcec739c00",
+        "corpus": "d921ec7e349ce0d28daf30b2da9da5ee698bef0d",
+        "converted": "ad2acf33f265b8fba92e5096c9d2cf569a82b067"
+      },
+      "beir": {
+        "scifact": {
+          "archive_sha256": "536e14446a0ba56ed1398ab1055f39fe852686ecad24a6306c80c490fa8e0165",
+          "split": "test"
+        },
+        "arguana": {
+          "archive_sha256": "cfdf79adce27a401b3cd3ea267903134dbfab2c6afeb95d7fe5724a00bf7557b",
+          "split": "test"
+        }
+      },
+      "hotpot_commit": "1908d6afbbead072334abe2965f91bd2709910ab",
+      "hotpot_parquet_sha256": "c20b638ca82b21d04fe12e14ff417ad05153d4d215a65de54497fca4e972f7c6",
+      "mlqa_archive_sha256": "246e8089933d13007fe80684d5c5c0713d6834cf8b3b4a0ec7c66f0a0d2baac8"
+    },
+    "restored_account_locale": "en"
+  },
+  "resume_amendments": [
+    {
+      "created_utc": "2026-09-05T13:42:07Z",
+      "reason": "Continue remaining planned turns after a stream read error; each first attempt, including failure, remains in the primary denominator. No failed turn is retried.",
+      "original_recorder_sha256": "a4ed2cd5569d576e012bf5ba1ceeb5dee82145b0d20295314c67c5ab44b6d161",
+      "resumed_recorder_sha256": "34de199628f653f043d6238ba826ae7800f348140ab8add36d6fcaea6f0d42e0",
+      "attempts_before_resume": 9,
+      "failed_messages": ["m_a5dfdb6485"]
+    }
+  ],
+  "retrieval": {
+    "arguana": {
+      "queries": 40,
+      "documents": 8674,
+      "source_language": "en",
+      "indexed_languages": [
+        {
+          "lang": "en",
+          "n": 9464
+        },
+        {
+          "lang": "und",
+          "n": 21
+        }
+      ],
+      "arms": {
+        "hybrid": {
+          "hit_count": 21,
+          "hit_at_5": 0.525,
+          "recall_at_5": 0.525,
+          "ndcg_at_5": 0.392861190076668,
+          "mrr_at_5": 0.35041666666666665,
+          "sql_path_median_ms": 1038.8925
+        },
+        "dense": {
+          "hit_count": 37,
+          "hit_at_5": 0.925,
+          "recall_at_5": 0.925,
+          "ndcg_at_5": 0.768660631164485,
+          "mrr_at_5": 0.7166666666666667,
+          "sql_path_median_ms": 114.2765
+        },
+        "exact_dense": {
+          "hit_count": 37,
+          "hit_at_5": 0.925,
+          "recall_at_5": 0.925,
+          "ndcg_at_5": 0.768660631164485,
+          "mrr_at_5": 0.7166666666666667,
+          "sql_path_median_ms": 116.4725
+        }
+      },
+      "hybrid_only_hits": [],
+      "dense_only_hits": [
+        "arguana:test-law-lghbacpsba-pro02a",
+        "arguana:test-economy-epehwmrbals-pro05a",
+        "arguana:test-economy-beplcpdffe-pro02a",
+        "arguana:test-international-gmehwasr-con02a",
+        "arguana:test-politics-cdmaggpdgdf-con01a",
+        "arguana:test-science-ascidfakhba-pro04a",
+        "arguana:test-free-speech-debate-nshbcsbawc-con02a",
+        "arguana:test-science-ciidfaihwc-con03a",
+        "arguana:test-international-iiahwagit-con03a",
+        "arguana:test-free-speech-debate-yfsdfkhbwu-con01a",
+        "arguana:test-digital-freedoms-eifdfaihs-pro01a",
+        "arguana:test-health-dhghwapgd-pro05a",
+        "arguana:test-science-ciidfaihwc-pro04a",
+        "arguana:test-international-appghblsba-pro03a",
+        "arguana:test-health-hpehwadvoee-con03a",
+        "arguana:test-international-apwhbaucmip-pro02a"
+      ],
+      "mean_dense_exact_overlap_at_5": 1.0
+    },
+    "miracl-de": {
+      "queries": 40,
+      "documents": 414,
+      "source_language": "de",
+      "indexed_languages": [
+        {
+          "lang": "de",
+          "n": 406
+        },
+        {
+          "lang": "en",
+          "n": 2
+        },
+        {
+          "lang": "und",
+          "n": 6
+        }
+      ],
+      "arms": {
+        "hybrid": {
+          "hit_count": 38,
+          "hit_at_5": 0.95,
+          "recall_at_5": 0.7470833333333333,
+          "ndcg_at_5": 0.679820640807335,
+          "mrr_at_5": 0.75375,
+          "sql_path_median_ms": 22.2695
+        },
+        "dense": {
+          "hit_count": 37,
+          "hit_at_5": 0.925,
+          "recall_at_5": 0.7595833333333333,
+          "ndcg_at_5": 0.7281429497879855,
+          "mrr_at_5": 0.8083333333333333,
+          "sql_path_median_ms": 14.379999999999999
+        },
+        "exact_dense": {
+          "hit_count": 37,
+          "hit_at_5": 0.925,
+          "recall_at_5": 0.7595833333333333,
+          "ndcg_at_5": 0.7281429497879855,
+          "mrr_at_5": 0.8083333333333333,
+          "sql_path_median_ms": 13.8035
+        }
+      },
+      "hybrid_only_hits": ["miracl-de:9789633#0", "miracl-de:6947181#0"],
+      "dense_only_hits": ["miracl-de:280416#0"],
+      "mean_dense_exact_overlap_at_5": 1.0
+    },
+    "miracl-en": {
+      "queries": 40,
+      "documents": 416,
+      "source_language": "en",
+      "indexed_languages": [
+        {
+          "lang": "en",
+          "n": 426
+        }
+      ],
+      "arms": {
+        "hybrid": {
+          "hit_count": 38,
+          "hit_at_5": 0.95,
+          "recall_at_5": 0.7663392857142857,
+          "ndcg_at_5": 0.7287425581046901,
+          "mrr_at_5": 0.8104166666666667,
+          "sql_path_median_ms": 21.881
+        },
+        "dense": {
+          "hit_count": 38,
+          "hit_at_5": 0.95,
+          "recall_at_5": 0.7788392857142857,
+          "ndcg_at_5": 0.7881579053265243,
+          "mrr_at_5": 0.8925,
+          "sql_path_median_ms": 14.077
+        },
+        "exact_dense": {
+          "hit_count": 38,
+          "hit_at_5": 0.95,
+          "recall_at_5": 0.7788392857142857,
+          "ndcg_at_5": 0.7881579053265243,
+          "mrr_at_5": 0.8925,
+          "sql_path_median_ms": 13.755
+        }
+      },
+      "hybrid_only_hits": [],
+      "dense_only_hits": [],
+      "mean_dense_exact_overlap_at_5": 1.0
+    },
+    "miracl-es": {
+      "queries": 40,
+      "documents": 400,
+      "source_language": "es",
+      "indexed_languages": [
+        {
+          "lang": "es",
+          "n": 401
+        },
+        {
+          "lang": "und",
+          "n": 2
+        }
+      ],
+      "arms": {
+        "hybrid": {
+          "hit_count": 39,
+          "hit_at_5": 0.975,
+          "recall_at_5": 0.6754265873015873,
+          "ndcg_at_5": 0.699867500352926,
+          "mrr_at_5": 0.80625,
+          "sql_path_median_ms": 21.761499999999998
+        },
+        "dense": {
+          "hit_count": 39,
+          "hit_at_5": 0.975,
+          "recall_at_5": 0.6867460317460318,
+          "ndcg_at_5": 0.7314258197315512,
+          "mrr_at_5": 0.8479166666666667,
+          "sql_path_median_ms": 13.875
+        },
+        "exact_dense": {
+          "hit_count": 39,
+          "hit_at_5": 0.975,
+          "recall_at_5": 0.6867460317460318,
+          "ndcg_at_5": 0.7314258197315512,
+          "mrr_at_5": 0.8479166666666667,
+          "sql_path_median_ms": 14.025
+        }
+      },
+      "hybrid_only_hits": [],
+      "dense_only_hits": [],
+      "mean_dense_exact_overlap_at_5": 1.0
+    },
+    "miracl-fr": {
+      "queries": 40,
+      "documents": 400,
+      "source_language": "fr",
+      "indexed_languages": [
+        {
+          "lang": "es",
+          "n": 1
+        },
+        {
+          "lang": "fr",
+          "n": 400
+        },
+        {
+          "lang": "und",
+          "n": 3
+        }
+      ],
+      "arms": {
+        "hybrid": {
+          "hit_count": 36,
+          "hit_at_5": 0.9,
+          "recall_at_5": 0.7545833333333334,
+          "ndcg_at_5": 0.6355217064908788,
+          "mrr_at_5": 0.6833333333333333,
+          "sql_path_median_ms": 25.799500000000002
+        },
+        "dense": {
+          "hit_count": 40,
+          "hit_at_5": 1,
+          "recall_at_5": 0.8920833333333333,
+          "ndcg_at_5": 0.7565227404133236,
+          "mrr_at_5": 0.7891666666666667,
+          "sql_path_median_ms": 14.060500000000001
+        },
+        "exact_dense": {
+          "hit_count": 40,
+          "hit_at_5": 1,
+          "recall_at_5": 0.8920833333333333,
+          "ndcg_at_5": 0.7565227404133236,
+          "mrr_at_5": 0.7891666666666667,
+          "sql_path_median_ms": 13.8505
+        }
+      },
+      "hybrid_only_hits": [],
+      "dense_only_hits": [
+        "miracl-fr:3419872#0",
+        "miracl-fr:1729055#0",
+        "miracl-fr:9889566#0",
+        "miracl-fr:1129984#0"
+      ],
+      "mean_dense_exact_overlap_at_5": 1.0
+    },
+    "miracl-ja": {
+      "queries": 40,
+      "documents": 382,
+      "source_language": "ja",
+      "indexed_languages": [
+        {
+          "lang": "ja",
+          "n": 426
+        }
+      ],
+      "arms": {
+        "hybrid": {
+          "hit_count": 40,
+          "hit_at_5": 1,
+          "recall_at_5": 0.9032738095238095,
+          "ndcg_at_5": 0.7304354805510646,
+          "mrr_at_5": 0.7241666666666666,
+          "sql_path_median_ms": 30.028
+        },
+        "dense": {
+          "hit_count": 40,
+          "hit_at_5": 1,
+          "recall_at_5": 0.9428571428571428,
+          "ndcg_at_5": 0.8035434881305465,
+          "mrr_at_5": 0.7683333333333333,
+          "sql_path_median_ms": 14.1505
+        },
+        "exact_dense": {
+          "hit_count": 40,
+          "hit_at_5": 1,
+          "recall_at_5": 0.9428571428571428,
+          "ndcg_at_5": 0.8035434881305465,
+          "mrr_at_5": 0.7683333333333333,
+          "sql_path_median_ms": 13.756499999999999
+        }
+      },
+      "hybrid_only_hits": [],
+      "dense_only_hits": [],
+      "mean_dense_exact_overlap_at_5": 1.0
+    },
+    "miracl-ko": {
+      "queries": 40,
+      "documents": 576,
+      "source_language": "ko",
+      "indexed_languages": [
+        {
+          "lang": "ja",
+          "n": 1
+        },
+        {
+          "lang": "ko",
+          "n": 622
+        },
+        {
+          "lang": "und",
+          "n": 2
+        }
+      ],
+      "arms": {
+        "hybrid": {
+          "hit_count": 36,
+          "hit_at_5": 0.9,
+          "recall_at_5": 0.6898737373737374,
+          "ndcg_at_5": 0.6660699938199298,
+          "mrr_at_5": 0.7216666666666667,
+          "sql_path_median_ms": 33.5435
+        },
+        "dense": {
+          "hit_count": 39,
+          "hit_at_5": 0.975,
+          "recall_at_5": 0.7846464646464646,
+          "ndcg_at_5": 0.7637816054882087,
+          "mrr_at_5": 0.8270833333333333,
+          "sql_path_median_ms": 17.957
+        },
+        "exact_dense": {
+          "hit_count": 39,
+          "hit_at_5": 0.975,
+          "recall_at_5": 0.7846464646464646,
+          "ndcg_at_5": 0.7637816054882087,
+          "mrr_at_5": 0.8270833333333333,
+          "sql_path_median_ms": 17.8585
+        }
+      },
+      "hybrid_only_hits": [],
+      "dense_only_hits": ["miracl-ko:883", "miracl-ko:1213", "miracl-ko:1259"],
+      "mean_dense_exact_overlap_at_5": 1.0
+    },
+    "miracl-zh": {
+      "queries": 40,
+      "documents": 399,
+      "source_language": "zh",
+      "indexed_languages": [
+        {
+          "lang": "ja",
+          "n": 1
+        },
+        {
+          "lang": "zh",
+          "n": 405
+        }
+      ],
+      "arms": {
+        "hybrid": {
+          "hit_count": 36,
+          "hit_at_5": 0.9,
+          "recall_at_5": 0.7042857142857143,
+          "ndcg_at_5": 0.6354000843019328,
+          "mrr_at_5": 0.69,
+          "sql_path_median_ms": 22.2805
+        },
+        "dense": {
+          "hit_count": 37,
+          "hit_at_5": 0.925,
+          "recall_at_5": 0.7838690476190476,
+          "ndcg_at_5": 0.744236942100746,
+          "mrr_at_5": 0.7820833333333334,
+          "sql_path_median_ms": 13.709
+        },
+        "exact_dense": {
+          "hit_count": 37,
+          "hit_at_5": 0.925,
+          "recall_at_5": 0.7838690476190476,
+          "ndcg_at_5": 0.744236942100746,
+          "mrr_at_5": 0.7820833333333334,
+          "sql_path_median_ms": 13.3195
+        }
+      },
+      "hybrid_only_hits": ["miracl-zh:5156310#0", "miracl-zh:5401198#0"],
+      "dense_only_hits": [
+        "miracl-zh:7252831#0",
+        "miracl-zh:4485570#0",
+        "miracl-zh:7122066#0"
+      ],
+      "mean_dense_exact_overlap_at_5": 1.0
+    },
+    "scifact": {
+      "queries": 40,
+      "documents": 5183,
+      "source_language": "en",
+      "indexed_languages": [
+        {
+          "lang": "en",
+          "n": 6699
+        },
+        {
+          "lang": "und",
+          "n": 1
+        }
+      ],
+      "arms": {
+        "hybrid": {
+          "hit_count": 34,
+          "hit_at_5": 0.85,
+          "recall_at_5": 0.8375,
+          "ndcg_at_5": 0.7536942383572417,
+          "mrr_at_5": 0.7341666666666666,
+          "sql_path_median_ms": 243.43599999999998
+        },
+        "dense": {
+          "hit_count": 35,
+          "hit_at_5": 0.875,
+          "recall_at_5": 0.8625,
+          "ndcg_at_5": 0.7903393782848303,
+          "mrr_at_5": 0.7791666666666667,
+          "sql_path_median_ms": 71.9025
+        },
+        "exact_dense": {
+          "hit_count": 35,
+          "hit_at_5": 0.875,
+          "recall_at_5": 0.8625,
+          "ndcg_at_5": 0.7903393782848303,
+          "mrr_at_5": 0.7791666666666667,
+          "sql_path_median_ms": 78.3905
+        }
+      },
+      "hybrid_only_hits": ["scifact:239"],
+      "dense_only_hits": ["scifact:544", "scifact:48"],
+      "mean_dense_exact_overlap_at_5": 1.0
+    },
+    "raw_sha256": "c86f393806c7410c14ee783db0767276744b531ddbb282489c36d94983624a95"
+  },
+  "chat": {
+    "baseline": {
+      "turns": 72,
+      "completed": 72,
+      "failed_attempts": 0,
+      "categories": {
+        "cross_language": {
+          "turns": 16,
+          "completed": 16,
+          "answer_correct": 16,
+          "grounded": 15,
+          "citation_supported": 15,
+          "all_labeled_evidence_reached": 16,
+          "all_labeled_evidence_cited": 16,
+          "correct_and_grounded": 15
+        },
+        "missing_source": {
+          "turns": 12,
+          "completed": 12,
+          "answer_correct": 10,
+          "grounded": 8,
+          "citation_supported": 5,
+          "all_labeled_evidence_reached": 0,
+          "all_labeled_evidence_cited": 0,
+          "correct_and_grounded": 8
+        },
+        "multihop": {
+          "turns": 16,
+          "completed": 16,
+          "answer_correct": 16,
+          "grounded": 13,
+          "citation_supported": 13,
+          "all_labeled_evidence_reached": 15,
+          "all_labeled_evidence_cited": 15,
+          "correct_and_grounded": 13
+        },
+        "native": {
+          "turns": 28,
+          "completed": 28,
+          "answer_correct": 28,
+          "grounded": 26,
+          "citation_supported": 26,
+          "all_labeled_evidence_reached": 28,
+          "all_labeled_evidence_cited": 28,
+          "correct_and_grounded": 26
+        }
+      },
+      "completed_median_s": 5.015499999999999,
+      "completed_mean_s": 6.034694444444445,
+      "completed_p95_s": 12.0633,
+      "mean_searches": 1.375,
+      "completed_mean_reported_tokens": 6846.930555555556,
+      "read_calls": 32,
+      "rejected_read_calls": 22,
+      "correct_both_repeats": 35,
+      "positive_correct_both_repeats": 30,
+      "native_by_language": {
+        "en": {
+          "turns": 4,
+          "correct": 4,
+          "correct_and_grounded": 4,
+          "citation_supported": 4
+        },
+        "de": {
+          "turns": 4,
+          "correct": 4,
+          "correct_and_grounded": 4,
+          "citation_supported": 4
+        },
+        "es": {
+          "turns": 4,
+          "correct": 4,
+          "correct_and_grounded": 4,
+          "citation_supported": 4
+        },
+        "fr": {
+          "turns": 4,
+          "correct": 4,
+          "correct_and_grounded": 3,
+          "citation_supported": 3
+        },
+        "ja": {
+          "turns": 4,
+          "correct": 4,
+          "correct_and_grounded": 4,
+          "citation_supported": 4
+        },
+        "ko": {
+          "turns": 4,
+          "correct": 4,
+          "correct_and_grounded": 3,
+          "citation_supported": 3
+        },
+        "zh": {
+          "turns": 4,
+          "correct": 4,
+          "correct_and_grounded": 4,
+          "citation_supported": 4
+        }
+      },
+      "missing_by_case": {
+        "missing-0": {
+          "turns": 2,
+          "completed": 2,
+          "correct": 2,
+          "correct_and_grounded": 2
+        },
+        "missing-1": {
+          "turns": 2,
+          "completed": 2,
+          "correct": 0,
+          "correct_and_grounded": 0
+        },
+        "missing-2": {
+          "turns": 2,
+          "completed": 2,
+          "correct": 2,
+          "correct_and_grounded": 2
+        },
+        "missing-3": {
+          "turns": 2,
+          "completed": 2,
+          "correct": 2,
+          "correct_and_grounded": 2
+        },
+        "missing-4": {
+          "turns": 2,
+          "completed": 2,
+          "correct": 2,
+          "correct_and_grounded": 2
+        },
+        "missing-5": {
+          "turns": 2,
+          "completed": 2,
+          "correct": 2,
+          "correct_and_grounded": 0
+        }
+      },
+      "failure_reasons": {
+        "Does not acknowledge insufficient whole-musical evidence; treats one song's lyric credits as credits for the entire show. This retained-song control has an ambiguous attachment in the source wording and is reported separately as a sensitivity case.": 1,
+        "Confident whole-show credits from the retained song passage, without an insufficiency statement. This source-scope control is ambiguous and is reported separately.": 1
+      }
+    },
+    "follow_links_ids": {
+      "turns": 72,
+      "completed": 71,
+      "failed_attempts": 1,
+      "categories": {
+        "cross_language": {
+          "turns": 16,
+          "completed": 16,
+          "answer_correct": 16,
+          "grounded": 15,
+          "citation_supported": 15,
+          "all_labeled_evidence_reached": 16,
+          "all_labeled_evidence_cited": 16,
+          "correct_and_grounded": 15
+        },
+        "missing_source": {
+          "turns": 12,
+          "completed": 11,
+          "answer_correct": 10,
+          "grounded": 8,
+          "citation_supported": 5,
+          "all_labeled_evidence_reached": 0,
+          "all_labeled_evidence_cited": 0,
+          "correct_and_grounded": 8
+        },
+        "multihop": {
+          "turns": 16,
+          "completed": 16,
+          "answer_correct": 16,
+          "grounded": 16,
+          "citation_supported": 15,
+          "all_labeled_evidence_reached": 15,
+          "all_labeled_evidence_cited": 14,
+          "correct_and_grounded": 16
+        },
+        "native": {
+          "turns": 28,
+          "completed": 28,
+          "answer_correct": 28,
+          "grounded": 26,
+          "citation_supported": 25,
+          "all_labeled_evidence_reached": 28,
+          "all_labeled_evidence_cited": 28,
+          "correct_and_grounded": 26
+        }
+      },
+      "completed_median_s": 5.253,
+      "completed_mean_s": 6.208830985915493,
+      "completed_p95_s": 13.3425,
+      "mean_searches": 1.2916666666666667,
+      "completed_mean_reported_tokens": 7771.887323943662,
+      "read_calls": 54,
+      "rejected_read_calls": 0,
+      "correct_both_repeats": 34,
+      "positive_correct_both_repeats": 30,
+      "native_by_language": {
+        "en": {
+          "turns": 4,
+          "correct": 4,
+          "correct_and_grounded": 4,
+          "citation_supported": 4
+        },
+        "de": {
+          "turns": 4,
+          "correct": 4,
+          "correct_and_grounded": 4,
+          "citation_supported": 4
+        },
+        "es": {
+          "turns": 4,
+          "correct": 4,
+          "correct_and_grounded": 4,
+          "citation_supported": 4
+        },
+        "fr": {
+          "turns": 4,
+          "correct": 4,
+          "correct_and_grounded": 3,
+          "citation_supported": 2
+        },
+        "ja": {
+          "turns": 4,
+          "correct": 4,
+          "correct_and_grounded": 3,
+          "citation_supported": 3
+        },
+        "ko": {
+          "turns": 4,
+          "correct": 4,
+          "correct_and_grounded": 4,
+          "citation_supported": 4
+        },
+        "zh": {
+          "turns": 4,
+          "correct": 4,
+          "correct_and_grounded": 4,
+          "citation_supported": 4
+        }
+      },
+      "missing_by_case": {
+        "missing-0": {
+          "turns": 2,
+          "completed": 2,
+          "correct": 2,
+          "correct_and_grounded": 2
+        },
+        "missing-1": {
+          "turns": 2,
+          "completed": 2,
+          "correct": 1,
+          "correct_and_grounded": 1
+        },
+        "missing-2": {
+          "turns": 2,
+          "completed": 1,
+          "correct": 1,
+          "correct_and_grounded": 1
+        },
+        "missing-3": {
+          "turns": 2,
+          "completed": 2,
+          "correct": 2,
+          "correct_and_grounded": 2
+        },
+        "missing-4": {
+          "turns": 2,
+          "completed": 2,
+          "correct": 2,
+          "correct_and_grounded": 2
+        },
+        "missing-5": {
+          "turns": 2,
+          "completed": 2,
+          "correct": 2,
+          "correct_and_grounded": 0
+        }
+      },
+      "failure_reasons": {
+        "Provider stream read failed before a final answer; retained first attempt, not retried.": 1,
+        "Confident whole-musical attribution from the retained song passage, without acknowledging missing whole-show evidence; ambiguous source-scope control.": 1
+      }
+    },
+    "paired_positive": {
+      "answer_correct": {
+        "candidate_only": [],
+        "baseline_only": []
+      },
+      "grounded": {
+        "candidate_only": [
+          ["native-fr-6556824#0", 0],
+          ["native-ko-755", 1],
+          ["hotpot-5ae46b615542995dadf24327", 0],
+          ["hotpot-5ae46b615542995dadf24327", 1],
+          ["hotpot-5ac113e2554299294b21909a", 1],
+          ["cross-7", 1]
+        ],
+        "baseline_only": [
+          ["native-fr-6556824#0", 1],
+          ["native-ja-2529", 1],
+          ["cross-0", 1]
+        ]
+      },
+      "citation_supported": {
+        "candidate_only": [
+          ["native-fr-6556824#0", 0],
+          ["native-ko-755", 1],
+          ["hotpot-5ae46b615542995dadf24327", 0],
+          ["hotpot-5ae46b615542995dadf24327", 1],
+          ["hotpot-5ac113e2554299294b21909a", 1],
+          ["cross-7", 1]
+        ],
+        "baseline_only": [
+          ["native-fr-6556824#0", 1],
+          ["native-fr-11892575#0", 0],
+          ["native-ja-2529", 1],
+          ["hotpot-5ae7821b5542997ec2727678", 1],
+          ["cross-0", 1]
+        ]
+      }
+    }
+  },
+  "retrieval_review": {
+    "raw_sha256": "c86f393806c7410c14ee783db0767276744b531ddbb282489c36d94983624a95",
+    "notes": [
+      {
+        "case": "arguana:test-law-lghbacpsba-pro02a",
+        "finding": "The labeled attorney-client-privilege rebuttal is dense rank 1. Hybrid top 5 instead contain intercept-evidence and jury discussions with vector ranks 12, 22, 17, 18 and 20, promoted by lexical ranks 15, 1, 10, 23 and 20. This is a fusion ranking loss, with the query itself excluded in all arms."
+      },
+      {
+        "case": "miracl-ko:883",
+        "finding": "Hybrid rank 1, source 10336#1, has an explicit nonrelevant judgment but states that WWII conventionally began with the German invasion of Poland. Positive source 1306015#2 supplies the same fact. Kept the published judgment and score unchanged; this is a concrete label-quality limitation."
+      },
+      {
+        "finding": "All saved dense/exact execution plans contain no HNSW index scan. Dense and exact top-5 chunk IDs agree on all 360 queries. This is not an approximate-index recall measurement."
+      }
+    ]
+  },
+  "chat_cases": [
+    {
+      "id": "native-en-2839",
+      "category": "native",
+      "language": "en",
+      "source_language": "en",
+      "workspace": "miracl-en",
+      "q": "What is a microbe?",
+      "answer": "A microscopic organism; single-celled or a colony."
+    },
+    {
+      "id": "native-en-600",
+      "category": "native",
+      "language": "en",
+      "source_language": "en",
+      "workspace": "miracl-en",
+      "q": "When did the Protestant Reformations start?",
+      "answer": "1517, with Martin Luther's Ninety-five Theses."
+    },
+    {
+      "id": "native-de-1147888#0",
+      "category": "native",
+      "language": "de",
+      "source_language": "de",
+      "workspace": "miracl-de",
+      "q": "Wo ist der Yellowstone Nationalpark?",
+      "answer": "United States, mainly Wyoming; also Montana and Idaho."
+    },
+    {
+      "id": "native-de-3163303#0",
+      "category": "native",
+      "language": "de",
+      "source_language": "de",
+      "workspace": "miracl-de",
+      "q": "Was ist die Hauptstadt des Bundesstaates Kalifornien?",
+      "answer": "Sacramento."
+    },
+    {
+      "id": "native-es-7684628#0",
+      "category": "native",
+      "language": "es",
+      "source_language": "es",
+      "workspace": "miracl-es",
+      "q": "¿Qué se celebra durante el Diwali?",
+      "answer": "The festival of lights and the Hindu new year; lights, sweets and celebrations."
+    },
+    {
+      "id": "native-es-313181#0",
+      "category": "native",
+      "language": "es",
+      "source_language": "es",
+      "workspace": "miracl-es",
+      "q": "¿Por qué los británicos toman té a las cinco de la tarde?",
+      "answer": "A late dinner and light lunch left a long gap; aristocrats took tea and a snack around five, and the custom spread."
+    },
+    {
+      "id": "native-fr-6556824#0",
+      "category": "native",
+      "language": "fr",
+      "source_language": "fr",
+      "workspace": "miracl-fr",
+      "q": "Quelle est l’importance d’Antioche?",
+      "answer": "Strategic routes and navigable Orontes; Seleucid capital and center of Hellenistic culture."
+    },
+    {
+      "id": "native-fr-11892575#0",
+      "category": "native",
+      "language": "fr",
+      "source_language": "fr",
+      "workspace": "miracl-fr",
+      "q": "Qu’est-ce que c'est un supernova?",
+      "answer": "A stellar explosion with a brief enormous rise in brightness, associated with a star's end of life."
+    },
+    {
+      "id": "native-ja-2529",
+      "category": "native",
+      "language": "ja",
+      "source_language": "ja",
+      "workspace": "miracl-ja",
+      "q": "チャンパ王国はいつ建国した？",
+      "answer": "Around the second century CE. A precise year is not given in the supplied source."
+    },
+    {
+      "id": "native-ja-4278",
+      "category": "native",
+      "language": "ja",
+      "source_language": "ja",
+      "workspace": "miracl-ja",
+      "q": "バリー・ボイトはいつ生まれた？",
+      "answer": "1937. The supplied source does not give month/day."
+    },
+    {
+      "id": "native-ko-1078",
+      "category": "native",
+      "language": "ko",
+      "source_language": "ko",
+      "workspace": "miracl-ko",
+      "q": "전류의 SI 단위는 암페어로 1 암페어는 1 초 당 1 쿨롱의 전하가 흐르는 것을 뜻하나요?",
+      "answer": "Yes. One ampere is one coulomb per second, symbol A."
+    },
+    {
+      "id": "native-ko-755",
+      "category": "native",
+      "language": "ko",
+      "source_language": "ko",
+      "workspace": "miracl-ko",
+      "q": "불가리아 수도는 어디인가요?",
+      "answer": "Sofia."
+    },
+    {
+      "id": "native-zh-674078#0",
+      "category": "native",
+      "language": "zh",
+      "source_language": "zh",
+      "workspace": "miracl-zh",
+      "q": "曼联队哪一年成立？",
+      "answer": "1878, originally Newton Heath; renamed Manchester United in 1902."
+    },
+    {
+      "id": "native-zh-509765#0",
+      "category": "native",
+      "language": "zh",
+      "source_language": "zh",
+      "workspace": "miracl-zh",
+      "q": "染色体有哪些组成部分？",
+      "answer": "DNA and proteins, especially histones. Structural descriptions of chromatids and centromere are also source-supported."
+    },
+    {
+      "id": "hotpot-5ae7821b5542997ec2727678",
+      "category": "multihop",
+      "language": "en",
+      "source_language": "en",
+      "workspace": "hotpot",
+      "q": "The Zapruder film shows President John F. Kennedy's motorcade as it passed through a plaza that was named aNational Historic Landmark in what year? ",
+      "answer": "1993"
+    },
+    {
+      "id": "hotpot-5ae46b615542995dadf24327",
+      "category": "multihop",
+      "language": "en",
+      "source_language": "en",
+      "workspace": "hotpot",
+      "q": "Who has more scope of profession, Edward Dmytryk or Otto Preminger?",
+      "answer": "Otto Ludwig Preminger"
+    },
+    {
+      "id": "hotpot-5a887898554299206df2b2a2",
+      "category": "multihop",
+      "language": "en",
+      "source_language": "en",
+      "workspace": "hotpot",
+      "q": "Are Broughtonia and Perilla both types of mint?",
+      "answer": "no"
+    },
+    {
+      "id": "hotpot-5a778b345542992a6e59decf",
+      "category": "multihop",
+      "language": "en",
+      "source_language": "en",
+      "workspace": "hotpot",
+      "q": "Who was born first, Susan Oliver or W. S. Van Dyke?",
+      "answer": "Woodbridge Strong Van Dyke II"
+    },
+    {
+      "id": "hotpot-5a8c2bb4554299240d9c20ac",
+      "category": "multihop",
+      "language": "en",
+      "source_language": "en",
+      "workspace": "hotpot",
+      "q": "What university in India hosts a literary festival which has had as a previous invitee the former Union Minister of Panchayati Raj?",
+      "answer": "Aligarh Muslim University, described in the source as a central university of India. The dataset's generic gold answer is not the institution's name."
+    },
+    {
+      "id": "hotpot-5ae0ff95554299422ee995b0",
+      "category": "multihop",
+      "language": "en",
+      "source_language": "en",
+      "workspace": "hotpot",
+      "q": "What son of Larry Johnson was born on November 19, 1979?",
+      "answer": "Larry Alphonso Johnson Jr."
+    },
+    {
+      "id": "hotpot-5ac113e2554299294b21909a",
+      "category": "multihop",
+      "language": "en",
+      "source_language": "en",
+      "workspace": "hotpot",
+      "q": "Who wrote the lyrics for Linda Eder's Broadway debut?",
+      "answer": "Wildhorn, Bricusse and Cuden"
+    },
+    {
+      "id": "hotpot-5a79332555429907847277e7",
+      "category": "multihop",
+      "language": "en",
+      "source_language": "en",
+      "workspace": "hotpot",
+      "q": "Who died first, Bryce Courtenay or Juan Carlos Onetti?",
+      "answer": "Juan Carlos Onetti"
+    },
+    {
+      "id": "cross-0",
+      "category": "cross_language",
+      "language": "de",
+      "source_language": "en",
+      "workspace": "mlqa-0",
+      "q": "[Lewis County, West Virginia] Wieviel Prozent der Familien waren arm?",
+      "answer": "16.30%"
+    },
+    {
+      "id": "cross-1",
+      "category": "cross_language",
+      "language": "es",
+      "source_language": "en",
+      "workspace": "mlqa-1",
+      "q": "[1 − 2 + 3 − 4 + ⋯] ¿De qué depende la transformación de Euler?",
+      "answer": "differences of differences, and higher iterations, but all the forward differences among 1, 1, 1, 1, ... are 0"
+    },
+    {
+      "id": "cross-2",
+      "category": "cross_language",
+      "language": "zh",
+      "source_language": "en",
+      "workspace": "mlqa-2",
+      "q": "[Sukhdev Thapar] 苏库德夫‧塔帕是哪国国籍？",
+      "answer": "Indian"
+    },
+    {
+      "id": "cross-3",
+      "category": "cross_language",
+      "language": "en",
+      "source_language": "de",
+      "workspace": "mlqa-3",
+      "q": "[Vereinigte Arabische Emirate] Which types of meat are preferred by the Emirati?",
+      "answer": "Lamm und Schaf"
+    },
+    {
+      "id": "cross-4",
+      "category": "cross_language",
+      "language": "en",
+      "source_language": "es",
+      "workspace": "mlqa-4",
+      "q": "[Desórdenes de Belice de 2005] What was the minimum known distance that the sounds of bullets firing could be heard from?",
+      "answer": "1 km"
+    },
+    {
+      "id": "cross-5",
+      "category": "cross_language",
+      "language": "en",
+      "source_language": "zh",
+      "workspace": "mlqa-5",
+      "q": "[兒童啟蒙教程] What was Barbauld's belief about her writing?",
+      "answer": "崇高"
+    },
+    {
+      "id": "cross-6",
+      "category": "cross_language",
+      "language": "es",
+      "source_language": "de",
+      "workspace": "mlqa-6",
+      "q": "[Gustav Radbruch] ¿Cuál es la traída de los subcampos? ",
+      "answer": "Rechtssoziologie, Rechtsphilosophie und Rechtsdogmatik."
+    },
+    {
+      "id": "cross-7",
+      "category": "cross_language",
+      "language": "de",
+      "source_language": "zh",
+      "workspace": "mlqa-7",
+      "q": "[马加赫坦克] In welcher Zeit wurden Magach- durch Merkava-Panzer ersetzt?",
+      "answer": "1980至1990年"
+    },
+    {
+      "id": "missing-0",
+      "category": "missing_source",
+      "language": "en",
+      "source_language": "en",
+      "workspace": "missing-0",
+      "q": "The Zapruder film shows President John F. Kennedy's motorcade as it passed through a plaza that was named aNational Historic Landmark in what year? ",
+      "answer": "The provided sources do not establish the answer. Acknowledge insufficient evidence; do not present outside knowledge as sourced."
+    },
+    {
+      "id": "missing-1",
+      "category": "missing_source",
+      "language": "en",
+      "source_language": "en",
+      "workspace": "missing-1",
+      "q": "Who wrote the lyrics for Linda Eder's Broadway debut?",
+      "answer": "The provided sources do not establish the answer. Acknowledge insufficient evidence; do not present outside knowledge as sourced."
+    },
+    {
+      "id": "missing-2",
+      "category": "missing_source",
+      "language": "de",
+      "source_language": "en",
+      "workspace": "missing-2",
+      "q": "[Lewis County, West Virginia] Wieviel Prozent der Familien waren arm?",
+      "answer": "The provided sources do not establish the answer. Acknowledge insufficient evidence; do not present outside knowledge as sourced."
+    },
+    {
+      "id": "missing-3",
+      "category": "missing_source",
+      "language": "zh",
+      "source_language": "en",
+      "workspace": "missing-3",
+      "q": "[Sukhdev Thapar] 苏库德夫‧塔帕是哪国国籍？",
+      "answer": "The provided sources do not establish the answer. Acknowledge insufficient evidence; do not present outside knowledge as sourced."
+    },
+    {
+      "id": "missing-4",
+      "category": "missing_source",
+      "language": "en",
+      "source_language": "es",
+      "workspace": "missing-4",
+      "q": "[Desórdenes de Belice de 2005] What was the minimum known distance that the sounds of bullets firing could be heard from?",
+      "answer": "The provided sources do not establish the answer. Acknowledge insufficient evidence; do not present outside knowledge as sourced."
+    },
+    {
+      "id": "missing-5",
+      "category": "missing_source",
+      "language": "de",
+      "source_language": "zh",
+      "workspace": "missing-5",
+      "q": "[马加赫坦克] In welcher Zeit wurden Magach- durch Merkava-Panzer ersetzt?",
+      "answer": "The provided sources do not establish the answer. Acknowledge insufficient evidence; do not present outside knowledge as sourced."
+    }
+  ],
+  "review": {
+    "file": "chat-review.json",
+    "sha256": "38b5a1f9a4c99eadbdf9a490f4f93cc61fb040d404bca1c5363fe7d40e35b32d",
+    "reviewer": "Codex source/answer review; not an independent or blinded human judge",
+    "correctness_scope": "Requested core answer against source-checked rubric. This does not certify the truth of every additional claim. Grounding and citation checks include additional material claims. Faithful repetition of a source error can pass those checks.",
+    "negative_sensitivity": {
+      "reason": "The retained In His Eyes passage makes missing-1 a source-scope ambiguity rather than a clean absence control. Planned labels stay unchanged.",
+      "exclude_case": "missing-1",
+      "baseline": {
+        "correct": 10,
+        "attempts": 10,
+        "completed": 10
+      },
+      "follow_links_ids": {
+        "correct": 9,
+        "attempts": 10,
+        "completed": 9
+      }
+    }
+  },
+  "validation": {
+    "metric_self_check": "passed on the VM before retrieval queries",
+    "frozen_chat_inputs_and_index": "unchanged after all 144 attempts",
+    "previous_curated_raw_runs": "all four hashes unchanged",
+    "python_ruff": "format and lint passed using cached Ruff; root fmt:py could not fetch Ruff because of UnknownIssuer TLS error",
+    "new_production_changes": false,
+    "deployment": false
+  },
+  "lab_restored": {
+    "restored_utc": "2026-09-05T14:04:18Z",
+    "retrieval_command": ["python", "/lab/lab_server.py"],
+    "baseline_variant": {
+      "name": "baseline",
+      "top_k": 5,
+      "per_file_cap": 4,
+      "lex_weight": 0.5,
+      "overlap_footer": true
+    },
+    "health": {
+      "gateway": 200,
+      "retrieval": 200
+    },
+    "services": [
+      {
+        "name": "/capy-rag-curated-retrieval-1",
+        "status": "running",
+        "exit_code": 0
+      },
+      {
+        "name": "/capy-rag-curated-worker-1",
+        "status": "exited",
+        "exit_code": 137
+      },
+      {
+        "name": "/capy-rag-curated-parser-1",
+        "status": "exited",
+        "exit_code": 0
+      },
+      {
+        "name": "/capy-rag-curated-parse-coordinator-1",
+        "status": "exited",
+        "exit_code": 0
+      }
+    ],
+    "data_retained": true,
+    "worker_exit_note": "Exit 137 follows the deliberate Docker stop after all uploads were ready; parser and coordinator were never started for this run."
+  }
+}
