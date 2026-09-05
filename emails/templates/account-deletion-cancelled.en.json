@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "subject": "Your Evo Notes account deletion was cancelled",
+  "subject": "Your Capy Notebook account deletion was cancelled",
   "preview": "Your account has been reactivated.",
   "content": {
     "type": "doc",
@@ -14,7 +14,7 @@
               { "type": "bold" },
               { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
             ],
-            "text": "Evo Notes"
+            "text": "Capy Notebook"
           }
         ]
       },
@@ -32,7 +32,7 @@
         "content": [
           {
             "type": "text",
-            "text": "Support cancelled your Evo Notes account deletion request. Your account is active again."
+            "text": "Support cancelled your Capy Notebook account deletion request. Your account is active again."
           }
         ]
       },
@@ -53,7 +53,7 @@
         "content": [
           {
             "type": "text",
-            "text": "You received this message because support cancelled your Evo Notes account deletion request."
+            "text": "You received this message because support cancelled your Capy Notebook account deletion request."
           }
         ]
       },

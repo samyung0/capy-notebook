@@ -21,7 +21,7 @@ import sys
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
-log = logging.getLogger("evo.obs")
+log = logging.getLogger("capy.obs")
 
 TRACEPARENT_HEADER = "traceparent"
 

@@ -18,7 +18,7 @@ describe('loadConfig', () => {
       COLLABORATION_ALLOWED_ORIGINS:
         'https://app.example.com, http://localhost:5173',
       COLLABORATION_SECRET: 'prod-secret',
-      DATABASE_URL: 'postgres://db/evo',
+      DATABASE_URL: 'postgres://db/capy',
       PORT: '2345',
       REDIS_URL: 'redis://redis:6379/1',
     });

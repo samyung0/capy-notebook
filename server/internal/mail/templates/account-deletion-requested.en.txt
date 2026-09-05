@@ -1,16 +1,16 @@
-Evo Notes
+Capy Notebook
 
 
 ACCOUNT DELETION SCHEDULED
 
 Hello,
 
-We received your request to delete your Evo Notes account. Deletion proceeds in {{.GraceDays}} days. At that point, your account and all of its workspaces, files, materials, and other data will be permanently deleted. If this was a mistake, contact support before then.
+We received your request to delete your Capy Notebook account. Deletion proceeds in {{.GraceDays}} days. At that point, your account and all of its workspaces, files, materials, and other data will be permanently deleted. If this was a mistake, contact support before then.
 
 Contact support {{.OpenURL}}
 
 ----------------------------------------
 
-You received this message because you requested account deletion on Evo Notes.
+You received this message because you requested account deletion on Capy Notebook.
 
 Manage product email preferences {{.UnsubscribeURL}}

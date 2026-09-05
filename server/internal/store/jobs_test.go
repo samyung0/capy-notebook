@@ -3,7 +3,7 @@ package store
 import (
 	"testing"
 
-	"github.com/evonotes/server/internal/sourceupload"
+	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 )
 
 func TestInitialPipelineJobType(t *testing.T) {

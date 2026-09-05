@@ -3,10 +3,10 @@ RUN corepack enable
 WORKDIR /workspace
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY collaboration/package.json collaboration/tsconfig.json ./collaboration/
-RUN pnpm install --frozen-lockfile --filter @evo-notes/collaboration...
-RUN pnpm --filter @evo-notes/collaboration deploy --prod /output
+RUN pnpm install --frozen-lockfile --filter @capy-notebook/collaboration...
+RUN pnpm --filter @capy-notebook/collaboration deploy --prod /output
 COPY collaboration/src ./collaboration/src
-RUN pnpm --filter @evo-notes/collaboration build
+RUN pnpm --filter @capy-notebook/collaboration build
 
 FROM node:22-alpine
 ENV NODE_ENV=production

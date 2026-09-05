@@ -81,7 +81,7 @@ function SignInPage() {
     <main className="grid min-h-dvh place-items-center bg-muted/40 p-4">
       <div>
         <div className="mb-5 text-center">
-          <h1 className="font-semibold text-2xl">Evo Notes operations</h1>
+          <h1 className="font-semibold text-2xl">Capy Notebook operations</h1>
           <p className="mt-1 text-muted-foreground text-sm">
             Sign in with an authorized operator account.
           </p>

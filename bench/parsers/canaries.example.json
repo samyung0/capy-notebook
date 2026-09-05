@@ -3,50 +3,50 @@
     {
       "label": "front-page scan heading",
       "page": 0,
-      "text": "EVO-SCAN-FRONT-PAGE"
+      "text": "CAPY-SCAN-FRONT-PAGE"
     },
     {
       "label": "sports-page scan heading",
       "page": 1,
-      "text": "EVO-SCAN-SPORTS-PAGE"
+      "text": "CAPY-SCAN-SPORTS-PAGE"
     }
   ],
   "office-canary.docx": [
     {
       "label": "DOCX canary",
       "page": 0,
-      "text": "EVO-DOCX-CANARY-4821"
+      "text": "CAPY-DOCX-CANARY-4821"
     }
   ],
   "office-canary.pptx": [
     {
       "label": "PPTX first-slide canary",
       "page": 0,
-      "text": "EVO-PPTX-CANARY-5932"
+      "text": "CAPY-PPTX-CANARY-5932"
     },
     {
       "label": "PPTX second-slide canary",
       "page": 1,
-      "text": "EVO-PPTX-TABLE-6043"
+      "text": "CAPY-PPTX-TABLE-6043"
     }
   ],
   "office-canary.xlsx": [
     {
       "label": "XLSX canary",
       "page": 0,
-      "text": "EVO-XLSX-CANARY-7154"
+      "text": "CAPY-XLSX-CANARY-7154"
     }
   ],
   "lecture_plus_scan.pdf": [
     {
       "label": "front-page scan heading",
       "page": 40,
-      "text": "EVO-SCAN-FRONT-PAGE"
+      "text": "CAPY-SCAN-FRONT-PAGE"
     },
     {
       "label": "sports-page scan heading",
       "page": 41,
-      "text": "EVO-SCAN-SPORTS-PAGE"
+      "text": "CAPY-SCAN-SPORTS-PAGE"
     }
   ]
 }

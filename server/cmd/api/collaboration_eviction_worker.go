@@ -9,13 +9,13 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/evonotes/server/internal/store"
 	"github.com/redis/go-redis/v9"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 const collaborationEvictionLease = 30 * time.Second
-const collaborationEvictionDeliveredChannel = "evo:collaboration:eviction-delivered"
-const collaborationInstanceRegistry = "evo:collaboration:instances"
+const collaborationEvictionDeliveredChannel = "capy:collaboration:eviction-delivered"
+const collaborationInstanceRegistry = "capy:collaboration:instances"
 
 type collaborationEvictionAck struct {
 	EvictionID string `json:"evictionId"`

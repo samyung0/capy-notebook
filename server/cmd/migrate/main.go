@@ -1,4 +1,4 @@
-// Command migrate applies numbered SQL files once and records them in
+// Command migrate applies the baseline/numbered migration plan and records it in
 // schema_migrations. The serving API should leave MIGRATE=false in production
 // and run this binary from the same image as an explicit deploy step.
 //
@@ -14,7 +14,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/evonotes/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 func env(key, def string) string {
@@ -25,11 +25,11 @@ func env(key, def string) string {
 }
 
 func main() {
-	status := flag.Bool("status", false, "print pending and applied files, then exit")
+	status := flag.Bool("status", false, "print applied, pending, covered, and ignored files, then exit")
 	seed := flag.Bool("seed", false, "apply the local demo seed after migrations")
 	flag.Parse()
 
-	dsn := env("DATABASE_URL", "postgres://evo:evo@localhost:5432/evo?sslmode=disable")
+	dsn := env("DATABASE_URL", "postgres://capy:capy@localhost:5432/capy?sslmode=disable")
 	ctx := context.Background()
 	st, err := store.Open(ctx, dsn)
 	if err != nil {
@@ -49,11 +49,8 @@ func main() {
 		log.Fatalf("status: %v", err)
 	}
 	for _, row := range pending {
-		if row.ChecksumMismatch {
-			log.Fatalf("migrate: %s checksum mismatch; add a new numbered file", row.Filename)
-		}
-		if !row.Applied {
-			log.Printf("applying %s", row.Filename)
+		if row.State == "pending" {
+			log.Printf("pending %s", row.Filename)
 		}
 	}
 	if err := st.Migrate(ctx); err != nil {
@@ -76,9 +73,8 @@ func printStatus(ctx context.Context, st *store.Store) error {
 	pending := 0
 	for _, row := range rows {
 		switch {
-		case row.ChecksumMismatch:
-			fmt.Printf("MISMATCH %s\n", row.Filename)
-			pending++
+		case row.State == "covered-by-baseline" || row.State == "ignored-baseline":
+			fmt.Printf("%s %s\n", row.State, row.Filename)
 		case row.Applied:
 			fmt.Printf("applied  %s\n", row.Filename)
 		default:

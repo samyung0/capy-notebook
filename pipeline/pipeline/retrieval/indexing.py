@@ -22,7 +22,7 @@ from .chunking import Chunk, _is_cjk, estimate_tokens, tokenize_for_search
 from .lang import detect_lang
 from .workflows import extract_json
 
-log = logging.getLogger("evo.retrieval.indexing")
+log = logging.getLogger("capy.retrieval.indexing")
 
 
 def _uid(prefix: str) -> str:

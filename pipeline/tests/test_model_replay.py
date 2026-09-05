@@ -261,7 +261,7 @@ async def test_certified_two_turn_replay(
             yield event
 
     monkeypatch.setattr(elitellm_client, "_stream_sse", spy_stream)
-    if os.environ.get("EVO_TEST_RECORD", "none") == "none":
+    if os.environ.get("CAPY_TEST_RECORD", "none") == "none":
         monkeypatch.setenv(env_name_for_provider(provider_slug), "sk-replay")
 
     user = [{"role": "user", "content": PROMPT}]
@@ -289,7 +289,7 @@ async def test_certified_two_turn_replay(
     payload = captured[1].get("input") or captured[1].get("messages")
     for key in continuity:
         assert _contains_key(payload, key), f"{model_id} lost {key} on the second turn"
-    if os.environ.get("EVO_TEST_RECORD", "none") == "none":
+    if os.environ.get("CAPY_TEST_RECORD", "none") == "none":
         recorded = replay_cassette.read_text()
         assert recorded.count("\n    method:") >= 2 or recorded.count("method:") >= 2
 

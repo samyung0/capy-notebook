@@ -56,5 +56,7 @@
     "receipt": "evo-notes-system.visual-check.json",
     "contactSheet": "evo-notes-system.visual-check.html"
   },
-  "error": "Chrome or Chromium is unavailable. Set ARCHIFY_CHROME to its executable path."
+  "error": "Chrome or Chromium is unavailable. Set ARCHIFY_CHROME to its executable path.",
+  "historicalEvidenceNote": "Original skipped visual-check receipt preserved in this file, including its original artifact path, hash, byte count, and diagnostics. The renamed HTML has only labeling changes and has not been visually rechecked. This receipt does not validate the current file.",
+  "renamedArtifact": "capy-notebook-system-prior.html"
 }

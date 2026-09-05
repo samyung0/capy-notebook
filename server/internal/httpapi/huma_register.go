@@ -9,14 +9,14 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 
-	"github.com/evonotes/server/internal/auth"
-	"github.com/evonotes/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/auth"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 // humaConfig builds the OpenAPI document metadata. huma serves the spec at
 // /openapi.yaml, /openapi.json (+ 3.0 variants) and docs at /docs.
 func humaConfig() huma.Config {
-	return huma.DefaultConfig("Evo Notes API", "0.1.0")
+	return huma.DefaultConfig("Capy Notebook API", "0.1.0")
 }
 
 // SpecYAML renders the OpenAPI 3.0.3 spec (safest for orval) without a live DB;
@@ -282,5 +282,6 @@ func registerRoutes(api huma.API, a *api) {
 	a.registerThinking(api)
 	a.registerExplore(api)
 	a.registerShare(api)
+	a.registerWorkspaceSummary(api)
 	a.registerBillingIntegrations(api)
 }

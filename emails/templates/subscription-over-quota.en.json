@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "subject": "Your Evo Notes storage is over the free limit",
+  "subject": "Your Capy Notebook storage is over the free limit",
   "preview": "Your subscription lapsed and storage is over the free limit.",
   "content": {
     "type": "doc",
@@ -14,7 +14,7 @@
               { "type": "bold" },
               { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
             ],
-            "text": "Evo Notes"
+            "text": "Capy Notebook"
           }
         ]
       },
@@ -53,7 +53,7 @@
         "content": [
           {
             "type": "text",
-            "text": "You received this message because your Evo Notes subscription and storage limits changed."
+            "text": "You received this message because your Capy Notebook subscription and storage limits changed."
           }
         ]
       },

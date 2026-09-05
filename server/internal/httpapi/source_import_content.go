@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/evonotes/server/internal/integrations"
+	"github.com/samyung0/capy-notebook/server/internal/integrations"
 )
 
 // getSourceImportContent proxies one selected provider object into the browser

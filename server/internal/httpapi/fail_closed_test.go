@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/evonotes/server/internal/pipeline"
+	"github.com/samyung0/capy-notebook/server/internal/pipeline"
 )
 
 // The generate defaults are declared as Huma tags so OpenAPI and orval show

@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/evonotes/server/internal/blob"
-	"github.com/evonotes/server/internal/httpapi"
-	"github.com/evonotes/server/internal/models"
-	"github.com/evonotes/server/internal/store"
-	"github.com/evonotes/server/internal/testdb"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/samyung0/capy-notebook/server/internal/blob"
+	"github.com/samyung0/capy-notebook/server/internal/httpapi"
+	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
 type billingFixture struct {
@@ -68,7 +68,7 @@ func openBilling(t *testing.T) billingFixture {
 		t.Fatal(err)
 	}
 
-	h := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", "evo", httpapi.Config{
+	h := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", "capy", httpapi.Config{
 		E2EAuth:       true,
 		E2ESecret:     "e2e-test-secret",
 		E2EUserIDs:    []string{ownerID, actorID},

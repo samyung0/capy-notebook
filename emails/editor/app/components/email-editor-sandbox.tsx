@@ -137,7 +137,7 @@ export function EmailEditorSandbox({
             <img alt="Maily" className="size-8" src="/brand/icon.svg" />
             <div className="min-w-0">
               <h1 className="truncate font-semibold text-sm">
-                Evo Notes email editor
+                Capy Notebook email editor
               </h1>
               <p className="truncate text-gray-500 text-xs">Powered by Maily</p>
             </div>

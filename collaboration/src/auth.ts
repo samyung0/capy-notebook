@@ -4,11 +4,11 @@ export type CollaborationAccess = 'comment' | 'write' | 'shrink';
 
 export interface CollaborationClaims {
   access: CollaborationAccess;
-  aud: 'evo-collaboration';
+  aud: 'capy-collaboration';
   avatarUrl?: string;
   exp: number;
   iat: number;
-  iss: 'evo-api';
+  iss: 'capy-api';
   jti: string;
   name?: string;
   room: string;
@@ -56,11 +56,11 @@ export function signCollaborationToken(
   const header = encodeJsonPart({ alg: 'HS256', typ: 'JWT' });
   const payload = encodeJsonPart({
     access: claims.access,
-    aud: claims.aud ?? 'evo-collaboration',
+    aud: claims.aud ?? 'capy-collaboration',
     ...(claims.avatarUrl ? { avatarUrl: claims.avatarUrl } : {}),
     exp: claims.exp,
     iat: claims.iat,
-    iss: claims.iss ?? 'evo-api',
+    iss: claims.iss ?? 'capy-api',
     jti: claims.jti,
     ...(claims.name ? { name: claims.name } : {}),
     room: claims.room,
@@ -133,8 +133,8 @@ export function verifyCollaborationToken(
     !roomMatch ||
     !Number.isSafeInteger(expectedSchema) ||
     expectedSchema < 1 ||
-    claims.aud !== 'evo-collaboration' ||
-    claims.iss !== 'evo-api' ||
+    claims.aud !== 'capy-collaboration' ||
+    claims.iss !== 'capy-api' ||
     (claims.access !== 'write' &&
       claims.access !== 'comment' &&
       claims.access !== 'shrink') ||

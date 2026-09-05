@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { m } from '@/i18n';
 import { useProviderConnect } from '@/lib/useProviderConnect';
 
-const DISMISS_KEY = 'evo_cloud_connect_dismissed';
+const DISMISS_KEY = 'capy_cloud_connect_dismissed';
 
 export function CloudConnectBanner() {
   const { data: integrations } = useIntegrations({ errorBoundary: false });

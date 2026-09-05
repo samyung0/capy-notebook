@@ -231,7 +231,7 @@ export default function WorkspaceOpen() {
 
   // Native drag-and-drop: rows expose their content type and id. Drops on a
   // content row insert before/after that row; the Others bucket appends.
-  const DND_TYPES = ['application/x-evo-material', 'application/x-evo-file'];
+  const DND_TYPES = ['application/x-capy-material', 'application/x-capy-file'];
   function hasDraggedContent(e: React.DragEvent) {
     return (
       draggedItemRef.current !== null ||
@@ -240,9 +240,9 @@ export default function WorkspaceOpen() {
   }
   function draggedContent(e: React.DragEvent): ContentOrderItem | null {
     if (draggedItemRef.current) return draggedItemRef.current;
-    const materialId = e.dataTransfer.getData('application/x-evo-material');
+    const materialId = e.dataTransfer.getData('application/x-capy-material');
     if (materialId) return { id: materialId, type: 'material' };
-    const fileId = e.dataTransfer.getData('application/x-evo-file');
+    const fileId = e.dataTransfer.getData('application/x-capy-file');
     if (fileId) return { id: fileId, type: 'file' };
     return null;
   }
@@ -394,8 +394,8 @@ export default function WorkspaceOpen() {
           draggedItemRef.current = dragged;
           e.dataTransfer.setData(
             item.type === 'file'
-              ? 'application/x-evo-file'
-              : 'application/x-evo-material',
+              ? 'application/x-capy-file'
+              : 'application/x-capy-material',
             item.id
           );
           e.dataTransfer.effectAllowed = 'move';
@@ -849,7 +849,7 @@ export default function WorkspaceOpen() {
       </ResizablePanelGroup>
       {ws && (
         <ShareDialog
-          link={`/share/workspaces/${ws.id}`}
+          link={`/w/${ws.id}`}
           onClose={() => setShareOpen(false)}
           onPrivacyChange={(privacy) => updateSharing({ id: ws.id, privacy })}
           onShareRoleChange={(shareRole) =>

@@ -61,7 +61,7 @@ describe('durable collaboration contributors', () => {
     Y.applyUpdate(attacker, Y.encodeStateAsUpdate(document));
     const before = Y.encodeStateVector(attacker);
     const marker = documentContributors(attacker)[0];
-    attacker.getMap('__evo_pending_contributors').delete(marker.key);
+    attacker.getMap('__capy_pending_contributors').delete(marker.key);
     const update = Y.encodeStateAsUpdate(attacker, before);
 
     expect(() => assertUpdatePreservesContributors(document, update)).toThrow(
@@ -83,7 +83,7 @@ describe('durable collaboration contributors', () => {
     Y.applyUpdate(attacker, Y.encodeStateAsUpdate(document));
     const before = Y.encodeStateVector(attacker);
     const marker = documentContributors(attacker)[0];
-    attacker.getMap('__evo_pending_contributors').set(marker.key, {
+    attacker.getMap('__capy_pending_contributors').set(marker.key, {
       access: marker.access,
       junk: 'x'.repeat(100_000),
       nonce: marker.nonce,
@@ -100,7 +100,7 @@ describe('durable collaboration contributors', () => {
 
   it('rejects oversized marker values', () => {
     const document = new Y.Doc();
-    document.getMap('__evo_pending_contributors').set('marker', {
+    document.getMap('__capy_pending_contributors').set('marker', {
       access: 'write',
       nonce: 'x'.repeat(129),
       userId: 'u_a',

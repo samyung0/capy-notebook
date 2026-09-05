@@ -12,8 +12,8 @@ import (
 	"github.com/stripe/stripe-go/v82/webhook"
 	svix "github.com/svix/svix-webhooks/go"
 
-	"github.com/evonotes/server/internal/billing"
-	"github.com/evonotes/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/billing"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 // webhookStore is the narrow slice of *store.Store the webhook handlers touch.

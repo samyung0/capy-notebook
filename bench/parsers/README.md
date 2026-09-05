@@ -7,7 +7,7 @@ The production decision records are:
   earlier Marker/RapidOCR capacity decision.
 - [`netcup-2026-08-31-stress.md`](netcup-2026-08-31-stress.md): current MinerU
   capacity, OOM, process-pool, timeout, health, and restart behavior.
-- [`results/evo-ingest-1-netcup-rs-2000-g12-2026-08-31/`](results/evo-ingest-1-netcup-rs-2000-g12-2026-08-31/):
+- [`results/capy-ingest-1-netcup-rs-2000-g12-2026-08-31/`](results/capy-ingest-1-netcup-rs-2000-g12-2026-08-31/):
   versionable raw results, machine specifications, artifact inventory, and
   supplemental measurements for the August 31 run.
 
@@ -71,7 +71,7 @@ decision report.
 python bench/parsers/build_worker_stress_fixtures.py \
   --digital /inputs/digital.pdf \
   --ocr /inputs/scanned.pdf \
-  --output-dir /opt/evo-ingest/stress-spool/sources \
+  --output-dir /opt/capy-ingest/stress-spool/sources \
   --tag candidate-1
 
 bash bench/parsers/run_worker_stress.sh \
@@ -88,7 +88,7 @@ harnesses measure one candidate limit and concurrent worker-plus-parser overlap:
 
 ```sh
 python bench/parsers/bench_worker_memory.py build \
-  --output /opt/evo-ingest/stress-current/worker-memory/content-120.json \
+  --output /opt/capy-ingest/stress-current/worker-memory/content-120.json \
   --target-mib 120
 
 MIBS=120 bash bench/parsers/run_worker_memory_stress.sh 1g 1g 1.0
@@ -109,12 +109,12 @@ contract survives. Each backend should run in its own container because model
 memory retained by an earlier backend can distort later results.
 
 ```sh
-docker build -t evo-parse-bench bench/parsers
+docker build -t capy-parse-bench bench/parsers
 docker run --rm --cpus=4 \
   -v "$PWD/bench/parsers/docs:/bench/docs:ro" \
   -v "$PWD/bench/parsers/out:/out" \
-  -v evo-parse-models:/models \
-  evo-parse-bench --threads 4
+  -v capy-parse-models:/models \
+  capy-parse-bench --threads 4
 ```
 
 Available backends:

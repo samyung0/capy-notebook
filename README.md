@@ -1,12 +1,13 @@
-# Evo Notes
+# Capy Notebook
 
 Study workspace: notes, sources, quizzes, flashcards, schedule, and AI retrieval.
 
 ## Parts
 
 - **Web app** (`src/`) — React/Vite SPA. Plate notes editor, file viewers, workspace chat/generate, quizzes, flashcards, schedule, tasks, Excalidraw canvas, Explore, billing. Clerk auth. Paraglide i18n (`messages/`).
+- **Site Worker** (`workers/site/`) serves the static app and `/w/{workspaceId}` summaries fetched live from Go. Full workspace content requires sign-in. Vite uses the same summary handler during local development.
 - **API** (`server/`) — Go HTTP gateway (`/api`, `:8080`). Workspaces, materials, files, comments, sharing, quota, billing, jobs, notifications. Owns Postgres migrations. Support CLIs live here too (`cmd/cancel-deletion`, `cmd/reconcile`).
-- **Ops dashboard** (`ops/` + `server/cmd/ops`). Separate operator SPA and Go origin (`:8082`) with overview, health, user lookup, usage explorer, append-only operator audit history, permission-gated model-registry writes, and a dedicated storage/Stripe reconciliation page. Every mounted database read refreshes every 30 seconds, and the global refresh button refetches all active Ops reads without calling providers or starting jobs. It is not on the product OpenAPI contract (`/api/ops`). Clerk provides identity, and production also requires Cloudflare Access on `ops.evonotes.com`. Membership is the `operators` table, with no grant API. `ops_permissions` maps `viewer`/`admin` to tokens (`read_all`, `write_registry`, `execute_reconciliation_job`). A read/auth pool and a shared admin-actions pool stay off note bodies, file bytes, prompts, responses, and email payloads; workspace-record metadata is visible.
+- **Ops dashboard** (`ops/` + `server/cmd/ops`). Separate operator SPA and Go origin (`:8082`) with overview, health, user lookup, usage explorer, append-only operator audit history, permission-gated model-registry writes, and a dedicated storage/Stripe reconciliation page. Every mounted database read refreshes every 30 seconds, and the global refresh button refetches all active Ops reads without calling providers or starting jobs. It is not on the product OpenAPI contract (`/api/ops`). Clerk provides identity, and production also requires Cloudflare Access on `ops.capynotebook.com`. Membership is the `operators` table, with no grant API. `ops_permissions` maps `viewer`/`admin` to tokens (`read_all`, `write_registry`, `execute_reconciliation_job`). A read/auth pool and a shared admin-actions pool stay off note bodies, file bytes, prompts, responses, and email payloads; workspace-record metadata is visible.
 - **Collaboration** (`collaboration/`) — Hocuspocus/Yjs sidecar. Authoritative live document state for materials.
 - **Pipeline** (`pipeline/`) — Python ingest worker (parse, chunk, embed, summarize) and FastAPI retrieval service (chat, generate).
 - **Parser** (`parser/`) — persistent CPU MinerU service with bounded document and page-slice concurrency.
@@ -95,7 +96,7 @@ pnpm dev
 docker compose -f deploy/docker-compose.yml --profile ops up --build ops
 
 # Ops UI only, proxies /api → :8082
-pnpm --filter @evo-notes/ops dev
+pnpm --filter @capy-notebook/ops dev
 
 # Standalone Maily editor on http://127.0.0.1:3000
 pnpm email:dev
@@ -106,3 +107,19 @@ pnpm email:build
 
 The Go binary and the Python worker do not auto-load `deploy/.env`. Export it
 first: `set -a; . deploy/.env; set +a`.
+
+## Deployment configuration
+
+GitHub environments hold UAT and production variables/secrets. Each manual
+app or ingest deployment applies that configuration. Copy the matching complete
+`deploy/.env.uat.example` or `.env.prod.example`, fill it, and use:
+
+```sh
+pnpm env:check --file deploy/.env.uat
+pnpm env:push --file deploy/.env.uat --environment uat --repo samyung0/capy-notebook
+```
+
+Use **Deploy UAT** for the coordinated release, or **Deploy ingest** against an
+already matching backend revision. The first release requires the explicit
+bootstrap option. See [deployment runbook](openwiki/deployment-runbook.md) for
+provisioning, Worker domain cutover and recovery.

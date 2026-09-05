@@ -115,6 +115,7 @@ function posthog(): Promise<PostHog | null> {
  * fine, titles and prompts are not.
  */
 export type AnalyticsEvent =
+  | { name: 'summary_viewed'; props: { workspaceId: string } }
   | { name: 'workspace_created'; props: { source: 'sidebar' | 'onboarding' } }
   | {
       name: 'source_uploaded';
@@ -179,6 +180,7 @@ const _analyticsEventNames: Record<AnalyticsEvent['name'], true> = {
   source_ingest_failed: true,
   source_uploaded: true,
   subscription_checkout_started: true,
+  summary_viewed: true,
   workspace_created: true,
 };
 void _analyticsEventNames;

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/evonotes/server/internal/testdb"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
 const testLLMParams = `{"temperature":0.3}`

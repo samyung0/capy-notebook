@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/evonotes/server/internal/blob"
-	"github.com/evonotes/server/internal/httpapi"
-	"github.com/evonotes/server/internal/models"
-	"github.com/evonotes/server/internal/store"
-	"github.com/evonotes/server/internal/testdb"
+	"github.com/samyung0/capy-notebook/server/internal/blob"
+	"github.com/samyung0/capy-notebook/server/internal/httpapi"
+	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
 func TestFilePreviewUsesTheAuthorizedNormalizedPDF(t *testing.T) {
@@ -26,7 +26,7 @@ func TestFilePreviewUsesTheAuthorizedNormalizedPDF(t *testing.T) {
 	}
 	st.SetModelRegistry(registry)
 	memory := blob.NewMemory()
-	handler := httpapi.New(st, memory, nil, nil, "marker", "evo", httpapi.Config{
+	handler := httpapi.New(st, memory, nil, nil, "marker", "capy", httpapi.Config{
 		AuthDisabled:  true,
 		E2EAuth:       true,
 		E2ESecret:     "e2e-test-secret",

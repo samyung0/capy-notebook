@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/evonotes/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/models"
 )
 
 // Token credit pricing. User charges are expressed in micro-credits, where

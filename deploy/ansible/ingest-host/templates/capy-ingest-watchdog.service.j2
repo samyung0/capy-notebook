@@ -1,0 +1,16 @@
+[Unit]
+Description=Capy Notebook %i parser watchdog
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=simple
+User={{ ingest_service_user }}
+Group={{ ingest_service_user }}
+ExecStart=/usr/bin/python3 /usr/local/sbin/capy-ingest-watchdog --stack %i
+Restart=always
+RestartSec=5
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target

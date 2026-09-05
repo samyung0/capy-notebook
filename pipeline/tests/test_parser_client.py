@@ -89,7 +89,7 @@ def test_source_method_schema_and_release_all_participate_in_identity(monkeypatc
     )
     monkeypatch.setattr(parser_client.cfg, "parse_method", "ocr")
     _, other_method = parser_client.artifact_identity(_descriptor())
-    monkeypatch.setattr(parser_client, "ARTIFACT_SCHEMA", "evo-parser-bundle-v4")
+    monkeypatch.setattr(parser_client, "ARTIFACT_SCHEMA", "capy-parser-bundle-v4")
     _, other_schema = parser_client.artifact_identity(_descriptor())
     monkeypatch.setattr(parser_client.cfg, "release_sha", "b" * 40)
     _, other_release = parser_client.artifact_identity(_descriptor())
@@ -852,5 +852,5 @@ def test_local_spool_sweep_keeps_keys_referenced_by_active_jobs(
 def test_empty_env_is_treated_as_unset(monkeypatch):
     from pipeline.config import _env
 
-    monkeypatch.setenv("EVO_EMPTY_AS_UNSET", "")
-    assert _env("EVO_EMPTY_AS_UNSET", "fallback") == "fallback"
+    monkeypatch.setenv("CAPY_EMPTY_AS_UNSET", "")
+    assert _env("CAPY_EMPTY_AS_UNSET", "fallback") == "fallback"

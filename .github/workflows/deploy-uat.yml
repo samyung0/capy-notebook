@@ -15,6 +15,11 @@ on:
         description: Full main-branch SHA; blank deploys the selected main revision
         required: false
         type: string
+      bootstrap_ingest:
+        description: Initialize an empty UAT ingest stack
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -63,6 +68,7 @@ jobs:
     uses: ./.github/workflows/deploy-environment.yml
     with:
       environment_name: uat
+      bootstrap_ingest: ${{ inputs.bootstrap_ingest || false }}
       revision: ${{ needs.resolve_revision.outputs.revision }}
 
   quality_gate:

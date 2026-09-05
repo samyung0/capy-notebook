@@ -1,4 +1,4 @@
-Evo Notes
+Capy Notebook
 
 
 ACCOUNT FROZEN
@@ -11,6 +11,6 @@ Manage subscription {{.OpenURL}}
 
 ----------------------------------------
 
-You received this message because your Evo Notes account was frozen after the storage buffer expired.
+You received this message because your Capy Notebook account was frozen after the storage buffer expired.
 
 Manage product email preferences {{.UnsubscribeURL}}

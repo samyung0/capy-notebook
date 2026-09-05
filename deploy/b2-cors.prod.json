@@ -1,6 +1,6 @@
 [
   {
-    "corsRuleName": "evo-spa-prod",
+    "corsRuleName": "capy-spa-prod",
     "allowedOrigins": ["https://capynotebook.com"],
     "allowedHeaders": ["content-type", "range"],
     "allowedOperations": ["s3_put", "s3_get", "s3_head"],

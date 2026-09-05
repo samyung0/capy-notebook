@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/evonotes/server/internal/obs"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 )
 
 // class is the route bucket a request falls into. Classes exist because a

@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/evonotes/server/internal/obs"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 )
 
 // AdminStore owns the single lazily opened pool used for permission-gated

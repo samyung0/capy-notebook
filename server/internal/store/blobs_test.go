@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/evonotes/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 )
 
 // newBlobTestUser creates a user that is torn down at the end of the test,

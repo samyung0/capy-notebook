@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/evonotes/server/internal/testdb"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
 func TestMain(m *testing.M) {

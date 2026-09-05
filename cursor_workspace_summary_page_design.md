@@ -30,7 +30,7 @@ Anonymous access is not a thin outline. Auth middleware treats these as public *
 
 `WorkspaceAccess` then allows any caller to read a `link` or `public` workspace. File download redirects to a **B2 presigned GET**. So a share URL is currently a CDN for the PDFs, not a landing page.
 
-There is also no SEO surface at all: one `index.html` titled “Evo Notes”, no sitemap/robots, UUID URLs, no workspace description, and Explore itself sits behind `AuthGate`.
+There is also no SEO surface at all: one `index.html` titled “Capy Notebook”, no sitemap/robots, UUID URLs, no workspace description, and Explore itself sits behind `AuthGate`.
 
 That last point matters. Google cannot discover public workspaces through the app; it can only follow inbound `/share/workspaces/<uuid>` links, and even then it gets a JS editor shell.
 
@@ -57,7 +57,7 @@ Practical equivalent:
 
 The SPA can hydrate that page or just be a nice client for humans. Crawlers and Slack/iMessage unfurls never execute your bundle.
 
-Do not put the outline only in a client `useQuery`. Google may eventually run JS; social crawlers will not, and you will ship a generic “Evo Notes” card.
+Do not put the outline only in a client `useQuery`. Google may eventually run JS; social crawlers will not, and you will ship a generic “Capy Notebook” card.
 
 ## Product split (this is the real design)
 

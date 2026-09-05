@@ -109,7 +109,7 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
             />
           </div>
           <ShareDialog
-            link={`/share/workspaces/${workspace.id}`}
+            link={`/w/${workspace.id}`}
             onClose={() => setShareOpen(false)}
             onPrivacyChange={(privacy) =>
               updateSharing({ id: workspace.id, privacy })
@@ -131,6 +131,7 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
               setOpen={setEditOpen}
               workspace={{
                 color: workspace.color,
+                description: workspace.description,
                 name: workspace.name,
                 tags: workspace.tags,
               }}

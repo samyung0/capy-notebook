@@ -1,4 +1,4 @@
-Evo Notes
+Capy Notebook
 
 
 STORAGE OVER FREE LIMIT
@@ -11,6 +11,6 @@ Manage subscription {{.OpenURL}}
 
 ----------------------------------------
 
-You received this message because your Evo Notes subscription and storage limits changed.
+You received this message because your Capy Notebook subscription and storage limits changed.
 
 Manage product email preferences {{.UnsubscribeURL}}

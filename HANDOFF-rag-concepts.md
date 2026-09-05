@@ -111,7 +111,7 @@ LightRAG's bill with LinearRAG's structure and neither one's benefit.
 | `pipeline/scripts/rag_eval.py` | single-shot search diagnostics |
 | `pipeline/scripts/rag_eval/questions-*-bridge.json` | the 13 bridge questions |
 
-**Lab VM** — `root@159.195.61.195`, key `~/.ssh/id_ed25519_evo_ingest`,
+**Lab VM** — `root@159.195.61.195`, key `~/.ssh/id_ed25519_capy_ingest`,
 stack at `/opt/evo-rag-lab` (compose project `evo-rag-lab`).
 Note: 159.195.250.206 was quoted once in conversation and does **not** accept
 this key.
@@ -130,8 +130,8 @@ the comparison.
 
 ## Gotchas
 
-- **Postgres in the lab** is compose service `db`, role `evo`, database `evo`:
-  `docker compose exec -T db psql -U evo -d evo`. Not `postgres`.
+- **Postgres in the lab** is compose service `db`, role `capy`, database `capy`:
+  `docker compose exec -T db psql -U capy -d capy`. Not `postgres`.
 - **Keys**: the lab's DeepSeek key was rotated out from under it once already
   (401s look like `agent_failed` in the stream, the real error is in
   `docker compose logs retrieval`). Current keys came from `deploy/.env.uat`.

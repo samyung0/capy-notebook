@@ -1,25 +1,20 @@
 ---
-- name: Provision the dedicated Evo ingest host
+- name: Provision the dedicated Capy Notebook ingest host
   hosts: all
   become: true
   vars:
-    ingest_hostname: evo-ingest-1
-    ingest_service_user: evo-ingest
-    ingest_repo_dir: /opt/evo-ingest/app
-    ingest_env_path: /etc/evo-ingest/ingest.env
-    ingest_release_env_path: /opt/evo-ingest/release.env
-    ingest_compose_file: deploy/docker-compose.ingest-host.yml
+    ingest_hostname: capy-ingest-1
+    ingest_service_user: capy-ingest
     ingest_wireguard_interface: wg0
     ingest_wireguard_listen_port: 51820
 
   pre_tasks:
-    - name: Refuse a mutable parser revision
+    - name: Require an explicit watchdog stack selection
       ansible.builtin.assert:
         that:
-          - ingest_repo_version | default('') is match('^[0-9a-f]{40}$')
-          - "'RELEASE_SHA' not in (ingest_env | default({}))"
-        fail_msg: Use the app release's full Git SHA; RELEASE_SHA is managed separately.
-      when: ingest_repo_url != 'CHANGE_ME'
+          - ingest_watchdog_stacks is defined
+          - ingest_watchdog_stacks | difference(['production', 'nonprod']) | length == 0
+        fail_msg: Set ingest_watchdog_stacks to the provisioned stacks, or an empty list for host-only setup.
 
     - name: Refuse incomplete WireGuard configuration
       ansible.builtin.assert:
@@ -75,9 +70,9 @@
         group: "{{ item.group }}"
         mode: "{{ item.mode }}"
       loop:
-        - { path: /etc/evo-ingest, owner: root, group: root, mode: "0700" }
+        - { path: /etc/capy-ingest, owner: root, group: root, mode: "0700" }
         - {
-            path: /opt/evo-ingest,
+            path: /opt/capy-ingest,
             owner: "{{ ingest_service_user }}",
             group: "{{ ingest_service_user }}",
             mode: "0750",
@@ -164,103 +159,76 @@
           APT::Periodic::Update-Package-Lists "1";
           APT::Periodic::Unattended-Upgrade "1";
 
-    - name: Check out the exact ingest release
-      ansible.builtin.git:
-        repo: "{{ ingest_repo_url }}"
-        dest: "{{ ingest_repo_dir }}"
-        version: "{{ ingest_repo_version }}"
-        update: true
-        force: false
-      register: ingest_checkout
-      become_user: "{{ ingest_service_user }}"
-      when: ingest_repo_url != 'CHANGE_ME'
-      notify: Restart ingest stack
+    # GitHub deployments own application checkouts, configuration, and containers.
+    # Docker's unless-stopped policy retains those exact containers across reboots.
+    - name: Inspect existing services before retiring the old launch path
+      ansible.builtin.service_facts:
 
-    - name: Verify the ingest checkout revision
+    - name: Refuse to replace a running legacy stack launcher
       ansible.builtin.assert:
         that:
-          - ingest_checkout.after == ingest_repo_version
-        fail_msg: Ingest checkout does not match the requested release SHA.
-      when: ingest_repo_url != 'CHANGE_ME'
+          - ansible_facts.services[item].state != 'running'
+        fail_msg: Retire the legacy stack launcher in a planned cutover before provisioning.
+      loop: [evo-ingest.service, capy-ingest.service]
+      when: item in ansible_facts.services
 
-    - name: Write the immutable ingest release identity
-      ansible.builtin.copy:
-        dest: "{{ ingest_release_env_path }}"
-        owner: "{{ ingest_service_user }}"
-        group: "{{ ingest_service_user }}"
-        mode: "0640"
-        content: "RELEASE_SHA={{ ingest_repo_version }}\n"
-      when: ingest_repo_url != 'CHANGE_ME'
-      notify: Restart ingest stack
+    - name: Disable the inactive legacy stack launchers
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        enabled: false
+      loop: [evo-ingest.service, capy-ingest.service]
+      when: item in ansible_facts.services
 
-    - name: Write the protected ingest environment
-      ansible.builtin.copy:
-        dest: "{{ ingest_env_path }}"
-        owner: root
-        group: "{{ ingest_service_user }}"
-        mode: "0640"
-        content: |-
-          {% for key, value in ingest_env | default({}) | dictsort %}
-          {{ key }}={{ value }}
-          {% endfor %}
-      no_log: true
-      when: ingest_env | default({}) | length > 0
-      notify: Restart ingest stack
+    - name: Stop legacy watchdogs
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        enabled: false
+        state: stopped
+      loop: [evo-ingest-watchdog.service, capy-ingest-watchdog.service]
+      when: item in ansible_facts.services
 
-    - name: Install the ingest stack systemd unit
-      ansible.builtin.template:
-        src: evo-ingest.service.j2
-        dest: /etc/systemd/system/evo-ingest.service
-        owner: root
-        group: root
-        mode: "0644"
-      notify:
-        - Reload systemd
-        - Restart ingest stack
+    - name: Remove retired launcher and watchdog units
+      ansible.builtin.file:
+        path: "/etc/systemd/system/{{ item }}"
+        state: absent
+      loop:
+        - evo-ingest.service
+        - capy-ingest.service
+        - evo-ingest-watchdog.service
+        - capy-ingest-watchdog.service
+      notify: Reload systemd
 
     - name: Install the ingest parser watchdog
       ansible.builtin.copy:
-        src: files/evo_ingest_watchdog.py
-        dest: /usr/local/sbin/evo-ingest-watchdog
+        src: files/capy_ingest_watchdog.py
+        dest: /usr/local/sbin/capy-ingest-watchdog
         owner: root
         group: root
         mode: "0755"
-      notify: Restart ingest watchdog
+      notify: Restart ingest watchdogs
 
-    - name: Install the ingest parser watchdog unit
+    - name: Install the per-stack parser watchdog unit
       ansible.builtin.template:
-        src: evo-ingest-watchdog.service.j2
-        dest: /etc/systemd/system/evo-ingest-watchdog.service
+        src: capy-ingest-watchdog.service.j2
+        dest: /etc/systemd/system/capy-ingest-watchdog@.service
         owner: root
         group: root
         mode: "0644"
       notify:
         - Reload systemd
-        - Restart ingest watchdog
+        - Restart ingest watchdogs
 
-    - name: Enable the ingest stack when code and secrets exist
+    - name: Enable watchdogs for the selected stacks
       ansible.builtin.systemd_service:
-        name: evo-ingest
+        name: "capy-ingest-watchdog@{{ item }}"
         enabled: true
         state: started
         daemon_reload: true
-      when:
-        - ingest_repo_url != 'CHANGE_ME'
-        - ingest_env | default({}) | length > 0
-
-    - name: Enable the ingest parser watchdog when the stack exists
-      ansible.builtin.systemd_service:
-        name: evo-ingest-watchdog
-        enabled: true
-        state: started
-        daemon_reload: true
-      when:
-        - ingest_repo_url != 'CHANGE_ME'
-        - ingest_env | default({}) | length > 0
+      loop: "{{ ingest_watchdog_stacks }}"
 
     - name: Keep SSH password login enabled
       ansible.builtin.copy:
-        dest: /etc/ssh/sshd_config.d/90-evo-ingest.conf
+        dest: /etc/ssh/sshd_config.d/90-capy-ingest.conf
         owner: root
         group: root
         mode: "0644"
@@ -292,23 +260,12 @@
         name: nftables
         state: reloaded
 
-    - name: Restart ingest stack
+    - name: Restart ingest watchdogs
       ansible.builtin.systemd_service:
-        name: evo-ingest
+        name: "capy-ingest-watchdog@{{ item }}"
         state: restarted
         daemon_reload: true
-      when:
-        - ingest_repo_url != 'CHANGE_ME'
-        - ingest_env | default({}) | length > 0
-
-    - name: Restart ingest watchdog
-      ansible.builtin.systemd_service:
-        name: evo-ingest-watchdog
-        state: restarted
-        daemon_reload: true
-      when:
-        - ingest_repo_url != 'CHANGE_ME'
-        - ingest_env | default({}) | length > 0
+      loop: "{{ ingest_watchdog_stacks }}"
 
     - name: Restart SSH
       ansible.builtin.systemd_service:

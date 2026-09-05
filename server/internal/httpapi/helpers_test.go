@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/evonotes/server/internal/pipeline"
-	"github.com/evonotes/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/pipeline"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 func TestResolveEmbeddingRequiresStore(t *testing.T) {
@@ -32,8 +32,8 @@ func TestHealthReportsReleaseRevision(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
 	}
-	if got := recorder.Header().Get("X-Evo-Release"); got != "0123456789abcdef0123456789abcdef01234567" {
-		t.Fatalf("X-Evo-Release = %q", got)
+	if got := recorder.Header().Get("X-Capy-Release"); got != "0123456789abcdef0123456789abcdef01234567" {
+		t.Fatalf("X-Capy-Release = %q", got)
 	}
 }
 

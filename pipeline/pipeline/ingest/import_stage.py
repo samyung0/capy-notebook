@@ -26,7 +26,7 @@ from ..jobs import CapacityWait, RetryableError, TerminalError
 from ..store import blobstore, db
 from . import pinned_http, telemetry
 
-log = logging.getLogger("evo.import")
+log = logging.getLogger("capy.import")
 
 _GATEWAY_TIMEOUT_S = 30
 _LEASE_WAIT_BACKOFF_S = 30

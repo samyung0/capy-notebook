@@ -16,7 +16,7 @@ func TestNewB2RejectsNonB2Endpoint(t *testing.T) {
 	_, err := NewB2(B2Config{
 		Endpoint: "https://s3.amazonaws.com",
 		Region:   "us-east-1",
-		Bucket:   "evo-notes",
+		Bucket:   "capy-notebook",
 		KeyID:    "test-key-id",
 		AppKey:   "test-app-key",
 	})
@@ -29,15 +29,15 @@ func TestNewB2BuildsB2Client(t *testing.T) {
 	store, err := NewB2(B2Config{
 		Endpoint: "https://s3.us-west-004.backblazeb2.com",
 		Region:   "us-west-004",
-		Bucket:   "evo-notes",
+		Bucket:   "capy-notebook",
 		KeyID:    "test-key-id",
 		AppKey:   "test-app-key",
 	})
 	if err != nil {
 		t.Fatalf("NewB2: %v", err)
 	}
-	if store.bucket != "evo-notes" {
-		t.Errorf("bucket = %q, want %q", store.bucket, "evo-notes")
+	if store.bucket != "capy-notebook" {
+		t.Errorf("bucket = %q, want %q", store.bucket, "capy-notebook")
 	}
 	if store.presignTTL != defaultPresignTTL {
 		t.Errorf("presignTTL = %s, want %s", store.presignTTL, defaultPresignTTL)

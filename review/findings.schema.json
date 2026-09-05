@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://evo-notes.local/review/findings.schema.json",
-  "title": "Evo Notes adversarial review report",
+  "$id": "https://capy-notebook.local/review/findings.schema.json",
+  "title": "Capy Notebook adversarial review report",
   "type": "object",
   "additionalProperties": false,
   "required": [

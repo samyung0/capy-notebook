@@ -9,7 +9,7 @@ The link uses `10.77.0.1/32` on the app host and `10.77.0.2/32` on the ingest
 host. `AllowedIPs` contains only the peer address. The playbook does not add a
 default route, DNS setting, forwarding, or NAT.
 
-The firewall admits the Netcup peer to the future Evo PostgreSQL port `5432`
+The firewall admits the Netcup peer to the future Capy Notebook PostgreSQL port `5432`
 and Redis port `6379` on `wg0`. This host sets
 `app_retire_native_postgresql: true` because its old `private-gallery` and
 `scout` databases are confirmed leftovers. The playbook stops and disables

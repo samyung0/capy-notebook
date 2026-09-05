@@ -48,5 +48,5 @@ export const stableElementIdsPlugin = createSlatePlugin({
     }) as typeof editor.apply;
     return editor;
   },
-  key: 'evo-stable-element-ids',
+  key: 'capy-stable-element-ids',
 });

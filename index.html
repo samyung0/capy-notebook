@@ -2,11 +2,11 @@
 <html data-style="classroom" data-theme="latte" lang="en">
   <head>
     <meta charset="UTF-8">
-    <meta content="%VITE_RELEASE_SHA%" name="evo-release">
+    <meta content="%VITE_RELEASE_SHA%" name="capy-release">
     <link href="/favicon.svg" rel="icon" type="image/svg+xml">
     <meta content="width=device-width, initial-scale=1.0" name="viewport">
     <meta content="light dark" name="color-scheme">
-    <title>Evo Notes</title>
+    <title>Capy Notebook</title>
 
     <script blocking="render" type="module">
     (() => {
@@ -15,8 +15,8 @@
         const THEMES = ['latte', 'mocha'];
         const DARKTHEMES = ['mocha'];
         const root = document.documentElement;
-        const style = localStorage.getItem('evo.style');
-        const theme = localStorage.getItem('evo.theme');
+        const style = localStorage.getItem('capy.style');
+        const theme = localStorage.getItem('capy.theme');
 
         root.dataset.style = STYLES.includes(style) ? style : 'classroom';
         root.dataset.theme = THEMES.includes(theme)

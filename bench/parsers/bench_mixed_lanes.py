@@ -31,8 +31,8 @@ from pathlib import Path
 from bench_parse import _healthz, _parse_url, _summarize, do_parse
 from PIL import Image, ImageDraw, ImageFont
 
-DECK_CANARY = "EVO-DECK-CANARY-GLYCOLYSIS"
-SCAN_CANARIES = ("EVO-SCAN-FRONT-PAGE", "EVO-SCAN-SPORTS-PAGE")
+DECK_CANARY = "CAPY-DECK-CANARY-GLYCOLYSIS"
+SCAN_CANARIES = ("CAPY-SCAN-FRONT-PAGE", "CAPY-SCAN-SPORTS-PAGE")
 LECTURE_PAGES = 40
 DOCS_DIR = Path(__file__).resolve().parent / "docs"
 

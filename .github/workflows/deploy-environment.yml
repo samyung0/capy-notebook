@@ -11,12 +11,17 @@ on:
         description: Full Git commit SHA to deploy
         required: true
         type: string
+      bootstrap_ingest:
+        description: Explicit first-time initialization of this environment's ingest stack
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     environment:
@@ -61,61 +66,58 @@ jobs:
           cache: pnpm
           node-version: 22
       - run: pnpm install --frozen-lockfile
+      - name: Render deployment configuration from GitHub
+        env:
+          CAPY_GITHUB_VARS: ${{ toJSON(vars) }}
+          CAPY_GITHUB_SECRETS: ${{ toJSON(secrets) }}
+        run: python3 scripts/env/config.py render --environment '${{ inputs.environment_name }}' --revision '${{ inputs.revision }}' --output "$RUNNER_TEMP/capy-config"
       - name: Build the SPA for the target environment
         env:
           NODE_OPTIONS: --max-old-space-size=4096
-          # Presence of the token is what enables source map generation and
-          # upload; SENTRY_URL is the EU region API host.
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
-          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
-          SENTRY_URL: ${{ vars.SENTRY_URL }}
-          VITE_APP_ENV: ${{ inputs.environment_name }}
-          VITE_APP_URL: ${{ vars.DEPLOYMENT_APP_URL }}
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
-          VITE_DIRECT_B2_UPLOAD: ${{ vars.VITE_DIRECT_B2_UPLOAD || 'true' }}
-          VITE_E2E_EDITOR_SEED: "false"
-          VITE_FEATURE_EDITOR_AI: ${{ vars.VITE_FEATURE_EDITOR_AI || 'false' }}
-          VITE_FEATURE_EXPLORE: ${{ vars.VITE_FEATURE_EXPLORE || 'false' }}
-          VITE_FEATURE_SCHEDULE: ${{ vars.VITE_FEATURE_SCHEDULE || 'false' }}
-          VITE_FEATURE_TASKS: ${{ vars.VITE_FEATURE_TASKS || 'false' }}
-          VITE_FEATURE_THINKING: ${{ vars.VITE_FEATURE_THINKING || 'false' }}
-          VITE_GOOGLE_PICKER_API_KEY: ${{ vars.VITE_GOOGLE_PICKER_API_KEY }}
-          VITE_GOOGLE_PICKER_APP_ID: ${{ vars.VITE_GOOGLE_PICKER_APP_ID }}
-          VITE_LLM_RUNTIME_ORIGIN: ${{ vars.VITE_LLM_RUNTIME_ORIGIN }}
-          VITE_OFFICE_RUNTIME_ORIGIN: ${{ vars.VITE_OFFICE_RUNTIME_ORIGIN }}
-          VITE_LOAD_TEST_SEED: "false"
-          VITE_MSAL_AUTHORITY: ${{ vars.VITE_MSAL_AUTHORITY }}
-          VITE_MSAL_CLIENT_ID: ${{ vars.VITE_MSAL_CLIENT_ID }}
-          VITE_POSTHOG_HOST: ${{ vars.VITE_POSTHOG_HOST }}
-          VITE_POSTHOG_KEY: ${{ vars.VITE_POSTHOG_KEY }}
-          VITE_RELEASE_SHA: ${{ inputs.revision }}
-          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
-          VITE_USE_MSW: "false"
-        run: pnpm build
-      - name: Configure ingest host release access
-        id: ingest_access
-        if: inputs.environment_name == 'production'
+        run: python3 scripts/env/config.py build --file "$RUNNER_TEMP/capy-config/build.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: capy-site-${{ inputs.environment_name }}-${{ inputs.revision }}
+          path: dist/
+          retention-days: 1
+          if-no-files-found: error
+      - name: Remove runner configuration
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/capy-config"
+
+  ingest_prepare:
+    needs: build
+    uses: ./.github/workflows/deploy-ingest.yml
+    with:
+      environment_name: ${{ inputs.environment_name }}
+      revision: ${{ inputs.revision }}
+      phase: ${{ inputs.bootstrap_ingest && 'bootstrap-prepare' || 'prepare' }}
+
+  deploy:
+    outputs:
+      coolify_deployment_uuid: ${{ steps.coolify.outputs.deployment_uuid }}
+      coolify_outcome: ${{ steps.coolify.outcome }}
+    needs: ingest_prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment:
+      name: ${{ inputs.environment_name }}
+      url: ${{ vars.DEPLOYMENT_APP_URL }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.revision }}
+      - name: Render deployment configuration from GitHub
         env:
-          INGEST_HOST: ${{ vars.INGEST_HOST }}
-          INGEST_HOST_KNOWN_HOSTS: ${{ secrets.INGEST_HOST_KNOWN_HOSTS }}
-          INGEST_HOST_SSH_PRIVATE_KEY: ${{ secrets.INGEST_HOST_SSH_PRIVATE_KEY }}
-        run: |
-          [[ -n "$INGEST_HOST" ]] || { echo "INGEST_HOST is required" >&2; exit 1; }
-          [[ -n "$INGEST_HOST_KNOWN_HOSTS" ]] || { echo "INGEST_HOST_KNOWN_HOSTS is required" >&2; exit 1; }
-          [[ -n "$INGEST_HOST_SSH_PRIVATE_KEY" ]] || { echo "INGEST_HOST_SSH_PRIVATE_KEY is required" >&2; exit 1; }
-          install -m 700 -d "$HOME/.ssh"
-          printf '%s\n' "$INGEST_HOST_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          printf '%s\n' "$INGEST_HOST_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
-          chmod 600 "$HOME/.ssh/known_hosts" "$HOME/.ssh/id_ed25519"
-      - name: Build the matching parser revision and pause ingest for cutover
-        if: inputs.environment_name == 'production'
+          CAPY_GITHUB_VARS: ${{ toJSON(vars) }}
+          CAPY_GITHUB_SECRETS: ${{ toJSON(secrets) }}
+        run: python3 scripts/env/config.py render --environment '${{ inputs.environment_name }}' --revision '${{ inputs.revision }}' --output "$RUNNER_TEMP/capy-config"
+      - name: Synchronize and verify Coolify configuration
         env:
-          DEPLOY_REVISION: ${{ inputs.revision }}
-          INGEST_HOST: ${{ vars.INGEST_HOST }}
-          INGEST_HOST_SSH_PORT: ${{ vars.INGEST_HOST_SSH_PORT || '22' }}
-          INGEST_HOST_USER: ${{ vars.INGEST_HOST_USER || 'evo-ingest' }}
-        run: scripts/deploy/ingest-host-release.sh prepare
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          COOLIFY_API_URL: ${{ vars.COOLIFY_API_URL }}
+          COOLIFY_RESOURCE_UUID: ${{ vars.COOLIFY_RESOURCE_UUID }}
+        run: python3 scripts/env/config.py apply-coolify --file "$RUNNER_TEMP/capy-config/coolify.json"
       - name: Deploy the pinned backend revision through Coolify
         id: coolify
         env:
@@ -124,28 +126,62 @@ jobs:
           COOLIFY_RESOURCE_UUID: ${{ vars.COOLIFY_RESOURCE_UUID }}
           DEPLOY_REVISION: ${{ inputs.revision }}
         run: scripts/deploy/coolify-deploy.sh
-      - name: Activate matching ingest host workers after migrations
-        if: inputs.environment_name == 'production'
-        env:
-          DEPLOY_REVISION: ${{ inputs.revision }}
-          INGEST_HOST: ${{ vars.INGEST_HOST }}
-          INGEST_HOST_SSH_PORT: ${{ vars.INGEST_HOST_SSH_PORT || '22' }}
-          INGEST_HOST_USER: ${{ vars.INGEST_HOST_USER || 'evo-ingest' }}
-        run: scripts/deploy/ingest-host-release.sh activate
-      - name: Deploy the matching SPA revision to Cloudflare Pages
+      - name: Remove runner configuration
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/capy-config"
+
+  ingest_activate:
+    needs: deploy
+    uses: ./.github/workflows/deploy-ingest.yml
+    with:
+      environment_name: ${{ inputs.environment_name }}
+      revision: ${{ inputs.revision }}
+      phase: activate
+
+  site:
+    needs: [deploy, ingest_activate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: ${{ inputs.environment_name }}
+      url: ${{ vars.DEPLOYMENT_APP_URL }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.revision }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: capy-site-${{ inputs.environment_name }}-${{ inputs.revision }}
+          path: dist/
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Stage the isolated Office runtime
+        run: node workers/office/stage.mjs dist "$RUNNER_TEMP/capy-office-assets"
+      - name: Deploy the matching Office Worker
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_PAGES_BRANCH: ${{ vars.CLOUDFLARE_PAGES_BRANCH || 'main' }}
-          CLOUDFLARE_PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
-          DEPLOY_REVISION: ${{ inputs.revision }}
+          PARENT_ORIGINS: ${{ vars.OFFICE_ALLOWED_PARENT_ORIGINS }}
+          TARGET_ENVIRONMENT: ${{ inputs.environment_name }}
         run: >-
-          pnpm dlx wrangler@4.125.0 pages deploy
-          "$GITHUB_WORKSPACE/dist"
-          --project-name="$CLOUDFLARE_PAGES_PROJECT"
-          --branch="$CLOUDFLARE_PAGES_BRANCH"
-          --commit-hash="$DEPLOY_REVISION"
-          --commit-dirty=false
+          npx --yes wrangler@4.125.0 deploy
+          --config wrangler.office.jsonc
+          --env "$TARGET_ENVIRONMENT"
+          --assets "$RUNNER_TEMP/capy-office-assets"
+          --var "PARENT_ORIGINS:$PARENT_ORIGINS"
+      - name: Deploy the matching SPA Worker
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          API_ORIGIN: ${{ vars.DEPLOYMENT_API_URL }}
+          APP_ORIGIN: ${{ vars.DEPLOYMENT_APP_URL }}
+          TARGET_ENVIRONMENT: ${{ inputs.environment_name }}
+        run: >-
+          npx --yes wrangler@4.125.0 deploy
+          --env "$TARGET_ENVIRONMENT"
+          --var "API_ORIGIN:$API_ORIGIN"
+          --var "APP_ORIGIN:$APP_ORIGIN"
       - name: Verify the public deployment revision
         env:
           DEPLOYMENT_API_URL: ${{ vars.DEPLOYMENT_API_URL }}
@@ -153,11 +189,14 @@ jobs:
           DEPLOYMENT_COLLAB_URL: ${{ vars.DEPLOYMENT_COLLAB_URL }}
           EXPECTED_REVISION: ${{ inputs.revision }}
         run: scripts/deploy/verify-release.sh
-      - name: Restore the previous ingest release if activation did not commit
-        if: always() && inputs.environment_name == 'production' && steps.ingest_access.outcome == 'success'
-        env:
-          DEPLOY_REVISION: ${{ inputs.revision }}
-          INGEST_HOST: ${{ vars.INGEST_HOST }}
-          INGEST_HOST_SSH_PORT: ${{ vars.INGEST_HOST_SSH_PORT || '22' }}
-          INGEST_HOST_USER: ${{ vars.INGEST_HOST_USER || 'evo-ingest' }}
-        run: scripts/deploy/ingest-host-release.sh rollback-if-pending
+
+  ingest_recover:
+    if: always() && needs.ingest_prepare.result != 'skipped' && (needs.ingest_prepare.result != 'success' || needs.deploy.result != 'success' || needs.ingest_activate.result != 'success')
+    needs: [ingest_prepare, deploy, ingest_activate]
+    uses: ./.github/workflows/deploy-ingest.yml
+    with:
+      environment_name: ${{ inputs.environment_name }}
+      revision: ${{ inputs.revision }}
+      phase: ${{ needs.deploy.result == 'skipped' && 'rollback-if-pending' || 'recover' }}
+      coolify_deployment_uuid: ${{ needs.deploy.outputs.coolify_deployment_uuid }}
+      coolify_outcome: ${{ needs.deploy.outputs.coolify_outcome }}

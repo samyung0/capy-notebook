@@ -23,7 +23,7 @@ test.describe('workspace invitations', () => {
 
     await ownerPage
       .getByPlaceholder('Email or user ID')
-      .fill('commenter@evonotes.test');
+      .fill('commenter@capynotebook.test');
     await ownerPage.getByRole('combobox', { name: 'Invite role' }).click();
     await ownerPage.getByRole('option', { name: 'Comment' }).click();
 
@@ -39,13 +39,13 @@ test.describe('workspace invitations', () => {
     expect(await created.text()).toBe('');
     await expect(ownerPage.getByText('Invitation submitted')).toBeVisible();
     await expect(
-      ownerPage.getByText('commenter@evonotes.test')
+      ownerPage.getByText('commenter@capynotebook.test')
     ).not.toBeVisible();
 
     const unknown = await ownerApi.post(
       `/api/workspaces/${workspace.id}/invites`,
       {
-        data: { identifier: 'missing@evonotes.test', role: 'viewer' },
+        data: { identifier: 'missing@capynotebook.test', role: 'viewer' },
       }
     );
     expect(unknown.status()).toBe(202);
@@ -70,7 +70,10 @@ test.describe('workspace invitations', () => {
     // The email is the only place the plaintext token exists; the in-app
     // notification links by invite id instead. Accepting with the emailed
     // token is left to the UI flow below so the invite stays consumable once.
-    const email = await waitForEmail(commenterApi, 'commenter@evonotes.test');
+    const email = await waitForEmail(
+      commenterApi,
+      'commenter@capynotebook.test'
+    );
     const emailedToken = email.text.match(/\/workspace-invites\/([\w-]+)/)?.[1];
     expect(emailedToken).toMatch(/^[\w-]{32}$/);
     expect(emailedToken).not.toBe(reference);
@@ -124,7 +127,9 @@ test.describe('workspace invitations', () => {
 
     await ownerPage.reload();
     await ownerPage.getByRole('button', { name: 'Share' }).click();
-    await expect(ownerPage.getByText('commenter@evonotes.test')).toBeVisible();
+    await expect(
+      ownerPage.getByText('commenter@capynotebook.test')
+    ).toBeVisible();
 
     const candidates = await ownerApi.get(
       `/api/workspaces/${workspace.id}/invite-candidates?q=commenter`

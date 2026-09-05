@@ -35,7 +35,7 @@ from .locale import response_language_rule
 from .stream import AssembledResponse, StreamEvent, ToolCall
 from .tools import ToolContext, ToolResult, TurnFailed
 
-log = logging.getLogger("evo.retrieval.agent")
+log = logging.getLogger("capy.retrieval.agent")
 
 SYSTEM_PROMPT = (
     "You are a study assistant answering strictly from the user's own uploaded "

@@ -24,7 +24,7 @@ from ..config import cfg
 from ..registry import ModelConfig
 from .usage_extract import NormalizedUsage
 
-log = logging.getLogger("evo.accounting")
+log = logging.getLogger("capy.accounting")
 
 KIND_LLM = "llm"
 KIND_EMBEDDING = "embedding"
@@ -47,7 +47,7 @@ class AccountingError(RuntimeError):
 
 
 class SettlementError(AccountingError):
-    """A provider receipt exists but could not be applied to Evo's ledger."""
+    """A provider receipt exists but could not be applied to Capy Notebook's ledger."""
 
 
 def provider_status(exc: BaseException | None) -> int | None:

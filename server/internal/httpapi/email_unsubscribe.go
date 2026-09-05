@@ -5,7 +5,7 @@ import (
 	"html"
 	"net/http"
 
-	"github.com/evonotes/server/internal/mail"
+	"github.com/samyung0/capy-notebook/server/internal/mail"
 )
 
 func (a *api) emailUnsubscribe(w http.ResponseWriter, r *http.Request) {

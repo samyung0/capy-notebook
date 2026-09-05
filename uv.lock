@@ -88,6 +88,58 @@ wheels = [
 ]
 
 [[package]]
+name = "capy-pipeline"
+version = "0.4.0"
+source = { editable = "." }
+dependencies = [
+    { name = "boto3" },
+    { name = "cryptography" },
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "pillow" },
+    { name = "psycopg", extra = ["binary", "pool"] },
+    { name = "pydantic" },
+    { name = "python-dotenv" },
+    { name = "python-multipart" },
+    { name = "redis" },
+    { name = "requests" },
+    { name = "sentry-sdk", extra = ["fastapi"] },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.optional-dependencies]
+test = [
+    { name = "prompt-toolkit" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "testcontainers" },
+    { name = "vcrpy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "boto3", specifier = ">=1.34" },
+    { name = "cryptography", specifier = ">=42" },
+    { name = "fastapi", specifier = ">=0.110" },
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "pillow", specifier = ">=10.0" },
+    { name = "prompt-toolkit", marker = "extra == 'test'", specifier = ">=3.0.37" },
+    { name = "psycopg", extras = ["binary", "pool"], specifier = ">=3.1" },
+    { name = "pydantic", specifier = ">=2" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0" },
+    { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24" },
+    { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "python-multipart", specifier = ">=0.0.9" },
+    { name = "redis", specifier = ">=5.0" },
+    { name = "requests", specifier = ">=2.31" },
+    { name = "sentry-sdk", extras = ["fastapi"], specifier = ">=2.0" },
+    { name = "testcontainers", marker = "extra == 'test'", specifier = ">=4.15.0" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.29" },
+    { name = "vcrpy", marker = "extra == 'test'", specifier = ">=6.0" },
+]
+provides-extras = ["test"]
+
+[[package]]
 name = "certifi"
 version = "2026.6.17"
 source = { registry = "https://pypi.org/simple" }
@@ -402,58 +454,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/88/7f/731ff914b0255d3d0
 wheels = [
     { url = "https://files.pythonhosted.org/packages/75/23/529140fe1aab80fc6992f93a706deec709140a6397439139a054e1515c45/docker-7.2.0-py3-none-any.whl", hash = "sha256:a3f45fdeb9165e2d25d9a1d02ddf3bc70fb572cf5ebbf9b58558c22caf29b71f", size = 148775 },
 ]
-
-[[package]]
-name = "evo-pipeline"
-version = "0.4.0"
-source = { editable = "." }
-dependencies = [
-    { name = "boto3" },
-    { name = "cryptography" },
-    { name = "fastapi" },
-    { name = "httpx" },
-    { name = "pillow" },
-    { name = "psycopg", extra = ["binary", "pool"] },
-    { name = "pydantic" },
-    { name = "python-dotenv" },
-    { name = "python-multipart" },
-    { name = "redis" },
-    { name = "requests" },
-    { name = "sentry-sdk", extra = ["fastapi"] },
-    { name = "uvicorn", extra = ["standard"] },
-]
-
-[package.optional-dependencies]
-test = [
-    { name = "prompt-toolkit" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "testcontainers" },
-    { name = "vcrpy" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "boto3", specifier = ">=1.34" },
-    { name = "cryptography", specifier = ">=42" },
-    { name = "fastapi", specifier = ">=0.110" },
-    { name = "httpx", specifier = ">=0.27" },
-    { name = "pillow", specifier = ">=10.0" },
-    { name = "prompt-toolkit", marker = "extra == 'test'", specifier = ">=3.0.37" },
-    { name = "psycopg", extras = ["binary", "pool"], specifier = ">=3.1" },
-    { name = "pydantic", specifier = ">=2" },
-    { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0" },
-    { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24" },
-    { name = "python-dotenv", specifier = ">=1.0" },
-    { name = "python-multipart", specifier = ">=0.0.9" },
-    { name = "redis", specifier = ">=5.0" },
-    { name = "requests", specifier = ">=2.31" },
-    { name = "sentry-sdk", extras = ["fastapi"], specifier = ">=2.0" },
-    { name = "testcontainers", marker = "extra == 'test'", specifier = ">=4.15.0" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.29" },
-    { name = "vcrpy", marker = "extra == 'test'", specifier = ">=6.0" },
-]
-provides-extras = ["test"]
 
 [[package]]
 name = "exceptiongroup"

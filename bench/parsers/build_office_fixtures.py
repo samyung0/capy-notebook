@@ -11,11 +11,11 @@ from pathlib import Path
 def build_docx(out: Path) -> None:
     html = """<!doctype html><meta charset="utf-8">
 <h1>Document parser fixture</h1>
-<p>EVO-DOCX-CANARY-4821 must survive Office conversion and parsing.</p>
+<p>CAPY-DOCX-CANARY-4821 must survive Office conversion and parsing.</p>
 <table border="1"><tr><th>Course</th><th>Score</th></tr>
 <tr><td>Biology</td><td>92</td></tr><tr><td>History</td><td>88</td></tr></table>
 """
-    with tempfile.TemporaryDirectory(prefix="evo-docx-") as temp:
+    with tempfile.TemporaryDirectory(prefix="capy-docx-") as temp:
         source = Path(temp) / "office-canary.html"
         source.write_text(html, encoding="utf-8")
         subprocess.run(
@@ -43,7 +43,7 @@ def build_pptx(out: Path) -> None:
     first = deck.slides.add_slide(deck.slide_layouts[1])
     first.shapes.title.text = "Presentation parser fixture"
     first.placeholders[1].text = (
-        "EVO-PPTX-CANARY-5932\n"
+        "CAPY-PPTX-CANARY-5932\n"
         "This slide checks title, body text, and page attribution."
     )
     second = deck.slides.add_slide(deck.slide_layouts[5])
@@ -54,7 +54,7 @@ def build_pptx(out: Path) -> None:
     for row, values in enumerate(
         (
             ("Metric", "Value"),
-            ("EVO-PPTX-TABLE-6043", "present"),
+            ("CAPY-PPTX-TABLE-6043", "present"),
             ("Accuracy", "reviewed"),
         )
     ):
@@ -71,7 +71,7 @@ def build_xlsx(out: Path) -> None:
     sheet = workbook.active
     sheet.title = "Parser fixture"
     rows = (
-        ("EVO-XLSX-CANARY-7154", "Quarter", "Revenue"),
+        ("CAPY-XLSX-CANARY-7154", "Quarter", "Revenue"),
         ("North", "Q1", 12500),
         ("South", "Q1", 9800),
         ("Total", "", "=SUM(C2:C3)"),

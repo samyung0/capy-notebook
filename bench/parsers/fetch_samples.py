@@ -54,7 +54,7 @@ def main() -> int:
             continue
         print(f"fetch {name}  <- {url}\n      {why}")
         request = urllib.request.Request(
-            url, headers={"User-Agent": "evo-notes-parse-bench"}
+            url, headers={"User-Agent": "capy-notebook-parse-bench"}
         )
         with urllib.request.urlopen(request, timeout=60) as response:
             target.write_bytes(response.read())

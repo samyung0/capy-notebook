@@ -1,4 +1,4 @@
-# Dev stack for the Evo Notes backend.
+# Dev stack for the Capy Notebook backend.
 #   docker compose -f deploy/docker-compose.yml up --build
 #
 # Production / Coolify: deploy/docker-compose.prod.yml
@@ -39,9 +39,9 @@ services:
   db:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_USER: evo
-      POSTGRES_PASSWORD: evo
-      POSTGRES_DB: evo
+      POSTGRES_USER: capy
+      POSTGRES_PASSWORD: capy
+      POSTGRES_DB: capy
     ports:
       # 5432 for the usual case; 5433 is an escape hatch for hosts that already
       # run a native Postgres on 5432 (which would otherwise shadow this one for
@@ -49,9 +49,9 @@ services:
       - "5432:5432"
       - "5433:5432"
     volumes:
-      - evo_pgdata:/var/lib/postgresql/data
+      - capy_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U evo -d evo"]
+      test: ["CMD-SHELL", "pg_isready -U capy -d capy"]
       interval: 5s
       timeout: 3s
       retries: 12
@@ -75,7 +75,7 @@ services:
       API_URL: http://server:8080
       COLLABORATION_ALLOWED_ORIGINS: ${COLLABORATION_ALLOWED_ORIGINS:-${APP_URL:-http://localhost:5173}}
       COLLABORATION_SECRET: ${COLLABORATION_SECRET:-dev-collaboration-secret}
-      DATABASE_URL: postgres://evo:evo@db:5432/evo?sslmode=disable
+      DATABASE_URL: postgres://capy:capy@db:5432/capy?sslmode=disable
       REDIS_URL: redis://redis:6379/0
       PORT: "1234"
       SENTRY_DSN: ${SENTRY_DSN_COLLABORATION:-}
@@ -99,7 +99,7 @@ services:
       context: ../server
     environment:
       <<: *observability
-      DATABASE_URL: postgres://evo:evo@db:5432/evo?sslmode=disable
+      DATABASE_URL: postgres://capy:capy@db:5432/capy?sslmode=disable
       ADDR: ":8080"
       # Local stack: the API applies numbered files and the demo seed.
       # Production serving API should be false; run /migrate from this image first.
@@ -119,8 +119,8 @@ services:
       COLLABORATION_INTERNAL_URL: http://collaboration:1234
       # Vestigial labels stored on the job payload; the parse route is chosen by
       # the file's parseMode, not by these.
-      EVO_PARSER: ${EVO_PARSER:-mineru}
-      EVO_ENGINE: ${EVO_ENGINE:-evo}
+      CAPY_PARSER: ${CAPY_PARSER:-mineru}
+      CAPY_ENGINE: ${CAPY_ENGINE:-capy}
       PIPELINE_URL: http://retrieval:8001
       PIPELINE_SECRET: ${PIPELINE_SECRET:-dev-pipeline-secret}
       LLM_CREDENTIALS_KEY: ${LLM_CREDENTIALS_KEY:-}
@@ -141,7 +141,7 @@ services:
       RATE_LIMIT_DISABLED: ${RATE_LIMIT_DISABLED:-}
       RATE_LIMIT_AI_PER_HOUR: ${RATE_LIMIT_AI_PER_HOUR:-}
       # Durable caption/derived artifact cache TTL.
-      EVO_CAPTION_CACHE_TTL_DAYS: ${EVO_CAPTION_CACHE_TTL_DAYS:-90}
+      CAPY_CAPTION_CACHE_TTL_DAYS: ${CAPY_CAPTION_CACHE_TTL_DAYS:-90}
     ports:
       - "8080:8080"
     healthcheck:
@@ -172,7 +172,7 @@ services:
       OPS_STATIC_DIR: /app/static
       OPS_DATABASE_URL: ${OPS_DATABASE_URL:-}
       OPS_ADMIN_DATABASE_URL: ${OPS_ADMIN_DATABASE_URL:-}
-      # Must match EVO_INGEST_ENVIRONMENT on the workers writing to this
+      # Must match CAPY_INGEST_ENVIRONMENT on the workers writing to this
       # database; the ingest pages filter on it. This stack is `local`.
       OPS_INGEST_PRIMARY_ENVIRONMENT: ${OPS_INGEST_PRIMARY_ENVIRONMENT:-local}
       OPS_INGEST_UAT_DATABASE_URL: ${OPS_INGEST_UAT_DATABASE_URL:-}
@@ -211,7 +211,7 @@ services:
       dockerfile: pipeline/Dockerfile
     environment: &app-ingest-env
       <<: *observability
-      DATABASE_URL: postgres://evo:evo@db:5432/evo?sslmode=disable
+      DATABASE_URL: postgres://capy:capy@db:5432/capy?sslmode=disable
       SENTRY_DSN: ${SENTRY_DSN_WORKER:-}
       # Backblaze B2 source-object storage.
       B2_ENDPOINT: ${B2_ENDPOINT:-}
@@ -224,23 +224,23 @@ services:
       PARSER_URL: ${PARSER_URL:-}
       PARSER_TOKEN: ${PARSER_TOKEN:-}
       PARSER_TIMEOUT: ${PARSER_TIMEOUT:-2400}
-      EVO_PARSE_SLICE_TIMEOUT: ${EVO_PARSE_SLICE_TIMEOUT:-600}
+      CAPY_PARSE_SLICE_TIMEOUT: ${CAPY_PARSE_SLICE_TIMEOUT:-600}
       PARSER_SLOT_TTL: ${PARSER_SLOT_TTL:-2700}
-      EVO_PARSE_SHARED_DIR: ${EVO_PARSE_SHARED_DIR:-/tmp/evo-parse-spool}
-      EVO_PARSE_JOB_TIMEOUT: ${EVO_PARSE_JOB_TIMEOUT:-3600}
-      EVO_INGEST_TIMEOUT: ${EVO_INGEST_TIMEOUT:-1200}
+      CAPY_PARSE_SHARED_DIR: ${CAPY_PARSE_SHARED_DIR:-/tmp/capy-parse-spool}
+      CAPY_PARSE_JOB_TIMEOUT: ${CAPY_PARSE_JOB_TIMEOUT:-3600}
+      CAPY_INGEST_TIMEOUT: ${CAPY_INGEST_TIMEOUT:-1200}
       # The local app-host worker may submit only one parse at a time.
-      EVO_PARSE_SLOTS: "1"
-      EVO_PARSE_METHOD: ${EVO_PARSE_METHOD:-auto}
-      EVO_OFFICE_PREVIEW_MAX_BYTES: ${EVO_OFFICE_PREVIEW_MAX_BYTES:-134217728}
-      EVO_PARSE_ARTIFACT_MAX_BYTES: ${EVO_PARSE_ARTIFACT_MAX_BYTES:-268435456}
-      EVO_PARSE_ARTIFACT_MAX_ENTRIES: ${EVO_PARSE_ARTIFACT_MAX_ENTRIES:-4096}
-      EVO_PARSE_ARTIFACT_MAX_ENTRY_BYTES: ${EVO_PARSE_ARTIFACT_MAX_ENTRY_BYTES:-134217728}
-      EVO_PARSE_ARTIFACT_MAX_EXPANDED_BYTES: ${EVO_PARSE_ARTIFACT_MAX_EXPANDED_BYTES:-536870912}
-      EVO_PARSE_CONTENT_MAX_BYTES: ${EVO_PARSE_CONTENT_MAX_BYTES:-134217728}
-      EVO_PARSE_CONTENT_MAX_BLOCKS: ${EVO_PARSE_CONTENT_MAX_BLOCKS:-250000}
-      EVO_PARSE_IMAGE_MAX_BYTES: ${EVO_PARSE_IMAGE_MAX_BYTES:-33554432}
-      EVO_PARSE_IMAGES_MAX_BYTES: ${EVO_PARSE_IMAGES_MAX_BYTES:-268435456}
+      CAPY_PARSE_SLOTS: "1"
+      CAPY_PARSE_METHOD: ${CAPY_PARSE_METHOD:-auto}
+      CAPY_OFFICE_PREVIEW_MAX_BYTES: ${CAPY_OFFICE_PREVIEW_MAX_BYTES:-134217728}
+      CAPY_PARSE_ARTIFACT_MAX_BYTES: ${CAPY_PARSE_ARTIFACT_MAX_BYTES:-268435456}
+      CAPY_PARSE_ARTIFACT_MAX_ENTRIES: ${CAPY_PARSE_ARTIFACT_MAX_ENTRIES:-4096}
+      CAPY_PARSE_ARTIFACT_MAX_ENTRY_BYTES: ${CAPY_PARSE_ARTIFACT_MAX_ENTRY_BYTES:-134217728}
+      CAPY_PARSE_ARTIFACT_MAX_EXPANDED_BYTES: ${CAPY_PARSE_ARTIFACT_MAX_EXPANDED_BYTES:-536870912}
+      CAPY_PARSE_CONTENT_MAX_BYTES: ${CAPY_PARSE_CONTENT_MAX_BYTES:-134217728}
+      CAPY_PARSE_CONTENT_MAX_BLOCKS: ${CAPY_PARSE_CONTENT_MAX_BLOCKS:-250000}
+      CAPY_PARSE_IMAGE_MAX_BYTES: ${CAPY_PARSE_IMAGE_MAX_BYTES:-33554432}
+      CAPY_PARSE_IMAGES_MAX_BYTES: ${CAPY_PARSE_IMAGES_MAX_BYTES:-268435456}
       # Platform keys match elitellm_providers.json. Model identity lives on
       # model_configs.
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
@@ -250,19 +250,19 @@ services:
       ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
       ELEVENLABS_BASE_URL: ${ELEVENLABS_BASE_URL:-https://api.elevenlabs.io}
       EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}
-      EVO_CAPTION_CONCURRENCY: ${EVO_CAPTION_CONCURRENCY:-8}
-      EVO_CAPTION_MAX_EDGE: ${EVO_CAPTION_MAX_EDGE:-1280}
-      EVO_CAPTION_VERSION: ${EVO_CAPTION_VERSION:-v2}
-      EVO_IMAGE_MAX_PIXELS: ${EVO_IMAGE_MAX_PIXELS:-100000000}
-      EVO_ELEVENLABS_TRANSCRIPT_VERSION: ${EVO_ELEVENLABS_TRANSCRIPT_VERSION:-scribe-v2-1}
-      EVO_ELEVENLABS_CONCURRENCY_UNITS: ${EVO_ELEVENLABS_CONCURRENCY_UNITS:-12}
-      EVO_ELEVENLABS_SYNC_TIMEOUT_S: ${EVO_ELEVENLABS_SYNC_TIMEOUT_S:-43200}
-      EVO_AUDIO_MAX_DURATION_SECONDS: ${EVO_AUDIO_MAX_DURATION_SECONDS:-36000}
-      EVO_TABULAR_TEXT_VERSION: ${EVO_TABULAR_TEXT_VERSION:-v1}
+      CAPY_CAPTION_CONCURRENCY: ${CAPY_CAPTION_CONCURRENCY:-8}
+      CAPY_CAPTION_MAX_EDGE: ${CAPY_CAPTION_MAX_EDGE:-1280}
+      CAPY_CAPTION_VERSION: ${CAPY_CAPTION_VERSION:-v2}
+      CAPY_IMAGE_MAX_PIXELS: ${CAPY_IMAGE_MAX_PIXELS:-100000000}
+      CAPY_ELEVENLABS_TRANSCRIPT_VERSION: ${CAPY_ELEVENLABS_TRANSCRIPT_VERSION:-scribe-v2-1}
+      CAPY_ELEVENLABS_CONCURRENCY_UNITS: ${CAPY_ELEVENLABS_CONCURRENCY_UNITS:-12}
+      CAPY_ELEVENLABS_SYNC_TIMEOUT_S: ${CAPY_ELEVENLABS_SYNC_TIMEOUT_S:-43200}
+      CAPY_AUDIO_MAX_DURATION_SECONDS: ${CAPY_AUDIO_MAX_DURATION_SECONDS:-36000}
+      CAPY_TABULAR_TEXT_VERSION: ${CAPY_TABULAR_TEXT_VERSION:-v1}
       # Must match the gateway: whichever process sweeps first applies its own.
-      EVO_CAPTION_CACHE_TTL_DAYS: ${EVO_CAPTION_CACHE_TTL_DAYS:-90}
-      EVO_PARSE_ZIP_TTL_HOURS: ${EVO_PARSE_ZIP_TTL_HOURS:-6}
-      EVO_PARSE_SOURCE_TTL_HOURS: ${EVO_PARSE_SOURCE_TTL_HOURS:-2}
+      CAPY_CAPTION_CACHE_TTL_DAYS: ${CAPY_CAPTION_CACHE_TTL_DAYS:-90}
+      CAPY_PARSE_ZIP_TTL_HOURS: ${CAPY_PARSE_ZIP_TTL_HOURS:-6}
+      CAPY_PARSE_SOURCE_TTL_HOURS: ${CAPY_PARSE_SOURCE_TTL_HOURS:-2}
     command: ["python", "-m", "pipeline.ingest.worker"]
     deploy:
       replicas: ${WORKER_REPLICAS:-1}
@@ -280,9 +280,9 @@ services:
       dockerfile: pipeline/Dockerfile
     environment:
       <<: *app-ingest-env
-      EVO_PARSE_COORDINATOR_CONCURRENCY: "1"
-      EVO_DB_SYNC_POOL_MAX_SIZE: "2"
-      EVO_DB_ASYNC_POOL_MAX_SIZE: "2"
+      CAPY_PARSE_COORDINATOR_CONCURRENCY: "1"
+      CAPY_DB_SYNC_POOL_MAX_SIZE: "2"
+      CAPY_DB_ASYNC_POOL_MAX_SIZE: "2"
     command: ["python", "-m", "pipeline.ingest.parse_worker"]
     depends_on:
       db:
@@ -300,8 +300,8 @@ services:
       <<: *app-ingest-env
       GATEWAY_URL: http://server:8080
       PIPELINE_SECRET: ${PIPELINE_SECRET:-dev-pipeline-secret}
-      EVO_DB_SYNC_POOL_MAX_SIZE: "2"
-      EVO_DB_ASYNC_POOL_MAX_SIZE: "2"
+      CAPY_DB_SYNC_POOL_MAX_SIZE: "2"
+      CAPY_DB_ASYNC_POOL_MAX_SIZE: "2"
     command: ["python", "-m", "pipeline.ingest.import_worker"]
     depends_on:
       db:
@@ -314,7 +314,7 @@ services:
       dockerfile: pipeline/Dockerfile
     environment:
       <<: *observability
-      DATABASE_URL: postgres://evo:evo@db:5432/evo?sslmode=disable
+      DATABASE_URL: postgres://capy:capy@db:5432/capy?sslmode=disable
       SENTRY_DSN: ${SENTRY_DSN_RETRIEVAL:-}
       # Tools with side effects call back into the gateway rather than writing
       # materials directly, so the agent inherits Go's authz and quota checks.
@@ -348,7 +348,7 @@ services:
       context: ../server
     entrypoint: ["/app/reconcile"]
     environment:
-      DATABASE_URL: postgres://evo:evo@db:5432/evo?sslmode=disable
+      DATABASE_URL: postgres://capy:capy@db:5432/capy?sslmode=disable
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_PRICE_PRO: ${STRIPE_PRICE_PRO:-}
     depends_on:
@@ -358,4 +358,4 @@ services:
       - reconcile
 
 volumes:
-  evo_pgdata:
+  capy_pgdata:

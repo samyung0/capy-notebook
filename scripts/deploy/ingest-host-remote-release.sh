@@ -1,232 +1,208 @@
 #!/usr/bin/env bash
-
+# One persistent pending release per stack; the owner survives separate workflow jobs.
 set -euo pipefail
+umask 077
 
-die() {
-  printf 'ingest-host-release: %s\n' "$1" >&2
-  exit 1
+die() { printf 'ingest-host-release: %s\n' "$1" >&2; exit 1; }
+mode="${1:-}"; revision="${2:-}"; environment="${3:-}"; owner="${4:-}"; staging="${5:-}"; repository_url="${6:-}"; backend_revision="${7:-}"
+[[ "$mode" == bootstrap-prepare || "$mode" == prepare || "$mode" == activate || "$mode" == recover || "$mode" == rollback-if-pending ]] || die 'invalid phase'
+[[ "$revision" =~ ^[0-9a-f]{40}$ ]] || die 'invalid revision'
+[[ "$environment" == uat || "$environment" == production ]] || die 'invalid environment'
+[[ "$owner" =~ ^[A-Za-z0-9_-]+$ ]] || die 'invalid release owner'
+base="${CAPY_INGEST_ROOT:-/opt/capy-ingest}"
+stack=production; project=capy-ingest; repo="$base/app"; compose=deploy/docker-compose.ingest-host.yml
+shared=prod.env; consumers=(parse-coordinator worker import-worker host-sampler)
+if [[ "$environment" == uat ]]; then
+  stack=nonprod; project=capy-ingest-nonprod; repo="$base/app-nonprod"
+  compose=deploy/docker-compose.ingest-host.nonprod.yml; shared=nonprod.env
+  consumers=(parse-coordinator-uat worker-uat import-worker-uat host-sampler-uat)
+fi
+state="$base/releases/$stack"; pending="$state/pending"; active="$state/active"
+if [[ "$mode" == bootstrap-prepare ]]; then
+  [[ ! -e "$active" ]] || die 'stack already initialized; use a normal deployment'
+  mkdir -p "$state"
+else
+  [[ -d "$repo/.git" && -d "$state" ]] || die 'stack not initialized; explicitly select bootstrap on the deployment workflow'
+fi
+# flock serializes individual mutations; pending ownership covers gaps between jobs.
+exec 9>"$state/operation.lock"
+flock -n 9 || die 'another ingest operation is running'
+if [[ "$mode" == bootstrap-prepare ]]; then
+  [[ ! -e "$active" && ! -e "$pending" ]] || die 'stack is initialized or another bootstrap is pending'
+fi
+restore_revision=""
+pending_work=""
+cleanup() {
+  local status="$?"
+  if [[ "$status" != 0 && "$restore_revision" =~ ^[0-9a-f]{40}$ && ! -e "$pending" ]]; then
+    git checkout --detach "$restore_revision" >/dev/null || printf 'Could not restore the previous checkout.\n' >&2
+  fi
+  if [[ -n "$pending_work" && -d "$pending_work" ]]; then rm -rf -- "$pending_work"; fi
+  if [[ "$staging" =~ ^/tmp/capy-release\.[A-Za-z0-9]+$ ]]; then rm -rf -- "$staging"; fi
 }
-
-mode="${1:-}"
-revision="${2:-}"
-repo="${EVO_INGEST_REPO:-/opt/evo-ingest/app}"
-release_env="${EVO_INGEST_RELEASE_ENV:-/opt/evo-ingest/release.env}"
-pending_state="${EVO_INGEST_PENDING_STATE:-/opt/evo-ingest/release.pending}"
-secret_env="${EVO_INGEST_SECRET_ENV:-/etc/evo-ingest/ingest.env}"
-compose="${EVO_INGEST_COMPOSE:-deploy/docker-compose.ingest-host.yml}"
-health_attempts="${EVO_INGEST_HEALTH_ATTEMPTS:-100}"
-health_interval="${EVO_INGEST_HEALTH_INTERVAL:-15}"
-
-[[ "$mode" == "prepare" || "$mode" == "activate" || "$mode" == "rollback-if-pending" ]] ||
-  die "mode must be prepare, activate, or rollback-if-pending"
-[[ "$revision" =~ ^[0-9a-f]{40}$ ]] || die "revision must be a lowercase full Git SHA"
-[[ "$health_attempts" =~ ^[1-9][0-9]*$ ]] || die "health attempts must be positive"
-[[ "$health_interval" =~ ^[0-9]+$ ]] || die "health interval must be non-negative"
-
+trap cleanup EXIT
+if [[ "$mode" == bootstrap-prepare && ! -d "$repo/.git" ]]; then
+  [[ "$repository_url" =~ ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(\.git)?$ ]] || die 'bootstrap requires the repository HTTPS URL'
+  [[ ! -e "$repo" || -z "$(ls -A "$repo")" ]] || die 'bootstrap checkout is not empty; refusing overwrite'
+  git clone --no-checkout -- "$repository_url" "$repo"
+  git -C "$repo" checkout --detach "$revision"
+fi
 cd "$repo"
-
-write_release_env() {
-  local sha="$1"
-  printf 'RELEASE_SHA=%s\n' "$sha" >"${release_env}.tmp"
-  mv "${release_env}.tmp" "$release_env"
+[[ -z "$(git status --porcelain)" ]] || die 'ingest checkout has local changes'
+read_sha() { local sha; sha="$(cat "$1")"; [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || die 'invalid stored release'; printf '%s' "$sha"; }
+set_current() {
+  local target="$1"
+  python3 - "$target" "$state/current" "$owner" <<'PY_LINK'
+import os,sys
+source,destination,owner=sys.argv[1:]
+temporary=destination+'.'+owner+'.tmp'
+if os.path.lexists(temporary): os.unlink(temporary)
+os.symlink(source, temporary)
+os.replace(temporary, destination)
+PY_LINK
 }
-
-active_revision() {
-  local sha=""
-  if [[ -f "$release_env" ]]; then
-    sha="$(sed -n 's/^RELEASE_SHA=//p' "$release_env")"
-  fi
-  if [[ -n "$sha" && ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
-    die "active release file contains an invalid revision"
-  fi
-  printf '%s' "$sha"
-}
-
-state_value() {
-  local key="$1"
-  sed -n "s/^${key}=//p" "$pending_state"
-}
-
-write_pending_state() {
-  local previous="$1"
-  local candidate="$2"
-  umask 077
-  {
-    printf 'PREVIOUS_SHA=%s\n' "${previous:-none}"
-    printf 'CANDIDATE_SHA=%s\n' "$candidate"
-  } >"${pending_state}.tmp"
-  mv "${pending_state}.tmp" "$pending_state"
-}
-
-read_pending_state() {
-  [[ -f "$pending_state" ]] || return 1
-  previous_revision="$(state_value PREVIOUS_SHA)"
-  candidate_revision="$(state_value CANDIDATE_SHA)"
-  [[ "$previous_revision" == "none" || "$previous_revision" =~ ^[0-9a-f]{40}$ ]] ||
-    die "pending release contains an invalid previous revision"
-  [[ "$candidate_revision" =~ ^[0-9a-f]{40}$ ]] ||
-    die "pending release contains an invalid candidate revision"
-}
-
+write_active() { printf '%s\n' "$1" > "$active.tmp"; mv "$active.tmp" "$active"; }
+config="$state/current"
 dc() {
-  local sha="$1"
-  shift
-  RELEASE_SHA="$sha" docker compose \
-    -p evo-ingest \
-    --env-file "$secret_env" \
-    -f "$compose" \
-    "$@"
+  local sha="$1"; shift
+  local args=(-p "$project" --env-file "$config/$shared" -f "$compose")
+  if [[ "$environment" == uat ]]; then args+=(--profile uat); fi
+  CAPY_INGEST_UAT_ENV_FILE="$config/uat.queue.env" RELEASE_SHA="$sha" docker compose "${args[@]}" "$@"
 }
-
-verify_container_revision() {
-  local sha="$1"
-  local service="$2"
-  local containers container image_revision
-  containers="$(dc "$sha" ps -q "$service")"
-  [[ -n "$containers" ]] || return 1
-  while IFS= read -r container; do
-    [[ -n "$container" ]] || continue
-    image_revision="$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$container")"
-    [[ "$image_revision" == "$sha" ]] || return 1
-  done <<<"$containers"
+verify() {
+  local sha="$1" service="$2" ids id actual running
+  ids="$(dc "$sha" ps -q "$service")"; [[ -n "$ids" ]] || return 1
+  while IFS= read -r id; do
+    actual="$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$id")"
+    running="$(docker inspect --format '{{.State.Running}}' "$id")"
+    [[ "$actual" == "$sha" && "$running" == true ]] || return 1
+  done <<<"$ids"
 }
-
-preserve_service_image() {
-  local sha="$1"
-  local service="$2"
-  local target="$3"
-  local containers container image image_revision
-  containers="$(dc "$sha" ps -q "$service")"
-  [[ -n "$containers" ]] || die "$service is not running at the active release"
-  container="${containers%%$'\n'*}"
-  image_revision="$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$container")"
-  [[ "$image_revision" == "$sha" ]] || die "$service does not match the active release"
-  image="$(docker inspect --format '{{ .Image }}' "$container")"
-  docker image tag "$image" "$target"
-}
-
-verify_image_revision() {
-  local image="$1"
-  local sha="$2"
-  local image_revision
-  image_revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")"
-  [[ "$image_revision" == "$sha" ]]
-}
-
-wait_for_parser() {
-  local sha="$1"
-  local remaining="$health_attempts"
+parser_ready() {
+  local sha="$1" remaining=100 container health
   while ((remaining > 0)); do
-    if verify_container_revision "$sha" parser && dc "$sha" exec -T parser python -c '
-import json, os, sys, urllib.request
-url = f"http://{os.environ["PARSER_BIND_ADDRESS"]}:8090/healthz"
-with urllib.request.urlopen(url, timeout=5) as response:
-    health = json.load(response)
-if health.get("ok") is not True or health.get("state") != "ready":
-    raise SystemExit(1)
-if health.get("release_sha") != sys.argv[1]:
-    raise SystemExit(1)
-' "$sha"; then
-      return 0
+    container="$(dc "$sha" ps -q parser)"
+    if [[ -n "$container" ]] && verify "$sha" parser; then
+      health="$(docker inspect --format '{{.State.Health.Status}}' "$container")"
+      # The Compose healthcheck calls /healthz on the configured parser port.
+      # That endpoint returns 503 until the parser workers are ready.
+      [[ "$health" != healthy ]] || return 0
     fi
-    remaining=$((remaining - 1))
-    sleep "$health_interval"
+    remaining=$((remaining-1)); sleep 15
   done
   return 1
 }
 
-rollback_release() {
-  local previous_revision candidate_revision
-  if ! read_pending_state; then
-    printf 'ingest-host-release: no pending release to roll back\n'
-    return 0
-  fi
-
-  git cat-file -e "${candidate_revision}^{commit}"
-  git checkout --detach "$candidate_revision"
-  if [[ "$previous_revision" == "none" ]]; then
-    dc "$candidate_revision" stop worker parse-coordinator host-sampler parser >/dev/null 2>&1 || true
-    rm -f "$release_env" "$pending_state"
-    printf 'ingest-host-release: removed failed bootstrap release %s\n' "$candidate_revision"
-    return 0
-  fi
-
-  verify_image_revision "evo-ingest-parser:${previous_revision}" "$previous_revision"
-  verify_image_revision "evo-ingest-pipeline:${previous_revision}" "$previous_revision"
-  write_release_env "$previous_revision"
-  dc "$previous_revision" up -d --no-build --no-deps parser
-  wait_for_parser "$previous_revision" || die "previous parser did not recover"
-  dc "$previous_revision" up -d --no-build --no-deps parse-coordinator worker host-sampler
-  verify_container_revision "$previous_revision" parse-coordinator
-  verify_container_revision "$previous_revision" worker
-  verify_container_revision "$previous_revision" host-sampler
-  git checkout --detach "$previous_revision"
-  rm -f "$pending_state"
-  printf 'ingest-host-release: restored release %s\n' "$previous_revision"
+check_owner() {
+  [[ "$(cat "$pending/owner")" == "$owner" && "$(read_sha "$pending/candidate")" == "$revision" ]] || die 'pending release belongs to another workflow; refusing mutation'
 }
-
-rollback_on_failure() {
-  local status="$?"
-  trap - EXIT
-  if [[ "$status" -ne 0 ]]; then
-    set +e
-    rollback_release
-    local rollback_status="$?"
-    set -e
-    if [[ "$rollback_status" -ne 0 ]]; then
-      printf 'ingest-host-release: automatic rollback failed; pending state remains\n' >&2
-    fi
+rollback() {
+  [[ -d "$pending" ]] || { printf 'No pending ingest release.\n'; return; }
+  check_owner
+  local previous; previous="$(cat "$pending/previous")"
+  config="$pending/candidate-config"
+  if [[ "$previous" == none ]]; then
+    dc "$revision" stop "${consumers[@]}" parser
+    [[ ! -e "$state/failed-bootstrap-$owner" ]] || die 'bootstrap failure evidence already exists; pending state retained'
+    rm -f "$state/current"
+    mv "$pending" "$state/failed-bootstrap-$owner"
+    printf 'Stopped failed bootstrap; volumes and configuration evidence retained.\n'
+    return
   fi
-  exit "$status"
+  previous="$(read_sha "$pending/previous")"
+  dc "$revision" stop "${consumers[@]}" parser
+  git checkout --detach "$previous"
+  local previous_config; previous_config="$(cd "$pending/previous-config" && pwd -P)"
+  set_current "$previous_config"
+  config="$state/current"
+  dc "$previous" up -d --no-build --no-deps parser
+  parser_ready "$previous" || die 'previous parser failed to recover; pending state retained'
+  dc "$previous" up -d --no-build --no-deps "${consumers[@]}"
+  for service in "${consumers[@]}"; do verify "$previous" "$service" || die 'previous consumer failed to recover'; done
+  write_active "$previous"
+  rm -rf "$pending"
+  printf 'Restored %s ingest release %s.\n' "$environment" "$previous"
 }
-
-[[ -z "$(git status --porcelain)" ]] || die "ingest checkout has local changes; refusing release"
-
-if [[ "$mode" == "rollback-if-pending" ]]; then
-  rollback_release
-  exit 0
+if [[ "$mode" == recover ]]; then
+  [[ -d "$pending" ]] || { printf 'No pending ingest release.\n'; exit; }
+  check_owner
+  [[ "$backend_revision" =~ ^[0-9a-f]{40}$ ]] || die 'backend revision could not be verified; pending state retained'
+  if [[ "$backend_revision" == "$revision" ]]; then
+    mode=activate
+  elif [[ "$backend_revision" == "$(cat "$pending/previous")" ]]; then
+    rollback
+    exit
+  else
+    die 'backend matches neither pending revision; keep consumers paused and investigate'
+  fi
 fi
-
-if [[ "$mode" == "prepare" ]]; then
-  [[ ! -f "$pending_state" ]] || die "another ingest release is still pending"
-  previous_revision="$(active_revision)"
-  if [[ -n "$previous_revision" ]]; then
-    verify_container_revision "$previous_revision" parser || die "active parser revision is inconsistent"
-    verify_container_revision "$previous_revision" parse-coordinator || die "active parse coordinator revision is inconsistent"
-    verify_container_revision "$previous_revision" worker || die "active worker revision is inconsistent"
-    verify_container_revision "$previous_revision" host-sampler || die "active sampler revision is inconsistent"
-    preserve_service_image "$previous_revision" parser "evo-ingest-parser:${previous_revision}"
-    preserve_service_image "$previous_revision" worker "evo-ingest-pipeline:${previous_revision}"
+if [[ "$mode" == rollback-if-pending ]]; then rollback; exit; fi
+if [[ "$mode" == prepare || "$mode" == bootstrap-prepare ]]; then
+  [[ ! -e "$pending" ]] || die 'another release is pending; recover it with its original owner before retrying'
+  [[ "$staging" =~ ^/tmp/capy-release\.[A-Za-z0-9]+$ && -f "$staging/$shared" && -f "$staging/$environment.queue.env" ]] || die 'rendered configuration is missing'
+  previous=none
+  if [[ "$mode" == prepare ]]; then
+    [[ -f "$active" ]] || die 'stack not initialized; explicitly select bootstrap on the deployment workflow'
+    previous="$(read_sha "$active")"
+    [[ -d "$config" && -f "$config/$shared" ]] || die 'current config snapshot is missing; restore it before deploying'
   fi
-
-  git fetch --prune origin
-  git cat-file -e "${revision}^{commit}"
+  if [[ "$environment" == uat ]]; then
+    for service in worker-local parse-coordinator-local import-worker-local host-sampler-local; do
+      [[ -z "$(docker ps -q --filter label=com.docker.compose.project=capy-ingest-nonprod --filter "label=com.docker.compose.service=$service")" ]] || die 'stop local-profile consumers before changing the shared nonprod parser; local data is preserved'
+    done
+  fi
+  if [[ "$previous" != none ]]; then
+    verify "$previous" parser || die 'active parser SHA mismatch'
+    for service in "${consumers[@]}"; do verify "$previous" "$service" || die "active $service SHA mismatch"; done
+  else
+    [[ -z "$(docker ps -q --filter "label=com.docker.compose.project=$project")" ]] || die 'bootstrap found running containers; initialize their existing release state instead'
+  fi
+  if [[ "$previous" != none ]]; then restore_revision="$previous"; fi
+  git fetch origin
+  git cat-file -e "$revision^{commit}"
   git checkout --detach "$revision"
-  [[ "$(git rev-parse HEAD)" == "$revision" ]]
-  dc "$revision" config >/dev/null
-  dc "$revision" build parser worker
-  verify_image_revision "evo-ingest-parser:${revision}" "$revision"
-  verify_image_revision "evo-ingest-pipeline:${revision}" "$revision"
-
-  write_pending_state "$previous_revision" "$revision"
-  trap rollback_on_failure EXIT
-
-  dc "$revision" stop parse-coordinator worker host-sampler
-  write_release_env "$revision"
+  config="$staging"
+  dc "$revision" config --quiet 2>/dev/null || die 'invalid rendered Compose configuration (details redacted)'
+  dc "$revision" build parser "${consumers[1]}"
+  local_snapshot="$state/config-$owner"
+  [[ ! -e "$local_snapshot" ]] || die 'configuration snapshot for this owner already exists; use a new run attempt'
+  cp -a "$staging" "$local_snapshot"
+  pending_work="$(mktemp -d "$state/.pending-$owner.XXXXXXXX")"
+  printf '%s\n' "$owner" > "$pending_work/owner"
+  printf '%s\n' "$revision" > "$pending_work/candidate"
+  printf '%s\n' "$previous" > "$pending_work/previous"
+  if [[ "$previous" != none ]]; then
+    ln -s "$(cd "$state/current" && pwd -P)" "$pending_work/previous-config"
+  fi
+  ln -s "$local_snapshot" "$pending_work/candidate-config"
+  mv "$pending_work" "$pending"
+  pending_work=""
+  config="$state/current"
+  if [[ "$previous" != none ]]; then dc "$previous" stop "${consumers[@]}"; fi
+  set_current "$local_snapshot"
+  if [[ "$previous" == none ]]; then
+    dc "$revision" run --rm --no-deps parse-spool-init
+  fi
   dc "$revision" up -d --no-build --no-deps parser
-  wait_for_parser "$revision" || die "parser did not become healthy at release $revision"
-  printf 'ingest-host-release: parser %s is ready; ingest remains paused\n' "$revision"
-  exit 0
+  parser_ready "$revision" || die 'candidate parser failed; run rollback with this release owner'
+  printf 'Prepared %s parser %s; consumers remain stopped.\n' "$environment" "$revision"
+  exit
 fi
-
-read_pending_state || die "no prepared ingest release exists"
-[[ "$candidate_revision" == "$revision" ]] || die "prepared parser revision does not match activation"
-[[ "$(git rev-parse HEAD)" == "$revision" ]] || die "ingest checkout does not match activation"
-[[ "$(active_revision)" == "$revision" ]] || die "active release file does not match activation"
-verify_container_revision "$revision" parser || die "running parser does not match activation"
-dc "$revision" up -d --no-build --no-deps parse-coordinator worker host-sampler
-verify_container_revision "$revision" parse-coordinator || die "running parse coordinator does not match activation"
-verify_container_revision "$revision" worker || die "running worker does not match activation"
-verify_container_revision "$revision" host-sampler || die "running sampler does not match activation"
-rm -f "$pending_state"
-printf 'ingest-host-release: activated release %s\n' "$revision"
+[[ -d "$pending" ]] || die 'no pending release'
+check_owner
+[[ "$(git rev-parse HEAD)" == "$revision" ]] || die 'checkout revision mismatch'
+parser_ready "$revision" || die 'candidate parser is not healthy at this revision; pending state retained'
+dc "$revision" up -d --no-build --no-deps "${consumers[@]}"
+for service in "${consumers[@]}"; do verify "$revision" "$service" || die "$service revision mismatch"; done
+# Snapshots are immutable and live outside pending; interruption at any point
+# leaves both release configurations available to owner-scoped recovery.
+if [[ -d "$pending/previous-config" ]]; then
+  previous_config="$(cd "$pending/previous-config" && pwd -P)"
+  rm -f "$state/previous-config"
+  ln -s "$previous_config" "$state/previous-config"
+fi
+set_current "$(cd "$pending/candidate-config" && pwd -P)"
+write_active "$revision"
+cp "$pending/previous" "$state/previous"
+rm -rf "$pending"
+printf 'Activated %s ingest release %s.\n' "$environment" "$revision"

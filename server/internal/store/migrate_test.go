@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/evonotes/server/internal/testdb"
-	"github.com/evonotes/server/migrations"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
+	"github.com/samyung0/capy-notebook/server/migrations"
 )
 
 func TestMigrationFilesAreNumbered(t *testing.T) {
@@ -56,16 +56,22 @@ func TestMigrateIsApplyOnce(t *testing.T) {
 	if err := s.Migrate(ctx); err != nil {
 		t.Fatalf("second migrate: %v", err)
 	}
-	files, err := listMigrationFiles()
+	status, err := s.MigrationStatus(ctx)
 	if err != nil {
 		t.Fatal(err)
+	}
+	applied := 0
+	for _, row := range status {
+		if row.Applied {
+			applied++
+		}
 	}
 	var n int
 	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != len(files) {
-		t.Fatalf("schema_migrations rows = %d, want %d", n, len(files))
+	if n != applied {
+		t.Fatalf("schema_migrations rows = %d, want %d", n, applied)
 	}
 }
 

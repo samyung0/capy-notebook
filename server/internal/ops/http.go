@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/evonotes/server/internal/store"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 type HandlerConfig struct {

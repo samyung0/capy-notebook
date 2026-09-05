@@ -1,6 +1,6 @@
 [
   {
-    "corsRuleName": "evo-spa-uat",
+    "corsRuleName": "capy-spa-uat",
     "allowedOrigins": [
       "https://uat.capynotebook.com",
       "https://*.uat.capynotebook.com",

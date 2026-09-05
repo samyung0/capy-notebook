@@ -17,8 +17,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/evonotes/server/internal/httpapi"
-	"github.com/evonotes/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/httpapi"
+	"github.com/samyung0/capy-notebook/server/internal/models"
 )
 
 func main() {

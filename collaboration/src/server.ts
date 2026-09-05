@@ -92,12 +92,12 @@ const evictionWaiters = new Map<
   }
 >();
 const INSTANCE_ID = `${process.pid}-${randomUUID()}`;
-const INSTANCE_REGISTRY_KEY = 'evo:collaboration:instances';
-const EVICTION_KEY_PREFIX = 'evo:collaboration:evicting:';
-const EVICTION_REQUEST_CHANNEL = 'evo:collaboration:evict-request';
-const EVICTION_ACK_CHANNEL = 'evo:collaboration:evict-ack';
-const USER_EVICTION_CHANNEL = 'evo:collaboration:user-evict';
-const EVICTION_DELIVERED_CHANNEL = 'evo:collaboration:eviction-delivered';
+const INSTANCE_REGISTRY_KEY = 'capy:collaboration:instances';
+const EVICTION_KEY_PREFIX = 'capy:collaboration:evicting:';
+const EVICTION_REQUEST_CHANNEL = 'capy:collaboration:evict-request';
+const EVICTION_ACK_CHANNEL = 'capy:collaboration:evict-ack';
+const USER_EVICTION_CHANNEL = 'capy:collaboration:user-evict';
+const EVICTION_DELIVERED_CHANNEL = 'capy:collaboration:eviction-delivered';
 const INSTANCE_TTL_MS = 30_000;
 const EVICTION_TIMEOUT_MS = 15_000;
 const localEvictions = new RoomEvictionCoordinator(10 * 60_000);
@@ -276,7 +276,7 @@ async function publishRoomEviction(
   stage: string
 ) {
   try {
-    await redis.publish('evo:collaboration:evict', payload);
+    await redis.publish('capy:collaboration:evict', payload);
   } catch (error) {
     storeFailures += 1;
     captureError(error, { room, stage });
@@ -743,12 +743,12 @@ async function handleHttpRequest(
     });
     response.end(
       [
-        `evo_collaboration_active_rooms ${instance.getDocumentsCount()}`,
-        `evo_collaboration_connections ${instance.getConnectionsCount()}`,
-        `evo_collaboration_authentication_failures_total ${authenticationFailures}`,
-        `evo_collaboration_store_failures_total ${storeFailures}`,
-        `evo_collaboration_failed_store_queue ${failedStores.size}`,
-        `evo_collaboration_process_rss_bytes ${process.memoryUsage().rss}`,
+        `capy_collaboration_active_rooms ${instance.getDocumentsCount()}`,
+        `capy_collaboration_connections ${instance.getConnectionsCount()}`,
+        `capy_collaboration_authentication_failures_total ${authenticationFailures}`,
+        `capy_collaboration_store_failures_total ${storeFailures}`,
+        `capy_collaboration_failed_store_queue ${failedStores.size}`,
+        `capy_collaboration_process_rss_bytes ${process.memoryUsage().rss}`,
         '',
       ].join('\n')
     );
@@ -916,7 +916,7 @@ async function compactIdleDocuments() {
     if (compacted) {
       const evictionId = randomUUID();
       await redis.publish(
-        'evo:collaboration:evict',
+        'capy:collaboration:evict',
         JSON.stringify({
           evictionId,
           materialId: compacted.materialId,
@@ -983,8 +983,8 @@ const compactionTimer = setInterval(() => {
 compactionTimer.unref();
 
 await subscriber.subscribe(
-  'evo:collaboration:comments',
-  'evo:collaboration:evict',
+  'capy:collaboration:comments',
+  'capy:collaboration:evict',
   USER_EVICTION_CHANNEL,
   EVICTION_REQUEST_CHANNEL,
   EVICTION_ACK_CHANNEL
@@ -1029,7 +1029,7 @@ subscriber.on('message', (channel: string, raw: string) => {
     };
     const room = event.room;
     if (!room) return;
-    if (channel === 'evo:collaboration:evict') {
+    if (channel === 'capy:collaboration:evict') {
       const roomMaterialId = materialIdFromRoom(room);
       if (event.materialId && event.materialId !== roomMaterialId) return;
       const delivery =

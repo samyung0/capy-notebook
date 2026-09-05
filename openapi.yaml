@@ -2196,6 +2196,8 @@ components:
         createdAt:
           format: date-time
           type: string
+        description:
+          type: string
         fileCount:
           format: int64
           type: integer
@@ -2228,6 +2230,7 @@ components:
       required:
         - author
         - clones
+        - description
         - id
         - name
         - color
@@ -3121,6 +3124,10 @@ components:
           type: string
         color:
           $ref: "#/components/schemas/UserColor"
+        description:
+          description: Optional workspace description; empty clears it
+          maxLength: 1000
+          type: string
         name:
           maxLength: 100
           minLength: 1
@@ -3330,6 +3337,8 @@ components:
         createdAt:
           format: date-time
           type: string
+        description:
+          type: string
         fileCount:
           format: int64
           type: integer
@@ -3360,6 +3369,7 @@ components:
             $ref: "#/components/schemas/Tag"
           type: array
       required:
+        - description
         - id
         - name
         - color
@@ -3458,8 +3468,63 @@ components:
         - attempts
         - avgScore
       type: object
+    WorkspaceSummary:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/WorkspaceSummary.json
+          format: uri
+          readOnly: true
+          type: string
+        author:
+          type: string
+        chapters:
+          items:
+            $ref: "#/components/schemas/WorkspaceSummaryChapter"
+          type: array
+        color:
+          $ref: "#/components/schemas/UserColor"
+        description:
+          type: string
+        files:
+          description: Unfiled file names
+          items:
+            type: string
+          type: array
+        name:
+          type: string
+        privacy:
+          $ref: "#/components/schemas/Privacy"
+        tags:
+          items:
+            type: string
+          type: array
+      required:
+        - name
+        - author
+        - description
+        - color
+        - privacy
+        - tags
+        - chapters
+        - files
+      type: object
+    WorkspaceSummaryChapter:
+      additionalProperties: false
+      properties:
+        files:
+          items:
+            type: string
+          type: array
+        name:
+          type: string
+      required:
+        - name
+        - files
+      type: object
 info:
-  title: Evo Notes API
+  title: Capy Notebook API
   version: 0.1.0
 openapi: 3.0.3
 paths:
@@ -5205,6 +5270,59 @@ paths:
       summary: Mark one notification read
       tags:
         - Account
+  /api/public/workspaces/{id}/summary:
+    get:
+      operationId: getPublicWorkspaceSummary
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceSummary"
+          description: OK
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get public workspace metadata
+      tags:
+        - Sharing
+    head:
+      operationId: headPublicWorkspaceSummary
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Check public workspace metadata
+      tags:
+        - Sharing
   /api/quiz-grade:
     post:
       operationId: gradeQuizAnswer

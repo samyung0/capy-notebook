@@ -4,6 +4,7 @@ import { sentryVitePlugin } from '@sentry/vite-plugin';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv } from 'vite';
+import { summaryVitePlugin } from './src/summary/vite';
 import { llmRuntimePlugin } from './vite-llm-runtime';
 
 const BETTEROFFICE_DOCX_SUBPATH = /^@betteroffice\/docx\/(.+)$/;
@@ -38,6 +39,7 @@ export default defineConfig(({ mode }) => {
             import.meta.dirname,
             'office-runtime.html'
           ),
+          summary: path.resolve(import.meta.dirname, 'summary.html'),
         },
       },
       sourcemap: uploadSourceMaps ? 'hidden' : false,
@@ -64,6 +66,12 @@ export default defineConfig(({ mode }) => {
       react(),
       tailwindcss(),
       llmRuntimePlugin(),
+      summaryVitePlugin(
+        env.VITE_API_URL || 'http://localhost:8080',
+        servePublic && devHost
+          ? `https://${devHost}`
+          : `http://localhost:${Number.parseInt(env.VITE_PORT, 10) || 5173}`
+      ),
       paraglideVitePlugin({
         outdir: './src/i18n/paraglide',
         project: './project.inlang',

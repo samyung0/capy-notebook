@@ -1,8 +1,8 @@
 # CPU-only parser benchmark image (Marker v2 + Docling).
 #
 # Build once, then pin cores at run time so the numbers map to a rentable VM:
-#   docker build -t evo-parse-bench bench/parsers
-#   docker run --rm --cpus=4 -v ...:/bench/docs:ro -v ...:/out -v evo-parse-models:/models evo-parse-bench --threads 4
+#   docker build -t capy-parse-bench bench/parsers
+#   docker run --rm --cpus=4 -v ...:/bench/docs:ro -v ...:/out -v capy-parse-models:/models capy-parse-bench --threads 4
 #
 # Nothing here needs an API key. Both parsers run fully local; the only network
 # access is the one-time model download from Hugging Face into /models.

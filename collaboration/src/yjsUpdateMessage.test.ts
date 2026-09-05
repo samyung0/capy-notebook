@@ -36,7 +36,7 @@ function writableFrame(
 function contributorRemovalUpdate(): { document: Y.Doc; update: Uint8Array } {
   const document = new Y.Doc();
   document.getText('content').insert(0, 'A');
-  const contributors = document.getMap('__evo_pending_contributors');
+  const contributors = document.getMap('__capy_pending_contributors');
   contributors.set('instance:write:alice', {
     access: 'write',
     nonce: 'nonce-alice',
@@ -46,7 +46,7 @@ function contributorRemovalUpdate(): { document: Y.Doc; update: Uint8Array } {
   const attacker = new Y.Doc();
   Y.applyUpdate(attacker, Y.encodeStateAsUpdate(document));
   attacker.getText('content').insert(1, 'B');
-  attacker.getMap('__evo_pending_contributors').delete('instance:write:alice');
+  attacker.getMap('__capy_pending_contributors').delete('instance:write:alice');
   return {
     document,
     update: Y.encodeStateAsUpdate(attacker, Y.encodeStateVector(document)),
@@ -72,7 +72,7 @@ describe('inboundYjsUpdate', () => {
     'accepts legitimate content in writable sync subtype %i',
     (syncMessageType) => {
       const document = new Y.Doc();
-      document.getMap('__evo_pending_contributors').set('alice', {
+      document.getMap('__capy_pending_contributors').set('alice', {
         access: 'write',
         nonce: 'nonce-alice',
         userId: 'alice',

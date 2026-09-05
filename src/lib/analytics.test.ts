@@ -35,12 +35,13 @@ const ANALYTICS_EVENT_NAMES = {
   source_ingest_failed: true,
   source_uploaded: true,
   subscription_checkout_started: true,
+  summary_viewed: true,
   workspace_created: true,
 } as const satisfies Record<AnalyticsEvent['name'], true>;
 
 describe('analytics helpers', () => {
   it('keeps the closed event union exhaustive', () => {
-    expect(Object.keys(ANALYTICS_EVENT_NAMES)).toHaveLength(18);
+    expect(Object.keys(ANALYTICS_EVENT_NAMES)).toHaveLength(19);
   });
 
   it.each([
@@ -152,10 +153,10 @@ describe('analytics helpers', () => {
   });
 
   it('keys identify by user id and email', () => {
-    expect(identityKey('u_1', 'kate@evonotes.app')).toBe(
-      identityKey('u_1', 'kate@evonotes.app')
+    expect(identityKey('u_1', 'kate@capynotebook.app')).toBe(
+      identityKey('u_1', 'kate@capynotebook.app')
     );
-    expect(identityKey('u_1', 'kate@evonotes.app')).not.toBe(
+    expect(identityKey('u_1', 'kate@capynotebook.app')).not.toBe(
       identityKey('u_1')
     );
     expect(identityKey(null)).toBe('');

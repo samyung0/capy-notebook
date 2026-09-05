@@ -14,15 +14,15 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/evonotes/server/internal/blob"
-	"github.com/evonotes/server/internal/httpapi"
-	"github.com/evonotes/server/internal/mail"
-	"github.com/evonotes/server/internal/models"
-	"github.com/evonotes/server/internal/obs"
-	"github.com/evonotes/server/internal/pipeline"
-	"github.com/evonotes/server/internal/ratelimit"
-	"github.com/evonotes/server/internal/reconcile"
-	"github.com/evonotes/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/blob"
+	"github.com/samyung0/capy-notebook/server/internal/httpapi"
+	"github.com/samyung0/capy-notebook/server/internal/mail"
+	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
+	"github.com/samyung0/capy-notebook/server/internal/pipeline"
+	"github.com/samyung0/capy-notebook/server/internal/ratelimit"
+	"github.com/samyung0/capy-notebook/server/internal/reconcile"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 func env(key, def string) string {
@@ -139,7 +139,7 @@ func openBlobStore(appEnv string) (blob.Store, error) {
 		if appEnv != "e2e" {
 			return nil, errors.New("blob: disk backend is only allowed when APP_ENV=e2e")
 		}
-		root := env("BLOB_DISK_ROOT", os.TempDir()+"/evo-blobs")
+		root := env("BLOB_DISK_ROOT", os.TempDir()+"/capy-blobs")
 		store, err := blob.NewDisk(root)
 		if err != nil {
 			return nil, err
@@ -170,10 +170,10 @@ func openBlobStore(appEnv string) (blob.Store, error) {
 }
 
 func main() {
-	dsn := env("DATABASE_URL", "postgres://evo:evo@localhost:5432/evo?sslmode=disable")
+	dsn := env("DATABASE_URL", "postgres://capy:capy@localhost:5432/capy?sslmode=disable")
 	addr := env("ADDR", ":8080")
-	parser := env("EVO_PARSER", "marker")
-	engine := env("EVO_ENGINE", "evo")
+	parser := env("CAPY_PARSER", "marker")
+	engine := env("CAPY_ENGINE", "capy")
 	appURL := env("APP_URL", "http://localhost:5173")
 	appEnv := env("APP_ENV", "development")
 	authDisabled := envBool("AUTH_DISABLED")
@@ -396,7 +396,7 @@ func main() {
 	}()
 
 	go runBlobReaper(ctx, st, blobStore, artifactTTL{
-		CaptionDays: envInt("EVO_CAPTION_CACHE_TTL_DAYS", 90),
+		CaptionDays: envInt("CAPY_CAPTION_CACHE_TTL_DAYS", 90),
 	})
 	go runBlobSweep(ctx, st, blobStore)
 	go runAccountPurgeWorker(ctx, st, clerkSecret != "")
@@ -439,7 +439,7 @@ func main() {
 	})
 
 	go func() {
-		log.Printf("evo-notes gateway listening on %s", addr)
+		log.Printf("capy-notebook gateway listening on %s", addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("serve: %v", err)
 		}

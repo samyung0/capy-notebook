@@ -246,9 +246,9 @@ def run_replay_pytest(
     env = os.environ.copy()
     env.update(extra_env)
     if record:
-        env["EVO_TEST_RECORD"] = "once"
+        env["CAPY_TEST_RECORD"] = "once"
     else:
-        env.pop("EVO_TEST_RECORD", None)
+        env.pop("CAPY_TEST_RECORD", None)
     proc = subprocess.run(
         [
             sys.executable,
@@ -272,7 +272,7 @@ def replay_certified_models(
 ) -> int:
     """Replay every certified two-turn cassette without permitting recording."""
     env = os.environ.copy()
-    env.pop("EVO_TEST_RECORD", None)
+    env.pop("CAPY_TEST_RECORD", None)
     proc = run_process(
         [
             sys.executable,

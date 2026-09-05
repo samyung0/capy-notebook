@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/evonotes/server/internal/pipeline"
-	"github.com/evonotes/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/pipeline"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 func TestPipelineLLMError(t *testing.T) {

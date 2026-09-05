@@ -241,7 +241,7 @@ def test_certify_rejects_invalid_identity_before_running(tmp_path: Path):
 
 
 def test_replay_command_forces_replay_mode(monkeypatch, tmp_path: Path):
-    monkeypatch.setenv("EVO_TEST_RECORD", "once")
+    monkeypatch.setenv("CAPY_TEST_RECORD", "once")
     captured = {}
 
     def run_process(command, **kwargs):
@@ -251,7 +251,7 @@ def test_replay_command_forces_replay_mode(monkeypatch, tmp_path: Path):
 
     assert replay_certified_models(repo=tmp_path, run_process=run_process) == 7
     assert captured["command"][3].endswith("test_certified_two_turn_replay")
-    assert "EVO_TEST_RECORD" not in captured["env"]
+    assert "CAPY_TEST_RECORD" not in captured["env"]
     assert captured["cwd"] == tmp_path
     assert captured["check"] is False
 

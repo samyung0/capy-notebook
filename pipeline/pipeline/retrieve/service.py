@@ -33,7 +33,7 @@ from .ai_adapter import router as plate_ai_router
 obs.init_logging("retrieval")
 obs.init_sentry("retrieval")
 
-log = logging.getLogger("evo.retrieve")
+log = logging.getLogger("capy.retrieve")
 
 # uvicorn imports this module before it builds its event loop, which is the only
 # point at which the policy can still be chosen.
@@ -56,7 +56,7 @@ async def lifespan(app: FastAPI):
         await store.close_pool()
 
 
-app = FastAPI(title="Evo Notes retrieval", lifespan=lifespan)
+app = FastAPI(title="Capy Notebook retrieval", lifespan=lifespan)
 
 _SECRET_HEADER = "X-Pipeline-Secret"
 _PUBLIC_PATHS = {"/healthz"}

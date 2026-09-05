@@ -1,2 +1,4 @@
 - Developer Epo decided large completed implementations use repeated independent subagent review rounds whose reports live in /private/tmp; reviewers are subagents and obeys the `human` skill
 - Developer Epo decided (2026-09-05) that while no production database or data exists, schema changes edit `server/migrations/0001_init.sql` in place instead of adding migration files. server/migrations/0001_init.sql
+- Developer Epo decided (2026-09-05) to rename Evo Notes to Capy Notebook across project code and infrastructure, use Capy Notebook unchanged as the Chinese product name, and rename the EVO_* environment prefix including EVO_PRIVATE_BIND_ADDRESS to CAPY_*.
+- Developer Epo decided (2026-09-05) the product is Capy Notebook, the registered company is Stable Studio Limited, and product support uses support@stablestudio.org.

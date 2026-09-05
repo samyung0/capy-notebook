@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/evonotes/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/models"
 )
 
 var (

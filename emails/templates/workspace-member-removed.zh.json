@@ -14,7 +14,7 @@
               { "type": "bold" },
               { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
             ],
-            "text": "Evo Notes"
+            "text": "Capy Notebook"
           }
         ]
       },
@@ -55,7 +55,7 @@
       {
         "type": "button",
         "attrs": {
-          "text": "打开 Evo Notes",
+          "text": "打开 Capy Notebook",
           "url": "OpenURL",
           "isUrlVariable": true,
           "alignment": "left",
@@ -69,7 +69,7 @@
         "content": [
           {
             "type": "text",
-            "text": "你收到这封邮件是因为 Evo Notes 工作区成员身份发生了变化。"
+            "text": "你收到这封邮件是因为 Capy Notebook 工作区成员身份发生了变化。"
           }
         ]
       },

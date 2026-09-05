@@ -3,7 +3,7 @@ package auth
 import (
 	"context"
 
-	"github.com/evonotes/server/internal/obs"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 )
 
 type ctxKey int

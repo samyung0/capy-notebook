@@ -3,7 +3,7 @@ package store
 import (
 	"testing"
 
-	"github.com/evonotes/server/internal/planlimits"
+	"github.com/samyung0/capy-notebook/server/internal/planlimits"
 )
 
 func mustPlanLimits(t *testing.T, s *Store, tier PlanTier) planlimits.Limits {

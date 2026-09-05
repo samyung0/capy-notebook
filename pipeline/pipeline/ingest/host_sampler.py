@@ -18,7 +18,7 @@ import requests
 from .. import obs
 from ..config import cfg
 
-log = logging.getLogger("evo.ingest.host_sampler")
+log = logging.getLogger("capy.ingest.host_sampler")
 
 
 def _env_float(name: str, default: float) -> float:
@@ -28,20 +28,20 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
-PROC_ROOT = Path(os.environ.get("EVO_HOST_PROC", "/host/proc"))
-HOST_ID = os.environ.get("EVO_INGEST_HOST_ID", socket.gethostname())
-ENVIRONMENT = os.environ.get("EVO_INGEST_ENVIRONMENT", "").strip().lower() or (
+PROC_ROOT = Path(os.environ.get("CAPY_HOST_PROC", "/host/proc"))
+HOST_ID = os.environ.get("CAPY_INGEST_HOST_ID", socket.gethostname())
+ENVIRONMENT = os.environ.get("CAPY_INGEST_ENVIRONMENT", "").strip().lower() or (
     "local"
     if os.environ.get("APP_ENV", "development") == "development"
     else "production"
 )
 RELEASE_SHA = os.environ.get("RELEASE_SHA", "").strip()
-HOST_METRICS_ENABLED = os.environ.get("EVO_HOST_METRICS_ENABLED", "true") == "true"
-ACTIVE_INTERVAL = _env_float("EVO_HOST_SAMPLE_ACTIVE_SECONDS", 5.0)
-IDLE_INTERVAL = _env_float("EVO_HOST_SAMPLE_IDLE_SECONDS", 60.0)
-SPOOL_INTERVAL = _env_float("EVO_HOST_SPOOL_SAMPLE_SECONDS", 60.0)
+HOST_METRICS_ENABLED = os.environ.get("CAPY_HOST_METRICS_ENABLED", "true") == "true"
+ACTIVE_INTERVAL = _env_float("CAPY_HOST_SAMPLE_ACTIVE_SECONDS", 5.0)
+IDLE_INTERVAL = _env_float("CAPY_HOST_SAMPLE_IDLE_SECONDS", 60.0)
+SPOOL_INTERVAL = _env_float("CAPY_HOST_SPOOL_SAMPLE_SECONDS", 60.0)
 HEALTH_URL = os.environ.get("PARSER_HEALTH_URL", "http://127.0.0.1:8090/healthz")
-SHARED_DIR = Path(os.environ.get("EVO_PARSE_SHARED_DIR", "/var/lib/evo-parse"))
+SHARED_DIR = Path(os.environ.get("CAPY_PARSE_SHARED_DIR", "/var/lib/capy-parse"))
 PARTITION_NAME = re.compile(
     r"^(?:sd[a-z]+|vd[a-z]+|xvd[a-z]+)\d+$|^(?:nvme\d+n\d+|mmcblk\d+)p\d+$"
 )

@@ -12,12 +12,12 @@ memory_limit=$3
 memory_swap_limit=$4
 cpu_limit=$5
 hold_seconds=$6
-fixture_root=/opt/evo-ingest/stress-current/worker-memory
-bench_script=/opt/evo-ingest/worker-stress-20260831/bench/parsers/bench_worker_memory.py
+fixture_root=/opt/capy-ingest/stress-current/worker-memory
+bench_script=/opt/capy-ingest/worker-stress-20260831/bench/parsers/bench_worker_memory.py
 
 names=()
 for worker_number in $(seq 1 "$replicas"); do
-  name="evo-worker-memory-${content_mib}-${worker_number}"
+  name="capy-worker-memory-${content_mib}-${worker_number}"
   names+=("$name")
   docker rm -f "$name" >/dev/null 2>&1 || true
   docker run -d \
@@ -28,7 +28,7 @@ for worker_number in $(seq 1 "$replicas"); do
     --pids-limit 128 \
     -v "$fixture_root:/fixtures:ro" \
     -v "$bench_script:/bench_worker_memory.py:ro" \
-    evo-worker-stress:current \
+    capy-worker-stress:current \
     python /bench_worker_memory.py load \
       --input "/fixtures/content-${content_mib}.json" \
       --hold-seconds "$hold_seconds" >/dev/null

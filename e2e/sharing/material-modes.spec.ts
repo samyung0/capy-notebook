@@ -1,9 +1,5 @@
 import { expect, test } from '../fixtures/actors';
-import {
-  expectEditorLive,
-  expectStaticPreview,
-  openAllBlocks,
-} from '../helpers/editor';
+import { expectEditorLive, openAllBlocks } from '../helpers/editor';
 import { openWorkspaceMaterial } from '../helpers/workspace';
 
 test.describe('shared material modes', () => {
@@ -30,27 +26,25 @@ test.describe('shared material modes', () => {
     ).toContainText('1 card · 0% known');
   });
 
-  test('anonymous viewers stay static and never join the editor', async ({
+  test('anonymous visitors see only the summary and cannot read materials', async ({
     anonymousPage,
+    anonymousApi,
     seed,
   }) => {
     for (const [workspaceId, material] of [
       [seed.linkWorkspace.id, seed.viewerNote],
       [seed.editableWorkspace.id, seed.editableNote],
     ] as const) {
-      await openWorkspaceMaterial(
-        anonymousPage,
-        workspaceId,
-        material.id,
-        true
-      );
-      await expectStaticPreview(anonymousPage, material.body);
+      const response = await anonymousPage.goto(`/w/${workspaceId}`);
+      expect(response?.status()).toBe(200);
+      await expect(anonymousPage.getByText(material.body)).toHaveCount(0);
       await expect(
-        anonymousPage.locator('[contenteditable="true"]')
+        anonymousPage.locator(
+          '[data-slate-editor="true"], [contenteditable="true"]'
+        )
       ).toHaveCount(0);
-      await expect(
-        anonymousPage.getByRole('combobox', { name: 'Material mode' })
-      ).toHaveCount(0);
+      const content = await anonymousApi.get(`/api/materials/${material.id}`);
+      expect(content.status()).toBe(401);
     }
   });
 

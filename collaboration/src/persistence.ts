@@ -19,7 +19,7 @@ import {
 import { assertCanonicalMaterialValue } from './materialDocument.js';
 
 const CONTENT_ROOT = 'content';
-const CONTRIBUTORS_ROOT = '__evo_pending_contributors';
+const CONTRIBUTORS_ROOT = '__capy_pending_contributors';
 const ROOM_PATTERN = /^material:([A-Za-z0-9_-]+):schema:(\d+)$/;
 // Measuring a document means cloning it and serializing it to Plate JSON, so
 // doing it per inbound update costs O(document) per keystroke. Amortize it over

@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/evonotes/server/internal/materialdoc"
-	"github.com/evonotes/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/models"
 )
 
 // JSON tags match src/api/types.ts exactly so responses are drop-in for the
@@ -30,12 +30,13 @@ type User struct {
 }
 
 type Workspace struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Color     UserColor `json:"color"`
-	Privacy   Privacy   `json:"privacy"`
-	ShareRole ShareRole `json:"shareRole"`
-	Tags      []Tag     `json:"tags"`
+	Description string    `json:"description"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Color       UserColor `json:"color"`
+	Privacy     Privacy   `json:"privacy"`
+	ShareRole   ShareRole `json:"shareRole"`
+	Tags        []Tag     `json:"tags"`
 	// OwnerUserID is the account every byte in this workspace is charged to.
 	// It is the account whose quota governs whether members may add content,
 	// so it is not interchangeable with the requester.

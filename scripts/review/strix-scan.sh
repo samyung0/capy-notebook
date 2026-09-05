@@ -25,14 +25,14 @@ review_require_authorized_uat
 # The status must land on the revision the deployment is actually serving, not
 # on whatever the local checkout happens to be.
 deployed_sha="$(curl --silent --show-error --max-time 30 --head "${UAT_API_URL%/}/healthz" |
-  awk 'BEGIN { IGNORECASE=1 } /^x-evo-release:/ { sub(/^[^:]+:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit }')"
+  awk 'tolower($0) ~ /^x-capy-release:/ { sub(/^[^:]+:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit }')"
 [[ "$deployed_sha" =~ ^[0-9a-fA-F]{40}$ ]] ||
-  review_die "UAT gateway did not report a full X-Evo-Release SHA (got '${deployed_sha:-nothing}')"
+  review_die "UAT gateway did not report a full X-Capy-Release SHA (got '${deployed_sha:-nothing}')"
 
 cd "$REVIEW_ROOT"
 results="$(review_results_dir strix-uat)"
 mkdir -p "$results"
-instruction_file="$(mktemp "${TMPDIR:-/tmp}/evo-strix-instructions.XXXXXX")"
+instruction_file="$(mktemp "${TMPDIR:-/tmp}/capy-strix-instructions.XXXXXX")"
 trap 'rm -f "$instruction_file"' EXIT
 chmod 600 "$instruction_file"
 cp "$REVIEW_ROOT/review/strix-uat.md" "$instruction_file"

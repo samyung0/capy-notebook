@@ -7,7 +7,7 @@ tags: [frontend, office, wasm, xlsx, pptx, uploads]
 
 # Office files
 
-Evo Notes uses its BetterOffice fork for modern Word, spreadsheet, and
+Capy Notebook uses its BetterOffice fork for modern Word, spreadsheet, and
 presentation files. PDF stays on the PDF viewer, while CSV and TSV keep a small
 read-only table preview. Legacy `.doc`, `.xls`, and `.ppt` files and unknown
 formats may be uploaded within the plan byte limit, but remain store-only.
@@ -23,13 +23,13 @@ formats may be uploaded within the plan byte limit, but remain store-only.
 ## Repository boundary
 
 The fork is a Git submodule at `vendor/betteroffice`, pinned to a reviewed
-commit from `https://github.com/samyung0/betteroffice.git`. Evo Notes imports
+commit from `https://github.com/samyung0/betteroffice.git`. Capy Notebook imports
 source entry points from that exact commit through Vite aliases. Do not depend
 on a moving branch at build time. The fork does not need to be published to
 npm for this application: the submodule commit is the package/version boundary
 and the generated WASM is built during a cold install.
 
-After cloning Evo Notes, initialize the submodule:
+After cloning Capy Notebook, initialize the submodule:
 
 ```bash
 git submodule update --init vendor/betteroffice
@@ -145,7 +145,7 @@ to BetterOffice. A store-only or legacy Office file with no exact preview stays
 on its native viewer without an overlay; the client never invents a preview URL.
 Native PDFs use their source blob as the same preview route.
 
-LibreOffice output is checked against `EVO_OFFICE_PREVIEW_MAX_BYTES` before the
+LibreOffice output is checked against `CAPY_OFFICE_PREVIEW_MAX_BYTES` before the
 parser reads it. Bundle creation, ingest caching, and donor reuse enforce the
 same limit, so a compressed Office source cannot turn into an unbounded Python
 allocation or preview object.
@@ -201,4 +201,4 @@ analysis cancellation/cache reuse, view-only loading, lazy editor loading, an
 XLSX cell save/reopen, a PPTX slide insertion/save, DOCX viewer isolation and
 editing-export separation, citation-preview switching, and the pending-to-ready
 viewer transition. BetterOffice's own round-trip and split-viewer tests remain
-in the fork and are intentionally excluded from Evo Notes' test-file inventory.
+in the fork and are intentionally excluded from Capy Notebook' test-file inventory.

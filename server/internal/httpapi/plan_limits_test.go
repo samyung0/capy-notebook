@@ -3,8 +3,8 @@ package httpapi_test
 import (
 	"testing"
 
-	"github.com/evonotes/server/internal/planlimits"
-	"github.com/evonotes/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/planlimits"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 func mustPlanLimits(

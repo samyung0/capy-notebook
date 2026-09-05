@@ -1,11 +1,11 @@
-Evo Notes
+Capy Notebook
 
 
 你有一个工作区邀请
 
 你好，
 
-你已受邀加入 Evo Notes 工作区 {{.WorkspaceName}}。
+你已受邀加入 Capy Notebook 工作区 {{.WorkspaceName}}。
 
 查看邀请 {{.InviteURL}}
 
@@ -13,6 +13,6 @@ Evo Notes
 
 ----------------------------------------
 
-你收到这封邮件是因为有人邀请你加入 Evo Notes 工作区。
+你收到这封邮件是因为有人邀请你加入 Capy Notebook 工作区。
 
 管理产品邮件偏好 {{.UnsubscribeURL}}

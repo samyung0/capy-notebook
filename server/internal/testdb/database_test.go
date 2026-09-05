@@ -9,12 +9,12 @@ func TestValidateURL(t *testing.T) {
 		url    string
 		ok     bool
 	}{
-		{name: "harness inactive", url: "postgres://evo:evo@127.0.0.1:5432/evo"},
+		{name: "harness inactive", url: "postgres://capy:capy@127.0.0.1:5432/capy"},
 		{name: "empty URL", marker: "1"},
-		{name: "remote host", marker: "1", url: "postgres://evo:evo@db.example.com:5432/evo"},
-		{name: "missing mapped port", marker: "1", url: "postgres://evo:evo@localhost/evo"},
-		{name: "loopback IPv4", marker: "1", url: "postgres://evo:evo@127.0.0.1:49152/evo", ok: true},
-		{name: "localhost", marker: "1", url: "postgresql://evo:evo@localhost:49152/evo", ok: true},
+		{name: "remote host", marker: "1", url: "postgres://capy:capy@db.example.com:5432/capy"},
+		{name: "missing mapped port", marker: "1", url: "postgres://capy:capy@localhost/capy"},
+		{name: "loopback IPv4", marker: "1", url: "postgres://capy:capy@127.0.0.1:49152/capy", ok: true},
+		{name: "localhost", marker: "1", url: "postgresql://capy:capy@localhost:49152/capy", ok: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

@@ -10,11 +10,11 @@ DELETE FROM workspace_members WHERE user_id IN ('u_owner', 'u_editor', 'u_commen
 DELETE FROM workspaces WHERE user_id IN ('u_owner', 'u_editor', 'u_commenter', 'u_viewer', 'u_other');
 
 INSERT INTO users (id, name, email, class_label, streak) VALUES
-  ('u_owner',  'E2E Owner',  'owner@evonotes.test',  'E2E', 0),
-  ('u_editor', 'E2E Editor', 'editor@evonotes.test', 'E2E', 0),
-  ('u_commenter', 'E2E Commenter', 'commenter@evonotes.test', 'E2E', 0),
-  ('u_viewer', 'E2E Viewer', 'viewer@evonotes.test', 'E2E', 0),
-  ('u_other',  'E2E Other',  'other@evonotes.test',  'E2E', 0)
+  ('u_owner',  'E2E Owner',  'owner@capynotebook.test',  'E2E', 0),
+  ('u_editor', 'E2E Editor', 'editor@capynotebook.test', 'E2E', 0),
+  ('u_commenter', 'E2E Commenter', 'commenter@capynotebook.test', 'E2E', 0),
+  ('u_viewer', 'E2E Viewer', 'viewer@capynotebook.test', 'E2E', 0),
+  ('u_other',  'E2E Other',  'other@capynotebook.test',  'E2E', 0)
 ON CONFLICT (id) DO UPDATE SET
   name = EXCLUDED.name,
   email = EXCLUDED.email;

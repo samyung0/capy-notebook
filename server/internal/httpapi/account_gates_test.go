@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/evonotes/server/internal/blob"
-	"github.com/evonotes/server/internal/httpapi"
-	"github.com/evonotes/server/internal/store"
-	"github.com/evonotes/server/internal/testdb"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/samyung0/capy-notebook/server/internal/blob"
+	"github.com/samyung0/capy-notebook/server/internal/httpapi"
+	"github.com/samyung0/capy-notebook/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
 // quotaFixture is an over-quota owner's workspace seen from both sides. The two
@@ -57,9 +57,9 @@ func overQuotaFixture(t *testing.T) quotaFixture {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID)
 	})
 
-	ownerHandler := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", "evo",
+	ownerHandler := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", "capy",
 		httpapi.Config{AuthDisabled: true, DevUserID: userID})
-	memberHandler := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", "evo",
+	memberHandler := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", "capy",
 		httpapi.Config{
 			AuthDisabled: true, E2EAuth: true, E2ESecret: "e2e-test-secret",
 			E2EUserIDs: []string{"u_editor"},

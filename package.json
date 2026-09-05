@@ -113,9 +113,10 @@
     "typescript": "^7.0.2",
     "ultracite": "7.9.4",
     "vite": "^6.0.0",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "wrangler": "4.125.0"
   },
-  "name": "evo-notes",
+  "name": "capy-notebook",
   "scripts": {
     "predev": "pnpm run office:prepare",
     "dev": "vite",
@@ -146,7 +147,7 @@
     "email:build": "tsx scripts/build-emails.ts",
     "email:check": "pnpm run email:build && tsx scripts/check-emails.ts",
     "email:compile": "paraglide-js compile --project ./project.inlang --outdir ./src/i18n/paraglide",
-    "email:dev": "pnpm --filter @evo-notes/email-editor dev",
+    "email:dev": "pnpm --filter @capy-notebook/email-editor dev",
     "model:certify": "uv run --extra test python pipeline/scripts/certify_agentic_loop_model.py",
     "api:docs": "node scripts/serve-openapi.mjs",
     "api:docs:generate": "pnpm gen:openapi && node scripts/serve-openapi.mjs",
@@ -159,7 +160,7 @@
     "review:validate-boundaries": "node --test scripts/review/validate-review-boundaries.test.mjs",
     "review:validate-scanners": "node --test scripts/review/validate-strix-run.test.mjs scripts/review/validate-codex-scan.test.mjs",
     "perf": "playwright test --config=e2e/perf/playwright.perf.config.ts",
-    "chaos:peers": "pnpm --filter @evo-notes/collaboration chaos --",
+    "chaos:peers": "pnpm --filter @capy-notebook/collaboration chaos --",
     "check": "ultracite check && pnpm run typecheck",
     "gen:openapi": "cd server && go run ./cmd/openapi -o ../openapi.yaml -python-slots ../pipeline/pipeline/generated/slot.py",
     "gen:api": "pnpm gen:api:clean && orval && node scripts/sync-slot-contracts.mjs",
@@ -167,7 +168,17 @@
     "gen:api:full": "pnpm gen:openapi && pnpm gen:api",
     "fix": "ultracite fix",
     "prepare": "husky",
-    "office:prepare": "node scripts/prepare-betteroffice.mjs"
+    "office:prepare": "node scripts/prepare-betteroffice.mjs",
+    "test:deployment": "python3 scripts/env/test_config.py && python3 scripts/deploy/test_ingest_release.py",
+    "env:check": "python3 scripts/env/config.py check",
+    "env:push": "python3 scripts/env/config.py push",
+    "test:site": "vitest run --dir workers/site",
+    "typecheck:site": "tsc --noEmit -p workers/site/tsconfig.json",
+    "worker:types": "wrangler types workers/site/worker-configuration.d.ts --env uat --strict-vars=false",
+    "test:office": "vitest run --dir workers/office --maxWorkers=1",
+    "typecheck:office": "tsc --noEmit -p workers/office/tsconfig.json",
+    "uat:seed": "python3 scripts/uat/seed.py",
+    "test:uat-seed": "python3 -m unittest discover -s scripts/uat -p test_*.py"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,mjs,cjs,json,jsonc,css,scss,md,mdx}": [

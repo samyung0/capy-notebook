@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/evonotes/server/internal/materialdoc"
-	"github.com/evonotes/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 /* ------------------------------------------------------------------ requests */
@@ -20,9 +20,10 @@ type CreateWorkspaceReq struct {
 
 // UpdateWorkspaceReq updates general workspace settings only.
 type UpdateWorkspaceReq struct {
-	Name  *string          `json:"name,omitempty" minLength:"1" maxLength:"100"`
-	Color *store.UserColor `json:"color,omitempty"`
-	Tags  *[]TagInput      `json:"tags,omitempty" maxItems:"5" doc:"Tags; at most 5"`
+	Description *string          `json:"description,omitempty" maxLength:"1000" doc:"Optional workspace description; empty clears it"`
+	Name        *string          `json:"name,omitempty" minLength:"1" maxLength:"100"`
+	Color       *store.UserColor `json:"color,omitempty"`
+	Tags        *[]TagInput      `json:"tags,omitempty" maxItems:"5" doc:"Tags; at most 5"`
 }
 
 // UpdateWorkspaceSharingReq updates visibility and nonmember permissions.

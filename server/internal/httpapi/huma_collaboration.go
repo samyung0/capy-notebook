@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/evonotes/server/internal/httpapi/apimodel"
-	"github.com/evonotes/server/internal/materialdoc"
-	"github.com/evonotes/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 type materialRevisionsOutput struct {
@@ -338,5 +338,5 @@ func (a *api) publishCommentInvalidation(ctx context.Context, materialID string)
 		event["room"] = room
 	}
 	payload, _ := json.Marshal(event)
-	_ = a.rdb.Publish(ctx, "evo:collaboration:comments", payload).Err()
+	_ = a.rdb.Publish(ctx, "capy:collaboration:comments", payload).Err()
 }

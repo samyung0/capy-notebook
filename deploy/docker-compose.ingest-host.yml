@@ -4,8 +4,8 @@
 
 x-pipeline-env: &pipeline-env
   APP_ENV: production
-  EVO_INGEST_ENVIRONMENT: production
-  EVO_INGEST_HOST_ID: ${EVO_INGEST_HOST_ID:-netcup-ingest-1}
+  CAPY_INGEST_ENVIRONMENT: production
+  CAPY_INGEST_HOST_ID: ${CAPY_INGEST_HOST_ID:-netcup-ingest-1}
   RELEASE_SHA: ${RELEASE_SHA:?set the exact 40-character release SHA}
   LOG_FORMAT: json
   DATABASE_URL: ${DATABASE_URL:?set the private WireGuard Postgres URL}
@@ -18,22 +18,22 @@ x-pipeline-env: &pipeline-env
   PARSER_URL: http://${PARSER_BIND_ADDRESS:?set the WireGuard bind address}:8090/file_parse
   PARSER_TOKEN: ${PARSER_TOKEN:?set PARSER_TOKEN}
   PARSER_TIMEOUT: ${PARSER_TIMEOUT:-2400}
-  EVO_PARSE_SLICE_TIMEOUT: ${EVO_PARSE_SLICE_TIMEOUT:-600}
+  CAPY_PARSE_SLICE_TIMEOUT: ${CAPY_PARSE_SLICE_TIMEOUT:-600}
   PARSER_SLOT_TTL: ${PARSER_SLOT_TTL:-2700}
-  EVO_PARSE_SHARED_DIR: /var/lib/evo-parse
-  EVO_PARSE_JOB_TIMEOUT: ${EVO_PARSE_JOB_TIMEOUT:-3600}
-  EVO_INGEST_TIMEOUT: ${EVO_INGEST_TIMEOUT:-1200}
-  EVO_PARSE_SLOTS: ${EVO_PARSE_SLOTS:-4}
-  EVO_PARSE_METHOD: ${EVO_PARSE_METHOD:-auto}
-  EVO_OFFICE_PREVIEW_MAX_BYTES: ${EVO_OFFICE_PREVIEW_MAX_BYTES:-134217728}
-  EVO_PARSE_ARTIFACT_MAX_BYTES: ${EVO_PARSE_ARTIFACT_MAX_BYTES:-268435456}
-  EVO_PARSE_ARTIFACT_MAX_ENTRIES: ${EVO_PARSE_ARTIFACT_MAX_ENTRIES:-4096}
-  EVO_PARSE_ARTIFACT_MAX_ENTRY_BYTES: ${EVO_PARSE_ARTIFACT_MAX_ENTRY_BYTES:-134217728}
-  EVO_PARSE_ARTIFACT_MAX_EXPANDED_BYTES: ${EVO_PARSE_ARTIFACT_MAX_EXPANDED_BYTES:-536870912}
-  EVO_PARSE_CONTENT_MAX_BYTES: ${EVO_PARSE_CONTENT_MAX_BYTES:-134217728}
-  EVO_PARSE_CONTENT_MAX_BLOCKS: ${EVO_PARSE_CONTENT_MAX_BLOCKS:-250000}
-  EVO_PARSE_IMAGE_MAX_BYTES: ${EVO_PARSE_IMAGE_MAX_BYTES:-33554432}
-  EVO_PARSE_IMAGES_MAX_BYTES: ${EVO_PARSE_IMAGES_MAX_BYTES:-268435456}
+  CAPY_PARSE_SHARED_DIR: /var/lib/capy-parse
+  CAPY_PARSE_JOB_TIMEOUT: ${CAPY_PARSE_JOB_TIMEOUT:-3600}
+  CAPY_INGEST_TIMEOUT: ${CAPY_INGEST_TIMEOUT:-1200}
+  CAPY_PARSE_SLOTS: ${CAPY_PARSE_SLOTS:-4}
+  CAPY_PARSE_METHOD: ${CAPY_PARSE_METHOD:-auto}
+  CAPY_OFFICE_PREVIEW_MAX_BYTES: ${CAPY_OFFICE_PREVIEW_MAX_BYTES:-134217728}
+  CAPY_PARSE_ARTIFACT_MAX_BYTES: ${CAPY_PARSE_ARTIFACT_MAX_BYTES:-268435456}
+  CAPY_PARSE_ARTIFACT_MAX_ENTRIES: ${CAPY_PARSE_ARTIFACT_MAX_ENTRIES:-4096}
+  CAPY_PARSE_ARTIFACT_MAX_ENTRY_BYTES: ${CAPY_PARSE_ARTIFACT_MAX_ENTRY_BYTES:-134217728}
+  CAPY_PARSE_ARTIFACT_MAX_EXPANDED_BYTES: ${CAPY_PARSE_ARTIFACT_MAX_EXPANDED_BYTES:-536870912}
+  CAPY_PARSE_CONTENT_MAX_BYTES: ${CAPY_PARSE_CONTENT_MAX_BYTES:-134217728}
+  CAPY_PARSE_CONTENT_MAX_BLOCKS: ${CAPY_PARSE_CONTENT_MAX_BLOCKS:-250000}
+  CAPY_PARSE_IMAGE_MAX_BYTES: ${CAPY_PARSE_IMAGE_MAX_BYTES:-33554432}
+  CAPY_PARSE_IMAGES_MAX_BYTES: ${CAPY_PARSE_IMAGES_MAX_BYTES:-268435456}
   SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.1}
   # The Sentry environment tag. Empty falls back to APP_ENV in code; UAT sets
   # it because its APP_ENV stays `production` to exercise production checks.
@@ -46,14 +46,14 @@ services:
       [
         "sh",
         "-c",
-        "mkdir -p /var/lib/evo-parse/sources /var/lib/evo-parse/artifacts /var/lib/evo-parse/quarantine && chown -R 10001:10001 /var/lib/evo-parse && chmod 2770 /var/lib/evo-parse /var/lib/evo-parse/sources /var/lib/evo-parse/artifacts /var/lib/evo-parse/quarantine",
+        "mkdir -p /var/lib/capy-parse/sources /var/lib/capy-parse/artifacts /var/lib/capy-parse/quarantine && chown -R 10001:10001 /var/lib/capy-parse && chmod 2770 /var/lib/capy-parse /var/lib/capy-parse/sources /var/lib/capy-parse/artifacts /var/lib/capy-parse/quarantine",
       ]
     volumes:
-      - parse_spool:/var/lib/evo-parse
+      - parse_spool:/var/lib/capy-parse
     restart: "no"
 
   parser:
-    image: evo-ingest-parser:${RELEASE_SHA:?set the exact 40-character release SHA}
+    image: capy-ingest-parser:${RELEASE_SHA:?set the exact 40-character release SHA}
     build:
       context: ..
       dockerfile: parser/Dockerfile
@@ -65,23 +65,23 @@ services:
       RELEASE_SHA: ${RELEASE_SHA:?set the exact 40-character release SHA}
       PARSER_BIND_ADDRESS: ${PARSER_BIND_ADDRESS:?set the WireGuard bind address}
       PARSER_TOKEN: ${PARSER_TOKEN:?set PARSER_TOKEN}
-      EVO_PARSE_CONCURRENCY: ${EVO_PARSE_CONCURRENCY:-4}
-      EVO_MINERU_SLICE_PAGES: ${EVO_MINERU_SLICE_PAGES:-26}
-      EVO_PARSE_SLICE_TIMEOUT: ${EVO_PARSE_SLICE_TIMEOUT:-600}
-      EVO_PARSE_SHARED_DIR: /var/lib/evo-parse
-      EVO_OFFICE_CONVERT_TIMEOUT: ${EVO_OFFICE_CONVERT_TIMEOUT:-180}
-      EVO_OFFICE_PREVIEW_MAX_BYTES: ${EVO_OFFICE_PREVIEW_MAX_BYTES:-134217728}
-      EVO_PARSE_ARTIFACT_MAX_BYTES: ${EVO_PARSE_ARTIFACT_MAX_BYTES:-268435456}
-      EVO_PARSE_ARTIFACT_MAX_ENTRIES: ${EVO_PARSE_ARTIFACT_MAX_ENTRIES:-4096}
-      EVO_PARSE_ARTIFACT_MAX_ENTRY_BYTES: ${EVO_PARSE_ARTIFACT_MAX_ENTRY_BYTES:-134217728}
-      EVO_PARSE_ARTIFACT_MAX_EXPANDED_BYTES: ${EVO_PARSE_ARTIFACT_MAX_EXPANDED_BYTES:-536870912}
-      EVO_PARSE_CONTENT_MAX_BYTES: ${EVO_PARSE_CONTENT_MAX_BYTES:-134217728}
-      EVO_PARSE_CONTENT_MAX_BLOCKS: ${EVO_PARSE_CONTENT_MAX_BLOCKS:-250000}
-      EVO_PARSE_IMAGE_MAX_BYTES: ${EVO_PARSE_IMAGE_MAX_BYTES:-33554432}
-      EVO_PARSE_IMAGES_MAX_BYTES: ${EVO_PARSE_IMAGES_MAX_BYTES:-268435456}
-      MINERU_PROCESSING_WINDOW_SIZE: ${EVO_MINERU_PROCESSING_WINDOW_SIZE:-26}
-      MINERU_INTRA_OP_NUM_THREADS: ${EVO_MINERU_INTRA_OP_NUM_THREADS:-2}
-      MINERU_INTER_OP_NUM_THREADS: ${EVO_MINERU_INTER_OP_NUM_THREADS:-1}
+      CAPY_PARSE_CONCURRENCY: ${CAPY_PARSE_CONCURRENCY:-4}
+      CAPY_MINERU_SLICE_PAGES: ${CAPY_MINERU_SLICE_PAGES:-26}
+      CAPY_PARSE_SLICE_TIMEOUT: ${CAPY_PARSE_SLICE_TIMEOUT:-600}
+      CAPY_PARSE_SHARED_DIR: /var/lib/capy-parse
+      CAPY_OFFICE_CONVERT_TIMEOUT: ${CAPY_OFFICE_CONVERT_TIMEOUT:-180}
+      CAPY_OFFICE_PREVIEW_MAX_BYTES: ${CAPY_OFFICE_PREVIEW_MAX_BYTES:-134217728}
+      CAPY_PARSE_ARTIFACT_MAX_BYTES: ${CAPY_PARSE_ARTIFACT_MAX_BYTES:-268435456}
+      CAPY_PARSE_ARTIFACT_MAX_ENTRIES: ${CAPY_PARSE_ARTIFACT_MAX_ENTRIES:-4096}
+      CAPY_PARSE_ARTIFACT_MAX_ENTRY_BYTES: ${CAPY_PARSE_ARTIFACT_MAX_ENTRY_BYTES:-134217728}
+      CAPY_PARSE_ARTIFACT_MAX_EXPANDED_BYTES: ${CAPY_PARSE_ARTIFACT_MAX_EXPANDED_BYTES:-536870912}
+      CAPY_PARSE_CONTENT_MAX_BYTES: ${CAPY_PARSE_CONTENT_MAX_BYTES:-134217728}
+      CAPY_PARSE_CONTENT_MAX_BLOCKS: ${CAPY_PARSE_CONTENT_MAX_BLOCKS:-250000}
+      CAPY_PARSE_IMAGE_MAX_BYTES: ${CAPY_PARSE_IMAGE_MAX_BYTES:-33554432}
+      CAPY_PARSE_IMAGES_MAX_BYTES: ${CAPY_PARSE_IMAGES_MAX_BYTES:-268435456}
+      MINERU_PROCESSING_WINDOW_SIZE: ${CAPY_MINERU_PROCESSING_WINDOW_SIZE:-26}
+      MINERU_INTRA_OP_NUM_THREADS: ${CAPY_MINERU_INTRA_OP_NUM_THREADS:-2}
+      MINERU_INTER_OP_NUM_THREADS: ${CAPY_MINERU_INTER_OP_NUM_THREADS:-1}
     command:
       [
         "uvicorn",
@@ -97,7 +97,7 @@ services:
       ]
     volumes:
       - parser_models:/models
-      - parse_spool:/var/lib/evo-parse
+      - parse_spool:/var/lib/capy-parse
     mem_limit: 14g
     memswap_limit: 18g
     cpus: 8.0
@@ -121,7 +121,7 @@ services:
     restart: unless-stopped
 
   parse-coordinator:
-    image: evo-ingest-pipeline:${RELEASE_SHA:?set the exact 40-character release SHA}
+    image: capy-ingest-pipeline:${RELEASE_SHA:?set the exact 40-character release SHA}
     build:
       context: ..
       dockerfile: pipeline/Dockerfile
@@ -132,14 +132,14 @@ services:
       <<: *pipeline-env
       SENTRY_DSN: ${SENTRY_DSN_WORKER:-}
       EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}
-      EVO_PARSE_COORDINATOR_CONCURRENCY: ${EVO_PARSE_COORDINATOR_CONCURRENCY:-4}
-      EVO_DB_SYNC_POOL_MAX_SIZE: "2"
-      EVO_DB_ASYNC_POOL_MAX_SIZE: "2"
+      CAPY_PARSE_COORDINATOR_CONCURRENCY: ${CAPY_PARSE_COORDINATOR_CONCURRENCY:-4}
+      CAPY_DB_SYNC_POOL_MAX_SIZE: "2"
+      CAPY_DB_ASYNC_POOL_MAX_SIZE: "2"
     command: ["python", "-m", "pipeline.ingest.parse_worker"]
-    mem_limit: ${EVO_PARSE_COORDINATOR_MEMORY_LIMIT:-512m}
-    memswap_limit: ${EVO_PARSE_COORDINATOR_MEMORY_SWAP_LIMIT:-768m}
-    cpus: ${EVO_PARSE_COORDINATOR_CPUS:-1.0}
-    pids_limit: ${EVO_PARSE_COORDINATOR_PIDS_LIMIT:-128}
+    mem_limit: ${CAPY_PARSE_COORDINATOR_MEMORY_LIMIT:-512m}
+    memswap_limit: ${CAPY_PARSE_COORDINATOR_MEMORY_SWAP_LIMIT:-768m}
+    cpus: ${CAPY_PARSE_COORDINATOR_CPUS:-1.0}
+    pids_limit: ${CAPY_PARSE_COORDINATOR_PIDS_LIMIT:-128}
     depends_on:
       parse-spool-init:
         condition: service_completed_successfully
@@ -147,12 +147,12 @@ services:
         condition: service_healthy
     restart: unless-stopped
     volumes:
-      - parse_spool:/var/lib/evo-parse
+      - parse_spool:/var/lib/capy-parse
 
   # Drive/OneDrive imports: one provider file per claim, streamed into B2.
   # Its own service so a slow provider download never holds an ingest slot.
   import-worker:
-    image: evo-ingest-pipeline:${RELEASE_SHA:?set the exact 40-character release SHA}
+    image: capy-ingest-pipeline:${RELEASE_SHA:?set the exact 40-character release SHA}
     build:
       context: ..
       dockerfile: pipeline/Dockerfile
@@ -164,15 +164,15 @@ services:
       SENTRY_DSN: ${SENTRY_DSN_WORKER:-}
       GATEWAY_URL: ${GATEWAY_URL:?set the private WireGuard gateway URL}
       PIPELINE_SECRET: ${PIPELINE_SECRET:?set the gateway PIPELINE_SECRET}
-      EVO_IMPORT_JOB_TIMEOUT: ${EVO_IMPORT_JOB_TIMEOUT:-600}
-      EVO_IMPORT_DOWNLOAD_HOSTS: ${EVO_IMPORT_DOWNLOAD_HOSTS:-}
-      EVO_DB_SYNC_POOL_MAX_SIZE: "2"
-      EVO_DB_ASYNC_POOL_MAX_SIZE: "2"
+      CAPY_IMPORT_JOB_TIMEOUT: ${CAPY_IMPORT_JOB_TIMEOUT:-600}
+      CAPY_IMPORT_DOWNLOAD_HOSTS: ${CAPY_IMPORT_DOWNLOAD_HOSTS:-}
+      CAPY_DB_SYNC_POOL_MAX_SIZE: "2"
+      CAPY_DB_ASYNC_POOL_MAX_SIZE: "2"
     command: ["python", "-m", "pipeline.ingest.import_worker"]
-    mem_limit: ${EVO_IMPORT_WORKER_MEMORY_LIMIT:-256m}
-    memswap_limit: ${EVO_IMPORT_WORKER_MEMORY_SWAP_LIMIT:-384m}
-    cpus: ${EVO_IMPORT_WORKER_CPUS:-0.5}
-    pids_limit: ${EVO_IMPORT_WORKER_PIDS_LIMIT:-64}
+    mem_limit: ${CAPY_IMPORT_WORKER_MEMORY_LIMIT:-256m}
+    memswap_limit: ${CAPY_IMPORT_WORKER_MEMORY_SWAP_LIMIT:-384m}
+    cpus: ${CAPY_IMPORT_WORKER_CPUS:-0.5}
+    pids_limit: ${CAPY_IMPORT_WORKER_PIDS_LIMIT:-64}
     deploy:
       mode: replicated
       replicas: ${IMPORT_WORKER_REPLICAS:-2}
@@ -181,10 +181,10 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
     volumes:
-      - parse_spool:/var/lib/evo-parse
+      - parse_spool:/var/lib/capy-parse
 
   worker:
-    image: evo-ingest-pipeline:${RELEASE_SHA:?set the exact 40-character release SHA}
+    image: capy-ingest-pipeline:${RELEASE_SHA:?set the exact 40-character release SHA}
     build:
       context: ..
       dockerfile: pipeline/Dockerfile
@@ -203,23 +203,23 @@ services:
       EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}
       # Caption concurrency is per worker. Four workers allow at most sixteen
       # uncached embedded-figure caption calls at once.
-      EVO_CAPTION_CONCURRENCY: ${EVO_CAPTION_CONCURRENCY:-4}
-      EVO_CAPTION_MAX_EDGE: ${EVO_CAPTION_MAX_EDGE:-1280}
-      EVO_CAPTION_VERSION: ${EVO_CAPTION_VERSION:-v2}
-      EVO_IMAGE_MAX_PIXELS: ${EVO_IMAGE_MAX_PIXELS:-100000000}
-      EVO_ELEVENLABS_TRANSCRIPT_VERSION: ${EVO_ELEVENLABS_TRANSCRIPT_VERSION:-scribe-v2-1}
-      EVO_ELEVENLABS_CONCURRENCY_UNITS: ${EVO_ELEVENLABS_CONCURRENCY_UNITS:-12}
-      EVO_ELEVENLABS_SYNC_TIMEOUT_S: ${EVO_ELEVENLABS_SYNC_TIMEOUT_S:-43200}
-      EVO_AUDIO_MAX_DURATION_SECONDS: ${EVO_AUDIO_MAX_DURATION_SECONDS:-36000}
-      EVO_TABULAR_TEXT_VERSION: ${EVO_TABULAR_TEXT_VERSION:-v1}
-      EVO_CAPTION_CACHE_TTL_DAYS: ${EVO_CAPTION_CACHE_TTL_DAYS:-90}
-      EVO_PARSE_ZIP_TTL_HOURS: ${EVO_PARSE_ZIP_TTL_HOURS:-6}
-      EVO_PARSE_SOURCE_TTL_HOURS: ${EVO_PARSE_SOURCE_TTL_HOURS:-2}
+      CAPY_CAPTION_CONCURRENCY: ${CAPY_CAPTION_CONCURRENCY:-4}
+      CAPY_CAPTION_MAX_EDGE: ${CAPY_CAPTION_MAX_EDGE:-1280}
+      CAPY_CAPTION_VERSION: ${CAPY_CAPTION_VERSION:-v2}
+      CAPY_IMAGE_MAX_PIXELS: ${CAPY_IMAGE_MAX_PIXELS:-100000000}
+      CAPY_ELEVENLABS_TRANSCRIPT_VERSION: ${CAPY_ELEVENLABS_TRANSCRIPT_VERSION:-scribe-v2-1}
+      CAPY_ELEVENLABS_CONCURRENCY_UNITS: ${CAPY_ELEVENLABS_CONCURRENCY_UNITS:-12}
+      CAPY_ELEVENLABS_SYNC_TIMEOUT_S: ${CAPY_ELEVENLABS_SYNC_TIMEOUT_S:-43200}
+      CAPY_AUDIO_MAX_DURATION_SECONDS: ${CAPY_AUDIO_MAX_DURATION_SECONDS:-36000}
+      CAPY_TABULAR_TEXT_VERSION: ${CAPY_TABULAR_TEXT_VERSION:-v1}
+      CAPY_CAPTION_CACHE_TTL_DAYS: ${CAPY_CAPTION_CACHE_TTL_DAYS:-90}
+      CAPY_PARSE_ZIP_TTL_HOURS: ${CAPY_PARSE_ZIP_TTL_HOURS:-6}
+      CAPY_PARSE_SOURCE_TTL_HOURS: ${CAPY_PARSE_SOURCE_TTL_HOURS:-2}
     command: ["python", "-m", "pipeline.ingest.worker"]
-    mem_limit: ${EVO_INGEST_WORKER_MEMORY_LIMIT:-1g}
-    memswap_limit: ${EVO_INGEST_WORKER_MEMORY_SWAP_LIMIT:-1280m}
-    cpus: ${EVO_INGEST_WORKER_CPUS:-1.0}
-    pids_limit: ${EVO_INGEST_WORKER_PIDS_LIMIT:-128}
+    mem_limit: ${CAPY_INGEST_WORKER_MEMORY_LIMIT:-1g}
+    memswap_limit: ${CAPY_INGEST_WORKER_MEMORY_SWAP_LIMIT:-1280m}
+    cpus: ${CAPY_INGEST_WORKER_CPUS:-1.0}
+    pids_limit: ${CAPY_INGEST_WORKER_PIDS_LIMIT:-128}
     deploy:
       mode: replicated
       replicas: ${WORKER_REPLICAS:-4}
@@ -228,23 +228,23 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
     volumes:
-      - parse_spool:/var/lib/evo-parse
+      - parse_spool:/var/lib/capy-parse
 
   host-sampler:
-    image: evo-ingest-pipeline:${RELEASE_SHA:?set the exact 40-character release SHA}
+    image: capy-ingest-pipeline:${RELEASE_SHA:?set the exact 40-character release SHA}
     network_mode: host
     read_only: true
     environment:
       <<: *pipeline-env
-      EVO_HOST_PROC: /host/proc
-      EVO_INGEST_ENVIRONMENT: production
-      EVO_INGEST_HOST_ID: ${EVO_INGEST_HOST_ID:-netcup-ingest-1}
-      EVO_HOST_SAMPLE_ACTIVE_SECONDS: ${EVO_HOST_SAMPLE_ACTIVE_SECONDS:-5}
-      EVO_HOST_SAMPLE_IDLE_SECONDS: ${EVO_HOST_SAMPLE_IDLE_SECONDS:-60}
+      CAPY_HOST_PROC: /host/proc
+      CAPY_INGEST_ENVIRONMENT: production
+      CAPY_INGEST_HOST_ID: ${CAPY_INGEST_HOST_ID:-netcup-ingest-1}
+      CAPY_HOST_SAMPLE_ACTIVE_SECONDS: ${CAPY_HOST_SAMPLE_ACTIVE_SECONDS:-5}
+      CAPY_HOST_SAMPLE_IDLE_SECONDS: ${CAPY_HOST_SAMPLE_IDLE_SECONDS:-60}
       PARSER_HEALTH_URL: http://${PARSER_BIND_ADDRESS:?set the WireGuard bind address}:8090/healthz
     volumes:
       - /proc:/host/proc:ro
-      - parse_spool:/var/lib/evo-parse:ro
+      - parse_spool:/var/lib/capy-parse:ro
     command: ["python", "-m", "pipeline.ingest.host_sampler"]
     depends_on:
       parser:
@@ -253,6 +253,6 @@ services:
 
 volumes:
   parser_models:
-    name: ${EVO_INGEST_PARSER_MODELS_VOLUME:-evo-ingest_parser_models}
+    name: ${CAPY_INGEST_PARSER_MODELS_VOLUME:-capy-ingest_parser_models}
   parse_spool:
-    name: ${EVO_INGEST_PROD_PARSE_SPOOL_VOLUME:-evo-ingest_parse_spool}
+    name: ${CAPY_INGEST_PROD_PARSE_SPOOL_VOLUME:-capy-ingest_parse_spool}

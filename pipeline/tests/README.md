@@ -34,7 +34,7 @@ To replay only the certified two-turn agentic-loop cassettes, run:
 pnpm test:pipeline:replay
 ```
 
-That command removes `EVO_TEST_RECORD` before it starts pytest. It cannot make
+That command removes `CAPY_TEST_RECORD` before it starts pytest. It cannot make
 live model calls or rewrite a cassette, even if record mode is exported in the
 calling shell.
 
@@ -59,10 +59,10 @@ export DEEPINFRA_API_KEY="..." # seeded Qwen embedding and routed ZAI GLM
 export DEEPSEEK_API_KEY="..."   # summaries, answers
 export ANTHROPIC_API_KEY="..."  # first-party Anthropic if you certify a Claude slug
 
-export EVO_TEST_RECORD=once       # record only interactions not already saved
+export CAPY_TEST_RECORD=once       # record only interactions not already saved
 # delete the cassette(s) you want to refresh first, then:
 uv run --extra test pytest pipeline/tests/test_ingest_query.py -q
-unset EVO_TEST_RECORD
+unset CAPY_TEST_RECORD
 ```
 
 ## Certifying or re-recording an agentic-loop model
@@ -124,7 +124,7 @@ those are made deterministic so a recording keeps matching:
 - **Request-shaping config is pinned in `conftest.py`**, not read from
   `deploy/.env`, so model names and base-URL paths are byte-identical between
   record and replay.
-- **One embedding batch per file** (`EVO_EMBEDDING_BATCH=1000`) gives the
+- **One embedding batch per file** (`CAPY_EMBEDDING_BATCH=1000`) gives the
   `input` list a stable composition.
 - **Fresh workspace per test** means the prompts are a pure function of the
   fixture content.

@@ -18,12 +18,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/evonotes/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 const (
 	postgresImage = "pgvector/pgvector:pg16"
-	testDBMarker  = "EVO_GO_DISPOSABLE_DATABASE"
+	testDBMarker  = "CAPY_GO_DISPOSABLE_DATABASE"
 )
 
 func main() {
@@ -53,9 +53,9 @@ func run(ctx context.Context, testArgs []string) error {
 	log.Printf("starting disposable Postgres %s", name)
 	if output, err := docker(ctx,
 		"run", "--detach", "--rm", "--name", name,
-		"--env", "POSTGRES_DB=evo",
-		"--env", "POSTGRES_USER=evo",
-		"--env", "POSTGRES_PASSWORD=evo",
+		"--env", "POSTGRES_DB=capy",
+		"--env", "POSTGRES_USER=capy",
+		"--env", "POSTGRES_PASSWORD=capy",
 		"--publish", "127.0.0.1::5432",
 		postgresImage,
 	); err != nil {
@@ -86,7 +86,7 @@ func run(ctx context.Context, testArgs []string) error {
 	}
 	command := exec.CommandContext(ctx, "go", goArgs...)
 	command.Dir = filepath.Join(repositoryRoot, "server")
-	command.Env = testEnvironment(os.Environ(), dsn)
+	command.Env = testEnvironment(os.Environ(), dsn, name)
 	command.Stdin = os.Stdin
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
@@ -99,7 +99,7 @@ func containerName() (string, error) {
 	if _, err := rand.Read(random); err != nil {
 		return "", fmt.Errorf("create container name: %w", err)
 	}
-	return "evo-go-test-" + hex.EncodeToString(random), nil
+	return "capy-go-test-" + hex.EncodeToString(random), nil
 }
 
 func docker(ctx context.Context, args ...string) (string, error) {
@@ -131,9 +131,9 @@ func mappedPort(ctx context.Context, name string) (string, error) {
 func postgresURL(port string) string {
 	address := &url.URL{
 		Scheme:   "postgres",
-		User:     url.UserPassword("evo", "evo"),
+		User:     url.UserPassword("capy", "capy"),
 		Host:     net.JoinHostPort("127.0.0.1", port),
-		Path:     "/evo",
+		Path:     "/capy",
 		RawQuery: "sslmode=disable",
 	}
 	return address.String()
@@ -208,10 +208,11 @@ func fileExists(path string) bool {
 	return err == nil && !info.IsDir()
 }
 
-func testEnvironment(base []string, dsn string) []string {
+func testEnvironment(base []string, dsn, container string) []string {
 	blocked := map[string]struct{}{
-		"DATABASE_URL": {},
-		testDBMarker:   {},
+		"DATABASE_URL":           {},
+		testDBMarker:             {},
+		"CAPY_GO_TEST_CONTAINER": {},
 	}
 	out := make([]string, 0, len(base)+2)
 	for _, item := range base {
@@ -220,5 +221,5 @@ func testEnvironment(base []string, dsn string) []string {
 			out = append(out, item)
 		}
 	}
-	return append(out, "DATABASE_URL="+dsn, testDBMarker+"=1")
+	return append(out, "DATABASE_URL="+dsn, testDBMarker+"=1", "CAPY_GO_TEST_CONTAINER="+container)
 }

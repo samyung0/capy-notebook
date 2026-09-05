@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/evonotes/server/internal/models"
-	"github.com/evonotes/server/internal/obs"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 )
 
 func registryRequestFromSnapshot(snapshot RegistrySnapshot) RegistrySaveRequest {

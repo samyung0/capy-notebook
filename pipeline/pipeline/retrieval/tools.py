@@ -26,7 +26,7 @@ from .chunking import clip_to_tokens, estimate_tokens
 from .limits import TurnBudget
 from .search import Passage, SearchStats, search
 
-log = logging.getLogger("evo.retrieval.tools")
+log = logging.getLogger("capy.retrieval.tools")
 
 
 class TurnFailed(RuntimeError):

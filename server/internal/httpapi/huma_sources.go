@@ -16,12 +16,12 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/evonotes/server/internal/blob"
-	"github.com/evonotes/server/internal/httpapi/apimodel"
-	"github.com/evonotes/server/internal/integrations"
-	"github.com/evonotes/server/internal/obs"
-	"github.com/evonotes/server/internal/sourceupload"
-	"github.com/evonotes/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/blob"
+	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
+	"github.com/samyung0/capy-notebook/server/internal/integrations"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
+	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 type sourceUploadPolicyOutput struct {
@@ -708,7 +708,7 @@ func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourc
 				FinalPath:  sourceObjectKey(blobID + ext),
 				Name:       meta.Name, Kind: kind, ContentType: contentType,
 				DeclaredSize: reservedSize, ParseMode: mode, CaptionImages: captionImages,
-				// Four import attempts of EVO_IMPORT_JOB_TIMEOUT fit inside an
+				// Four import attempts of CAPY_IMPORT_JOB_TIMEOUT fit inside an
 				// hour; the upload sweeper then frees a reservation whose worker
 				// died with its budget spent.
 				ExpiresAt: time.Now().UTC().Add(time.Hour),

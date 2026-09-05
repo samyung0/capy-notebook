@@ -14,7 +14,7 @@
               { "type": "bold" },
               { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
             ],
-            "text": "Evo Notes"
+            "text": "Capy Notebook"
           }
         ]
       },
@@ -71,7 +71,7 @@
       {
         "type": "button",
         "attrs": {
-          "text": "Open Evo Notes",
+          "text": "Open Capy Notebook",
           "url": "OpenURL",
           "isUrlVariable": true,
           "alignment": "left",
@@ -85,7 +85,7 @@
         "content": [
           {
             "type": "text",
-            "text": "You received this message because your Evo Notes workspace membership changed."
+            "text": "You received this message because your Capy Notebook workspace membership changed."
           }
         ]
       },

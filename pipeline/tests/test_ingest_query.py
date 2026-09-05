@@ -5,7 +5,7 @@ hybrid search and the grounded answer — against a live
 Postgres carrying the gateway's own schema, while every model HTTP call is
 served from a recorded cassette.
 
-Record once:  EVO_TEST_RECORD=once  (real provider keys exported)
+Record once:  CAPY_TEST_RECORD=once  (real provider keys exported)
 Replay:       (default, no env)     free, offline w.r.t. model APIs
 """
 

@@ -18,16 +18,16 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/stripe/stripe-go/v82"
 
-	"github.com/evonotes/server/internal/auth"
-	"github.com/evonotes/server/internal/billing"
-	"github.com/evonotes/server/internal/blob"
-	"github.com/evonotes/server/internal/mail"
-	"github.com/evonotes/server/internal/models"
-	"github.com/evonotes/server/internal/obs"
-	"github.com/evonotes/server/internal/pipeline"
-	"github.com/evonotes/server/internal/ratelimit"
-	"github.com/evonotes/server/internal/sourceupload"
-	"github.com/evonotes/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/auth"
+	"github.com/samyung0/capy-notebook/server/internal/billing"
+	"github.com/samyung0/capy-notebook/server/internal/blob"
+	"github.com/samyung0/capy-notebook/server/internal/mail"
+	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
+	"github.com/samyung0/capy-notebook/server/internal/pipeline"
+	"github.com/samyung0/capy-notebook/server/internal/ratelimit"
+	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 // corsOrigins falls back to "*" when no allowlist is configured. Bearer tokens
@@ -140,6 +140,15 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		AllowCredentials: false,
 		MaxAge:           600,
 	}))
+	// Summary failures must not be cached either: visibility is read live.
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasPrefix(r.URL.Path, "/api/public/workspaces/") {
+				w.Header().Set("Cache-Control", "no-store")
+			}
+			next.ServeHTTP(w, r)
+		})
+	})
 	r.Use(auth.Middleware(auth.Config{
 		SecretKey:  cfg.ClerkSecretKey,
 		Disabled:   cfg.AuthDisabled,
@@ -155,13 +164,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 			"/api/internal/",
 		},
 		PublicReadPrefix: []string{
-			"/api/workspaces/",
-			"/api/files/",
-			"/api/editor-assets/",
-			"/api/materials/",
-			"/api/quizzes/",
-			"/api/flashcards/",
-			"/api/explore/",
+			"/api/public/workspaces/",
 		},
 	}))
 	// After auth: limits are per user wherever there is one, and only fall back
@@ -211,7 +214,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 func healthHandler(releaseSHA string) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		if releaseSHA != "" {
-			w.Header().Set("X-Evo-Release", releaseSHA)
+			w.Header().Set("X-Capy-Release", releaseSHA)
 		}
 		_, _ = w.Write([]byte("ok"))
 	}

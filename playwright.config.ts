@@ -37,7 +37,7 @@ const apiUrl = process.env.E2E_API_URL ?? `http://127.0.0.1:${apiPort}`;
 const baseURL = process.env.E2E_BASE_URL ?? `http://127.0.0.1:${vitePort}`;
 const composeProject =
   process.env.E2E_COMPOSE_PROJECT ??
-  `evo-notes-e2e-${process.pid}-${randomBytes(3).toString('hex')}`;
+  `capy-notebook-e2e-${process.pid}-${randomBytes(3).toString('hex')}`;
 const e2eSecret =
   process.env.E2E_AUTH_SECRET ?? randomBytes(32).toString('hex');
 const urlPort = (value: string) => {

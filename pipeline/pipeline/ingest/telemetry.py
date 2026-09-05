@@ -16,12 +16,12 @@ from typing import Any
 from ..store import db
 
 _SAFE_CODE = re.compile(r"[^a-z0-9]+")
-_CGROUP_ROOT = Path(os.environ.get("EVO_WORKER_CGROUP_ROOT", "/sys/fs/cgroup"))
-log = logging.getLogger("evo.ingest.telemetry")
+_CGROUP_ROOT = Path(os.environ.get("CAPY_WORKER_CGROUP_ROOT", "/sys/fs/cgroup"))
+log = logging.getLogger("capy.ingest.telemetry")
 
 
 def environment() -> str:
-    value = os.environ.get("EVO_INGEST_ENVIRONMENT", "").strip().lower()
+    value = os.environ.get("CAPY_INGEST_ENVIRONMENT", "").strip().lower()
     if value:
         return value
     return (
@@ -32,11 +32,11 @@ def environment() -> str:
 
 
 def host_id() -> str:
-    return os.environ.get("EVO_INGEST_HOST_ID", "netcup-ingest-1").strip()
+    return os.environ.get("CAPY_INGEST_HOST_ID", "netcup-ingest-1").strip()
 
 
 def _instance_id(role: str) -> str:
-    configured = os.environ.get("EVO_WORKER_INSTANCE_ID", "").strip()
+    configured = os.environ.get("CAPY_WORKER_INSTANCE_ID", "").strip()
     if configured:
         return configured
     # A parse-coordinator container supervises several child processes that

@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/evonotes/server/internal/obs"
-	"github.com/evonotes/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 // settleTimeout bounds the detached write that closes a reservation. Short:

@@ -22,7 +22,7 @@ const TRAILING_SLASH = /\/$/;
 export const DEV_DEFAULTS = {
   allowedOrigins: 'http://localhost:5173',
   apiUrl: 'http://localhost:8080',
-  databaseUrl: 'postgres://evo:evo@localhost:5432/evo?sslmode=disable',
+  databaseUrl: 'postgres://capy:capy@localhost:5432/capy?sslmode=disable',
   redisUrl: 'redis://localhost:6379/0',
   secret: 'dev-collaboration-secret',
 } as const;

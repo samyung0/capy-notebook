@@ -12,10 +12,10 @@ tag=$3
 memory_limit=$4
 memory_swap_limit=$5
 cpu_limit=$6
-spool=/opt/evo-ingest/stress-spool
-bench_root=/opt/evo-ingest/worker-stress-20260831
-result_dir=/opt/evo-ingest/stress-results/worker-${tag}
-parser_name=evo-worker-test-parser
+spool=/opt/capy-ingest/stress-spool
+bench_root=/opt/capy-ingest/worker-stress-20260831
+result_dir=/opt/capy-ingest/stress-results/worker-${tag}
+parser_name=capy-worker-test-parser
 release_sha=2725da1cbe39407786c9b3bdcd40fe68e0149046
 
 if [[ ! $lane =~ ^(digital|mixed|mostly-ocr|ocr)$ ]]; then
@@ -47,7 +47,7 @@ printf '\n' >>"$sample_file"
 
 names=()
 for copy_number in 1 2 3 4; do
-  name=evo-worker-${tag}-${copy_number}
+  name=capy-worker-${tag}-${copy_number}
   names+=("$name")
   docker rm -f "$name" >/dev/null 2>&1 || true
   filename=${lane}-${copy_number}.pdf
@@ -56,22 +56,22 @@ for copy_number in 1 2 3 4; do
     run -d --name "$name" --network host
     --pids-limit 128
     --cpus "$cpu_limit"
-    -v "$spool:/var/lib/evo-parse"
+    -v "$spool:/var/lib/capy-parse"
     -v "$bench_root/bench/parsers/bench_worker_job.py:/bench_worker_job.py:ro"
     -e PARSER_URL=http://127.0.0.1:8090/file_parse
     -e PARSER_TOKEN=worker-stress-token
     -e RELEASE_SHA="$release_sha"
-    -e EVO_PARSE_METHOD="$method"
-    -e EVO_PARSE_SHARED_DIR=/var/lib/evo-parse
+    -e CAPY_PARSE_METHOD="$method"
+    -e CAPY_PARSE_SHARED_DIR=/var/lib/capy-parse
     -e PARSER_TIMEOUT=2400
-    -e EVO_PARSE_SLICE_TIMEOUT=600
-    -e EVO_CAPTION_CONCURRENCY=8
+    -e CAPY_PARSE_SLICE_TIMEOUT=600
+    -e CAPY_CAPTION_CONCURRENCY=8
   )
   if [[ $memory_limit != unbounded ]]; then
     docker_args+=(--memory "$memory_limit" --memory-swap "$memory_swap_limit")
   fi
   docker_args+=(
-    evo-worker-stress:current python /bench_worker_job.py
+    capy-worker-stress:current python /bench_worker_job.py
     --source-key "sources/$filename"
     --source-sha256 "$digest"
     --filename "$filename"
@@ -122,7 +122,7 @@ done
 
 docker run --rm -i \
   -v "$result_dir:/results:ro" \
-  evo-worker-stress:current \
+  capy-worker-stress:current \
   python - /results/resources.csv /results <<'PY'
 import csv
 import json

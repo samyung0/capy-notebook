@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "subject": "你的 Evo Notes 账户删除已取消",
+  "subject": "你的 Capy Notebook 账户删除已取消",
   "preview": "你的账户已重新激活。",
   "content": {
     "type": "doc",
@@ -14,7 +14,7 @@
               { "type": "bold" },
               { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
             ],
-            "text": "Evo Notes"
+            "text": "Capy Notebook"
           }
         ]
       },
@@ -32,7 +32,7 @@
         "content": [
           {
             "type": "text",
-            "text": "支持已取消你的 Evo Notes 账户删除请求，账户已重新激活。"
+            "text": "支持已取消你的 Capy Notebook 账户删除请求，账户已重新激活。"
           }
         ]
       },
@@ -53,7 +53,7 @@
         "content": [
           {
             "type": "text",
-            "text": "你收到这封邮件是因为支持取消了你的 Evo Notes 账户删除请求。"
+            "text": "你收到这封邮件是因为支持取消了你的 Capy Notebook 账户删除请求。"
           }
         ]
       },

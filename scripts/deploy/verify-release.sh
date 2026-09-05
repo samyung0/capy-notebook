@@ -36,7 +36,7 @@ check_release() {
 
   if ! app_code="$(curl --silent --show-error --location --max-time 30 \
     --output "$app_body" --write-out '%{http_code}' \
-    "${DEPLOYMENT_APP_URL%/}/?evo_release=$EXPECTED_REVISION")"; then
+    "${DEPLOYMENT_APP_URL%/}/?capy_release=$EXPECTED_REVISION")"; then
     last_error="application request failed"
     return 1
   fi
@@ -44,7 +44,7 @@ check_release() {
     last_error="application returned HTTP $app_code"
     return 1
   fi
-  app_revision="$(sed -n 's/.*<meta content="\([0-9a-fA-F]\{40\}\)" name="evo-release">.*/\1/p' "$app_body" | head -n 1)"
+  app_revision="$(sed -n 's/.*<meta content="\([0-9a-fA-F]\{40\}\)" name="capy-release">.*/\1/p' "$app_body" | head -n 1)"
   if [[ "$app_revision" != "$EXPECTED_REVISION" ]]; then
     last_error="application reports revision '${app_revision:-missing}', expected $EXPECTED_REVISION"
     return 1
@@ -52,7 +52,7 @@ check_release() {
 
   if ! api_code="$(curl --silent --show-error --max-time 30 \
     --dump-header "$api_headers" --output /dev/null --write-out '%{http_code}' \
-    "${DEPLOYMENT_API_URL%/}/healthz?evo_release=$EXPECTED_REVISION")"; then
+    "${DEPLOYMENT_API_URL%/}/healthz?capy_release=$EXPECTED_REVISION")"; then
     last_error="gateway health request failed"
     return 1
   fi
@@ -60,7 +60,7 @@ check_release() {
     last_error="gateway health returned HTTP $api_code"
     return 1
   fi
-  api_revision="$(awk 'BEGIN { IGNORECASE=1 } /^x-evo-release:/ { sub(/^[^:]+:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit }' "$api_headers")"
+  api_revision="$(awk 'tolower($0) ~ /^x-capy-release:/ { sub(/^[^:]+:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit }' "$api_headers")"
   if [[ "$api_revision" != "$EXPECTED_REVISION" ]]; then
     last_error="gateway reports revision '${api_revision:-missing}', expected $EXPECTED_REVISION"
     return 1

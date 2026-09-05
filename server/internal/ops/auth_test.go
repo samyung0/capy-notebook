@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/evonotes/server/internal/obs"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 )
 
 type fakeClerkVerifier struct {

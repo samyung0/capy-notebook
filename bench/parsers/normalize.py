@@ -1,4 +1,4 @@
-"""Adapters from Marker v2 / Docling output into Evo's ``content_list`` shape.
+"""Adapters from Marker v2 / Docling output into Capy Notebook's ``content_list`` shape.
 
 This is the load-bearing part of any parser swap, so it lives in its own module
 rather than inside the benchmark driver: if a candidate wins, this file moves to

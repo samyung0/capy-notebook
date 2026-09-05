@@ -14,7 +14,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from .config import cfg
 from .store import db
 
-log = logging.getLogger("evo.credentials")
+log = logging.getLogger("capy.credentials")
 
 _INVALID_KEY = "LLM_CREDENTIALS_KEY must be 32-byte hex or base64"
 

@@ -25,7 +25,7 @@ from ..retrieval import accounting, models
 from ..retrieval.chunking import clip_to_tokens
 from ..retrieval.locale import response_language_rule, rewrite_language_rule
 
-log = logging.getLogger("evo.retrieve.ai")
+log = logging.getLogger("capy.retrieve.ai")
 router = APIRouter(prefix="/plate-ai", tags=["plate-ai"])
 
 MAX_CONTEXT_CHARS = 200_000

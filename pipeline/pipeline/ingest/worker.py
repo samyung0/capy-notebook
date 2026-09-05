@@ -54,7 +54,7 @@ from ..store import blobstore, db
 from . import capacity, import_stage, source_text, telemetry
 from . import plan as ingest_plan
 
-log = logging.getLogger("evo.worker")
+log = logging.getLogger("capy.worker")
 
 _RESOURCE_AUDIO_SECOND = "audio_transcription_second"
 _RESOURCE_DIGITAL_PAGE = "digital_parse_page"
@@ -1535,7 +1535,7 @@ async def _chunks_for(
     artifact = payload.get("parseArtifact")
     if not isinstance(artifact, dict):
         raise TerminalError("document ingest has no completed parse artifact")
-    raw_dir = Path(tempfile.mkdtemp(prefix="evo_parse_"))
+    raw_dir = Path(tempfile.mkdtemp(prefix="capy_parse_"))
     try:
         _set_stage("artifact_extract")
         content_list = await asyncio.to_thread(

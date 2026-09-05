@@ -7,7 +7,7 @@ tags: [frontend, plate, slate, yjs, hocuspocus, collaboration, ai]
 
 # Frontend: Plate.js and Yjs Editor
 
-Evo Notes uses Plate/Slate for editing and rendering, but Yjs is the live and
+Capy Notebook uses Plate/Slate for editing and rendering, but Yjs is the live and
 durable authority for material content after a room is initialized.
 
 - Yjs owns live material content.
@@ -219,7 +219,7 @@ not worsen any dimension, otherwise the deletions needed to recover would be
 rejected too and the material would be permanently unsavable.
 
 The writable Y.Doc contract permits only the Plate `content` root and the
-server-owned `__evo_pending_contributors` map. Every client update checks this
+server-owned `__capy_pending_contributors` map. Every client update checks this
 allowlist before application, and load/store paths check it again. Unknown or
 wrong-shaped top-level roots are rejected rather than persisted outside Plate
 content accounting. Contributor markers have three bounded fields only:
@@ -364,7 +364,7 @@ Comment highlighting is local decoration state. It is never applied with
 update. If an anchor no longer resolves, the thread remains available at its
 stable block and quoted fallback instead of being deleted.
 
-Comment mutations publish `evo:collaboration:comments` through Redis.
+Comment mutations publish `capy:collaboration:comments` through Redis.
 Hocuspocus sends a stateless `comments-invalidated` room event and clients
 invalidate the discussion query.
 
@@ -468,8 +468,8 @@ Run:
 ```bash
 pnpm run typecheck
 pnpm run test
-pnpm --filter @evo-notes/collaboration typecheck
-pnpm --filter @evo-notes/collaboration test
+pnpm --filter @capy-notebook/collaboration typecheck
+pnpm --filter @capy-notebook/collaboration test
 cd server && go test ./...
 ```
 

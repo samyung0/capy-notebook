@@ -1,4 +1,4 @@
-Evo Notes
+Capy Notebook
 
 
 账户已冻结
@@ -11,6 +11,6 @@ Evo Notes
 
 ----------------------------------------
 
-你收到这封邮件是因为存储缓冲期结束后你的 Evo Notes 账户被冻结。
+你收到这封邮件是因为存储缓冲期结束后你的 Capy Notebook 账户被冻结。
 
 管理产品邮件偏好 {{.UnsubscribeURL}}

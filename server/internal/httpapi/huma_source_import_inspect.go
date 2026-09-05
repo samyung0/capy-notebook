@@ -10,7 +10,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/evonotes/server/internal/integrations"
+	"github.com/samyung0/capy-notebook/server/internal/integrations"
 )
 
 type inspectSourceImportsReq struct {

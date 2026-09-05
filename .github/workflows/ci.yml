@@ -37,9 +37,15 @@ jobs:
       - run: pnpm run check
       - run: pnpm run build
       - run: pnpm review:validate-boundaries
+      - run: pnpm test:deployment
+      - run: pnpm typecheck:site
+      - run: pnpm test:site
+      - run: pnpm typecheck:office
+      - run: pnpm test:office
+      - run: pnpm test:uat-seed
       - run: pnpm test
-      - run: pnpm --filter @evo-notes/ops typecheck
-      - run: pnpm --filter @evo-notes/ops test
+      - run: pnpm --filter @capy-notebook/ops typecheck
+      - run: pnpm --filter @capy-notebook/ops test
       - run: pnpm run test:collaboration
 
   e2e_check:

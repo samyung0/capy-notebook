@@ -6,7 +6,6 @@ import { useMe, useSearch } from '@/api/hooks';
 import type { SearchKind, SearchResult } from '@/api/types';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Avatar } from '@/components/ui/Avatar';
-import { Card } from '@/components/ui/Card';
 import {
   Dialog,
   DialogClose,
@@ -18,7 +17,6 @@ import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { Input } from '@/components/ui/Input';
 import { Menu } from '@/components/ui/Menu';
-import { cn } from '@/lib/cn';
 import { features } from '@/lib/features';
 import { useDebounced } from '@/lib/useDebounced';
 import { userColorPair } from '@/lib/userColor';
@@ -31,6 +29,7 @@ const CLERK_ACTIVE = !USE_MSW && !!CLERK_PUBLISHABLE_KEY;
 import { VisuallyHidden } from 'radix-ui';
 import { NotificationsBell } from '@/features/notification/NotificationBell';
 import { m } from '@/i18n';
+import { TopInsetFrame } from '@/summary/TopInsetFrame';
 import { MobileNavDrawer } from './Sidebar';
 import { ThemeSwitchDrawer } from './ThemeSwitchDrawer';
 
@@ -246,15 +245,7 @@ function ProfilePill() {
 
 export function TopInsetBar({ className }: { className?: string }) {
   return (
-    // the border radius should match the large panel/panel with inverted radius
-    <Card
-      className={cn(
-        'top-inset-bar-shape flex-row items-center justify-between gap-2.5 py-1.5 pr-3 pl-4',
-        className
-      )}
-      radius="unset"
-      theme="surface-dark"
-    >
+    <TopInsetFrame className={className}>
       <div className="flex min-w-0 flex-1 items-center gap-2.5">
         <MobileNavDrawer className="lg:hidden" />
         <div className="hidden lg:block">
@@ -263,6 +254,6 @@ export function TopInsetBar({ className }: { className?: string }) {
         <NotificationsBell />
       </div>
       <ProfilePill />
-    </Card>
+    </TopInsetFrame>
   );
 }

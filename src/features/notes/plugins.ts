@@ -280,7 +280,7 @@ const IndentListKit = [
 ];
 
 const CodeBlockListCleanupPlugin = createSlatePlugin({
-  key: 'evo-code-block-list-cleanup',
+  key: 'capy-code-block-list-cleanup',
 }).overrideEditor(({ editor, tf: { normalizeNode } }) => ({
   transforms: {
     normalizeNode([node, path]) {
@@ -405,12 +405,12 @@ const AutoformatPlugin = createSlatePlugin({
       ],
     }),
   ],
-  key: 'evo-autoformat',
+  key: 'capy-autoformat',
 });
 
 function createSaveShortcutPlugin(onSave: () => void) {
   return createPlatePlugin({
-    key: 'evo-save-shortcut',
+    key: 'capy-save-shortcut',
     shortcuts: {
       save: {
         handler: ({ event }) => {

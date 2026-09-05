@@ -1,8 +1,8 @@
 #!/usr/sbin/nft -f
 
-destroy table inet evo_ingest_filter
+destroy table inet capy_ingest_filter
 
-table inet evo_ingest_filter {
+table inet capy_ingest_filter {
   chain input {
     type filter hook input priority filter; policy drop;
     ct state established,related accept

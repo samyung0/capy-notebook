@@ -8,7 +8,12 @@ const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as
   | string
   | undefined;
 
-function AuthTokenBridge({ children }: { children: React.ReactNode }) {
+type AuthProviderProps = {
+  children: React.ReactNode;
+  pending?: React.ReactNode;
+};
+
+function AuthTokenBridge({ children, pending }: AuthProviderProps) {
   const { getToken, isLoaded, isSignedIn, userId } = useAuth();
   const identity = isLoaded ? (userId ?? null) : undefined;
   const [readyIdentity, setReadyIdentity] = useState<string | null | undefined>(
@@ -35,6 +40,7 @@ function AuthTokenBridge({ children }: { children: React.ReactNode }) {
 
   // Route loaders must not run until the matching token getter is installed.
   if (!isLoaded || readyIdentity !== identity) {
+    if (pending !== undefined) return <>{pending}</>;
     return (
       <div
         aria-label={m.a11y_loading()}
@@ -48,7 +54,7 @@ function AuthTokenBridge({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-export function AppAuthProvider({ children }: { children: React.ReactNode }) {
+export function AppAuthProvider({ children, pending }: AuthProviderProps) {
   if (USE_MSW) return <>{children}</>;
   if (!PUBLISHABLE_KEY) {
     console.warn('VITE_CLERK_PUBLISHABLE_KEY missing — auth disabled');
@@ -56,7 +62,7 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
   }
   return (
     <ClerkProvider afterSignOutUrl="/sign-in" publishableKey={PUBLISHABLE_KEY}>
-      <AuthTokenBridge>{children}</AuthTokenBridge>
+      <AuthTokenBridge pending={pending}>{children}</AuthTokenBridge>
     </ClerkProvider>
   );
 }

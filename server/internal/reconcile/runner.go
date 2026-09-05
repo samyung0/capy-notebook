@@ -5,9 +5,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/evonotes/server/internal/billing"
-	"github.com/evonotes/server/internal/obs"
-	"github.com/evonotes/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/billing"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 const leaseDuration = time.Hour

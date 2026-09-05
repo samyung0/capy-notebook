@@ -17,6 +17,7 @@ import {
 import { Spinner } from '@/components/ui/feedback';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { flattenTagErrors, TagSelect } from '@/components/ui/TagSelect';
+import { Textarea } from '@/components/ui/TextArea';
 import { UserColorChooser } from '@/components/ui/UserColorChooser';
 import { m } from '@/i18n';
 
@@ -98,6 +99,25 @@ export function WorkspaceFormEditDialog({
                     )}
                   </label>
                 </>
+              )}
+            />
+            <Controller
+              control={control}
+              name="description"
+              render={({ field, fieldState }) => (
+                <label className="flex flex-col gap-1.5">
+                  <InputTitle>{m.summary_description_label()}</InputTitle>
+                  <Textarea
+                    {...field}
+                    aria-invalid={fieldState.invalid}
+                    maxLength={1000}
+                    placeholder={m.summary_description_placeholder()}
+                    value={field.value ?? ''}
+                  />
+                  {fieldState.invalid && (
+                    <InputError errors={[fieldState.error]} />
+                  )}
+                </label>
               )}
             />
             <Controller

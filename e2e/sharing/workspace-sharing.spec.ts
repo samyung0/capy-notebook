@@ -57,19 +57,17 @@ test.describe('workspace sharing', () => {
     ).toHaveCount(0);
   });
 
-  test('non-member and anonymous cannot open a private workspace', async ({
+  test('private summary reveals no metadata, even to signed-in visitors', async ({
     otherPage,
     anonymousPage,
     seed,
   }) => {
     for (const page of [otherPage, anonymousPage]) {
-      const resPromise = waitForApi(
-        page,
-        apiEndsWith(`/api/workspaces/${seed.privateWorkspace.id}`)
-      );
-      await page.goto(`/share/workspaces/${seed.privateWorkspace.id}`);
-      expect((await resPromise).status()).toBe(404);
-      await expect(page.getByTestId('private-or-unavailable')).toBeVisible();
+      const response = await page.goto(`/w/${seed.privateWorkspace.id}`);
+      expect(response?.status()).toBe(404);
+      await expect(
+        page.getByRole('heading', { name: 'Workspace unavailable' })
+      ).toBeVisible();
       await expect(page.getByText(seed.privateWorkspace.name)).toHaveCount(0);
       await expect(
         page.getByText(seed.privateWorkspace.secretTitle)
@@ -106,33 +104,30 @@ test.describe('workspace sharing', () => {
       ).toContainText('Can view');
 
       for (const page of [anonymousPage, otherPage]) {
-        const resPromise = waitForApi(
-          page,
-          apiEndsWith(`/api/workspaces/${seed.mutateWorkspace.id}`)
-        );
-        await page.goto(`/share/workspaces/${seed.mutateWorkspace.id}`);
-        const res = await resPromise;
-        expect(res.status()).toBe(200);
-        const body = await res.json();
-        expect(body.capabilities.canEdit).toBe(false);
+        const response = await page.goto(`/w/${seed.mutateWorkspace.id}`);
+        expect(response?.status()).toBe(200);
         await expect(
           page.getByRole('heading', { name: seed.mutateWorkspace.name })
         ).toBeVisible();
         await expect(
-          page.getByRole('button', { name: 'Clone workspace' })
+          page.getByRole('link', { name: 'Open workspace' })
         ).toBeVisible();
-        await expect(page.getByRole('button', { name: 'Share' })).toHaveCount(
-          0
-        );
+        await expect(
+          page.getByRole('button', { name: 'Clone workspace' })
+        ).toHaveCount(0);
         await expect(
           page.getByRole('button', { name: /Add file/i })
         ).toHaveCount(0);
-        await expect(
-          page.getByRole('button', { name: /Add chapter/i })
-        ).toHaveCount(0);
-        await expect(page.getByText('Chat')).toHaveCount(0);
-        await expect(page.getByText('Generate')).toHaveCount(0);
+        expect(
+          await page.locator('meta[name="robots"]').getAttribute('content')
+        ).toBe('noindex, nofollow');
       }
+      const open = waitForApi(
+        otherPage,
+        apiEndsWith(`/api/workspaces/${seed.mutateWorkspace.id}`)
+      );
+      await otherPage.getByRole('link', { name: 'Open workspace' }).click();
+      expect((await open).status()).toBe(200);
     } finally {
       // Always restore private so other workers/tests stay isolated.
       const restore = await ownerApi.patch(
@@ -150,23 +145,18 @@ test.describe('workspace sharing', () => {
     otherPage,
     seed,
   }) => {
-    const publicRes = waitForApi(
-      anonymousPage,
-      apiEndsWith(`/api/workspaces/${seed.publicWorkspace.id}`)
+    const publicRes = await anonymousPage.goto(
+      `/share/workspaces/${seed.publicWorkspace.id}`
     );
-    await anonymousPage.goto(`/share/workspaces/${seed.publicWorkspace.id}`);
-    expect((await publicRes).status()).toBe(200);
+    expect(publicRes?.status()).toBe(200);
+    await expect(anonymousPage).toHaveURL(
+      new RegExp(`/w/${seed.publicWorkspace.id}$`)
+    );
     await expect(
       anonymousPage.getByRole('heading', { name: seed.publicWorkspace.name })
     ).toBeVisible();
-
-    const linkRes = waitForApi(
-      anonymousPage,
-      apiEndsWith(`/api/workspaces/${seed.linkWorkspace.id}`)
-    );
-    await anonymousPage.goto(`/share/workspaces/${seed.linkWorkspace.id}`);
-    expect((await linkRes).status()).toBe(200);
-
+    const linkRes = await anonymousPage.goto(`/w/${seed.linkWorkspace.id}`);
+    expect(linkRes?.status()).toBe(200);
     const exploreRes = waitForApi(
       otherPage,
       apiEndsWith('/api/explore/workspaces')
@@ -181,7 +171,7 @@ test.describe('workspace sharing', () => {
   });
 
   test('signed-in viewer can clone a shared workspace; anonymous gets 401', async ({
-    anonymousPage,
+    anonymousApi,
     otherApi,
     otherPage,
     seed,
@@ -190,7 +180,7 @@ test.describe('workspace sharing', () => {
       otherPage,
       apiEndsWith(`/api/workspaces/${seed.linkWorkspace.id}/clone`, 'POST')
     );
-    await otherPage.goto(`/share/workspaces/${seed.linkWorkspace.id}`);
+    await otherPage.goto(`/workspaces/${seed.linkWorkspace.id}`);
     await otherPage.getByRole('button', { name: 'Clone workspace' }).click();
     const cloneRes = await clonePromise;
     expect(cloneRes.status()).toBe(201);
@@ -199,16 +189,10 @@ test.describe('workspace sharing', () => {
       expect(cloned.workspace.privacy).toBe('private');
       expect(cloned.workspace.isOwner).toBe(true);
 
-      const anonClone = waitForApi(
-        anonymousPage,
-        apiEndsWith(`/api/workspaces/${seed.linkWorkspace.id}/clone`, 'POST')
+      const anonClone = await anonymousApi.post(
+        `/api/workspaces/${seed.linkWorkspace.id}/clone`
       );
-      await anonymousPage.goto(`/share/workspaces/${seed.linkWorkspace.id}`);
-      await anonymousPage
-        .getByRole('button', { name: 'Clone workspace' })
-        .click();
-      expect((await anonClone).status()).toBe(401);
-      await expect(anonymousPage.getByText('Sign in to clone')).toBeVisible();
+      expect(anonClone.status()).toBe(401);
     } finally {
       const removedClone = await otherApi.delete(
         `/api/workspaces/${cloned.workspace.id}`
@@ -389,12 +373,11 @@ test.describe('workspace sharing', () => {
     );
     expect(roster.status()).toBe(403);
 
-    // Anonymous visitors read the workspace but never comment, so the
-    // directory is not theirs to enumerate.
+    // Anonymous visitors can read only the summary, not the mention directory.
     const anonymous = await anonymousApi.get(
       `/api/workspaces/${seed.publicWorkspace.id}/collaborators`
     );
-    expect(anonymous.status()).toBe(403);
+    expect(anonymous.status()).toBe(401);
 
     const ownerRoster = await ownerApi.get(
       `/api/workspaces/${seed.publicWorkspace.id}/members`

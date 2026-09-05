@@ -1,6 +1,6 @@
 # UAT activation checklist
 
-What to verify once the Coolify resource for `evo-notes-uat` has real values and
+What to verify once the Coolify resource for `capy-notebook-uat` has real values and
 has deployed at least once. Ordered by dependency: a failure at one step makes
 every later step meaningless. Setup instructions live in
 [`deployment-runbook.md`](deployment-runbook.md); this file is only the
@@ -20,7 +20,7 @@ fails loudly on anything outside the accepted status range. It reads
 `deploy/.env.uat` and requires `UAT_TARGET_AUTHORIZED=true`.
 
 Then, from the ingest host, confirm the import worker can reach the gateway on
-WireGuard (`EVO_PRIVATE_BIND_ADDRESS` must be set on the UAT app host):
+WireGuard (`CAPY_PRIVATE_BIND_ADDRESS` must be set on the UAT app host):
 
 ```bash
 curl --fail --silent http://10.77.0.3:8080/healthz
@@ -43,7 +43,8 @@ application's **production** instance, subscribed to `user.created`,
 (`server/internal/httpapi/webhooks.go`); other events are verified, claimed and
 marked processed as no-ops.
 
-Copy its signing secret into `CLERK_WEBHOOK_SECRET` and redeploy.
+Set its signing secret as GitHub `uat` secret `CLERK_WEBHOOK_SECRET`, or upload
+the updated ignored `.env.uat` through `env:push`, then redeploy.
 
 Verify with a real signup, not with the dashboard's test button alone:
 
@@ -136,3 +137,23 @@ a checksum per migration and refuses to run when an applied file changes
 the local lane: gateway, Postgres and Redis on their own machine against the
 Clerk development instance. Point a local gateway at the UAT database only with
 `MIGRATE=false`.
+
+## 7. Site summary and deployment configuration
+
+- The site is Worker `capy-notebook-uat`, with `API_ORIGIN` and `APP_ORIGIN`
+  matching UAT. `/w/{workspaceId}` contains the selected summary in the initial
+  HTML with JavaScript disabled; the Open workspace link requires sign-in.
+- Public and link summaries return `Cache-Control: no-store`. Link summaries
+  include `X-Robots-Tag: noindex, nofollow`. Changing to private immediately
+  returns the same 404 as a missing workspace. Full file/material/quiz routes
+  reject anonymous requests.
+- GitHub configuration sync/readback passed before deployment. Managed Coolify
+  variables are literal, non-preview and readable for verification; unset ones
+  are blank. Neither values nor fingerprints appear in runner logs.
+- Backend `X-Capy-Release`, SPA `capy-release` and all selected ingest container
+  revision labels match the release. The state's `active` agrees, `current`
+  resolves to its snapshot and `pending` is absent after success.
+- An ingest-only run verifies the already deployed backend SHA. An unfinished
+  Coolify job leaves recovery pending rather than resuming incompatible workers.
+- Local UI plus UAT still renders the same summary through Vite. Full-local
+  Compose uses `deploy/.env` with the renamed `CAPY_*` keys.

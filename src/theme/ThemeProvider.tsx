@@ -44,8 +44,8 @@ interface ThemeState {
 
 const ThemeContext = createContext<ThemeState | null>(null);
 
-const STYLE_KEY = 'evo.style';
-const THEME_KEY = 'evo.theme';
+const STYLE_KEY = 'capy.style';
+const THEME_KEY = 'capy.theme';
 
 function readStored<T extends string>(
   key: string,

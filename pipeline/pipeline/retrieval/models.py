@@ -28,7 +28,7 @@ from .stream import (
 )
 from .usage_extract import NormalizedUsage, extract_usage
 
-log = logging.getLogger("evo.models")
+log = logging.getLogger("capy.models")
 
 INVALID_KEY = "invalid_key"
 KEY_FAILED = "key_failed"

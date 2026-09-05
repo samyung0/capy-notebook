@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/evonotes/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 )
 
 // TestUserDeleteCascadeSplitsOwnershipFromAuthorship pins the two invariants the

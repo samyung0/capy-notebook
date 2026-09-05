@@ -7,9 +7,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/evonotes/server/internal/materialdoc"
-	"github.com/evonotes/server/internal/models"
 	"github.com/jackc/pgx/v5"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/models"
 )
 
 /* -------------------------------------------------------------- access checks
@@ -17,8 +17,8 @@ import (
 Sharing model: workspace privacy is inherited by everything inside it, while
 standalone materials keep their own privacy.
   - owner / member → read (and write per role capabilities)
-  - link/public    → any caller may read; signed-in workspace nonmembers receive
-    share_role for material collaboration, while anonymous callers view only
+  - link/public    → signed-in callers may read; workspace nonmembers receive
+    share_role for material collaboration
   - private        → owner/members only (404 for everyone else)
 A material is readable when its parent workspace is link/public, or when it is
 standalone and its own policy is link/public. */
@@ -26,6 +26,9 @@ standalone and its own policy is link/public. */
 // WorkspaceAccess reports whether userID may read wsID. isOwner is true for
 // the owner; (false, nil) means shared read access (privacy link/public).
 func (s *Store) WorkspaceAccess(ctx context.Context, userID, wsID string) (isOwner bool, err error) {
+	if userID == "" {
+		return false, ErrNotFound
+	}
 	var owner *string
 	var privacy Privacy
 	e := s.pool.QueryRow(ctx, `SELECT w.user_id, w.privacy
@@ -79,6 +82,9 @@ func (s *Store) WorkspaceRole(ctx context.Context, userID, wsID string) (Workspa
 // scoped to one material, such as who may read the collaborator directory.
 // Structural authorization keeps using WorkspaceRole.
 func (s *Store) WorkspaceEffectiveRole(ctx context.Context, userID, wsID string) (WorkspaceRole, error) {
+	if userID == "" {
+		return "", ErrNotFound
+	}
 	var owner *string
 	var privacy Privacy
 	var shareRole *ShareRole
@@ -223,13 +229,15 @@ type MaterialAccessInfo struct {
 //   - explicit member: their role, raised to the share role where the
 //     workspace is shared more permissively
 //   - signed-in nonmember of a link/public workspace: workspace share_role
-//   - anonymous shared reader: viewer
 //   - standalone material-level sharing: viewer
 func materialEffectiveAccess(
 	ctx context.Context,
 	q rowQueryer,
 	userID, matID string,
 ) (MaterialAccessInfo, error) {
+	if userID == "" {
+		return MaterialAccessInfo{}, ErrNotFound
+	}
 	var materialOwner, wsID, workspaceOwner *string
 	var materialPrivacy Privacy
 	var workspacePrivacy *Privacy
@@ -271,11 +279,9 @@ func materialEffectiveAccess(
 	materialShared := wsID == nil && (materialPrivacy == PrivacyLink || materialPrivacy == PrivacyPublic)
 	var sharedRole WorkspaceRole
 	switch {
-	case workspaceShared && userID != "" && shareRole != nil:
+	case workspaceShared && shareRole != nil:
 		sharedRole = shareRole.WorkspaceRole()
 	case workspaceShared:
-		// Anonymous readers are viewers whatever the share role says, because
-		// every write route requires a session.
 		sharedRole = RoleViewer
 	case materialShared:
 		// Standalone material links are intentionally view-only.
@@ -434,7 +440,7 @@ func (s *Store) ListPublicWorkspaces(ctx context.Context) ([]PublicWorkspace, er
 	out := []PublicWorkspace{}
 	for rows.Next() {
 		var w PublicWorkspace
-		if err := rows.Scan(&w.ID, &w.Name, &w.Color, &w.Privacy, &w.ShareRole,
+		if err := rows.Scan(&w.ID, &w.Name, &w.Description, &w.Color, &w.Privacy, &w.ShareRole,
 			&w.Tags, &w.OwnerUserID, &w.OwnerName, &w.OwnerPlanTier,
 			&w.ChapterCount, &w.FileCount, &w.CreatedAt, &w.LastAccessedAt,
 			&w.Author, &w.Clones); err != nil {
@@ -1090,11 +1096,11 @@ func (s *Store) cloneWorkspaceOnce(
 		return Workspace{}, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO workspaces
-			(id, user_id, name, color, privacy,
+			(id, user_id, name, color, description, privacy,
 			 embedding_provider_slug, embedding_model_slug, embedding_model_version, embedding_dim)
-		VALUES ($1,$2,$3,$4,'private',$5,$6,$7,$8)`,
+		VALUES ($1,$2,$3,$4,$9,'private',$5,$6,$7,$8)`,
 		newID, userID, name, src.Color,
-		srcEmbed.Pin.ProviderSlug, srcEmbed.Pin.ModelSlug, srcEmbed.Pin.Version, srcEmbed.Dim); err != nil {
+		srcEmbed.Pin.ProviderSlug, srcEmbed.Pin.ModelSlug, srcEmbed.Pin.Version, srcEmbed.Dim, src.Description); err != nil {
 		return Workspace{}, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,'owner')`,

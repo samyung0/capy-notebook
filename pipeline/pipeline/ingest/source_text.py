@@ -31,7 +31,7 @@ from ..jobs import CapacityWait, RetryableError, TerminalError
 from ..retrieval import accounting, models
 from ..store import blobstore, db
 
-log = logging.getLogger("evo.worker.source_text")
+log = logging.getLogger("capy.worker.source_text")
 
 _AUDIO_CAPACITY_LEASE_SECONDS = 300
 _AUDIO_CAPACITY_RENEW_SECONDS = 60

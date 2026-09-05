@@ -13,7 +13,7 @@ ENV PYTHONUNBUFFERED=1 \
     HF_HUB_CACHE=/models/huggingface \
     TORCH_HOME=/models/torch \
     MINERU_DEVICE_MODE=cpu \
-    MINERU_API_OUTPUT_ROOT=/run/evo-parser/output \
+    MINERU_API_OUTPUT_ROOT=/run/capy-parser/output \
     MINERU_PROCESSING_WINDOW_SIZE=26 \
     MINERU_INTRA_OP_NUM_THREADS=2 \
     MINERU_INTER_OP_NUM_THREADS=1 \
@@ -49,8 +49,8 @@ RUN pip install --no-cache-dir --require-hashes \
 COPY parser/app.py parser/mineru_worker.py ./parser/
 
 RUN useradd --create-home --uid 10001 parser \
-    && mkdir -p /models/config /models/huggingface /models/torch /run/evo-parser/output \
-    && chown -R parser:parser /models /run/evo-parser
+    && mkdir -p /models/config /models/huggingface /models/torch /run/capy-parser/output \
+    && chown -R parser:parser /models /run/capy-parser
 USER parser
 
 EXPOSE 8090

@@ -1,4 +1,4 @@
-"""Evo Notes retrieval pipeline.
+"""Capy Notebook retrieval pipeline.
 
 Three runtime roles share this package (compose picks the command):
 - ``pipeline.ingest.parse_worker`` — coordinates document parsing and artifact handoff.

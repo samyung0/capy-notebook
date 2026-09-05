@@ -6,16 +6,14 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/fs"
-	"regexp"
-	"sort"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/evonotes/server/migrations"
+	"github.com/samyung0/capy-notebook/server/migrations"
 )
 
 const schemaMigrationsDDL = `
-CREATE TABLE IF NOT EXISTS schema_migrations (
+CREATE TABLE IF NOT EXISTS public.schema_migrations (
   filename   text PRIMARY KEY,
   checksum   text NOT NULL,
   applied_at timestamptz NOT NULL DEFAULT now()
@@ -24,9 +22,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 
 // Session lock so two replicas serialize the apply loop. Unlock must run on
 // the same connection that took the lock (a pool-level lock would leak).
-const migrateLockKey int64 = 0x65766f6d696731 // "evomig1"
-
-var migrationFileName = regexp.MustCompile(`^\d{4}_.+\.sql$`)
+const migrateLockKey int64 = 0x65766f6d696731 // Stable advisory lock across releases.
 
 // ShouldApplyDevSeed reports whether this process should load the local demo
 // rows. Production, UAT, and e2e stay empty of Kate Malone.
@@ -34,60 +30,103 @@ func ShouldApplyDevSeed(appEnv string) bool {
 	return appEnv == "" || appEnv == "development"
 }
 
-// MigrationFileStatus is one numbered file in this binary versus the ledger.
+// MigrationFileStatus is one migration file in the validated execution plan.
 type MigrationFileStatus struct {
-	Filename         string
-	Checksum         string
-	Applied          bool
-	AppliedChecksum  string
-	ChecksumMismatch bool
+	State           string
+	Filename        string
+	Checksum        string
+	Applied         bool
+	AppliedChecksum string
 }
 
-// Migrate applies each numbered embedded SQL file once. A matching checksum
-// skips. A recorded file whose bytes changed is an error: add a new file.
+// Migrate applies the pending baseline/numbered plan once. Recorded bytes are
+// immutable: checksum changes require a new numbered file.
 func (s *Store) Migrate(ctx context.Context) error {
 	return migrateWithConn(ctx, s.pool)
 }
 
 func migrateWithConn(ctx context.Context, pool *pgxpool.Pool) error {
-	conn, err := pool.Acquire(ctx)
-	if err != nil {
-		return fmt.Errorf("migrate: acquire: %w", err)
-	}
-	defer conn.Release()
+	return migrateWithFS(ctx, pool, migrations.FS)
+}
 
+func migrationPlanWithConn(ctx context.Context, conn *pgxpool.Conn, fsys fs.FS) (migrationPlan, error) {
 	if _, err := conn.Exec(ctx, schemaMigrationsDDL); err != nil {
-		return fmt.Errorf("migrate: create schema_migrations: %w", err)
+		return migrationPlan{}, fmt.Errorf("migrate: create ledger: %w", err)
 	}
-	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, migrateLockKey); err != nil {
-		return fmt.Errorf("migrate: lock: %w", err)
-	}
-	defer func() {
-		_, _ = conn.Exec(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock($1)`, migrateLockKey)
-	}()
-
 	applied, err := loadAppliedMigrations(ctx, conn)
 	if err != nil {
-		return err
+		return migrationPlan{}, err
 	}
-	files, err := listMigrationFiles()
+	plan, err := planMigrations(fsys, applied)
+	if err != nil {
+		return plan, err
+	}
+	if plan.needsEmpty {
+		var occupied bool
+		err = conn.QueryRow(ctx, applicationObjectsSQL).Scan(&occupied)
+		if err != nil {
+			return plan, fmt.Errorf("migrate: inspect empty database: %w", err)
+		}
+		if occupied {
+			return plan, fmt.Errorf("migrate: refusing baseline on a nonempty application database with an empty ledger")
+		}
+	}
+	return plan, nil
+}
+
+// Extension objects are infrastructure; every other user-schema relation,
+// routine, or type prevents initializing an empty ledger from a snapshot.
+const applicationObjectsSQL = `WITH RECURSIVE extension_objects(classid,objid) AS (
+ SELECT classid,objid FROM pg_depend WHERE deptype='e'
+ UNION
+ SELECT d.classid,d.objid FROM pg_depend d JOIN extension_objects e
+  ON d.refclassid=e.classid AND d.refobjid=e.objid WHERE d.deptype IN ('a','i')
+) SELECT EXISTS (
+ SELECT 1 FROM (
+  SELECT 'pg_class'::regclass AS classid,c.oid,c.relnamespace AS namespace
+  FROM pg_class c WHERE c.oid <> 'public.schema_migrations'::regclass
+   AND NOT EXISTS (SELECT 1 FROM pg_index i WHERE i.indexrelid=c.oid AND i.indrelid='public.schema_migrations'::regclass)
+  UNION ALL
+  SELECT 'pg_proc'::regclass,p.oid,p.pronamespace FROM pg_proc p
+  UNION ALL
+  SELECT 'pg_type'::regclass,t.oid,t.typnamespace FROM pg_type t
+   WHERE t.typrelid <> 'public.schema_migrations'::regclass
+    AND t.oid <> (SELECT typarray FROM pg_type WHERE typrelid='public.schema_migrations'::regclass)
+ ) obj JOIN pg_namespace n ON n.oid=obj.namespace
+ WHERE n.nspname <> 'information_schema' AND n.nspname !~ '^pg_'
+ AND NOT EXISTS (SELECT 1 FROM extension_objects e WHERE e.classid=obj.classid AND e.objid=obj.oid)
+)`
+
+func lockedMigrationConn(ctx context.Context, pool *pgxpool.Pool) (*pgxpool.Conn, func(), error) {
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	if _, err = conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, migrateLockKey); err != nil {
+		conn.Release()
+		return nil, nil, err
+	}
+	return conn, func() {
+		_, _ = conn.Exec(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock($1)`, migrateLockKey)
+		conn.Release()
+	}, nil
+}
+
+func migrateWithFS(ctx context.Context, pool *pgxpool.Pool, fsys fs.FS) error {
+	conn, release, err := lockedMigrationConn(ctx, pool)
 	if err != nil {
 		return err
 	}
-	for _, name := range files {
-		body, err := migrations.FS.ReadFile(name)
-		if err != nil {
-			return fmt.Errorf("migrate: read %s: %w", name, err)
-		}
-		sum := checksumSQL(body)
-		if recorded, ok := applied[name]; ok {
-			if recorded != sum {
-				return fmt.Errorf("migrate: %s already applied with a different checksum; add a new numbered file", name)
+	defer release()
+	plan, err := migrationPlanWithConn(ctx, conn, fsys)
+	if err != nil {
+		return err
+	}
+	for i, file := range plan.files {
+		if plan.status[i].State == "pending" {
+			if err := applyMigration(ctx, conn, file.name, string(file.body), plan.status[i].Checksum); err != nil {
+				return err
 			}
-			continue
-		}
-		if err := applyMigration(ctx, conn, name, string(body), sum); err != nil {
-			return err
 		}
 	}
 	return nil
@@ -103,8 +142,12 @@ func applyMigration(ctx context.Context, conn *pgxpool.Conn, name, body, sum str
 	if _, err := tx.Exec(ctx, body); err != nil {
 		return fmt.Errorf("migrate: apply %s: %w", name, err)
 	}
+	// Snapshot session settings must not leak into later files or pooled API connections.
+	if _, err := tx.Exec(ctx, `RESET ALL`); err != nil {
+		return fmt.Errorf("migrate: reset session after %s: %w", name, err)
+	}
 	if _, err := tx.Exec(ctx,
-		`INSERT INTO schema_migrations (filename, checksum) VALUES ($1, $2)`,
+		`INSERT INTO public.schema_migrations (filename, checksum) VALUES ($1, $2)`,
 		name, sum,
 	); err != nil {
 		return fmt.Errorf("migrate: record %s: %w", name, err)
@@ -116,7 +159,7 @@ func applyMigration(ctx context.Context, conn *pgxpool.Conn, name, body, sum str
 }
 
 func loadAppliedMigrations(ctx context.Context, conn *pgxpool.Conn) (map[string]string, error) {
-	rows, err := conn.Query(ctx, `SELECT filename, checksum FROM schema_migrations`)
+	rows, err := conn.Query(ctx, `SELECT filename, checksum FROM public.schema_migrations`)
 	if err != nil {
 		return nil, fmt.Errorf("migrate: list applied: %w", err)
 	}
@@ -133,18 +176,14 @@ func loadAppliedMigrations(ctx context.Context, conn *pgxpool.Conn) (map[string]
 }
 
 func listMigrationFiles() ([]string, error) {
-	entries, err := fs.ReadDir(migrations.FS, ".")
+	files, err := readMigrationFiles(migrations.FS)
 	if err != nil {
-		return nil, fmt.Errorf("migrate: read embed: %w", err)
+		return nil, err
 	}
-	names := make([]string, 0, len(entries))
-	for _, e := range entries {
-		if e.IsDir() || !migrationFileName.MatchString(e.Name()) {
-			continue
-		}
-		names = append(names, e.Name())
+	names := make([]string, 0, len(files))
+	for _, file := range files {
+		names = append(names, file.name)
 	}
-	sort.Strings(names)
 	return names, nil
 }
 
@@ -153,49 +192,18 @@ func checksumSQL(body []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// MigrationStatus lists numbered files in this binary and whether Postgres
-// already recorded them. Extra ledger rows (a newer database, older binary)
-// are ignored so a rollback deploy can still serve.
+// MigrationStatus returns the same validated plan used by Migrate.
 func (s *Store) MigrationStatus(ctx context.Context) ([]MigrationFileStatus, error) {
-	if _, err := s.pool.Exec(ctx, schemaMigrationsDDL); err != nil {
-		return nil, fmt.Errorf("migrate status: %w", err)
-	}
-	rows, err := s.pool.Query(ctx, `SELECT filename, checksum FROM schema_migrations`)
-	if err != nil {
-		return nil, fmt.Errorf("migrate status: %w", err)
-	}
-	defer rows.Close()
-	applied := make(map[string]string)
-	for rows.Next() {
-		var name, sum string
-		if err := rows.Scan(&name, &sum); err != nil {
-			return nil, err
-		}
-		applied[name] = sum
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	files, err := listMigrationFiles()
+	return migrationStatusWithFS(ctx, s.pool, migrations.FS)
+}
+func migrationStatusWithFS(ctx context.Context, pool *pgxpool.Pool, fsys fs.FS) ([]MigrationFileStatus, error) {
+	conn, release, err := lockedMigrationConn(ctx, pool)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]MigrationFileStatus, 0, len(files))
-	for _, name := range files {
-		body, err := migrations.FS.ReadFile(name)
-		if err != nil {
-			return nil, err
-		}
-		sum := checksumSQL(body)
-		st := MigrationFileStatus{Filename: name, Checksum: sum}
-		if recorded, ok := applied[name]; ok {
-			st.Applied = true
-			st.AppliedChecksum = recorded
-			st.ChecksumMismatch = recorded != sum
-		}
-		out = append(out, st)
-	}
-	return out, nil
+	defer release()
+	plan, err := migrationPlanWithConn(ctx, conn, fsys)
+	return plan.status, err
 }
 
 // ApplyDevSeed loads the local demo rows. The file is not a numbered

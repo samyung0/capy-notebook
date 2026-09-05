@@ -32,9 +32,9 @@ def _write_fixture(
         writer.add_page(source.pages[page_number % len(source.pages)])
     writer.add_metadata(
         {
-            "/EvoStressCopy": str(copy_number),
-            "/EvoStressLane": output.stem.rsplit("-", 1)[0],
-            "/EvoStressTag": tag,
+            "/CapyStressCopy": str(copy_number),
+            "/CapyStressLane": output.stem.rsplit("-", 1)[0],
+            "/CapyStressTag": tag,
         }
     )
     output.parent.mkdir(parents=True, exist_ok=True)

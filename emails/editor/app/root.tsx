@@ -26,9 +26,9 @@ export const links: Route.LinksFunction = () => [
 ];
 
 export const meta: Route.MetaFunction = () => [
-  { title: 'Evo Notes email editor' },
+  { title: 'Capy Notebook email editor' },
   {
-    content: 'Local Maily editor for Evo Notes email templates.',
+    content: 'Local Maily editor for Capy Notebook email templates.',
     name: 'description',
   },
   { content: 'noindex, nofollow', name: 'robots' },

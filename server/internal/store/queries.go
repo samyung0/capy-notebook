@@ -10,18 +10,19 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/evonotes/server/internal/copytext"
-	"github.com/evonotes/server/internal/embeddingpins"
-	"github.com/evonotes/server/internal/materialdoc"
-	"github.com/evonotes/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/copytext"
+	"github.com/samyung0/capy-notebook/server/internal/embeddingpins"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/models"
 )
 
 /* ------------------------------------------------------------------ patches */
 
 type WorkspacePatch struct {
-	Name  *string    `json:"name"`
-	Color *UserColor `json:"color"`
-	Tags  *[]TagRef  `json:"tags"`
+	Description *string    `json:"description"`
+	Name        *string    `json:"name"`
+	Color       *UserColor `json:"color"`
+	Tags        *[]TagRef  `json:"tags"`
 }
 type ChapterPatch struct {
 	Name  *string `json:"name"`
@@ -163,7 +164,7 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 
 // The owner name is a subselect rather than a join so every caller of wsCols
 // keeps its existing FROM clause.
-const wsCols = `w.id, w.name, w.color, w.privacy, w.share_role,
+const wsCols = `w.id, w.name, w.description, w.color, w.privacy, w.share_role,
 	COALESCE((SELECT jsonb_agg(jsonb_build_object('id', t.id, 'value', t.name) ORDER BY t.name)
 		FROM entity_tags et JOIN tags t ON t.id=et.tag_id
 		WHERE et.workspace_id=w.id), '[]'::jsonb),
@@ -184,7 +185,7 @@ const wsCols = `w.id, w.name, w.color, w.privacy, w.share_role,
 
 func (s *Store) scanWorkspace(row pgx.Row) (Workspace, error) {
 	var w Workspace
-	err := row.Scan(&w.ID, &w.Name, &w.Color, &w.Privacy, &w.ShareRole, &w.Tags,
+	err := row.Scan(&w.ID, &w.Name, &w.Description, &w.Color, &w.Privacy, &w.ShareRole, &w.Tags,
 		&w.OwnerUserID, &w.OwnerName, &w.OwnerPlanTier, &w.ChapterCount,
 		&w.FileCount, &w.CreatedAt, &w.LastAccessedAt)
 	if err != nil {
@@ -521,8 +522,8 @@ func (s *Store) UpdateWorkspace(ctx context.Context, userID, id string, p Worksp
 	}
 
 	ct, err := tx.Exec(ctx, `UPDATE workspaces SET
-		name=COALESCE($2,name), color=COALESCE($3,color) WHERE id=$1`,
-		id, p.Name, p.Color)
+		name=COALESCE($2,name), color=COALESCE($3,color), description=COALESCE($4,description) WHERE id=$1`,
+		id, p.Name, p.Color, p.Description)
 	if err != nil {
 		return Workspace{}, err
 	}

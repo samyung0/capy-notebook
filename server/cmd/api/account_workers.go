@@ -5,8 +5,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/evonotes/server/internal/integrations"
-	"github.com/evonotes/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/integrations"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 // runAccountPurgeWorker retries session revocation for deletion-pending users,

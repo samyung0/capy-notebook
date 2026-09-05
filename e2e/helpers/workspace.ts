@@ -4,10 +4,9 @@ export async function openWorkspaceMaterial(
   page: Page,
   workspaceId: string,
   materialId: string,
-  shared = false
+  _shared = false
 ) {
-  const base = shared
-    ? `/share/workspaces/${workspaceId}`
-    : `/workspaces/${workspaceId}`;
+  // Shared roles still open authenticated app content.
+  const base = `/workspaces/${workspaceId}`;
   await page.goto(`${base}?material=${encodeURIComponent(materialId)}`);
 }

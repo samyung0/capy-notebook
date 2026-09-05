@@ -1,4 +1,4 @@
-"""Benchmark CPU-only document parsers against Evo's content_list contract.
+"""Benchmark CPU-only document parsers against Capy Notebook's content_list contract.
 
 Measures the two things that decide whether the fast parse route can leave the
 GPU: throughput per vCPU, and whether the output still carries the structure the
@@ -11,12 +11,12 @@ content_list survives, and how fast, on a box the size you would actually rent.
 
 Run it in Docker so the core count is pinned and comparable to a VM:
 
-    docker build -t evo-parse-bench bench/parsers
+    docker build -t capy-parse-bench bench/parsers
     docker run --rm --cpus=4 \
       -v "$PWD/bench/parsers/docs:/bench/docs:ro" \
       -v "$PWD/bench/parsers/out:/out" \
-      -v evo-parse-models:/models \
-      evo-parse-bench --threads 4
+      -v capy-parse-models:/models \
+      capy-parse-bench --threads 4
 
 Add ``--probe`` on the first run: it prints each library's version and Marker's
 real CLI flags instead of parsing anything, which is the fastest way to find out

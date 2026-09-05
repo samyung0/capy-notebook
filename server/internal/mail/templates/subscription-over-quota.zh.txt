@@ -1,4 +1,4 @@
-Evo Notes
+Capy Notebook
 
 
 存储超过免费额度
@@ -11,6 +11,6 @@ Evo Notes
 
 ----------------------------------------
 
-你收到这封邮件是因为 Evo Notes 订阅与存储限额发生了变化。
+你收到这封邮件是因为 Capy Notebook 订阅与存储限额发生了变化。
 
 管理产品邮件偏好 {{.UnsubscribeURL}}

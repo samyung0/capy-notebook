@@ -1,5 +1,5 @@
 {
-  "name": "@evo-notes/email-editor",
+  "name": "@capy-notebook/email-editor",
   "private": true,
   "type": "module",
   "scripts": {

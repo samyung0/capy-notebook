@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/evonotes/server/internal/blob"
-	"github.com/evonotes/server/internal/httpapi"
-	"github.com/evonotes/server/internal/store"
-	"github.com/evonotes/server/internal/testdb"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/samyung0/capy-notebook/server/internal/blob"
+	"github.com/samyung0/capy-notebook/server/internal/httpapi"
+	"github.com/samyung0/capy-notebook/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
 func deletionAPI(t *testing.T, mapped bool) (http.Handler, *pgxpool.Pool, string, string) {
@@ -45,7 +45,7 @@ func deletionAPI(t *testing.T, mapped bool) (http.Handler, *pgxpool.Pool, string
 		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID)
 	})
 
-	handler := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", "evo", httpapi.Config{
+	handler := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", "capy", httpapi.Config{
 		AuthDisabled: true,
 		DevUserID:    userID,
 	})

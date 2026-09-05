@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "subject": "Your Evo Notes account deletion is scheduled",
+  "subject": "Your Capy Notebook account deletion is scheduled",
   "preview": "Your account is scheduled for deletion.",
   "content": {
     "type": "doc",
@@ -14,7 +14,7 @@
               { "type": "bold" },
               { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
             ],
-            "text": "Evo Notes"
+            "text": "Capy Notebook"
           }
         ]
       },
@@ -32,7 +32,7 @@
         "content": [
           {
             "type": "text",
-            "text": "We received your request to delete your Evo Notes account. Deletion proceeds in "
+            "text": "We received your request to delete your Capy Notebook account. Deletion proceeds in "
           },
           {
             "type": "variable",
@@ -65,7 +65,7 @@
         "content": [
           {
             "type": "text",
-            "text": "You received this message because you requested account deletion on Evo Notes."
+            "text": "You received this message because you requested account deletion on Capy Notebook."
           }
         ]
       },

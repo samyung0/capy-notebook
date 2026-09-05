@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/evonotes/server/internal/obs"
-	"github.com/evonotes/server/internal/sourceupload"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
+	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 )
 
 // CreateSourceWithJob inserts an uploaded file as 'pending' and enqueues its

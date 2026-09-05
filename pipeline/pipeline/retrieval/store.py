@@ -23,7 +23,7 @@ from ..store.db import SourceSupersededError
 from .chunking import QueryTerms
 from .lang import TS_CONFIG
 
-log = logging.getLogger("evo.retrieval.store")
+log = logging.getLogger("capy.retrieval.store")
 
 _pool: AsyncConnectionPool | None = None
 

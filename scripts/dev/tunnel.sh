@@ -19,7 +19,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-ENV_FILE="${EVO_ENV_FILE:-$ROOT_DIR/deploy/.env}"
+ENV_FILE="${CAPY_ENV_FILE:-$ROOT_DIR/deploy/.env}"
 CONFIG_DIR="${CLOUDFLARED_HOME:-$HOME/.cloudflared}"
 
 die() {
@@ -41,8 +41,8 @@ fails rather than stealing anything: the DNS record refuses to move, and a
 tunnel whose credentials live on another laptop is rejected here.
 
 Environment:
-  EVO_ENV_FILE           env file to read (default deploy/.env)
-  EVO_DEV_TUNNEL_NAME    override the name derived from VITE_DEV_HOST
+  CAPY_ENV_FILE           env file to read (default deploy/.env)
+  CAPY_DEV_TUNNEL_NAME    override the name derived from VITE_DEV_HOST
 EOF
 }
 
@@ -112,7 +112,7 @@ esac
 
 # One tunnel per hostname, named after it. Deriving the name keeps the two from
 # drifting apart and leaves VITE_DEV_HOST as the only thing a developer sets.
-TUNNEL_NAME="${EVO_DEV_TUNNEL_NAME:-evo-${host%%.*}}"
+TUNNEL_NAME="${CAPY_DEV_TUNNEL_NAME:-capy-${host%%.*}}"
 
 if [[ ! -f "$CONFIG_DIR/cert.pem" ]]; then
   printf 'tunnel: no Cloudflare login found — a browser window will ask you to pick the zone\n'
@@ -134,7 +134,7 @@ fi
 # deleting it would take their dev hostname down with it.
 credentials="$CONFIG_DIR/$uuid.json"
 [[ -f "$credentials" ]] ||
-  die "tunnel $TUNNEL_NAME exists on the Cloudflare account but its credentials are not on this machine, so it belongs to another developer — set EVO_DEV_TUNNEL_NAME (and a VITE_DEV_HOST) of your own rather than deleting theirs"
+  die "tunnel $TUNNEL_NAME exists on the Cloudflare account but its credentials are not on this machine, so it belongs to another developer — set CAPY_DEV_TUNNEL_NAME (and a VITE_DEV_HOST) of your own rather than deleting theirs"
 
 config="$CONFIG_DIR/$TUNNEL_NAME.yml"
 cat > "$config" <<EOF
@@ -183,7 +183,7 @@ covered:
      Nothing to do: $host is a subdomain of the primary domain, which shares
      sessions by default. Add it only if the subdomain allowlist is enabled.
 
-  2. UAT gateway env (Coolify -> evo-notes-uat -> redeploy)
+  2. UAT gateway env (Coolify -> capy-notebook-uat -> redeploy)
      COLLABORATION_ALLOWED_ORIGINS += https://$host
      Missing: the app loads but no note connects to the editor websocket.
 

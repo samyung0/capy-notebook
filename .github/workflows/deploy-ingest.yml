@@ -1,0 +1,130 @@
+name: Deploy ingest
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment_name:
+        description: Environment whose backend already serves this revision
+        required: true
+        type: choice
+        options: [uat, production]
+      revision:
+        description: Full SHA already deployed to the matching backend
+        required: true
+        type: string
+      bootstrap:
+        description: Initialize an empty ingest stack with GitHub configuration
+        required: false
+        default: false
+        type: boolean
+  workflow_call:
+    inputs:
+      environment_name:
+        required: true
+        type: string
+      revision:
+        required: true
+        type: string
+      phase:
+        description: Coordinated app release phase
+        required: true
+        type: string
+      coolify_deployment_uuid:
+        description: Provider job to confirm terminal before coordinated recovery
+        required: false
+        type: string
+      coolify_outcome:
+        description: Whether the backend deployment step ran
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  ingest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: ${{ inputs.environment_name }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.revision }}
+          fetch-depth: 0
+      - name: Validate target and immutable revision
+        env:
+          TARGET_ENVIRONMENT: ${{ inputs.environment_name }}
+          DEPLOY_REVISION: ${{ inputs.revision }}
+        run: |
+          [[ "$GITHUB_REF" == refs/heads/main ]]
+          [[ "$TARGET_ENVIRONMENT" == uat || "$TARGET_ENVIRONMENT" == production ]]
+          [[ "$DEPLOY_REVISION" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$(git rev-parse HEAD)" == "$DEPLOY_REVISION" ]]
+          git merge-base --is-ancestor "$DEPLOY_REVISION" origin/main
+      - name: Verify manual deployment matches the running backend
+        if: github.event_name == 'workflow_dispatch' && inputs.phase == ''
+        env:
+          DEPLOYMENT_API_URL: ${{ vars.DEPLOYMENT_API_URL }}
+          EXPECTED_REVISION: ${{ inputs.revision }}
+        run: python3 scripts/deploy/verify-backend.py
+      - name: Render environment configuration from GitHub
+        if: inputs.phase == 'prepare' || inputs.phase == 'bootstrap-prepare' || inputs.phase == ''
+        env:
+          CAPY_GITHUB_VARS: ${{ toJSON(vars) }}
+          CAPY_GITHUB_SECRETS: ${{ toJSON(secrets) }}
+        run: python3 scripts/env/config.py render --environment '${{ inputs.environment_name }}' --revision '${{ inputs.revision }}' --output "$RUNNER_TEMP/capy-config"
+      - name: Configure SSH access
+        env:
+          INGEST_HOST_KNOWN_HOSTS: ${{ secrets.INGEST_HOST_KNOWN_HOSTS }}
+          INGEST_HOST_SSH_PRIVATE_KEY: ${{ secrets.INGEST_HOST_SSH_PRIVATE_KEY }}
+        run: |
+          [[ -n "$INGEST_HOST_KNOWN_HOSTS" && -n "$INGEST_HOST_SSH_PRIVATE_KEY" ]]
+          install -m 700 -d "$HOME/.ssh"
+          umask 077
+          printf '%s\n' "$INGEST_HOST_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          printf '%s\n' "$INGEST_HOST_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+      - name: Apply the ingest release phase
+        env:
+          TARGET_ENVIRONMENT: ${{ inputs.environment_name }}
+          DEPLOY_REVISION: ${{ inputs.revision }}
+          RELEASE_PHASE: ${{ inputs.phase }}
+          COOLIFY_DEPLOYMENT_UUID: ${{ inputs.coolify_deployment_uuid }}
+          COOLIFY_OUTCOME: ${{ inputs.coolify_outcome }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          COOLIFY_API_URL: ${{ vars.COOLIFY_API_URL }}
+          COOLIFY_RESOURCE_UUID: ${{ vars.COOLIFY_RESOURCE_UUID }}
+          DEPLOYMENT_API_URL: ${{ vars.DEPLOYMENT_API_URL }}
+          BOOTSTRAP: ${{ inputs.bootstrap }}
+          CAPY_INGEST_REPOSITORY_URL: https://github.com/${{ github.repository }}.git
+          CAPY_RELEASE_OWNER: ${{ github.run_id }}-${{ github.run_attempt }}
+          CAPY_CONFIG_DIR: ${{ runner.temp }}/capy-config
+          INGEST_HOST: ${{ vars.INGEST_HOST }}
+          INGEST_HOST_USER: ${{ vars.INGEST_HOST_USER }}
+          INGEST_HOST_SSH_PORT: ${{ vars.INGEST_HOST_SSH_PORT }}
+        run: |
+          recover() {
+            CAPY_BACKEND_REVISION="$(python3 scripts/deploy/verify-backend.py --print)" || return 1
+            export CAPY_BACKEND_REVISION
+            scripts/deploy/ingest-host-release.sh recover
+          }
+          if [[ "$RELEASE_PHASE" == recover ]]; then
+            if [[ "$COOLIFY_OUTCOME" == skipped ]]; then
+              scripts/deploy/ingest-host-release.sh rollback-if-pending
+            else
+              python3 scripts/env/config.py verify-coolify-terminal --deployment-uuid "$COOLIFY_DEPLOYMENT_UUID"
+              recover
+            fi
+          elif [[ -n "$RELEASE_PHASE" ]]; then
+            scripts/deploy/ingest-host-release.sh "$RELEASE_PHASE"
+          else
+            trap recover EXIT
+            if [[ "$BOOTSTRAP" == true ]]; then
+              scripts/deploy/ingest-host-release.sh bootstrap-prepare
+            else
+              scripts/deploy/ingest-host-release.sh prepare
+            fi
+            scripts/deploy/ingest-host-release.sh activate
+          fi
+      - name: Remove runner configuration and SSH key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/capy-config" "$HOME/.ssh/id_ed25519"

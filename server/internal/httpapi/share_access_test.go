@@ -11,14 +11,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/evonotes/server/internal/auth"
-	"github.com/evonotes/server/internal/blob"
-	"github.com/evonotes/server/internal/httpapi"
-	"github.com/evonotes/server/internal/models"
-	"github.com/evonotes/server/internal/pipeline"
-	"github.com/evonotes/server/internal/store"
-	"github.com/evonotes/server/internal/testdb"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/samyung0/capy-notebook/server/internal/auth"
+	"github.com/samyung0/capy-notebook/server/internal/blob"
+	"github.com/samyung0/capy-notebook/server/internal/httpapi"
+	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/pipeline"
+	"github.com/samyung0/capy-notebook/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
 func openShareHTTP(t *testing.T) http.Handler {
@@ -39,7 +39,7 @@ func openShareAPI(t *testing.T, pipe *pipeline.Client) http.Handler {
 		t.Fatalf("registry: %v", err)
 	}
 	st.SetModelRegistry(reg)
-	return httpapi.New(st, blob.NewMemory(), pipe, nil, "docling", "evo", httpapi.Config{
+	return httpapi.New(st, blob.NewMemory(), pipe, nil, "docling", "capy", httpapi.Config{
 		AuthDisabled:  true,
 		E2EAuth:       true,
 		E2ESecret:     "e2e-test-secret",
@@ -134,14 +134,27 @@ func TestShareHTTPReads(t *testing.T) {
 		{"owner private ws", "u_owner", "/api/workspaces/ws_e2e_private", 200},
 		{"editor private ws", "u_editor", "/api/workspaces/ws_e2e_private", 200},
 		{"other private ws", "u_other", "/api/workspaces/ws_e2e_private", 404},
-		{"anon private ws", "", "/api/workspaces/ws_e2e_private", 404},
-		{"anon link ws", "", "/api/workspaces/ws_e2e_link", 200},
-		{"anon public ws", "", "/api/workspaces/ws_e2e_public", 200},
-		{"anon private quiz", "", "/api/quizzes/qz_e2e_private", 404},
-		{"anon link quiz", "", "/api/quizzes/qz_e2e_link", 200},
-		{"anon link flashcards", "", "/api/flashcards/dk_e2e_link", 200},
-		{"anon link cards", "", "/api/flashcards/dk_e2e_link/cards", 200},
-		{"anon link chapters", "", "/api/workspaces/ws_e2e_link/chapters", 200},
+		{"anon private ws", "", "/api/workspaces/ws_e2e_private", 401},
+		{"anon link ws", "", "/api/workspaces/ws_e2e_link", 401},
+		{"anon public ws", "", "/api/workspaces/ws_e2e_public", 401},
+		{"anon private quiz", "", "/api/quizzes/qz_e2e_private", 401},
+		{"anon link quiz", "", "/api/quizzes/qz_e2e_link", 401},
+		{"anon link flashcards", "", "/api/flashcards/dk_e2e_link", 401},
+		{"anon link cards", "", "/api/flashcards/dk_e2e_link/cards", 401},
+		{"anon link chapters", "", "/api/workspaces/ws_e2e_link/chapters", 401},
+		{"anon link files", "", "/api/workspaces/ws_e2e_link/files", 401},
+		{"anon link materials", "", "/api/workspaces/ws_e2e_link/materials", 401},
+		{"anon file", "", "/api/files/f_missing", 401},
+		{"anon raw", "", "/api/files/f_missing/raw", 401},
+		{"anon preview", "", "/api/files/f_missing/preview", 401},
+		{"anon asset resolve", "", "/api/editor-assets/a_missing/resolve", 401},
+		{"anon material", "", "/api/materials/note_e2e_private", 401},
+		{"anon explore workspace", "", "/api/explore/workspaces", 401},
+		{"anon explore quiz", "", "/api/explore/quizzes", 401},
+		{"anon explore flashcards", "", "/api/explore/flashcards", 401},
+		{"signed-in link ws", "u_other", "/api/workspaces/ws_e2e_link", 200},
+		{"signed-in link quiz", "u_other", "/api/quizzes/qz_e2e_link", 200},
+		{"signed-in link flashcards", "u_other", "/api/flashcards/dk_e2e_link", 200},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -156,15 +169,15 @@ func TestShareHTTPReads(t *testing.T) {
 func TestShareHTTPCapabilities(t *testing.T) {
 	h := openShareHTTP(t)
 
-	rec := doReq(t, h, http.MethodGet, "/api/workspaces/ws_e2e_link", "", nil)
+	rec := doReq(t, h, http.MethodGet, "/api/workspaces/ws_e2e_link", "u_other", nil)
 	if rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
-	var anon map[string]any
-	_ = json.Unmarshal(rec.Body.Bytes(), &anon)
-	caps := anon["capabilities"].(map[string]any)
+	var visitor map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &visitor)
+	caps := visitor["capabilities"].(map[string]any)
 	if caps["canView"] != true || caps["canEdit"] != false || caps["canManageMembers"] != false {
-		t.Fatalf("anon caps = %#v", caps)
+		t.Fatalf("visitor caps = %#v", caps)
 	}
 
 	rec = doReq(t, h, http.MethodGet, "/api/workspaces/ws_e2e_private", "u_editor", nil)
@@ -353,7 +366,7 @@ func TestShareHTTPWritesAndClone(t *testing.T) {
 func TestShareHTTPExploreAndAttempts(t *testing.T) {
 	h := openShareHTTP(t)
 
-	rec := doReq(t, h, http.MethodGet, "/api/explore/workspaces", "", nil)
+	rec := doReq(t, h, http.MethodGet, "/api/explore/workspaces", "u_other", nil)
 	if rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
@@ -415,7 +428,7 @@ func TestQuizAndFlashcardCapabilitiesSeparateEditorsFromOwners(t *testing.T) {
 		{path: "/api/quizzes/qz_e2e_private", userID: "u_viewer"},
 		{path: "/api/flashcards/dk_e2e_private", userID: "u_editor", canEdit: true},
 		{path: "/api/flashcards/dk_e2e_private", userID: "u_commenter"},
-		{path: "/api/flashcards/dk_e2e_link"},
+		{path: "/api/flashcards/dk_e2e_link", userID: "u_other"},
 	} {
 		rec := doReq(t, h, http.MethodGet, tc.path, tc.userID, nil)
 		if rec.Code != http.StatusOK {
@@ -538,7 +551,7 @@ func TestMaterialRevisionHTTPCapsFreeOwnerAtThreeDailyVersions(t *testing.T) {
 		nil,
 		nil,
 		"docling",
-		"evo",
+		"capy",
 		httpapi.Config{
 			AuthDisabled:        true,
 			DevUserID:           userID,

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/evonotes/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 )
 
 func TestWorkspaceRoleCapabilities(t *testing.T) {

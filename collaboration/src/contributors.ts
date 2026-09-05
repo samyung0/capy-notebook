@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import * as Y from 'yjs';
 import type { CollaborationAccess, CollaborationContext } from './auth.js';
 
-const CONTRIBUTORS_ROOT = '__evo_pending_contributors';
+const CONTRIBUTORS_ROOT = '__capy_pending_contributors';
 const CONTRIBUTOR_MARKER_KEYS = ['access', 'nonce', 'userId'] as const;
 const MAX_CONTRIBUTOR_KEY_BYTES = 512;
 const MAX_CONTRIBUTOR_NONCE_BYTES = 128;

@@ -208,7 +208,7 @@ export const useNoteEditorPrefs = create<NoteEditorPrefsState>()(
           enabled: mergeEnabledGroups(p.enabled),
         };
       },
-      name: 'evo-note-editor-prefs',
+      name: 'capy-note-editor-prefs',
     }
   )
 );

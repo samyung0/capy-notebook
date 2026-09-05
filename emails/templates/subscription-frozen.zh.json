@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "subject": "你的 Evo Notes 账户已被冻结",
+  "subject": "你的 Capy Notebook 账户已被冻结",
   "preview": "账户已冻结，请释放空间或重新订阅。",
   "content": {
     "type": "doc",
@@ -14,7 +14,7 @@
               { "type": "bold" },
               { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
             ],
-            "text": "Evo Notes"
+            "text": "Capy Notebook"
           }
         ]
       },
@@ -53,7 +53,7 @@
         "content": [
           {
             "type": "text",
-            "text": "你收到这封邮件是因为存储缓冲期结束后你的 Evo Notes 账户被冻结。"
+            "text": "你收到这封邮件是因为存储缓冲期结束后你的 Capy Notebook 账户被冻结。"
           }
         ]
       },

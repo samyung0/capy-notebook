@@ -140,7 +140,7 @@ func (l *Limiter) Allow(ctx context.Context, key string, rule Rule) (bool, time.
 	tolerance := interval * int64(rule.burst())
 
 	res, err := gcra.Run(ctx, l.rdb,
-		[]string{"evo:rl:" + key},
+		[]string{"capy:rl:" + key},
 		time.Now().UnixMilli(), interval, tolerance,
 	).Int64Slice()
 	if err != nil || len(res) != 2 {

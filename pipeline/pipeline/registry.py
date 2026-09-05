@@ -26,7 +26,7 @@ from typing import Any
 from .generated import Slot
 from .store import db
 
-log = logging.getLogger("evo.registry")
+log = logging.getLogger("capy.registry")
 
 POLL_INTERVAL = 600.0
 

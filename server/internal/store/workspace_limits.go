@@ -7,7 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/evonotes/server/internal/planlimits"
+	"github.com/samyung0/capy-notebook/server/internal/planlimits"
 )
 
 var ErrWorkspaceLimitExceeded = errors.New("owned workspace limit exceeded")

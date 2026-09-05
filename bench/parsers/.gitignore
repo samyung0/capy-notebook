@@ -2,8 +2,8 @@
 # docs/ holds real uploads (possibly someone's lecture notes) — never commit it.
 docs/
 results/*
-!results/evo-ingest-1-netcup-rs-2000-g12-2026-08-31/
-!results/evo-ingest-1-netcup-rs-2000-g12-2026-08-31/**
+!results/capy-ingest-1-netcup-rs-2000-g12-2026-08-31/
+!results/capy-ingest-1-netcup-rs-2000-g12-2026-08-31/**
 out/
 .DS_Store
 *.failure.log

@@ -3,7 +3,7 @@ package embeddingpins
 import (
 	"fmt"
 
-	"github.com/evonotes/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/models"
 )
 
 type Spec struct {

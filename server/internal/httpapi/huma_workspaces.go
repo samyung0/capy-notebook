@@ -6,8 +6,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/evonotes/server/internal/httpapi/apimodel"
-	"github.com/evonotes/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 type listWorkspacesInput struct {
@@ -126,14 +126,14 @@ func (a *api) createWorkspace(ctx context.Context, in *createWorkspaceInput) (*w
 	return a.ownedWorkspaceOutput(ctx, res)
 }
 
-// updateWorkspace changes name, colour and tags, none of which move bytes, so
+// updateWorkspace changes descriptive metadata, none of which moves stored content bytes, so
 // an over-quota account keeps them.
 func (a *api) updateWorkspace(ctx context.Context, in *updateWorkspaceInput) (*workspaceOutput, error) {
 	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
 	p := store.WorkspacePatch{
-		Name: in.Body.Name, Color: in.Body.Color,
+		Name: in.Body.Name, Color: in.Body.Color, Description: in.Body.Description,
 	}
 	if in.Body.Tags != nil {
 		t := apimodel.ToTagRefs(*in.Body.Tags)

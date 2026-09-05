@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/evonotes/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 )
 
 func (s *Store) MaterialRoom(ctx context.Context, materialID string) (string, error) {

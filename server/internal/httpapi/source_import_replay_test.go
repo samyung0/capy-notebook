@@ -11,12 +11,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/evonotes/server/internal/blob"
-	"github.com/evonotes/server/internal/httpapi"
-	"github.com/evonotes/server/internal/httpapi/apimodel"
-	"github.com/evonotes/server/internal/integrations"
-	"github.com/evonotes/server/internal/store"
-	"github.com/evonotes/server/internal/testdb"
+	"github.com/samyung0/capy-notebook/server/internal/blob"
+	"github.com/samyung0/capy-notebook/server/internal/httpapi"
+	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
+	"github.com/samyung0/capy-notebook/server/internal/integrations"
+	"github.com/samyung0/capy-notebook/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
 func TestCompletedSourceImportReplaysBeforeMutableAdmission(t *testing.T) {
@@ -130,7 +130,7 @@ func TestCompletedSourceImportReplaysBeforeMutableAdmission(t *testing.T) {
 		"parseMode": "none",
 		"requestId": requestID,
 	}
-	configured := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", "evo", httpapi.Config{
+	configured := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", "capy", httpapi.Config{
 		AuthDisabled: true, DevUserID: actor,
 		PipelineSecret: "test-pipeline-secret",
 	})
@@ -158,7 +158,7 @@ func TestCompletedSourceImportReplaysBeforeMutableAdmission(t *testing.T) {
 			withoutChapter.Code, withoutChapter.Body.String(), first.Body.String())
 	}
 
-	unavailable := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", "evo", httpapi.Config{
+	unavailable := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", "capy", httpapi.Config{
 		AuthDisabled: true, DevUserID: actor,
 	})
 	withoutRelay := doReq(t, unavailable, http.MethodPost,

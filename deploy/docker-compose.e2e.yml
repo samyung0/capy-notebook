@@ -10,18 +10,18 @@ services:
   db:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_USER: evo
-      POSTGRES_PASSWORD: evo
-      POSTGRES_DB: evo
+      POSTGRES_USER: capy
+      POSTGRES_PASSWORD: capy
+      POSTGRES_DB: capy
     ports:
       - "127.0.0.1:${E2E_DB_PORT:-55432}:5432"
     volumes:
-      - evo_e2e_pgdata:/var/lib/postgresql/data
+      - capy_e2e_pgdata:/var/lib/postgresql/data
     healthcheck:
       # pg_isready can succeed against Postgres' temporary bootstrap server
       # before POSTGRES_DB has been created. Require a real query so dependent
       # services only start after initialization is complete.
-      test: ["CMD-SHELL", 'psql -U evo -d evo -c "SELECT 1" >/dev/null 2>&1']
+      test: ["CMD-SHELL", 'psql -U capy -d capy -c "SELECT 1" >/dev/null 2>&1']
       interval: 3s
       timeout: 3s
       retries: 20
@@ -42,7 +42,7 @@ services:
       API_URL: http://server:8080
       COLLABORATION_ALLOWED_ORIGINS: ${E2E_BASE_URL:-http://127.0.0.1:5174}
       COLLABORATION_SECRET: ${COLLABORATION_SECRET:-e2e-collaboration-secret}
-      DATABASE_URL: postgres://evo:evo@db:5432/evo?sslmode=disable
+      DATABASE_URL: postgres://capy:capy@db:5432/capy?sslmode=disable
       REDIS_URL: redis://redis:6379/0
       PORT: "1234"
     ports:
@@ -64,7 +64,7 @@ services:
     build:
       context: ../server
     environment:
-      DATABASE_URL: postgres://evo:evo@db:5432/evo?sslmode=disable
+      DATABASE_URL: postgres://capy:capy@db:5432/capy?sslmode=disable
       ADDR: ":8080"
       MIGRATE: "true"
       BLOB_BACKEND: memory
@@ -92,4 +92,4 @@ services:
         condition: service_healthy
 
 volumes:
-  evo_e2e_pgdata:
+  capy_e2e_pgdata:

@@ -11,10 +11,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/evonotes/server/internal/obs"
-	"github.com/evonotes/server/internal/ops"
-	"github.com/evonotes/server/internal/store"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
+	"github.com/samyung0/capy-notebook/server/internal/ops"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 func env(key, fallback string) string {

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/evonotes/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 )
 
 func newTransferTestUser(t *testing.T, s *Store, label string) string {

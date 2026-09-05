@@ -18,8 +18,8 @@ import (
 
 	"github.com/stripe/stripe-go/v82"
 
-	"github.com/evonotes/server/internal/store"
-	"github.com/evonotes/server/internal/testdb"
+	"github.com/samyung0/capy-notebook/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
 /* ------------------------------------------------------------------ fake store

@@ -1,4 +1,4 @@
-Evo Notes
+Capy Notebook
 
 
 YOUR CHAT MODEL CHANGED
@@ -11,6 +11,6 @@ Open LLM settings {{.OpenURL}}
 
 ----------------------------------------
 
-You received this message because an Evo Notes model you selected was retired.
+You received this message because a Capy Notebook model you selected was retired.
 
 Manage product email preferences {{.UnsubscribeURL}}

@@ -12,9 +12,9 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/evonotes/server/internal/materialdoc"
-	"github.com/evonotes/server/internal/models"
-	"github.com/evonotes/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 // Tag is the response shape for one tag on an entity: a stable catalog id plus
@@ -286,6 +286,7 @@ type (
 // IsOwner is request-scoped: false when a non-owner reads a link/public
 // workspace (the client renders it read-only with a clone action).
 type Workspace struct {
+	Description    string                   `json:"description"`
 	ID             string                   `json:"id"`
 	Name           string                   `json:"name"`
 	Color          store.UserColor          `json:"color"`
@@ -322,7 +323,7 @@ type Workspace struct {
 func FromWorkspace(w store.Workspace, ownerState store.AccountState) Workspace {
 	role := store.RoleOwner
 	out := Workspace{
-		ID: w.ID, Name: w.Name, Color: w.Color, Privacy: w.Privacy, ShareRole: w.ShareRole,
+		ID: w.ID, Name: w.Name, Description: w.Description, Color: w.Color, Privacy: w.Privacy, ShareRole: w.ShareRole,
 		Tags: WrapTags(w.Tags), ChapterCount: w.ChapterCount, FileCount: w.FileCount,
 		FilesLimit: w.FilesLimit,
 		CreatedAt:  w.CreatedAt, LastAccessedAt: w.LastAccessedAt, IsOwner: true,

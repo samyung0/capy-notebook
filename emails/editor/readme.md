@@ -1,4 +1,4 @@
-# Evo Notes email editor
+# Capy Notebook email editor
 
 This is the standalone Maily frontend used to edit locale sources in
 `emails/templates/`.

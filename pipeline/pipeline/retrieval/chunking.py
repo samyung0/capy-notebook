@@ -28,7 +28,7 @@ from typing import Any
 from ..config import cfg
 from .lang import CJK_CLASS, CJK_RUN_RE, is_cjk
 
-log = logging.getLogger("evo.retrieval.chunking")
+log = logging.getLogger("capy.retrieval.chunking")
 
 # Bumped when packing, overlap, indexed_text shape, or the text-search
 # configuration behind `rag_chunks.search` change. Part of

@@ -89,7 +89,7 @@ function Brand() {
         <ShieldCheck aria-hidden="true" className="size-5" />
       </span>
       <div>
-        <p className="font-semibold leading-tight">Evo Notes</p>
+        <p className="font-semibold leading-tight">Capy Notebook</p>
         <p className="text-muted-foreground text-xs">Internal operations</p>
       </div>
     </div>

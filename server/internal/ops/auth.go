@@ -8,9 +8,9 @@ import (
 
 	clerk "github.com/clerk/clerk-sdk-go/v2"
 	clerkjwt "github.com/clerk/clerk-sdk-go/v2/jwt"
-	"github.com/evonotes/server/internal/obs"
-	"github.com/evonotes/server/internal/store"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 type CloudflareVerifier interface {

@@ -23,7 +23,7 @@ This repository defines deployment as follows:
 
 1. **Push to UAT:** merge or push to `main`; `CI` must succeed. The **Deploy
    UAT** workflow then deploys the exact CI `head_sha` to the isolated UAT
-   Coolify and Cloudflare Pages resources and calls the reusable
+   Coolify and Cloudflare Worker resources and calls the reusable
    **Deterministic UAT quality** workflow. Set repository variable
    `UAT_DEPLOYMENT_ENABLED=true` only after the first manual baseline.
 2. **Push to production:** manually dispatch **Promote revision to production**
@@ -58,20 +58,20 @@ can be tested.
 
 ## 1. DNS & hostnames
 
-The SPA is static. The Go gateway, the Hocuspocus sidecar, the Python
+One Cloudflare Worker serves the static SPA and live `/w/{workspaceId}` summaries. The Go gateway, the Hocuspocus sidecar, the Python
 retrieval service, the ingest worker, and the operator dashboard are separate
 processes. Three services have public hostnames. Cloudflare Access protects the
 operator hostname before traffic reaches its origin.
 
 | Hostname           | Serves                                             | Public DNS | Proxied              |
 | ------------------ | -------------------------------------------------- | ---------- | -------------------- |
-| `abcd.com`         | SPA (Cloudflare Pages / static)                    | yes        | yes                  |
+| `abcd.com`         | SPA and workspace SSR (Cloudflare Worker)                    | yes        | yes                  |
 | `llm.abcd.com`     | optional; only if `VITE_LLM_RUNTIME_ORIGIN` is set | optional   | yes                  |
 | `office.abcd.com`  | isolated Office file runtime                       | yes        | yes                  |
 | `www.abcd.com`     | redirect to apex                                   | yes        | yes                  |
 | `api.abcd.com`     | Go gateway (`server`, :8080)                       | yes        | yes                  |
 | `collab.abcd.com`  | Hocuspocus WebSocket (`collaboration`, :1234)      | yes        | yes                  |
-| `ops.evonotes.com` | Go ops API + static dashboard (`ops`, :8082)       | yes        | yes, Access required |
+| `ops.capynotebook.com` | Go ops API + static dashboard (`ops`, :8082)       | yes        | yes, Access required |
 | retrieval :8001    | Python chat/generate                               | **no**     | —                    |
 | ingest host        | parser + ingest worker + embed                     | **no**     | —                    |
 | Postgres / Redis   | —                                                  | **no**     | —                    |
@@ -85,9 +85,20 @@ from the gateway over the docker network (`PIPELINE_URL=http://retrieval:8001`).
 
 If the domain is **already** on Cloudflare, skip nameserver migration.
 
-1. **SPA.** Cloudflare Pages custom domain on `abcd.com` and `www.abcd.com`,
-   or CNAME those names to whatever static host you use. Orange cloud on.
-   Coolify does not serve the SPA in the topology below.
+1. **Site.** Deploy `wrangler.jsonc` with `--env uat` or `--env production`.
+   The Worker serves `dist/`, renders `/w/{workspaceId}` from the live Go summary
+   endpoint, and proxies `/api/*` to the configured `API_ORIGIN`. `APP_ORIGIN`
+   is the canonical browser origin. CI supplies both from the GitHub deployment
+   URLs. Attach the corresponding custom domain to that Worker.
+   When replacing the old UAT Pages project, deploy and verify the Worker first,
+   then detach the Pages custom domain and attach it to the Worker. Verify the
+   public release before deleting the retired Pages project.
+   On this first cutover, the workflow's public revision check cannot pass while
+   the domain still serves Pages. Once the Worker publish step succeeds, move
+   the domain and rerun the failed site job; the successfully activated backend
+   and ingest release stays in place.
+   Coolify serves the backend, not the site. Summary responses and errors are
+   `no-store`; link summaries are `noindex, nofollow`. There is no KV/R2 cache.
    The quiz judge is `llm-runtime.html`, usually same-origin as the SPA.
    Isolation headers live only on that document (`COOP`/`COEP` plus
    `Document-Isolation-Policy: isolate-and-credentialless`). The SPA stays
@@ -103,24 +114,24 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    cookie-less hostname such as `office.abcd.com`. Serve only the built
    `office-runtime.html` and its `/assets/*` there (404 other routes), set
    `VITE_OFFICE_RUNTIME_ORIGIN=https://office.abcd.com` when building the SPA,
-   and set `Content-Security-Policy: frame-ancestors https://abcd.com` on the
-   runtime response. Do not proxy `/api`, issue authentication cookies, or set
+   and set `OFFICE_ALLOWED_PARENT_ORIGINS` to the exact comma-separated HTTPS
+   parent origins in GitHub. `workers/office` stages the runtime HTML and assets
+   from the same build as the SPA, replaces inherited headers, and publishes
+   before the SPA. UAT uses `uat-office.capynotebook.com` and allows
+   `https://uat.capynotebook.com,https://dev-sam.uat.capynotebook.com`; add each
+   future developer origin explicitly. Production requires its own Office custom
+   domain configured in `wrangler.office.jsonc` before first rollout. The Worker
+   supplies the matching `frame-ancestors` policy and allows embedded blob fonts. Do not proxy `/api`, issue authentication cookies, or set
    parent-domain cookies on this hostname. The Office host transfers protected
    bytes by exact-origin `postMessage`; it does not need CORS access to the API.
 2. **API + collab.** Pick one of §1.1 Coolify (typical), §1.2 bare compose, or
    §1.3 public A records. Retrieval, worker, Postgres, and Redis stay off
    public DNS in every option.
-3. **Apex `/api` rewrite.** Worker or origin rule on `abcd.com`:
-
-   ```
-   If  http.host eq "abcd.com"
-   and starts_with(http.request.uri.path, "/api")
-   Then reverse-proxy to https://api.abcd.com  (same path, Host: api.abcd.com)
-   ```
-
-   A 302 redirect is not enough — `fetch('/api/...')` would leave the SPA
-   origin. Do **not** proxy `/webhooks/` via the apex; those URLs are configured
-   in Clerk/Stripe as `https://api.abcd.com/webhooks/...`.
+3. **Same-origin API.** The site Worker forwards `/api/*` only to its explicit
+   `API_ORIGIN` and streams request/response bodies. It passes Go's file redirects
+   back to the browser without following them with credentials. `/webhooks/*`
+   stays on the API hostname. Do not attach the cookie-less Office hostname to
+   this Worker; it must expose only Office assets as described above.
 
 4. **Always Use HTTPS** and **HSTS** (start with a short max-age). SSL/TLS mode
    depends on how the origin is reached — see the option you picked.
@@ -153,7 +164,7 @@ The prod file runs `/migrate` once per deploy, starts the API with
 5. **Deploy.** Coolify runs `docker compose up --build`. `migrate` applies
    pending `NNNN_*.sql` files and exits 0; `server` / `worker` / `retrieval`
    wait on `service_completed_successfully`. An exited `migrate` container
-   is expected. Open its logs and look for `applying 0001_init.sql` (first
+   is expected. Open its logs and look for `pending 0001_init.sql` (first
    deploy) or only `migrations applied` (later deploys).
 6. **Domains** on the resource, after the first successful deploy (Coolify
    has to parse the compose file first). Enter **`http://`** — Cloudflare
@@ -163,7 +174,7 @@ The prod file runs `/migrate` once per deploy, starts the API with
    | ----------------------------------------------- | ------------------------------ |
    | `server`                                        | `http://api.abcd.com:8080`     |
    | `collaboration`                                 | `http://collab.abcd.com:1234`  |
-   | `ops` (after step 8)                            | `http://ops.evonotes.com:8082` |
+   | `ops` (after step 8)                            | `http://ops.capynotebook.com:8082` |
    | `db`, `redis`, `migrate`, `worker`, `retrieval` | no domain                      |
 
    Redeploy or wait for the proxy to pick up the domains.
@@ -206,7 +217,7 @@ or Caddy on the host; the tunnel should hit that proxy and let it route by
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
 | `api.abcd.com`               | `http://localhost:80` (or `http://coolify-proxy:80` if `cloudflared` is a container on the `coolify` network) | `http://api.abcd.com` on the **server** service |
 | `collab.abcd.com`            | same `:80`                                                                                                    | `http://collab.abcd.com` on **collaboration**   |
-| `ops.evonotes.com`           | same `:80`                                                                                                    | `http://ops.evonotes.com` on **ops**            |
+| `ops.capynotebook.com`           | same `:80`                                                                                                    | `http://ops.capynotebook.com` on **ops**            |
 | retrieval, worker, db, redis | none                                                                                                          | no domain                                       |
 
 Details that are easy to get wrong:
@@ -251,10 +262,10 @@ Details that are easy to get wrong:
   cache, and only a deploy re-parses the repository. Check the container
   environment after the first deploy instead of trusting the stored parse.
 
-In the tunnel's Public Hostnames page, add `ops.evonotes.com` with service
+In the tunnel's Public Hostnames page, add `ops.capynotebook.com` with service
 `http://localhost:80`, or the Coolify proxy address from the table. Cloudflare
 creates the proxied CNAME to the tunnel. Do not also create an A or AAAA record
-for `ops.evonotes.com`.
+for `ops.capynotebook.com`.
 
 ### 1.2 Bare docker compose + Tunnel
 
@@ -265,7 +276,7 @@ records; do **not** also point A records at the VPS IP.
 ```
 api.abcd.com     → http://localhost:8080  (the `server` container)
 collab.abcd.com  → http://localhost:1234  (the `collaboration` container)
-ops.evonotes.com → http://localhost:8082  (the `ops` container)
+ops.capynotebook.com → http://localhost:8082  (the `ops` container)
 ```
 
 SSL/TLS **Full (strict)** is appropriate here if the origin speaks TLS.
@@ -298,7 +309,7 @@ callback. Do not add the key to any `VITE_*` variable.
 Disable provider training in the ElevenLabs Data Use settings. Starter does not
 offer zero-retention mode: the app privacy policy must disclose ElevenLabs as an
 audio transcription processor and its retention before audio upload is enabled.
-Evo Notes does not persist a provider transcript ID or webhook payload, but must
+Capy Notebook does not persist a provider transcript ID or webhook payload, but must
 not claim that provider logs or backups are
 immediately erased. Do not process PHI without an enterprise agreement.
 
@@ -316,15 +327,15 @@ opens lazily only after the application authorizes a registry Save or a
 reconciliation request:
 
 ```
-OPS_DATABASE_URL=postgres://evo_ops:<password>@<private-postgres-host>:5432/evo?sslmode=require
-OPS_ADMIN_DATABASE_URL=postgres://evo_ops_admin:<password>@<private-postgres-host>:5432/evo?sslmode=require
+OPS_DATABASE_URL=postgres://capy_ops:<password>@<private-postgres-host>:5432/capy?sslmode=require
+OPS_ADMIN_DATABASE_URL=postgres://capy_ops_admin:<password>@<private-postgres-host>:5432/capy?sslmode=require
 OPS_INGEST_PRIMARY_ENVIRONMENT=production
-# Optional: the same column-limited evo_ops role in the other app databases.
-OPS_INGEST_UAT_DATABASE_URL=postgres://evo_ops:<password>@<uat-postgres-host>:5432/evo?sslmode=require
-OPS_INGEST_LOCAL_DATABASE_URL=postgres://evo_ops:<password>@<local-postgres-host>:5432/evo?sslmode=require
+# Optional: the same column-limited capy_ops role in the other app databases.
+OPS_INGEST_UAT_DATABASE_URL=postgres://capy_ops:<password>@<uat-postgres-host>:5432/capy?sslmode=require
+OPS_INGEST_LOCAL_DATABASE_URL=postgres://capy_ops:<password>@<local-postgres-host>:5432/capy?sslmode=require
 
 `OPS_INGEST_PRIMARY_ENVIRONMENT` names which environment wrote the rows in
-`OPS_DATABASE_URL`, and must equal the `EVO_INGEST_ENVIRONMENT` of the queue
+`OPS_DATABASE_URL`, and must equal the `CAPY_INGEST_ENVIRONMENT` of the queue
 consumers pointed at that database: `production` here, `uat` in the UAT
 resource, `local` in the local compose stack. Every ingest attempt, provider
 call, and host sample is filtered on it. A mismatch is not rejected at startup
@@ -369,7 +380,7 @@ runtime. They must belong to the same Clerk instance as the product. Start the
 service with the compose `ops` profile. Do not set any database URL in browser
 build arguments.
 
-In Clerk, add `https://ops.evonotes.com` to the production instance's allowed
+In Clerk, add `https://ops.capynotebook.com` to the production instance's allowed
 origins and redirect URLs. Keep `https://abcd.com` and `https://www.abcd.com`
 if the product uses both. Do not create a second Clerk instance: the Clerk
 subject must continue to match `users.id` and `operators.user_id`. The Clerk
@@ -412,11 +423,11 @@ Skip all security rules for:
 challenges webhook deliveries, which cannot solve a JavaScript challenge.
 
 **Cache rules:** bypass cache for `api.abcd.com`, `collab.abcd.com`, and
-`ops.evonotes.com` entirely. A cached SSE or WebSocket response breaks
+`ops.capynotebook.com` entirely. A cached SSE or WebSocket response breaks
 streaming. Cached operator responses can disclose one operator's data to
 another.
 
-For `ops.evonotes.com`, add a response-header rule with
+For `ops.capynotebook.com`, add a response-header rule with
 `Cache-Control: private, no-store` and
 `X-Robots-Tag: noindex, nofollow, noarchive`. Keep the dashboard's HTML
 `robots` meta tag too. These headers prevent accidental cache and search
@@ -424,7 +435,7 @@ indexing; they are not access controls.
 
 ### 2.1 Cloudflare Access for ops
 
-Create a self-hosted Access application for `https://ops.evonotes.com/*`.
+Create a self-hosted Access application for `https://ops.capynotebook.com/*`.
 Use an Allow policy that names each operator email, or a company identity
 provider group that contains only operators. Do not use `Emails ending in` for
 a mixed-use domain, and do not add a Bypass or Everyone policy. A short session
@@ -490,7 +501,7 @@ a slow download never holds an ingest slot.
 
 The worker reaches the gateway's `/api/internal/import/*` routes with
 `GATEWAY_URL` and the gateway's `PIPELINE_SECRET`. Production publishes the
-gateway on `EVO_PRIVATE_BIND_ADDRESS:8080` next to Postgres and Redis, so the
+gateway on `CAPY_PRIVATE_BIND_ADDRESS:8080` next to Postgres and Redis, so the
 ingest host uses `http://10.77.0.1:8080`; the nonprod queue env files carry each
 environment's own gateway URL and secret. That publication exposes the whole
 gateway API to the ingest host, not only `/api/internal/`; the host is trusted
@@ -499,7 +510,7 @@ gateway disables new imports with `503` instead of creating stranded
 reservations.
 
 Retry scheduling lives on the `jobs` row (four attempts, 30 s doubling
-backoff, `EVO_IMPORT_JOB_TIMEOUT` per attempt). The gateway's twelve-minute
+backoff, `CAPY_IMPORT_JOB_TIMEOUT` per attempt). The gateway's twelve-minute
 attempt lease only fences stale callbacks: a retryable failure releases it before
 the requeue, a terminal failure or an exhausted budget closes the import and
 releases its reservation, and a worker that finds the lease still held by a
@@ -514,7 +525,7 @@ per-actor ingest lease cap.
 
 Download URLs the gateway did not build itself (Microsoft's preauthenticated
 URL, every redirect) are checked per hop: the host must match a suffix in
-`EVO_IMPORT_DOWNLOAD_HOSTS`, every resolved address must be public, and the
+`CAPY_IMPORT_DOWNLOAD_HOSTS`, every resolved address must be public, and the
 connection goes to that validated address with the hostname as SNI so a second
 lookup cannot redirect it. A redirect that changes origin drops the bearer
 token. Providers move download tiers without notice (OneDrive personal answers
@@ -577,8 +588,8 @@ reaper. A bucket lifecycle rule would delete objects the database still
 believes are live. They expire by TTL-since-last-use, which defaults to 90 days.
 
 The required parse ZIP handoff remains in the parser/worker shared local volume.
-`EVO_PARSE_ZIP_TTL_HOURS` controls those local fingerprint bundles, and
-`EVO_PARSE_SOURCE_TTL_HOURS` controls abandoned job-scoped source files. The
+`CAPY_PARSE_ZIP_TTL_HOURS` controls those local fingerprint bundles, and
+`CAPY_PARSE_SOURCE_TTL_HOURS` controls abandoned job-scoped source files. The
 worker sweeps both on a 5-minute timer while the queue is idle. After verifying
 a local parse ZIP, the coordinator makes up to three attempts to copy it to the
 separate `parse-bundles/` B2 prefix for later identical-source reuse. A failed
@@ -591,7 +602,7 @@ committed success or terminal failure.
 The dedicated-host Compose file defaults to four `worker` containers. Each
 claims only `ingest` rows and runs exactly one direct-route or post-parse job.
 Each has a 1 CPU, 1 GiB RAM, 1.25 GiB memory-plus-swap, and 128-process hard
-ceiling. `EVO_CAPTION_CONCURRENCY=4` caps embedded-figure fan-out inside each
+ceiling. `CAPY_CAPTION_CONCURRENCY=4` caps embedded-figure fan-out inside each
 job, so four workers can make at most sixteen uncached figure-caption calls at
 once. Embedding and summary calls remain sequential inside each job;
 their host-wide concurrency is at most four. These are limits, not reserved
@@ -686,21 +697,22 @@ those services start.
    default route, DNS override, NAT, or forwarding: this tunnel carries only
    parser HTTP, Postgres, Redis, and the gateway's `:8080` for the import
    worker.
-2. On the app host, set `EVO_PRIVATE_BIND_ADDRESS=10.77.0.1` before deploying
+2. On the app host, set `CAPY_PRIVATE_BIND_ADDRESS=10.77.0.1` before deploying
    this branch. The app-host playbook stops the confirmed-unused native
    PostgreSQL cluster but preserves its files under `/var/lib/postgresql`.
-   `deploy/docker-compose.prod.yml` publishes Evo Postgres and Redis only on
+   `deploy/docker-compose.prod.yml` publishes Capy Notebook Postgres and Redis only on
    WireGuard. The default bind address is loopback, never the public interface.
-3. Copy `deploy/ansible/ingest-host/inventory.example.yml` to the ignored
+3. Copy `deploy/ansible/ingest-host/inventory.example.yml` to ignored
    `inventory.yml`, restrict it to mode `0600`, and follow that directory's
-   README. The inventory remains plaintext and must never be committed, shared,
-   or pasted. Set `ingest_repo_version` to the same full Git SHA being promoted;
-   branch names are rejected. Password and root SSH login remain enabled for
-   now. This is easier to operate, but exposes the public SSH endpoint to
-   password guessing. Fail2ban reduces repeated attempts but does not remove
-   the risk of a reusable password.
-4. Store the values from `deploy/ingest-host.env.example` in the ignored
-   `ingest_env`, including `GATEWAY_URL` and `PIPELINE_SECRET` for the import
+   README. Ansible provisions the host, network, service account and selected
+   watchdogs. GitHub workflows own release checkouts and application secrets.
+   Choose `ingest_watchdog_stacks: [nonprod]` for UAT; production provisioning
+   is a separate authorized action. Ansible refuses an active legacy stack unit.
+4. Fill the matching `deploy/.env.uat` or `deploy/.env.prod` using the complete
+   example and upload it with `pnpm env:push` as described in §12.7. The workflow
+   derives `DATABASE_URL`, `REDIS_URL`, and `GATEWAY_URL` from that environment's
+   `POSTGRES_PASSWORD` and `CAPY_PRIVATE_BIND_ADDRESS`. It supplies `PIPELINE_SECRET`
+   to the import
    worker and `ELEVENLABS_API_KEY` for
    uploaded-audio transcription. The worker also needs `DEEPINFRA_API_KEY` for the seeded Qwen
    embedding route and the exact ZAI GLM routing exception used by
@@ -708,7 +720,7 @@ those services start.
    downloads the B2 object, never in Go. The parser binds only to
    `PARSER_BIND_ADDRESS`; its bearer token remains defense in depth. The
    measured default is MinerU pipeline with OCR `auto`. Synchronous audio calls
-   use `EVO_ELEVENLABS_SYNC_TIMEOUT_S` (12 hours by default) so the documented
+   use `CAPY_ELEVENLABS_SYNC_TIMEOUT_S` (12 hours by default) so the documented
    10-hour source limit is not cut off by the ordinary 20-minute ingest timeout.
    Initial limits are four coordinator processes, four admitted document jobs,
    and four active 26-page slices. The default time hierarchy is a 600-second
@@ -734,9 +746,10 @@ those services start.
    Verify with `swapon --show --bytes` and `free -h`. Do not interpret available
    swap as permission to raise the four-slice cap.
 
-6. Apply the app migration before starting `host-sampler`, because it writes
-   the ingest host/worker sample and rollup tables. Start `evo-ingest.service`, wait for model warmup, and
-   verify `/healthz` through WireGuard. It must return HTTP 200 with `ok=true`,
+6. On the first coordinated app deployment, select `bootstrap_ingest`. The
+   workflow builds and warms the parser, deploys/migrates the backend, then
+   activates its matching coordinator, ingest worker, import worker and sampler.
+   Verify parser `/healthz` through WireGuard. It must return HTTP 200 with `ok=true`,
    `state=ready`, and a `release_sha` equal to the app's deployed revision. No
    parser port may listen on the public address.
 7. Run `bench/parsers/accuracy_report.py` across representative PDF, DOC/DOCX,
@@ -744,27 +757,44 @@ those services start.
    rejected row and the rendered page comparisons. A 610-page PDF should yield
    24 slices at the 26-page default. Record wall time, peak RAM, swap, and
    ordering/geometry accuracy at one and four concurrent slices.
-8. Production deployment builds the candidate parser and pipeline images under
-   immutable full-SHA tags while the current ingest services keep running. At
-   cutover, `ingest-host-release.sh prepare` records the previous and candidate
-   SHAs in `/opt/evo-ingest/release.pending`, pauses the parse coordinator,
-   workers, and sampler, and
-   starts the candidate parser without rebuilding. A failed candidate health
-   check triggers the prepare script's exit trap and restores the previous
-   parser, coordinator, worker, and sampler images. After the app deployment
-   and exact-SHA verification succeed, `activate` starts the matching
-   coordinator, workers, and sampler and
-   removes the pending marker. The workflow has an unconditional final cleanup
-   that calls `rollback-if-pending`; therefore any failure after prepare but
-   before committed activation restores ingest. After activation, roll back by
-   promoting the previous known-good exact SHA through the same workflow. The
-   parser, coordinator, worker, migration, and app remain revision-matched. The
-   artifact schema plus release-derived fingerprint prevents cache confusion.
+8. App deployment builds the site before pausing ingest, prepares the candidate
+   parser, applies GitHub config to Coolify, deploys the backend, then activates
+   matching queue consumers. It publishes the Worker last. A Worker failure
+   cannot resume old ingest against the new backend. Recovery before backend
+   deployment can restore the previous ingest snapshot. If backend deployment
+   has started, recovery must know that Coolify's exact deployment is terminal
+   and identify the live backend SHA. Unknown or still-running provider state
+   leaves consumers paused with pending evidence for investigation.
+
+Each stack has its own checkout and durable release state:
+
+| Target | Checkout | State |
+| --- | --- | --- |
+| Production | `/opt/capy-ingest/app` | `/opt/capy-ingest/releases/production` |
+| UAT | `/opt/capy-ingest/app-nonprod` | `/opt/capy-ingest/releases/nonprod` |
+
+`active` contains the committed SHA. `current` points to an immutable
+`config-<run-id-attempt>` directory. `pending` records its owner, candidate,
+previous SHA and snapshot links; `operation.lock` serializes mutations. The
+workflow never invents a previous SHA or prunes another stack's images/volumes.
+Bootstrap only clones into an absent/empty checkout and records active after
+verification. A failed bootstrap stops candidate services and retains evidence.
+
+Docker `restart: unless-stopped` restarts the deployed containers with their
+existing images and environment after a reboot. There is no second systemd
+Compose launcher. The per-stack watchdog checks the same active/pending state
+and lock before restarting an unhealthy existing parser.
+
+For a failed or canceled deployment, inspect the exact Coolify deployment and
+live backend revision before invoking recovery with the original run owner.
+Do not delete pending state or blindly roll back only ingest. After committed
+activation, promote the previous compatible revision through the whole app
+workflow; this does not reverse database migrations automatically.
 
 ### 7.1 Production and non-production ingest-host storage
 
-Production keeps the explicitly named `evo-ingest_parse_spool` volume. The one
-local/UAT project uses `evo-ingest_nonprod_parse_spool` through
+Production keeps the explicitly named `capy-ingest_parse_spool` volume. The one
+local/UAT project uses `capy-ingest_nonprod_parse_spool` through
 `deploy/docker-compose.ingest-host.nonprod.yml` and never mounts the production
 volume. Docker named volumes grow only as files are written, so this setup
 reserves no fixed number of bytes for nonproduction. The ordinary
@@ -791,48 +821,27 @@ process cannot connect to two databases, but the locks allow only one consumer
 per role to do job work. These resource values are hard container ceilings,
 not reservations.
 
-Install one shared stack file and one queue credential file per app
-environment:
+The UAT workflow writes `nonprod.env` and `uat.queue.env` into the current
+immutable snapshot. Keep only the local lane's `local.queue.env` at
+`/opt/capy-ingest/local.queue.env`, mode `0600`, owned by `capy-ingest`. Its
+private Postgres/Redis routes, test B2 bucket and provider credentials belong to
+local development. UAT deployment never overwrites that file.
+
+After a UAT release is active, local consumers can use its same parser revision:
 
 ```bash
-cp deploy/ingest-host.nonprod.env.example /opt/evo-ingest/nonprod.env
-cp deploy/ingest-host.nonprod.queue.env.example /opt/evo-ingest/local.queue.env
-cp deploy/ingest-host.nonprod.queue.env.example /opt/evo-ingest/uat.queue.env
-chmod 0640 /opt/evo-ingest/nonprod.env \
-  /opt/evo-ingest/local.queue.env /opt/evo-ingest/uat.queue.env
+cd /opt/capy-ingest/app-nonprod
+export CAPY_INGEST_UAT_ENV_FILE=/opt/capy-ingest/releases/nonprod/current/uat.queue.env
+docker compose -p capy-ingest-nonprod \
+  --env-file /opt/capy-ingest/releases/nonprod/current/nonprod.env \
+  -f deploy/docker-compose.ingest-host.nonprod.yml --profile local \
+  up -d --no-build --no-deps parse-coordinator-local worker-local import-worker-local host-sampler-local
 ```
 
-`nonprod.env` owns the shared parser token, port, release, resource limits, and
-the two queue-file paths. Fill `local.queue.env` with the disposable local app
-stack's private Postgres and Redis addresses reachable from the ingest VM, its
-test B2 bucket, and its provider credentials. Fill `uat.queue.env` with the
-future UAT server's dedicated private values. Neither file may contain
-production credentials.
-
-Start only local consumers while no UAT server exists:
-
-```bash
-docker compose --env-file /opt/evo-ingest/nonprod.env \
-  -f deploy/docker-compose.ingest-host.nonprod.yml \
-  --profile local up -d --build
-```
-
-Once UAT exists, enable both profiles in the same project:
-
-```bash
-docker compose --env-file /opt/evo-ingest/nonprod.env \
-  -f deploy/docker-compose.ingest-host.nonprod.yml \
-  --profile local --profile uat up -d --build
-```
-
-Both profiles use the single `RELEASE_SHA` from `nonprod.env`. Stop the shared
-project when neither local nor UAT needs ingest so production gets the host's
-idle CPU and memory.
-
-```bash
-docker compose --env-file /opt/evo-ingest/nonprod.env \
-  -f deploy/docker-compose.ingest-host.nonprod.yml down
-```
+Stop those four local consumers before the next UAT release. The workflow
+refuses to change their shared parser while they run. Resuming them afterwards
+uses the newly committed revision; it never rebuilds or changes the parser.
+The standalone full-local Docker Compose lane remains available for schema work.
 
 Do not add `-v` to `down`: that would request deletion of project volumes. The
 shared spool has an explicit name, but treating destructive volume flags as safe
@@ -885,9 +894,8 @@ starts a clean process.
 `restart: unless-stopped` recovered PID 1 kills, cgroup OOM kills, a Docker
 daemon restart, and a full VM reboot in testing. The parser health route was
 available on the first successful probe about 32 seconds after reboot was
-issued, with cold models. Docker health status alone remains diagnostic, so the
-Ansible role installs `evo-ingest-watchdog.service`. It restarts the parser after
-three failed health checks. Per-slice execution deadlines own stuck-work
+issued, with cold models. Ansible installs `capy-ingest-watchdog@.service` for explicitly selected stacks.
+It restarts an existing parser after three unhealthy Docker health observations. Per-slice execution deadlines own stuck-work
 detection; the watchdog does not independently time active work. It skips
 absent containers and planned release cutovers. A restart
 drops in-flight connections, but ordinary parser errors get one retry and the
@@ -948,30 +956,30 @@ to prevent a repair loop.
    `usage_events.metadata`:
 
    ```sql
-   CREATE ROLE evo_ops LOGIN NOINHERIT PASSWORD '<read-password>';
-   CREATE ROLE evo_ops_admin LOGIN NOINHERIT PASSWORD '<admin-password>';
+   CREATE ROLE capy_ops LOGIN NOINHERIT PASSWORD '<read-password>';
+   CREATE ROLE capy_ops_admin LOGIN NOINHERIT PASSWORD '<admin-password>';
 
-   GRANT CONNECT ON DATABASE evo
-     TO evo_ops, evo_ops_admin;
+   GRANT CONNECT ON DATABASE capy
+     TO capy_ops, capy_ops_admin;
    REVOKE CREATE ON SCHEMA public FROM PUBLIC;
    REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC;
    ALTER DEFAULT PRIVILEGES IN SCHEMA public
      REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
    GRANT USAGE ON SCHEMA public
-     TO evo_ops, evo_ops_admin;
+     TO capy_ops, capy_ops_admin;
 
    GRANT SELECT (
      user_id, period_start, used_micros, reserved_micros
-   ) ON user_credits TO evo_ops;
+   ) ON user_credits TO capy_ops;
    GRANT SELECT (
      plan_tier, storage_limit_bytes, credit_limit_micros,
      source_file_max_bytes, material_revision_limit,
      owned_workspace_limit, files_per_workspace, files_per_upload
-   ) ON plan_limits TO evo_ops;
+   ) ON plan_limits TO capy_ops;
    GRANT SELECT (
      id, actor_user_id, trace_id, surface, paid_by, status,
      created_at, expires_at, settled_at
-   ) ON provider_sessions TO evo_ops;
+   ) ON provider_sessions TO capy_ops;
    GRANT SELECT (
      id, reservation_id, actor_user_id, job_attempt_id, job_stage,
      kind, purpose, status, thinking, input_tokens, output_tokens,
@@ -981,68 +989,68 @@ to prevent a repair loop.
      context_window_tokens, context_counting_method,
      context_counting_version, opened_at, applied_at, abandoned_at,
      error_category, error_code, provider_status
-   ) ON provider_calls TO evo_ops;
+   ) ON provider_calls TO capy_ops;
    GRANT SELECT (
      id, job_type, trigger, status, requested_by_id, requested_by_name,
      requested_at, started_at, finished_at, scanned_count, repaired_count,
      error_count, error
-   ) ON reconcile_runs TO evo_ops;
+   ) ON reconcile_runs TO capy_ops;
    GRANT SELECT (
      id, run_id, event_type, subject_type, subject_id, actor_user_id,
      metadata, created_at
-   ) ON reconciliation_report TO evo_ops;
+   ) ON reconciliation_report TO capy_ops;
    GRANT SELECT (
      id, occurred_at, actor_user_id, actor_role, action,
      target_type, target_id, outcome, trace_id, metadata
-   ) ON operator_audit_events TO evo_ops;
+   ) ON operator_audit_events TO capy_ops;
    -- Retrieval telemetry: features and ids only, no text columns exist.
-   GRANT SELECT ON rag_search_events TO evo_ops;
+   GRANT SELECT ON rag_search_events TO capy_ops;
    GRANT SELECT (
      user_id, used_bytes, reserved_bytes
-   ) ON user_storage TO evo_ops;
+   ) ON user_storage TO capy_ops;
    GRANT SELECT (
      user_id, delta_bytes
-   ) ON user_storage_deltas TO evo_ops;
+   ) ON user_storage_deltas TO capy_ops;
    GRANT SELECT (
      id, name, email, plan_tier, subscription_status,
      deletion_requested_at, purge_after,
      deleted_at, suspended_at, suspended_reason,
      session_revoke_pending, session_revoke_attempts,
      session_revoke_not_before, session_revoke_last_error, created_at
-   ) ON users TO evo_ops;
+   ) ON users TO capy_ops;
    -- AccountAccess computes the active user's lifecycle state on this pool.
    GRANT SELECT (
      user_id, status, plan_tier, current_period_end, ended_at,
      canceled_at, stripe_event_created, updated_at
    )
-     ON user_subscriptions TO evo_ops;
+     ON user_subscriptions TO capy_ops;
    GRANT SELECT (
      id, user_id, name, embedding_provider_slug, embedding_model_slug,
      embedding_model_version,
      embedding_dim, last_accessed_at
-   ) ON workspaces TO evo_ops;
-   GRANT SELECT (user_id, role) ON operators TO evo_ops;
-   GRANT SELECT (role, permission) ON ops_permissions TO evo_ops;
+   ) ON workspaces TO capy_ops;
+   GRANT SELECT (user_id, role) ON operators TO capy_ops;
+   GRANT SELECT (role, permission) ON ops_permissions TO capy_ops;
    GRANT SELECT (
      version, provider_name, model_name, provider_slug, model_slug,
      platform_enabled, byok_enabled, thinking_levels, default_thinking,
      context_window_tokens, params, slots, capabilities, micros_per_input_token,
      micros_per_cached_input_token, micros_per_output_token, enabled,
      is_default_for, created_at, updated_at, created_by, updated_by
-   ) ON model_configs TO evo_ops;
+   ) ON model_configs TO capy_ops;
    GRANT SELECT (
      resource_key, version, unit, credit_micros_per_unit, active, created_at
-   ) ON resource_credit_rates TO evo_ops;
-   GRANT SELECT (id, version, updated_at) ON model_registry_state TO evo_ops;
-   GRANT SELECT ON ops_assistant_turns TO evo_ops;
+   ) ON resource_credit_rates TO capy_ops;
+   GRANT SELECT (id, version, updated_at) ON model_registry_state TO capy_ops;
+   GRANT SELECT ON ops_assistant_turns TO capy_ops;
    GRANT SELECT (id, workspace_id)
-     ON files TO evo_ops;
+     ON files TO capy_ops;
    GRANT SELECT (
      type, status, not_before, locked_at, lease_expires_at, queued_at, updated_at
-   ) ON jobs TO evo_ops;
+   ) ON jobs TO capy_ops;
    GRANT SELECT (
      status, updated_at
-   ) ON email_outbox TO evo_ops;
+   ) ON email_outbox TO capy_ops;
    GRANT SELECT (
      id, trace_id, actor_user_id, kind, surface, provider, model,
      thinking, catalog_provider_slug, catalog_model_slug, model_version,
@@ -1053,7 +1061,7 @@ to prevent a repair loop.
      parse_worker_rss_bytes, parse_worker_pss_bytes,
      parse_io_read_bytes, parse_io_write_bytes,
      credit_micros, reservation_id, provider_call_id, created_at
-   ) ON usage_events TO evo_ops;
+   ) ON usage_events TO capy_ops;
    GRANT SELECT (
      sampled_at, environment, host_id, release_sha, host_metrics_available,
      active_jobs, queued_jobs,
@@ -1066,12 +1074,12 @@ to prevent a repair loop.
      parse_delayed_jobs, parse_running_jobs, ingest_ready_jobs,
      ingest_delayed_jobs, ingest_running_jobs, expired_leases,
      oldest_queued_job_ms, disk_free_bytes, spool_bytes, spool_files
-   ) ON ingest_host_samples TO evo_ops;
+   ) ON ingest_host_samples TO capy_ops;
    GRANT SELECT (
      sampled_at, environment, host_id, worker_instance_id, role, release_sha,
      state, stage, job_attempt_id, cpu_cores, memory_bytes, memory_limit_bytes,
      pids_current, pids_limit, oom_events, oom_kill_events
-   ) ON ingest_worker_samples TO evo_ops;
+   ) ON ingest_worker_samples TO capy_ops;
    GRANT SELECT (
      id, job_id, operation_id, attempt, job_type, environment, status, stage,
      error_category, error_code, retryable, route, source_format, claimed_at,
@@ -1079,18 +1087,18 @@ to prevent a repair loop.
      stage_timings,
      parse_pages, parse_ocr_pages, parse_slices, figures_selected, figures_cached,
      figures_captioned, figures_failed, chunks_created
-   ) ON ingest_job_attempts TO evo_ops;
+   ) ON ingest_job_attempts TO capy_ops;
 
-   GRANT EXECUTE ON FUNCTION touch_operator_seen(text) TO evo_ops;
+   GRANT EXECUTE ON FUNCTION touch_operator_seen(text) TO capy_ops;
    GRANT EXECUTE ON FUNCTION request_reconciliation(text, text, text)
-     TO evo_ops_admin;
+     TO capy_ops_admin;
    GRANT EXECUTE ON FUNCTION record_registry_audit(
      text, bigint, bigint, bigint, bigint, bigint, text
    )
-     TO evo_ops_admin;
+     TO capy_ops_admin;
    GRANT EXECUTE ON FUNCTION save_resource_credit_rate(
      text, text, bigint, text
-   ) TO evo_ops_admin;
+   ) TO capy_ops_admin;
 
    GRANT SELECT (
      version, provider_name, model_name, provider_slug, model_slug,
@@ -1098,30 +1106,30 @@ to prevent a repair loop.
      context_window_tokens, params, slots, capabilities, micros_per_input_token,
      micros_per_cached_input_token, micros_per_output_token, enabled,
      is_default_for, created_at, updated_at, created_by, updated_by
-   ) ON model_configs TO evo_ops_admin;
+   ) ON model_configs TO capy_ops_admin;
    GRANT SELECT (id, version, updated_at)
-     ON model_registry_state TO evo_ops_admin;
+     ON model_registry_state TO capy_ops_admin;
    GRANT SELECT (
      id, embedding_provider_slug, embedding_model_slug,
      embedding_model_version, embedding_dim
-   ) ON workspaces TO evo_ops_admin;
+   ) ON workspaces TO capy_ops_admin;
    GRANT SELECT (
      id, email, locale,
      chat_model_provider_slug, chat_model_slug,
      generate_model_provider_slug, generate_model_slug,
      editor_model_provider_slug, editor_model_slug,
      quiz_model_provider_slug, quiz_model_slug
-   ) ON users TO evo_ops_admin;
+   ) ON users TO capy_ops_admin;
    GRANT SELECT (
      user_id, email_workspace_invite, email_membership, email_billing
-   ) ON notification_prefs TO evo_ops_admin;
+   ) ON notification_prefs TO capy_ops_admin;
    GRANT SELECT (
      id, user_id, kind, data, href, workspace_id, workspace_invite_id,
      at, read_at
-   ) ON notifications TO evo_ops_admin;
-   GRANT SELECT (idempotency_key) ON email_outbox TO evo_ops_admin;
+   ) ON notifications TO capy_ops_admin;
+   GRANT SELECT (idempotency_key) ON email_outbox TO capy_ops_admin;
    GRANT SELECT (user_id, provider_slug)
-     ON user_llm_credentials TO evo_ops_admin;
+     ON user_llm_credentials TO capy_ops_admin;
 
    GRANT INSERT (
      version, provider_name, model_name, provider_slug, model_slug,
@@ -1129,26 +1137,26 @@ to prevent a repair loop.
      context_window_tokens, params, slots, capabilities, micros_per_input_token,
      micros_per_cached_input_token, micros_per_output_token, enabled,
      is_default_for, created_by, updated_by
-   ) ON model_configs TO evo_ops_admin;
+   ) ON model_configs TO capy_ops_admin;
    GRANT UPDATE (enabled, is_default_for, updated_at, updated_by)
-     ON model_configs TO evo_ops_admin;
+     ON model_configs TO capy_ops_admin;
    GRANT EXECUTE ON FUNCTION model_configs_thinking_ok(text[], text[], text)
-     TO evo_ops_admin;
+     TO capy_ops_admin;
    GRANT UPDATE (version, updated_at)
-     ON model_registry_state TO evo_ops_admin;
+     ON model_registry_state TO capy_ops_admin;
    GRANT UPDATE (
      chat_model_provider_slug, chat_model_slug,
      generate_model_provider_slug, generate_model_slug,
      editor_model_provider_slug, editor_model_slug,
      quiz_model_provider_slug, quiz_model_slug,
      updated_at
-   ) ON users TO evo_ops_admin;
+   ) ON users TO capy_ops_admin;
    GRANT INSERT (
      id, user_id, kind, data, href, workspace_id, workspace_invite_id, at
-   ) ON notifications TO evo_ops_admin;
+   ) ON notifications TO capy_ops_admin;
    GRANT INSERT (
      id, user_id, to_email, template, locale, payload, idempotency_key
-   ) ON email_outbox TO evo_ops_admin;
+   ) ON email_outbox TO capy_ops_admin;
    ```
 
    Ops validates the eight `plan_limits` column grants before it loads the
@@ -1166,7 +1174,7 @@ to prevent a repair loop.
    the audit event inside the mutation transaction. Audit triggers reject
    `UPDATE`, `DELETE`, and `TRUNCATE`, including attempts by the database owner.
    `model_configs_thinking_ok` is the CHECK helper for registry inserts; grant
-   EXECUTE to `evo_ops_admin` only. Do not grant `UPDATE` on `operators`,
+   EXECUTE to `capy_ops_admin` only. Do not grant `UPDATE` on `operators`,
    table-level `UPDATE`, any other update column, or `DELETE` on `model_configs`,
    audit-table writes, schema creation, sequence access, or generic
    `ALL TABLES IN SCHEMA` privileges.
@@ -1249,7 +1257,7 @@ Embedding rows are the ones the database will actually reject a delete of.
 | Same `trace_id` searched in Sentry and in gateway logs                       | both return the request                          |
 | `SELECT * FROM provider_sessions WHERE status='open' AND expires_at < now()` | empty after a minute (sweeper is running)        |
 | Open Ops Overview after sending a chat turn                                  | current-month usage appears within 30 seconds    |
-| `curl -sI https://ops.evonotes.com` without Access credentials               | Cloudflare Access login or denial, never the app |
+| `curl -sI https://ops.capynotebook.com` without Access credentials               | Cloudflare Access login or denial, never the app |
 | Sign in through Access + Clerk as a user absent from `operators`             | `403` from the ops service                       |
 | Sign in as an operator with `role='viewer'`, then submit registry Save       | `403`; registry writer pool remains unopened     |
 | `curl -sI http://127.0.0.1:8082/healthz` on the host                         | `200`; :8082 is not reachable from another host  |
@@ -1371,11 +1379,10 @@ Start the guided setup from the repository root:
 scripts/review/setup-uat.sh
 ```
 
-The wizard records local values in ignored `deploy/.env.uat` with mode `0600`.
-When the GitHub CLI is authenticated, it can also populate the repository
-variables and `uat` environment secrets listed below. It cannot create Clerk,
-Stripe, Coolify, DNS, database, or bucket resources; those remain deliberate
-human actions.
+The setup command creates the ignored `deploy/.env.uat` from its example if
+missing, sets mode `0600`, and validates known keys. Fill it before uploading
+through the shared manifest-backed `env:push` command in §12.7. Service and
+DNS provisioning are separate from environment upload.
 
 ### 12.1 Isolation model
 
@@ -1389,7 +1396,7 @@ never mounts that volume.
 | App compute         | local compose                        | separate Coolify environment/resource                                                       | production Coolify environment/resource         |
 | Postgres and Redis  | disposable/local                     | dedicated UAT instances/volumes                                                             | production instances/volumes                    |
 | Blob storage        | local/test bucket                    | dedicated private UAT bucket and key                                                        | production private bucket and key               |
-| Ingest host         | shared nonprod project, local queue consumers | same nonprod project, UAT queue consumers; one global `1/1/1` capacity with local | production project and `evo-ingest_parse_spool` |
+| Ingest host         | shared nonprod project, local queue consumers | same nonprod project, UAT queue consumers; one global `1/1/1` capacity with local | production project and `capy-ingest_parse_spool` |
 | Clerk               | development instance                 | separate Clerk application, Production instance                                             | production application's Production instance    |
 | Stripe              | `Stable Studio Dev` sandbox, `stripe listen` | named UAT sandbox with a registered endpoint                                             | live mode                                       |
 | Product mail        | log backend, no credentials          | Resend `uat.capynotebook.com`, domain-scoped key                                            | Resend on the production domain                 |
@@ -1425,28 +1432,27 @@ authentication strategy.
    routing, origin lockdown, cache bypass, WebSocket support, and `/api`
    reverse proxy using §§1–3. Do not use wildcard host authorization for
    review tooling.
-5. Copy `deploy/.env.prod.example` into the UAT resource and fill it with only
-   UAT values. Set `APP_ENV=production`; UAT must exercise production safety
+5. Copy `deploy/.env.uat.example` to ignored `deploy/.env.uat`, fill only UAT
+   values and upload them to the GitHub `uat` environment using §12.7. Set `APP_ENV=production`; UAT must exercise production safety
    checks. Set `SENTRY_ENVIRONMENT=uat`, which is the only thing keeping UAT
    errors out of production's Sentry bucket. Set
    `OPS_INGEST_PRIMARY_ENVIRONMENT=uat` and leave
    `OPS_INGEST_UAT_DATABASE_URL` unset: the compose default is `production`,
    which would silently empty the UAT ingest dashboard (§8). Use the UAT origins in `APP_URL`, CORS, collaboration, OAuth, Sentry,
    and browser build variables.
-6. Create a separate Cloudflare Pages project for the UAT SPA. Either create it
-   as Direct Upload or disable builds on an existing Git-integrated project;
-   GitHub Actions deploys `dist/` with Wrangler. Set its production branch to
-   `main` and attach only the UAT domains.
+6. The deployment publishes Worker `capy-notebook-uat` with the built assets and
+   live summary handler. Attach only the UAT site domain after verifying it,
+   following the Pages cutover order in §1. No summary storage service is needed.
 7. Deploy once, inspect the `migrate` container, and verify all public routes
    resolve through Cloudflare. This initial deployment may use a unique random
    temporary Clerk webhook secret until the public UAT webhook URL exists.
    Replace it with Clerk's actual endpoint signing secret and redeploy before
    creating fixtures.
-8. Give the ingest VM private network routes to the UAT Postgres and Redis
-   ports. Fill `/opt/evo-ingest/uat.queue.env` with the dedicated UAT database,
-   Redis, B2, and provider values. Restart the one nonproduction project with
-   both the `local` and `uat` profiles as shown in §7.1. Do not start an ingest
-   worker inside the UAT Coolify resource.
+8. Give the ingest VM private routes to the UAT Postgres, Redis and gateway
+   ports. Select `bootstrap_ingest` on the first **Deploy UAT** run; it renders
+   the queue configuration from GitHub and starts only UAT consumers after
+   backend verification. Local consumers remain an explicit operator action.
+   Do not start an ingest worker inside the UAT Coolify resource.
 
 Give UAT a visible banner. It shares Sentry projects with production and
 separates by `SENTRY_ENVIRONMENT` (§5); it has no PostHog project at all (§6).
@@ -1455,7 +1461,7 @@ security exploration can generate more traffic and LLM work than a human test.
 
 ### 12.3 Clerk: a separate UAT application
 
-Create a separate Clerk application named `Evo Notes UAT`. Use its Production
+Create a separate Clerk application named `Capy Notebook UAT`. Use its Production
 instance for UAT so custom domains, production-key behavior, cookies, webhook
 verification, and browser restrictions match production. This does not mean
 sharing the real production Clerk application: UAT and production must have
@@ -1492,7 +1498,7 @@ exemptions.
 A Clerk production instance does not authenticate on `localhost`, so a local
 `pnpm dev` that talks to the UAT gateway has to be served from a real origin.
 `pnpm dev:tunnel` publishes the dev server through its own Cloudflare tunnel,
-created on the developer's machine and unrelated to the `evo-uat` tunnel on
+created on the developer's machine and unrelated to the `capy-uat` tunnel on
 the VM, at the hostname in `VITE_DEV_HOST`. The DNS record points at that
 laptop; only the API calls Vite proxies reach the VM. `pnpm dev:public` then
 serves it (plain `pnpm dev` stays on localhost).
@@ -1626,10 +1632,9 @@ duplicate webhook delivery, and out-of-order delivery using synthetic
 customers. Confirm plan state, idempotency, and reconciliation before the
 first production release.
 
-Stripe credentials are deployment secrets, not review-runner secrets. The
-wizard keeps them locally only to reduce transcription mistakes; paste them
-into Coolify yourself. Do not add them to GitHub Actions unless a future test
-has a narrow, documented reason to call Stripe directly.
+Stripe credentials are GitHub environment deployment secrets. Keep the matching
+sandbox values in ignored `deploy/.env.uat` and upload through `env:push`; the
+deployment sync applies them to Coolify. Scanner-only credentials remain local.
 
 Leaving the gateway's Stripe secret, webhook secret, and Pro price blank keeps
 billing disabled. If either `STRIPE_WEBHOOK_SECRET` or `STRIPE_PRICE_PRO` is
@@ -1662,8 +1667,8 @@ TXT and MX are never proxied, so there is no orange-cloud decision:
 | TXT  | `send.uat`              | `v=spf1 include:amazonses.com ~all`            | —        |
 
 All three resolve and the domain is verified. Set `EMAIL_BACKEND=resend`,
-`RESEND_API_KEY` to the domain-scoped `Evo Notes UAT (sending)` key,
-`EMAIL_FROM=Evo Notes <notifications@uat.capynotebook.com>`, and a fresh
+`RESEND_API_KEY` to the domain-scoped `Capy Notebook UAT (sending)` key,
+`EMAIL_FROM=Capy Notebook <notifications@uat.capynotebook.com>`, and a fresh
 32-byte `EMAIL_UNSUBSCRIBE_SECRET` in the UAT Coolify resource. A
 sending-scoped key restricted to this domain cannot send from production's
 domain even if it leaks.
@@ -1696,7 +1701,7 @@ After Clerk webhooks are healthy and the UAT deployment is stable:
 3. Leave the `other` account uninvited. It must receive the same not-found
    response as any unrelated tenant rather than learning that the fixture
    exists.
-4. Record the workspace and material IDs in the wizard. Do not put fixture
+4. Record the workspace and material IDs in `deploy/.env.uat` and upload them. Do not put fixture
    content, session cookies, invitation tokens, or passwords in GitHub.
 5. Reset or recreate the fixture whenever a scanner changes it. Keep the IDs
    current; stale IDs are failed setup, not passing authorization tests.
@@ -1709,87 +1714,63 @@ cleanup.
 
 ### 12.7 GitHub Actions configuration
 
-Create Actions environments named `uat` and `production`, both restricted to
-`main`. Do not add required reviewers to `uat`, because successful `main` CI is
-supposed to deploy there unattended. Add the available approval protection to
-`production`. No workflow runs Strix or Codex Security; those scans run
-locally and only their commit statuses reach GitHub.
+Create GitHub environments `uat` and `production`, restricted to `main`. Keep
+UAT without a reviewer for post-CI deployment and retain production's release
+approval protection. Codex Security and Strix still run locally; Actions checks
+their commit statuses and never receives local scanner credentials.
 
-Repository variables used by UAT validation and activation:
+`deploy/env-manifest.json` classifies each supported input as a GitHub variable
+or secret and names its deployment targets. Both complete examples include
+backend, browser, provider and ingest inputs. Keep the real files ignored and
+mode `0600`. Use `CLERK_PUBLISHABLE_KEY` for deployments; the renderer derives
+its browser/ops `VITE_` form. Local development continues using `deploy/.env`.
 
-```text
-UAT_DEPLOYMENT_ENABLED=false
-UAT_TARGET_AUTHORIZED=true
-UAT_APP_URL=https://uat.example.com
-UAT_API_URL=https://uat-api.example.com
-UAT_COLLAB_URL=wss://uat-collab.example.com
-UAT_OPS_URL=https://uat-ops.example.com
-UAT_ALLOWED_HOSTS=uat.example.com,uat-api.example.com,uat-collab.example.com,uat-ops.example.com
-CLERK_PUBLISHABLE_KEY=<UAT publishable key>
-UAT_OWNER_EMAIL=<synthetic owner>
-UAT_EDITOR_EMAIL=<synthetic editor>
-UAT_COMMENTER_EMAIL=<synthetic commenter>
-UAT_VIEWER_EMAIL=<synthetic viewer>
-UAT_OTHER_EMAIL=<synthetic unrelated user>
-UAT_FIXTURE_WORKSPACE_ID=<fixture id>
-UAT_FIXTURE_MATERIAL_ID=<fixture id>
+```bash
+pnpm env:check --file deploy/.env.uat
+pnpm env:push --file deploy/.env.uat --environment uat --repo samyung0/capy-notebook
 ```
 
-Variables on the `uat` environment:
+The uploader needs `gh auth login` with repository/environment administration
+access. It sends secrets through stdin, rejects unknown/duplicate keys, and
+does no shell expansion. An explicit blank deletes that key in GitHub; omitted
+keys are left alone. Review-only `STRIX_*`, `LLM_API_KEY`, tunnel/dev controls,
+and derived release values remain local. Double-quoted `\n` escapes can hold
+an SSH private key. Do not put actual multiline shell fragments in the file.
 
-```text
-COOLIFY_API_URL=https://uat-coolify.example.com/api/v1
-COOLIFY_RESOURCE_UUID=<UAT Coolify application UUID>
-CLOUDFLARE_ACCOUNT_ID=<account id>
-CLOUDFLARE_PAGES_PROJECT=<UAT Pages project>
-CLOUDFLARE_PAGES_BRANCH=main
-DEPLOYMENT_APP_URL=https://uat.example.com
-DEPLOYMENT_API_URL=https://uat-api.example.com
-DEPLOYMENT_COLLAB_URL=wss://uat-collab.example.com
-DEPLOYMENT_OPS_URL=https://uat-ops.example.com
-CLERK_PUBLISHABLE_KEY=<UAT publishable key>
-SENTRY_ORG=<EU organization slug>
-SENTRY_PROJECT=capy-web
-SENTRY_URL=https://de.sentry.io/
-# Optional public VITE_* values: Sentry, PostHog, picker/OAuth, feature flags
-```
+Every deployment reads GitHub's environment values afresh, renders private
+runner files, and applies/reads back all managed Coolify variables. Empty
+optional values remain literal blanks. After successful replacement readback, the sync removes only the corresponding old `EVO_*` names and retired `IMPORT_RELAY_ENQUEUE_URL` / `IMPORT_RELAY_SECRET`, verifies their absence, and preserves unrelated normal variables. The sync disables preview entries and
+uses `is_literal=true`, `is_shown_once=false`; it prints neither values nor
+fingerprints. Coolify's token needs sensitive-read access for verification.
+The Cloudflare token needs Worker scripts/assets deployment access. Retire
+`CLOUDFLARE_PAGES_PROJECT` and `CLOUDFLARE_PAGES_BRANCH` in GitHub before the
+first new deployment; they are rejected as unknown inputs.
 
-Protected secrets on the `uat` environment:
+Required families include application origins, Clerk/webhook keys, Postgres,
+B2, collaboration/pipeline secrets, actual provider/mail/billing keys, Coolify
+and Cloudflare credentials, and ingest SSH/token/network settings. Runtime
+DSNs derive from the selected environment's private address and URL-encoded
+Postgres password. Never copy a development bucket or production secret into
+UAT merely to fill a missing input.
 
-```text
-COOLIFY_API_TOKEN=<token able to update, deploy, and read the UAT application>
-CLOUDFLARE_API_TOKEN=<token with Cloudflare Pages Edit for the UAT project>
-CLERK_SECRET_KEY=<UAT Clerk secret key>
-SENTRY_AUTH_TOKEN=<source map upload; project:releases + org:read>
-```
+Deterministic quality URLs, authorization flag, synthetic account emails and
+fixture IDs belong in the GitHub `uat` environment and use the same upload
+path. Keep `UAT_DEPLOYMENT_ENABLED=false` as a separate **repository** variable
+until the first manual baseline passes. The local scanner authorization flag
+still requires explicit permission to scan that UAT target.
 
-If `LLM_API_KEY` or `STRIX_UAT_AUTH_INSTRUCTIONS` still exist as GitHub
-secrets from the retired Strix workflows, delete them. They belong only in the
-ignored local `deploy/.env.uat`.
-
-Configure the `production` environment with the same deployment variable names,
-but production URLs, the production Coolify UUID, the production Pages project,
-and the production Clerk publishable key. Add separate
-`COOLIFY_API_TOKEN` and `CLOUDFLARE_API_TOKEN` environment secrets. Do not add
-Clerk, Stripe, database, B2, or LLM server secrets to GitHub: those stay in the
-production Coolify resource. Disable native Git auto-deploy on both production
-resources so the protected workflow is the only release path.
-
-Keep the local `STRIX_UAT_AUTH_INSTRUCTIONS` limited to synthetic accounts and
-the minimum navigation needed. If authenticated autonomous exploration is worth
-the extra coverage, it may contain a dedicated synthetic password; rotate that
-password after the scan and inspect `review-results/` for accidental
-disclosure. `scripts/review/strix-scan.sh` writes the value to a mode-`0600`
-temporary file and removes it after the scan. The short-lived Clerk-token
-Playwright suite covers the fixed authorization matrix even when Strix remains
-unauthenticated.
+Use **Deploy UAT** for the coordinated app/backend/ingest/site release and
+**Deploy ingest** for an explicit ingest-only run against an already matching
+backend SHA. Both apply the selected GitHub config on every run. Native Coolify
+Git auto-deploy stays disabled. Production promotion retains UAT, editor-perf,
+source-security, Strix, and protected-environment gates.
 
 ### 12.8 Baseline, automation, and release gate
 
 1. Leave `UAT_DEPLOYMENT_ENABLED=false` initially. This prevents successful CI
    runs from deploying to a half-configured target.
 2. Manually dispatch **Deploy UAT** from `main`. It deploys the selected SHA and
-   automatically calls **Deterministic UAT quality**. Inspect Coolify, Pages,
+   automatically calls **Deterministic UAT quality**. Inspect Coolify, Worker,
    smoke, and Playwright evidence, including release-SHA, accessibility, and
    320 CSS-pixel reflow checks.
 3. Repair the fixture and tune only documented budgets or exclusions. Do not
@@ -1824,3 +1805,107 @@ after exposure or personnel changes. Delete stale artifacts under the
 repository's retention policy; they should contain sanitized evidence, but
 they are still security-sensitive. Local `review-results/` bundles are
 unsanitized; keep them out of shared drives and chat.
+
+
+## Repeatable UAT authorization seed
+
+After the first UAT backend deployment has applied its numbered migrations,
+run the explicit initializer from the repository. This does not run on each
+deploy and does not apply migrations or reset data.
+
+```sh
+pnpm uat:seed --file deploy/.env.uat \
+  --ssh-key ~/.ssh/id_ed25519_evo_uat \
+  --db-container <actual-UAT-Postgres-container>
+```
+
+Find the exact Postgres container name in the UAT Coolify resource or with
+`ssh -i ~/.ssh/id_ed25519_evo_uat root@159.195.250.206 docker ps`.
+The script targets only this UAT host and checks the database schema before
+creating accounts. The ignored environment file must select the UAT URLs and
+contain the UAT Clerk backend key. The script also verifies the key's primary
+Clerk domain before changing accounts.
+
+The approved emails are `capy-uat-{owner,editor,commenter,viewer,other}+clerk_test@stablestudio.org`.
+Missing users are created through Clerk's backend API with verified email
+addresses and no password or invitation. Existing users must remain active with
+the matching verified primary email. UAT browser tests use short-lived sign-in
+tickets; the seed stores no reusable login tokens.
+
+The SQL transaction inserts missing application users, private workspace
+`ws_uat_authorization_v1`, and note `note_uat_authorization_v1`, assigning owner,
+editor, commenter and viewer membership. The other account remains uninvited.
+Repeated runs preserve content and revision history. Identity, lifecycle,
+ownership or permission drift stops the transaction; it never resets accounts,
+restores deleted data or overwrites existing note content. Storage is accounted
+through the normal database triggers.
+
+To prepare or verify only the Clerk accounts while the backend is unavailable:
+
+```sh
+pnpm uat:seed --file deploy/.env.uat --accounts-only
+```
+
+GitHub UAT variables `UAT_OWNER_EMAIL`, `UAT_EDITOR_EMAIL`,
+`UAT_COMMENTER_EMAIL`, `UAT_VIEWER_EMAIL`, `UAT_OTHER_EMAIL`,
+`UAT_FIXTURE_WORKSPACE_ID` and `UAT_FIXTURE_MATERIAL_ID` must match the values
+above. Run `pnpm e2e:uat` after full initialization and a healthy deployment.
+
+
+## Database migration baselines
+
+`server/migrations/NNNN_name.sql` files are forward migrations.
+`BNNNN_name.sql`, for example `B0100_snapshot.sql`, is an optional
+snapshot equivalent to all numbered migrations through that version.
+Keep four-digit consecutive numbered versions, starting at `0001`; the baseline
+and a numbered migration may share a version, but two files of the same kind
+may not. There is currently only `0001_init.sql`, so no duplicate snapshot is
+checked in.
+
+| Database state | Execution with `B0100_snapshot.sql` available |
+| --- | --- |
+| Empty application database and empty migration ledger | Apply `B0100_snapshot.sql`, then `0101` onward |
+| Existing numbered history at `0070` | Apply `0071` onward; ignore the snapshot |
+| Previously initialized from `B0050_snapshot.sql`, upgraded through `0100` | Keep that baseline record; apply `0101` onward |
+
+The runner records only SQL files it actually executes. It does not invent
+ledger entries for migrations covered by a snapshot. Applied baselines and
+numbered migrations retain SHA-256 validation; editing an applied file fails
+before any pending file runs. `migrate -status` reports `applied`, `pending`,
+`covered-by-baseline` and `ignored-baseline` from the same validated plan.
+Migration processes take the existing advisory lock before ledger creation and
+execute each SQL file and its ledger entry in one transaction.
+
+A baseline requires an empty application database, including other user schemas.
+Preinstalled extensions and the empty migration ledger are allowed. The runner
+refuses to adopt existing tables, routines or types just because their migration
+ledger is missing. It never resets, deletes or automatically labels existing
+data as baselined.
+
+To publish a new baseline, build a disposable database through version N using
+the retained numbered files. Produce a reviewed SQL snapshot containing its
+schema plus required catalog rows, such as plan limits, model configuration,
+credit rates and operator permissions. Exclude user data, development fixtures,
+UAT actors and the migration ledger. Preserve sequence values for any seeded
+serial/identity IDs. Baselines use executable SQL statements, including explicit
+`INSERT`/`setval`; remove psql backslash directives and do not use `COPY ... FROM
+stdin` streams or transaction-control statements. Schema snapshots may contain
+ordinary dump session settings; the runner resets those settings before recording
+the file so they cannot leak to later migrations or API connections.
+
+Run `pnpm test:go`. `TestEmbeddedBaselinesMatchForwardHistory` automatically
+checks each embedded baseline against the numbered path through its version.
+It compares PostgreSQL schema dumps including grants, table rows, and sequence
+`last_value`/`is_called`. Only `created_at` and `updated_at` metadata are excluded
+from row comparison. Fixtures also exercise an upgrade with existing content,
+checksum refusal, empty-database checks, rollback, and dump session settings.
+New data-changing forward migrations still need tests with representative
+existing rows; baseline equivalence alone does not prove a backfill is safe.
+
+Once a database is kept, freeze its applied migration files. Publish a later
+baseline as a new immutable file. Keep the old baselines and numbered history
+for existing environments and restored backups. This implementation does not
+retire historical upgrade paths; that would require a separate minimum-supported-
+version decision. An older binary without the database's recorded baseline
+refuses migration, even if later numbered files could otherwise be ignored for
+an application rollback. Schema changes remain forward-only.

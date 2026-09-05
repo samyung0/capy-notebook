@@ -9,8 +9,8 @@
 -- (30 MB source files, larger storage and credit limits) for testing large
 -- uploads and paid-tier gates; select it with DEV_USER_ID=u_2.
 INSERT INTO users (id, name, email, class_label, streak, plan_tier, subscription_status) VALUES
-  ('u_1', 'Kate Malone', 'kate@evonotes.app', 'Grade 11 · Science', 0, 'free', 'none'),
-  ('u_2', 'Theo Park',   'theo@evonotes.app', 'Grade 12 · Science', 0, 'pro',  'active')
+  ('u_1', 'Kate Malone', 'kate@capynotebook.app', 'Grade 11 · Science', 0, 'free', 'none'),
+  ('u_2', 'Theo Park',   'theo@capynotebook.app', 'Grade 12 · Science', 0, 'pro',  'active')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO workspaces (id, user_id, name, color, privacy, created_at, last_accessed_at) VALUES

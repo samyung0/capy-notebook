@@ -3,7 +3,7 @@ package store
 import (
 	"testing"
 
-	"github.com/evonotes/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/models"
 )
 
 func TestCreditsForTokensDifferByModel(t *testing.T) {

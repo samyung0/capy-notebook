@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "subject": "你的 Evo Notes 存储已超过免费额度",
+  "subject": "你的 Capy Notebook 存储已超过免费额度",
   "preview": "订阅已失效，且存储超过免费额度。",
   "content": {
     "type": "doc",
@@ -14,7 +14,7 @@
               { "type": "bold" },
               { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
             ],
-            "text": "Evo Notes"
+            "text": "Capy Notebook"
           }
         ]
       },
@@ -53,7 +53,7 @@
         "content": [
           {
             "type": "text",
-            "text": "你收到这封邮件是因为 Evo Notes 订阅与存储限额发生了变化。"
+            "text": "你收到这封邮件是因为 Capy Notebook 订阅与存储限额发生了变化。"
           }
         ]
       },

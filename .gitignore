@@ -25,6 +25,7 @@ node_modules/
 dist/
 dist-ssr/
 .vite/
+.wrangler/
 *.tsbuildinfo
 *.local
 

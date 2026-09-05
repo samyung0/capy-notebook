@@ -1,4 +1,4 @@
-Evo Notes
+Capy Notebook
 
 
 你的对话模型已更换
@@ -11,6 +11,6 @@ Evo Notes
 
 ----------------------------------------
 
-你收到这封邮件是因为你选用的 Evo Notes 模型已下线。
+你收到这封邮件是因为你选用的 Capy Notebook 模型已下线。
 
 管理产品邮件偏好 {{.UnsubscribeURL}}

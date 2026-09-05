@@ -6,7 +6,7 @@
  * allowlist as the app). Tokens are minted locally — no Go API session needed.
  *
  * Example:
- *   pnpm --filter @evo-notes/collaboration chaos -- \
+ *   pnpm --filter @capy-notebook/collaboration chaos -- \
  *     --material-id mat_abc --peers 4
  */
 import { randomBytes } from 'node:crypto';

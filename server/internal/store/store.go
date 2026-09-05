@@ -15,8 +15,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/evonotes/server/internal/models"
-	"github.com/evonotes/server/internal/planlimits"
+	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/planlimits"
 )
 
 // ErrNotFound is returned by Get-style methods when a row is absent.

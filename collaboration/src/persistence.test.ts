@@ -118,7 +118,7 @@ describe('live collaboration authorization', () => {
 
   it('rejects malformed durable contributor markers before admission', async () => {
     const invalid = new Y.Doc({ gc: true });
-    invalid.getMap('__evo_pending_contributors').set('marker', {
+    invalid.getMap('__capy_pending_contributors').set('marker', {
       access: 'write',
       junk: 'not server-owned metadata',
       nonce: 'nonce-a',

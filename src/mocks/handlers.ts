@@ -159,10 +159,10 @@ const mockInviteCandidates: MockInviteCandidate[] = [
   },
 ];
 
-const editorStateCacheName = 'evo-notes-editor-e2e-state-v1';
+const editorStateCacheName = 'capy-notebook-editor-e2e-state-v1';
 const editorStateRequest = (materialId: string) =>
   new Request(
-    `https://editor-state.evonotes.test/materials/${encodeURIComponent(materialId)}`
+    `https://editor-state.capynotebook.test/materials/${encodeURIComponent(materialId)}`
   );
 
 /**
@@ -757,6 +757,7 @@ export const handlers = [
       chapterCount: 0,
       color: (body.color as UserColor) ?? 'graphite',
       createdAt: new Date().toISOString(),
+      description: '',
       fileCount: 0,
       filesLimit: PLAN_LIMITS.pro.filesPerWorkspace,
       id: uid('ws'),
@@ -780,6 +781,7 @@ export const handlers = [
     };
     if (body.tags !== undefined) ws.tags = resolveTags('workspace', body.tags);
     if (body.name !== undefined) ws.name = body.name;
+    if (body.description !== undefined) ws.description = body.description;
     if (body.color !== undefined) ws.color = body.color;
     return HttpResponse.json(ws);
   }),

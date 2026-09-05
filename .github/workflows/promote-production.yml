@@ -14,6 +14,11 @@ on:
         type: choice
         options:
           - DEPLOY
+      bootstrap_ingest:
+        description: Initialize an empty production ingest stack after all promotion gates
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   actions: read
@@ -106,4 +111,5 @@ jobs:
     uses: ./.github/workflows/deploy-environment.yml
     with:
       environment_name: production
+      bootstrap_ingest: ${{ inputs.bootstrap_ingest }}
       revision: ${{ needs.validate_candidate.outputs.revision }}

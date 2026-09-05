@@ -1,11 +1,11 @@
-Evo Notes
+Capy Notebook
 
 
 YOU HAVE A WORKSPACE INVITATION
 
 Hello,
 
-You have been invited to join {{.WorkspaceName}} on Evo Notes.
+You have been invited to join {{.WorkspaceName}} on Capy Notebook.
 
 View invitation {{.InviteURL}}
 
@@ -13,6 +13,6 @@ Open this link if the button does not work: {{.InviteURL}}
 
 ----------------------------------------
 
-You received this message because an Evo Notes workspace invited you.
+You received this message because a Capy Notebook workspace invited you.
 
 Manage product email preferences {{.UnsubscribeURL}}

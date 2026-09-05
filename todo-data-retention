@@ -57,7 +57,7 @@ part of the account/workspace lifecycle fixes.
   user. Their raw payload cannot be scrubbed by user purge until correlation
   succeeds, so define a bounded retention/redaction rule for unmatched events.
 - Define the external retention and deletion guarantees for synchronous
-  ElevenLabs transcription requests; Evo Notes stores no provider transcript
+  ElevenLabs transcription requests; Capy Notebook stores no provider transcript
   id or webhook correlation row after the response completes.
 - Inventory object storage, cache objects, collaboration persistence, vector/RAG
   tenants, parse/transcription providers, email delivery, Clerk, Stripe, Sentry,

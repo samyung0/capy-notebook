@@ -1,4 +1,4 @@
-module github.com/evonotes/server
+module github.com/samyung0/capy-notebook/server
 
 go 1.25.0
 

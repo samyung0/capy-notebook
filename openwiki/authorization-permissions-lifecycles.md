@@ -7,7 +7,7 @@ tags: [backend, authorization, permissions, lifecycle, storage, quota, files]
 
 # Authorization, permissions, and lifecycles
 
-This page documents the authorization behavior implemented as of 2026-09-01.
+This page documents the authorization behavior implemented as of 2026-09-05.
 It uses **commenter**, the role name used by the API and database; "commentor"
 refers to the same role when it appears in product discussions.
 
@@ -51,6 +51,33 @@ Sources: [role definitions](../server/internal/store/enums.go#L62),
 
 ## Visibility and shared access
 
+### Anonymous workspace summaries
+
+`GET /api/public/workspaces/{id}/summary` reads live metadata for link/public
+workspaces. `HEAD` checks the same visibility without returning a body. Existing
+`ws_` identifiers remain the link identity. The response contains the workspace
+name, description, color, tags, privacy, owner display name, chapter names and
+file names, including unfiled files. It contains no material content, extracted
+text, internal content IDs, blob keys, download URLs, member details or account
+email. This is a metadata projection, not an AI-generated content summary.
+
+The query reads visibility, owner lifecycle and metadata in one SQL snapshot.
+Private, missing or malformed IDs and suspended, deletion-pending or deleted
+owners return `404`; an authenticated owner does not bypass private-summary
+exclusion. Over-quota owners retain summary reads under the existing read policy.
+Success and failure responses use `Cache-Control: no-store`; no summary cache,
+queue, R2 or KV invalidation is involved. More than 1000 chapters or a projection
+larger than 256 KiB returns `422` rather than a truncated outline.
+
+Owners edit an optional description through ordinary workspace PATCH. It accepts
+at most 1000 characters; omission preserves the value and an empty string clears
+it. Clones copy the description. Existing name/color/tag and lifecycle
+permissions remain in force.
+
+Sources: [public handler](../server/internal/httpapi/huma_workspace_summary.go),
+[live projection](../server/internal/store/workspace_summary.go), and
+[authentication boundary](../server/internal/httpapi/server.go).
+
 ### Private workspaces
 
 Only the owner and explicit members can read a private workspace. Unauthorized
@@ -59,9 +86,10 @@ resource exists.
 
 ### Link and public workspaces
 
-Both link and public workspaces are readable to anyone with access to the URL.
-Only public workspaces are listed in Explore. Files and all materials inside a
-shared workspace inherit that readable visibility.
+Signed-in users with the URL can read link and public workspaces. Only public
+workspaces are listed in Explore, which also requires authentication. Files and
+materials inherit their workspace visibility, but reading their content requires
+a session. Anonymous visitors receive only the minimal workspace summary below.
 
 The workspace's `shareRole` grants an effective role for material
 collaboration to every **signed-in** caller:
@@ -71,14 +99,17 @@ collaboration to every **signed-in** caller:
 | Signed-in `editor` share role         | Yes                            | Yes                    | Yes     | No                               |
 | Signed-in `commenter` share role      | Yes                            | No                     | Yes     | No                               |
 | Signed-in `viewer` share role         | Yes                            | No                     | No      | No                               |
-| Anonymous visitor, for any share role | Yes                            | No                     | No      | No                               |
+| Anonymous visitor, for any share role | No; summary only               | No                     | No      | No                               |
 
 Important boundaries:
 
 - A share role applies to **material collaboration**, not structural workspace
   authorization. Shared editors cannot add chapters, upload files, use
   workspace chat/generation, manage members, or change sharing.
-- Anonymous visitors are always viewers. Write routes require authentication.
+- Anonymous visitors cannot read workspace contents, standalone materials,
+  files, previews, editor assets, quizzes, flashcards, or Explore. They cannot
+  obtain material collaboration access. The public summary is their only
+  workspace read endpoint; write routes still require authentication.
 - Roles are grants rather than caps, so a member's effective role is the **more
   permissive** of their membership and the share role. A viewer invited to a
   workspace shared for editing may edit documents. Capping them would not
@@ -197,8 +228,8 @@ and [material editor checks](../server/internal/store/share.go#L209).
 - A user can edit only their own comment.
 - A user can delete their own comment or discussion. Owners/editors can also
   delete another user's comment or discussion; commenters cannot.
-- Viewers and anonymous visitors get static read-only material rendering and
-  cannot join the collaboration room.
+- Signed-in viewers get static read-only material rendering and cannot join
+  the collaboration room. Anonymous visitors must sign in to read materials.
 - Discussions and comments carry their author's display name and avatar. The
   client does not resolve authorship against the current member list, so a
   contributor who has since left the workspace stays attributed and a reader
@@ -265,8 +296,9 @@ and [commenter end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L29).
   standalone sharing uses `/sharing`. Content/metadata paths do not accept
   privacy, and sharing rejects workspace-contained materials before writing
   anything.
-- Commenters, viewers, shared visitors, and anonymous visitors can read a shared
-  quiz or flashcards, but cannot change its questions or cards.
+- Signed-in commenters, viewers, and shared visitors can read a shared quiz or
+  flashcards, but cannot change its questions or cards. Anonymous visitors must
+  sign in to read this content.
 - Cloning a readable shared quiz, flashcards, material, or workspace creates a new
   owner-controlled copy charged to the signed-in cloner.
 - Clone source content is one repeatable-read SQL snapshot. Clones never lock a

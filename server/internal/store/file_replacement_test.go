@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	appmodels "github.com/evonotes/server/internal/models"
+	appmodels "github.com/samyung0/capy-notebook/server/internal/models"
 )
 
 func TestFileReplacementReusesIngestPolicy(t *testing.T) {

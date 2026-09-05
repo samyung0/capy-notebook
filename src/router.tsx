@@ -95,23 +95,17 @@ const page = <const T extends string>(
     ...(loader ? { loader } : {}),
   });
 
+const SharedQuiz = lazyRouteComponent(() => import('@/routes/QuizAttempt'));
+const SharedFlashcards = lazyRouteComponent(
+  () => import('@/routes/FlashcardStudy')
+);
 const publicRoutes = [
   createRoute({
-    component: lazyRouteComponent(() => import('@/routes/WorkspaceOpen')),
-    errorComponent: ShareRouteErrorComponent,
-    getParentRoute: () => rootRoute,
-    loader: ({ context: { queryClient: qc }, params }) => {
-      const id = params.workspaceId;
-      qc.prefetchQuery(workspaceQuery(id));
-      qc.prefetchQuery(chaptersQuery(id));
-      qc.prefetchQuery(filesQuery(id));
-      qc.prefetchQuery(materialsQuery(id));
-    },
-    path: '/share/workspaces/$workspaceId',
-    validateSearch: parseWorkspaceOpenSearch,
-  }),
-  createRoute({
-    component: lazyRouteComponent(() => import('@/routes/QuizAttempt')),
+    component: () => (
+      <AuthGate>
+        <SharedQuiz />
+      </AuthGate>
+    ),
     errorComponent: ShareRouteErrorComponent,
     getParentRoute: () => rootRoute,
     loader: ({ context: { queryClient: qc }, params }) =>
@@ -119,7 +113,11 @@ const publicRoutes = [
     path: '/share/quizzes/$quizId',
   }),
   createRoute({
-    component: lazyRouteComponent(() => import('@/routes/FlashcardStudy')),
+    component: () => (
+      <AuthGate>
+        <SharedFlashcards />
+      </AuthGate>
+    ),
     errorComponent: ShareRouteErrorComponent,
     getParentRoute: () => rootRoute,
     loader: ({ context: { queryClient: qc }, params }) => {

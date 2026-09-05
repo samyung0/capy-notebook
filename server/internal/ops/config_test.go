@@ -9,8 +9,8 @@ func validOpsConfig(env string) Config {
 		CloudflareAccessIssuer: "https://team.cloudflareaccess.com",
 		CloudflareAccessAUD:    "audience",
 		CloudflareAccessJWKS:   "https://team.cloudflareaccess.com/cdn-cgi/access/certs",
-		DatabaseURL:            "postgres://evo_ops@db/evo",
-		AdminDatabaseURL:       "postgres://evo_ops_admin@db/evo",
+		DatabaseURL:            "postgres://capy_ops@db/capy",
+		AdminDatabaseURL:       "postgres://capy_ops_admin@db/capy",
 	}
 }
 
@@ -189,7 +189,7 @@ func TestConfigRejectsAmbiguousIngestDatabaseLabels(t *testing.T) {
 
 	duplicate := validOpsConfig("production")
 	duplicate.IngestPrimaryEnv = "uat"
-	duplicate.IngestUATDatabaseURL = "postgres://evo_ops@uat-db/evo"
+	duplicate.IngestUATDatabaseURL = "postgres://capy_ops@uat-db/capy"
 	if err := duplicate.Validate(); err == nil {
 		t.Fatal("accepted a duplicate UAT ingest database")
 	}
@@ -205,22 +205,22 @@ func TestConfigFromEnvReadsDocumentedNames(t *testing.T) {
 	t.Setenv("OPS_CF_ACCESS_ISSUER", "")
 	t.Setenv("OPS_CF_ACCESS_AUDIENCE", "")
 	t.Setenv("OPS_CF_ACCESS_JWKS_URL", "")
-	t.Setenv("OPS_DATABASE_URL", "postgres://evo@db/evo")
-	t.Setenv("OPS_ADMIN_DATABASE_URL", "postgres://evo_admin@db/evo")
+	t.Setenv("OPS_DATABASE_URL", "postgres://capy@db/capy")
+	t.Setenv("OPS_ADMIN_DATABASE_URL", "postgres://capy_admin@db/capy")
 	t.Setenv("OPS_INGEST_PRIMARY_ENVIRONMENT", "production")
-	t.Setenv("OPS_INGEST_UAT_DATABASE_URL", "postgres://evo@uat-db/evo")
-	t.Setenv("OPS_INGEST_LOCAL_DATABASE_URL", "postgres://evo@local-db/evo")
+	t.Setenv("OPS_INGEST_UAT_DATABASE_URL", "postgres://capy@uat-db/capy")
+	t.Setenv("OPS_INGEST_LOCAL_DATABASE_URL", "postgres://capy@local-db/capy")
 
 	config := ConfigFromEnv()
 	if err := config.Validate(); err != nil {
 		t.Fatalf("documented env rejected: %v", err)
 	}
-	if config.AdminDatabaseURL != "postgres://evo_admin@db/evo" {
+	if config.AdminDatabaseURL != "postgres://capy_admin@db/capy" {
 		t.Fatalf("AdminDatabaseURL = %q", config.AdminDatabaseURL)
 	}
 	if config.IngestPrimaryEnv != "production" ||
-		config.IngestUATDatabaseURL != "postgres://evo@uat-db/evo" ||
-		config.IngestLocalDatabaseURL != "postgres://evo@local-db/evo" {
+		config.IngestUATDatabaseURL != "postgres://capy@uat-db/capy" ||
+		config.IngestLocalDatabaseURL != "postgres://capy@local-db/capy" {
 		t.Fatalf("ingest database config = %+v", config)
 	}
 	if config.DevUserID != "dev-operator" || !config.AllowOwnerDSN() {

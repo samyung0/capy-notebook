@@ -45,7 +45,7 @@ from mineru_worker import (
 )
 from starlette.background import BackgroundTask
 
-ARTIFACT_SCHEMA = "evo-parser-bundle-v3"
+ARTIFACT_SCHEMA = "capy-parser-bundle-v3"
 PARSER_IMPLEMENTATION = "mineru-3.4.5-pipeline-sliced-v1"
 RELEASE_SHA = os.environ.get("RELEASE_SHA", "dev").strip() or "dev"
 if os.environ.get("APP_ENV") == "production" and not re.fullmatch(
@@ -72,31 +72,33 @@ def _dependency_versions() -> dict[str, str]:
 
 
 PARSER_DEPENDENCIES = _dependency_versions()
-MAX_SOURCE_BYTES = int(os.environ.get("EVO_MAX_SOURCE_BYTES", str(100 << 20)))
-MAX_ARTIFACT_BYTES = int(os.environ.get("EVO_PARSE_ARTIFACT_MAX_BYTES", str(256 << 20)))
-MAX_ARTIFACT_ENTRIES = int(os.environ.get("EVO_PARSE_ARTIFACT_MAX_ENTRIES", "4096"))
+MAX_SOURCE_BYTES = int(os.environ.get("CAPY_MAX_SOURCE_BYTES", str(100 << 20)))
+MAX_ARTIFACT_BYTES = int(
+    os.environ.get("CAPY_PARSE_ARTIFACT_MAX_BYTES", str(256 << 20))
+)
+MAX_ARTIFACT_ENTRIES = int(os.environ.get("CAPY_PARSE_ARTIFACT_MAX_ENTRIES", "4096"))
 MAX_ARTIFACT_ENTRY_BYTES = int(
-    os.environ.get("EVO_PARSE_ARTIFACT_MAX_ENTRY_BYTES", str(128 << 20))
+    os.environ.get("CAPY_PARSE_ARTIFACT_MAX_ENTRY_BYTES", str(128 << 20))
 )
 MAX_ARTIFACT_EXPANDED_BYTES = int(
-    os.environ.get("EVO_PARSE_ARTIFACT_MAX_EXPANDED_BYTES", str(512 << 20))
+    os.environ.get("CAPY_PARSE_ARTIFACT_MAX_EXPANDED_BYTES", str(512 << 20))
 )
-MAX_CONTENT_BYTES = int(os.environ.get("EVO_PARSE_CONTENT_MAX_BYTES", str(128 << 20)))
-MAX_CONTENT_BLOCKS = int(os.environ.get("EVO_PARSE_CONTENT_MAX_BLOCKS", "250000"))
-MAX_IMAGE_BYTES = int(os.environ.get("EVO_PARSE_IMAGE_MAX_BYTES", str(32 << 20)))
-MAX_IMAGES_BYTES = int(os.environ.get("EVO_PARSE_IMAGES_MAX_BYTES", str(256 << 20)))
-SLICE_PAGES = int(os.environ.get("EVO_MINERU_SLICE_PAGES", "26"))
-PARSE_CONCURRENCY = int(os.environ.get("EVO_PARSE_CONCURRENCY", "4"))
-PARSE_SLICE_TIMEOUT_S = max(1, int(os.environ.get("EVO_PARSE_SLICE_TIMEOUT", "600")))
+MAX_CONTENT_BYTES = int(os.environ.get("CAPY_PARSE_CONTENT_MAX_BYTES", str(128 << 20)))
+MAX_CONTENT_BLOCKS = int(os.environ.get("CAPY_PARSE_CONTENT_MAX_BLOCKS", "250000"))
+MAX_IMAGE_BYTES = int(os.environ.get("CAPY_PARSE_IMAGE_MAX_BYTES", str(32 << 20)))
+MAX_IMAGES_BYTES = int(os.environ.get("CAPY_PARSE_IMAGES_MAX_BYTES", str(256 << 20)))
+SLICE_PAGES = int(os.environ.get("CAPY_MINERU_SLICE_PAGES", "26"))
+PARSE_CONCURRENCY = int(os.environ.get("CAPY_PARSE_CONCURRENCY", "4"))
+PARSE_SLICE_TIMEOUT_S = max(1, int(os.environ.get("CAPY_PARSE_SLICE_TIMEOUT", "600")))
 RESTART_BACKSTOP_S = 1.0
 OOM_POLL_INTERVAL_S = 0.25
 SHARED_DIR = Path(
-    os.environ.get("EVO_PARSE_SHARED_DIR", "/tmp/evo-parse-spool")
+    os.environ.get("CAPY_PARSE_SHARED_DIR", "/tmp/capy-parse-spool")
 ).resolve()
 if not 1 <= PARSE_CONCURRENCY <= 4:
-    raise RuntimeError("EVO_PARSE_CONCURRENCY must be between 1 and 4")
+    raise RuntimeError("CAPY_PARSE_CONCURRENCY must be between 1 and 4")
 if SLICE_PAGES <= 0:
-    raise RuntimeError("EVO_MINERU_SLICE_PAGES must be positive")
+    raise RuntimeError("CAPY_MINERU_SLICE_PAGES must be positive")
 if any(
     value <= 0
     for value in (

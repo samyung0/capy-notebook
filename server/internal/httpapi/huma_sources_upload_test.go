@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/evonotes/server/internal/blob"
-	"github.com/evonotes/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/blob"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 func TestPromoteUploadObjectAcceptsConcurrentMatchingPromotion(t *testing.T) {

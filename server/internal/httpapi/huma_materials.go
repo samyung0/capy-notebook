@@ -7,10 +7,10 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/evonotes/server/internal/copytext"
-	"github.com/evonotes/server/internal/httpapi/apimodel"
-	"github.com/evonotes/server/internal/materialdoc"
-	"github.com/evonotes/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/copytext"
+	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 type materialRefsOutput struct {

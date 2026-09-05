@@ -65,7 +65,7 @@ hosts listed in `UAT_ALLOWED_HOSTS`, then scans the UAT SPA, gateway, and
 deleted at exit. Validation always enforces findings: high or critical fails,
 an incomplete run fails, and spend at 95% of the budget fails because coverage
 may have stopped at the cap. The status lands on the SHA the UAT gateway
-reports in `X-Evo-Release`, not on the local checkout.
+reports in `X-Capy-Release`, not on the local checkout.
 
 Other local commands:
 
@@ -120,5 +120,5 @@ Until then the runbook keeps them as manual release checks.
 
 Reports follow `references/finding-contract.md`. A scanner label is a
 candidate, not a validated finding. For release, every piece of evidence comes
-from the exact candidate revision; the SPA exposes it in an `evo-release` meta
-tag and the gateway in `X-Evo-Release`. Production is never a scan target.
+from the exact candidate revision; the SPA exposes it in an `capy-release` meta
+tag and the gateway in `X-Capy-Release`. Production is never a scan target.

@@ -5,8 +5,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/evonotes/server/internal/blob"
-	"github.com/evonotes/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/blob"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 // Bucket objects are only ever deleted here. Refcount triggers in the schema move

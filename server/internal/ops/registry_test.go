@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/evonotes/server/internal/embeddingpins"
-	"github.com/evonotes/server/internal/models"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/samyung0/capy-notebook/server/internal/embeddingpins"
+	"github.com/samyung0/capy-notebook/server/internal/models"
 )
 
 func openRegistryTestTx(t *testing.T) (*RegistryStore, pgx.Tx) {

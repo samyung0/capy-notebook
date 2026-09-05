@@ -43,10 +43,10 @@ func signCollaborationToken(secret string, claims collaborationClaims) (string, 
 func newCollaborationClaims(userID, room, access, name, avatarURL, tokenID string, schema int) collaborationClaims {
 	now := time.Now().UTC()
 	return collaborationClaims{
-		Audience:  "evo-collaboration",
+		Audience:  "capy-collaboration",
 		ExpiresAt: now.Add(5 * time.Minute).Unix(),
 		IssuedAt:  now.Unix(),
-		Issuer:    "evo-api",
+		Issuer:    "capy-api",
 		ID:        tokenID,
 		Subject:   userID,
 		Room:      room,

@@ -37,14 +37,14 @@ json_header="Content-Type: application/json"
 # branch head when its deployment worker begins, which can differ from the SHA
 # that CI approved when several pushes arrive close together.
 update_body="$(jq -cn --arg revision "$DEPLOY_REVISION" '{git_commit_sha: $revision, is_auto_deploy_enabled: false}')"
-curl --silent --show-error --fail-with-body --retry 3 --retry-all-errors \
+curl --silent --show-error --fail --retry 3 --retry-all-errors \
   --request PATCH "$api_url/applications/$COOLIFY_RESOURCE_UUID" \
   --header "$auth_header" \
   --header "$json_header" \
   --data "$update_body" >/dev/null
 
 deploy_body="$(jq -cn --arg uuid "$COOLIFY_RESOURCE_UUID" '{uuid: $uuid, force: false}')"
-deploy_response="$(curl --silent --show-error --fail-with-body \
+deploy_response="$(curl --silent --show-error --fail \
   --request POST "$api_url/deploy" \
   --header "$auth_header" \
   --header "$json_header" \
@@ -58,12 +58,16 @@ deployment_uuid="$(jq -r --arg uuid "$COOLIFY_RESOURCE_UUID" '
 [[ -n "$deployment_uuid" && "$deployment_uuid" != "null" ]] || die "Coolify did not return a deployment UUID"
 [[ "$deployment_uuid" =~ ^[A-Za-z0-9_-]+$ ]] || die "Coolify returned an invalid deployment UUID"
 
+# Record the provider job before polling so recovery can prove it is terminal.
+if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+  printf 'deployment_uuid=%s\n' "$deployment_uuid" >> "$GITHUB_OUTPUT"
+fi
 printf 'Coolify deployment %s queued for revision %s.\n' "$deployment_uuid" "$DEPLOY_REVISION"
 started_at="$SECONDS"
 last_status=""
 
 while (( SECONDS - started_at < timeout )); do
-  deployment="$(curl --silent --show-error --fail-with-body --retry 3 --retry-all-errors \
+  deployment="$(curl --silent --show-error --fail --retry 3 --retry-all-errors \
     "$api_url/deployments/$deployment_uuid" \
     --header "$auth_header")"
   status="$(jq -r '.status // empty' <<< "$deployment")"
@@ -77,7 +81,7 @@ while (( SECONDS - started_at < timeout )); do
   case "$status" in
     finished|completed|success|successful)
       [[ -n "$deployed_revision" ]] || die "finished deployment did not report its commit"
-      if [[ "$DEPLOY_REVISION" != "$deployed_revision" && "$DEPLOY_REVISION" != "$deployed_revision"* && "$deployed_revision" != "$DEPLOY_REVISION"* ]]; then
+      if [[ "$DEPLOY_REVISION" != "$deployed_revision" ]]; then
         die "Coolify deployed commit $deployed_revision instead of $DEPLOY_REVISION"
       fi
       if [[ -n "${GITHUB_OUTPUT:-}" ]]; then

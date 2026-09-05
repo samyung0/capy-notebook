@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/evonotes/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 )
 
 func equalJSONDocuments(a, b string) bool {
@@ -132,7 +132,7 @@ func TestEffectiveMaterialAccessUnionsMembershipAndShareRole(t *testing.T) {
 		t.Fatalf("signed-in nonmember access = %#v, %v", access, err)
 	}
 	anonymous, err := s.MaterialEffectiveAccess(ctx, "", material.ID)
-	if err != nil || anonymous.Role != RoleViewer || anonymous.MemberRole != "" {
+	if !errors.Is(err, ErrNotFound) || anonymous.Role != "" || anonymous.MemberRole != "" {
 		t.Fatalf("anonymous access = %#v, %v", anonymous, err)
 	}
 	if err := s.AssertWorkspaceEditor(ctx, "u_other", ws.ID); !errors.Is(err, ErrForbidden) {

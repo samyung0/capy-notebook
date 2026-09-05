@@ -1,6 +1,6 @@
-# Evo Notes
+# Capy Notebook
 
-Evo Notes is an AI notebook where users can can upload files and study through curated routines and study tools. We want to address the shortcomings of other notebook apps such as NotebookLM, Recall, Copilot Notebooks:
+Capy Notebook is an AI notebook where users can can upload files and study through curated routines and study tools. We want to address the shortcomings of other notebook apps such as NotebookLM, Recall, Copilot Notebooks:
 
 - Lack of helpful tools and study routines that promotes learning behaviors
   - No one reads an AI-generated text-dense summary markdown file
@@ -8,7 +8,7 @@ Evo Notes is an AI notebook where users can can upload files and study through c
 - No support for collaboration
   - Studying with friends is fun, and it makes us want to study more
 
-Here is what I want Evo Notes to be:
+Here is what I want Capy Notebook to be:
 
 - a web application (working on), a mobile application on both android and ios with additional feature supporting pen writing and drawing (not working on)
 - a fast and performant application on all platforms, audits for performance regressions, latency testing, stress testing should be made frequently to ensure the user experience is smooth

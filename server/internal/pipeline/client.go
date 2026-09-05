@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/evonotes/server/internal/obs"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 )
 
 const SecretHeader = "X-Pipeline-Secret"

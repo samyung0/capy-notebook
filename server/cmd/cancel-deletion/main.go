@@ -20,7 +20,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/evonotes/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 func env(key, def string) string {
@@ -41,7 +41,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	dsn := env("DATABASE_URL", "postgres://evo:evo@localhost:5432/evo?sslmode=disable")
+	dsn := env("DATABASE_URL", "postgres://capy:capy@localhost:5432/capy?sslmode=disable")
 	ctx := context.Background()
 	st, err := store.New(ctx, dsn)
 	if err != nil {

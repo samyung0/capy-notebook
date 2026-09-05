@@ -15,7 +15,7 @@ import redis
 
 from .config import cfg
 
-log = logging.getLogger("evo.progress")
+log = logging.getLogger("capy.progress")
 
 _client: redis.Redis | None = None
 

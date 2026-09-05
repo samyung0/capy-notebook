@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "subject": "{{.FromName}} is no longer available on Evo Notes",
+  "subject": "{{.FromName}} is no longer available on Capy Notebook",
   "preview": "New messages will use {{.ToName}}.",
   "content": {
     "type": "doc",
@@ -14,7 +14,7 @@
               { "type": "bold" },
               { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
             ],
-            "text": "Evo Notes"
+            "text": "Capy Notebook"
           }
         ]
       },
@@ -73,7 +73,7 @@
         "content": [
           {
             "type": "text",
-            "text": "You received this message because an Evo Notes model you selected was retired."
+            "text": "You received this message because a Capy Notebook model you selected was retired."
           }
         ]
       },

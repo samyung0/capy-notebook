@@ -1,4 +1,4 @@
-Evo Notes
+Capy Notebook
 
 
 WORKSPACE ROLE CHANGED
@@ -9,10 +9,10 @@ Workspace: {{.WorkspaceName}}
 
 New role: {{.RoleName}}
 
-Open Evo Notes {{.OpenURL}}
+Open Capy Notebook {{.OpenURL}}
 
 ----------------------------------------
 
-You received this message because your Evo Notes workspace membership changed.
+You received this message because your Capy Notebook workspace membership changed.
 
 Manage product email preferences {{.UnsubscribeURL}}

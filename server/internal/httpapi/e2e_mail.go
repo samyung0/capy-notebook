@@ -4,7 +4,7 @@ import (
 	"crypto/subtle"
 	"net/http"
 
-	"github.com/evonotes/server/internal/auth"
+	"github.com/samyung0/capy-notebook/server/internal/auth"
 )
 
 type capturedEmail struct {

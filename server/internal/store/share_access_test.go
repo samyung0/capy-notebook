@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/evonotes/server/internal/testdb"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
 func openAccessTestStore(t *testing.T) *Store {
@@ -36,12 +36,17 @@ func TestWorkspaceAccessMatrix(t *testing.T) {
 		{"other private", "u_other", "ws_e2e_private", false, ErrNotFound},
 		{"anon private", "", "ws_e2e_private", false, ErrNotFound},
 		{"other link", "u_other", "ws_e2e_link", false, nil},
-		{"anon link", "", "ws_e2e_link", false, nil},
+		{"anon link", "", "ws_e2e_link", false, ErrNotFound},
 		{"other public", "u_other", "ws_e2e_public", false, nil},
-		{"anon public", "", "ws_e2e_public", false, nil},
+		{"anon public", "", "ws_e2e_public", false, ErrNotFound},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.user == "" {
+				if _, err := s.WorkspaceEffectiveRole(ctx, tc.user, tc.ws); !errors.Is(err, ErrNotFound) {
+					t.Fatalf("anonymous effective role = %v", err)
+				}
+			}
 			own, err := s.WorkspaceAccess(ctx, tc.user, tc.ws)
 			if tc.wantErr != nil {
 				if !errors.Is(err, tc.wantErr) {
@@ -101,7 +106,7 @@ func TestMaterialAccessMatrix(t *testing.T) {
 		{"other private quiz", "u_other", "qz_e2e_private", ErrNotFound},
 		{"anon private quiz", "", "qz_e2e_private", ErrNotFound},
 		{"other link quiz", "u_other", "qz_e2e_link", nil},
-		{"anon link quiz", "", "qz_e2e_link", nil},
+		{"anon link quiz", "", "qz_e2e_link", ErrNotFound},
 		{"other public quiz", "u_other", "qz_e2e_public", nil},
 		// Private child material inherits readability from link parent workspace.
 		{"other private note in link ws", "u_other", "note_e2e_private", ErrNotFound},
@@ -140,8 +145,8 @@ func TestMaterialInheritsParentWorkspaceShare(t *testing.T) {
 	if _, err := s.MaterialAccess(ctx, "u_other", mt.ID); err != nil {
 		t.Fatalf("expected parent workspace share to grant read: %v", err)
 	}
-	if _, err := s.MaterialAccess(ctx, "", mt.ID); err != nil {
-		t.Fatalf("anonymous should read via parent workspace share: %v", err)
+	if _, err := s.MaterialAccess(ctx, "", mt.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("anonymous content read should fail: %v", err)
 	}
 }
 

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "subject": "{{.FromName}} 已从 Evo Notes 下线",
+  "subject": "{{.FromName}} 已从 Capy Notebook 下线",
   "preview": "新的消息将使用 {{.ToName}}。",
   "content": {
     "type": "doc",
@@ -14,7 +14,7 @@
               { "type": "bold" },
               { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
             ],
-            "text": "Evo Notes"
+            "text": "Capy Notebook"
           }
         ]
       },
@@ -62,7 +62,7 @@
         "content": [
           {
             "type": "text",
-            "text": "你收到这封邮件是因为你选用的 Evo Notes 模型已下线。"
+            "text": "你收到这封邮件是因为你选用的 Capy Notebook 模型已下线。"
           }
         ]
       },

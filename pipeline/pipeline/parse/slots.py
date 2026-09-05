@@ -18,7 +18,7 @@ import redis
 
 from ..config import cfg
 
-log = logging.getLogger("evo.parse.slots")
+log = logging.getLogger("capy.parse.slots")
 
 YIELD_BACKOFF_S = 2
 
@@ -57,7 +57,7 @@ def cap_for(route: str) -> int:
 
 
 def _key(route: str) -> str:
-    return f"evo:parse:slots:{route}"
+    return f"capy:parse:slots:{route}"
 
 
 def try_acquire(route: str, job_id: str) -> bool:

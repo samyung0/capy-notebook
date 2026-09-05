@@ -14,7 +14,7 @@ import {
 import { useEffect, useState } from 'react';
 import { m } from '@/i18n';
 
-const REMOTE_CURSOR_KEY = 'evo_remote_cursor';
+const REMOTE_CURSOR_KEY = 'capy_remote_cursor';
 
 export const remoteCursorDecorationPlugin = createPlatePlugin({
   key: REMOTE_CURSOR_KEY,

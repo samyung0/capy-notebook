@@ -17,10 +17,10 @@ MINERU_DEFAULT_METHOD = "auto"
 MINERU_METHODS = frozenset({"auto", "txt", "ocr"})
 OFFICE_SUFFIXES = frozenset({".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx"})
 OFFICE_PREVIEW_MAX_BYTES = int(
-    os.environ.get("EVO_OFFICE_PREVIEW_MAX_BYTES", str(128 << 20))
+    os.environ.get("CAPY_OFFICE_PREVIEW_MAX_BYTES", str(128 << 20))
 )
 OUTPUT_ROOT = Path(
-    os.environ.get("MINERU_API_OUTPUT_ROOT", "/run/evo-parser/output")
+    os.environ.get("MINERU_API_OUTPUT_ROOT", "/run/capy-parser/output")
 ).resolve()
 
 
@@ -68,8 +68,8 @@ def normalize_document(data: bytes, name: str) -> NormalizedDocument:
     if suffix not in OFFICE_SUFFIXES:
         raise ValueError("MinerU document parsing supports PDF and Office files")
 
-    timeout = max(30, int(os.environ.get("EVO_OFFICE_CONVERT_TIMEOUT", "180")))
-    with tempfile.TemporaryDirectory(prefix="evo_office_") as tmp_name:
+    timeout = max(30, int(os.environ.get("CAPY_OFFICE_CONVERT_TIMEOUT", "180")))
+    with tempfile.TemporaryDirectory(prefix="capy_office_") as tmp_name:
         tmp = Path(tmp_name)
         source = tmp / f"source{suffix}"
         source.write_bytes(data)

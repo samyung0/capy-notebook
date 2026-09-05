@@ -35,7 +35,7 @@ def main() -> int:
     parser.add_argument("--request-id", required=True)
     args = parser.parse_args()
 
-    raw_dir = Path(tempfile.mkdtemp(prefix="evo_worker_bench_"))
+    raw_dir = Path(tempfile.mkdtemp(prefix="capy_worker_bench_"))
     started = time.perf_counter()
     try:
         content, artifact_key, fingerprint = parser_client.parse_to_bundle(

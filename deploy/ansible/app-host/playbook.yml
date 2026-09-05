@@ -72,7 +72,7 @@
         proto: udp
         from_ip: "{{ app_wireguard_peer_public_ip }}"
         to_port: "{{ app_wireguard_listen_port }}"
-        comment: Evo ingest-host private service link
+        comment: Capy Notebook ingest-host private service link
 
     - name: Stop the unused native PostgreSQL cluster
       ansible.builtin.systemd_service:
@@ -128,7 +128,7 @@
         from_ip: "{{ app_wireguard_peer_address | regex_replace('/.*$', '') }}"
         to_ip: "{{ app_wireguard_address | regex_replace('/.*$', '') }}"
         to_port: "{{ item }}"
-        comment: Evo ingest-host private app service
+        comment: Capy Notebook ingest-host private app service
       loop: "{{ app_wireguard_service_ports }}"
 
     - name: Enable the private service link

@@ -1,16 +1,16 @@
-Evo Notes
+Capy Notebook
 
 
 ACCOUNT REACTIVATED
 
 Hello,
 
-Support cancelled your Evo Notes account deletion request. Your account is active again.
+Support cancelled your Capy Notebook account deletion request. Your account is active again.
 
 Open Settings {{.OpenURL}}
 
 ----------------------------------------
 
-You received this message because support cancelled your Evo Notes account deletion request.
+You received this message because support cancelled your Capy Notebook account deletion request.
 
 Manage product email preferences {{.UnsubscribeURL}}

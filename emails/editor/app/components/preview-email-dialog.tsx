@@ -68,7 +68,7 @@ export function PreviewEmailDialog({
               E
             </div>
             <div className="flex min-w-0 flex-col gap-0.5">
-              <h3 className="font-medium">Evo Notes</h3>
+              <h3 className="font-medium">Capy Notebook</h3>
               <h4 className="truncate text-sm">{result.subject}</h4>
               <p className="truncate text-gray-500 text-sm">{result.preview}</p>
             </div>

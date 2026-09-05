@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/evonotes/server/internal/store"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 func newReadStoreForTest(t *testing.T, pool *pgxpool.Pool) *ReadStore {

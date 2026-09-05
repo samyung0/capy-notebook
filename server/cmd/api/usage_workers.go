@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/evonotes/server/internal/obs"
-	"github.com/evonotes/server/internal/reconcile"
-	"github.com/evonotes/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
+	"github.com/samyung0/capy-notebook/server/internal/reconcile"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 const (

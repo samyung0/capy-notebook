@@ -346,6 +346,9 @@ importers:
       vitest:
         specifier: ^4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@26.2.0)(msw@2.15.0(@types/node@26.2.0)(typescript@7.0.2))(vite@6.4.3(@types/node@26.2.0)(jiti@2.7.0)(lightningcss@1.32.0)(sass@1.51.0)(tsx@4.23.11)(yaml@2.9.0))
+      wrangler:
+        specifier: 4.125.0
+        version: 4.125.0(@cloudflare/workers-types@5.20260823.1)
 
   collaboration:
     dependencies:
@@ -9319,15 +9322,13 @@ snapshots:
       react: 19.2.8
       react-dom: 19.2.8(react@19.2.8)
 
-  '@cloudflare/kv-asset-handler@0.5.0':
-    optional: true
+  '@cloudflare/kv-asset-handler@0.5.0': {}
 
   '@cloudflare/unenv-preset@2.16.1(unenv@2.0.0-rc.24)(workerd@1.20260820.1)':
     dependencies:
       unenv: 2.0.0-rc.24
     optionalDependencies:
       workerd: 1.20260820.1
-    optional: true
 
   '@cloudflare/workerd-darwin-64@1.20260820.1':
     optional: true
@@ -9448,7 +9449,6 @@ snapshots:
   '@cspotcode/source-map-support@0.8.1':
     dependencies:
       '@jridgewell/trace-mapping': 0.3.9
-    optional: true
 
   '@emnapi/runtime@1.11.3':
     dependencies:
@@ -9842,8 +9842,7 @@ snapshots:
       '@iconify/types': 2.0.0
       import-meta-resolve: 4.2.0
 
-  '@img/colour@1.1.0':
-    optional: true
+  '@img/colour@1.1.0': {}
 
   '@img/sharp-darwin-arm64@0.35.2':
     optionalDependencies:
@@ -10068,7 +10067,6 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
-    optional: true
 
   '@juggle/resize-observer@3.4.0': {}
 
@@ -10813,17 +10811,14 @@ snapshots:
   '@poppinss/colors@4.1.6':
     dependencies:
       kleur: 4.1.5
-    optional: true
 
   '@poppinss/dumper@0.6.5':
     dependencies:
       '@poppinss/colors': 4.1.6
       '@sindresorhus/is': 7.2.0
       supports-color: 10.2.2
-    optional: true
 
-  '@poppinss/exception@1.2.3':
-    optional: true
+  '@poppinss/exception@1.2.3': {}
 
   '@posthog/browser-common@0.5.0':
     dependencies:
@@ -12661,8 +12656,7 @@ snapshots:
 
   '@sindresorhus/is@4.6.0': {}
 
-  '@sindresorhus/is@7.2.0':
-    optional: true
+  '@sindresorhus/is@7.2.0': {}
 
   '@sindresorhus/merge-streams@4.0.0': {}
 
@@ -12678,8 +12672,7 @@ snapshots:
       y-protocols: 1.0.7(yjs@13.6.31)
       yjs: 13.6.31
 
-  '@speed-highlight/core@1.2.24':
-    optional: true
+  '@speed-highlight/core@1.2.24': {}
 
   '@sqlite.org/sqlite-wasm@3.48.0-build4': {}
 
@@ -13809,8 +13802,7 @@ snapshots:
       readable-stream: 3.6.2
     optional: true
 
-  blake3-wasm@2.1.5:
-    optional: true
+  blake3-wasm@2.1.5: {}
 
   bluebird@3.4.7: {}
 
@@ -14472,8 +14464,7 @@ snapshots:
 
   err-code@3.0.1: {}
 
-  error-stack-parser-es@1.0.5:
-    optional: true
+  error-stack-parser-es@1.0.5: {}
 
   error@4.4.0:
     dependencies:
@@ -16065,7 +16056,6 @@ snapshots:
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
-    optional: true
 
   minimatch@10.2.6:
     dependencies:
@@ -17243,7 +17233,6 @@ snapshots:
       '@img/sharp-win32-arm64': 0.35.2
       '@img/sharp-win32-ia32': 0.35.2
       '@img/sharp-win32-x64': 0.35.2
-    optional: true
 
   shebang-command@2.0.0:
     dependencies:
@@ -17446,8 +17435,7 @@ snapshots:
       make-asynchronous: 1.1.0
       time-span: 5.1.0
 
-  supports-color@10.2.2:
-    optional: true
+  supports-color@10.2.2: {}
 
   swr@2.5.0(react@19.2.8):
     dependencies:
@@ -17670,7 +17658,6 @@ snapshots:
   unenv@2.0.0-rc.24:
     dependencies:
       pathe: 2.0.3
-    optional: true
 
   unhead@2.1.17:
     dependencies:
@@ -18104,7 +18091,6 @@ snapshots:
       '@cloudflare/workerd-linux-64': 1.20260820.1
       '@cloudflare/workerd-linux-arm64': 1.20260820.1
       '@cloudflare/workerd-windows-64': 1.20260820.1
-    optional: true
 
   wrangler@4.125.0(@cloudflare/workers-types@5.20260823.1):
     dependencies:
@@ -18122,7 +18108,6 @@ snapshots:
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
-    optional: true
 
   wrap-ansi@7.0.0:
     dependencies:
@@ -18133,8 +18118,7 @@ snapshots:
   wrappy@1.0.2:
     optional: true
 
-  ws@8.21.0:
-    optional: true
+  ws@8.21.0: {}
 
   ws@8.21.3: {}
 
@@ -18227,7 +18211,6 @@ snapshots:
     dependencies:
       '@poppinss/exception': 1.2.3
       error-stack-parser-es: 1.0.5
-    optional: true
 
   youch@4.1.0-beta.10:
     dependencies:
@@ -18236,7 +18219,6 @@ snapshots:
       '@speed-highlight/core': 1.2.24
       cookie: 1.1.1
       youch-core: 0.3.3
-    optional: true
 
   youtube-video-element@1.9.0:
     dependencies:

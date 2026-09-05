@@ -438,6 +438,7 @@ export type MaterialRevision = Omit<GenMaterialRevision, 'content'> & {
   content: import('@/features/materials/document').MaterialDocument;
 };
 
+export type { WorkspaceSummary, WorkspaceSummaryChapter } from './gen/model';
 /* ---------------- Raw generated namespace ----------------
    Reach for `Gen` when you need the exact backend contract (e.g. nullable
    arrays, request bodies) rather than the UI-facing domain type above. */

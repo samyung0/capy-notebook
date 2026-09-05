@@ -11,11 +11,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/evonotes/server/internal/embeddingpins"
-	"github.com/evonotes/server/internal/models"
-	"github.com/evonotes/server/internal/obs"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/samyung0/capy-notebook/server/internal/embeddingpins"
+	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 )
 
 var providerSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)

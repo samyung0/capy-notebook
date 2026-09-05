@@ -13,7 +13,7 @@ import (
 	"github.com/stripe/stripe-go/v82/refund"
 	"github.com/stripe/stripe-go/v82/subscription"
 
-	"github.com/evonotes/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 // Config holds Stripe settings.

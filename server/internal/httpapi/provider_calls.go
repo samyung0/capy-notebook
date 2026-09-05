@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/evonotes/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 type providerCallReq struct {

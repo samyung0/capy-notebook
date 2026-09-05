@@ -181,7 +181,7 @@ export function CostsPage() {
             after each response settles; Ops does not poll providers.
           </FreshnessNote>
         }
-        description="Credits are Evo Notes internal credits, not USD or provider invoice costs. All period boundaries use UTC."
+        description="Credits are Capy Notebook internal credits, not USD or provider invoice costs. All period boundaries use UTC."
         title="Usage explorer"
       />
 

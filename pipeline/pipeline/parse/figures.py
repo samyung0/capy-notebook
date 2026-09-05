@@ -45,7 +45,7 @@ from ..config import cfg
 from ..retrieval import models
 from ..store import blobstore, db
 
-log = logging.getLogger("evo.parse.figures")
+log = logging.getLogger("capy.parse.figures")
 
 _MIN_WIDTH = 130
 _MIN_HEIGHT = 130
@@ -205,7 +205,7 @@ def select_figures(content_list: list[dict[str, Any]], raw_dir: Path) -> list[Fi
         # largest figures survive, since page area is the best cheap proxy for
         # which picture the page is actually about.
         log.warning(
-            "capping %s figures at EVO_CAPTION_MAX_PER_FILE=%s",
+            "capping %s figures at CAPY_CAPTION_MAX_PER_FILE=%s",
             len(figures),
             cfg.caption_max_per_file,
         )

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "subject": "You're invited to join {{.WorkspaceName}} on Evo Notes",
-  "preview": "You have a new Evo Notes workspace invitation.",
+  "subject": "You're invited to join {{.WorkspaceName}} on Capy Notebook",
+  "preview": "You have a new Capy Notebook workspace invitation.",
   "content": {
     "type": "doc",
     "content": [
@@ -14,7 +14,7 @@
               { "type": "bold" },
               { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
             ],
-            "text": "Evo Notes"
+            "text": "Capy Notebook"
           }
         ]
       },
@@ -41,7 +41,7 @@
               "required": true
             }
           },
-          { "type": "text", "text": " on Evo Notes." }
+          { "type": "text", "text": " on Capy Notebook." }
         ]
       },
       {
@@ -89,7 +89,7 @@
         "content": [
           {
             "type": "text",
-            "text": "You received this message because an Evo Notes workspace invited you."
+            "text": "You received this message because a Capy Notebook workspace invited you."
           }
         ]
       },

@@ -29,7 +29,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/evonotes/server/internal/obs"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 )
 
 const PollInterval = 10 * time.Minute

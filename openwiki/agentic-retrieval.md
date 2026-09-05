@@ -36,6 +36,14 @@ Go-only: every route except `/healthz` requires `X-Pipeline-Secret`. User
 provider keys stay ciphertext on that hop; retrieval decrypts them with
 `LLM_CREDENTIALS_KEY`.
 
+Public workspace landing pages use a separate live metadata projection from Go
+at `GET /api/public/workspaces/{id}/summary`. It returns workspace metadata and
+chapter/file names for link/public workspaces, with `Cache-Control: no-store`.
+It never calls retrieval or returns source text, material bodies, file-content
+summaries or download URLs. Reading full workspace/study content requires a
+session. There is no summary generation job, KV or R2 cache for this endpoint;
+see [the authorization contract](authorization-permissions-lifecycles.md#anonymous-workspace-summaries).
+
 ```mermaid
 flowchart LR
   Upload[Upload / move file] --> Plan[Go format policy builds processingPlan v1]
@@ -540,7 +548,7 @@ The prompt tells the vision model to return exactly `DECORATIVE` for an ornament
 generic icon, divider, background, branding, or other image with no study value.
 That sentinel is cached by image digest but is not written onto the block, so it
 does not enter chunks or embeddings. Uncertain images are described instead of
-discarded. `EVO_CAPTION_VERSION=v2` separates these decisions from older cached
+discarded. `CAPY_CAPTION_VERSION=v2` separates these decisions from older cached
 captions.
 
 Captions are cached in B2 under a **source-identity** key
@@ -578,7 +586,7 @@ choice.
 `pipeline/retrieval/chunking.py`:
 
 - Groups blocks under the heading hierarchy (`text_level` or markdown `#`).
-- Packs by estimated-token budget (`EVO_CHUNK_TOKENS` 400, overlap 50, min 40;
+- Packs by estimated-token budget (`CAPY_CHUNK_TOKENS` 400, overlap 50, min 40;
   `estimate_tokens` counts ~4 Latin characters or 1 CJK character per token)
   without splitting a block unless one block alone exceeds the target. Packing
   by characters made a Chinese chunk carry ~4x the tokens of an English one,
@@ -706,8 +714,9 @@ its short TTL remains; after that it re-parses if there is no donor row.
   summary helper propagates `SettlementError` unchanged so the ingest worker
   closes the attempt without retrying a provider response that was already
   charged.
-5. Stop. There is no concept or entity index, no chapter/workspace summary
-   tree and no rollup job. Cross-document reasoning happens at query time,
+5. Stop. There is no concept or entity index, no chapter/workspace content-summary
+   tree and no rollup job. The public metadata outline described above is read
+   directly from workspace/chapter/file rows and is separate from this pipeline. Cross-document reasoning happens at query time,
    conditioned on the question: the agent reads the first hits and searches
    again for the names it finds there. Concept extraction (one LLM call per
    ~12 chunks, names only, rendered as a footer on every search result) was
@@ -796,8 +805,8 @@ always point at document passages.
 4. `_rerank` is a seam that currently returns identity. Heading prefixes and
    the per-file diversity cap are the v1 quality levers; a hosted or local
    cross-encoder plugs in here later without changing callers.
-5. Cap how many passages any one file may contribute (`EVO_SEARCH_PER_FILE_CAP`,
-   default 4 of `EVO_SEARCH_TOP_K` 5). A tighter cap measured worse: with 3 the
+5. Cap how many passages any one file may contribute (`CAPY_SEARCH_PER_FILE_CAP`,
+   default 4 of `CAPY_SEARCH_TOP_K` 5). A tighter cap measured worse: with 3 the
    file holding the answer lost correct passages to other files' noise.
    The hit chunk is what the model sees. A packing cut is a `read_document`
    follow-up, not automatic neighbour expansion.
@@ -1038,17 +1047,17 @@ receipt. The delete then cascades; the old `rag_teardown` job and pipeline
 | --- | --- | --- |
 | Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material`. The same secret is required on every inbound retrieval request except `/healthz`. |
 | User provider keys | `LLM_CREDENTIALS_KEY` | Same 32-byte hex/base64 value as Go. Retrieval decrypts `user_llm_credentials`. Platform keys use the `platformEnv` name in `elitellm_providers.json`; user keys are request-scoped and never written to process env. |
-| Parse | `PARSER_URL`, `PARSER_TOKEN`, `EVO_PARSE_METHOD`, `EVO_PARSE_SLOTS`, `EVO_PARSE_COORDINATOR_CONCURRENCY`, `EVO_PARSE_CONCURRENCY`, `EVO_MINERU_SLICE_PAGES`, `EVO_PARSE_JOB_TIMEOUT`, `EVO_OFFICE_PREVIEW_MAX_BYTES`, `RELEASE_SHA` | Persistent Netcup MinerU pipeline service. Production defaults to four coordinator processes, 26 pages per slice, four admitted documents, and four active slices. Method, schema, and exact release-derived parser version participate in the artifact fingerprint. |
-| Post-parse ingest | `WORKER_REPLICAS`, `EVO_INGEST_TIMEOUT`, `EVO_CAPTION_CONCURRENCY` | Dedicated-host defaults are four isolated one-job containers, 20 minutes per attempt, and at most four concurrent embedded-figure captions per worker. Other model stages are sequential within each job. |
-| Shared nonproduction capacity | `EVO_SHARED_CAPACITY_LOCK_DIR` | Unset in production. The shared local/UAT Compose project sets one spool directory for both environments. A queue consumer takes the `parse` or `ingest` file lock before claiming a row, which leaves the other environment's job pending and caps active work at one job per role. |
-| Chunk size | `EVO_CHUNK_*` | Estimated-token budgets (`estimate_tokens`), not a real tokenizer |
+| Parse | `PARSER_URL`, `PARSER_TOKEN`, `CAPY_PARSE_METHOD`, `CAPY_PARSE_SLOTS`, `CAPY_PARSE_COORDINATOR_CONCURRENCY`, `CAPY_PARSE_CONCURRENCY`, `CAPY_MINERU_SLICE_PAGES`, `CAPY_PARSE_JOB_TIMEOUT`, `CAPY_OFFICE_PREVIEW_MAX_BYTES`, `RELEASE_SHA` | Persistent Netcup MinerU pipeline service. Production defaults to four coordinator processes, 26 pages per slice, four admitted documents, and four active slices. Method, schema, and exact release-derived parser version participate in the artifact fingerprint. |
+| Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT`, `CAPY_CAPTION_CONCURRENCY` | Dedicated-host defaults are four isolated one-job containers, 20 minutes per attempt, and at most four concurrent embedded-figure captions per worker. Other model stages are sequential within each job. |
+| Shared nonproduction capacity | `CAPY_SHARED_CAPACITY_LOCK_DIR` | Unset in production. The shared local/UAT Compose project sets one spool directory for both environments. A queue consumer takes the `parse` or `ingest` file lock before claiming a row, which leaves the other environment's job pending and caps active work at one job per role. |
+| Chunk size | `CAPY_CHUNK_*` | Estimated-token budgets (`estimate_tokens`), not a real tokenizer |
 | Embedding | `EMBEDDING_DIM` | The shipped width, matching `halfvec(N)`. The *model* is never env: it is a `model_configs` row pinned per workspace |
-| Search | `EVO_SEARCH_CANDIDATES`, `EVO_SEARCH_TOP_K`, `EVO_SEARCH_PER_FILE_CAP` | |
-| Agent | `EVO_AGENT_MAX_STEPS` | Default 12. Cap is the design, not a safety valve |
-| LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `EVO_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 200k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |
-| Captions | `EVO_CAPTION_CONCURRENCY`, `EVO_CAPTION_MAX_EDGE`, `EVO_CAPTION_VERSION` | Caption mode is resolved per file in the processing plan. The ZAI GLM-5.3-Flash catalog row routes through DeepInfra. Captions always use `reasoning_effort: low`, which is also the catalog default for chat. |
-| Caption safety valve | `EVO_CAPTION_MAX_PER_FILE` | `0` (uncapped); the filters bound the cost |
-| Direct media | `EVO_IMAGE_MAX_PIXELS`, `ELEVENLABS_API_KEY`, `ELEVENLABS_BASE_URL`, `EVO_ELEVENLABS_TRANSCRIPT_VERSION`, `EVO_ELEVENLABS_CONCURRENCY_UNITS`, `EVO_ELEVENLABS_SYNC_TIMEOUT_S`, `EVO_AUDIO_MAX_DURATION_SECONDS`, `EVO_TABULAR_TEXT_VERSION` | Image decoding is capped at 100M pixels. Scribe v2 is synchronous, has an absolute 12-hour request timeout, and defaults to 12 weighted Starter units, with each file consuming `min(4, ceil(duration_seconds / 480))`; audio is capped at 10 hours. |
+| Search | `CAPY_SEARCH_CANDIDATES`, `CAPY_SEARCH_TOP_K`, `CAPY_SEARCH_PER_FILE_CAP` | |
+| Agent | `CAPY_AGENT_MAX_STEPS` | Default 12. Cap is the design, not a safety valve |
+| LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `CAPY_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 200k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |
+| Captions | `CAPY_CAPTION_CONCURRENCY`, `CAPY_CAPTION_MAX_EDGE`, `CAPY_CAPTION_VERSION` | Caption mode is resolved per file in the processing plan. The ZAI GLM-5.3-Flash catalog row routes through DeepInfra. Captions always use `reasoning_effort: low`, which is also the catalog default for chat. |
+| Caption safety valve | `CAPY_CAPTION_MAX_PER_FILE` | `0` (uncapped); the filters bound the cost |
+| Direct media | `CAPY_IMAGE_MAX_PIXELS`, `ELEVENLABS_API_KEY`, `ELEVENLABS_BASE_URL`, `CAPY_ELEVENLABS_TRANSCRIPT_VERSION`, `CAPY_ELEVENLABS_CONCURRENCY_UNITS`, `CAPY_ELEVENLABS_SYNC_TIMEOUT_S`, `CAPY_AUDIO_MAX_DURATION_SECONDS`, `CAPY_TABULAR_TEXT_VERSION` | Image decoding is capped at 100M pixels. Scribe v2 is synchronous, has an absolute 12-hour request timeout, and defaults to 12 weighted Starter units, with each file consuming `min(4, ceil(duration_seconds / 480))`; audio is capped at 10 hours. |
 
 Windows note: psycopg's async driver refuses the Proactor event loop.
 `pipeline.use_compatible_event_loop()` is called by both entrypoints and by the

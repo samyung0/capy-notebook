@@ -1,4 +1,4 @@
-# Evo Notes UAT rules of engagement
+# Capy Notebook UAT rules of engagement
 
 Test only the exact targets supplied on the Strix command line. Those hosts are
 owned by the project and must be listed in `UAT_ALLOWED_HOSTS`. Do not discover,

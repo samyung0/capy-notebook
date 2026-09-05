@@ -1,4 +1,4 @@
-Evo Notes
+Capy Notebook
 
 
 已移出工作区
@@ -7,10 +7,10 @@ Evo Notes
 
 {{.WorkspaceName}}
 
-打开 Evo Notes {{.OpenURL}}
+打开 Capy Notebook {{.OpenURL}}
 
 ----------------------------------------
 
-你收到这封邮件是因为 Evo Notes 工作区成员身份发生了变化。
+你收到这封邮件是因为 Capy Notebook 工作区成员身份发生了变化。
 
 管理产品邮件偏好 {{.UnsubscribeURL}}

@@ -1,4 +1,4 @@
-# Evo Notes collaboration service
+# Capy Notebook collaboration service
 
 Self-hosted Hocuspocus/Yjs authority for live Plate material content.
 
@@ -16,7 +16,7 @@ Optional: fill these in `deploy/.env` (the repository's single env file, see
 COLLABORATION_ALLOWED_ORIGINS=http://localhost:5173   # comma-separated
 COLLABORATION_SECRET=dev-collaboration-secret         # must match Go
 API_URL=http://localhost:8080
-DATABASE_URL=postgres://evo:evo@localhost:5432/evo?sslmode=disable
+DATABASE_URL=postgres://capy:capy@localhost:5432/capy?sslmode=disable
 REDIS_URL=redis://localhost:6379/0
 ```
 
@@ -110,8 +110,8 @@ Comment connections are read-only at the server protocol layer.
 
 Go publishes:
 
-- `evo:collaboration:comments` for stateless discussion invalidation;
-- `evo:collaboration:evict` for ACL/lifecycle reconnects.
+- `capy:collaboration:comments` for stateless discussion invalidation;
+- `capy:collaboration:evict` for ACL/lifecycle reconnects.
 
 ## Operations
 
@@ -131,7 +131,7 @@ synthetic peers that join/leave and apply small Plate/Yjs updates:
 
 ```bash
 # same secret + allowed origin as deploy/docker-compose.yml
-pnpm --filter @evo-notes/collaboration chaos -- \
+pnpm --filter @capy-notebook/collaboration chaos -- \
   --material-id <material_id> \
   --peers 4
 ```
@@ -149,8 +149,8 @@ your typing continues to merge normally.
 ## Commands
 
 ```bash
-pnpm --filter @evo-notes/collaboration typecheck
-pnpm --filter @evo-notes/collaboration test
-pnpm --filter @evo-notes/collaboration build
-pnpm --filter @evo-notes/collaboration chaos -- --help
+pnpm --filter @capy-notebook/collaboration typecheck
+pnpm --filter @capy-notebook/collaboration test
+pnpm --filter @capy-notebook/collaboration build
+pnpm --filter @capy-notebook/collaboration chaos -- --help
 ```

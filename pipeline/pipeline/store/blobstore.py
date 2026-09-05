@@ -23,7 +23,7 @@ from pathlib import Path, PurePosixPath
 
 from ..config import cfg
 
-log = logging.getLogger("evo.blob")
+log = logging.getLogger("capy.blob")
 
 _client = None
 _WRITE_ATTEMPTS = 3

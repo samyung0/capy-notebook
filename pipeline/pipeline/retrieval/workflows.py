@@ -24,7 +24,7 @@ from .chunking import estimate_tokens
 from .locale import response_language_rule
 from .search import Passage
 
-log = logging.getLogger("evo.retrieval.workflows")
+log = logging.getLogger("capy.retrieval.workflows")
 
 
 class InvalidGenerateScope(ValueError):

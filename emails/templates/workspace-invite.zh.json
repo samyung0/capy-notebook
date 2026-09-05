@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "subject": "邀请你加入 Evo Notes 工作区 {{.WorkspaceName}}",
-  "preview": "你有一个新的 Evo Notes 工作区邀请。",
+  "subject": "邀请你加入 Capy Notebook 工作区 {{.WorkspaceName}}",
+  "preview": "你有一个新的 Capy Notebook 工作区邀请。",
   "content": {
     "type": "doc",
     "content": [
@@ -14,7 +14,7 @@
               { "type": "bold" },
               { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
             ],
-            "text": "Evo Notes"
+            "text": "Capy Notebook"
           }
         ]
       },
@@ -30,7 +30,7 @@
       {
         "type": "paragraph",
         "content": [
-          { "type": "text", "text": "你已受邀加入 Evo Notes 工作区 " },
+          { "type": "text", "text": "你已受邀加入 Capy Notebook 工作区 " },
           {
             "type": "variable",
             "attrs": {
@@ -84,7 +84,7 @@
         "content": [
           {
             "type": "text",
-            "text": "你收到这封邮件是因为有人邀请你加入 Evo Notes 工作区。"
+            "text": "你收到这封邮件是因为有人邀请你加入 Capy Notebook 工作区。"
           }
         ]
       },

@@ -39,7 +39,7 @@ import { canReplyAtDepth } from './canReplyAtDepth';
 import { useEditorRuntime } from './EditorRuntime';
 import type { NoteEditorMode } from './editorMode';
 
-const COMMENT_DECORATION_KEY = 'evo_comment_highlight';
+const COMMENT_DECORATION_KEY = 'capy_comment_highlight';
 
 export interface EditorCollaborationOptions {
   currentUserId: string | null;
@@ -268,7 +268,7 @@ function BlockDiscussionThreads({
 }
 
 export const discussionPlugin = createPlatePlugin({
-  key: 'evo-discussions',
+  key: 'capy-discussions',
   options: {
     currentUserId: null as string | null,
     discussions: [] as MaterialDiscussion[],

@@ -76,7 +76,13 @@ export default function Explore() {
                     >
                       <Icon name="workspaces" size={20} />
                     </span>
-                    <p className="t-card-title mt-3 truncate">{w.name}</p>
+                    <a
+                      className="t-card-title mt-3 block truncate hover:underline"
+                      href={`/w/${w.id}`}
+                      title={m.summary_view()}
+                    >
+                      {w.name}
+                    </a>
                     <p className="t-meta mt-1 text-fg-muted">
                       by {w.author} · {w.clones.toLocaleString()} clones
                     </p>

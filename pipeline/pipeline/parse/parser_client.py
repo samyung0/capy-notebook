@@ -36,10 +36,10 @@ from .. import obs
 from ..config import cfg
 from ..store import blobstore
 
-log = logging.getLogger("evo.parse.client")
+log = logging.getLogger("capy.parse.client")
 
-SOURCE_DESCRIPTOR_SCHEMA = "evo-local-source-v1"
-ARTIFACT_SCHEMA = "evo-parser-bundle-v3"
+SOURCE_DESCRIPTOR_SCHEMA = "capy-local-source-v1"
+ARTIFACT_SCHEMA = "capy-parser-bundle-v3"
 
 ROUTE_FAST = "fast"
 

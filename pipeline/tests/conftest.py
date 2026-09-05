@@ -10,9 +10,9 @@ raw TCP, not HTTP, so cassette tests start fresh containers per pytest session
 and tear them down at the end.
 
 Two modes (see ``tests/README.md``):
-- **replay** (default): ``EVO_TEST_RECORD`` unset. No model traffic; cassettes
+- **replay** (default): ``CAPY_TEST_RECORD`` unset. No model traffic; cassettes
   must exist. Provider keys can be dummies.
-- **record**: ``EVO_TEST_RECORD=once`` with real API keys exported.
+- **record**: ``CAPY_TEST_RECORD=once`` with real API keys exported.
 
 Both modes need Docker. The retrieval index is owned by the Go schema now, so
 the container is the stock ``pgvector/pgvector:pg16`` image and the fixture
@@ -51,10 +51,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # migration), not from env, so only the dimension and the provider base URLs are
 # pinned here.
 os.environ["EMBEDDING_DIM"] = os.environ.get("EMBEDDING_DIM", "2560")
-os.environ["EVO_PARSE_METHOD"] = "auto"
+os.environ["CAPY_PARSE_METHOD"] = "auto"
 # One embedding request per file keeps the batch composition stable, which is
 # what the body matcher compares.
-os.environ["EVO_EMBEDDING_BATCH"] = "1000"
+os.environ["CAPY_EMBEDDING_BATCH"] = "1000"
 
 # Dummy provider keys for replay (never sent anywhere — VCR intercepts). Real
 # keys come from the exported environment in record mode. elitellm reads the
@@ -74,7 +74,7 @@ for _k in (
 # reaper buys nothing here.
 os.environ.setdefault("TESTCONTAINERS_RYUK_DISABLED", "true")
 
-RECORD_MODE = os.getenv("EVO_TEST_RECORD", "none")
+RECORD_MODE = os.getenv("CAPY_TEST_RECORD", "none")
 
 # Imported only after the environment above is in place, because pipeline.config
 # snapshots os.environ at class-definition time. pytest-asyncio builds a loop
@@ -104,7 +104,7 @@ def pytest_runtest_setup(item):
         return
     if not (CASSETTES / f"{item.name}.yaml").exists():
         pytest.skip(
-            f"cassette {item.name}.yaml not recorded — run EVO_TEST_RECORD=once"
+            f"cassette {item.name}.yaml not recorded — run CAPY_TEST_RECORD=once"
         )
 
 
@@ -119,8 +119,8 @@ def _configure_test_infrastructure(postgres, redis) -> str:
     redis_host = f"[{redis_host}]" if ":" in redis_host else redis_host
 
     dsn = (
-        f"postgres://evo:evo@{db_host}:{postgres.get_exposed_port(5432)}"
-        "/evo?sslmode=disable"
+        f"postgres://capy:capy@{db_host}:{postgres.get_exposed_port(5432)}"
+        "/capy?sslmode=disable"
     )
     redis_url = f"redis://{redis_host}:{redis.get_exposed_port(6379)}/0"
     os.environ.update({"DATABASE_URL": dsn, "REDIS_URL": redis_url})
@@ -172,7 +172,7 @@ def _apply_migration(dsn: str) -> None:
         conn.execute(
             """
             INSERT INTO users (id, name, email)
-            VALUES ('u_1', 'Pipeline Seed', 'pipeline@evonotes.test')
+            VALUES ('u_1', 'Pipeline Seed', 'pipeline@capynotebook.test')
             ON CONFLICT (id) DO NOTHING
             """
         )
@@ -186,7 +186,11 @@ def _test_infra():
 
     postgres = DockerContainer(
         "pgvector/pgvector:pg16",
-        env={"POSTGRES_USER": "evo", "POSTGRES_PASSWORD": "evo", "POSTGRES_DB": "evo"},
+        env={
+            "POSTGRES_USER": "capy",
+            "POSTGRES_PASSWORD": "capy",
+            "POSTGRES_DB": "capy",
+        },
         ports=[5432],
     ).waiting_for(
         LogMessageWaitStrategy(
@@ -269,11 +273,11 @@ def _vcr():
         filter_query_parameters=["key"],
         decode_compressed_response=True,
     )
-    v.register_matcher("evo_json_body", _json_body_matcher)
+    v.register_matcher("capy_json_body", _json_body_matcher)
     # Deliberately NOT matching scheme/host/port: each provider owns a distinct
     # PATH, so path + JSON body identifies every call and the real provider
     # hostnames never need to be reproduced at replay time.
-    v.match_on = ("method", "path", "evo_json_body")
+    v.match_on = ("method", "path", "capy_json_body")
     return v
 
 

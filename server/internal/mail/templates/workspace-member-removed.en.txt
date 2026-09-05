@@ -1,4 +1,4 @@
-Evo Notes
+Capy Notebook
 
 
 REMOVED FROM WORKSPACE
@@ -7,10 +7,10 @@ Your membership in {{.WorkspaceName}} was removed by a workspace owner.
 
 {{.WorkspaceName}}
 
-Open Evo Notes {{.OpenURL}}
+Open Capy Notebook {{.OpenURL}}
 
 ----------------------------------------
 
-You received this message because your Evo Notes workspace membership changed.
+You received this message because your Capy Notebook workspace membership changed.
 
 Manage product email preferences {{.UnsubscribeURL}}

@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-const disposableMarker = "EVO_GO_DISPOSABLE_DATABASE"
+const disposableMarker = "CAPY_GO_DISPOSABLE_DATABASE"
 
 // URL returns the disposable loopback Postgres URL installed by cmd/testdb.
 // Database tests fail instead of skipping when run outside the harness, so CI

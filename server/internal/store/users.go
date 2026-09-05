@@ -8,8 +8,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/evonotes/server/internal/copytext"
-	"github.com/evonotes/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/copytext"
+	"github.com/samyung0/capy-notebook/server/internal/models"
 )
 
 const BrowserProviderSlug = "browser"

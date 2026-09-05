@@ -7,8 +7,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/evonotes/server/internal/reconcile"
-	"github.com/evonotes/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/reconcile"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 func env(key, def string) string {
@@ -19,7 +19,7 @@ func env(key, def string) string {
 }
 
 func main() {
-	dsn := env("DATABASE_URL", "postgres://evo:evo@localhost:5432/evo?sslmode=disable")
+	dsn := env("DATABASE_URL", "postgres://capy:capy@localhost:5432/capy?sslmode=disable")
 	stripeKey := env("STRIPE_SECRET_KEY", "")
 	pricePro := env("STRIPE_PRICE_PRO", "")
 

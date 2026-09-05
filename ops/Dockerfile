@@ -3,7 +3,7 @@ WORKDIR /src
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY ops/package.json ops/package.json
-RUN pnpm install --frozen-lockfile --filter @evo-notes/ops...
+RUN pnpm install --frozen-lockfile --filter @capy-notebook/ops...
 COPY ops ops
 ARG VITE_CLERK_PUBLISHABLE_KEY
 ARG VITE_SENTRY_DSN
@@ -13,7 +13,7 @@ ENV VITE_CLERK_PUBLISHABLE_KEY=$VITE_CLERK_PUBLISHABLE_KEY
 ENV VITE_SENTRY_DSN=$VITE_SENTRY_DSN
 ENV VITE_APP_ENV=$VITE_APP_ENV
 ENV VITE_RELEASE_SHA=$VITE_RELEASE_SHA
-RUN pnpm --filter @evo-notes/ops build
+RUN pnpm --filter @capy-notebook/ops build
 
 FROM golang:1.25-alpine AS backend
 WORKDIR /src

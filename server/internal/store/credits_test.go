@@ -7,8 +7,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/evonotes/server/internal/models"
-	"github.com/evonotes/server/internal/obs"
+	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 )
 
 func newCreditsTestUser(t *testing.T, s *Store) string {

@@ -13,7 +13,7 @@ fast_commands=(
   "pnpm run check"
   "pnpm review:validate-boundaries"
   "pnpm test"
-  "pnpm --filter @evo-notes/ops test"
+  "pnpm --filter @capy-notebook/ops test"
   "pnpm test:collaboration"
   "pnpm test:pipeline:offline"
 )

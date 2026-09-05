@@ -1,4 +1,4 @@
--- Evo Notes — schema baseline.
+-- Capy Notebook — schema baseline.
 --
 -- Store.Migrate applies each numbered file in this directory once and records
 -- the filename plus a sha256 in schema_migrations. After the first kept
@@ -176,6 +176,7 @@ CREATE TABLE IF NOT EXISTS workspaces (
   id               text PRIMARY KEY,
   user_id          text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   name             text NOT NULL,
+  description      text NOT NULL DEFAULT '' CHECK (char_length(description) <= 1000),
   color            text NOT NULL DEFAULT 'green',
   privacy          text NOT NULL DEFAULT 'private',
   -- Role granted to link/public visitors who are not explicit members.
@@ -429,8 +430,8 @@ CREATE INDEX IF NOT EXISTS material_yjs_projection_pending_idx
 CREATE TABLE IF NOT EXISTS collaboration_eviction_outbox (
   id              text PRIMARY KEY,
   channel         text NOT NULL CHECK (channel IN (
-                    'evo:collaboration:evict',
-                    'evo:collaboration:user-evict'
+                    'capy:collaboration:evict',
+                    'capy:collaboration:user-evict'
                   )),
   payload         jsonb NOT NULL CHECK (jsonb_typeof(payload) = 'object'),
   attempts        int NOT NULL DEFAULT 0 CHECK (attempts >= 0),
@@ -3363,7 +3364,7 @@ BEGIN
   INSERT INTO collaboration_eviction_outbox (id, channel, payload)
   VALUES (
     eviction_id,
-    'evo:collaboration:evict',
+    'capy:collaboration:evict',
     jsonb_build_object(
       'evictionId', eviction_id,
       'materialId', target_material_id,
@@ -3517,7 +3518,7 @@ BEGIN
   INSERT INTO collaboration_eviction_outbox (id, channel, payload)
   VALUES (
     eviction_id,
-    'evo:collaboration:user-evict',
+    'capy:collaboration:user-evict',
     jsonb_build_object(
       'evictionId', eviction_id,
       'mode', eviction_mode,

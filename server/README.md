@@ -1,4 +1,4 @@
-# Evo Notes — Gateway (Go)
+# Capy Notebook — Gateway (Go)
 
 Thin HTTP gateway implementing the frontend's `/api` contract (see
 `src/mocks/handlers.ts`) against Postgres. Heavy ML (parsing, RAG) lives in the
@@ -54,9 +54,13 @@ separate dashboard bundle.
 Backblaze B2 is required. Set every `B2_*` variable in `deploy/.env`; startup
 verifies bucket access and exits if those credentials are invalid.
 
-With `MIGRATE=true` (local default) the server applies each numbered file in
-`migrations/` once, records it in `schema_migrations`, then loads `dev_seed.sql`
-when `APP_ENV=development`. Production should run `cmd/migrate` from the same
+With `MIGRATE=true` (local default), the server applies the migration plan once
+and records actual executed files and SHA-256 checksums in `public.schema_migrations`.
+An empty database starts from the newest optional `Bnnnn_name.sql` snapshot,
+then applies numbered files above that version. Existing databases continue
+through their numbered history and never apply a new snapshot. Without a
+snapshot, initialization still starts at `0001_init.sql`. `dev_seed.sql` loads
+separately when `APP_ENV=development`. Production should run `cmd/migrate` from the same
 image, then start the API with `MIGRATE=false`.
 
 ### Bucket configuration
@@ -172,3 +176,13 @@ Vite proxies `/api` → `http://localhost:8080` (see `vite.config.ts`).
   service; the old non-streaming chat endpoint has been removed.
 - File uploads currently land `status='ready'`; Phase 2 switches to multipart +
   `status='processing'` + an `ingest` job on the Postgres-backed `jobs` queue.
+
+
+### Publishing future migration baselines
+
+See [the deployment runbook](../openwiki/deployment-runbook.md#database-migration-baselines)
+for snapshot contents, checksum rules and retained upgrade history. The existing
+`0001_init.sql` remains the initial schema; no duplicate snapshot is needed yet.
+`pnpm test:go` compares every future embedded baseline with the numbered path,
+including schema, catalog rows and sequence state, in the harness's one
+Postgres container.

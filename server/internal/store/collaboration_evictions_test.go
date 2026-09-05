@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/evonotes/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 )
 
 func TestACLChangeQueuesRetryableStableEviction(t *testing.T) {
@@ -146,13 +146,13 @@ func TestWorkspaceMembershipAndLifecycleChangesQueueEvictions(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='public' WHERE id=$1`, workspace.ID); err != nil {
 		t.Fatal(err)
 	}
-	if got := count("evo:collaboration:evict"); got != 1 {
+	if got := count("capy:collaboration:evict"); got != 1 {
 		t.Fatalf("workspace ACL queued %d room evictions, want 1", got)
 	}
-	if got := mode("evo:collaboration:evict"); got != "drain" {
+	if got := mode("capy:collaboration:evict"); got != "drain" {
 		t.Fatalf("workspace widening mode = %q, want drain", got)
 	}
-	if got := eventType("evo:collaboration:evict"); got != "access-changed" {
+	if got := eventType("capy:collaboration:evict"); got != "access-changed" {
 		t.Fatalf("workspace widening room event = %q, want access-changed", got)
 	}
 
@@ -166,7 +166,7 @@ func TestWorkspaceMembershipAndLifecycleChangesQueueEvictions(t *testing.T) {
 		SET privacy='public', share_role='viewer' WHERE id=$1`, workspace.ID); err != nil {
 		t.Fatal(err)
 	}
-	if got := mode("evo:collaboration:evict"); got != "drain" {
+	if got := mode("capy:collaboration:evict"); got != "drain" {
 		t.Fatalf("effective private-to-public widening mode = %q, want drain", got)
 	}
 
@@ -180,7 +180,7 @@ func TestWorkspaceMembershipAndLifecycleChangesQueueEvictions(t *testing.T) {
 		SET share_role='viewer' WHERE id=$1`, workspace.ID); err != nil {
 		t.Fatal(err)
 	}
-	if got := mode("evo:collaboration:evict"); got != "drain" {
+	if got := mode("capy:collaboration:evict"); got != "drain" {
 		t.Fatalf("dormant private role change mode = %q, want drain", got)
 	}
 	if _, err := s.pool.Exec(ctx, `UPDATE workspaces
@@ -192,10 +192,10 @@ func TestWorkspaceMembershipAndLifecycleChangesQueueEvictions(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id,user_id,role) VALUES ($1,$2,'viewer')`, workspace.ID, memberID); err != nil {
 		t.Fatal(err)
 	}
-	if got := count("evo:collaboration:evict"); got != 1 {
+	if got := count("capy:collaboration:evict"); got != 1 {
 		t.Fatalf("membership ACL queued %d room evictions, want 1", got)
 	}
-	if got := mode("evo:collaboration:evict"); got != "drain" {
+	if got := mode("capy:collaboration:evict"); got != "drain" {
 		t.Fatalf("membership insert mode = %q, want drain", got)
 	}
 
@@ -204,7 +204,7 @@ func TestWorkspaceMembershipAndLifecycleChangesQueueEvictions(t *testing.T) {
 		WHERE workspace_id=$1 AND user_id=$2`, workspace.ID, memberID); err != nil {
 		t.Fatal(err)
 	}
-	if got := mode("evo:collaboration:evict"); got != "discard" {
+	if got := mode("capy:collaboration:evict"); got != "discard" {
 		t.Fatalf("membership removal mode = %q, want discard", got)
 	}
 
@@ -212,16 +212,16 @@ func TestWorkspaceMembershipAndLifecycleChangesQueueEvictions(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `UPDATE users SET suspended_at=now(), suspended_reason='test' WHERE id=$1`, ownerID); err != nil {
 		t.Fatal(err)
 	}
-	if got := count("evo:collaboration:user-evict"); got != 1 {
+	if got := count("capy:collaboration:user-evict"); got != 1 {
 		t.Fatalf("lifecycle queued %d user evictions, want 1", got)
 	}
-	if got := count("evo:collaboration:evict"); got != 1 {
+	if got := count("capy:collaboration:evict"); got != 1 {
 		t.Fatalf("lifecycle queued %d owned-room evictions, want 1", got)
 	}
-	if got := mode("evo:collaboration:user-evict"); got != "discard" {
+	if got := mode("capy:collaboration:user-evict"); got != "discard" {
 		t.Fatalf("account suspension user mode = %q, want discard", got)
 	}
-	if got := mode("evo:collaboration:evict"); got != "discard" {
+	if got := mode("capy:collaboration:evict"); got != "discard" {
 		t.Fatalf("account suspension room mode = %q, want discard", got)
 	}
 
@@ -230,13 +230,13 @@ func TestWorkspaceMembershipAndLifecycleChangesQueueEvictions(t *testing.T) {
 		SET suspended_at=NULL, suspended_reason=NULL WHERE id=$1`, ownerID); err != nil {
 		t.Fatal(err)
 	}
-	if got := mode("evo:collaboration:user-evict"); got != "drain" {
+	if got := mode("capy:collaboration:user-evict"); got != "drain" {
 		t.Fatalf("account restoration user mode = %q, want drain", got)
 	}
-	if got := mode("evo:collaboration:evict"); got != "drain" {
+	if got := mode("capy:collaboration:evict"); got != "drain" {
 		t.Fatalf("account restoration room mode = %q, want drain", got)
 	}
-	if got := eventType("evo:collaboration:evict"); got != "account-access-restored" {
+	if got := eventType("capy:collaboration:evict"); got != "account-access-restored" {
 		t.Fatalf("account restoration room event = %q, want account-access-restored", got)
 	}
 
@@ -245,13 +245,13 @@ func TestWorkspaceMembershipAndLifecycleChangesQueueEvictions(t *testing.T) {
 		SET plan_tier='pro', subscription_status='active' WHERE id=$1`, ownerID); err != nil {
 		t.Fatal(err)
 	}
-	if got := mode("evo:collaboration:user-evict"); got != "drain" {
+	if got := mode("capy:collaboration:user-evict"); got != "drain" {
 		t.Fatalf("plan improvement user mode = %q, want drain", got)
 	}
-	if got := mode("evo:collaboration:evict"); got != "drain" {
+	if got := mode("capy:collaboration:evict"); got != "drain" {
 		t.Fatalf("plan improvement room mode = %q, want drain", got)
 	}
-	if got := eventType("evo:collaboration:evict"); got != "account-access-restored" {
+	if got := eventType("capy:collaboration:evict"); got != "account-access-restored" {
 		t.Fatalf("plan improvement room event = %q, want account-access-restored", got)
 	}
 
@@ -260,10 +260,10 @@ func TestWorkspaceMembershipAndLifecycleChangesQueueEvictions(t *testing.T) {
 		SET plan_tier='free', subscription_status='canceled' WHERE id=$1`, ownerID); err != nil {
 		t.Fatal(err)
 	}
-	if got := mode("evo:collaboration:user-evict"); got != "discard" {
+	if got := mode("capy:collaboration:user-evict"); got != "discard" {
 		t.Fatalf("plan downgrade user mode = %q, want discard", got)
 	}
-	if got := mode("evo:collaboration:evict"); got != "discard" {
+	if got := mode("capy:collaboration:evict"); got != "discard" {
 		t.Fatalf("plan downgrade room mode = %q, want discard", got)
 	}
 }

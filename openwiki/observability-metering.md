@@ -802,7 +802,7 @@ deliberately **no API that grants it**. Rows are inserted by hand against the
 database. An escalation path reachable from the product would make every bug in
 the product a path to everyone's data.
 
-The standalone service at `ops.evonotes.com` adds two identity gates before
+The standalone service at `ops.capynotebook.com` adds two identity gates before
 that membership check. Cloudflare Access signs the edge assertion, which the
 origin verifies against the team JWKS with issuer and audience checks. It
 protects both static files and `/api/ops`. The static shell then starts Clerk.
@@ -820,10 +820,10 @@ suspended, and deletion-pending users are denied even while an `operators` row
 remains. Over-quota grace and frozen states retain ops access because they are
 storage restrictions, not identity revocations.
 
-Routine reads and the last-seen function use `evo_ops`. That role has no access
+Routine reads and the last-seen function use `capy_ops`. That role has no access
 to message bodies, file bodies, email payloads, job payloads, or usage
 metadata, and it cannot update `operators` directly. The shared
-`evo_ops_admin` pool opens lazily after a `write_registry` or
+`capy_ops_admin` pool opens lazily after a `write_registry` or
 `execute_reconciliation_job` token check. It contains the restricted registry
 grants and can execute `request_reconciliation`; that function checks
 `ops_permissions` again before it inserts a pending storage or Stripe run.
@@ -962,11 +962,11 @@ the likelihood grew every time the registry was reconfigured.
 | `RATE_LIMIT_DISABLED` | gateway | forced true under `APP_ENV=e2e` |
 | `RATE_LIMIT_AI_PER_HOUR` | gateway | overrides the default 200; 15/min burst and editor 120/min are code-only |
 | `GATEWAY_URL` / `PIPELINE_SECRET` | import worker | the gateway's private URL and shared secret for `/api/internal/import/*`; the gateway's empty `PIPELINE_SECRET` disables Drive imports |
-| `EVO_IMPORT_JOB_TIMEOUT` / `EVO_IMPORT_DOWNLOAD_HOSTS` | import worker | per-attempt transfer budget (600 s) and the provider download host allowlist |
+| `CAPY_IMPORT_JOB_TIMEOUT` / `CAPY_IMPORT_DOWNLOAD_HOSTS` | import worker | per-attempt transfer budget (600 s) and the provider download host allowlist |
 | `SENTRY_DSN_GATEWAY` / `_RETRIEVAL` / `_WORKER` / `_COLLABORATION` | compose | mapped onto each process's `SENTRY_DSN` |
 | `SENTRY_DSN_OPS` / `VITE_SENTRY_DSN_OPS` | ops | separate operator-service project; empty disables |
-| `OPS_DATABASE_URL` | ops | `evo_ops` read/auth role; routine reads plus execute-only last-seen update |
-| `OPS_ADMIN_DATABASE_URL` | ops | lazy `evo_ops_admin` pool; restricted registry writes and reconciliation requests |
+| `OPS_DATABASE_URL` | ops | `capy_ops` read/auth role; routine reads plus execute-only last-seen update |
+| `OPS_ADMIN_DATABASE_URL` | ops | lazy `capy_ops_admin` pool; restricted registry writes and reconciliation requests |
 | `OPS_CF_ACCESS_ISSUER` / `_AUDIENCE` | ops | required Cloudflare Access verification values |
 | `OPS_CF_ACCESS_JWKS_URL` | ops | optional; defaults to `<issuer>/cdn-cgi/access/certs` |
 | `OPS_ACCESS_DISABLED` / `OPS_AUTH_DISABLED` | ops | fail-closed defaults; bypass requires explicit unsafe development mode |
