@@ -13,12 +13,13 @@ from pathlib import Path
 assert os.environ.get("GATEWAY_URL") == "http://127.0.0.1:8082"
 
 from pipeline.config import cfg
-from pipeline.retrieval import agent, store, tools
+from pipeline.prompts import chat as chat_prompts
+from pipeline.retrieval import store, tools
 
 ROOT = Path("/lab")
 original_run = tools.run
 original_overlap = tools._overlap_footer
-original_prompt = agent.system_prompt
+original_prompt = chat_prompts.system_prompt
 original_render = tools.render_result
 FOLLOW_LINKS = (
     "\n- If a retrieved passage supplies an identifier or refers to another source "
@@ -76,7 +77,10 @@ async def observed_run(name, args, ctx):
 
 
 tools.run = observed_run
-agent.system_prompt = experiment_prompt
+# Patched on the module, not imported by name: chat_messages() resolves
+# system_prompt as a global at call time, so this override reaches the
+# real agent without touching an application file.
+chat_prompts.system_prompt = experiment_prompt
 tools.render_result = experiment_render
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
-import { lazy, type ReactNode, Suspense, useCallback, useState } from 'react';
-import { useReplaceSource, useWorkspace } from '@/api/hooks';
+import { lazy, type ReactNode, Suspense, useState } from 'react';
+import { useWorkspace } from '@/api/hooks';
 import type { Region, SourceFile } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { Button } from '@/components/ui/Button';
@@ -8,6 +8,7 @@ import { ImageViewer } from '@/features/files/ImageViewer';
 import { m } from '@/i18n';
 import { FileEmpty, FileLoading } from './FileStates';
 import { fileExt, IMAGE_MIN_ZOOM, isImageFile } from './fileUtils';
+import { SourceTextView } from './SourceTextView';
 import { officeRuntimeKey } from './useOfficeRuntime';
 
 const PdfView = lazy(() => import('./PdfView'));
@@ -55,58 +56,19 @@ function lazyView(node: ReactNode) {
 
 function OfficeCitationPreview({
   canEdit,
-  fileRevision,
-  onSave,
   page,
   previewUrl,
   regions,
-  previewReady,
   renderOffice,
 }: {
   canEdit: boolean;
-  fileRevision: number;
-  onSave: (
-    bytes: Uint8Array,
-    expectedRevision: number
-  ) => Promise<{ revision: number }>;
   page?: number;
   previewUrl: string;
   regions: Region[];
-  previewReady: boolean;
-  renderOffice: (options: {
-    onCancelEditing?: () => void;
-    onSave: (
-      bytes: Uint8Array,
-      expectedRevision: number
-    ) => Promise<{ revision: number }>;
-    startEditing: boolean;
-  }) => ReactNode;
+  renderOffice: (startEditing: boolean) => ReactNode;
 }) {
   const [editing, setEditing] = useState(false);
-  const [awaitingPreviewRevision, setAwaitingPreviewRevision] = useState<
-    number | null
-  >(null);
-  const awaitingFreshPreview =
-    awaitingPreviewRevision != null &&
-    (!previewReady || fileRevision < awaitingPreviewRevision);
-  const saveAndAwaitPreview = useCallback(
-    async (bytes: Uint8Array, expectedRevision: number) => {
-      const saved = await onSave(bytes, expectedRevision);
-      setEditing(false);
-      setAwaitingPreviewRevision(saved.revision);
-      return saved;
-    },
-    [onSave]
-  );
-
-  if (editing || awaitingFreshPreview || !previewReady) {
-    return renderOffice({
-      onCancelEditing: editing ? () => setEditing(false) : undefined,
-      onSave: saveAndAwaitPreview,
-      startEditing: editing,
-    });
-  }
-
+  if (editing) return renderOffice(true);
   return (
     <div className="flex h-full min-h-[60vh] flex-col">
       {canEdit && (
@@ -178,17 +140,6 @@ function FileViewerContent({
   const { data: workspace } = useWorkspace(file?.workspaceId ?? '', {
     errorBoundary: false,
   });
-  const replaceSource = useReplaceSource(file);
-  const saveOfficeFile = useCallback(
-    async (bytes: Uint8Array, expectedRevision: number) => {
-      const saved = await replaceSource.mutateAsync({
-        bytes,
-        expectedRevision,
-      });
-      return { revision: saved.revision ?? expectedRevision + 1 };
-    },
-    [replaceSource.mutateAsync]
-  );
   if (!file) {
     return (
       <div className="grid h-full place-items-center">
@@ -206,7 +157,14 @@ function FileViewerContent({
 
   if (file.kind === 'pdf' || ext === 'pdf') {
     if (!file.url) return <FileEmpty />;
-    return lazyView(<PdfView page={page} regions={regions} url={file.url} />);
+    return lazyView(
+      <PdfView
+        annotationFile={file}
+        page={page}
+        regions={regions}
+        url={file.url}
+      />
+    );
   }
 
   if (isImageFile(file)) {
@@ -236,27 +194,32 @@ function FileViewerContent({
   if (file.kind === 'sheet' || SHEET_EXTS.has(ext)) {
     if (!file.url) return <FileEmpty />;
     if (ext === 'csv' || ext === 'tsv')
-      return lazyView(<CsvView url={file.url} />);
+      return lazyView(
+        <SourceTextView
+          canEdit={workspace?.role === 'owner' || workspace?.role === 'editor'}
+          file={file}
+          key={file.id}
+          onDirtyChange={onDirtyChange}
+          renderPreview={(url) => <CsvView url={url ?? file.url!} />}
+        />
+      );
     if (ext !== 'xlsx') return <UnsupportedPreview file={file} />;
     if (citationPreviewUrl) {
       return lazyView(
         <OfficeCitationPreview
-          canEdit={workspace?.capabilities.canEdit ?? false}
-          fileRevision={file.revision}
+          canEdit={workspace?.role === 'owner' || workspace?.role === 'editor'}
           key={file.id}
-          onSave={saveOfficeFile}
           page={page}
-          previewReady={file.status === 'ready'}
           previewUrl={citationPreviewUrl}
           regions={regions ?? []}
-          renderOffice={({ onCancelEditing, onSave, startEditing }) => (
+          renderOffice={(startEditing) => (
             <SheetView
-              canEdit={workspace?.capabilities.canEdit ?? false}
+              canEdit={
+                workspace?.role === 'owner' || workspace?.role === 'editor'
+              }
               file={file}
               key={officeRuntimeIdentity}
-              onCancelEditing={onCancelEditing}
               onDirtyChange={onDirtyChange}
-              onSave={onSave}
               startEditing={startEditing}
             />
           )}
@@ -265,11 +228,10 @@ function FileViewerContent({
     }
     return lazyView(
       <SheetView
-        canEdit={workspace?.capabilities.canEdit ?? false}
+        canEdit={workspace?.role === 'owner' || workspace?.role === 'editor'}
         file={file}
         key={officeRuntimeIdentity}
         onDirtyChange={onDirtyChange}
-        onSave={saveOfficeFile}
       />
     );
   }
@@ -280,22 +242,19 @@ function FileViewerContent({
     if (citationPreviewUrl) {
       return lazyView(
         <OfficeCitationPreview
-          canEdit={workspace?.capabilities.canEdit ?? false}
-          fileRevision={file.revision}
+          canEdit={workspace?.role === 'owner' || workspace?.role === 'editor'}
           key={file.id}
-          onSave={saveOfficeFile}
           page={page}
-          previewReady={file.status === 'ready'}
           previewUrl={citationPreviewUrl}
           regions={regions ?? []}
-          renderOffice={({ onCancelEditing, onSave, startEditing }) => (
+          renderOffice={(startEditing) => (
             <DocxView
-              canEdit={workspace?.capabilities.canEdit ?? false}
+              canEdit={
+                workspace?.role === 'owner' || workspace?.role === 'editor'
+              }
               file={file}
               key={officeRuntimeIdentity}
-              onCancelEditing={onCancelEditing}
               onDirtyChange={onDirtyChange}
-              onSave={onSave}
               startEditing={startEditing}
             />
           )}
@@ -304,11 +263,10 @@ function FileViewerContent({
     }
     return lazyView(
       <DocxView
-        canEdit={workspace?.capabilities.canEdit ?? false}
+        canEdit={workspace?.role === 'owner' || workspace?.role === 'editor'}
         file={file}
         key={officeRuntimeIdentity}
         onDirtyChange={onDirtyChange}
-        onSave={saveOfficeFile}
       />
     );
   }
@@ -319,22 +277,19 @@ function FileViewerContent({
     if (citationPreviewUrl) {
       return lazyView(
         <OfficeCitationPreview
-          canEdit={workspace?.capabilities.canEdit ?? false}
-          fileRevision={file.revision}
+          canEdit={workspace?.role === 'owner' || workspace?.role === 'editor'}
           key={file.id}
-          onSave={saveOfficeFile}
           page={page}
-          previewReady={file.status === 'ready'}
           previewUrl={citationPreviewUrl}
           regions={regions ?? []}
-          renderOffice={({ onCancelEditing, onSave, startEditing }) => (
+          renderOffice={(startEditing) => (
             <PptxView
-              canEdit={workspace?.capabilities.canEdit ?? false}
+              canEdit={
+                workspace?.role === 'owner' || workspace?.role === 'editor'
+              }
               file={file}
               key={officeRuntimeIdentity}
-              onCancelEditing={onCancelEditing}
               onDirtyChange={onDirtyChange}
-              onSave={onSave}
               startEditing={startEditing}
             />
           )}
@@ -343,11 +298,10 @@ function FileViewerContent({
     }
     return lazyView(
       <PptxView
-        canEdit={workspace?.capabilities.canEdit ?? false}
+        canEdit={workspace?.role === 'owner' || workspace?.role === 'editor'}
         file={file}
         key={officeRuntimeIdentity}
         onDirtyChange={onDirtyChange}
-        onSave={saveOfficeFile}
       />
     );
   }
@@ -361,7 +315,19 @@ function FileViewerContent({
   if (isText) {
     if (file.content == null && !file.url) return <FileEmpty />;
     return lazyView(
-      <TextView content={file.content} markdown={isMarkdown} url={file.url} />
+      <SourceTextView
+        canEdit={workspace?.role === 'owner' || workspace?.role === 'editor'}
+        file={file}
+        key={file.id}
+        onDirtyChange={onDirtyChange}
+        renderPreview={(url) => (
+          <TextView
+            content={url ? undefined : file.content}
+            markdown={isMarkdown}
+            url={url ?? file.url}
+          />
+        )}
+      />
     );
   }
 

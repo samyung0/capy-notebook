@@ -186,7 +186,9 @@ func (s *Store) workspaceChargedBytesTx(
 			COALESCE((SELECT sum(size_bytes) FROM files WHERE workspace_id=$1), 0)
 			+ COALESCE((SELECT sum(size_bytes) FROM editor_assets
 				WHERE workspace_id=$1 AND status='ready'), 0)
-			+ COALESCE((SELECT sum(size_bytes) FROM materials WHERE workspace_id=$1), 0),
+			+ COALESCE((SELECT sum(size_bytes) FROM materials WHERE workspace_id=$1), 0)
+			+ COALESCE((SELECT sum(d.storage_bytes) FROM source_documents d JOIN files f ON f.id=d.file_id WHERE f.workspace_id=$1),0)
+			+ COALESCE((SELECT sum(c.storage_bytes) FROM source_refresh_candidates c JOIN files f ON f.id=c.file_id WHERE f.workspace_id=$1),0),
 			COALESCE((SELECT sum(COALESCE(reserved_size, declared_size)) FROM upload_sessions
 				WHERE workspace_id=$1 AND status='pending' AND expires_at > now()), 0)`,
 		workspaceID).Scan(&out.used, &out.reserved)

@@ -399,6 +399,7 @@ async def test_open_call_forwards_numeric_context_before_provider_call(monkeypat
 
     async def capture_to_thread(function, *args):
         forwarded.append((function, args))
+        return True
 
     monkeypatch.setattr(accounting.asyncio, "to_thread", capture_to_thread)
     context = accounting.ContextComposition(
@@ -419,6 +420,8 @@ async def test_open_call_forwards_numeric_context_before_provider_call(monkeypat
     finally:
         accounting.reset(token)
 
+    # The interactive receipt window derives from the stream backstop, not
+    # the idle timeout: a stream may legitimately run far past one idle gap.
     assert forwarded == [
         (
             accounting._open_call_sync,
@@ -429,10 +432,118 @@ async def test_open_call_forwards_numeric_context_before_provider_call(monkeypat
                 accounting.PURPOSE_AGENT,
                 "high",
                 context,
-                max(1, math.ceil(accounting.cfg.interactive_provider_timeout_s)) + 300,
+                max(1, math.ceil(accounting.cfg.interactive_stream_max_s)) + 300,
+                "",
+                "",
+                None,
+                None,
+                "",
             ),
         )
     ]
+
+
+def _gated_spec() -> ModelConfig:
+    return _spec(
+        provider_slug="deepinfra",
+        model_slug="Qwen/Qwen3-Embedding-4B",
+        thinking_levels=(),
+        default_thinking="",
+    )
+
+
+def test_model_capacity_splits_the_interactive_reserve(monkeypatch):
+    from pipeline import registry
+
+    monkeypatch.setattr(
+        accounting.cfg,
+        "model_concurrency",
+        {("deepinfra", "Qwen/Qwen3-Embedding-4B"): (200, 80)},
+    )
+    key = "deepinfra:Qwen/Qwen3-Embedding-4B"
+    registry.bind_request_llm(paid_by="platform")
+    assert accounting.model_capacity(
+        "deepinfra", "Qwen/Qwen3-Embedding-4B", "gateway"
+    ) == (key, 200)
+    assert accounting.model_capacity(
+        "deepinfra", "Qwen/Qwen3-Embedding-4B", "ingest"
+    ) == (key, 120)
+    # A model without an entry is ungated; a user's own key is never gated.
+    assert accounting.model_capacity("deepinfra", "other", "ingest") is None
+    registry.bind_request_llm(paid_by="user")
+    try:
+        assert (
+            accounting.model_capacity("deepinfra", "Qwen/Qwen3-Embedding-4B", "gateway")
+            is None
+        )
+    finally:
+        registry.bind_request_llm(paid_by="platform")
+
+
+async def test_open_call_polls_the_full_gate_until_its_deadline(monkeypatch):
+    monkeypatch.setattr(accounting.cfg, "gateway_url", "http://gateway")
+    monkeypatch.setattr(accounting.cfg, "pipeline_secret", "secret")
+    monkeypatch.setattr(accounting.cfg, "dsn", "postgres://unused")
+    monkeypatch.setattr(
+        accounting.cfg,
+        "model_concurrency",
+        {("deepinfra", "Qwen/Qwen3-Embedding-4B"): (2, 1)},
+    )
+    answers = [False, False, True]
+    leases = []
+
+    async def to_thread(function, *args):
+        assert function is accounting._open_call_sync
+        leases.append(args[9])
+        return answers.pop(0)
+
+    sleeps = []
+
+    async def no_sleep(seconds):
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(accounting.asyncio, "to_thread", to_thread)
+    monkeypatch.setattr(accounting.asyncio, "sleep", no_sleep)
+    token = accounting.bind("cr_1")
+    try:
+        await accounting.open_call(
+            "pc_1",
+            kind=accounting.KIND_EMBEDDING,
+            purpose=accounting.KIND_EMBEDDING,
+            spec=_gated_spec(),
+            deadline=accounting.time.monotonic() + 60,
+        )
+        state = accounting.current()
+        assert state is not None and state.leased_calls == {"pc_1"}
+        # Interactive callers see the whole total; the row and lease were
+        # attempted together on every poll.
+        assert leases == [("deepinfra:Qwen/Qwen3-Embedding-4B", 2)] * 3
+        assert len(sleeps) == 2
+
+        answers.append(False)
+        with pytest.raises(accounting.elitellm.ProviderBusy) as caught:
+            await accounting.open_call(
+                "pc_2",
+                kind=accounting.KIND_EMBEDDING,
+                purpose=accounting.KIND_EMBEDDING,
+                spec=_gated_spec(),
+                deadline=accounting.time.monotonic(),
+            )
+        assert caught.value.retry_after == accounting.BUSY_RETRY_AFTER_S
+        assert state.leased_calls == {"pc_1"}
+
+        released = []
+
+        async def release_thread(function, *args):
+            released.append((function, args))
+
+        monkeypatch.setattr(accounting.asyncio, "to_thread", release_thread)
+        await accounting.release_call("pc_1")
+        await accounting.release_call("pc_never_leased")
+        assert released == [(accounting._release_lease_sync, ("pc_1",))]
+        assert state.leased_calls == set()
+    finally:
+        accounting.reset(token)
 
 
 async def test_ingest_settlement_stays_per_call_and_local(monkeypatch):
@@ -477,3 +588,63 @@ async def test_ingest_settlement_stays_per_call_and_local(monkeypatch):
             ),
         )
     ]
+
+
+async def test_a_cancelled_admission_is_undone_without_delaying_the_cancel(
+    monkeypatch,
+):
+    """The admission thread cannot be cancelled; the undo must not wait for it."""
+    monkeypatch.setattr(accounting.cfg, "gateway_url", "http://gateway")
+    monkeypatch.setattr(accounting.cfg, "pipeline_secret", "secret")
+    monkeypatch.setattr(accounting.cfg, "dsn", "postgres://unused")
+    monkeypatch.setattr(
+        accounting.cfg,
+        "model_concurrency",
+        {("deepinfra", "Qwen/Qwen3-Embedding-4B"): (2, 1)},
+    )
+    thread_may_finish = asyncio.Event()
+    undone: list[str] = []
+
+    async def to_thread(function, *args):
+        if function is accounting._open_call_sync:
+            # Stands in for a thread still holding the database when the
+            # request goes away; it commits the lease after the cancel.
+            await thread_may_finish.wait()
+            return True
+        assert function is accounting._undo_admission_sync
+        undone.append(args[0])
+        return None
+
+    monkeypatch.setattr(accounting.asyncio, "to_thread", to_thread)
+    token = accounting.bind("cr_1")
+    try:
+        opening = asyncio.ensure_future(
+            accounting.open_call(
+                "pc_1",
+                kind=accounting.KIND_EMBEDDING,
+                purpose=accounting.KIND_EMBEDDING,
+                spec=_gated_spec(),
+                deadline=accounting.time.monotonic() + 60,
+            )
+        )
+        await asyncio.sleep(0)
+        opening.cancel()
+        started = accounting.time.monotonic()
+        # Bounded: an inline await of the thread would hang here, not fail.
+        done, _pending = await asyncio.wait({opening}, timeout=1)
+        assert done and opening.cancelled()
+        assert accounting.time.monotonic() - started < 1
+        assert undone == []
+
+        thread_may_finish.set()
+        registered = False
+        for _ in range(20):
+            await asyncio.sleep(0)
+            registered = registered or bool(accounting._background)
+            if undone and not accounting._background:
+                break
+        assert undone == ["pc_1"]
+        # The undo task was held while it ran and let go when it finished.
+        assert registered and accounting._background == set()
+    finally:
+        accounting.reset(token)

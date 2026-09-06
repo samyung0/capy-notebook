@@ -4,6 +4,9 @@ import json
 
 import pytest
 
+from pipeline import elitellm, registry
+from pipeline.elitellm.client import anthropic_request
+from pipeline.prompts import chat as chat_prompts
 from pipeline.registry import ModelConfig
 from pipeline.retrieval import accounting, compact
 
@@ -39,7 +42,7 @@ def test_compaction_uses_full_usable_budget_not_a_ratio(monkeypatch):
     assert compact.needs_compact([{"role": "user", "content": "q"}], spec)
 
 
-def test_compaction_caps_large_model_input_at_200k():
+def test_compaction_caps_large_model_input_at_250k():
     usable = compact.usable_input_limit(_spec(context_window_tokens=1_000_000))
 
     assert usable == (
@@ -48,11 +51,11 @@ def test_compaction_caps_large_model_input_at_200k():
 
 
 def test_checkpoint_summary_has_8000_token_budget():
-    assert compact.SUMMARY_TARGET_MIN == 4000
-    assert compact.SUMMARY_TARGET_MAX == 6000
-    assert compact.SUMMARY_MAX_TOKENS == 8000
-    assert "Target 4,000 to 6,000 tokens" in compact.CHECKPOINT_SYSTEM_PROMPT
-    assert "Never exceed 8,000 tokens" in compact.CHECKPOINT_SYSTEM_PROMPT
+    assert chat_prompts.SUMMARY_TARGET_MIN == 4000
+    assert chat_prompts.SUMMARY_TARGET_MAX == 6000
+    assert chat_prompts.SUMMARY_MAX_TOKENS == 8000
+    assert "Target 4,000 to 6,000 tokens" in chat_prompts.CHECKPOINT_SYSTEM_PROMPT
+    assert "Never exceed 8,000 tokens" in chat_prompts.CHECKPOINT_SYSTEM_PROMPT
 
 
 def test_catalog_margin_can_apply_calibrated_estimation_error():
@@ -61,6 +64,63 @@ def test_catalog_margin_can_apply_calibrated_estimation_error():
         _spec(params={"context_safety_margin_tokens": 2048})
     )
     assert plain - calibrated == 2048 - compact.PROTOCOL_SAFETY_MARGIN_TOKENS
+
+
+@pytest.mark.parametrize(
+    "thinking,output",
+    [("instant", 8192), ("low", 8192), ("mid", 12288), ("high", 20480), ("max", 8192)],
+)
+def test_admission_reserves_the_same_anthropic_output_as_the_request(thinking, output):
+    spec = _spec(
+        provider_slug="anthropic",
+        context_window_tokens=200_000,
+        thinking_levels=("instant", "low", "mid", "high", "max"),
+        default_thinking=thinking,
+    )
+    registry.bind_request_llm(thinking=thinking)
+    try:
+        body = anthropic_request(
+            spec, [], temperature=None, tools=None, max_tokens=None, thinking=thinking
+        )
+        assert body["max_tokens"] == elitellm.output_budget(spec) == output
+        assert (
+            compact.usable_input_limit(spec)
+            + body["max_tokens"]
+            + compact.PROTOCOL_SAFETY_MARGIN_TOKENS
+            == 200_000
+        )
+        assert (
+            compact.usable_input_limit(spec, max_tokens=8000, reasoning=False)
+            == 200_000 - 8000 - compact.PROTOCOL_SAFETY_MARGIN_TOKENS
+        )
+        assert (
+            compact.usable_input_limit(spec, max_tokens=65_536)
+            == 200_000 - 65_536 - compact.PROTOCOL_SAFETY_MARGIN_TOKENS
+        )
+    finally:
+        registry.bind_request_llm()
+
+
+def test_high_reasoning_pending_overflow_is_explicit_before_the_provider_call():
+    from pipeline.retrieval import pending
+
+    spec = _spec(
+        provider_slug="anthropic",
+        context_window_tokens=200_000,
+        thinking_levels=("high",),
+        default_thinking="high",
+    )
+    messages = [
+        {"role": "system", "content": "system"},
+        {"role": "user", "content": "question", "_kind": "query"},
+    ]
+    sources = pending.PendingSources(
+        [{"fileId": "f", "changes": [{"after": "x" * 561_000}]}]
+    )
+    block, _, omitted = pending.reserve(messages, sources, spec, None)
+    assert omitted
+    assert "omitted" in block["content"]
+    assert compact.fits_request(pending.inject(messages, block), spec)
 
 
 @pytest.mark.asyncio
@@ -101,7 +161,7 @@ async def test_checkpoint_prompt_uses_current_message_only_to_resolve_references
     ]
     assert "third bullet" in seen["system"]
     assert "let its topic narrow" in seen["system"]
-    assert seen["max_tokens"] == compact.SUMMARY_MAX_TOKENS
+    assert seen["max_tokens"] == chat_prompts.SUMMARY_MAX_TOKENS
 
 
 @pytest.mark.asyncio

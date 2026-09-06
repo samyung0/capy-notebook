@@ -14,11 +14,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
+import random
+import time
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from typing import Any
 
 from .. import elitellm, obs, registry
 from ..config import cfg
+from ..prompts.retrieval import qwen3_query
 from ..registry import ModelConfig
 from . import accounting
 from .stream import (
@@ -34,6 +39,16 @@ INVALID_KEY = "invalid_key"
 KEY_FAILED = "key_failed"
 INVALID_KEY_MSG = "The provider rejected this key."
 KEY_FAILED_MSG = "Something went wrong, please double check if the key is valid."
+BUSY_ERROR_CODE = "provider_busy"
+BUSY_ERROR = "The model is busy right now. Try again in a moment."
+
+
+def busy_retry_after_s(exc: BaseException) -> int:
+    """Whole seconds a client should wait before retrying a busy call."""
+    retry_after = getattr(exc, "retry_after", None)
+    if retry_after is None or retry_after <= 0:
+        retry_after = accounting.BUSY_RETRY_AFTER_S
+    return max(1, math.ceil(retry_after))
 
 
 class UserKeyError(RuntimeError):
@@ -76,6 +91,8 @@ async def _tracked_call(
     purpose: str,
     thinking: str = "",
     context: accounting.ContextComposition | None = None,
+    spec: ModelConfig | None = None,
+    deadline: float | None = None,
 ):
     call_id = accounting.new_call_id()
     await accounting.open_call(
@@ -84,6 +101,8 @@ async def _tracked_call(
         purpose=purpose,
         thinking=thinking,
         context=context,
+        spec=spec,
+        deadline=deadline,
     )
     try:
         yield call_id
@@ -98,9 +117,132 @@ async def _tracked_call(
         ):
             await accounting.abandon_call(call_id, exc)
         raise
+    finally:
+        # The attempt is over whichever way it ended; free its slot so the
+        # next waiter is not held behind an abandoned or settled call.
+        await accounting.release_call(call_id)
 
 
-PRE_BYTE_RETRIES = 2
+@dataclass(frozen=True)
+class RetryPolicy:
+    """Attempts and wall budget for one logical provider call.
+
+    Every attempt is its own call id. A busy answer (429, 503, 529) waits for
+    the provider's Retry-After, else a jittered backoff; a wait that would run
+    past the budget ends the call at once. Waiting at a capped model's gate
+    spends the same budget.
+    """
+
+    attempts: int
+    budget_s: float
+
+
+INTERACTIVE_RETRY = RetryPolicy(attempts=2, budget_s=3.0)
+INGEST_RETRY = RetryPolicy(attempts=4, budget_s=120.0)
+
+
+def _interactive() -> bool:
+    state = accounting.current()
+    return state is None or state.settlement_mode != "ingest"
+
+
+def retry_policy() -> RetryPolicy:
+    return INTERACTIVE_RETRY if _interactive() else INGEST_RETRY
+
+
+def busy_error(exc: BaseException) -> BaseException | None:
+    """The busy provider answer behind ``exc``, following cause links.
+
+    Keyed on the definitive status like ``accounting.provider_status``, so a
+    429 surfaces as busy whichever exception type carried it.
+    """
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        status = getattr(current, "status_code", None)
+        if status is None:
+            status = getattr(getattr(current, "response", None), "status_code", None)
+        if (
+            isinstance(current, elitellm.ProviderBusy)
+            or status in elitellm.BUSY_STATUSES
+        ):
+            return current
+        current = current.__cause__ or current.__context__
+    return None
+
+
+def _provider_retry_after(busy: BaseException) -> float | None:
+    """The wait the provider itself asked for, never a synthesized one."""
+    if isinstance(busy, elitellm.ProviderBusy):
+        return busy.provider_retry_after
+    return getattr(busy, "retry_after", None)
+
+
+def _busy_wait_s(busy: BaseException, attempt: int) -> float:
+    retry_after = getattr(busy, "retry_after", None)
+    if retry_after is not None:
+        return float(retry_after)
+    return 0.5 * (2**attempt) * random.uniform(0.75, 1.25)
+
+
+async def _retry_or_raise(
+    exc: BaseException,
+    *,
+    attempt: int,
+    policy: RetryPolicy,
+    deadline: float,
+    retry_any: bool,
+) -> None:
+    """Sleep before the next attempt, or raise once the call is over.
+
+    ``retry_any`` also retries failures that are not busy answers; streaming
+    callers use it for pre-byte failures, whose cause is usually transport.
+    """
+    busy = busy_error(exc)
+    last = attempt >= policy.attempts - 1
+    if busy is None:
+        if last or not retry_any:
+            _raise_user_key(exc)
+        wait = 0.25 * (2**attempt)
+    else:
+        wait = _busy_wait_s(busy, attempt)
+    if last or time.monotonic() + wait > deadline:
+        if busy is None:
+            _raise_user_key(exc)
+        raise elitellm.ProviderBusy(
+            str(busy) or "the provider is busy",
+            status_code=accounting.provider_status(busy),
+            retry_after=wait,
+            provider_retry_after=_provider_retry_after(busy),
+        ) from exc
+    await asyncio.sleep(wait)
+
+
+async def _call_with_retry(attempt_call: Any, *, retry_any: bool = False) -> Any:
+    """Run ``attempt_call(deadline)`` under the current retry policy.
+
+    ``retry_any`` also retries failures that are not busy answers, for calls
+    where one dropped attempt is a permanent loss rather than a user retry.
+    """
+    policy = retry_policy()
+    deadline = time.monotonic() + policy.budget_s
+    for attempt in range(policy.attempts):
+        try:
+            return await attempt_call(deadline)
+        except asyncio.CancelledError:
+            raise
+        except (UserKeyError, registry.RegistryError, accounting.SettlementError):
+            raise
+        except Exception as exc:  # noqa: BLE001 - the policy re-raises or sleeps
+            await _retry_or_raise(
+                exc,
+                attempt=attempt,
+                policy=policy,
+                deadline=deadline,
+                retry_any=retry_any,
+            )
+    raise AssertionError("retry loop must return or raise")
 
 
 class _ByteFlag:
@@ -112,9 +254,11 @@ class _ByteFlag:
 
 
 def _raise_user_key(exc: BaseException) -> None:
-    mapped = classify_user_key_error(exc)
-    if mapped is not None:
-        raise mapped from exc
+    # A busy answer is the provider's capacity, not the user's key.
+    if busy_error(exc) is None:
+        mapped = classify_user_key_error(exc)
+        if mapped is not None:
+            raise mapped from exc
     raise exc
 
 
@@ -148,10 +292,6 @@ def resolve_query_model(
 
 
 _QWEN3_EMBED_MARKER = "qwen3-embedding"
-_QWEN3_QUERY_TASK = (
-    "Given a question about the user's notes and uploaded materials, "
-    "retrieve relevant passages that answer the question"
-)
 
 
 def is_qwen3_embedding(spec: ModelConfig) -> bool:
@@ -167,7 +307,7 @@ def format_query(query: str, spec: ModelConfig) -> str:
     """
     if not is_qwen3_embedding(spec):
         return query
-    return f"Instruct: {_QWEN3_QUERY_TASK}\nQuery:{query}"
+    return qwen3_query(query)
 
 
 def _record_name(spec: ModelConfig) -> str:
@@ -196,24 +336,31 @@ async def embed(texts: list[str], *, spec: ModelConfig) -> list[list[float]]:
     dim = spec.embedding_dim
     for start in range(0, len(texts), cfg.embedding_batch):
         batch = texts[start : start + cfg.embedding_batch]
-        async with _tracked_call(
-            kind=accounting.KIND_EMBEDDING,
-            purpose=accounting.KIND_EMBEDDING,
-        ) as call_id:
-            try:
-                resp = await elitellm.embed_batch(spec, batch, dimensions=dim)
-            except Exception as exc:  # noqa: BLE001
-                _raise_user_key(exc)
-            obs.record_embedding(spec.provider_slug, _record_name(spec), resp)
-            block = getattr(resp, "usage", None)
-            await accounting.settle(
-                call_id=call_id,
+
+        async def _one(deadline: float, batch: list[str] = batch) -> Any:
+            async with _tracked_call(
                 kind=accounting.KIND_EMBEDDING,
                 purpose=accounting.KIND_EMBEDDING,
-                thinking="",
                 spec=spec,
-                usage=extract_usage(block, provider=spec.provider_slug),
-            )
+                deadline=deadline,
+            ) as call_id:
+                try:
+                    resp = await elitellm.embed_batch(spec, batch, dimensions=dim)
+                except Exception as exc:  # noqa: BLE001
+                    _raise_user_key(exc)
+                obs.record_embedding(spec.provider_slug, _record_name(spec), resp)
+                block = getattr(resp, "usage", None)
+                await accounting.settle(
+                    call_id=call_id,
+                    kind=accounting.KIND_EMBEDDING,
+                    purpose=accounting.KIND_EMBEDDING,
+                    thinking="",
+                    spec=spec,
+                    usage=extract_usage(block, provider=spec.provider_slug),
+                )
+            return resp
+
+        resp = await _call_with_retry(_one)
         ordered = sorted(resp.data, key=lambda d: d.index)
         for item in ordered:
             vector = list(item.embedding)
@@ -239,6 +386,37 @@ async def complete(
     call_purpose: str = "llm",
 ) -> Any:
     """One completion, returning the raw message (may carry tool calls)."""
+    resp = await complete_response(
+        messages,
+        model=model,
+        temperature=temperature,
+        tools=tools,
+        response_format=response_format,
+        max_tokens=max_tokens,
+        reasoning=reasoning,
+        call_purpose=call_purpose,
+    )
+    return elitellm.message_from_response(resp)
+
+
+async def complete_response(
+    messages: list[dict[str, Any]],
+    *,
+    model: ModelConfig,
+    temperature: float | None = None,
+    tools: list[dict[str, Any]] | None = None,
+    response_format: dict[str, Any] | None = None,
+    max_tokens: int | None = None,
+    reasoning: bool | None = None,
+    call_purpose: str = "llm",
+) -> Any:
+    """One completion as a chat-completion-shaped response.
+
+    Interactive callers run over the streaming transport and the stream is
+    assembled here, so the idle timeout is what bounds them: a long quiz or
+    checkpoint summary fails on silence, not on a whole-call clock. Ingest
+    keeps the plain request under its own larger bound.
+    """
     spec = _as_spec(model)
     thinking = elitellm.resolve_thinking(spec, reasoning)
     submitted_messages = provider_messages(messages)
@@ -249,90 +427,85 @@ async def complete(
         response_format=response_format,
         reasoning=reasoning,
     )
-    async with _tracked_call(
-        kind=accounting.KIND_LLM,
-        purpose=call_purpose,
-        thinking=thinking,
-        context=context,
-    ) as call_id:
-        try:
-            resp = await elitellm.complete(
-                spec,
-                submitted_messages,
-                temperature=temperature,
-                tools=tools,
-                response_format=response_format,
-                max_tokens=max_tokens,
-                reasoning=reasoning,
-                input_items=messages_to_responses_input(submitted_messages)
-                if elitellm.uses_responses(spec, tools=bool(tools), reasoning=reasoning)
-                else None,
-            )
-        except Exception as exc:  # noqa: BLE001
-            _raise_user_key(exc)
-        obs.record_completion(spec.provider_slug, _record_name(spec), resp)
-        await accounting.settle(
-            call_id=call_id,
+    streamed = _interactive()
+
+    async def _one(deadline: float) -> Any:
+        async with _tracked_call(
             kind=accounting.KIND_LLM,
             purpose=call_purpose,
             thinking=thinking,
+            context=context,
             spec=spec,
-            usage=extract_usage(
-                getattr(resp, "usage", None), provider=spec.provider_slug
-            ),
-        )
-    return elitellm.message_from_response(resp)
-
-
-async def complete_response(
-    messages: list[dict[str, Any]],
-    *,
-    model: ModelConfig,
-    temperature: float | None = None,
-    max_tokens: int | None = None,
-    reasoning: bool | None = None,
-    call_purpose: str = "llm",
-) -> Any:
-    """Like complete, but returns the full response so callers can read usage."""
-    spec = _as_spec(model)
-    thinking = elitellm.resolve_thinking(spec, reasoning)
-    submitted_messages = provider_messages(messages)
-    context = measure_request_context(
-        messages,
-        model=spec,
-        reasoning=reasoning,
-    )
-    async with _tracked_call(
-        kind=accounting.KIND_LLM,
-        purpose=call_purpose,
-        thinking=thinking,
-        context=context,
-    ) as call_id:
-        try:
-            resp = await elitellm.complete(
-                spec,
-                submitted_messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                reasoning=reasoning,
-                input_items=messages_to_responses_input(submitted_messages)
-                if elitellm.uses_responses(spec, reasoning=reasoning)
-                else None,
+            deadline=deadline,
+        ) as call_id:
+            try:
+                if streamed:
+                    assembled = await _stream_via_adapter(
+                        spec,
+                        submitted_messages,
+                        tools,
+                        temperature,
+                        None,
+                        max_tokens=max_tokens,
+                        reasoning=reasoning,
+                        response_format=response_format,
+                    )
+                    if assembled.status == "error":
+                        raise elitellm.ProviderError(
+                            assembled.error or "provider stream failed"
+                        )
+                    usage = assembled.usage
+                    message = dict(assembled.provider_message)
+                    message.setdefault("role", "assistant")
+                    message.setdefault("content", assembled.text)
+                    resp = elitellm.chat_response(
+                        message,
+                        finish_reason="length"
+                        if assembled.status == "incomplete"
+                        else ("tool_calls" if assembled.tool_calls else "stop"),
+                        usage=usage,
+                    )
+                else:
+                    resp = await elitellm.complete(
+                        spec,
+                        submitted_messages,
+                        temperature=temperature,
+                        tools=tools,
+                        response_format=response_format,
+                        max_tokens=max_tokens,
+                        reasoning=reasoning,
+                        input_items=messages_to_responses_input(submitted_messages)
+                        if elitellm.uses_responses(
+                            spec, tools=bool(tools), reasoning=reasoning
+                        )
+                        else None,
+                    )
+                    usage = extract_usage(
+                        getattr(resp, "usage", None), provider=spec.provider_slug
+                    )
+            except Exception as exc:  # noqa: BLE001
+                _raise_user_key(exc)
+            obs.record_normalized(
+                spec.provider_slug,
+                _record_name(spec),
+                usage.input_tokens,
+                usage.output_tokens,
+                cached_read_tokens=usage.cached_read_tokens,
+                cache_write_tokens=usage.cache_write_tokens,
+                reasoning_tokens=usage.reasoning_tokens,
+                cache_anomaly=usage.anomaly,
             )
-        except Exception as exc:  # noqa: BLE001
-            _raise_user_key(exc)
-        obs.record_completion(spec.provider_slug, _record_name(spec), resp)
-        await accounting.settle(
-            call_id=call_id,
-            kind=accounting.KIND_LLM,
-            purpose=call_purpose,
-            thinking=thinking,
-            spec=spec,
-            usage=extract_usage(
-                getattr(resp, "usage", None), provider=spec.provider_slug
-            ),
-        )
-    return resp
+            await accounting.settle(
+                call_id=call_id,
+                kind=accounting.KIND_LLM,
+                purpose=call_purpose,
+                thinking=thinking,
+                spec=spec,
+                usage=usage,
+            )
+        return resp
+
+    return await _call_with_retry(_one)
 
 
 async def complete_text(
@@ -456,10 +629,11 @@ async def stream_agent_response(
 ) -> AssembledResponse:
     """Stream one tool-capable model response into a normalized assembly.
 
-    Failures before the first provider byte are retried on a new call id.
-    A byte from the provider, or a token already handed to the client from
-    this call, makes the attempt final: abandon and raise. The client not
-    having seen SSE yet does not make a post-byte failure retryable.
+    Failures before the first provider byte are retried on a new call id
+    under the retry policy; a busy answer waits for Retry-After. A byte from
+    the provider, or a token already handed to the client from this call,
+    makes the attempt final: abandon and raise. The client not having seen
+    SSE yet does not make a post-byte failure retryable.
     """
     spec = _as_spec(model)
     thinking = elitellm.resolve_thinking(spec)
@@ -469,9 +643,9 @@ async def stream_agent_response(
         model=spec,
         tools=tools,
     )
-    attempts = 1 + PRE_BYTE_RETRIES
-    last_exc: BaseException | None = None
-    for attempt in range(attempts):
+    policy = retry_policy()
+    deadline = time.monotonic() + policy.budget_s
+    for attempt in range(policy.attempts):
         received = _ByteFlag()
         try:
             async with _tracked_call(
@@ -479,6 +653,8 @@ async def stream_agent_response(
                 purpose=call_purpose,
                 thinking=thinking,
                 context=context,
+                spec=spec,
+                deadline=deadline,
             ) as call_id:
                 assembled = await _stream_via_adapter(
                     spec,
@@ -509,18 +685,22 @@ async def stream_agent_response(
             return assembled
         except asyncio.CancelledError:
             raise
-        except (UserKeyError, registry.RegistryError):
+        except (UserKeyError, registry.RegistryError, accounting.SettlementError):
             raise
         except Exception as exc:
-            last_exc = exc
-            if received.seen or attempt >= attempts - 1:
+            if received.seen:
                 _raise_user_key(exc)
             mapped = classify_user_key_error(exc)
             if mapped is not None and mapped.code == INVALID_KEY:
                 raise mapped from exc
-            await asyncio.sleep(0.25 * (2**attempt))
-    assert last_exc is not None
-    raise last_exc
+            await _retry_or_raise(
+                exc,
+                attempt=attempt,
+                policy=policy,
+                deadline=deadline,
+                retry_any=True,
+            )
+    raise AssertionError("retry loop must return or raise")
 
 
 async def _stream_via_adapter(
@@ -530,8 +710,12 @@ async def _stream_via_adapter(
     temperature: float | None,
     on_event: Any | None,
     on_provider_byte: Any | None = None,
+    *,
+    max_tokens: int | None = None,
+    reasoning: bool | None = None,
+    response_format: dict[str, Any] | None = None,
 ) -> AssembledResponse:
-    if elitellm.uses_responses(spec, tools=bool(tools)):
+    if elitellm.uses_responses(spec, tools=bool(tools), reasoning=reasoning):
         assembler: ChatCompletionsAssembler | OpenAIResponsesAssembler = (
             OpenAIResponsesAssembler()
         )
@@ -544,7 +728,10 @@ async def _stream_via_adapter(
         provider_messages(messages),
         temperature=temperature,
         tools=tools,
+        max_tokens=max_tokens,
+        reasoning=reasoning,
         input_items=input_items,
+        response_format=response_format,
     )
     async for chunk in stream:
         if on_provider_byte is not None:
@@ -563,6 +750,7 @@ async def stream_text(
     max_tokens: int | None = None,
     reasoning: bool | None = None,
 ):
+    """Yield text deltas. Pre-byte failures retry like the agent stream."""
     spec = _as_spec(model)
     thinking = elitellm.resolve_thinking(spec, reasoning)
     submitted_messages = provider_messages(messages)
@@ -571,66 +759,91 @@ async def stream_text(
         model=spec,
         reasoning=reasoning,
     )
-    async with _tracked_call(
-        kind=accounting.KIND_LLM,
-        purpose="llm",
-        thinking=thinking,
-        context=context,
-    ) as call_id:
-        usage = NormalizedUsage()
+    policy = retry_policy()
+    deadline = time.monotonic() + policy.budget_s
+    for attempt in range(policy.attempts):
+        received = _ByteFlag()
         try:
-            stream = elitellm.stream(
-                spec,
-                submitted_messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                reasoning=reasoning,
-                input_items=messages_to_responses_input(submitted_messages)
-                if elitellm.uses_responses(spec, reasoning=reasoning)
-                else None,
-            )
-            async for chunk in stream:
-                obs.record_stream_chunk(spec.provider_slug, _record_name(spec), chunk)
-                block = getattr(chunk, "usage", None)
-                if block is not None:
-                    usage = extract_usage(block, provider=spec.provider_slug)
-                choices = getattr(chunk, "choices", None) or []
-                delta = ""
-                if choices:
-                    delta = (
-                        getattr(getattr(choices[0], "delta", None), "content", "") or ""
+            async with _tracked_call(
+                kind=accounting.KIND_LLM,
+                purpose="llm",
+                thinking=thinking,
+                context=context,
+                spec=spec,
+                deadline=deadline,
+            ) as call_id:
+                usage = NormalizedUsage()
+                stream = elitellm.stream(
+                    spec,
+                    submitted_messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    reasoning=reasoning,
+                    input_items=messages_to_responses_input(submitted_messages)
+                    if elitellm.uses_responses(spec, reasoning=reasoning)
+                    else None,
+                )
+                async for chunk in stream:
+                    received.mark()
+                    obs.record_stream_chunk(
+                        spec.provider_slug, _record_name(spec), chunk
                     )
-                if not delta:
-                    etype = str(getattr(chunk, "type", "") or "")
-                    if etype in (
-                        "response.output_text.delta",
-                        "response.text.delta",
-                    ):
-                        delta = str(getattr(chunk, "delta", "") or "")
-                if delta:
-                    yield delta
-        except Exception as exc:  # noqa: BLE001
-            _raise_user_key(exc)
-        await accounting.settle(
-            call_id=call_id,
-            kind=accounting.KIND_LLM,
-            purpose="llm",
-            thinking=thinking,
-            spec=spec,
-            usage=usage,
-        )
+                    block = getattr(chunk, "usage", None)
+                    if block is not None:
+                        usage = extract_usage(block, provider=spec.provider_slug)
+                    choices = getattr(chunk, "choices", None) or []
+                    delta = ""
+                    if choices:
+                        delta = (
+                            getattr(getattr(choices[0], "delta", None), "content", "")
+                            or ""
+                        )
+                    if not delta:
+                        etype = str(getattr(chunk, "type", "") or "")
+                        if etype in (
+                            "response.output_text.delta",
+                            "response.text.delta",
+                        ):
+                            delta = str(getattr(chunk, "delta", "") or "")
+                    if delta:
+                        yield delta
+                await accounting.settle(
+                    call_id=call_id,
+                    kind=accounting.KIND_LLM,
+                    purpose="llm",
+                    thinking=thinking,
+                    spec=spec,
+                    usage=usage,
+                )
+            return
+        except asyncio.CancelledError:
+            raise
+        except (UserKeyError, registry.RegistryError, accounting.SettlementError):
+            raise
+        except Exception as exc:
+            if received.seen:
+                _raise_user_key(exc)
+            mapped = classify_user_key_error(exc)
+            if mapped is not None and mapped.code == INVALID_KEY:
+                raise mapped from exc
+            await _retry_or_raise(
+                exc,
+                attempt=attempt,
+                policy=policy,
+                deadline=deadline,
+                retry_any=True,
+            )
 
 
-_CAPTION_ATTEMPTS = 3
+async def caption_image(data_url: str, prompt: str, *, best_effort: bool = True) -> str:
+    """Describe one figure so it becomes searchable text.
 
-
-async def caption_image(data_url: str, prompt: str) -> str:
-    """Describe one figure so it becomes searchable text. Best effort.
-
-    Retried with backoff, unlike the other model calls: a figure-heavy document
-    issues hundreds of these at once, so a provider rate limit is an expected
-    condition rather than an outage, and one dropped caption is one figure
-    permanently missing from the index.
+    Any failure is retried under the ingest policy, since a figure-heavy
+    document issues hundreds of these and one dropped caption is one figure
+    permanently missing from the index. Past that budget a figure caption is
+    dropped, while a standalone image upload, whose caption is the whole
+    content, raises ProviderBusy so its job re-pends instead of spending an
+    attempt.
     """
     spec = registry.captioning_spec()
     caption_thinking = elitellm.resolve_thinking(spec, reasoning=False)
@@ -643,40 +856,49 @@ async def caption_image(data_url: str, prompt: str) -> str:
             ],
         }
     ]
-    for attempt in range(_CAPTION_ATTEMPTS):
-        try:
-            context = measure_request_context(messages, model=spec, reasoning=False)
-            async with _tracked_call(
+    context = measure_request_context(messages, model=spec, reasoning=False)
+
+    async def _one(deadline: float) -> str:
+        async with _tracked_call(
+            kind=accounting.KIND_LLM,
+            purpose="image_caption",
+            thinking=caption_thinking,
+            context=context,
+            spec=spec,
+            deadline=deadline,
+        ) as call_id:
+            # Captions never inherit a user's chat reasoning level. The
+            # provider adapter resolves this to the model's fixed minimum.
+            resp = await elitellm.complete(spec, messages, reasoning=False)
+            obs.record_completion(spec.provider_slug, _record_name(spec), resp)
+            await accounting.settle(
+                call_id=call_id,
                 kind=accounting.KIND_LLM,
                 purpose="image_caption",
                 thinking=caption_thinking,
-                context=context,
-            ) as call_id:
-                # Captions never inherit a user's chat reasoning level. The
-                # provider adapter resolves this to the model's fixed minimum.
-                resp = await elitellm.complete(spec, messages, reasoning=False)
-                obs.record_completion(spec.provider_slug, _record_name(spec), resp)
-                await accounting.settle(
-                    call_id=call_id,
-                    kind=accounting.KIND_LLM,
-                    purpose="image_caption",
-                    thinking=caption_thinking,
-                    spec=spec,
-                    usage=extract_usage(
-                        getattr(resp, "usage", None), provider=spec.provider_slug
-                    ),
-                )
-                message = elitellm.message_from_response(resp)
-                return (getattr(message, "content", "") or "").strip()
-        except asyncio.CancelledError:
+                spec=spec,
+                usage=extract_usage(
+                    getattr(resp, "usage", None), provider=spec.provider_slug
+                ),
+            )
+            message = elitellm.message_from_response(resp)
+            return (getattr(message, "content", "") or "").strip()
+
+    try:
+        # A transient failure here loses one figure for good, so every failure
+        # gets the policy's attempts, not only busy answers.
+        return await _call_with_retry(_one, retry_any=True)
+    except asyncio.CancelledError:
+        raise
+    except accounting.SettlementError:
+        # The provider already returned. Settlement has already retried the
+        # exact receipt through its deadline, so a new call can only add cost.
+        raise
+    except elitellm.ProviderBusy:
+        if not best_effort:
             raise
-        except accounting.SettlementError:
-            # The provider already returned. Settlement has already retried the
-            # exact receipt through its deadline, so a new call can only add cost.
-            raise
-        except Exception:
-            if attempt == _CAPTION_ATTEMPTS - 1:
-                log.warning("image caption failed", exc_info=True)
-                return ""
-            await asyncio.sleep(2**attempt)
-    return ""
+        log.warning("image caption dropped: provider busy", exc_info=True)
+        return ""
+    except Exception:
+        log.warning("image caption failed", exc_info=True)
+        return ""

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 
+import httpx
 import pytest
 
+from pipeline.config import cfg
 from pipeline.elitellm.client import (
     ANTHROPIC_URL,
     DEEPINFRA_CHAT_URL,
@@ -436,3 +439,152 @@ def test_assistant_message_from_complete_is_jsonable():
     json.dumps(msg)
     assert jsonable(msg)["tool_calls"][0]["function"]["name"] == "search_workspace"
     assert msg["reasoning_content"] == "think"
+
+
+# ---- transport: busy answers and the idle timer ---------------------------
+
+
+class _Chunks(httpx.AsyncByteStream):
+    """Emit SSE bytes on a schedule so the timers can be observed."""
+
+    def __init__(self, parts: list[tuple[float, bytes]]) -> None:
+        self._parts = parts
+
+    async def __aiter__(self):
+        for delay, chunk in self._parts:
+            await asyncio.sleep(delay)
+            yield chunk
+
+
+_mock_clients: list[httpx.AsyncClient] = []
+
+
+@pytest.fixture(autouse=True)
+async def _close_mock_clients():
+    yield
+    while _mock_clients:
+        await _mock_clients.pop().aclose()
+
+
+def _mock_client(monkeypatch, handler):
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    _mock_clients.append(client)
+    monkeypatch.setattr("pipeline.elitellm.client._client", lambda: client)
+    return client
+
+
+async def test_busy_answers_carry_retry_after(monkeypatch):
+    from pipeline.elitellm import client as transport
+
+    def handler(_request):
+        return httpx.Response(429, headers={"retry-after": "7"}, text="slow down")
+
+    _mock_client(monkeypatch, handler)
+    with pytest.raises(transport.ProviderError) as caught:
+        await transport._post_json("https://example.test/v1", {}, {"a": 1})
+    assert caught.value.busy
+    assert caught.value.retry_after == 7.0
+    assert caught.value.status_code == 429
+
+    def http_date(_request):
+        return httpx.Response(
+            503, headers={"retry-after": "Thu, 01 Jan 2099 00:00:00 GMT"}
+        )
+
+    _mock_client(monkeypatch, http_date)
+    with pytest.raises(transport.ProviderError) as caught:
+        await transport._post_json("https://example.test/v1", {}, {})
+    assert caught.value.busy and caught.value.retry_after > 0
+
+    def bad_request(_request):
+        return httpx.Response(400, text="nope")
+
+    _mock_client(monkeypatch, bad_request)
+    with pytest.raises(transport.ProviderError) as caught:
+        await transport._post_json("https://example.test/v1", {}, {})
+    assert not caught.value.busy and caught.value.retry_after is None
+
+
+def _sse(payloads: list[tuple[float, str]]) -> _Chunks:
+    return _Chunks([(delay, f"data: {body}\n\n".encode()) for delay, body in payloads])
+
+
+async def _collect(monkeypatch, stream: httpx.AsyncByteStream) -> list[dict]:
+    from pipeline.elitellm import client as transport
+
+    def handler(_request):
+        return httpx.Response(200, stream=stream)
+
+    _mock_client(monkeypatch, handler)
+    return [
+        event
+        async for event in transport._stream_sse("https://example.test/v1", {}, {})
+    ]
+
+
+async def test_stream_idle_timer_restarts_on_every_data_event(monkeypatch):
+    monkeypatch.setattr(cfg, "interactive_provider_timeout_s", 0.5)
+    monkeypatch.setattr(cfg, "interactive_stream_max_s", 10.0)
+    # Eight events 0.1 s apart run 0.8 s in total, past the idle bound, with a
+    # five-fold margin on each gap for a slow CI scheduler.
+    events = await _collect(
+        monkeypatch, _sse([(0.1, f'{{"n": {n}}}') for n in range(8)])
+    )
+    assert [event["n"] for event in events] == list(range(8))
+
+
+async def test_consumer_stalls_are_not_provider_silence(monkeypatch):
+    from pipeline.elitellm import client as transport
+
+    monkeypatch.setattr(cfg, "interactive_provider_timeout_s", 0.3)
+    monkeypatch.setattr(cfg, "interactive_stream_max_s", 10.0)
+
+    def handler(_request):
+        return httpx.Response(200, stream=_sse([(0, '{"n": 0}'), (0, '{"n": 1}')]))
+
+    _mock_client(monkeypatch, handler)
+    seen = []
+    async for event in transport._stream_sse("https://example.test/v1", {}, {}):
+        seen.append(event["n"])
+        # Longer than the idle bound: only reads from the provider are timed.
+        await asyncio.sleep(0.5)
+    assert seen == [0, 1]
+
+
+async def test_stream_silence_past_the_idle_bound_times_out(monkeypatch):
+    monkeypatch.setattr(cfg, "interactive_provider_timeout_s", 0.5)
+    monkeypatch.setattr(cfg, "interactive_stream_max_s", 10.0)
+    with pytest.raises(TimeoutError):
+        await _collect(monkeypatch, _sse([(0.05, '{"n": 0}'), (1.5, '{"n": 1}')]))
+
+
+async def test_keep_alive_comments_do_not_count_as_activity(monkeypatch):
+    monkeypatch.setattr(cfg, "interactive_provider_timeout_s", 0.5)
+    monkeypatch.setattr(cfg, "interactive_stream_max_s", 10.0)
+    # Comment keep-alives and empty data frames both leave the clock running.
+    parts = [(0.05, b'data: {"n": 0}\n\n')] + [
+        (0.05, b": keep-alive\n\n"),
+        (0.05, b"data:\n\n"),
+    ] * 12
+    with pytest.raises(TimeoutError):
+        await _collect(monkeypatch, _Chunks(parts))
+
+
+async def test_stream_backstop_bounds_a_trickling_stream(monkeypatch):
+    monkeypatch.setattr(cfg, "interactive_provider_timeout_s", 5.0)
+    monkeypatch.setattr(cfg, "interactive_stream_max_s", 0.5)
+    with pytest.raises(TimeoutError):
+        await _collect(monkeypatch, _sse([(0.05, f'{{"n": {n}}}') for n in range(60)]))
+
+
+async def test_stream_error_status_is_a_busy_provider_error(monkeypatch):
+    from pipeline.elitellm import client as transport
+
+    def handler(_request):
+        return httpx.Response(529, headers={"retry-after": "2"}, text="overloaded")
+
+    _mock_client(monkeypatch, handler)
+    with pytest.raises(transport.ProviderError) as caught:
+        async for _event in transport._stream_sse("https://example.test/v1", {}, {}):
+            pass
+    assert caught.value.busy and caught.value.retry_after == 2.0

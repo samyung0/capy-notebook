@@ -219,6 +219,8 @@ func (s *Store) UserProvisioned(ctx context.Context, userID string) (bool, error
 // lockAccountSessionsTx serializes final write admission with deletion,
 // suspension, and plan projection. IDs are locked in database order so a
 // collaborator write can safely lock both the actor and the storage owner.
+// Non-key locks let cancellation write an owner's storage-delta foreign key
+// while a collaborator admission waits for the cancelling actor's row.
 func (s *Store) lockAccountSessionsTx(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -241,7 +243,7 @@ func (s *Store) lockAccountSessionsTx(
 	}
 	rows, err := tx.Query(ctx, `SELECT id, deleted_at, deletion_requested_at,
 			suspended_at, suspended_reason
-		FROM users WHERE id=ANY($1::text[]) ORDER BY id FOR UPDATE`, ids)
+		FROM users WHERE id=ANY($1::text[]) ORDER BY id FOR NO KEY UPDATE`, ids)
 	if err != nil {
 		return err
 	}

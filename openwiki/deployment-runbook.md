@@ -299,7 +299,12 @@ Same values whether Coolify, bare compose, or A records. Coolify domain fields
 are `http://`; these vars stay `https://` / `wss://`. Copy the rest from
 `deploy/.env.example` (Clerk, Stripe, Sentry DSNs, provider keys).
 `RATE_LIMIT_AI_PER_HOUR` defaults to 200; the 15/minute AI burst and
-120/minute editor class are not env-overridable.
+120/minute editor class are not env-overridable. `CAPY_MODEL_CONCURRENCY` is
+required on both the app host (retrieval) and the ingest host (workers): the
+retrieval service and the ingest worker refuse to start under
+`APP_ENV=production` without it. Production runs
+`deepinfra:zai-org/GLM-5.3-Flash=200/120,deepinfra:Qwen/Qwen3-Embedding-4B=200/80`;
+UAT sets its own values against its own DeepInfra account.
 
 `ELEVENLABS_API_KEY` is needed only by the Netcup ingest worker. Audio sends the
 model and presigned source URL as multipart fields and waits for the synchronous
@@ -722,6 +727,8 @@ those services start.
    measured default is MinerU pipeline with OCR `auto`. Synchronous audio calls
    use `CAPY_ELEVENLABS_SYNC_TIMEOUT_S` (12 hours by default) so the documented
    10-hour source limit is not cut off by the ordinary 20-minute ingest timeout.
+   The worker also requires `CAPY_MODEL_CONCURRENCY` (§1.4) and exits at
+   startup without it.
    Initial limits are four coordinator processes, four admitted document jobs,
    and four active 26-page slices. The default time hierarchy is a 600-second
    per-slice execution deadline, 40-minute parser request, 45-minute Redis slot,
@@ -988,7 +995,7 @@ to prevent a repair loop.
      context_conversation_tokens, context_total_tokens,
      context_window_tokens, context_counting_method,
      context_counting_version, opened_at, applied_at, abandoned_at,
-     error_category, error_code, provider_status
+     error_category, error_code, provider_status, provider, model, credit_micros
    ) ON provider_calls TO capy_ops;
    GRANT SELECT (
      id, job_type, trigger, status, requested_by_id, requested_by_name,
@@ -1725,6 +1732,10 @@ backend, browser, provider and ingest inputs. Keep the real files ignored and
 mode `0600`. Use `CLERK_PUBLISHABLE_KEY` for deployments; the renderer derives
 its browser/ops `VITE_` form. Local development continues using `deploy/.env`.
 
+Set `DEPLOYMENT_OPS_URL` in each GitHub environment and its local environment
+file for the optional ops edge check. The UAT workflow and local review scripts
+use this name directly; there is no repository-level ops URL fallback.
+
 ```bash
 pnpm env:check --file deploy/.env.uat
 pnpm env:push --file deploy/.env.uat --environment uat --repo samyung0/capy-notebook
@@ -1734,12 +1745,12 @@ The uploader needs `gh auth login` with repository/environment administration
 access. It sends secrets through stdin, rejects unknown/duplicate keys, and
 does no shell expansion. An explicit blank deletes that key in GitHub; omitted
 keys are left alone. Review-only `STRIX_*`, `LLM_API_KEY`, tunnel/dev controls,
-and derived release values remain local. Double-quoted `\n` escapes can hold
+and derived release values remain local. `VITE_DEV_HOST` also stays local. Double-quoted `\n` escapes can hold
 an SSH private key. Do not put actual multiline shell fragments in the file.
 
 Every deployment reads GitHub's environment values afresh, renders private
 runner files, and applies/reads back all managed Coolify variables. Empty
-optional values remain literal blanks. After successful replacement readback, the sync removes only the corresponding old `EVO_*` names and retired `IMPORT_RELAY_ENQUEUE_URL` / `IMPORT_RELAY_SECRET`, verifies their absence, and preserves unrelated normal variables. The sync disables preview entries and
+optional values remain literal blanks. After successful replacement readback, the sync removes only the corresponding old `EVO_*` names and retired `EVO_QUERY_MODEL`, `IMPORT_RELAY_ENQUEUE_URL` / `IMPORT_RELAY_SECRET`, verifies their absence, and preserves unrelated normal variables. The sync disables preview entries and
 uses `is_literal=true`, `is_shown_once=false`; it prints neither values nor
 fingerprints. Coolify's token needs sensitive-read access for verification.
 The Cloudflare token needs Worker scripts/assets deployment access. Retire

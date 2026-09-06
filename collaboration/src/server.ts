@@ -1,7 +1,7 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Redis as RedisExtension } from '@hocuspocus/extension-redis';
-import { Server } from '@hocuspocus/server';
+import { type Document, Server } from '@hocuspocus/server';
 import { Redis as IORedis } from 'ioredis';
 import { Pool } from 'pg';
 import * as Y from 'yjs';
@@ -9,6 +9,7 @@ import {
   assertAllowedOrigin,
   type CollaborationContext,
   claimsContext,
+  SOURCE_ROOM_PATTERN,
   verifyCollaborationToken,
 } from './auth.js';
 import { broadcastCheckpointPersisted } from './checkpointReceipt.js';
@@ -32,11 +33,13 @@ import {
   FailedStoreRetryRunner,
   type FailedStoreSnapshot,
 } from './failedStoreRetry.js';
+import { readInternalCommandJson } from './internalCommandRequest.js';
 import {
   MATERIAL_DOCUMENT_LIMITS,
   MaterialDocumentLimitError,
 } from './limits.js';
 import { captureError, initErrorReporting, log } from './observability.js';
+import { closeOfficeRuntime } from './officeRuntime.js';
 import { materialIdFromRoom, YjsDocumentStore } from './persistence.js';
 import { ProjectionService } from './projection.js';
 import {
@@ -45,6 +48,17 @@ import {
   observeServiceCommandStore,
   ServiceCommandCompletions,
 } from './serviceCommand.js';
+import {
+  MAX_SOURCE_STATE_BYTES,
+  SourceDocumentStore,
+  SourceRequestError,
+  sourceRoom,
+} from './sourceDocuments.js';
+import {
+  SOURCE_HANDOFF_CHANNEL,
+  SourceHandoff,
+  type SourcePublish,
+} from './sourceHandoff.js';
 import { handlePermanentStoreFailure } from './storeFailure.js';
 import {
   inboundYjsUpdate,
@@ -70,6 +84,8 @@ const subscriber = new IORedis(config.redisUrl, {
   maxRetriesPerRequest: null,
 });
 const store = new YjsDocumentStore(pool);
+const sources = new SourceDocumentStore(pool, config.apiUrl, config.secret);
+const sourceStores = new Map<string, Promise<void>>();
 const projections = new ProjectionService(store, config.apiUrl, config.secret);
 const serviceCommandCompletions = new ServiceCommandCompletions();
 const failedStores = new Map<string, FailedStoreSnapshot>();
@@ -487,7 +503,7 @@ const server = new Server<CollaborationContext>({
   address: config.host,
   async afterUnloadDocument({ documentName }) {
     pendingCheckpoints.delete(documentName);
-    store.forgetRoom(documentName);
+    if (!SOURCE_ROOM_PATTERN.test(documentName)) store.forgetRoom(documentName);
   },
   // Runs per inbound message, so it must stay free of I/O. Distributed eviction
   // always reaches this instance over Redis pub/sub and populates
@@ -500,7 +516,7 @@ const server = new Server<CollaborationContext>({
     }
     const yjsUpdate = inboundYjsUpdate(update);
     if (!yjsUpdate) return;
-    if (context.access === 'comment') {
+    if (context.access === 'comment' || context.access === 'read') {
       if (yjsUpdateContainsChanges(document, yjsUpdate)) {
         throw new Error('comment-only connection sent a document update');
       }
@@ -508,6 +524,25 @@ const server = new Server<CollaborationContext>({
     }
     try {
       assertUpdatePreservesContributors(document, yjsUpdate);
+      if (SOURCE_ROOM_PATTERN.test(document.name)) {
+        await sources.assertConnectionAccess(
+          document.name,
+          context.userId,
+          context.access
+        );
+        const candidate = new Y.Doc();
+        try {
+          Y.applyUpdate(candidate, Y.encodeStateAsUpdate(document));
+          Y.applyUpdate(candidate, yjsUpdate);
+          if (
+            Y.encodeStateAsUpdate(candidate).byteLength > MAX_SOURCE_STATE_BYTES
+          )
+            throw new Error('Source checkpoint exceeds byte limit');
+        } finally {
+          candidate.destroy();
+        }
+        return;
+      }
       const shrinkOnly = context.access === 'shrink';
       store.validateUpdate(document.name, document, yjsUpdate, { shrinkOnly });
     } catch (error) {
@@ -552,12 +587,12 @@ const server = new Server<CollaborationContext>({
         config.secret,
         documentName
       );
-      await store.assertConnectionAccess(
-        documentName,
-        claims.sub,
-        claims.access
-      );
-      connectionConfig.readOnly = claims.access === 'comment';
+      await (SOURCE_ROOM_PATTERN.test(documentName)
+        ? sources
+        : store
+      ).assertConnectionAccess(documentName, claims.sub, claims.access);
+      connectionConfig.readOnly =
+        claims.access === 'comment' || claims.access === 'read';
       // shrink stays writable at the Hocuspocus layer; validateUpdate enforces
       // the shrinking-direction rule for over-quota accounts.
       return claimsContext(claims);
@@ -571,23 +606,39 @@ const server = new Server<CollaborationContext>({
       throw error;
     }
   },
-  async onLoadDocument({ document, documentName }) {
+  async onLoadDocument({ document, documentName, context }) {
     assertRoomAvailable(documentName);
     if (await isRoomEvicting(documentName)) {
       throw new Error('collaboration room is being compacted');
     }
     attachDocumentContributorTracker(document, INSTANCE_ID);
-    await store.load(documentName, document);
+    if (SOURCE_ROOM_PATTERN.test(documentName))
+      await sources.load(documentName, document, context.userId);
+    else await store.load(documentName, document);
   },
   async onStateless({ connection, document, payload }) {
     const context = connection.context as CollaborationContext | undefined;
     if (!context || context.expiresAt <= Math.floor(Date.now() / 1000)) {
       throw new Error('collaboration token expired');
     }
-    let event: { id?: unknown; type?: unknown };
+    let event: {
+      id?: unknown;
+      type?: unknown;
+      epoch?: unknown;
+      checkpoint?: unknown;
+      clean?: unknown;
+    };
     try {
       event = JSON.parse(payload);
     } catch {
+      return;
+    }
+    if (
+      event.type === 'source-handoff-ready' &&
+      SOURCE_ROOM_PATTERN.test(document.name)
+    ) {
+      if (sourceHandoff.ready(document.name, connection.socketId, event))
+        connection.readOnly = true;
       return;
     }
     if (event.type !== 'checkpoint-request' || connection.readOnly) return;
@@ -606,8 +657,13 @@ const server = new Server<CollaborationContext>({
     }
     if (pending.size >= MAX_PENDING_CHECKPOINTS) return;
     pending.add(id);
+    if (SOURCE_ROOM_PATTERN.test(document.name)) await persistSource(document);
   },
   async onStoreDocument({ document, documentName, lastContext }) {
+    if (SOURCE_ROOM_PATTERN.test(documentName)) {
+      await persistSource(document);
+      return;
+    }
     await observeServiceCommandStore(
       serviceCommandCompletions,
       lastContext?.serviceCommandId,
@@ -695,22 +751,182 @@ const server = new Server<CollaborationContext>({
       throw new Error('collaboration room is being compacted');
     }
     const claims = verifyCollaborationToken(token, config.secret, documentName);
-    await store.assertConnectionAccess(documentName, claims.sub, claims.access);
+    await (SOURCE_ROOM_PATTERN.test(documentName)
+      ? sources
+      : store
+    ).assertConnectionAccess(documentName, claims.sub, claims.access);
     connection.context = claimsContext(claims);
-    connection.readOnly = claims.access === 'comment';
+    connection.readOnly =
+      claims.access === 'comment' || claims.access === 'read';
   },
   quiet: true,
   stopOnSignals: false,
   unloadImmediately: false,
-  websocketOptions: { maxPayload: config.maxPayloadBytes },
+  websocketOptions: {
+    maxPayload: Math.max(config.maxPayloadBytes, MAX_SOURCE_STATE_BYTES + 1024),
+  },
   yDocOptions: { gc: true, gcFilter: () => true },
 });
+
+function sourceReceipt(
+  document: Document,
+  claimed: readonly string[],
+  checkpoint: number
+) {
+  const pending = pendingCheckpoints.get(document.name);
+  const checkpointIds = claimed.filter((id) => pending?.delete(id));
+  const { fileId, epoch } = sourceRoom(document.name);
+  document.broadcastStateless(
+    JSON.stringify({
+      checkpoint,
+      checkpointIds,
+      epoch,
+      fileId,
+      type: 'checkpoint-persisted',
+      yjsVersion: checkpoint,
+    })
+  );
+  if (!pending?.size) pendingCheckpoints.delete(document.name);
+}
+
+async function persistSource(document: Document) {
+  const room = document.name;
+  const previous = sourceStores.get(room) ?? Promise.resolve();
+  const next = previous
+    .catch(() => undefined)
+    .then(async () => {
+      const finish = beginStore(room);
+      const snapshot = new Y.Doc();
+      const rawState = Y.encodeStateAsUpdate(document);
+      Y.applyUpdate(snapshot, rawState);
+      const claimed = [...(pendingCheckpoints.get(room) ?? [])];
+      try {
+        assertRoomAvailable(room, true);
+        const saved = await sources.store(room, snapshot);
+        failedStores.delete(room);
+        clearDocumentContributors(document, saved.contributors);
+        sourceReceipt(document, claimed, saved.checkpoint);
+      } catch (error) {
+        storeFailures++;
+        storeFailureGenerations.set(
+          room,
+          (storeFailureGenerations.get(room) ?? 0) + 1
+        );
+        const recoverable =
+          !(error instanceof SourceRequestError) ||
+          ![401, 403, 404, 409, 413, 422].includes(error.status);
+        document.broadcastStateless(
+          JSON.stringify({
+            type: 'source-checkpoint-failed',
+            ...sourceRoom(room),
+            checkpointIds: claimed,
+            message:
+              error instanceof Error ? error.message : 'Source save failed',
+            recoverable,
+          })
+        );
+        if (recoverable && !roomEvictions.isDiscarding(room))
+          failedStores.set(room, { checkpointIds: claimed, state: rawState });
+        else {
+          failedStores.delete(room);
+          rejectAuthorizationRoom(room);
+        }
+        throw error;
+      } finally {
+        snapshot.destroy();
+        finish();
+      }
+    });
+  sourceStores.set(room, next);
+  try {
+    await next;
+  } finally {
+    if (sourceStores.get(room) === next) sourceStores.delete(room);
+  }
+}
+
+const sourceHandoff = new SourceHandoff(
+  INSTANCE_ID,
+  redis,
+  pool,
+  server.hocuspocus,
+  sources,
+  activeInstanceIds,
+  persistSource
+);
 
 async function handleHttpRequest(
   request: IncomingMessage,
   response: ServerResponse
 ) {
   const instance = server.hocuspocus;
+  if (
+    request.method === 'POST' &&
+    (request.url === '/internal/source-changes/resolve' ||
+      request.url === '/internal/source-refresh/publish')
+  ) {
+    const got = Buffer.from(
+      String(request.headers['x-collaboration-secret'] ?? '')
+    );
+    const expected = Buffer.from(config.secret);
+    if (got.length !== expected.length || !timingSafeEqual(got, expected)) {
+      jsonResponse(response, 401, { message: 'Unauthorized' });
+      return;
+    }
+    const body = await readInternalCommandJson(request);
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      jsonResponse(response, 400, { message: 'Invalid source request' });
+      return;
+    }
+    const input = body as Record<string, unknown>;
+    if (
+      typeof input.fileId !== 'string' ||
+      !Number.isSafeInteger(input.epoch) ||
+      !Number.isSafeInteger(input.checkpoint)
+    ) {
+      jsonResponse(response, 400, { message: 'Invalid source checkpoint' });
+      return;
+    }
+    try {
+      if (request.url === '/internal/source-changes/resolve') {
+        if (
+          typeof input.workspaceId !== 'string' ||
+          typeof input.userId !== 'string' ||
+          typeof input.changeId !== 'string'
+        )
+          throw new SourceRequestError(400, 'Invalid source image request');
+        jsonResponse(
+          response,
+          200,
+          await sources.resolve(
+            input as Parameters<SourceDocumentStore['resolve']>[0]
+          )
+        );
+      } else {
+        if (
+          typeof input.jobId !== 'string' ||
+          typeof input.leaseToken !== 'string' ||
+          !Number.isSafeInteger(input.attemptId)
+        )
+          throw new SourceRequestError(400, 'Invalid source publication');
+        jsonResponse(
+          response,
+          200,
+          await sourceHandoff.publish(input as SourcePublish)
+        );
+      }
+    } catch (error) {
+      jsonResponse(
+        response,
+        error instanceof SourceRequestError ? error.status : 500,
+        {
+          message:
+            error instanceof Error ? error.message : 'Source operation failed',
+        }
+      );
+    }
+    return;
+  }
   if (request.url === '/internal/commands' && request.method === 'POST') {
     await handleServiceCommandRequest(
       request,
@@ -787,6 +1003,16 @@ const failedStoreRetries = new FailedStoreRetryRunner(
       )
         return;
       Y.applyUpdate(document, failed.state);
+      if (SOURCE_ROOM_PATTERN.test(room)) {
+        const stored = await sources.store(room, document);
+        clearIfCurrent();
+        const live = server.hocuspocus.documents.get(room);
+        if (live) {
+          clearDocumentContributors(live, stored.contributors);
+          sourceReceipt(live, failed.checkpointIds, stored.checkpoint);
+        }
+        return;
+      }
       const stored = await store.store(room, document);
       clearIfCurrent();
       const live = server.hocuspocus.documents.get(room);
@@ -812,6 +1038,16 @@ const failedStoreRetries = new FailedStoreRetryRunner(
         .catch(() => undefined);
     } catch (error) {
       storeFailures += 1;
+      if (SOURCE_ROOM_PATTERN.test(room)) {
+        if (
+          error instanceof SourceRequestError &&
+          [401, 403, 404, 409, 413, 422].includes(error.status)
+        ) {
+          clearIfCurrent();
+          rejectAuthorizationRoom(room);
+        }
+        return;
+      }
       handleRejectedStore(
         room,
         error,
@@ -987,9 +1223,16 @@ await subscriber.subscribe(
   'capy:collaboration:evict',
   USER_EVICTION_CHANNEL,
   EVICTION_REQUEST_CHANNEL,
-  EVICTION_ACK_CHANNEL
+  EVICTION_ACK_CHANNEL,
+  SOURCE_HANDOFF_CHANNEL
 );
 subscriber.on('message', (channel: string, raw: string) => {
+  if (channel === SOURCE_HANDOFF_CHANNEL) {
+    void sourceHandoff
+      .handle(raw)
+      .catch((error) => captureError(error, { stage: 'source_handoff' }));
+    return;
+  }
   if (channel === EVICTION_REQUEST_CHANNEL) {
     void handleEvictionRequest(raw).catch((error) => {
       storeFailures += 1;
@@ -1030,6 +1273,29 @@ subscriber.on('message', (channel: string, raw: string) => {
     const room = event.room;
     if (!room) return;
     if (channel === 'capy:collaboration:evict') {
+      if (SOURCE_ROOM_PATTERN.test(room)) {
+        void evictLocalRoom(
+          room,
+          raw,
+          event.evictionId,
+          parseRoomEvictionMode(event.mode)
+        )
+          .then(async () => {
+            if (event.evictionId)
+              await redis.publish(
+                EVICTION_DELIVERED_CHANNEL,
+                JSON.stringify({
+                  evictionId: event.evictionId,
+                  instanceId: INSTANCE_ID,
+                  ok: true,
+                })
+              );
+          })
+          .catch((error) =>
+            captureError(error, { room, stage: 'source_eviction' })
+          );
+        return;
+      }
       const roomMaterialId = materialIdFromRoom(room);
       if (event.materialId && event.materialId !== roomMaterialId) return;
       const delivery =
@@ -1099,6 +1365,19 @@ const heartbeatTimer = setInterval(() => {
 }, INSTANCE_TTL_MS / 2);
 heartbeatTimer.unref();
 
+let schedulingSources = false;
+const sourceRefreshTimer = setInterval(() => {
+  if (schedulingSources) return;
+  schedulingSources = true;
+  void sources
+    .scheduleRefreshes()
+    .catch((error) => captureError(error, { stage: 'source_refresh' }))
+    .finally(() => {
+      schedulingSources = false;
+    });
+}, 5000);
+sourceRefreshTimer.unref();
+
 projections.start();
 await server.listen(config.port);
 console.info(`collaboration service listening on ${server.webSocketURL}`);
@@ -1111,9 +1390,11 @@ async function shutdown(signal: string) {
   clearInterval(retryTimer);
   clearInterval(compactionTimer);
   clearInterval(heartbeatTimer);
+  clearInterval(sourceRefreshTimer);
   projections.stop();
   server.hocuspocus.flushPendingStores();
   await server.destroy();
+  await closeOfficeRuntime();
   await Promise.allSettled([subscriber.quit(), redis.quit(), pool.end()]);
 }
 

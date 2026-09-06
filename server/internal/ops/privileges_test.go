@@ -160,7 +160,8 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 			context_system_tokens, context_tool_tokens,
 			context_conversation_tokens, context_total_tokens,
 			context_window_tokens, context_counting_method,
-			context_counting_version, opened_at, applied_at
+			context_counting_version, opened_at, applied_at,
+			provider, model, credit_micros
 		)
 			ON provider_calls TO %s;
 		GRANT SELECT (

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"math/big"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -196,6 +197,9 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	r.Post("/api/workspaces/{id}/ai/copilot", a.aiCopilot)
 	if cfg.PipelineSecret != "" {
 		r.Post("/api/internal/materials", a.internalCreateMaterial)
+		r.Post("/api/internal/source-changes/resolve", a.internalSourceAuthority)
+		r.Post("/api/internal/source-changes/caption", a.internalSourceCaption)
+		r.Post("/api/internal/source-refresh/publish", a.internalSourceAuthority)
 		r.Get("/api/internal/materials/{materialId}", a.internalGetMaterial)
 		r.Post("/api/internal/provider-calls", a.internalSettleProviderCall)
 		r.Post("/api/internal/import/acquire", a.internalAcquireSourceImport)
@@ -245,6 +249,8 @@ var errAgentFailed = errors.New("the chat agent hit an internal error")
 var errGenerateEmpty = errors.New("the model returned no usable material")
 
 var errScopeNoIndexedContent = errors.New("the requested scope has no indexed content")
+var errContextTooLarge = errors.New("source context exceeds the selected model's input limit")
+var errSourceChanged = errors.New("sources changed while this request was running; please try again")
 
 func (a *api) fail(w http.ResponseWriter, err error) {
 	if errors.Is(err, store.ErrNotFound) {
@@ -330,6 +336,16 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 		})
 		return
 	}
+	var busy *providerBusyError
+	if errors.As(err, &busy) {
+		w.Header().Set("Retry-After", strconv.Itoa(busy.retryAfter()))
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+			"code":              "provider_busy",
+			"message":           busy.Error(),
+			"retryAfterSeconds": busy.retryAfter(),
+		})
+		return
+	}
 	if errors.Is(err, errAIUnavailable) {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
 			"code":    "ai_unavailable",
@@ -348,6 +364,20 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
 			"code":    "scope_has_no_indexed_content",
 			"message": errScopeNoIndexedContent.Error(),
+		})
+		return
+	}
+	if errors.Is(err, errContextTooLarge) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"code":    "context_too_large",
+			"message": errContextTooLarge.Error(),
+		})
+		return
+	}
+	if errors.Is(err, errSourceChanged) {
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"code":    "source_changed",
+			"message": errSourceChanged.Error(),
 		})
 		return
 	}

@@ -286,6 +286,8 @@ type (
 // IsOwner is request-scoped: false when a non-owner reads a link/public
 // workspace (the client renders it read-only with a clone action).
 type Workspace struct {
+	AutoReparse    bool                     `json:"autoReparse"`
+	AutoReindex    bool                     `json:"autoReindex"`
 	Description    string                   `json:"description"`
 	ID             string                   `json:"id"`
 	Name           string                   `json:"name"`
@@ -323,6 +325,7 @@ type Workspace struct {
 func FromWorkspace(w store.Workspace, ownerState store.AccountState) Workspace {
 	role := store.RoleOwner
 	out := Workspace{
+		AutoReparse: w.AutoReparse, AutoReindex: w.AutoReindex,
 		ID: w.ID, Name: w.Name, Description: w.Description, Color: w.Color, Privacy: w.Privacy, ShareRole: w.ShareRole,
 		Tags: WrapTags(w.Tags), ChapterCount: w.ChapterCount, FileCount: w.FileCount,
 		FilesLimit: w.FilesLimit,

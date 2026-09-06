@@ -134,6 +134,9 @@ def test_job_pins_keep_embedding_after_default_would_move():
 
 
 class _Conn:
+    def execute(self, query, params):
+        assert query.startswith("UPDATE files SET ever_parsed_successfully=true")
+
     def __enter__(self):
         return self
 

@@ -14,10 +14,16 @@ import re
 import secrets
 from typing import Any
 
-from .. import registry
+from .. import elitellm, registry
 from ..jobs import RetryableError
+from ..prompts.ingest import (
+    DESCRIPTOR_WORDS,
+    SUMMARY_VERSION,
+    partial_messages,
+    summary_messages,
+)
 from ..registry import embedding_spec, ingest_spec
-from . import accounting, models, store
+from . import accounting, compact, models, store
 from .chunking import Chunk, _is_cjk, estimate_tokens, tokenize_for_search
 from .lang import detect_lang
 from .workflows import extract_json
@@ -38,7 +44,8 @@ def content_hash(chunks: list[Chunk]) -> str:
     """
     digest = hashlib.sha256()
     for chunk in chunks:
-        digest.update(chunk.text.encode("utf-8"))
+        digest.update(chunk.indexed_text().encode("utf-8"))
+        digest.update(b"\x01" if chunk.reference else b"\x00")
         digest.update(b"\x00")
         geometry = {
             "page_start": chunk.page_start,
@@ -68,6 +75,7 @@ async def index_file(
     chunks: list[Chunk],
     on_progress=None,
     claim_job_id: str | None = None,
+    allow_empty: bool = False,
 ) -> dict[str, Any]:
     """Write chunks and summary for canonical parsed content."""
     if not chunks:
@@ -77,6 +85,16 @@ async def index_file(
             rows=[],
             claim_job_id=claim_job_id,
         )
+        if allow_empty:
+            await store.upsert_content_summary(
+                workspace_id=workspace_id,
+                content_id=content_id,
+                fingerprint=content_hash([]),
+                descriptor="",
+                summary="",
+                summary_version=SUMMARY_VERSION,
+            )
+            await store.mark_content_ready(content_id, claim_job_id=claim_job_id)
         return {"chunks": 0}
 
     fingerprint = content_hash(chunks)
@@ -84,7 +102,17 @@ async def index_file(
     # The workspace's embedding pin, installed on the job by the worker. Not the
     # registry default: this workspace's existing chunks are in that space and
     # there is no reindex job to move them.
-    vectors = await models.embed(indexed, spec=embedding_spec())
+    spec = embedding_spec()
+    reusable = await store.existing_file_vectors(
+        workspace_id=workspace_id,
+        file_id=file_id,
+        spec=spec,
+        inputs=indexed,
+    )
+    missing = list(dict.fromkeys(text for text in indexed if text not in reusable))
+    if missing:
+        reusable.update(zip(missing, await models.embed(missing, spec=spec)))
+    vectors = [reusable[text] for text in indexed]
     if on_progress:
         on_progress(70)
 
@@ -187,26 +215,7 @@ async def embed_copied_chunks(
 
 # ------------------------------------------------------------------ summaries
 
-# Bumped when the prompt or length policy changes. Not part of pipeline_identity:
-# a prose change must not invalidate a parse. Donors copy the version so a later
-# backfill can tell old summaries from new.
-SUMMARY_VERSION = 1
-_DESCRIPTOR_WORDS = 50
 _PROMPT_RESERVE_TOKENS = 2000
-
-_SUMMARY_SYSTEM = (
-    "You summarize study material for another assistant. Return ONLY JSON: "
-    '{"descriptor": "...", "summary": "..."}. descriptor is one dense sentence '
-    "of about 50 words naming the topics covered. summary is a factual overview "
-    "of the requested length. Name specific topics, terms and results. No "
-    "preamble, no meta-commentary about the document being a document."
-)
-
-_PARTIAL_SYSTEM = (
-    "You summarize one section of a longer study document. Write a dense "
-    "factual overview of the requested length covering the specific topics, "
-    "terms and results in this section. No preamble."
-)
 
 
 def _summary_word_target(char_count: int) -> int:
@@ -280,7 +289,17 @@ def _parse_summary_payload(raw: str) -> tuple[str, str]:
 
 
 def _input_budget() -> int:
-    return max(1000, registry.input_budget(ingest_spec()))
+    spec = ingest_spec()
+    overhead = max(
+        compact.request_context(summary_messages("", 1000), spec).total_tokens,
+        compact.request_context(partial_messages("", 1000), spec).total_tokens,
+    )
+    available = (
+        registry.input_budget(spec) - overhead - compact.PROTOCOL_SAFETY_MARGIN_TOKENS
+    )
+    if available <= 0:
+        raise RetryableError("The ingest model has no space for source content.")
+    return available
 
 
 def _chunk_groups(chunks: list[Chunk], budget: int) -> list[list[Chunk]]:
@@ -288,7 +307,7 @@ def _chunk_groups(chunks: list[Chunk], budget: int) -> list[list[Chunk]]:
     current: list[Chunk] = []
     used = 0
     for chunk in chunks:
-        cost = estimate_tokens(chunk.text)
+        cost = estimate_tokens(chunk.indexed_text()) + 2
         if current and used + cost > budget:
             groups.append(current)
             current = [chunk]
@@ -303,16 +322,7 @@ def _chunk_groups(chunks: list[Chunk], budget: int) -> list[list[Chunk]]:
 
 async def _summarize_once(body: str, word_target: int) -> tuple[str, str]:
     raw = await models.complete_text(
-        [
-            {"role": "system", "content": _SUMMARY_SYSTEM},
-            {
-                "role": "user",
-                "content": (
-                    f"Write a descriptor of about {_DESCRIPTOR_WORDS} words and "
-                    f"a summary of about {word_target} words.\n\nContent:\n{body}"
-                ),
-            },
-        ],
+        summary_messages(body, word_target),
         model=ingest_spec(),
         reasoning=False,
         call_purpose="file_summary",
@@ -326,22 +336,38 @@ async def _summarize_mapped(chunks: list[Chunk], word_target: int) -> tuple[str,
     partials: list[str] = []
     per_group = max(80, word_target // max(len(groups), 1))
     for group in groups:
-        body = "\n\n".join(chunk.text for chunk in group)
+        body = "\n\n".join(chunk.indexed_text() for chunk in group)
         raw = await models.complete_text(
-            [
-                {"role": "system", "content": _PARTIAL_SYSTEM},
-                {
-                    "role": "user",
-                    "content": f"Write about {per_group} words.\n\nContent:\n{body}",
-                },
-            ],
+            partial_messages(body, per_group),
             model=ingest_spec(),
             reasoning=False,
             call_purpose="file_summary",
         )
-        if raw and raw.strip():
-            partials.append(raw.strip())
+        if not raw or not raw.strip():
+            raise RetryableError("A source section summary was empty.")
+        partials.append(raw.strip())
     combined = "\n\n---\n\n".join(partials)
+    while estimate_tokens(combined) > _input_budget():
+        previous_size = estimate_tokens(combined)
+        smaller: list[str] = []
+        for group in _chunk_groups(
+            [Chunk(text=part) for part in partials], _input_budget()
+        ):
+            raw = await models.complete_text(
+                partial_messages("\n\n".join(chunk.text for chunk in group), per_group),
+                model=ingest_spec(),
+                reasoning=False,
+                call_purpose="file_summary",
+            )
+            if not raw or not raw.strip():
+                raise RetryableError("A source section summary was empty.")
+            smaller.append(raw.strip())
+        partials = smaller
+        combined = "\n\n---\n\n".join(partials)
+        if estimate_tokens(combined) >= previous_size:
+            raise RetryableError(
+                "Source summaries exceed the ingest model input limit."
+            )
     return await _summarize_once(combined, word_target)
 
 
@@ -359,19 +385,21 @@ async def summarize_file(file_name: str, chunks: list[Chunk]) -> tuple[str, str]
     later pass ever refills it. Retrying the job (and failing it after the
     budget) is recoverable; a permanent blank is not.
     """
-    body = "\n\n".join(chunk.text for chunk in chunks)
+    body = "\n\n".join(chunk.indexed_text() for chunk in chunks)
     word_target = _summary_word_target(len(body))
     try:
         if estimate_tokens(body) <= _input_budget():
             descriptor, summary = await _summarize_once(body, word_target)
         else:
             descriptor, summary = await _summarize_mapped(chunks, word_target)
-    except accounting.SettlementError:
+    except (accounting.SettlementError, elitellm.ProviderBusy):
+        # Settlement failures must not start another provider call; a busy
+        # provider re-pends the job without spending its attempt.
         raise
     except Exception as exc:
         log.warning("file summary failed for %s", file_name, exc_info=True)
         raise RetryableError(f"file summary failed: {exc}") from exc
     return (
-        _truncate_words(descriptor, _DESCRIPTOR_WORDS),
+        _truncate_words(descriptor, DESCRIPTOR_WORDS),
         _truncate_words(summary, word_target),
     )

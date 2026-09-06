@@ -32,6 +32,19 @@ class ConfigTest(unittest.TestCase):
             config.classify({"UNCLASSIFIED_SECRET": "never printed"})
 
     def test_github_requires_known_keys_and_correct_namespace(self):
+        with patch.dict(
+            config.os.environ,
+            {
+                "CAPY_GITHUB_VARS": json.dumps(
+                    {"DEPLOYMENT_OPS_URL": "https://uat-ops.example.com"}
+                ),
+                "CAPY_GITHUB_SECRETS": "{}",
+            },
+        ):
+            self.assertEqual(
+                config.github_values(),
+                {"DEPLOYMENT_OPS_URL": "https://uat-ops.example.com"},
+            )
         with (
             patch.dict(
                 config.os.environ,
@@ -107,7 +120,7 @@ class ConfigTest(unittest.TestCase):
                 api.call_args_list[0].args, ("PATCH", "/envs/bulk", payload)
             )
 
-    def test_coolify_removes_only_replaced_names_and_retired_relay_after_verification(
+    def test_coolify_removes_replaced_and_retired_keys_after_verification(
         self,
     ):
         values = {"CAPY_PRIVATE_BIND_ADDRESS": "10.77.0.3"}
@@ -117,6 +130,7 @@ class ConfigTest(unittest.TestCase):
             for index, key in enumerate(
                 (
                     "EVO_PRIVATE_BIND_ADDRESS",
+                    "EVO_QUERY_MODEL",
                     "IMPORT_RELAY_ENQUEUE_URL",
                     "IMPORT_RELAY_SECRET",
                 )
@@ -136,6 +150,7 @@ class ConfigTest(unittest.TestCase):
                     {},
                     {},
                     {},
+                    {},
                     current + preserved,
                 ],
             ) as api,
@@ -150,6 +165,7 @@ class ConfigTest(unittest.TestCase):
                 ("DELETE", "/envs/retired-0"),
                 ("DELETE", "/envs/retired-1"),
                 ("DELETE", "/envs/retired-2"),
+                ("DELETE", "/envs/retired-3"),
                 ("GET", "/envs"),
             ],
         )

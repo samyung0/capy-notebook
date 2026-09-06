@@ -5,29 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const officeRoot = path.join(root, 'vendor', 'betteroffice');
-const engines = [
-  {
-    build: 'build:docx-wasm',
-    files: [
-      'packages/docx/src/wasm/generated/edit/docx_edit.js',
-      'packages/docx/src/wasm/generated/viewer/docx_view_wasm.js',
-    ],
-  },
-  {
-    build: 'build:xlsx-wasm',
-    files: [
-      'packages/xlsx/src/wasm/generated/xlsx_wasm.js',
-      'packages/xlsx/src/wasm/generated/viewer/xlsx_view_wasm.js',
-    ],
-  },
-  {
-    build: 'build:pptx-wasm',
-    files: [
-      'packages/pptx/src/wasm/generated/pptx_wasm.js',
-      'packages/pptx/src/wasm/generated/viewer/pptx_view_wasm.js',
-    ],
-  },
-];
+const engines = ['build:docx-wasm', 'build:xlsx-wasm', 'build:pptx-wasm'];
 
 if (!existsSync(path.join(officeRoot, 'package.json'))) {
   console.error(
@@ -36,13 +14,12 @@ if (!existsSync(path.join(officeRoot, 'package.json'))) {
   process.exit(1);
 }
 
-const missing = engines.filter(({ files }) =>
-  files.some((file) => !existsSync(path.join(officeRoot, file)))
-);
-if (missing.length === 0) process.exit(0);
-
+// The fork builder fingerprints sources and generated output. Checking only
+// whether a JS file exists would keep stale WASM after a submodule update.
 run('bun', ['install', '--frozen-lockfile']);
-for (const engine of missing) run('bun', ['run', engine.build]);
+run('bun', ['run', '--filter', '@betteroffice/docx-react', 'build:css']);
+for (const engine of engines) run('bun', ['run', engine]);
+run('bun', ['scripts/build-office-checkpoint.ts']);
 
 function run(command, args) {
   const result = spawnSync(command, args, {

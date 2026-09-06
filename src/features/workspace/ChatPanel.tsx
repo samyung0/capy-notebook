@@ -1,6 +1,8 @@
+import { useMutation } from '@tanstack/react-query';
 import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { Streamdown } from 'streamdown';
+import { api } from '@/api/client';
 import { useConversations, useMessages } from '@/api/hooks';
 import type {
   ActivityBlock,
@@ -8,6 +10,7 @@ import type {
   Citation,
   UserColor,
 } from '@/api/types';
+import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
@@ -211,8 +214,23 @@ export function ChatPanel({
   /** Opens and highlights a cited source in the center pane. */
   onOpenCitation?: (citation: Citation) => void;
 }) {
-  const { messages, conversationId, streaming, send, stop, startNew, hydrate } =
-    useChatStream(workspaceId);
+  const {
+    pendingSources,
+    messages,
+    conversationId,
+    streaming,
+    send,
+    stop,
+    startNew,
+    hydrate,
+  } = useChatStream(workspaceId);
+  const { mutate: processChanges, isPending: processingChanges } = useMutation({
+    mutationFn: async (fileIds: string[]) => {
+      await Promise.all(
+        fileIds.map((id) => api.post(`/files/${id}/process-changes`, {}))
+      );
+    },
+  });
   const { data: conversations } = useConversations(workspaceId, {
     errorBoundary: false,
   });
@@ -320,6 +338,22 @@ export function ChatPanel({
           <div className="m-auto max-w-[80%] text-center">
             <Icon className="mx-auto mb-2 size-6.5" name="message" />
             <p>{m.chat_empty()}</p>
+          </div>
+        )}
+        {pendingSources?.omitted && (
+          <div
+            className="rounded-lg border border-line bg-surface p-3 text-sm"
+            role="status"
+          >
+            <p>{m.source_pending_context()}</p>
+            <Button
+              disabled={processingChanges}
+              onClick={() => processChanges(pendingSources.fileIds)}
+              size="sm"
+              variant="ghost-hover"
+            >
+              {m.source_process_changes()}
+            </Button>
           </div>
         )}
         {messages.map((msg) =>

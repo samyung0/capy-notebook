@@ -32,6 +32,7 @@ export interface ChatStreamHandlers {
   onCitations?: (citations: Citation[], version: number) => void;
   onDone?: (e: StreamDone) => void;
   onError?: (message: string) => void;
+  onPendingSources?: (event: { fileIds: string[]; omitted: boolean }) => void;
   onPhase?: (phase: ChatPhase) => void;
   onStart?: (e: StreamStart) => void;
   onToolEnd?: (callId: string, status: 'success' | 'refused') => void;
@@ -51,8 +52,10 @@ function errorMessage(payload: unknown, fallback: string): string {
     error?: { message?: unknown };
     message?: unknown;
   };
+  if (body.code === 'source_changed') return m.error_source_changed_body();
   if (body.code === 'agent_failed') return m.chat_failed();
   if (body.code === 'model_unavailable') return m.chat_model_unavailable();
+  if (body.code === 'provider_busy') return m.error_provider_busy_body();
   if (body.code === 'invalid_llm_key' || body.code === 'invalid_key') {
     return m.settings_llm_key_invalid();
   }
@@ -115,6 +118,8 @@ export async function streamChat(
       .join('\n');
     if (!data) return;
     let ev: {
+      fileIds?: string[];
+      omitted?: boolean;
       blockId?: string;
       callId?: string;
       citations?: Citation[];
@@ -152,6 +157,17 @@ export async function streamChat(
           modelVersion: ev.modelVersion,
           providerSlug: ev.providerSlug,
         });
+        break;
+      case 'pending_sources':
+        if (
+          Array.isArray(ev.fileIds) &&
+          ev.fileIds.every((id) => typeof id === 'string') &&
+          typeof ev.omitted === 'boolean'
+        )
+          handlers.onPendingSources?.({
+            fileIds: ev.fileIds,
+            omitted: ev.omitted,
+          });
         break;
       case 'phase':
         if (ev.phase) handlers.onPhase?.(ev.phase);

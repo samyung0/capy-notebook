@@ -36,7 +36,7 @@ jobs:
           UAT_API_URL: ${{ vars.DEPLOYMENT_API_URL || vars.UAT_API_URL }}
           UAT_APP_URL: ${{ vars.DEPLOYMENT_APP_URL || vars.UAT_APP_URL }}
           UAT_COLLAB_URL: ${{ vars.DEPLOYMENT_COLLAB_URL || vars.UAT_COLLAB_URL }}
-          UAT_OPS_URL: ${{ vars.DEPLOYMENT_OPS_URL || vars.UAT_OPS_URL }}
+          DEPLOYMENT_OPS_URL: ${{ vars.DEPLOYMENT_OPS_URL }}
           UAT_TARGET_AUTHORIZED: ${{ vars.UAT_TARGET_AUTHORIZED }}
           EXPECTED_REVISION: ${{ inputs.revision || github.sha }}
         run: scripts/review/remote-smoke.sh

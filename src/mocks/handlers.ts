@@ -735,11 +735,26 @@ export const handlers = [
     const avg = att.length
       ? Math.round(att.reduce((s, a) => s + a.pct, 0) / att.length)
       : 0;
+    const sourceFiles = db.files.filter((file) => file.workspaceId === ws.id);
+    const indexed = sourceFiles.filter((file) => file.indexed).length;
+    const notIndexable = sourceFiles.filter(
+      (file) =>
+        !file.indexed &&
+        (file.kind === 'unknown' ||
+          ['doc', 'xls', 'ppt'].includes(
+            file.name.split('.').pop()?.toLowerCase() ?? ''
+          ))
+    ).length;
     return HttpResponse.json({
       attempts: att.length,
       avgScore: avg,
       chapters: ws.chapterCount,
       files: ws.fileCount,
+      indexed,
+      notIndexable,
+      notIndexed: sourceFiles.length - indexed - notIndexable,
+      pendingReindex: 0,
+      pendingReparse: 0,
       quizzes: wsQuizIds.size,
     });
   }),
@@ -748,6 +763,8 @@ export const handlers = [
       tags?: TagInput[];
     };
     const ws: Workspace = {
+      autoReindex: true,
+      autoReparse: true,
       capabilities: {
         canComment: true,
         canEdit: true,

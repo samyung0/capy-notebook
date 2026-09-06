@@ -75,19 +75,11 @@
       "kind": "variable",
       "targets": ["ingest-production", "ingest-shared"]
     },
-    "CAPY_CAPTION_VERSION": {
-      "kind": "variable",
-      "targets": ["ingest-production", "ingest-shared"]
-    },
     "CAPY_ELEVENLABS_CONCURRENCY_UNITS": {
       "kind": "variable",
       "targets": ["ingest-production", "ingest-shared"]
     },
     "CAPY_ELEVENLABS_SYNC_TIMEOUT_S": {
-      "kind": "variable",
-      "targets": ["ingest-production", "ingest-shared"]
-    },
-    "CAPY_ELEVENLABS_TRANSCRIPT_VERSION": {
       "kind": "variable",
       "targets": ["ingest-production", "ingest-shared"]
     },
@@ -231,6 +223,14 @@
       "kind": "variable",
       "targets": ["ingest-production"]
     },
+    "CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S": {
+      "kind": "variable",
+      "targets": ["coolify"]
+    },
+    "CAPY_INTERACTIVE_STREAM_MAX_S": {
+      "kind": "variable",
+      "targets": ["coolify"]
+    },
     "CAPY_MINERU_INTER_OP_NUM_THREADS": {
       "kind": "variable",
       "targets": ["ingest-production", "ingest-shared"]
@@ -246,6 +246,11 @@
     "CAPY_MINERU_SLICE_PAGES": {
       "kind": "variable",
       "targets": ["ingest-production", "ingest-shared"]
+    },
+    "CAPY_MODEL_CONCURRENCY": {
+      "kind": "variable",
+      "targets": ["coolify", "ingest-production", "ingest-shared"],
+      "required_for": ["coolify", "ingest-production", "ingest-shared"]
     },
     "CAPY_OFFICE_CONVERT_TIMEOUT": {
       "kind": "variable",
@@ -442,6 +447,10 @@
       "kind": "variable",
       "targets": ["workflow"],
       "required_for": ["workflow"]
+    },
+    "DEPLOYMENT_OPS_URL": {
+      "kind": "variable",
+      "targets": ["workflow", "quality"]
     },
     "DEV_USER_ID": {
       "kind": "variable",
@@ -738,11 +747,6 @@
       "targets": ["quality"],
       "environments": ["uat"]
     },
-    "UAT_OPS_URL": {
-      "kind": "variable",
-      "targets": ["quality"],
-      "environments": ["uat"]
-    },
     "UAT_OTHER_EMAIL": {
       "kind": "variable",
       "targets": ["quality"],
@@ -774,6 +778,10 @@
       "environments": ["uat"]
     },
     "VITE_API_URL": {
+      "kind": "variable",
+      "targets": ["local"]
+    },
+    "VITE_DEV_HOST": {
       "kind": "variable",
       "targets": ["local"]
     },

@@ -1,4 +1,0 @@
-Photosynthesis converts light energy into chemical energy. Chlorophyll absorbs
-mostly red and blue light. The Calvin cycle fixes carbon dioxide into glucose
-inside the stroma of chloroplasts. ATP and NADPH produced by the light reactions
-power the Calvin cycle.

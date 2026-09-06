@@ -442,7 +442,7 @@ func (s *Store) ListPublicWorkspaces(ctx context.Context) ([]PublicWorkspace, er
 		var w PublicWorkspace
 		if err := rows.Scan(&w.ID, &w.Name, &w.Description, &w.Color, &w.Privacy, &w.ShareRole,
 			&w.Tags, &w.OwnerUserID, &w.OwnerName, &w.OwnerPlanTier,
-			&w.ChapterCount, &w.FileCount, &w.CreatedAt, &w.LastAccessedAt,
+			&w.ChapterCount, &w.FileCount, &w.CreatedAt, &w.LastAccessedAt, &w.AutoReparse, &w.AutoReindex,
 			&w.Author, &w.Clones); err != nil {
 			return nil, err
 		}
@@ -666,7 +666,7 @@ type workspaceCloneFile struct {
 	contentHash, sourceSHA256           *string
 	sizeBytes                           int64
 	position                            int64
-	indexed, captionImages              bool
+	indexed, captionImages, everParsed  bool
 	parseMode                           string
 }
 
@@ -827,7 +827,7 @@ func (s *Store) snapshotWorkspaceForClone(
 			)),
 			parser, engine, blob_path, preview_blob_path, url, content,
 			parsed_fingerprint, parsed_parser_version, source_etag,
-			content_hash, source_sha256, parse_mode, caption_images
+			content_hash, source_sha256, parse_mode, caption_images, ever_parsed_successfully
 		 FROM files
 		 WHERE workspace_id=$1 AND status='ready'
 		 ORDER BY added_at`,
@@ -860,6 +860,7 @@ func (s *Store) snapshotWorkspaceForClone(
 			&file.sourceSHA256,
 			&file.parseMode,
 			&file.captionImages,
+			&file.everParsed,
 		); err != nil {
 			rows.Close()
 			return workspaceCloneSnapshot{}, err
@@ -1149,15 +1150,20 @@ func (s *Store) cloneWorkspaceOnce(
 			}
 			if _, err := tx.Exec(ctx, `INSERT INTO files
 				(id, workspace_id, user_id, created_by, chapter_id, position, name, kind, size_bytes, added_at, status, indexed, parser, engine, blob_path, preview_blob_path, url, content,
-				 parsed_fingerprint, parsed_parser_version, source_etag, content_hash, source_sha256, parse_mode, caption_images)
-				VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
+				 parsed_fingerprint, parsed_parser_version, source_etag, content_hash, source_sha256, parse_mode, caption_images, ever_parsed_successfully)
+				VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)`,
 				nid, newID, userID, chapterID, f.position, f.name, f.kind, f.sizeBytes, time.Now().UTC(), f.status, f.indexed, f.parser, f.engine, f.blobPath, f.previewBlobPath, url, f.content,
-				f.parsedFingerprint, f.parsedParserVersion, f.sourceETag, f.contentHash, f.sourceSHA256, f.parseMode, f.captionImages); err != nil {
+				f.parsedFingerprint, f.parsedParserVersion, f.sourceETag, f.contentHash, f.sourceSHA256, f.parseMode, f.captionImages, f.everParsed); err != nil {
 				return Workspace{}, err
 			}
 		}
 	}
 
+	for oldID, newID := range fileMap {
+		if err := cloneImageCaptionAssociations(ctx, tx, oldID, newID, false); err != nil {
+			return Workspace{}, err
+		}
+	}
 	if err := cloneRetrievalIndex(ctx, tx, srcID, newID, srcEmbed.Pin, fileMap, chapterMap); err != nil {
 		return Workspace{}, err
 	}
@@ -1174,6 +1180,9 @@ func (s *Store) cloneWorkspaceOnce(
 			asset.newID, newID, userID, asset.name, asset.purpose,
 			asset.objectPath, asset.contentType, asset.sizeBytes, asset.etag,
 			asset.createdAt, asset.completedAt); err != nil {
+			return Workspace{}, err
+		}
+		if err := cloneImageCaptionAssociations(ctx, tx, asset.oldID, asset.newID, true); err != nil {
 			return Workspace{}, err
 		}
 	}
@@ -1491,6 +1500,9 @@ func (s *Store) cloneMaterialKindOnce(
 			asset.completedAt); err != nil {
 			return Material{}, err
 		}
+		if err := cloneImageCaptionAssociations(ctx, tx, asset.oldID, asset.newID, true); err != nil {
+			return Material{}, err
+		}
 	}
 	rewrite := func(value string) (string, error) {
 		if src.Kind == "flashcards" {
@@ -1618,4 +1630,15 @@ func (s *Store) UpdateFlashcardSet(ctx context.Context, id string, p FlashcardSe
 		return FlashcardSet{}, err
 	}
 	return s.GetFlashcardSet(ctx, id)
+}
+
+// Explicit authorized copies carry resource-owned caption references. Hash
+// discovery uses a separate live-visibility check in the caption resolver.
+func cloneImageCaptionAssociations(ctx context.Context, tx pgx.Tx, oldID, newID string, asset bool) error {
+	column := "file_id"
+	if asset {
+		column = "editor_asset_id"
+	}
+	_, err := tx.Exec(ctx, `INSERT INTO image_caption_associations(id,`+column+`,image_sha256,caption_blob_path,size_bytes) SELECT 'ica_'||substr(md5(random()::text||clock_timestamp()::text||id),1,24),$2,image_sha256,caption_blob_path,size_bytes FROM image_caption_associations WHERE published AND `+column+`=$1`, oldID, newID)
+	return err
 }

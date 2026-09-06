@@ -1,4 +1,4 @@
-export const OFFICE_PROTOCOL_VERSION = 2 as const;
+export const OFFICE_PROTOCOL_VERSION = 3 as const;
 
 export type OfficeFormat = 'docx' | 'xlsx' | 'pptx';
 export type OfficeMode = 'view' | 'edit';
@@ -33,7 +33,21 @@ export type OfficeHostMessage =
       canEdit: boolean;
       mode: OfficeMode;
       revision: number;
+      collaboration?: { epoch: number; initialUpdate: ArrayBuffer };
     }
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'update';
+      epoch: number;
+      bytes: ArrayBuffer;
+    }
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'flush';
+      epoch: number;
+      id: string;
+    }
+  | { version: typeof OFFICE_PROTOCOL_VERSION; type: 'export'; id: string }
   | {
       version: typeof OFFICE_PROTOCOL_VERSION;
       type: 'set-capabilities';
@@ -41,6 +55,34 @@ export type OfficeHostMessage =
     };
 
 export type OfficeRuntimeMessage =
+  | { version: typeof OFFICE_PROTOCOL_VERSION; type: 'initialized' }
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'update' | 'collaboration-ready';
+      epoch: number;
+      bytes: ArrayBuffer;
+      revision: number;
+    }
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'flushed';
+      epoch: number;
+      id: string;
+      bytes: ArrayBuffer;
+      revision: number;
+    }
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'checkpoint';
+      revision: number;
+    }
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'exported';
+      id: string;
+      bytes: ArrayBuffer;
+      revision: number;
+    }
   | {
       version: typeof OFFICE_PROTOCOL_VERSION;
       type: 'ready';
@@ -72,18 +114,20 @@ export type OfficeRuntimeMessage =
       revision: number;
     };
 
-export type OfficeRuntimePayload = {
-  [Type in OfficeRuntimeMessage['type']]: Omit<
-    Extract<OfficeRuntimeMessage, { type: Type }>,
-    'version'
-  >;
-}[OfficeRuntimeMessage['type']];
+type WithoutVersion<T> = T extends unknown ? Omit<T, 'version'> : never;
+export type OfficeRuntimePayload = WithoutVersion<OfficeRuntimeMessage>;
 
 export function isOfficeHostMessage(
   value: unknown
 ): value is OfficeHostMessage {
   if (!value || typeof value !== 'object') return false;
-  const candidate = value as { type?: unknown; version?: unknown };
+  const candidate = value as Record<string, unknown>;
+  if (candidate.version !== OFFICE_PROTOCOL_VERSION) return false;
+  if (candidate.type === 'update')
+    return isCount(candidate.epoch) && candidate.bytes instanceof ArrayBuffer;
+  if (candidate.type === 'flush')
+    return isCount(candidate.epoch) && typeof candidate.id === 'string';
+  if (candidate.type === 'export') return typeof candidate.id === 'string';
   return (
     candidate.version === OFFICE_PROTOCOL_VERSION &&
     ((candidate.type === 'load' &&
@@ -97,7 +141,9 @@ export function isOfficeHostMessage(
       typeof (candidate as { canEdit?: unknown }).canEdit === 'boolean' &&
       (candidate as { bytes?: unknown }).bytes instanceof ArrayBuffer &&
       typeof (candidate as { revision?: unknown }).revision === 'number' &&
-      isRevision((candidate as { revision: number }).revision)) ||
+      isRevision((candidate as { revision: number }).revision) &&
+      (candidate.mode === 'view' ||
+        isCollaboration(candidate.collaboration))) ||
       (candidate.type === 'set-capabilities' &&
         typeof (candidate as { canEdit?: unknown }).canEdit === 'boolean'))
   );
@@ -112,6 +158,24 @@ export function isOfficeRuntimeMessage(
     type?: unknown;
     version?: unknown;
   };
+  const raw = value as Record<string, unknown>;
+  if (raw.version === OFFICE_PROTOCOL_VERSION && raw.type === 'initialized')
+    return true;
+  if (raw.version === OFFICE_PROTOCOL_VERSION && isCount(raw.revision)) {
+    if (raw.type === 'checkpoint') return true;
+    if (raw.type === 'exported')
+      return typeof raw.id === 'string' && raw.bytes instanceof ArrayBuffer;
+    if (
+      raw.type === 'update' ||
+      raw.type === 'collaboration-ready' ||
+      raw.type === 'flushed'
+    )
+      return (
+        isCount(raw.epoch) &&
+        raw.bytes instanceof ArrayBuffer &&
+        (raw.type !== 'flushed' || typeof raw.id === 'string')
+      );
+  }
   return (
     candidate.version === OFFICE_PROTOCOL_VERSION &&
     typeof candidate.revision === 'number' &&
@@ -167,4 +231,12 @@ function isCount(value: unknown): value is number {
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function isCollaboration(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    isCount(candidate.epoch) && candidate.initialUpdate instanceof ArrayBuffer
+  );
 }

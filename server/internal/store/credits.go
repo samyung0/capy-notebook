@@ -1165,7 +1165,7 @@ func (s *Store) sweepOrphanIngestReservations(ctx context.Context) (int64, error
 		     AND r.created_at < now() - ($2 * interval '1 millisecond')
 		     AND NOT EXISTS (
 		       SELECT 1 FROM jobs j
-		        WHERE j.type IN ('parse', 'ingest')
+		        WHERE j.type IN ('parse', 'ingest', 'source_refresh')
 		          AND j.status IN ('pending', 'running')
 		          AND j.payload->>'reservationId' = r.id
 		     )

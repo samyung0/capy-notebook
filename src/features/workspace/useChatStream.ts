@@ -48,6 +48,10 @@ export function shouldApplyCitations(
  */
 export function useChatStream(workspaceId: string) {
   const qc = useQueryClient();
+  const [pendingSources, setPendingSources] = useState<{
+    fileIds: string[];
+    omitted: boolean;
+  } | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [streaming, setStreaming] = useState(false);
@@ -61,6 +65,7 @@ export function useChatStream(workspaceId: string) {
 
   const hydrate = useCallback(
     (convId: string | null, history: ChatMessage[]) => {
+      setPendingSources(null);
       setConversationId(convId);
       setMessages(history);
     },
@@ -69,6 +74,7 @@ export function useChatStream(workspaceId: string) {
 
   const startNew = useCallback(() => {
     abortRef.current?.abort();
+    setPendingSources(null);
     setConversationId(null);
     setMessages([]);
   }, []);
@@ -197,6 +203,7 @@ export function useChatStream(workspaceId: string) {
               });
             },
             onError: fail,
+            onPendingSources: setPendingSources,
             onPhase: (phase) => patch(currentId, { phase }),
             onStart: ({
               messageId,
@@ -282,5 +289,14 @@ export function useChatStream(workspaceId: string) {
     [conversationId, qc, patch, streaming, workspaceId]
   );
 
-  return { conversationId, hydrate, messages, send, startNew, stop, streaming };
+  return {
+    conversationId,
+    hydrate,
+    messages,
+    pendingSources,
+    send,
+    startNew,
+    stop,
+    streaming,
+  };
 }

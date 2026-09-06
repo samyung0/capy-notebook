@@ -439,7 +439,7 @@ func TestSetModelPrefsRevalidatesAfterWaitingForUserLock(t *testing.T) {
 			SELECT EXISTS (
 				SELECT 1 FROM pg_stat_activity
 				 WHERE wait_event_type='Lock'
-				   AND query LIKE '%deleted_at, deletion_requested_at%FOR UPDATE%'
+				   AND query LIKE '%deleted_at, deletion_requested_at%FOR%UPDATE%'
 			)`).Scan(&waiting); err != nil {
 			t.Fatal(err)
 		}

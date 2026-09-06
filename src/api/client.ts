@@ -66,6 +66,11 @@ export function isModelUnavailableError(err: unknown): err is ApiError {
   return isApiError(err) && err.code === 'model_unavailable';
 }
 
+/** The pipeline's retry budget met a busy provider or a full per-model gate. */
+export function isProviderBusyError(err: unknown): err is ApiError {
+  return isApiError(err) && err.code === 'provider_busy';
+}
+
 export function isInvalidLLMKeyError(err: unknown): err is ApiError {
   return isApiError(err) && err.code === 'invalid_llm_key';
 }
@@ -99,6 +104,7 @@ const CODED_ERROR_MESSAGES = new Set([
   'workspace_limit_exceeded',
   'llm_credits_exhausted',
   'model_unavailable',
+  'provider_busy',
   'invalid_llm_key',
   'llm_key_failed',
   'material_content_unreadable',

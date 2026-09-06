@@ -20,9 +20,11 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from .. import obs, registry, use_compatible_event_loop
-from ..config import cfg
-from ..retrieval import accounting, models, store, workflows
+from .. import elitellm, obs, registry, use_compatible_event_loop
+from ..config import cfg, require_model_concurrency_in_production
+from ..prompts import generate as generate_prompts
+from ..prompts import quiz as quiz_prompts
+from ..retrieval import accounting, compact, models, pending, store, workflows
 from ..retrieval.agent import CLIENT_ERROR, CLIENT_ERROR_CODE, ClientDrop, run_agent
 from ..retrieval.chunking import clip_to_tokens, estimate_tokens
 from ..retrieval.events import error as client_error
@@ -85,6 +87,22 @@ async def user_key_error_handler(_request: Request, exc: models.UserKeyError):
     return JSONResponse({"code": exc.code, "message": exc.message}, status_code=400)
 
 
+@app.exception_handler(compact.ContextTooLarge)
+@app.exception_handler(workflows.PendingSourceContextTooLarge)
+async def pending_source_context_handler(
+    _request: Request,
+    exc: workflows.PendingSourceContextTooLarge | compact.ContextTooLarge,
+):
+    return JSONResponse(
+        {"code": "context_too_large", "message": str(exc)}, status_code=400
+    )
+
+
+@app.exception_handler(pending.SourceChanged)
+async def source_changed_handler(_request: Request, exc: pending.SourceChanged):
+    return JSONResponse({"code": exc.code, "message": str(exc)}, status_code=409)
+
+
 @app.exception_handler(workflows.GenerateEmpty)
 async def generate_empty_handler(_request: Request, exc: workflows.GenerateEmpty):
     return JSONResponse(
@@ -109,6 +127,22 @@ async def generate_no_content_handler(
     )
 
 
+@app.exception_handler(elitellm.ProviderBusy)
+async def provider_busy_handler(_request: Request, exc: elitellm.ProviderBusy):
+    """The call's busy budget is spent: tell the gateway how long to wait."""
+    seconds = models.busy_retry_after_s(exc)
+    return JSONResponse(
+        {
+            "code": models.BUSY_ERROR_CODE,
+            "message": models.BUSY_ERROR,
+            "retryable": True,
+            "retryAfterSeconds": seconds,
+        },
+        status_code=503,
+        headers={"Retry-After": str(seconds)},
+    )
+
+
 @app.middleware("http")
 async def request_context(request: Request, call_next):
     """Continue the gateway's trace and open a usage accumulator per request.
@@ -126,6 +160,7 @@ async def request_context(request: Request, call_next):
 
 
 app.include_router(plate_ai_router)
+require_model_concurrency_in_production()
 
 
 def _uid(prefix: str) -> str:
@@ -196,14 +231,6 @@ class GenerateReq(LLMPin):
 
 
 _VALID_LEVELS = {"recall", "application", "analysis"}
-
-# What each cognitive level asks the LLM to write, so questions have a purpose
-# instead of a vague difficulty knob.
-_LEVEL_GUIDE = (
-    "recall (remember a fact, term, or definition), "
-    "application (use a concept or procedure to solve a problem), "
-    "analysis (compare, break down, or reason about relationships between ideas)"
-)
 
 
 def _cognitive_levels(req: GenerateReq) -> list[str]:
@@ -366,11 +393,11 @@ async def quiz_grade(req: QuizGradeReq) -> dict[str, Any]:
     try:
         text = await models.complete_text(
             [
-                {"role": "system", "content": quiz_grade_mod.GRADE_SYSTEM},
+                {"role": "system", "content": quiz_prompts.GRADE_SYSTEM},
                 {
                     "role": "user",
                     "content": clip_to_tokens(
-                        quiz_grade_mod.build_grade_prompt(
+                        quiz_prompts.build_grade_prompt(
                             prompt=req.prompt,
                             hints=req.hints or [],
                             rubrics=req.rubrics or [],
@@ -396,14 +423,6 @@ async def quiz_grade(req: QuizGradeReq) -> dict[str, Any]:
 
 
 # ------------------------------------------------------------------- generate
-
-_DIAGRAM_HEADER = {
-    "flowchart": "flowchart TD",
-    "sequence": "sequenceDiagram",
-    "class": "classDiagram",
-    "state": "stateDiagram-v2",
-    "er": "erDiagram",
-}
 
 
 @app.post("/generate")
@@ -434,29 +453,37 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
     )
     chapters = req.chapters or []
     file_ids = req.fileIds or []
-    context, passages = await workflows.gather_context(
+    if req.kind == "flashcards":
+        instruction = generate_prompts.flashcards_instruction(req.count)
+    elif req.kind == "mindmap":
+        instruction = generate_prompts.mindmap_instruction(req.detail)
+    elif req.kind == "diagram":
+        instruction = generate_prompts.diagram_instruction(req.diagramType)
+    elif req.kind == "quiz":
+        instruction = generate_prompts.quiz_instruction(
+            count=req.count, types=req.types, levels=_cognitive_levels(req)
+        )
+    else:
+        raise ValueError(f"unsupported generate kind {req.kind!r}")
+    scope = workflows.scope_label(chapters, [])
+    context, _passages, changes = await workflows.generation_context(
         workspace_id=req.workspaceId,
         file_ids=file_ids or None,
-        budget=registry.input_budget(model),
+        instruction=instruction,
+        scope=scope,
+        model=model,
+        locale=req.locale,
     )
-    if not passages:
-        raise workflows.GenerateNoContent("The requested scope has no indexed content.")
-    file_names = sorted({p.file_name for p in passages})
-    scope = workflows.scope_label(chapters, file_names)
+    raw = await workflows.produce(
+        instruction=instruction,
+        context=context,
+        scope=scope,
+        model=model,
+        locale=req.locale,
+        pending_sources=changes,
+    )
 
     if req.kind == "flashcards":
-        n = req.count
-        raw = await workflows.produce(
-            instruction=(
-                f"Create {n} study flashcards from these sources. Return ONLY a JSON "
-                'array of objects {"front": "...", "back": "..."}. Each front is a '
-                "single question or term; each back is a self-contained answer."
-            ),
-            context=context,
-            scope=scope,
-            model=model,
-            locale=req.locale,
-        )
         data = workflows.require_json_list(raw, "flashcards")
         cards = [
             {
@@ -474,19 +501,6 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
         return {"kind": "flashcards", "cards": cards}
 
     if req.kind == "mindmap":
-        detail = req.detail
-        raw = await workflows.produce(
-            instruction=(
-                "Create a Mermaid `mindmap` organizing the key concepts of these "
-                f"sources and their relationships ({detail} level of detail). Return "
-                "ONLY the Mermaid code starting with the line `mindmap` — no code "
-                "fences, no prose."
-            ),
-            context=context,
-            scope=scope,
-            model=model,
-            locale=req.locale,
-        )
         code = workflows.require_mermaid(raw, "mindmap")
         return {
             "kind": "mindmap",
@@ -495,24 +509,6 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
         }
 
     if req.kind == "diagram":
-        dtype = req.diagramType.lower()
-        header = _DIAGRAM_HEADER.get(dtype)
-        want = (
-            f"a Mermaid `{header}` diagram"
-            if header
-            else "the most appropriate Mermaid diagram"
-        )
-        raw = await workflows.produce(
-            instruction=(
-                f"Create {want} that best illustrates the key ideas, processes or "
-                "relationships in these sources. Return ONLY the Mermaid code (a "
-                "valid diagram) — no code fences, no prose."
-            ),
-            context=context,
-            scope=scope,
-            model=model,
-            locale=req.locale,
-        )
         code = workflows.require_mermaid(raw, "diagram")
         return {
             "kind": "diagram",
@@ -522,33 +518,6 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
 
     if req.kind != "quiz":
         raise ValueError(f"unsupported generate kind {req.kind!r}")
-    n = req.count
-    types = req.types
-    levels = _cognitive_levels(req)
-    raw = await workflows.produce(
-        instruction=(
-            f"Create a {n}-question quiz from these sources using question types "
-            f'{types}. Tag each question with a cognitive "level" chosen from: '
-            f"{_LEVEL_GUIDE}. Aim for a mix across these levels: {levels}, and make "
-            "each question genuinely match the cognitive demand of its level. "
-            "Return ONLY a JSON array of question objects. Each object has: "
-            '"type" (one of mcq, multi, boolean, short, open, ordering, matching), '
-            '"level" (recall|application|analysis), "prompt", and the fields '
-            "appropriate to its type (mcq/multi: options[] + correct[] indices; "
-            "boolean: correct bool; short: accepted[]; open: accepted[] model "
-            "answer, hints[], rubrics[] marking-scheme strings, optional points; "
-            "ordering: items[] in order; matching: pairs[] of {left,right}). For "
-            "mcq and multi, each option MUST be an object "
-            '{"value": "...", "explanation": "..."} where the explanation says '
-            "why that option is correct or incorrect. For boolean, short, open, "
-            "ordering and matching, add a single "
-            '"explanation" field for the question.'
-        ),
-        context=context,
-        scope=scope,
-        model=model,
-        locale=req.locale,
-    )
     questions = workflows.normalize_questions(workflows.require_json_list(raw, "quiz"))
     if not questions:
         raise workflows.GenerateEmpty("quiz")

@@ -119,6 +119,30 @@ Historical benchmark/architecture evidence retains original identifiers, as do
 local checkout and SSH-key paths. GitHub's existing Coolify deploy-key title is
 also unchanged because that API requires replacing the key to change its label.
 
+## Configuration rename follow-up, 2026-09-06
+
+Ops checks use `DEPLOYMENT_OPS_URL` directly in the selected GitHub environment
+and local environment file. The manifest accepts it, the UAT example includes
+it, and the duplicate repository `UAT_OPS_URL` was removed after verifying the
+values matched. GitHub variables and secret names contain no `EVO_*` entries.
+
+UAT Coolify's saved Compose definition was reloaded from its repository without
+starting a deployment. The four renamed settings and sender name were aligned
+with GitHub variables, and the old names and retired `EVO_QUERY_MODEL` were
+removed. Future configuration sync also removes that retired query-model key.
+Other credentials remain subject to the normal GitHub deployment sync.
+
+The ignored local ingest inventory now names the existing `capy-ingest-1`
+host. Local parser paths and development database credentials match the Capy
+Compose setup; retired import-relay entries were removed. `VITE_DEV_HOST` is
+classified as local-only. Both local environment files validate.
+
+Deployment tests and offline ops URL authorization checks passed. UAT config
+rendering passed with actual GitHub variables and local copies of its secrets;
+GitHub secret values cannot be read back. No deployment, service restart,
+production change, or database migration was performed. The original RAG lab,
+historical evidence, backups, and existing SSH-key filenames remain preserved.
+
 
 ## UAT hosting and seed follow-up, 2026-09-05
 

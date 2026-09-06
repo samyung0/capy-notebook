@@ -1,0 +1,28 @@
+# Independent final source frontend and collaboration re-review
+
+Reviewed the current shared working tree on 2026-09-06. No actionable confirmed findings in the requested scope. All three findings in `/private/tmp/capy-source-frontend-collab-review.md` are addressed by the implementation inspected here.
+
+This was an independent read-only review. I read repository/local instructions, human/ponytail/unslop skills, applicable human decisions, the Office plan, Office and error-handling OpenWiki, authorization lifecycle guidance, the earlier report, and the implementation follow-up. No product files or human decisions were edited. Temporary browser instrumentation was served through a temporary Vite plugin without putting probe files into the repository.
+
+## Prior finding verification
+
+- Draft ownership and cleanup: `src/features/files/useSourceSession.ts:100` allocates a distinct session ID, restores compatible persisted states into the shared document, and retains incompatible drafts. `src/features/files/sourceDraft.ts:78` compares each version and deletes within the same read/write IndexedDB transaction. `useSourceSession.ts:313` cleans only after a matched acknowledgment covers the current authored sequence. Unrelated and duplicate receipts cannot trigger cleanup. The two-tab browser check independently passed: cleanup of snapshots A1/B1 removed A1 and retained B2 with its exact content.
+- Visible XLSX input and handoff: `src/features/files/useSourceSession.ts:83` waits for the registered input flusher before requesting/accepting durability; pending input participates in dirty and clean-epoch decisions. `src/office-runtime/main.tsx:115` waits for composition and pointer completion before the editor flusher. `vendor/betteroffice/packages/xlsx-react/src/XlsxEditor.tsx:1397` commits cell/formula buffers and queued chart nudges before encoding/export. Independent actual-runtime Chromium checks passed for formula Ctrl+S, open-cell Ctrl+S, capability pause followed by flush with an open cell, export/reopen preserving that cell, and IME pause refusing to acknowledge until compositionend before preserving Japanese text. No page errors occurred.
+- Text preview: `src/features/files/SourceTextView.tsx:28` subscribes to the currently joined Y.Text while previewing and rebuilds/revokes blob URLs on changes. The old one-off Done snapshot is gone. Published URL/revision changes do not replace the joined document or remount the active text binding. Static verification agrees with the implementation's archived actual-component browser probe; I did not independently repeat that separate text-preview probe.
+
+## Access and handoff lifecycle review
+
+The new `GET /internal/collaboration/files/{id}/access` handler checks the collaboration secret before calling the store. `server/internal/store/source_documents.go:155` reuses `sourceLockTx`, including file/workspace existence, actor and owner account-session locks, current workspace role/sharing checks, and owner write eligibility. It then checks the source epoch and that its base revision still matches the file. It avoids reading/encoding current/indexed state or issuing a blob URL. The Node request forwards the actor, room epoch, and write requirement, and handles a successful empty 204 response. Authentication and token refresh use this check; inbound source edits use it before applying changes. Durable checkpoint admission retains its separate authorization/quota validation.
+
+Traced local writer readiness, matching socket/epoch/checkpoint IDs, read-only transition, persisted-state CAS, distributed instance acknowledgments, Redis lease checks, cancel/complete handling, and client epoch recovery. The watchdog consults the authoritative epoch, restores editing only for an unchanged epoch, closes old connections for a completed publication, and closes connections when authority cannot be read. Publication retries check the fenced durable job receipt before rejecting the already-advanced epoch. No additional confirmed defect emerged in these paths.
+
+## Checks run by this reviewer
+
+- `pnpm run test:collaboration collaboration/src/sourceDocuments.test.ts collaboration/src/sourceHandoff.test.ts`: 2 suites, 10 tests passed. Includes lightweight access request shape, source token epoch binding, delayed-replica merge, empty finalize acknowledgment, matching handoff readiness, watchdog completion/cancellation, and published receipt retry.
+- `/private/tmp/capy-source-final-rereview-browser.cjs`: actual Office iframe and IndexedDB functions, all focused input/IME/export/two-tab checks passed. Screenshot `/private/tmp/capy-source-final-rereview-browser.png`.
+- `/private/tmp/capy-source-pointer-rereview.cjs`: real mouse drag starting in the formula input and ending above the iframe, followed by flush. Passed; returned `flushed`, cleared pending state, and retained `pending pointer test`. This disproved the suspected stuck-pointer case, so it is not a finding.
+- Browser processes and the owned temporary Vite server were stopped. Native/Rust builds were not started.
+
+## Limits
+
+No real multi-instance Redis/HTTP coordinator crash exercise, authenticated full-app peer session, real OS IME, or large-file performance run was performed. The IME probe dispatches composition events through the actual runtime/editor. Collaboration tests mock remote services. The existing recovery UI still exposes one incompatible snapshot at a time while retaining all incompatible entries, as documented in the implementation report. I did not rerun the root Go store suite or the full frontend/native suites because the coordinating task already had passing results. These limits do not establish a defect.

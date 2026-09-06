@@ -585,6 +585,8 @@ func (s *Store) reconcileStorageUserTx(
 	var used, reserved int64
 	if err := tx.QueryRow(ctx, `SELECT
 		COALESCE((SELECT sum(size_bytes) FROM files WHERE user_id=$1), 0)
+		+ COALESCE((SELECT sum(storage_bytes) FROM source_documents WHERE user_id=$1),0)
+		+ COALESCE((SELECT sum(storage_bytes) FROM source_refresh_candidates WHERE user_id=$1),0)
 		+ COALESCE((SELECT sum(size_bytes) FROM editor_assets
 			WHERE user_id=$1 AND status='ready'), 0)
 		+ COALESCE((SELECT sum(size_bytes) FROM materials

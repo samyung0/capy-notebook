@@ -1,20 +1,21 @@
-"""Shared test configuration: VCR replay + ephemeral Docker infrastructure.
+"""Shared test configuration: ephemeral Docker infrastructure + VCR replay.
 
-Why record-replay
------------------
-The pipeline's real cost is model traffic: embeddings and DeepSeek
-completions for summaries and answers. Those HTTP
-interactions are recorded ONCE into per-test YAML cassettes
-(``tests/cassettes/``) and replayed for free afterwards. Postgres and Redis are
-raw TCP, not HTTP, so cassette tests start fresh containers per pytest session
-and tear them down at the end.
+No test drives retrieval behaviour through a recorded model response. Pipeline
+logic is asserted against Postgres with synthetic embeddings
+(``@pytest.mark.integration``) or in pure unit tests, so a prompt or model
+change cannot break a test that is really about chunking, scoping, or cascade
+deletes.
 
-Two modes (see ``tests/README.md``):
-- **replay** (default): ``CAPY_TEST_RECORD`` unset. No model traffic; cassettes
-  must exist. Provider keys can be dummies.
-- **record**: ``CAPY_TEST_RECORD=once`` with real API keys exported.
+VCR survives for one narrow job: ``test_model_replay.py`` replays the certified
+two-turn cassettes in ``tests/cassettes/replay/`` to prove a catalog model
+streams tool calls in the shape the adapter parses. That is a claim about a
+provider's wire format, not about this pipeline.
 
-Both modes need Docker. The retrieval index is owned by the Go schema now, so
+- **replay** (default): ``CAPY_TEST_RECORD`` unset. No model traffic.
+- **record**: ``CAPY_TEST_RECORD=once`` with real keys, via ``pnpm
+  model:certify`` only.
+
+Integration tests need Docker. The retrieval index is owned by the Go schema, so
 the container is the stock ``pgvector/pgvector:pg16`` image and the fixture
 applies every numbered ``server/migrations/NNNN_*.sql`` file in name order —
 the same files ``Store.Migrate`` ledgers. Demo seed is not applied; the
@@ -38,7 +39,6 @@ import pytest
 # environment (record mode) always wins over these replay defaults. Database and
 # Redis URLs are installed by the infra fixture once Docker assigns host ports.
 # --------------------------------------------------------------------------
-FIXTURES = Path(__file__).parent / "fixtures"
 CASSETTES = Path(__file__).parent / "cassettes"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -91,21 +91,6 @@ MIGRATIONS = sorted(
     for path in (REPO_ROOT / "server" / "migrations").glob("*.sql")
     if _MIGRATION_NAME.match(path.name)
 )
-
-
-def pytest_runtest_setup(item):
-    """Skip cassette tests with no recording, before any fixture runs.
-
-    The check cannot live in the ``cassette`` fixture: ``_test_infra`` is
-    session-scoped, so pytest would start Docker before a function-scoped
-    fixture ever gets the chance to skip.
-    """
-    if RECORD_MODE != "none" or item.get_closest_marker("cassette") is None:
-        return
-    if not (CASSETTES / f"{item.name}.yaml").exists():
-        pytest.skip(
-            f"cassette {item.name}.yaml not recorded — run CAPY_TEST_RECORD=once"
-        )
 
 
 # --------------------------------------------------------------------------
@@ -180,7 +165,7 @@ def _apply_migration(dsn: str) -> None:
 
 @pytest.fixture(scope="session")
 def _test_infra():
-    """Fresh Postgres/Redis containers, migrated, for cassette tests."""
+    """Fresh Postgres/Redis containers, migrated, for integration tests."""
     from testcontainers.core.container import DockerContainer
     from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
@@ -279,19 +264,6 @@ def _vcr():
     # hostnames never need to be reproduced at replay time.
     v.match_on = ("method", "path", "capy_json_body")
     return v
-
-
-@pytest.fixture
-def cassette(request, _test_infra, _vcr):
-    """Open a VCR cassette named after the test function.
-
-    A missing cassette has already skipped the test in ``pytest_runtest_setup``.
-    """
-    path = CASSETTES / f"{request.node.name}.yaml"
-    # allow_playback_repeats: identical prompts can legitimately fire twice
-    # (two chunk groups with the same text); let one interaction satisfy both.
-    with _vcr.use_cassette(str(path), allow_playback_repeats=True):
-        yield
 
 
 @pytest.fixture
@@ -403,7 +375,7 @@ def workspace(_test_infra) -> Workspace:
     with psycopg.connect(dsn, autocommit=True) as conn:
         conn.execute(
             "INSERT INTO workspaces (id, user_id, name, color) VALUES (%s, %s, %s, 'green')",
-            (workspace_id, _SEED_USER, "Cassette workspace"),
+            (workspace_id, _SEED_USER, "Test workspace"),
         )
         row = conn.execute(
             "SELECT embedding_provider_slug, embedding_model_slug, embedding_model_version FROM workspaces "
@@ -427,13 +399,3 @@ def workspace(_test_infra) -> Workspace:
         registry.set_job_pins(None)
         with psycopg.connect(dsn, autocommit=True) as conn:
             conn.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))
-
-
-@pytest.fixture
-def sample_txt() -> str:
-    return (FIXTURES / "sample.txt").read_text(encoding="utf-8")
-
-
-@pytest.fixture
-def sample_pdf() -> Path:
-    return FIXTURES / "sample.pdf"

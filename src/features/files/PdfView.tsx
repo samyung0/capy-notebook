@@ -8,6 +8,7 @@ import { Skeleton } from '@/components/ui/feedback';
 import { m } from '@/i18n';
 import { CitationOverlay } from './CitationOverlay';
 import { normalizeCitationRegions } from './citationRegions';
+import { PdfAnnotations } from './PdfAnnotations';
 
 // Keep PDF rendering available under the app's CSP and while offline.
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -83,6 +84,8 @@ function LazyPdfPage({
           loading={<Skeleton className="absolute inset-0 h-full w-full" />}
           onLoadSuccess={(pdfPage) => {
             const viewport = pdfPage.getViewport({ scale: 1 });
+            if (wrapperRef.current)
+              wrapperRef.current.dataset.rotation = String(viewport.rotation);
             if (viewport.height > 0) {
               const ratio = viewport.width / viewport.height;
               setMeasuredAspectRatio(ratio);
@@ -107,7 +110,9 @@ export default function PdfView({
   url,
   page,
   regions,
+  annotationFile,
 }: {
+  annotationFile?: { id: string; revision: number };
   url: string;
   /** 1-based page to scroll to once rendered, from a chat citation. */
   page?: number;
@@ -116,6 +121,7 @@ export default function PdfView({
   const containerRef = useRef<HTMLDivElement>(null);
   const [numPages, setNumPages] = useState(0);
   const [pageWidth, setPageWidth] = useState(0);
+  const [pageMeasureVersion, setPageMeasureVersion] = useState(0);
   const [pageAspectRatio, setPageAspectRatio] = useState(
     DEFAULT_PAGE_ASPECT_RATIO
   );
@@ -237,6 +243,7 @@ export default function PdfView({
     <div
       className="relative flex h-full w-full flex-col items-center"
       ref={containerRef}
+      tabIndex={annotationFile ? 0 : undefined}
     >
       <Document
         className="h-full w-full max-w-[800px]"
@@ -260,11 +267,11 @@ export default function PdfView({
                 key={p}
                 observeVisibility={observeVisibility}
                 onAspectRatio={p === 1 ? setPageAspectRatio : undefined}
-                onMeasured={
-                  p === targetPage && citationKey
-                    ? () => setMeasuredCitationKey(citationKey)
-                    : undefined
-                }
+                onMeasured={() => {
+                  setPageMeasureVersion((value) => value + 1);
+                  if (p === targetPage && citationKey)
+                    setMeasuredCitationKey(citationKey);
+                }}
                 pageNumber={p}
                 pageWidth={pageWidth}
                 placeholderAspectRatio={pageAspectRatio}
@@ -274,6 +281,14 @@ export default function PdfView({
           })}
         </div>
       </Document>
+      {annotationFile && (
+        <PdfAnnotations
+          containerRef={containerRef}
+          fileId={annotationFile.id}
+          renderVersion={`${numPages}:${pageWidth}:${pageAspectRatio}:${pageMeasureVersion}`}
+          revision={annotationFile.revision}
+        />
+      )}
     </div>
   );
 }

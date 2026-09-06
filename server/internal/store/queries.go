@@ -19,6 +19,8 @@ import (
 /* ------------------------------------------------------------------ patches */
 
 type WorkspacePatch struct {
+	AutoReparse *bool      `json:"autoReparse"`
+	AutoReindex *bool      `json:"autoReindex"`
 	Description *string    `json:"description"`
 	Name        *string    `json:"name"`
 	Color       *UserColor `json:"color"`
@@ -181,13 +183,13 @@ const wsCols = `w.id, w.name, w.description, w.color, w.privacy, w.share_role,
 		 FROM users u WHERE u.id=w.user_id),
 	(SELECT count(*) FROM chapters c WHERE c.workspace_id=w.id),
 	(SELECT count(*) FROM files f WHERE f.workspace_id=w.id),
-	w.created_at, w.last_accessed_at`
+	w.created_at, w.last_accessed_at, w.auto_reparse, w.auto_reindex`
 
 func (s *Store) scanWorkspace(row pgx.Row) (Workspace, error) {
 	var w Workspace
 	err := row.Scan(&w.ID, &w.Name, &w.Description, &w.Color, &w.Privacy, &w.ShareRole, &w.Tags,
 		&w.OwnerUserID, &w.OwnerName, &w.OwnerPlanTier, &w.ChapterCount,
-		&w.FileCount, &w.CreatedAt, &w.LastAccessedAt)
+		&w.FileCount, &w.CreatedAt, &w.LastAccessedAt, &w.AutoReparse, &w.AutoReindex)
 	if err != nil {
 		return w, err
 	}
@@ -290,6 +292,9 @@ func (s *Store) WorkspaceStats(ctx context.Context, userID, id string) (Workspac
 		(SELECT count(*) FROM attempts a JOIN materials m ON m.id=a.material_id WHERE m.workspace_id=$1),
 		COALESCE((SELECT round(avg(a.pct))::int FROM attempts a JOIN materials m ON m.id=a.material_id WHERE m.workspace_id=$1),0)`,
 		id).Scan(&st.Chapters, &st.Files, &st.Quizzes, &st.Attempts, &st.AvgScore)
+	if err == nil {
+		err = s.workspaceIndexCounts(ctx, id, &st)
+	}
 	return st, err
 }
 
@@ -522,8 +527,9 @@ func (s *Store) UpdateWorkspace(ctx context.Context, userID, id string, p Worksp
 	}
 
 	ct, err := tx.Exec(ctx, `UPDATE workspaces SET
-		name=COALESCE($2,name), color=COALESCE($3,color), description=COALESCE($4,description) WHERE id=$1`,
-		id, p.Name, p.Color, p.Description)
+		name=COALESCE($2,name), color=COALESCE($3,color), description=COALESCE($4,description),
+		auto_reparse=COALESCE($5,auto_reparse), auto_reindex=COALESCE($6,auto_reindex) WHERE id=$1`,
+		id, p.Name, p.Color, p.Description, p.AutoReparse, p.AutoReindex)
 	if err != nil {
 		return Workspace{}, err
 	}

@@ -1,5 +1,32 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { buildGradePrompt, gradeOpenAnswer, parseGradeResponse } from './judge';
+import {
+  buildGradePrompt,
+  GRADE_SYSTEM,
+  gradeOpenAnswer,
+  parseGradeResponse,
+} from './judge';
+
+/** Written by the Python prompt module; both judges must reproduce it. */
+const golden = JSON.parse(
+  readFileSync(
+    fileURLToPath(
+      new URL(
+        '../../../pipeline/pipeline/prompts/quiz_grade.golden.json',
+        import.meta.url
+      )
+    ),
+    'utf8'
+  )
+) as {
+  cases: {
+    expected: string;
+    input: Parameters<typeof buildGradePrompt>[0];
+    name: string;
+  }[];
+  system: string;
+};
 
 const sample = {
   hints: ['Think about surface area'],
@@ -58,5 +85,12 @@ describe('quiz judge', () => {
       award: 0.5,
       reason: 'ATP yes, cristae missing',
     });
+  });
+
+  it('matches the golden prompt shared with the server judge', () => {
+    expect(GRADE_SYSTEM).toBe(golden.system);
+    for (const { expected, input, name } of golden.cases) {
+      expect(buildGradePrompt(input), name).toBe(expected);
+    }
   });
 });

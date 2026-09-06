@@ -410,11 +410,18 @@ func (s *Store) FinalizeReplacementUploadSession(
 	defer tx.Rollback(ctx)
 
 	var workspaceID string
-	if err := tx.QueryRow(ctx, `SELECT workspace_id FROM upload_sessions
-		WHERE target='source_replace' AND id=$1`, uploadID).Scan(&workspaceID); err != nil {
+	var replacementFileID *string
+	if err := tx.QueryRow(ctx, `SELECT workspace_id,file_id FROM upload_sessions
+		WHERE target='source_replace' AND id=$1`, uploadID).Scan(&workspaceID, &replacementFileID); err != nil {
 		if isNoRows(err) {
 			return File{}, ErrNotFound
 		}
+		return File{}, err
+	}
+	if replacementFileID == nil {
+		return File{}, ErrUploadState
+	}
+	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, *replacementFileID); err != nil {
 		return File{}, err
 	}
 	ownerID, err := s.storageOwnerTx(ctx, tx, workspaceID)
@@ -512,6 +519,18 @@ func (s *Store) FinalizeReplacementUploadSession(
 		return File{}, err
 	}
 
+	if _, err = tx.Exec(ctx, `SELECT enqueue_source_collaboration_eviction($1,'discard')`, file.ID); err != nil {
+		return File{}, err
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM source_refresh_candidates WHERE file_id=$1`, file.ID); err != nil {
+		return File{}, err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE source_documents SET epoch=epoch+1,checkpoint=0,indexed_checkpoint=0,base_revision=$2,base_blob_path=$3,base_source_sha256='',state='',indexed_state='',pending_effects='[]',net_tokens=0,running_job_id=NULL,desired_checkpoint=NULL,desired_manual=false,refresh_error=NULL,updated_at=now() WHERE file_id=$1`, file.ID, file.Revision, u.FinalPath); err != nil {
+		return File{}, err
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM image_caption_associations WHERE file_id=$1`, file.ID); err != nil {
+		return File{}, err
+	}
 	if !ready {
 		actor := ""
 		if u.CreatedBy != nil {
@@ -564,7 +583,7 @@ func supersedeOlderPipelineJobsTx(
 	var superseded int64
 	return tx.QueryRow(ctx, `WITH candidates AS MATERIALIZED (
 		SELECT id FROM jobs
-		WHERE type IN ('parse','ingest') AND payload->>'fileId'=$1
+		WHERE type IN ('parse','ingest','source_refresh') AND payload->>'fileId'=$1
 		  AND status IN ('pending','running')
 		  AND CASE
 		    WHEN jsonb_typeof(payload->'sourceRevision')='number'

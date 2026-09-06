@@ -11,6 +11,7 @@ retryable because the attempt budget bounds them.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from .config import cfg
@@ -29,6 +30,20 @@ class CapacityWait(Exception):
 
     The file stays pending. Do not spend an attempt or mark the file failed.
     """
+
+
+# A provider that stays busy past the in-call retry budget re-pends the ingest
+# job without spending an attempt, at most this many times per job. The wait
+# follows the provider's Retry-After, else this base doubling per re-pend.
+PROVIDER_WAITS_MAX = 5
+PROVIDER_WAIT_BACKOFF_S = 30
+
+
+def provider_wait_backoff_s(retry_after: float | None, waits: int) -> int:
+    """``waits`` is the number of busy re-pends this job already had."""
+    if retry_after is not None and retry_after > 0:
+        return max(1, math.ceil(retry_after))
+    return PROVIDER_WAIT_BACKOFF_S * (2 ** max(waits, 0))
 
 
 @dataclass(frozen=True)

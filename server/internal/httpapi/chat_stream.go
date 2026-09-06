@@ -58,30 +58,31 @@ func chatQueryTooLong(text string) bool {
 // Type is one of: phase | block_start | block_delta | block_end | tool_start |
 // tool_end | citations | checkpoint | done | error.
 type pipeChatEvent struct {
-	Type             string                `json:"type"`
-	Phase            string                `json:"phase,omitempty"`
-	BlockID          string                `json:"blockId,omitempty"`
-	Kind             string                `json:"kind,omitempty"`
-	Text             string                `json:"text,omitempty"`
-	CallID           string                `json:"callId,omitempty"`
-	Name             string                `json:"name,omitempty"`
-	Detail           string                `json:"detail,omitempty"`
-	Status           string                `json:"status,omitempty"`
-	Citations        []store.Citation      `json:"citations,omitempty"`
-	Version          int                   `json:"version,omitempty"`
-	TokenCount       int                   `json:"tokenCount,omitempty"`
-	GenerationID     string                `json:"generationId,omitempty"`
-	Message          string                `json:"message,omitempty"`
-	Code             string                `json:"code,omitempty"`
-	Usage            pipeUsage             `json:"usage,omitempty"`
-	Activity         []store.ActivityBlock `json:"activity,omitempty"`
-	Answer           string                `json:"answer,omitempty"`
-	ThroughMessageID string                `json:"throughMessageId,omitempty"`
-	Summary          string                `json:"summary,omitempty"`
-	ProviderSlug     string                `json:"providerSlug,omitempty"`
-	ModelSlug        string                `json:"modelSlug,omitempty"`
-	ModelVersion     int                   `json:"modelVersion,omitempty"`
-	EstimatedTokens  int                   `json:"estimatedTokens,omitempty"`
+	Type              string                `json:"type"`
+	Phase             string                `json:"phase,omitempty"`
+	BlockID           string                `json:"blockId,omitempty"`
+	Kind              string                `json:"kind,omitempty"`
+	Text              string                `json:"text,omitempty"`
+	CallID            string                `json:"callId,omitempty"`
+	Name              string                `json:"name,omitempty"`
+	Detail            string                `json:"detail,omitempty"`
+	Status            string                `json:"status,omitempty"`
+	Citations         []store.Citation      `json:"citations,omitempty"`
+	Version           int                   `json:"version,omitempty"`
+	TokenCount        int                   `json:"tokenCount,omitempty"`
+	GenerationID      string                `json:"generationId,omitempty"`
+	Message           string                `json:"message,omitempty"`
+	Code              string                `json:"code,omitempty"`
+	RetryAfterSeconds int                   `json:"retryAfterSeconds,omitempty"`
+	Usage             pipeUsage             `json:"usage,omitempty"`
+	Activity          []store.ActivityBlock `json:"activity,omitempty"`
+	Answer            string                `json:"answer,omitempty"`
+	ThroughMessageID  string                `json:"throughMessageId,omitempty"`
+	Summary           string                `json:"summary,omitempty"`
+	ProviderSlug      string                `json:"providerSlug,omitempty"`
+	ModelSlug         string                `json:"modelSlug,omitempty"`
+	ModelVersion      int                   `json:"modelVersion,omitempty"`
+	EstimatedTokens   int                   `json:"estimatedTokens,omitempty"`
 }
 
 // chatStream persists the user turn, reserves an assistant row, relays the
@@ -286,7 +287,10 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 			if code, msg, ok := llmKeyPayload(streamErr); ok {
 				send(pipeChatEvent{Type: "error", Code: code, Message: msg})
 			} else if errors.As(streamErr, &eventErr) {
-				send(pipeChatEvent{Type: "error", Code: eventErr.Code, Message: eventErr.Message})
+				send(pipeChatEvent{
+					Type: "error", Code: eventErr.Code, Message: eventErr.Message,
+					RetryAfterSeconds: eventErr.RetryAfterSeconds,
+				})
 			} else if errors.Is(streamErr, errAIUnavailable) {
 				send(pipeChatEvent{Type: "error", Code: "ai_unavailable", Message: errAIUnavailable.Error()})
 			} else {
@@ -375,6 +379,12 @@ func (a *api) relayChat(
 				}
 				if ev.Type == "error" {
 					onEvent(ev)
+					if ev.Code == "provider_busy" {
+						return &chatEventError{
+							Code: ev.Code, Message: ev.Message,
+							RetryAfterSeconds: ev.RetryAfterSeconds,
+						}
+					}
 					if mapped := keyErrorFromEvent(ev.Code, ev.Message); mapped != nil {
 						return mapped
 					}

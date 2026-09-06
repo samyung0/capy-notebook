@@ -137,3 +137,24 @@ The panel is not mounted in production or when `VITE_USE_MSW=false`.
 
 Playwright tests should use `expectErrorSurface(page, variant, text?)` from
 `e2e/helpers/errors.ts` instead of duplicating selector details.
+
+## Collaborative source failures
+
+Source editors expose connecting, saving, saved, offline, error and recovery
+states. Saved requires an explicit durable checkpoint receipt. Recoverable
+failures retain the mounted editor and actor-specific local draft. An epoch
+change reloads a fully acknowledged editor; unacknowledged edits instead enter
+recovery with draft download and explicit discard of the displayed draft group.
+Discard checks versions, preserves newer writes from another tab and advances
+through remaining groups before reconnecting to the current file.
+Failed processing does not invalidate saved edits,
+and credits are required for processing rather than persistence.
+
+Chat `pending_sources` events show when edited source evidence is awaiting
+processing. If exact pending evidence exceeds the request budget, the message
+warns that source information may be outdated and offers Process file changes.
+Generation returns `context_too_large` with the same action instead of silently
+using incomplete pending evidence.
+If a published source changes while an answer or generation request gathers
+evidence, `source_changed` asks the user to retry. The Go relay preserves both
+codes for HTTP responses and chat events; neither starts an automatic retry.

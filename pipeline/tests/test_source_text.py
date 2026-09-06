@@ -9,6 +9,7 @@ import pytest
 from PIL import Image
 
 from pipeline.ingest import source_text
+from pipeline.parse import caption_cache
 
 
 def test_tabular_text_preserves_headers_values_and_formulas(tmp_path) -> None:
@@ -49,60 +50,27 @@ def test_tabular_text_bounds_its_expanded_search_projection(
 
 
 @pytest.mark.asyncio
-async def test_concurrent_image_uploads_share_one_caption_artifact(
+async def test_image_source_routes_authoritative_file_and_sha_to_caption_cache(
     monkeypatch, tmp_path
-) -> None:
+):
     source = tmp_path / "diagram.png"
     Image.new("RGB", (32, 32), "white").save(source)
-    objects: dict[str, bytes] = {}
-    gate = threading.Lock()
-    state = {"locked": False, "calls": 0}
+    seen = {}
 
-    class Connection:
-        pass
+    async def caption(**kwargs):
+        seen.update(kwargs)
+        assert (await kwargs["data_url"]()).startswith("data:image/jpeg;base64,")
+        return "A diagram.", "shared-caption", 42, True
 
-    def try_lock(_identity: str):
-        with gate:
-            if state["locked"]:
-                return None
-            state["locked"] = True
-            return Connection()
-
-    def release_lock(_connection: Connection, _identity: str) -> None:
-        with gate:
-            state["locked"] = False
-
-    async def caption(_data_url: str, prompt: str) -> str:
-        state["calls"] += 1
-        assert "formula" in prompt
-        await asyncio.sleep(0.02)
-        return "A chart showing x = 4 and y = x²."
-
-    monkeypatch.setattr(source_text.db, "try_source_artifact_lock", try_lock)
-    monkeypatch.setattr(source_text.db, "release_source_artifact_lock", release_lock)
-    monkeypatch.setattr(
-        source_text.blobstore, "read_bytes", lambda key: objects.get(key)
+    monkeypatch.setattr(caption_cache, "caption", caption)
+    result = await source_text.caption_image_source(
+        local_path=str(source),
+        name=source.name,
+        source_sha256="ab" * 32,
+        file_id="file-1",
     )
-    monkeypatch.setattr(
-        source_text.blobstore,
-        "write_bytes",
-        lambda key, data, _content_type: objects.__setitem__(key, data),
-    )
-    monkeypatch.setattr(source_text.models, "caption_image", caption)
-
-    first, second = await asyncio.gather(
-        source_text.caption_image_source(
-            local_path=str(source), name=source.name, source_sha256="ab" * 32
-        ),
-        source_text.caption_image_source(
-            local_path=str(source), name=source.name, source_sha256="ab" * 32
-        ),
-    )
-
-    assert state["calls"] == 1
-    assert first[0] == second[0]
-    assert first[1] == second[1]
-    assert sorted((first[3], second[3])) == [False, True]
+    assert seen["file_id"] == "file-1" and seen["image_sha256"] == "ab" * 32
+    assert result == ("A diagram.", "shared-caption", 42, True)
 
 
 @pytest.mark.asyncio
@@ -140,31 +108,6 @@ async def test_source_lock_releases_late_acquisition_after_cancellation(
     assert released.is_set()
 
 
-@pytest.mark.asyncio
-async def test_image_caption_continues_when_cache_write_fails(monkeypatch) -> None:
-    @asynccontextmanager
-    async def source_lock(_identity: str):
-        yield
-
-    monkeypatch.setattr(source_text, "_source_lock", source_lock)
-    monkeypatch.setattr(source_text, "_load_artifact", lambda _key: None)
-    monkeypatch.setattr(source_text, "_encode_image", lambda *_args: "data:image/png")
-    monkeypatch.setattr(source_text, "_save_artifact", lambda *_args: None)
-
-    async def caption(_data_url: str, _prompt: str) -> str:
-        return "A labeled diagram."
-
-    monkeypatch.setattr(source_text.models, "caption_image", caption)
-
-    result = await source_text.caption_image_source(
-        local_path="/tmp/diagram.png",
-        name="diagram.png",
-        source_sha256="ab" * 32,
-    )
-
-    assert result == ("A labeled diagram.", "", 0, False)
-
-
 def test_derived_cache_read_failure_is_a_cache_miss(monkeypatch) -> None:
     monkeypatch.setattr(
         source_text.blobstore,
@@ -175,12 +118,10 @@ def test_derived_cache_read_failure_is_a_cache_miss(monkeypatch) -> None:
     assert source_text._load_artifact("derived-text/source/image-v1.json") is None
 
 
-def test_audio_artifact_identity_uses_elevenlabs_version(monkeypatch) -> None:
-    monkeypatch.setattr(
-        source_text.cfg, "elevenlabs_transcript_version", "scribe-v2-test"
-    )
-    assert source_text.artifact_key("ab" * 32, "audio").endswith(
-        "/elevenlabs-scribe-v2-test.json"
+def test_derived_artifacts_are_keyed_on_source_bytes_alone() -> None:
+    sha = "ab" * 32
+    assert (
+        source_text.artifact_key(sha, "audio") == f"derived-text/{sha}/elevenlabs.json"
     )
 
 

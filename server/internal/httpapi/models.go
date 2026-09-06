@@ -255,14 +255,34 @@ func pipelineLLMError(err error) error {
 	if !errors.As(err, &pe) {
 		return nil
 	}
-	switch pe.Decode().Code {
+	body := pe.Decode()
+	switch body.Code {
 	case "invalid_key":
 		return store.ErrInvalidLLMKey
 	case "key_failed":
 		return store.ErrLLMKeyFailed
+	case "provider_busy":
+		return &providerBusyError{RetryAfterSeconds: body.RetryAfterSeconds}
 	default:
 		return nil
 	}
+}
+
+// providerBusyError is the pipeline's provider_busy answer: every attempt in
+// the call's budget met a busy provider or a full per-model gate. It is
+// retryable by the user, so it carries a wait rather than a generic failure.
+type providerBusyError struct {
+	RetryAfterSeconds int
+}
+
+func (e *providerBusyError) Error() string { return "the model is busy right now" }
+
+// retryAfter never returns zero: a Retry-After of 0 reads as "retry now".
+func (e *providerBusyError) retryAfter() int {
+	if e.RetryAfterSeconds > 0 {
+		return e.RetryAfterSeconds
+	}
+	return 5
 }
 
 func pipelineGenerateError(err error) error {
@@ -275,6 +295,10 @@ func pipelineGenerateError(err error) error {
 		return errGenerateEmpty
 	case "scope_has_no_indexed_content":
 		return errScopeNoIndexedContent
+	case "context_too_large":
+		return errContextTooLarge
+	case "source_changed":
+		return errSourceChanged
 	}
 	return nil
 }
@@ -285,7 +309,7 @@ func keyErrorFromEvent(code, message string) error {
 		return store.ErrInvalidLLMKey
 	case "key_failed":
 		return store.ErrLLMKeyFailed
-	case "context_too_large", "compaction_failed", "query_too_long", "invalid_scope":
+	case "context_too_large", "source_changed", "compaction_failed", "query_too_long", "invalid_scope":
 		return &chatEventError{Code: code, Message: message}
 	default:
 		return nil
@@ -293,8 +317,9 @@ func keyErrorFromEvent(code, message string) error {
 }
 
 type chatEventError struct {
-	Code    string
-	Message string
+	Code              string
+	Message           string
+	RetryAfterSeconds int
 }
 
 func (e *chatEventError) Error() string {

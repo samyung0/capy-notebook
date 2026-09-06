@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { api, isCreditsExhaustedError } from './client';
+import { api, isCreditsExhaustedError, isProviderBusyError } from './client';
 
 class FakeUploadXHR {
   static latest: FakeUploadXHR | undefined;
@@ -105,6 +105,35 @@ describe('coded API errors', () => {
 
     await expect(api.get('/chat')).rejects.toSatisfy((err: unknown) => {
       expect(isCreditsExhaustedError(err)).toBe(true);
+      return true;
+    });
+  });
+
+  it('surfaces provider_busy and its wait from a Huma envelope', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        json: async () => ({
+          detail: 'the model is busy right now',
+          errors: [
+            {
+              message: 'provider_busy',
+              value: { retryAfterSeconds: 7 },
+            },
+          ],
+          status: 503,
+          title: 'Service Unavailable',
+        }),
+        ok: false,
+        status: 503,
+        statusText: 'Service Unavailable',
+      }))
+    );
+
+    await expect(api.get('/generate')).rejects.toSatisfy((err: unknown) => {
+      expect(isProviderBusyError(err)).toBe(true);
+      const body = (err as { body?: { retryAfterSeconds?: number } }).body;
+      expect(body?.retryAfterSeconds).toBe(7);
       return true;
     });
   });

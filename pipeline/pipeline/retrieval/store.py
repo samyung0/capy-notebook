@@ -19,6 +19,7 @@ from psycopg_pool import AsyncConnectionPool
 
 from ..config import cfg
 from ..jobs import RetryableError, TerminalError
+from ..store import db as jobdb
 from ..store.db import SourceSupersededError
 from .chunking import QueryTerms
 from .lang import TS_CONFIG
@@ -114,6 +115,99 @@ async def workspace_embedding_pin(workspace_id: str) -> dict[str, Any]:
 # --------------------------------------------------------------- chunk writes
 
 
+async def existing_file_vectors(
+    *, workspace_id: str, file_id: str, spec, inputs: list[str]
+) -> dict[str, list[float]]:
+    """Reuse only exact embedding input in this file's immutable model space."""
+    table = vector_table(spec.provider_slug, spec.model_slug, spec.version)
+    db = await pool()
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            f"""
+            SELECT c.indexed_text, v.embedding::text AS embedding
+            FROM rag_file_contents fc
+            JOIN rag_contents rc ON rc.id = fc.content_id AND rc.status = 'ready'
+            JOIN rag_chunks c ON c.content_id = rc.id
+            JOIN {table} v ON v.chunk_id = c.id
+            WHERE fc.file_id = %s AND fc.workspace_id = %s
+              AND rc.embedding_provider_slug = %s AND rc.embedding_model_slug = %s
+              AND rc.embedding_model_version = %s
+              AND c.indexed_text = ANY(%s::text[])
+            """,
+            (
+                file_id,
+                workspace_id,
+                spec.provider_slug,
+                spec.model_slug,
+                spec.version,
+                inputs,
+            ),
+        )
+        return {
+            row["indexed_text"]: json.loads(row["embedding"])
+            for row in await cur.fetchall()
+        }
+
+
+async def _lock_source_candidate(conn, refresh: dict[str, Any]) -> None:
+    file_id = refresh["fileId"]
+    await conn.execute(
+        "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (file_id,)
+    )
+    cur = await conn.execute(
+        "SELECT user_id FROM workspaces WHERE id=%s FOR SHARE",
+        (refresh["workspaceId"],),
+    )
+    workspace = await cur.fetchone()
+    if workspace is None:
+        raise SourceSupersededError("source workspace was deleted")
+    owner = str(workspace["user_id"])
+    actors = sorted({owner, str(refresh["actorUserId"])})
+    cur = await conn.execute(
+        "SELECT id,deleted_at,suspended_at,deletion_requested_at FROM users WHERE id=ANY(%s) ORDER BY id FOR SHARE",
+        (actors,),
+    )
+    accounts = await cur.fetchall()
+    if len(accounts) != len(actors) or any(
+        row["deleted_at"] or row["suspended_at"] or row["deletion_requested_at"]
+        for row in accounts
+    ):
+        raise TerminalError("source account is unavailable")
+    cur = await conn.execute(
+        """SELECT 1 FROM workspaces w WHERE w.id=%s AND (w.user_id=%s OR
+        EXISTS(SELECT 1 FROM workspace_members m WHERE m.workspace_id=w.id AND m.user_id=%s AND m.role='editor')
+        OR(w.privacy IN ('link','public') AND w.share_role='editor'))""",
+        (refresh["workspaceId"], refresh["actorUserId"], refresh["actorUserId"]),
+    )
+    if await cur.fetchone() is None:
+        raise TerminalError("source editing access was revoked")
+    cur = await conn.execute(
+        """SELECT c.file_id FROM source_refresh_candidates c
+        JOIN source_documents d ON d.file_id=c.file_id JOIN files f ON f.id=c.file_id
+        JOIN jobs j ON j.id=c.job_id
+        WHERE c.file_id=%s AND c.job_id=%s AND c.epoch=%s AND c.checkpoint=%s AND c.lease_token=%s
+          AND d.epoch=c.epoch AND d.running_job_id=c.job_id AND d.base_revision=f.revision AND f.revision=%s
+          AND f.workspace_id=%s AND f.user_id=%s AND j.payload->>'sourceETag'=%s
+          AND (d.format='text' OR d.checkpoint=c.checkpoint)
+          AND j.status='running' AND j.attempts=%s AND j.lease_expires_at>now()
+        FOR UPDATE OF f,c,d,j""",
+        (
+            file_id,
+            refresh["_jobId"],
+            refresh["sourceEpoch"],
+            refresh["sourceCheckpoint"],
+            refresh["sourceLeaseToken"],
+            refresh["sourceRevision"],
+            refresh["workspaceId"],
+            owner,
+            refresh["sourceETag"],
+            refresh["_attempt"],
+        ),
+    )
+    if await cur.fetchone() is None:
+        raise SourceSupersededError("source candidate was superseded")
+
+
 async def attach_file_content(
     *,
     workspace_id: str,
@@ -132,9 +226,12 @@ async def attach_file_content(
     ``created=False`` is what tells it so.
     """
     content_id = f"rgc_{secrets.token_hex(8)}"
+    refresh = jobdb.source_refresh_for(file_id)
     db = await pool()
     async with db.connection() as conn, conn.transaction():
-        if source_revision is not None:
+        if refresh is not None:
+            await _lock_source_candidate(conn, refresh)
+        elif source_revision is not None:
             current = await conn.execute(
                 """
                 SELECT revision, COALESCE(source_etag, '') AS source_etag
@@ -191,16 +288,28 @@ async def attach_file_content(
             and row["claim_job_id"] == claim_job_id
         ):
             created = True
-        await conn.execute(
-            """
-            INSERT INTO rag_file_contents (file_id, workspace_id, content_id)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (file_id) DO UPDATE SET
-                workspace_id = EXCLUDED.workspace_id,
-                content_id = EXCLUDED.content_id
-            """,
-            (file_id, workspace_id, row["id"]),
-        )
+        if refresh is not None:
+            await conn.execute(
+                "UPDATE source_refresh_candidates SET content_id=%s,content_hash=%s WHERE file_id=%s AND job_id=%s AND lease_token=%s",
+                (
+                    row["id"],
+                    content_hash,
+                    file_id,
+                    refresh["_jobId"],
+                    refresh["sourceLeaseToken"],
+                ),
+            )
+        else:
+            await conn.execute(
+                """
+                INSERT INTO rag_file_contents (file_id, workspace_id, content_id)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (file_id) DO UPDATE SET
+                    workspace_id = EXCLUDED.workspace_id,
+                    content_id = EXCLUDED.content_id
+                """,
+                (file_id, workspace_id, row["id"]),
+            )
         return {
             "content_id": row["id"],
             "ready": row["status"] == "ready",
@@ -240,6 +349,7 @@ async def steal_stale_content(
 
 async def find_ready_donor(
     *,
+    workspace_id: str,
     source_sha256: str,
     pipeline_identity: str,
     embedding_provider_slug: str,
@@ -278,6 +388,15 @@ async def find_ready_donor(
             WHERE rc.source_sha256 = %s
               AND rc.pipeline_identity = %s
               AND rc.status = 'ready'
+              AND EXISTS (
+                  SELECT 1 FROM rag_file_contents holder
+                  JOIN files f ON f.id = holder.file_id
+                  JOIN workspaces w ON w.id = f.workspace_id
+                  JOIN users owner ON owner.id = w.user_id
+                  WHERE holder.content_id = rc.id
+                    AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
+                    AND (w.id = %s OR w.privacy IN ('link','public'))
+              )
             ORDER BY (
                 rc.embedding_provider_slug = %s
                 AND rc.embedding_model_slug = %s
@@ -289,6 +408,7 @@ async def find_ready_donor(
             (
                 source_sha256,
                 pipeline_identity,
+                workspace_id,
                 embedding_provider_slug,
                 embedding_model_slug,
                 embedding_model_version,
@@ -352,11 +472,87 @@ async def abandon_content(content_id: str) -> None:
 _NEW_CHUNK_ID_SQL = "'rc_' || substr(md5(%s || c.id), 1, 12)"
 
 
+async def _attach_donor_captions(
+    conn,
+    *,
+    donor_id: str,
+    dest_workspace_id: str,
+    dest_file_id: str,
+    refresh: dict[str, Any] | None,
+) -> None:
+    await conn.execute(
+        """
+        INSERT INTO image_caption_associations
+            (id,file_id,image_sha256,caption_blob_path,size_bytes,published)
+        SELECT 'ica_' || md5(%s || c.id), %s, c.image_sha256,c.caption_blob_path,c.size_bytes,%s
+        FROM image_caption_associations c
+        JOIN rag_file_contents holder ON holder.file_id=c.file_id
+        JOIN files f ON f.id=c.file_id JOIN workspaces w ON w.id=f.workspace_id
+        JOIN users owner ON owner.id=w.user_id
+        WHERE c.published AND holder.content_id=%s
+          AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
+          AND (w.id=%s OR w.privacy IN ('link','public'))
+        ON CONFLICT DO NOTHING
+        """,
+        (dest_file_id, dest_file_id, refresh is None, donor_id, dest_workspace_id),
+    )
+    if refresh is not None:
+        await conn.execute(
+            """UPDATE source_refresh_candidates candidate
+            SET image_sha256s=ARRAY(SELECT DISTINCT c.image_sha256 FROM image_caption_associations c
+            JOIN rag_file_contents holder ON holder.file_id=c.file_id
+            JOIN files f ON f.id=c.file_id JOIN workspaces w ON w.id=f.workspace_id
+            JOIN users owner ON owner.id=w.user_id
+            WHERE c.published AND holder.content_id=%s
+              AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
+              AND (w.id=%s OR w.privacy IN ('link','public')))
+            WHERE candidate.file_id=%s AND candidate.job_id=%s AND candidate.lease_token=%s""",
+            (
+                donor_id,
+                dest_workspace_id,
+                dest_file_id,
+                refresh["_jobId"],
+                refresh["sourceLeaseToken"],
+            ),
+        )
+
+
+async def attach_donor_captions(
+    *, donor_id: str, dest_workspace_id: str, dest_file_id: str
+) -> bool:
+    """Attach caption ownership when canonical content is already ready."""
+    refresh = jobdb.source_refresh_for(dest_file_id)
+    db = await pool()
+    async with db.connection() as conn, conn.transaction():
+        if refresh is not None:
+            await _lock_source_candidate(conn, refresh)
+        cur = await conn.execute(
+            """SELECT rc.id FROM rag_contents rc WHERE rc.id=%s AND rc.status='ready'
+            AND EXISTS(SELECT 1 FROM rag_file_contents holder JOIN files f ON f.id=holder.file_id
+            JOIN workspaces w ON w.id=f.workspace_id
+            JOIN users owner ON owner.id=w.user_id
+            WHERE holder.content_id=rc.id AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
+              AND (w.id=%s OR w.privacy IN ('link','public'))) FOR SHARE""",
+            (donor_id, dest_workspace_id),
+        )
+        if await cur.fetchone() is None:
+            return False
+        await _attach_donor_captions(
+            conn,
+            donor_id=donor_id,
+            dest_workspace_id=dest_workspace_id,
+            dest_file_id=dest_file_id,
+            refresh=refresh,
+        )
+    return True
+
+
 async def copy_content_from_donor(
     *,
     donor_id: str,
     dest_content_id: str,
     dest_workspace_id: str,
+    dest_file_id: str,
     copy_vectors: bool,
 ) -> bool:
     """Copy a ready donor's index into this workspace's content row.
@@ -364,22 +560,41 @@ async def copy_content_from_donor(
     Mirrors CloneWorkspace. Returns False if the donor vanished under FOR SHARE
     (workspace delete) so the caller can fall through to parsing.
     """
+    refresh = jobdb.source_refresh_for(dest_file_id)
     db = await pool()
     async with db.connection() as conn, conn.transaction():
+        if refresh is not None:
+            await _lock_source_candidate(conn, refresh)
         cur = await conn.execute(
             """
             SELECT id, workspace_id, content_hash, source_sha256, pipeline_identity,
                    embedding_provider_slug, embedding_model_slug,
                    embedding_model_version, embedding_dim
-            FROM rag_contents
+            FROM rag_contents rc
             WHERE id = %s AND status = 'ready'
+              AND EXISTS (
+                SELECT 1 FROM rag_file_contents holder JOIN files f ON f.id=holder.file_id
+                JOIN workspaces w ON w.id=f.workspace_id
+                JOIN users owner ON owner.id=w.user_id
+                WHERE holder.content_id=rc.id AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
+                  AND (w.id=%s OR w.privacy IN ('link','public'))
+              )
             FOR SHARE
             """,
-            (donor_id,),
+            (donor_id, dest_workspace_id),
         )
         donor = await cur.fetchone()
         if donor is None:
             return False
+        await _attach_donor_captions(
+            conn,
+            donor_id=donor_id,
+            dest_workspace_id=dest_workspace_id,
+            dest_file_id=dest_file_id,
+            refresh=refresh,
+        )
+        if donor_id == dest_content_id:
+            return True
         pin = donor
         table = None
         if copy_vectors:

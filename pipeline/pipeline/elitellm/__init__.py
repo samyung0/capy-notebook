@@ -1,14 +1,18 @@
 """Hand-rolled provider transport. Callers pass a resolved snapshot."""
 
 from .client import (
+    BUSY_STATUSES,
     CONTINUITY_KEYS,
+    ProviderBusy,
     ProviderError,
     assistant_message_from_obj,
+    chat_response,
     complete,
     context_components,
     embed_batch,
     message_from_response,
     observed_continuity,
+    output_budget,
     resolve_thinking,
     stream,
     transport_model_slug,
@@ -17,14 +21,18 @@ from .client import (
 )
 
 __all__ = [
+    "BUSY_STATUSES",
     "CONTINUITY_KEYS",
+    "ProviderBusy",
     "ProviderError",
     "assistant_message_from_obj",
+    "chat_response",
     "complete",
     "context_components",
     "embed_batch",
     "message_from_response",
     "observed_continuity",
+    "output_budget",
     "resolve_thinking",
     "stream",
     "transport_model_slug",

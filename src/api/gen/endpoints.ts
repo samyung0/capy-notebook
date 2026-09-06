@@ -12,8 +12,11 @@ import type {
   AttemptDetail,
   BillingCheckoutReq,
   BillingInfo,
+  BootstrapSourceDocumentParams,
   Canvas,
   Chapter,
+  CheckSourceAccessParams,
+  ClaimSourceRefreshParams,
   CloneWorkspaceResp,
   CollaborationTokenResponse,
   Comment,
@@ -66,6 +69,8 @@ import type {
   NotificationCountOutputBody,
   NotificationPage,
   NotificationPrefs,
+  PDFAnnotation,
+  PDFAnnotationBody,
   ProjectMaterialReq,
   PublicFlashcardSet,
   PublicQuiz,
@@ -80,7 +85,16 @@ import type {
   SearchParams,
   SearchResult,
   SetModelPrefsReq,
+  SourceCandidateResponse,
+  SourceCheckpoint,
+  SourceCollaborationToken,
+  SourceFailureInputBody,
   SourceImportStatus,
+  SourceProcessResult,
+  SourceRefreshFinalize,
+  SourceRefreshInputBody,
+  SourceRefreshPublish,
+  SourceSession,
   SourceUploadPolicy,
   SourceUploadReservation,
   Tag,
@@ -1554,6 +1568,312 @@ export const updateFile = async (id: string,
 
 
 
+export type listPDFAnnotationsResponse200 = {
+  data: PDFAnnotation[]
+  status: 200
+}
+
+export type listPDFAnnotationsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listPDFAnnotationsResponseSuccess = (listPDFAnnotationsResponse200) & {
+  headers: Headers;
+};
+export type listPDFAnnotationsResponseError = (listPDFAnnotationsResponseDefault) & {
+  headers: Headers;
+};
+
+export type listPDFAnnotationsResponse = (listPDFAnnotationsResponseSuccess | listPDFAnnotationsResponseError)
+
+export const getListPDFAnnotationsUrl = (id: string,) => {
+
+
+
+
+  return `/api/files/${id}/annotations`
+}
+
+/**
+ * @summary Read private PDF annotations
+ */
+export const listPDFAnnotations = async (id: string, options?: RequestInit): Promise<listPDFAnnotationsResponse> => {
+
+  const res = await fetch(getListPDFAnnotationsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listPDFAnnotationsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listPDFAnnotationsResponse
+}
+
+
+
+export type createPDFAnnotationResponse201 = {
+  data: PDFAnnotation
+  status: 201
+}
+
+export type createPDFAnnotationResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 201>
+}
+
+export type createPDFAnnotationResponseSuccess = (createPDFAnnotationResponse201) & {
+  headers: Headers;
+};
+export type createPDFAnnotationResponseError = (createPDFAnnotationResponseDefault) & {
+  headers: Headers;
+};
+
+export type createPDFAnnotationResponse = (createPDFAnnotationResponseSuccess | createPDFAnnotationResponseError)
+
+export const getCreatePDFAnnotationUrl = (id: string,) => {
+
+
+
+
+  return `/api/files/${id}/annotations`
+}
+
+/**
+ * @summary Create a private PDF annotation
+ */
+export const createPDFAnnotation = async (id: string,
+    pDFAnnotationBody: NonReadonly<PDFAnnotationBody>, options?: RequestInit): Promise<createPDFAnnotationResponse> => {
+
+  const res = await fetch(getCreatePDFAnnotationUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(pDFAnnotationBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createPDFAnnotationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createPDFAnnotationResponse
+}
+
+
+
+export type deletePDFAnnotationResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deletePDFAnnotationResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type deletePDFAnnotationResponseSuccess = (deletePDFAnnotationResponse204) & {
+  headers: Headers;
+};
+export type deletePDFAnnotationResponseError = (deletePDFAnnotationResponseDefault) & {
+  headers: Headers;
+};
+
+export type deletePDFAnnotationResponse = (deletePDFAnnotationResponseSuccess | deletePDFAnnotationResponseError)
+
+export const getDeletePDFAnnotationUrl = (id: string,
+    annotationId: string,) => {
+
+
+
+
+  return `/api/files/${id}/annotations/${annotationId}`
+}
+
+/**
+ * @summary Delete an authored PDF annotation
+ */
+export const deletePDFAnnotation = async (id: string,
+    annotationId: string, options?: RequestInit): Promise<deletePDFAnnotationResponse> => {
+
+  const res = await fetch(getDeletePDFAnnotationUrl(id,annotationId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deletePDFAnnotationResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as deletePDFAnnotationResponse
+}
+
+
+
+export type updatePDFAnnotationResponse200 = {
+  data: PDFAnnotation
+  status: 200
+}
+
+export type updatePDFAnnotationResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type updatePDFAnnotationResponseSuccess = (updatePDFAnnotationResponse200) & {
+  headers: Headers;
+};
+export type updatePDFAnnotationResponseError = (updatePDFAnnotationResponseDefault) & {
+  headers: Headers;
+};
+
+export type updatePDFAnnotationResponse = (updatePDFAnnotationResponseSuccess | updatePDFAnnotationResponseError)
+
+export const getUpdatePDFAnnotationUrl = (id: string,
+    annotationId: string,) => {
+
+
+
+
+  return `/api/files/${id}/annotations/${annotationId}`
+}
+
+/**
+ * @summary Update an authored PDF annotation
+ */
+export const updatePDFAnnotation = async (id: string,
+    annotationId: string,
+    pDFAnnotationBody: NonReadonly<PDFAnnotationBody>, options?: RequestInit): Promise<updatePDFAnnotationResponse> => {
+
+  const res = await fetch(getUpdatePDFAnnotationUrl(id,annotationId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(pDFAnnotationBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updatePDFAnnotationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updatePDFAnnotationResponse
+}
+
+
+
+export type createSourceCollaborationTokenResponse201 = {
+  data: SourceCollaborationToken
+  status: 201
+}
+
+export type createSourceCollaborationTokenResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 201>
+}
+
+export type createSourceCollaborationTokenResponseSuccess = (createSourceCollaborationTokenResponse201) & {
+  headers: Headers;
+};
+export type createSourceCollaborationTokenResponseError = (createSourceCollaborationTokenResponseDefault) & {
+  headers: Headers;
+};
+
+export type createSourceCollaborationTokenResponse = (createSourceCollaborationTokenResponseSuccess | createSourceCollaborationTokenResponseError)
+
+export const getCreateSourceCollaborationTokenUrl = (id: string,) => {
+
+
+
+
+  return `/api/files/${id}/collaboration-token`
+}
+
+/**
+ * @summary Create source room token
+ */
+export const createSourceCollaborationToken = async (id: string, options?: RequestInit): Promise<createSourceCollaborationTokenResponse> => {
+
+  const res = await fetch(getCreateSourceCollaborationTokenUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createSourceCollaborationTokenResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createSourceCollaborationTokenResponse
+}
+
+
+
+export type processSourceChangesResponse202 = {
+  data: SourceProcessResult
+  status: 202
+}
+
+export type processSourceChangesResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 202>
+}
+
+export type processSourceChangesResponseSuccess = (processSourceChangesResponse202) & {
+  headers: Headers;
+};
+export type processSourceChangesResponseError = (processSourceChangesResponseDefault) & {
+  headers: Headers;
+};
+
+export type processSourceChangesResponse = (processSourceChangesResponseSuccess | processSourceChangesResponseError)
+
+export const getProcessSourceChangesUrl = (id: string,) => {
+
+
+
+
+  return `/api/files/${id}/process-changes`
+}
+
+/**
+ * @summary Process the latest saved source changes
+ */
+export const processSourceChanges = async (id: string, options?: RequestInit): Promise<processSourceChangesResponse> => {
+
+  const res = await fetch(getProcessSourceChangesUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: processSourceChangesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as processSourceChangesResponse
+}
+
+
+
 export type createFileReplacementUploadResponse201 = {
   data: SourceUploadReservation
   status: 201
@@ -1653,6 +1973,56 @@ export const completeFileReplacementUpload = async (id: string,
 
   const data: completeFileReplacementUploadResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as completeFileReplacementUploadResponse
+}
+
+
+
+export type getSourceSessionResponse200 = {
+  data: SourceSession
+  status: 200
+}
+
+export type getSourceSessionResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getSourceSessionResponseSuccess = (getSourceSessionResponse200) & {
+  headers: Headers;
+};
+export type getSourceSessionResponseError = (getSourceSessionResponseDefault) & {
+  headers: Headers;
+};
+
+export type getSourceSessionResponse = (getSourceSessionResponseSuccess | getSourceSessionResponseError)
+
+export const getGetSourceSessionUrl = (id: string,) => {
+
+
+
+
+  return `/api/files/${id}/source-session`
+}
+
+/**
+ * @summary Read source editing session
+ */
+export const getSourceSession = async (id: string, options?: RequestInit): Promise<getSourceSessionResponse> => {
+
+  const res = await fetch(getGetSourceSessionUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getSourceSessionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getSourceSessionResponse
 }
 
 
@@ -6532,6 +6902,438 @@ export const transferWorkspace = async (id: string,
 
   const data: transferWorkspaceResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as transferWorkspaceResponse
+}
+
+
+
+export type checkSourceAccessResponse204 = {
+  data: void
+  status: 204
+}
+
+export type checkSourceAccessResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type checkSourceAccessResponseSuccess = (checkSourceAccessResponse204) & {
+  headers: Headers;
+};
+export type checkSourceAccessResponseError = (checkSourceAccessResponseDefault) & {
+  headers: Headers;
+};
+
+export type checkSourceAccessResponse = (checkSourceAccessResponseSuccess | checkSourceAccessResponseError)
+
+export const getCheckSourceAccessUrl = (id: string,
+    params?: CheckSourceAccessParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/collaboration/files/${id}/access?${stringifiedParams}` : `/internal/collaboration/files/${id}/access`
+}
+
+/**
+ * @summary Revalidate source room access
+ */
+export const checkSourceAccess = async (id: string,
+    params?: CheckSourceAccessParams, options?: RequestInit): Promise<checkSourceAccessResponse> => {
+
+  const res = await fetch(getCheckSourceAccessUrl(id,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: checkSourceAccessResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as checkSourceAccessResponse
+}
+
+
+
+export type bootstrapSourceDocumentResponse200 = {
+  data: SourceSession
+  status: 200
+}
+
+export type bootstrapSourceDocumentResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type bootstrapSourceDocumentResponseSuccess = (bootstrapSourceDocumentResponse200) & {
+  headers: Headers;
+};
+export type bootstrapSourceDocumentResponseError = (bootstrapSourceDocumentResponseDefault) & {
+  headers: Headers;
+};
+
+export type bootstrapSourceDocumentResponse = (bootstrapSourceDocumentResponseSuccess | bootstrapSourceDocumentResponseError)
+
+export const getBootstrapSourceDocumentUrl = (id: string,
+    params?: BootstrapSourceDocumentParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/collaboration/files/${id}/bootstrap?${stringifiedParams}` : `/internal/collaboration/files/${id}/bootstrap`
+}
+
+/**
+ * @summary Bootstrap an authorized source room
+ */
+export const bootstrapSourceDocument = async (id: string,
+    params?: BootstrapSourceDocumentParams, options?: RequestInit): Promise<bootstrapSourceDocumentResponse> => {
+
+  const res = await fetch(getBootstrapSourceDocumentUrl(id,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: bootstrapSourceDocumentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as bootstrapSourceDocumentResponse
+}
+
+
+
+export type checkpointSourceDocumentResponse200 = {
+  data: SourceSession
+  status: 200
+}
+
+export type checkpointSourceDocumentResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type checkpointSourceDocumentResponseSuccess = (checkpointSourceDocumentResponse200) & {
+  headers: Headers;
+};
+export type checkpointSourceDocumentResponseError = (checkpointSourceDocumentResponseDefault) & {
+  headers: Headers;
+};
+
+export type checkpointSourceDocumentResponse = (checkpointSourceDocumentResponseSuccess | checkpointSourceDocumentResponseError)
+
+export const getCheckpointSourceDocumentUrl = (id: string,) => {
+
+
+
+
+  return `/internal/collaboration/files/${id}/checkpoint`
+}
+
+/**
+ * @summary Persist an authorized source checkpoint
+ */
+export const checkpointSourceDocument = async (id: string,
+    sourceCheckpoint: NonReadonly<SourceCheckpoint>, options?: RequestInit): Promise<checkpointSourceDocumentResponse> => {
+
+  const res = await fetch(getCheckpointSourceDocumentUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(sourceCheckpoint)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: checkpointSourceDocumentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as checkpointSourceDocumentResponse
+}
+
+
+
+export type publishSourceRefreshResponse200 = {
+  data: SourceSession
+  status: 200
+}
+
+export type publishSourceRefreshResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type publishSourceRefreshResponseSuccess = (publishSourceRefreshResponse200) & {
+  headers: Headers;
+};
+export type publishSourceRefreshResponseError = (publishSourceRefreshResponseDefault) & {
+  headers: Headers;
+};
+
+export type publishSourceRefreshResponse = (publishSourceRefreshResponseSuccess | publishSourceRefreshResponseError)
+
+export const getPublishSourceRefreshUrl = (id: string,) => {
+
+
+
+
+  return `/internal/collaboration/files/${id}/publish`
+}
+
+/**
+ * @summary Publish a processed source checkpoint
+ */
+export const publishSourceRefresh = async (id: string,
+    sourceRefreshPublish: NonReadonly<SourceRefreshPublish>, options?: RequestInit): Promise<publishSourceRefreshResponse> => {
+
+  const res = await fetch(getPublishSourceRefreshUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(sourceRefreshPublish)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: publishSourceRefreshResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as publishSourceRefreshResponse
+}
+
+
+
+export type requestSourceRefreshResponse202 = {
+  data: SourceProcessResult
+  status: 202
+}
+
+export type requestSourceRefreshResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 202>
+}
+
+export type requestSourceRefreshResponseSuccess = (requestSourceRefreshResponse202) & {
+  headers: Headers;
+};
+export type requestSourceRefreshResponseError = (requestSourceRefreshResponseDefault) & {
+  headers: Headers;
+};
+
+export type requestSourceRefreshResponse = (requestSourceRefreshResponseSuccess | requestSourceRefreshResponseError)
+
+export const getRequestSourceRefreshUrl = (id: string,) => {
+
+
+
+
+  return `/internal/collaboration/files/${id}/refresh`
+}
+
+/**
+ * @summary Admit a saved source refresh
+ */
+export const requestSourceRefresh = async (id: string,
+    sourceRefreshInputBody: NonReadonly<SourceRefreshInputBody>, options?: RequestInit): Promise<requestSourceRefreshResponse> => {
+
+  const res = await fetch(getRequestSourceRefreshUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(sourceRefreshInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: requestSourceRefreshResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as requestSourceRefreshResponse
+}
+
+
+
+export type claimSourceRefreshResponse200 = {
+  data: SourceCandidateResponse
+  status: 200
+}
+
+export type claimSourceRefreshResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type claimSourceRefreshResponseSuccess = (claimSourceRefreshResponse200) & {
+  headers: Headers;
+};
+export type claimSourceRefreshResponseError = (claimSourceRefreshResponseDefault) & {
+  headers: Headers;
+};
+
+export type claimSourceRefreshResponse = (claimSourceRefreshResponseSuccess | claimSourceRefreshResponseError)
+
+export const getClaimSourceRefreshUrl = (id: string,
+    params?: ClaimSourceRefreshParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/collaboration/files/${id}/refresh-candidate?${stringifiedParams}` : `/internal/collaboration/files/${id}/refresh-candidate`
+}
+
+/**
+ * @summary Claim a fixed source export
+ */
+export const claimSourceRefresh = async (id: string,
+    params?: ClaimSourceRefreshParams, options?: RequestInit): Promise<claimSourceRefreshResponse> => {
+
+  const res = await fetch(getClaimSourceRefreshUrl(id,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: claimSourceRefreshResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as claimSourceRefreshResponse
+}
+
+
+
+export type finalizeSourceRefreshResponse204 = {
+  data: void
+  status: 204
+}
+
+export type finalizeSourceRefreshResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type finalizeSourceRefreshResponseSuccess = (finalizeSourceRefreshResponse204) & {
+  headers: Headers;
+};
+export type finalizeSourceRefreshResponseError = (finalizeSourceRefreshResponseDefault) & {
+  headers: Headers;
+};
+
+export type finalizeSourceRefreshResponse = (finalizeSourceRefreshResponseSuccess | finalizeSourceRefreshResponseError)
+
+export const getFinalizeSourceRefreshUrl = (id: string,) => {
+
+
+
+
+  return `/internal/collaboration/files/${id}/refresh-candidate`
+}
+
+/**
+ * @summary Enqueue an uploaded candidate
+ */
+export const finalizeSourceRefresh = async (id: string,
+    sourceRefreshFinalize: NonReadonly<SourceRefreshFinalize>, options?: RequestInit): Promise<finalizeSourceRefreshResponse> => {
+
+  const res = await fetch(getFinalizeSourceRefreshUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(sourceRefreshFinalize)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: finalizeSourceRefreshResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as finalizeSourceRefreshResponse
+}
+
+
+
+export type failSourceRefreshResponse204 = {
+  data: void
+  status: 204
+}
+
+export type failSourceRefreshResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type failSourceRefreshResponseSuccess = (failSourceRefreshResponse204) & {
+  headers: Headers;
+};
+export type failSourceRefreshResponseError = (failSourceRefreshResponseDefault) & {
+  headers: Headers;
+};
+
+export type failSourceRefreshResponse = (failSourceRefreshResponseSuccess | failSourceRefreshResponseError)
+
+export const getFailSourceRefreshUrl = (id: string,) => {
+
+
+
+
+  return `/internal/collaboration/files/${id}/refresh-failure`
+}
+
+/**
+ * @summary Discard an unsuccessful candidate
+ */
+export const failSourceRefresh = async (id: string,
+    sourceFailureInputBody: NonReadonly<SourceFailureInputBody>, options?: RequestInit): Promise<failSourceRefreshResponse> => {
+
+  const res = await fetch(getFailSourceRefreshUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(sourceFailureInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: failSourceRefreshResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as failSourceRefreshResponse
 }
 
 

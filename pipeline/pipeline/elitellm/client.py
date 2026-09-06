@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 import httpx
@@ -53,10 +55,75 @@ def _is_routed_zai_glm(spec: ModelConfig) -> bool:
     return spec.provider_slug == "zai" and spec.model_slug == ZAI_GLM_FLASH_MODEL
 
 
+BUSY_STATUSES = frozenset({429, 503, 529})
+
+
 class ProviderError(RuntimeError):
-    def __init__(self, message: str, *, status_code: int | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        retry_after: float | None = None,
+    ) -> None:
         super().__init__(message)
         self.status_code = status_code
+        # Seconds the provider asked us to wait (``Retry-After``), when it did.
+        self.retry_after = retry_after
+
+    @property
+    def busy(self) -> bool:
+        """A capacity answer: rate limited or overloaded, never a bad request."""
+        return self.status_code in BUSY_STATUSES
+
+
+class ProviderBusy(ProviderError):
+    """The call's busy budget is spent, or the model's own gate never opened.
+
+    ``retry_after`` is the hint handed to clients and is always set;
+    ``provider_retry_after`` is the provider's own Retry-After, None when it
+    sent none or when the gate refused, and is what ingest backs off on.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        retry_after: float | None = None,
+        provider_retry_after: float | None = None,
+    ) -> None:
+        super().__init__(message, status_code=status_code, retry_after=retry_after)
+        self.provider_retry_after = provider_retry_after
+
+    @property
+    def busy(self) -> bool:
+        return True
+
+
+def _retry_after(headers: Mapping[str, str]) -> float | None:
+    raw = (headers.get("retry-after") or "").strip()
+    if not raw:
+        return None
+    if raw.isdigit():
+        return float(raw)
+    try:
+        when = parsedate_to_datetime(raw)
+    except (TypeError, ValueError, IndexError):
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return max(0.0, (when - datetime.now(timezone.utc)).total_seconds())
+
+
+def _error_from_response(
+    status_code: int, text: str, headers: Mapping[str, str]
+) -> ProviderError:
+    return ProviderError(
+        text or f"provider HTTP {status_code}",
+        status_code=status_code,
+        retry_after=_retry_after(headers),
+    )
 
 
 def _has_payload(value: Any) -> bool:
@@ -113,6 +180,24 @@ def anthropic_thinking_body(thinking: str) -> dict[str, Any]:
     if thinking == "max":
         return {"type": "adaptive"}
     return {"type": "enabled", "budget_tokens": _ANTHROPIC_BUDGET.get(thinking, 8192)}
+
+
+def _anthropic_max_tokens(max_tokens: int | None, thinking: str) -> int:
+    tokens = max_tokens or 8192
+    budget = anthropic_thinking_body(thinking).get("budget_tokens")
+    return budget + 4096 if isinstance(budget, int) and tokens <= budget else tokens
+
+
+def output_budget(
+    spec: ModelConfig,
+    *,
+    max_tokens: int | None = None,
+    reasoning: bool | None = None,
+) -> int:
+    """Reserve the outbound cap, retaining 8192 for unspecified provider caps."""
+    if spec.provider_slug == "anthropic":
+        return _anthropic_max_tokens(max_tokens, _thinking_for_call(spec, reasoning))
+    return max_tokens if max_tokens is not None else 8192
 
 
 def deepseek_thinking_body(thinking: str) -> dict[str, Any]:
@@ -178,14 +263,10 @@ def anthropic_request(
 ) -> dict[str, Any]:
     system, rest = _split_system(messages)
     thinking_body = anthropic_thinking_body(thinking)
-    tokens = max_tokens or 8192
-    budget = thinking_body.get("budget_tokens")
-    if isinstance(budget, int) and tokens <= budget:
-        tokens = budget + 4096
     body: dict[str, Any] = {
         "model": spec.model_slug,
         "messages": _anthropic_messages(rest),
-        "max_tokens": tokens,
+        "max_tokens": _anthropic_max_tokens(max_tokens, thinking),
         "thinking": thinking_body,
     }
     if system:
@@ -440,13 +521,45 @@ def context_components(
     return system, conversation, schemas
 
 
-def _timeout() -> float:
+def _interactive() -> bool:
     from ..retrieval import accounting
 
     state = accounting.current()
-    if state is not None and state.settlement_mode == "ingest":
-        return cfg.ingest_provider_timeout_s
-    return cfg.interactive_provider_timeout_s
+    return state is None or state.settlement_mode != "ingest"
+
+
+def _call_timeout() -> float:
+    """Whole-call bound for a non-streaming request; idle bound for a stream."""
+    if _interactive():
+        return cfg.interactive_provider_timeout_s
+    return cfg.ingest_provider_timeout_s
+
+
+def _stream_backstop() -> float:
+    if _interactive():
+        return cfg.interactive_stream_max_s
+    return cfg.ingest_provider_timeout_s
+
+
+# One client per event loop: keep-alive connections are reused across calls
+# instead of paying a TLS handshake per request. The per-model gate bounds
+# concurrency, so the pool itself is unbounded.
+_clients: dict[int, tuple[asyncio.AbstractEventLoop, httpx.AsyncClient]] = {}
+
+
+def _client() -> httpx.AsyncClient:
+    loop = asyncio.get_running_loop()
+    entry = _clients.get(id(loop))
+    if entry is not None and entry[0] is loop and not loop.is_closed():
+        return entry[1]
+    for key, (old, _client_for_old) in list(_clients.items()):
+        if old.is_closed():
+            _clients.pop(key, None)
+    client = httpx.AsyncClient(
+        limits=httpx.Limits(max_connections=None, max_keepalive_connections=32)
+    )
+    _clients[id(loop)] = (loop, client)
+    return client
 
 
 def jsonable(value: Any) -> Any:
@@ -469,14 +582,14 @@ async def _post_json(
     headers: dict[str, str],
     body: dict[str, Any],
 ) -> dict[str, Any]:
-    timeout = _timeout()
+    timeout = _call_timeout()
     async with asyncio.timeout(timeout):
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(url, headers=headers, json=jsonable(body))
+        response = await _client().post(
+            url, headers=headers, json=jsonable(body), timeout=httpx.Timeout(timeout)
+        )
     if response.status_code >= 400:
-        raise ProviderError(
-            response.text or f"provider HTTP {response.status_code}",
-            status_code=response.status_code,
+        raise _error_from_response(
+            response.status_code, response.text, response.headers
         )
     return response.json()
 
@@ -486,29 +599,66 @@ async def _stream_sse(
     headers: dict[str, str],
     body: dict[str, Any],
 ) -> AsyncIterator[dict[str, Any]]:
-    timeout = _timeout()
-    async with asyncio.timeout(timeout):
-        async with (
-            httpx.AsyncClient(timeout=timeout) as client,
-            client.stream(
-                "POST", url, headers=headers, json=jsonable(body)
-            ) as response,
-        ):
-            if response.status_code >= 400:
-                text = await response.aread()
-                raise ProviderError(
-                    text.decode() if text else f"provider HTTP {response.status_code}",
-                    status_code=response.status_code,
-                )
-            async for line in response.aiter_lines():
-                if not line.startswith("data:"):
-                    continue
-                payload = line[5:].strip()
-                if payload == "[DONE]":
-                    return
-                if not payload:
-                    continue
-                yield json.loads(payload)
+    """Yield ``data:`` payloads. Each provider read gets the idle bound.
+
+    Only the awaits on the provider are timed, so a consumer may take as long
+    as it likes between chunks without that counting as provider silence.
+    Comment-only keep-alives (``: keep-alive``) do not count as activity, so a
+    provider that parks the request in a queue times out like a silent one.
+    The backstop bounds the whole stream and is what the receipt window is
+    derived from. httpx's own read timeout is off so this timer decides.
+    """
+    idle = _call_timeout()
+    loop = asyncio.get_running_loop()
+    backstop_at = loop.time() + _stream_backstop()
+    # Provider-wait time since the last data payload. Keep-alive comments and
+    # blank lines add to it like no bytes at all; time the consumer spends
+    # between chunks does not, because only the reads below are measured.
+    silence = 0.0
+
+    async def bounded(awaitable: Any) -> Any:
+        nonlocal silence
+        remaining = min(idle - silence, backstop_at - loop.time())
+        if remaining <= 0:
+            raise TimeoutError("provider stream went silent or exceeded its backstop")
+        started = loop.time()
+        try:
+            async with asyncio.timeout(remaining):
+                return await awaitable
+        finally:
+            silence += loop.time() - started
+
+    stream = _client().stream(
+        "POST",
+        url,
+        headers=headers,
+        json=jsonable(body),
+        timeout=httpx.Timeout(idle, read=None),
+    )
+    response = await bounded(stream.__aenter__())
+    try:
+        if response.status_code >= 400:
+            text = await bounded(response.aread())
+            raise _error_from_response(
+                response.status_code, text.decode(), response.headers
+            )
+        lines = response.aiter_lines()
+        while True:
+            try:
+                line = await bounded(anext(lines))
+            except StopAsyncIteration:
+                return
+            if not line.startswith("data:"):
+                continue
+            payload = line[5:].strip()
+            if payload == "[DONE]":
+                return
+            if not payload:
+                continue
+            silence = 0.0
+            yield json.loads(payload)
+    finally:
+        await stream.__aexit__(None, None, None)
 
 
 def _bearer(key: str) -> dict[str, str]:
@@ -611,6 +761,7 @@ async def stream(
     reasoning: bool | None = None,
     input_items: list[dict[str, Any]] | None = None,
     tool_choice: Any | None = None,
+    response_format: dict[str, Any] | None = None,
 ) -> AsyncIterator[Any]:
     thinking = _thinking_for_call(spec, reasoning)
     if temperature is None:
@@ -642,7 +793,7 @@ async def stream(
             thinking=thinking,
             stream=True,
             tool_choice=tool_choice,
-            response_format=None,
+            response_format=response_format,
         )
         async for event in _stream_sse(OPENAI_RESPONSES_URL, _bearer(key), body):
             yield _as_obj(event)
@@ -653,7 +804,7 @@ async def stream(
             messages,
             temperature=temperature,
             tools=tools,
-            response_format=None,
+            response_format=response_format,
             max_tokens=max_tokens,
             thinking=thinking,
             stream=True,
@@ -668,7 +819,7 @@ async def stream(
             messages,
             temperature=temperature,
             tools=tools,
-            response_format=None,
+            response_format=response_format,
             max_tokens=max_tokens,
             thinking=thinking,
             stream=True,
@@ -683,7 +834,7 @@ async def stream(
             messages,
             temperature=temperature,
             tools=tools,
-            response_format=None,
+            response_format=response_format,
             max_tokens=max_tokens,
             thinking=thinking,
             stream=True,
@@ -908,6 +1059,18 @@ class _AnthropicStreamConverter:
         if usage:
             payload["usage"] = dict(self._usage)
         return _as_obj(payload)
+
+
+def chat_response(
+    message: dict[str, Any], *, finish_reason: str, usage: Any = None
+) -> Any:
+    """Shape one assembled stream like a non-streaming chat completion."""
+    return _as_obj(
+        {
+            "choices": [{"message": dict(message), "finish_reason": finish_reason}],
+            "usage": usage,
+        }
+    )
 
 
 def message_from_response(resp: Any) -> Any:

@@ -177,6 +177,8 @@ export const userThinking: Record<string, Record<string, string>> = {};
 
 export const workspaces: Workspace[] = [
   {
+    autoReindex: true,
+    autoReparse: true,
     capabilities: {
       canComment: true,
       canEdit: true,
@@ -200,6 +202,8 @@ export const workspaces: Workspace[] = [
     tags: ct('tag_1', 'tag_2'),
   },
   {
+    autoReindex: true,
+    autoReparse: true,
     capabilities: {
       canComment: true,
       canEdit: true,
@@ -223,6 +227,8 @@ export const workspaces: Workspace[] = [
     tags: ct('tag_3', 'tag_4'),
   },
   {
+    autoReindex: true,
+    autoReparse: true,
     capabilities: {
       canComment: true,
       canEdit: true,
@@ -246,6 +252,8 @@ export const workspaces: Workspace[] = [
     tags: ct('tag_5', 'tag_6', 'tag_war'),
   },
   {
+    autoReindex: true,
+    autoReparse: true,
     capabilities: {
       canComment: true,
       canEdit: true,
@@ -269,6 +277,8 @@ export const workspaces: Workspace[] = [
     tags: ct('tag_7'),
   },
   {
+    autoReindex: true,
+    autoReparse: true,
     capabilities: {
       canComment: true,
       canEdit: true,

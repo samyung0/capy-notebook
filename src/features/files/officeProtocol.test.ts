@@ -6,10 +6,7 @@ import {
 } from './officeProtocol';
 import {
   isCurrentOfficeRuntimeMessage,
-  isCurrentOfficeSave,
   officeRuntimeKey,
-  resolveInitialOfficeMode,
-  runOfficeSave,
 } from './useOfficeRuntime';
 
 describe('office host protocol', () => {
@@ -25,7 +22,14 @@ describe('office host protocol', () => {
     };
 
     expect(isOfficeHostMessage({ ...load, mode: 'view' })).toBe(true);
-    expect(isOfficeHostMessage({ ...load, mode: 'edit' })).toBe(true);
+    expect(isOfficeHostMessage({ ...load, mode: 'edit' })).toBe(false);
+    expect(
+      isOfficeHostMessage({
+        ...load,
+        collaboration: { epoch: 1, initialUpdate: new ArrayBuffer(2) },
+        mode: 'edit',
+      })
+    ).toBe(true);
     expect(isOfficeHostMessage(load)).toBe(false);
   });
 
@@ -117,16 +121,12 @@ describe('office save fencing', () => {
   const fileA = { id: 'file-a', url: '/api/files/file-a/content' };
   const fileB = { id: 'file-b', url: '/api/files/file-b/content' };
 
-  it('includes the file, content URL, and revision in the runtime identity', () => {
+  it('keeps the editor mounted across metadata and content URL refetches', () => {
     expect(officeRuntimeKey(fileA, 1)).not.toBe(officeRuntimeKey(fileB, 1));
-    expect(officeRuntimeKey(fileA, 1)).not.toBe(officeRuntimeKey(fileA, 2));
-    expect(officeRuntimeKey(fileA, 1)).not.toBe(
+    expect(officeRuntimeKey(fileA, 1)).toBe(officeRuntimeKey(fileA, 2));
+    expect(officeRuntimeKey(fileA, 1)).toBe(
       officeRuntimeKey({ ...fileA, url: `${fileA.url}?v=2` }, 1)
     );
-  });
-
-  it('rejects a completion from another runtime generation', () => {
-    expect(isCurrentOfficeSave(1, 2, true)).toBe(false);
   });
 
   it.each(['ready', 'mode', 'dirty', 'error', 'save'])(
@@ -136,52 +136,35 @@ describe('office save fencing', () => {
       expect(isCurrentOfficeRuntimeMessage(2, 2)).toBe(true);
     }
   );
-
-  it('accepts only the still-mounted runtime that initiated the save', () => {
-    expect(isCurrentOfficeSave(1, 1, true)).toBe(true);
-    expect(isCurrentOfficeSave(1, 1, false)).toBe(false);
-  });
-
-  it.each([
-    ['resolved', true],
-    ['rejected', false],
-  ])(
-    'ignores a late %s save after the runtime changes',
-    async (_, resolveSave) => {
-      let currentGeneration = 1;
-      const committed: number[] = [];
-      const rejected: string[] = [];
-      let settleSave: ((value: { revision: number }) => void) | undefined;
-      let rejectSave: ((reason: Error) => void) | undefined;
-      const pending = new Promise<{ revision: number }>((resolve, reject) => {
-        settleSave = resolve;
-        rejectSave = reject;
-      });
-
-      const saving = runOfficeSave({
-        bytes: new Uint8Array([1, 2, 3]),
-        expectedRevision: 1,
-        isCurrent: () => isCurrentOfficeSave(1, currentGeneration, true),
-        onCommitted: (saved) => committed.push(saved.revision),
-        onRejected: (error) => rejected.push(error.message),
-        onSave: () => pending,
-      });
-      currentGeneration = 2;
-      if (resolveSave) settleSave?.({ revision: 2 });
-      else rejectSave?.(new Error('save failed'));
-      await saving;
-
-      expect(committed).toEqual([]);
-      expect(rejected).toEqual([]);
-    }
-  );
 });
 
-describe('office runtime lifecycle', () => {
-  it('starts directly in edit only when the host can save', () => {
-    expect(resolveInitialOfficeMode('edit', true, true)).toBe('edit');
-    expect(resolveInitialOfficeMode('edit', false, true)).toBe('view');
-    expect(resolveInitialOfficeMode('edit', true, false)).toBe('view');
-    expect(resolveInitialOfficeMode('view', true, true)).toBe('view');
+describe('source collaboration bridge', () => {
+  it('requires epochs and request identities for replica updates and flush receipts', () => {
+    const update = {
+      bytes: new ArrayBuffer(2),
+      epoch: 4,
+      type: 'update',
+      version: OFFICE_PROTOCOL_VERSION,
+    };
+    expect(isOfficeHostMessage(update)).toBe(true);
+    expect(isOfficeHostMessage({ ...update, epoch: -1 })).toBe(false);
+    expect(isOfficeRuntimeMessage({ ...update, revision: 2 })).toBe(true);
+    expect(
+      isOfficeRuntimeMessage({ ...update, revision: 2, type: 'flushed' })
+    ).toBe(false);
+    expect(
+      isOfficeRuntimeMessage({
+        ...update,
+        id: 'checkpoint-1',
+        revision: 2,
+        type: 'flushed',
+      })
+    ).toBe(true);
+    expect(
+      isOfficeRuntimeMessage({
+        type: 'initialized',
+        version: OFFICE_PROTOCOL_VERSION,
+      })
+    ).toBe(true);
   });
 });

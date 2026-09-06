@@ -609,6 +609,90 @@ export function CostsPage() {
               </Table>
             </CardContent>
           </Card>
+
+          <Card className="shadow-sm">
+            <CardHeader>
+              <CardTitle>Provider attempts</CardTitle>
+              <CardDescription>
+                Every provider attempt in the same range, keyed by transport
+                provider and model (the CAPY_MODEL_CONCURRENCY key). Busy is the
+                subset abandoned on a provider 429, 503 or 529 answer. Tokens
+                and credits come from the applied attempts.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {data.attempts.length === 0 ? (
+                <p className="text-muted-foreground text-sm">
+                  No provider attempts in this range.
+                </p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Provider / model</TableHead>
+                      <TableHead className="text-right">Attempts</TableHead>
+                      <TableHead className="text-right">Applied</TableHead>
+                      <TableHead className="text-right">Abandoned</TableHead>
+                      <TableHead className="text-right">Busy</TableHead>
+                      <TableHead className="text-right">Open</TableHead>
+                      <TableHead className="text-right">Input tokens</TableHead>
+                      <TableHead className="text-right">Cached input</TableHead>
+                      <TableHead className="text-right">Cache write</TableHead>
+                      <TableHead className="text-right">
+                        Output tokens
+                      </TableHead>
+                      <TableHead className="text-right">Reasoning</TableHead>
+                      <TableHead className="text-right">Credits</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.attempts.map((row) => (
+                      <TableRow key={`${row.provider}/${row.model}`}>
+                        <TableCell className="font-mono text-xs">
+                          {row.provider && row.model
+                            ? `${row.provider} / ${row.model}`
+                            : '—'}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatCount(row.attempts)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatCount(row.applied)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatCount(row.abandoned)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatCount(row.busy)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatCount(row.open)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatCount(row.inputTokens)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatCount(row.cachedReadTokens)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatCount(row.cacheWriteTokens)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatCount(row.outputTokens)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatCount(row.reasoningTokens)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatCredits(row.creditMicros)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
         </>
       )}
     </>

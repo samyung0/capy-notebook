@@ -559,13 +559,20 @@ async def test_definitive_provider_response_is_abandoned(monkeypatch):
     err = RuntimeError("rate limited")
     err.status_code = 429
     abandoned = {"n": 0}
-    api = _ChatAPI([], errors=[err, err, err])
+    api = _ChatAPI([], errors=[err, err])
     _patch_stream_client(monkeypatch, api, abandoned=abandoned)
 
-    with pytest.raises(RuntimeError, match="rate limited"):
+    async def no_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(retrieval_models.asyncio, "sleep", no_sleep)
+
+    # A busy answer gets the interactive policy's two attempts, each on its
+    # own abandoned call id, then the call fails closed as busy.
+    with pytest.raises(retrieval_models.elitellm.ProviderBusy, match="rate limited"):
         await retrieval_models.stream_agent_response(
             [{"role": "user", "content": "q"}], model=_chat_spec()
         )
 
-    assert api.creates == 3
-    assert abandoned["n"] == 3
+    assert api.creates == 2
+    assert abandoned["n"] == 2

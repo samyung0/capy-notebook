@@ -438,8 +438,23 @@ export type MaterialRevision = Omit<GenMaterialRevision, 'content'> & {
   content: import('@/features/materials/document').MaterialDocument;
 };
 
-export type { WorkspaceSummary, WorkspaceSummaryChapter } from './gen/model';
+export type {
+  PDFRect,
+  SourceCollaborationToken,
+  SourceProcessResult,
+  SourceSession,
+  WorkspaceSummary,
+  WorkspaceSummaryChapter,
+} from './gen/model';
 /* ---------------- Raw generated namespace ----------------
    Reach for `Gen` when you need the exact backend contract (e.g. nullable
    arrays, request bodies) rather than the UI-facing domain type above. */
 export * as Gen from './gen/model';
+export type PDFAnnotationBody = Omit<
+  import('./gen/model').PDFAnnotationBody,
+  'rects'
+> & { rects: import('./gen/model').PDFRect[] };
+export type PDFAnnotation = Omit<
+  import('./gen/model').PDFAnnotation,
+  'rects'
+> & { rects: import('./gen/model').PDFRect[] };

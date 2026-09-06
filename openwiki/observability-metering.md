@@ -425,11 +425,25 @@ call. A successful response appends its `usage_events` row and marks the call
 `applied` in the same transaction. Closing the parent session prevents another
 call from starting, but it does not discard a receipt for a call already sent.
 That exact call id remains settleable against a `settled` or `released` session
-until its `receipt_deadline_at`. Python sets the deadline to the provider HTTP
-timeout plus five minutes; direct SQL callers use the same maximum
-12-hour-five-minute window as ElevenLabs. ElevenLabs itself runs under an
-absolute 12-hour request timeout; the additional five minutes are receipt-only
-settlement grace. Settlement checks the stored deadline
+until its `receipt_deadline_at`. Python sets the deadline from the longest a
+call can legitimately run, plus five minutes: the interactive stream backstop
+(`CAPY_INTERACTIVE_STREAM_MAX_S`, 10 minutes) for every interactive call, the
+ingest provider timeout (120 s) for ingest, and the ElevenLabs sync timeout for
+audio; direct SQL callers use the same maximum 12-hour-five-minute window as
+ElevenLabs. ElevenLabs itself runs under an absolute 12-hour request timeout;
+the additional five minutes are receipt-only settlement grace.
+
+Interactive provider calls run over the streaming transport, generate, live
+compaction and checkpoint included (assembled back into a completion in
+`models.py`), under a 15-second idle timeout (`CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S`)
+that restarts on every provider `data:` event; comment-only keep-alives do not
+count, so a request parked in a provider queue times out like a silent one. The
+stream backstop bounds the whole stream. Non-streaming interactive calls such
+as query embeddings get the 15 seconds as a whole-call bound. Ingest calls keep
+their 120-second bound. Only the awaits on the provider are timed, so a slow
+consumer between chunks never counts as provider silence. The transport keeps
+one keep-alive `httpx` client per process (one per event loop) and parses
+`Retry-After` onto the provider error. Settlement checks the stored deadline
 under the call-row lock, and the usage worker also sweeps unanswered calls once
 per minute. Both paths abandon expiry with `receipt_timeout`. A provider error
 with a known failed response abandons the call immediately. An applied call without a
@@ -520,14 +534,32 @@ the exact pre-authorized session, kind, and purpose; it cannot create or
 overwrite a stub. Reusing the call id with different usage returns a conflict
 instead of silently accepting it.
 Provider SDK automatic retries are disabled, so one call id represents one
-outbound provider attempt. A future explicit provider retry must use a new call
-id; retrying only the settlement callback keeps the original id.
-Chat planning retries an uncertain pre-byte provider failure twice on a new
-call id while leaving each earlier uncertain attempt open for its bounded
-receipt window. A failure after the first provider chunk — even if the browser
-has not received SSE yet — is final for that response and is not retried, but
-the call remains open unless the provider supplied a definitive failed HTTP
-response. Settlement retries retain the same call id and in-memory receipt
+outbound provider attempt; retrying only the settlement callback keeps the
+original id. Every provider call runs under a retry policy in `models.py`: a
+busy answer (429, 503, 529) waits for the provider's `Retry-After`, else a
+jittered backoff, and every attempt is a new call id. Interactive calls get two
+attempts inside three seconds and then fail closed as `provider_busy` (HTTP 503
+carrying `retryAfterSeconds`, with a `Retry-After` header on the Plate copilot
+route; generate and quiz grade answer through Huma, which sets no header, so
+the wait is in the body only; an SSE `error` event with `retryAfterSeconds` on
+chat and Plate commands). A request cancelled while its admission is in flight
+is undone by a detached task that abandons the never-sent call row and frees
+its lease, without delaying the cancellation. A `Retry-After`
+longer than what is left of the budget ends the call at once. Ingest embedding,
+summary and caption calls get four attempts inside two minutes (captions retry
+any failure, not only busy answers, since one dropped caption is one figure
+gone from the index); past that a
+figure caption is dropped, while an embedding, summary or standalone image
+caption raises `ProviderBusy` so the job re-pends without spending an attempt
+(`jobs.provider_waits`, at most 5, `not_before` from the provider's own
+`Retry-After` else 30 s doubling; the synthesized client hint never feeds the
+job backoff), after which the file fails as `provider_busy`. Waiting at a capped
+model's gate spends the same budget.
+Chat planning retries any pre-byte failure under that policy while leaving
+each earlier uncertain attempt open for its bounded receipt window. A failure
+after the first provider chunk — even if the browser has not received SSE yet
+— is final for that response and is not retried, but the call remains open
+unless the provider supplied a definitive failed HTTP response. Settlement retries retain the same call id and in-memory receipt
 across transient database or gateway failures until it applies or its stored
 deadline expires. A deterministic local identity/session rejection fails
 immediately and leaves the immutable call for the normal deadline policy. Once
@@ -787,6 +819,29 @@ non-ingest leases in Postgres (cap 5). A replica that dies mid-stream leaves a r
 sweeper releases after 30 minutes. BYOK does not take a lease. Ingest
 concurrency is the separate cap of 20 above, not this one.
 
+**Per-model outbound concurrency** bounds what reaches a provider.
+`CAPY_MODEL_CONCURRENCY` lists `provider:model=total/reserve` entries keyed by
+transport provider and model (the routed GLM counts as
+`deepinfra:zai-org/GLM-5.3-Flash`); a model without an entry is ungated.
+Interactive callers may use the whole total, ingest callers total minus the
+reserve, so a chat search never queues behind a wave of captions. The lease is
+one row in `provider_capacity_leases`, taken in the same transaction as the
+pre-call `provider_calls` row with the call id as lease id and the receipt
+deadline as expiry, and released when the call ends; the app host and the
+ingest host share that table, so the cap holds across both. A waiter polls with
+jitter within its call's retry budget and then fails as `provider_busy`. Only
+platform keys are gated; a BYOK call answers to the user's own limits. A reserve
+must be below its total, and the retrieval service and ingest worker refuse to
+start under `APP_ENV=production` when the variable is unset. DeepInfra
+documents 200 concurrent requests per model per account; production runs GLM at
+200/120 and the Qwen embedding at 200/80, and UAT sets its own numbers against
+its own account. Health shows attempts abandoned on a provider 429, 503 or 529
+answer per provider and model over the last hour, and the usage explorer's
+provider-attempts table shows every attempt (applied, abandoned, busy, open) by
+transport provider and model for the selected range; the pre-call row carries
+the transport provider and model so abandoned attempts are attributable. A gate
+refusal writes no call row and is not counted.
+
 **Redis failures fail open.** A limiter outage must not become an API outage;
 the edge still bounds the blast radius.
 
@@ -961,6 +1016,9 @@ the likelihood grew every time the registry was reconfigured.
 | `CORS_ALLOWED_ORIGINS` | gateway | comma separated; empty means `*` |
 | `RATE_LIMIT_DISABLED` | gateway | forced true under `APP_ENV=e2e` |
 | `RATE_LIMIT_AI_PER_HOUR` | gateway | overrides the default 200; 15/min burst and editor 120/min are code-only |
+| `CAPY_MODEL_CONCURRENCY` | retrieval, ingest workers | `provider:model=total/reserve` entries, reserve below total; required under `APP_ENV=production`, otherwise unset leaves every model ungated |
+| `CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S` | retrieval | idle bound per interactive stream, whole-call bound for non-streaming interactive calls; default 15 |
+| `CAPY_INTERACTIVE_STREAM_MAX_S` | retrieval | whole-stream backstop; the interactive receipt window is this plus five minutes; default 600 |
 | `GATEWAY_URL` / `PIPELINE_SECRET` | import worker | the gateway's private URL and shared secret for `/api/internal/import/*`; the gateway's empty `PIPELINE_SECRET` disables Drive imports |
 | `CAPY_IMPORT_JOB_TIMEOUT` / `CAPY_IMPORT_DOWNLOAD_HOSTS` | import worker | per-attempt transfer budget (600 s) and the provider download host allowlist |
 | `SENTRY_DSN_GATEWAY` / `_RETRIEVAL` / `_WORKER` / `_COLLABORATION` | compose | mapped onto each process's `SENTRY_DSN` |

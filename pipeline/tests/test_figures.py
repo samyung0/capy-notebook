@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,7 +17,8 @@ from typing import Any
 import pytest
 from PIL import Image, ImageDraw
 
-from pipeline.parse import figures
+from pipeline.parse import caption_cache, figures
+from pipeline.prompts import captioning as caption_prompts
 from pipeline.registry import ModelConfig
 from pipeline.retrieval import models
 
@@ -117,10 +117,6 @@ async def test_caption_settlement_failure_never_starts_another_provider_call(
         await models.caption_image("data:image/png;base64,eA==", "caption")
 
     assert calls == 1
-
-
-def _caption_key() -> str:
-    return figures.cache_key(_SOURCE_SHA)
 
 
 def _write(path: Path, image: Image.Image) -> Path:
@@ -226,7 +222,7 @@ def test_chart_blocks_are_selected_and_use_their_own_caption_key(tmp_path: Path)
     selected = figures.select_figures(content_list, tmp_path)
 
     assert [f.path.name for f in selected] == ["plot.png"]
-    assert "Figure 4: glucose uptake" in selected[0].context
+    assert selected[0].items[0]["chart_caption"] == ["Figure 4: glucose uptake"]
 
 
 def test_page_bbox_does_not_reject_a_large_decodable_crop(
@@ -303,384 +299,110 @@ def test_the_safety_valve_keeps_the_largest_figures(tmp_path: Path, monkeypatch)
 
     selected = figures.select_figures(content_list, tmp_path)
 
-    assert [f.page for f in selected] == [4, 3]
-
-
-def test_context_carries_the_document_vocabulary(tmp_path: Path):
-    _write(tmp_path / "images" / "fig.png", _diagram())
-    content_list = [
-        _text_block("Cellular Respiration", 0, level=1),
-        _text_block("The Krebs cycle", 0, level=2),
-        _text_block("Acetyl-CoA enters the cycle here.", 0),
-        _image_block("images/fig.png", 0, image_caption=["Figure 3.1"]),
-        _text_block("Each turn yields three NADH.", 0),
-    ]
-
-    context = figures.select_figures(content_list, tmp_path)[0].context
-
-    assert "Cellular Respiration › The Krebs cycle" in context
-    assert "Figure 3.1" in context
-    assert "Acetyl-CoA enters the cycle here." in context
-    assert "Each turn yields three NADH." in context
-
-
-# --------------------------------------------------------------- captioning
+    assert [f.items[0]["page_idx"] for f in selected] == [4, 3]
 
 
 @pytest.fixture
 def captioning(monkeypatch):
-    """Stub the vision model and the caption cache; record what each did."""
     calls: list[str] = []
-    store: dict[str, bytes] = {}
-    gate = threading.Lock()
-    lock_state = {"held": False}
+    cached: dict[str, tuple[str, str, int]] = {}
+    locks: dict[str, asyncio.Lock] = {}
 
-    class Connection:
-        pass
+    @asynccontextmanager
+    async def lock(_file, _asset, digest):
+        async with locks.setdefault(digest, asyncio.Lock()):
+            yield
 
-    def try_lock(_identity: str):
-        with gate:
-            if lock_state["held"]:
-                return None
-            lock_state["held"] = True
-            return Connection()
+    async def lookup(_file, _asset, digest, _published, **_kwargs):
+        return cached.get(digest)
 
-    def release_lock(_connection: Connection, _identity: str) -> None:
-        with gate:
-            lock_state["held"] = False
+    async def persist(_file, _asset, digest, path, raw, _published, **_kwargs):
+        cached[digest] = (json.loads(raw)["text"], path, len(raw))
 
-    async def _caption(_data_url: str, prompt: str) -> str:
+    async def caption(_data_url, prompt, **_kwargs):
         calls.append(prompt)
         return f"description {len(calls)}"
 
-    monkeypatch.setattr(figures.models, "caption_image", _caption)
-    monkeypatch.setattr(figures.db, "try_source_artifact_lock", try_lock)
-    monkeypatch.setattr(figures.db, "release_source_artifact_lock", release_lock)
-    monkeypatch.setattr(figures.blobstore, "read_bytes", lambda key: store.get(key))
-    monkeypatch.setattr(
-        figures.blobstore,
-        "write_bytes",
-        lambda key, data, _type: store.__setitem__(key, data),
-    )
-    return {"calls": calls, "store": store}
+    monkeypatch.setattr(caption_cache, "_lock", lock)
+    monkeypatch.setattr(caption_cache, "lookup", lookup)
+    monkeypatch.setattr(caption_cache, "_persist", persist)
+    monkeypatch.setattr(caption_cache.models, "caption_image", caption)
+    return {"calls": calls, "cached": cached}
 
 
-async def _caption_all(tmp_path: Path, content_list: list[dict[str, Any]]) -> dict:
+async def _caption_all(tmp_path, content_list, source_sha256=_SOURCE_SHA):
     return await figures.caption_figures(
         content_list=content_list,
         raw_dir=tmp_path,
-        file_name="lecture.pdf",
-        source_sha256=_SOURCE_SHA,
+        file_name="private-lecture.pdf",
+        source_sha256=source_sha256,
+        file_id="f_1",
     )
 
 
-@pytest.mark.asyncio
-async def test_caption_lock_releases_late_acquisition_after_cancellation(
-    monkeypatch,
-) -> None:
-    started = threading.Event()
-    finish = threading.Event()
-    released = threading.Event()
-    connection = object()
-
-    def try_lock(_identity: str):
-        started.set()
-        assert finish.wait(timeout=2)
-        return connection
-
-    def release_lock(actual: object, _identity: str) -> None:
-        assert actual is connection
-        released.set()
-
-    monkeypatch.setattr(figures.db, "try_source_artifact_lock", try_lock)
-    monkeypatch.setattr(figures.db, "release_source_artifact_lock", release_lock)
-
-    async def hold_lock() -> None:
-        async with figures._CaptionCacheLock("source"):
-            pytest.fail("cancelled acquisition entered the lock")
-
-    task = asyncio.create_task(hold_lock())
-    assert await asyncio.to_thread(started.wait, 2)
-    task.cancel()
-    finish.set()
-
-    with pytest.raises(asyncio.CancelledError):
-        await task
-    assert released.is_set()
-
-
-async def test_caption_failure_cancels_siblings_before_releasing_cache_lock(
-    tmp_path: Path,
-    captioning,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _write(tmp_path / "images" / "fail.png", _diagram(seed=1))
-    _write(tmp_path / "images" / "block.png", _diagram(seed=2))
-    content_list = [
-        _image_block("images/fail.png", 0),
-        _image_block("images/block.png", 1),
+async def test_captions_reuse_image_bytes_across_source_changes_without_prose(
+    tmp_path, captioning
+):
+    _write(tmp_path / "images/a.png", _diagram(seed=1))
+    first = [
+        _text_block("Private lecture about the Krebs cycle", 2, level=1),
+        _image_block("images/a.png", 2),
     ]
-    blocker_started = asyncio.Event()
-    blocker_finished = asyncio.Event()
-    lock_released = asyncio.Event()
+    await _caption_all(tmp_path, first)
+    second = [_image_block("images/a.png", 8)]
+    stats = await _caption_all(tmp_path, second, source_sha256="cd" * 32)
+    assert second[0]["description"] == first[1]["description"]
+    assert stats["cached"] == 1 and stats["captioned"] == 0
+    assert captioning["calls"] == [caption_prompts.IMAGE_PROMPT]
+    assert "Private lecture" not in captioning["calls"][0]
+    assert "Page:" not in captioning["calls"][0]
 
-    class Lock:
-        async def __aenter__(self) -> None:
-            return None
 
-        async def __aexit__(self, *_args: object) -> None:
-            assert blocker_finished.is_set()
-            lock_released.set()
+async def test_concurrent_same_scope_figures_share_one_caption(tmp_path, captioning):
+    _write(tmp_path / "images/a.png", _diagram(seed=1))
+    first, second = [_image_block("images/a.png", 0)], [_image_block("images/a.png", 1)]
+    results = await asyncio.gather(
+        _caption_all(tmp_path, first), _caption_all(tmp_path, second)
+    )
+    assert len(captioning["calls"]) == 1
+    assert {r["cached"] for r in results} == {0, 1}
+    assert first[0]["description"] == second[0]["description"]
 
-    async def caption(_data_url: str, prompt: str) -> str:
-        if "Page: 1" in prompt:
-            await blocker_started.wait()
+
+async def test_cache_failure_keeps_captioned_content(tmp_path, captioning, monkeypatch):
+    async def fail(*_args, **_kwargs):
+        raise OSError("cache unavailable")
+
+    monkeypatch.setattr(caption_cache, "lookup", fail)
+    monkeypatch.setattr(caption_cache, "_persist", fail)
+    _write(tmp_path / "images/a.png", _diagram(seed=1))
+    content = [_image_block("images/a.png", 0)]
+    result = await _caption_all(tmp_path, content)
+    assert result["captioned"] == result["applied"] == 1
+    assert content[0]["description"] == "description 1"
+
+
+async def test_caption_failure_cancels_other_inflight_figures(tmp_path, monkeypatch):
+    _write(tmp_path / "images/a.png", _diagram(seed=1))
+    _write(tmp_path / "images/b.png", _diagram(seed=2))
+    started, finished = asyncio.Event(), asyncio.Event()
+    count = 0
+
+    async def caption(**_kwargs):
+        nonlocal count
+        count += 1
+        if count == 1:
+            await started.wait()
             raise RuntimeError("caption failed")
-        blocker_started.set()
+        started.set()
         try:
             await asyncio.Event().wait()
         finally:
-            blocker_finished.set()
+            finished.set()
 
-    monkeypatch.setattr(figures, "_CaptionCacheLock", lambda _identity: Lock())
-    monkeypatch.setattr(figures.models, "caption_image", caption)
-
+    monkeypatch.setattr(caption_cache, "caption", caption)
     with pytest.raises(RuntimeError, match="caption failed"):
-        await _caption_all(tmp_path, content_list)
-
-    assert blocker_finished.is_set()
-    assert lock_released.is_set()
-
-
-async def test_captions_are_written_onto_the_blocks_before_chunking(
-    tmp_path: Path, captioning
-):
-    _write(tmp_path / "images" / "a.png", _diagram(seed=1))
-    _write(tmp_path / "images" / "b.png", _diagram(seed=2))
-    content_list = [
-        _image_block("images/a.png", 0),
-        _image_block("images/b.png", 1),
-    ]
-
-    stats = await _caption_all(tmp_path, content_list)
-
-    assert stats["captioned"] == 2
-    # Set comparison: the calls run concurrently, so which figure gets which
-    # numbered stub is not fixed.
-    assert {block["description"] for block in content_list} == {
-        "description 1",
-        "description 2",
-    }
-
-
-async def test_a_reingest_replays_the_cache_so_the_content_hash_is_stable(
-    tmp_path: Path, captioning
-):
-    """Two ingests of the same source must produce byte-identical chunk text,
-    or canonical de-duplication in rag_contents silently stops working."""
-    _write(tmp_path / "images" / "a.png", _diagram(seed=1))
-    first = [_image_block("images/a.png", 0)]
-    second = [_image_block("images/a.png", 0)]
-
-    await _caption_all(tmp_path, first)
-    stats = await _caption_all(tmp_path, second)
-
-    assert len(captioning["calls"]) == 1
-    assert stats == {
-        "selected": 1,
-        "cached": 1,
-        "captioned": 0,
-        "decorative": 0,
-        "applied": 1,
-        "key": _caption_key(),
-    }
-    assert second[0]["description"] == first[0]["description"]
-
-
-async def test_concurrent_ingests_share_one_embedded_caption_cache(
-    tmp_path: Path, captioning
-):
-    first_dir = tmp_path / "first"
-    second_dir = tmp_path / "second"
-    _write(first_dir / "images" / "a.png", _diagram(seed=1))
-    _write(second_dir / "images" / "a.png", _diagram(seed=1))
-    first = [_image_block("images/a.png", 0)]
-    second = [_image_block("images/a.png", 0)]
-
-    first_stats, second_stats = await asyncio.gather(
-        _caption_all(first_dir, first),
-        _caption_all(second_dir, second),
-    )
-
-    assert len(captioning["calls"]) == 1
-    assert first[0]["description"] == second[0]["description"]
-    assert {first_stats["captioned"], second_stats["captioned"]} == {0, 1}
-
-
-async def test_a_bumped_caption_version_invalidates_the_cache(
-    tmp_path: Path, captioning, monkeypatch
-):
-    _write(tmp_path / "images" / "a.png", _diagram(seed=1))
-    await _caption_all(tmp_path, [_image_block("images/a.png", 0)])
-
-    monkeypatch.setattr(figures.cfg, "caption_version", "v3")
-    await _caption_all(tmp_path, [_image_block("images/a.png", 0)])
-
-    assert len(captioning["calls"]) == 2
-    assert set(captioning["store"]) == {
-        _caption_key().replace("v3", "v2"),
-        _caption_key(),
-    }
-
-
-async def test_the_prompt_carries_the_page_but_not_the_file_name(
-    tmp_path: Path, captioning
-):
-    """Everything in the prompt has to be inside the cache key.
-
-    Captions are stored under ``(source_sha256, caption version)`` and reused by
-    every later upload of the same bytes, so the uploader's file name must not
-    reach the model: it would leak into another workspace's captions and make
-    identical bytes caption differently depending on who ingested them first.
-    """
-    _write(tmp_path / "images" / "a.png", _diagram(seed=1))
-
-    await _caption_all(tmp_path, [_image_block("images/a.png", 3)])
-
-    prompt = captioning["calls"][0]
-    assert "lecture.pdf" not in prompt
-    assert "Page: 4" in prompt
-    assert "return exactly DECORATIVE" in prompt
-
-
-async def test_the_context_preamble_is_absent_when_there_is_no_context(
-    tmp_path: Path, captioning
-):
-    """A lone figure must not be promised context that never arrives.
-
-    The preamble ends in a colon. Emitted with nothing after it, it reads as a
-    cue that reference material follows, which is an invitation to invent some.
-    """
-    _write(tmp_path / "images" / "a.png", _diagram(seed=1))
-
-    await _caption_all(tmp_path, [_image_block("images/a.png", 0)])
-
-    prompt = captioning["calls"][0]
-    assert figures._CAPTION_CONTEXT_PREAMBLE not in prompt
-    assert not prompt.rstrip().endswith(":")
-
-
-async def test_the_context_preamble_appears_once_context_exists(
-    tmp_path: Path, captioning
-):
-    _write(tmp_path / "images" / "a.png", _diagram(seed=1))
-    content_list = [
-        _text_block("The Krebs cycle", 0, level=1),
-        _image_block("images/a.png", 0),
-    ]
-
-    await _caption_all(tmp_path, content_list)
-
-    prompt = captioning["calls"][0]
-    assert figures._CAPTION_CONTEXT_PREAMBLE in prompt
-    assert "The Krebs cycle" in prompt
-
-
-async def test_an_unreadable_cache_is_not_a_failed_ingest(
-    tmp_path: Path, captioning, monkeypatch
-):
-    """The cache is an optimization. Losing it costs money, not correctness."""
-    monkeypatch.setattr(figures.blobstore, "read_bytes", lambda _k: b"{ not json")
-
-    def _explode(*_a, **_k):
-        raise RuntimeError("B2 is down")
-
-    monkeypatch.setattr(figures.blobstore, "write_bytes", _explode)
-    _write(tmp_path / "images" / "a.png", _diagram(seed=1))
-    content_list = [_image_block("images/a.png", 0)]
-
-    stats = await _caption_all(tmp_path, content_list)
-
-    assert stats["captioned"] == 1
-    assert content_list[0]["description"] == "description 1"
-
-
-async def test_invalid_utf8_caption_cache_is_a_miss(
-    tmp_path: Path, captioning, monkeypatch
-):
-    monkeypatch.setattr(figures.blobstore, "read_bytes", lambda _k: b"\xff\xfe")
-    _write(tmp_path / "images" / "a.png", _diagram(seed=1))
-    content_list = [_image_block("images/a.png", 0)]
-
-    stats = await _caption_all(tmp_path, content_list)
-
-    assert stats["captioned"] == 1
-    assert content_list[0]["description"] == "description 1"
-
-
-async def test_a_decorative_result_is_cached_but_not_added_to_chunks(
-    tmp_path: Path, captioning, monkeypatch
-):
-    async def _decorative(_data_url: str, prompt: str) -> str:
-        captioning["calls"].append(prompt)
-        return "DECORATIVE"
-
-    monkeypatch.setattr(figures.models, "caption_image", _decorative)
-    _write(tmp_path / "images" / "logo.png", _solid((200, 200)))
-    content_list = [_image_block("images/logo.png", 0), _text_block("Hello", 0)]
-
-    first = await _caption_all(tmp_path, content_list)
-    second_content = [_image_block("images/logo.png", 0)]
-    second = await _caption_all(tmp_path, second_content)
-
-    assert first["decorative"] == 1
-    assert first["applied"] == 0
-    assert second["cached"] == 1
-    assert second["decorative"] == 1
-    assert len(captioning["calls"]) == 1
-    assert "description" not in content_list[0]
-    assert "description" not in second_content[0]
-
-
-async def test_the_caption_cache_follows_the_source_blob_not_the_parse_route(
-    tmp_path: Path, captioning
-):
-    """Re-parsing the same bytes on another route must not recaption."""
-    _write(tmp_path / "images" / "a.png", _diagram(seed=1))
-    first = [_image_block("images/a.png", 0)]
-    second = [_image_block("images/a.png", 0)]
-
-    await _caption_all(tmp_path, first)
-    stats = await figures.caption_figures(
-        content_list=second,
-        raw_dir=tmp_path,
-        file_name="lecture.pdf",
-        source_sha256=_SOURCE_SHA,
-    )
-
-    assert len(captioning["calls"]) == 1
-    assert stats["cached"] == 1
-    assert stats["key"] == _caption_key()
-
-    third = [_image_block("images/a.png", 0)]
-    await figures.caption_figures(
-        content_list=third,
-        raw_dir=tmp_path,
-        file_name="lecture.pdf",
-        source_sha256="cd" * 32,
-    )
-    assert len(captioning["calls"]) == 2
-
-
-async def test_the_cached_payload_is_keyed_by_image_content(tmp_path: Path, captioning):
-    """Keyed by the image digest rather than its path, so the same figure moving
-    between pages on a re-parse still hits."""
-    _write(tmp_path / "images" / "a.png", _diagram(seed=1))
-    content_list = [_image_block("images/a.png", 0)]
-
-    await _caption_all(tmp_path, content_list)
-
-    cached = json.loads(captioning["store"][_caption_key()])
-    digest = next(iter(cached))
-    assert len(digest) == 64
-    assert cached[digest] == "description 1"
+        await _caption_all(
+            tmp_path, [_image_block("images/a.png", 0), _image_block("images/b.png", 1)]
+        )
+    assert finished.is_set()

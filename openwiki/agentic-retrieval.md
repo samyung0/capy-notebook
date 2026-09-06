@@ -77,6 +77,34 @@ flowchart LR
 There is no dual-running period with LightRAG. Apache AGE is gone; the database
 image is stock `pgvector/pgvector:pg16`.
 
+### Where prompts live
+
+Every prompt this system sends sits in `pipeline/prompts/`, one module per model
+slot. A function there takes the surrounding context and returns what goes into
+the request — the message list for most calls, a bare string where the caller
+owns the wrapping. Nothing in that package opens a connection, reads the
+database, or resolves a model, so a prompt can be built in a test with no
+network and no pin.
+
+| Module | Slot | What it builds |
+| --- | --- | --- |
+| `chat.py` | `chat` | Agent system prompt and full message list; the checkpoint compaction prompt |
+| `generate.py` | `generate` | Material grounding rules, plus the flashcards / mindmap / diagram / quiz instructions |
+| `editor.py` | `editor` | Plate menu prompts: generate, edit, comment, table cells |
+| `quiz.py` | `quiz` | Open-answer marking. Import-free: `scripts/grading_benchmark` loads it by path, and `src/features/quizzes/judge.ts` is its browser twin |
+| `ingest.py` | `ingest` | File descriptor and summary, and `SUMMARY_VERSION` |
+| `captioning.py` | `captioning` | Figure captions and whole-image captions |
+| `retrieval.py` | `retrieval` | The Qwen3 instruct prefix for embedding queries |
+| `locale.py` | shared | The account-locale rule appended by chat, generate, and editor |
+
+Two prompts have a twin outside this package. `quiz.py` and
+`src/features/quizzes/judge.ts` must produce identical text — the browser BYOK
+path builds its own request — and `prompts/quiz_grade.golden.json` is asserted
+by both `pipeline/tests/test_quiz_grade.py` and
+`src/features/quizzes/judge.test.ts`, so a change made to one implementation
+and not the other fails. Agent tool descriptions stay in `retrieval/tools.py`
+next to their handlers and schemas.
+
 ## Schema ownership
 
 The retrieval index is application schema, not pipeline-owned:
@@ -164,18 +192,16 @@ kept database exists, then a new numbered migration), a new allowlist
 entry in both languages, and `params.vector_table` on the catalog row.
 Removing a table is not supported.
 
-### Reindexing is not available
+### The workspace embedding model stays fixed
 
 There is no job that re-embeds a workspace into a different model, and
 nothing in the product changes a workspace's embedding pin after
-creation. There is also no per-file re-embed path: once any upload can
-rewrite vectors in place, every later change inherits that mess and the
-cost. Donor copy may re-embed when the only ready donor is in another
-space. That is reuse falling back, not a product feature.
+creation. Source editing can reindex a complete file within that existing
+pin, staging replacement chunks before publishing them. Donor copy may also
+re-embed when the only ready donor uses another embedding space.
 
 Re-embedding is proportional to total corpus size rather than to what
-changed, so it is the one operation whose cost is unbounded by anything
-the user just did. Until a reindex job exists:
+changed. Until a workspace model-migration job exists:
 
 - a workspace stays in its original space for life;
 - cloning inherits the source's pin (`CloneWorkspace`) because
@@ -353,7 +379,7 @@ and retry requeues. This prevents another source-object download for the same
 job. It is deleted only after committed success or terminal cleanup. An idle
 sweep removes abandoned sources after two hours and local fingerprint bundles
 after six hours. Durable parse-bundle reuse copies use the same last-use B2
-cache TTL and deletion outbox as derived-text and caption artifacts. If all
+cache TTL and deletion outbox as derived-text artifacts. If all
 three upload attempts fail, another upload of the same source cannot reuse that
 parse once the local bundle is gone and must run MinerU again.
 
@@ -393,14 +419,16 @@ spending an attempt (the gateway lease is released and the row waits out
 `Retry-After`), import upload sessions expire after one hour, and one request
 carries at most 20 files.
 
-Browser Office saves replace the full source file under the same logical
+The explicit binary-replacement upload endpoint replaces the source under the same logical
 `files.id`. Completion uses an expected `files.revision` compare-and-swap,
 increments the revision, removes the old `rag_file_contents` alias, clears
 source/parse artifacts, and enqueues the correct first stage with the saved
 parse and caption policy. The orphan cleanup trigger removes canonical retrieval content only
 when no other alias uses it. Store-only replacements return ready and unindexed.
-There is no chunk-level dirty update: the serialized OOXML file is the source of
-truth and follows the normal donor/parse/index path.
+Collaborative Office saves use the durable checkpoint path instead. Their
+refresh candidate keeps the readable source/index until atomic publication,
+as described under source editing below. Both routes process a complete source
+through the normal donor/parse/index path.
 
 The ingest payload carries the exact source revision and ETag that created it.
 Every source-derived file mutation and retrieval attachment locks and verifies
@@ -449,12 +477,12 @@ performs the planned work:
 - CSV/TSV is decoded as text, detects a likely header, and emits deterministic
   row text with explicit field names. Formulas remain literal source values.
 
-Image and audio derived text is stored under
+Audio derived text is stored under
 `derived-text/{source_sha256}/...` and registered as `derived_text` in
-`artifact_cache`. A Postgres advisory lock on source hash plus transformation
-version ensures concurrent uploads perform at most one provider call. Deleting
+`artifact_cache`. A Postgres advisory lock on source hash ensures concurrent
+uploads perform at most one provider call. Deleting
 the last logical file drops its association, not the shared artifact; the same
-last-use TTL/reaper policy as figure captions handles eventual cleanup.
+last-use TTL/reaper policy handles eventual cleanup. Image captions instead use the containing-resource associations described below.
 Cancellation during advisory-lock acquisition waits for the thread result and
 returns any late session lock before propagating cancellation.
 
@@ -462,13 +490,13 @@ These B2 objects are reuse caches, not ingest success conditions. Each cache
 write makes three `put_object` attempts. If all three fail, the worker logs the
 failure and continues indexing from the provider result already in memory. It
 does not register an artifact key. Database registration has the same
-best-effort rule. After registration the worker verifies the deterministic B2
+best-effort rule. For audio artifacts, after registration the worker verifies the deterministic B2
 key still exists, which closes the race with a cache deletion already in
 progress. A vanished object loses its cache row and the current ingest keeps its
 in-memory result. Updating `files.caption_blob_path` is diagnostic and follows
 the same best-effort rule; a failed pointer write cannot fail chunking or
-indexing. A later upload cannot use direct image/audio
-donor reuse without that object and must run the transformation again. The
+indexing. Caption association ownership and live reuse authorization are
+described below. The
 document parse ZIP follows the same best-effort B2 reuse rule after verification,
 but its required parser-to-ingest handoff remains the atomic local file.
 Derived-cache reads and donor `HEAD` checks are optional too: a B2 read failure
@@ -544,35 +572,34 @@ size, pixel area, aspect ratio, page bbox, flatness/entropy, and cross-page
 repetition are not rejection rules because they can discard sparse diagrams,
 molecule drawings, and other useful scientific images.
 
-The prompt tells the vision model to return exactly `DECORATIVE` for an ornament,
-generic icon, divider, background, branding, or other image with no study value.
-That sentinel is cached by image digest but is not written onto the block, so it
-does not enter chunks or embeddings. Uncertain images are described instead of
-discarded. `CAPY_CAPTION_VERSION=v2` separates these decisions from older cached
-captions.
+A `DECORATIVE` caption is cached by image digest but is not written onto the block, so that sentinel does not enter chunks or embeddings. The shared image prompt describes visible facts without supplying surrounding source text.
 
-Captions are cached in B2 under a **source-identity** key
-(`captions/{source_sha256}/{caption version}.json`), keyed inside the JSON by
-image content hash. The parse fingerprint is not part of the path: a re-parse
-(different parser version) must not recaption unchanged
-figures, and a delete-then-re-upload of the same bytes hits the same object.
-Ownership lives on `artifact_cache` (TTL since last use), not on
-`files.caption_blob_path`, so deleting the file does not reap the cache.
-An advisory lock on source SHA plus caption version encloses cache reload,
-provider calls, merge, and save. Concurrent uploads of identical bytes therefore
-make one set of vision calls and cannot overwrite each other's cache entries.
-If one caption task fails or the attempt is cancelled, the worker cancels and
-awaits every unfinished sibling before releasing that lock. No detached paid
-caption call can overlap a retry for the same source.
-Cancellation during acquisition uses the same late-result cleanup as direct
-image and audio artifacts, so a pooled connection cannot retain the session lock.
+Image captions use `parse/caption_cache.py`. The lookup identity is the exact
+image SHA, independent of prompt version, source revision and surrounding text.
+The payload contains only the caption and lives under
+`image-captions/<imageSHA>/<payloadSHA>.json`. File/editor-asset associations
+hold references to the shared payload. Private workspaces reuse within that
+workspace; private standalone materials reuse within their owner; current link
+or public containing resources permit global reuse. A hash or B2 object hit
+alone grants no access. Visibility changes affect the next lookup without
+moving payloads, and an already-authorized association retains its own reference.
+Deleted or deletion-pending resource owners cannot grant new reuse.
 
-The caption prompt is built from the figure and its surrounding content only —
-no file name. Everything a globally cached or donor-copied output is generated
-from has to be inside its key, or the same bytes produce different text
-depending on who uploaded them first, and one uploader's file name reaches
-another workspace. The same rule applies to file summaries, which are copied
-verbatim from donors.
+A workspace/owner plus image-SHA advisory lock encloses lookup and generation.
+The provider receives only image bytes and the caption prompt, never a source
+name, heading, nearby paragraph or page label. Failed optional cache reads cause
+a new image-only caption. A temporary artifact reference protects an upload
+until its resource association commits, after which resource references own
+cleanup. Pending-edit captions remain unpublished. Candidate processing records
+every consumed image digest, including cache hits; successful Office publication
+promotes that set and releases retired associations. Clones copy only published
+caption associations.
+Ordinary image/figure ingestion, refresh candidates and pending-image resolution
+each bind caption attachment to their captured source or change identity.
+Lookup and post-upload attachment recheck that identity and the current job
+attempt or reader access in the same transaction as the reference write.
+A late response cannot restore a retired association after replacement or
+publication; a rejected upload keeps its temporary cleanup reference.
 
 Caption calls never inherit a user's chat reasoning level. The pinned catalog
 identity is `zai/glm-5.3-flash`, routed by EliteLLM to DeepInfra's
@@ -665,8 +692,10 @@ anyone claim the hash of a document they do not have and be handed its chunks
 and summary. One GET per ingest is the price. It then looks for a
 **ready** `rag_contents` row with the same
 `(source_sha256, pipeline_identity)`. `pipeline_identity` covers parse method,
-route, parser version, caption version, and chunker version — anything that
-feeds chunk text.
+route, parser version, whether embedded figures were captioned, and chunker
+version — anything that feeds chunk text. Whether captioning ran is in the key
+because it changes the parsed content list; the caption *text* is not, because
+it is cached separately under the image bytes.
 
 A hit copies that donor's `rag_chunks` (and, when the embedding pin matches,
 its vectors), plus its summary, into a new per-workspace
@@ -905,7 +934,7 @@ and are not sent back as LLM history.
    schemas, current query, tool arguments and results, and
    provider continuity items remain exact. Compaction starts only when the
    request would exceed the smaller of the selected model's input budget and the
-   200,000-token effective-context cap, after the output reserve and safety
+   250,000-token effective-context cap, after the output reserve and safety
    margin. There is no percentage trigger and no deterministic clipping
    fallback. Tool output is capped at 8,192 estimated tokens with a visible
    truncation marker. If protected context still cannot fit, the turn fails with
@@ -928,9 +957,12 @@ and are not sent back as LLM history.
    before the matching tool result in the next request. Raw chain-of-thought
    is never streamed to the browser. The user's reasoning policy applies to
    every agent model response. A provider failure before the first response
-   byte is retried twice on a new call id; the failed attempt is `abandoned`
-   (absorbed, no charge). Any later provider or SSE failure is not retried
-   and the client gets the same generic `agent_failed` error. If the browser
+   byte is retried once on a new call id inside a three-second budget, waiting
+   for the provider's `Retry-After` when it is busy; the failed attempt is
+   `abandoned` (absorbed, no charge). A busy provider or a full per-model gate
+   past that budget ends the turn with a retryable `provider_busy` error
+   carrying `retryAfterSeconds`. Any later provider or SSE failure is not
+   retried and the client gets the same generic `agent_failed` error. If the browser
    disconnects, Python stops writing SSE but finishes the in-flight provider
    call, settles usage when it arrives, and does not start another planning
    step.
@@ -1058,6 +1090,61 @@ while leaving already-open provider calls eligible for their exact late
 receipt. The delete then cascades; the old `rag_teardown` job and pipeline
 `/workspace/delete` endpoint are gone.
 
+## Editable source refresh and pending evidence
+
+`source_documents` separates the live durable editing checkpoint from the
+published source/index checkpoint. The collaboration service captures a fixed
+candidate and exports full source bytes to B2. `source_refresh_candidates`
+holds its source, seed, parse artifacts, preview, canonical index and consumed
+caption digests until publication. Existing parser/ingest workers process that
+candidate without changing the readable `files` row or `rag_file_contents` alias.
+
+The workspace owner funds automatic refresh. `auto_reparse` and `auto_reindex`
+default to true. Office requires a successful prior parse, 5,000 estimated net
+tokens and 60 seconds idle, with no forced deadline. Text batches every 15
+seconds without a minimum or indefinite typing delay. A file has one running
+candidate and one coalesced desired checkpoint. Turning a switch off prevents
+new automatic admission; current leased work can finish. Failed processing
+leaves authored state intact and exposes manual processing.
+
+Publication rechecks source epoch/base, current attempt/lease and candidate
+identity under the source lock. Office requires the exact current checkpoint,
+coordinates connected clients, publishes a fresh seed and clears Undo/Redo.
+Text can publish the captured older checkpoint while retaining exact residual
+changes and its Y.Text lineage. Durable job publication receipts survive lost
+HTTP acknowledgments and allow credit settlement after a crash. Stale or failed
+candidates release their own references; delayed source deletion covers a still
+valid candidate PUT URL. Clones use the last published snapshot.
+
+`retrieval/pending.py` captures all scoped durable changes once per answer,
+including sources with no index or search hit. Complete exact changes form a
+protected provider message outside tool-output clipping, live-history
+compaction and persisted conversation summaries. Replacements and removals
+supersede old indexed facts. Typed image placeholders can be resolved through
+`resolve_source_change`; the gateway verifies source access/checkpoint and the
+headless runtime extracts the exact image before image-only caption reuse.
+The same read captures published identities for every scoped file, including
+files without an index. Before each source-dependent model request, the pipeline
+checks that those published identities still match. Publication, replacement or
+deletion during gathering returns `source_changed` and asks the user to retry.
+New authored edits alone leave the captured evidence valid. This check prevents
+combining an old pending delta with a newer index without retaining old indexes
+or keeping database transactions open during model calls.
+
+The full provider request reserves this pending evidence within the selected
+model's window and the 250k effective ceiling, including output and safety
+allowances. If complete pending evidence cannot fit, chat omits that evidence,
+keeps it durably and explicitly tells both the model and user; the UI offers
+Process file changes. Generation uses the same evidence and returns
+`context_too_large` with that action when it cannot include it.
+
+Text refresh uses normal full-file normalization and chunking with parsing
+skipped. A small lookup reuses embeddings only for exact indexed input and the
+same immutable model pin. Canonical content hashes include heading context,
+reference classification and citation geometry. Short and detailed summaries
+regenerate from every current chunk, with full coverage in the large-document
+reduction path.
+
 ## Configuration surface
 
 | Concern | Env | Default / note |
@@ -1065,16 +1152,16 @@ receipt. The delete then cascades; the old `rag_teardown` job and pipeline
 | Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material`. The same secret is required on every inbound retrieval request except `/healthz`. |
 | User provider keys | `LLM_CREDENTIALS_KEY` | Same 32-byte hex/base64 value as Go. Retrieval decrypts `user_llm_credentials`. Platform keys use the `platformEnv` name in `elitellm_providers.json`; user keys are request-scoped and never written to process env. |
 | Parse | `PARSER_URL`, `PARSER_TOKEN`, `CAPY_PARSE_METHOD`, `CAPY_PARSE_SLOTS`, `CAPY_PARSE_COORDINATOR_CONCURRENCY`, `CAPY_PARSE_CONCURRENCY`, `CAPY_MINERU_SLICE_PAGES`, `CAPY_PARSE_JOB_TIMEOUT`, `CAPY_OFFICE_PREVIEW_MAX_BYTES`, `RELEASE_SHA` | Persistent Netcup MinerU pipeline service. Production defaults to four coordinator processes, 26 pages per slice, four admitted documents, and four active slices. Method, schema, and exact release-derived parser version participate in the artifact fingerprint. |
-| Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT`, `CAPY_CAPTION_CONCURRENCY` | Dedicated-host defaults are four isolated one-job containers, 20 minutes per attempt, and at most four concurrent embedded-figure captions per worker. Other model stages are sequential within each job. |
+| Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT`, `CAPY_CAPTION_CONCURRENCY`, `CAPY_MODEL_CONCURRENCY` | Dedicated-host defaults are four isolated one-job containers, 20 minutes per attempt, and at most four concurrent embedded-figure captions per worker. Other model stages are sequential within each job. A provider busy past the in-call retry budget (four attempts, two minutes) re-pends the job without spending an attempt, at most five times per job (`jobs.provider_waits`), then fails the file as `provider_busy`; figure captions stay best effort. `CAPY_MODEL_CONCURRENCY` caps outbound calls per transport model, ingest using the total minus the interactive reserve. |
 | Shared nonproduction capacity | `CAPY_SHARED_CAPACITY_LOCK_DIR` | Unset in production. The shared local/UAT Compose project sets one spool directory for both environments. A queue consumer takes the `parse` or `ingest` file lock before claiming a row, which leaves the other environment's job pending and caps active work at one job per role. |
 | Chunk size | `CAPY_CHUNK_*` | Estimated-token budgets (`estimate_tokens`), not a real tokenizer |
 | Embedding | `EMBEDDING_DIM` | The shipped width, matching `halfvec(N)`. The *model* is never env: it is a `model_configs` row pinned per workspace |
 | Search | `CAPY_SEARCH_CANDIDATES`, `CAPY_SEARCH_TOP_K`, `CAPY_SEARCH_PER_FILE_CAP` | |
 | Agent | `CAPY_AGENT_MAX_STEPS` | Default 12. Cap is the design, not a safety valve |
-| LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `CAPY_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 200k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |
-| Captions | `CAPY_CAPTION_CONCURRENCY`, `CAPY_CAPTION_MAX_EDGE`, `CAPY_CAPTION_VERSION` | Caption mode is resolved per file in the processing plan. The ZAI GLM-5.3-Flash catalog row routes through DeepInfra. Captions always use `reasoning_effort: low`, which is also the catalog default for chat. |
+| LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `CAPY_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 250k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |
+| Captions | `CAPY_CAPTION_CONCURRENCY`, `CAPY_CAPTION_MAX_EDGE` | Caption mode is resolved per file in the processing plan. The ZAI GLM-5.3-Flash catalog row routes through DeepInfra. Captions always use `reasoning_effort: low`, which is also the catalog default for chat. |
 | Caption safety valve | `CAPY_CAPTION_MAX_PER_FILE` | `0` (uncapped); the filters bound the cost |
-| Direct media | `CAPY_IMAGE_MAX_PIXELS`, `ELEVENLABS_API_KEY`, `ELEVENLABS_BASE_URL`, `CAPY_ELEVENLABS_TRANSCRIPT_VERSION`, `CAPY_ELEVENLABS_CONCURRENCY_UNITS`, `CAPY_ELEVENLABS_SYNC_TIMEOUT_S`, `CAPY_AUDIO_MAX_DURATION_SECONDS`, `CAPY_TABULAR_TEXT_VERSION` | Image decoding is capped at 100M pixels. Scribe v2 is synchronous, has an absolute 12-hour request timeout, and defaults to 12 weighted Starter units, with each file consuming `min(4, ceil(duration_seconds / 480))`; audio is capped at 10 hours. |
+| Direct media | `CAPY_IMAGE_MAX_PIXELS`, `ELEVENLABS_API_KEY`, `ELEVENLABS_BASE_URL`, `CAPY_ELEVENLABS_CONCURRENCY_UNITS`, `CAPY_ELEVENLABS_SYNC_TIMEOUT_S`, `CAPY_AUDIO_MAX_DURATION_SECONDS`, `CAPY_TABULAR_TEXT_VERSION` | Image decoding is capped at 100M pixels. Scribe v2 is synchronous, has an absolute 12-hour request timeout, and defaults to 12 weighted Starter units, with each file consuming `min(4, ceil(duration_seconds / 480))`; audio is capped at 10 hours. |
 
 Windows note: psycopg's async driver refuses the Proactor event loop.
 `pipeline.use_compatible_event_loop()` is called by both entrypoints and by the

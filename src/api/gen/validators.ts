@@ -29,6 +29,8 @@ export const GetDeletionPreflightResponse = zod.object({
 }).optional(),
   "workspacesNeedingTransfer": zod.array(zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "autoReindex": zod.boolean(),
+  "autoReparse": zod.boolean(),
   "capabilities": zod.object({
   "canComment": zod.boolean(),
   "canEdit": zod.boolean(),
@@ -57,6 +59,8 @@ export const GetDeletionPreflightResponse = zod.object({
 })).nullable(),
   "workspacesToDestroy": zod.array(zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "autoReindex": zod.boolean(),
+  "autoReparse": zod.boolean(),
   "capabilities": zod.object({
   "canComment": zod.boolean(),
   "canEdit": zod.boolean(),
@@ -545,6 +549,8 @@ export const exploreWorkspacesResponseTagsItemValueMax = 50;
 
 export const ExploreWorkspacesResponseItem = zod.object({
   "author": zod.string(),
+  "autoReindex": zod.boolean(),
+  "autoReparse": zod.boolean(),
   "capabilities": zod.object({
   "canComment": zod.boolean(),
   "canEdit": zod.boolean(),
@@ -670,6 +676,190 @@ export const UpdateFileResponse = zod.object({
 
 
 /**
+ * @summary Read private PDF annotations
+ */
+export const ListPDFAnnotationsParams = zod.object({
+  "id": zod.string()
+})
+
+export const listPDFAnnotationsResponseColorRegExp = new RegExp('^#[0-9a-fA-F]{6}$');
+
+export const listPDFAnnotationsResponseRectsMax = 1000;
+
+
+
+export const ListPDFAnnotationsResponseItem = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "authorId": zod.string(),
+  "color": zod.string().regex(listPDFAnnotationsResponseColorRegExp),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "fileId": zod.string(),
+  "id": zod.string(),
+  "kind": zod.enum(['highlight', 'rectangle', 'ellipse']),
+  "page": zod.int().min(1),
+  "rects": zod.array(zod.object({
+  "height": zod.number(),
+  "width": zod.number(),
+  "x": zod.number(),
+  "y": zod.number()
+})).min(1).max(listPDFAnnotationsResponseRectsMax),
+  "sourceIdentity": zod.string(),
+  "updatedAt": zod.iso.datetime({"offset":true})
+})
+export const ListPDFAnnotationsResponse = zod.array(ListPDFAnnotationsResponseItem)
+
+
+/**
+ * @summary Create a private PDF annotation
+ */
+export const CreatePDFAnnotationParams = zod.object({
+  "id": zod.string()
+})
+
+export const createPDFAnnotationBodyColorRegExp = new RegExp('^#[0-9a-fA-F]{6}$');
+
+export const createPDFAnnotationBodyRectsMax = 1000;
+
+
+
+export const CreatePDFAnnotationBody = zod.object({
+  "color": zod.string().regex(createPDFAnnotationBodyColorRegExp),
+  "kind": zod.enum(['highlight', 'rectangle', 'ellipse']),
+  "page": zod.int().min(1),
+  "rects": zod.array(zod.object({
+  "height": zod.number(),
+  "width": zod.number(),
+  "x": zod.number(),
+  "y": zod.number()
+})).min(1).max(createPDFAnnotationBodyRectsMax),
+  "sourceIdentity": zod.string()
+})
+
+export const createPDFAnnotationResponseColorRegExp = new RegExp('^#[0-9a-fA-F]{6}$');
+
+export const createPDFAnnotationResponseRectsMax = 1000;
+
+
+
+export const CreatePDFAnnotationResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "authorId": zod.string(),
+  "color": zod.string().regex(createPDFAnnotationResponseColorRegExp),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "fileId": zod.string(),
+  "id": zod.string(),
+  "kind": zod.enum(['highlight', 'rectangle', 'ellipse']),
+  "page": zod.int().min(1),
+  "rects": zod.array(zod.object({
+  "height": zod.number(),
+  "width": zod.number(),
+  "x": zod.number(),
+  "y": zod.number()
+})).min(1).max(createPDFAnnotationResponseRectsMax),
+  "sourceIdentity": zod.string(),
+  "updatedAt": zod.iso.datetime({"offset":true})
+})
+
+
+/**
+ * @summary Delete an authored PDF annotation
+ */
+export const DeletePDFAnnotationParams = zod.object({
+  "id": zod.string(),
+  "annotationId": zod.string()
+})
+
+export const DeletePDFAnnotationResponse = zod.void()
+
+
+/**
+ * @summary Update an authored PDF annotation
+ */
+export const UpdatePDFAnnotationParams = zod.object({
+  "id": zod.string(),
+  "annotationId": zod.string()
+})
+
+export const updatePDFAnnotationBodyColorRegExp = new RegExp('^#[0-9a-fA-F]{6}$');
+
+export const updatePDFAnnotationBodyRectsMax = 1000;
+
+
+
+export const UpdatePDFAnnotationBody = zod.object({
+  "color": zod.string().regex(updatePDFAnnotationBodyColorRegExp),
+  "kind": zod.enum(['highlight', 'rectangle', 'ellipse']),
+  "page": zod.int().min(1),
+  "rects": zod.array(zod.object({
+  "height": zod.number(),
+  "width": zod.number(),
+  "x": zod.number(),
+  "y": zod.number()
+})).min(1).max(updatePDFAnnotationBodyRectsMax),
+  "sourceIdentity": zod.string()
+})
+
+export const updatePDFAnnotationResponseColorRegExp = new RegExp('^#[0-9a-fA-F]{6}$');
+
+export const updatePDFAnnotationResponseRectsMax = 1000;
+
+
+
+export const UpdatePDFAnnotationResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "authorId": zod.string(),
+  "color": zod.string().regex(updatePDFAnnotationResponseColorRegExp),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "fileId": zod.string(),
+  "id": zod.string(),
+  "kind": zod.enum(['highlight', 'rectangle', 'ellipse']),
+  "page": zod.int().min(1),
+  "rects": zod.array(zod.object({
+  "height": zod.number(),
+  "width": zod.number(),
+  "x": zod.number(),
+  "y": zod.number()
+})).min(1).max(updatePDFAnnotationResponseRectsMax),
+  "sourceIdentity": zod.string(),
+  "updatedAt": zod.iso.datetime({"offset":true})
+})
+
+
+/**
+ * @summary Create source room token
+ */
+export const CreateSourceCollaborationTokenParams = zod.object({
+  "id": zod.string()
+})
+
+export const CreateSourceCollaborationTokenResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "access": zod.enum(['write', 'read']),
+  "epoch": zod.int(),
+  "expiresAt": zod.int(),
+  "room": zod.string(),
+  "token": zod.string(),
+  "url": zod.string()
+})
+
+
+/**
+ * @summary Process the latest saved source changes
+ */
+export const ProcessSourceChangesParams = zod.object({
+  "id": zod.string()
+})
+
+export const ProcessSourceChangesResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "checkpoint": zod.int(),
+  "fileId": zod.string(),
+  "jobId": zod.string(),
+  "status": zod.string()
+})
+
+
+/**
  * @summary Reserve a direct file replacement
  */
 export const CreateFileReplacementUploadParams = zod.object({
@@ -720,6 +910,34 @@ export const CompleteFileReplacementUploadResponse = zod.object({
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
   "url": zod.string().optional(),
+  "workspaceId": zod.string()
+})
+
+
+/**
+ * @summary Read source editing session
+ */
+export const GetSourceSessionParams = zod.object({
+  "id": zod.string()
+})
+
+export const GetSourceSessionResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "access": zod.enum(['write', 'read']),
+  "baseRevision": zod.int(),
+  "baseSourceSHA256": zod.string(),
+  "checkpoint": zod.int(),
+  "epoch": zod.int(),
+  "fileId": zod.string(),
+  "format": zod.enum(['docx', 'xlsx', 'pptx', 'text']),
+  "indexedCheckpoint": zod.int(),
+  "indexedState": zod.string(),
+  "netTokens": zod.int(),
+  "pendingEffects": zod.unknown(),
+  "room": zod.string(),
+  "sourceIdentity": zod.string(),
+  "sourceURL": zod.string(),
+  "state": zod.string(),
   "workspaceId": zod.string()
 })
 
@@ -2251,6 +2469,8 @@ export const listWorkspacesResponseTagsItemValueMax = 50;
 
 export const ListWorkspacesResponseItem = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "autoReindex": zod.boolean(),
+  "autoReparse": zod.boolean(),
   "capabilities": zod.object({
   "canComment": zod.boolean(),
   "canEdit": zod.boolean(),
@@ -2307,6 +2527,8 @@ export const createWorkspaceResponseTagsItemValueMax = 50;
 
 export const CreateWorkspaceResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "autoReindex": zod.boolean(),
+  "autoReparse": zod.boolean(),
   "capabilities": zod.object({
   "canComment": zod.boolean(),
   "canEdit": zod.boolean(),
@@ -2358,6 +2580,8 @@ export const getWorkspaceResponseTagsItemValueMax = 50;
 
 export const GetWorkspaceResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "autoReindex": zod.boolean(),
+  "autoReparse": zod.boolean(),
   "capabilities": zod.object({
   "canComment": zod.boolean(),
   "canEdit": zod.boolean(),
@@ -2404,6 +2628,8 @@ export const updateWorkspaceBodyTagsMax = 5;
 
 
 export const UpdateWorkspaceBody = zod.object({
+  "autoReindex": zod.boolean().optional(),
+  "autoReparse": zod.boolean().optional(),
   "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']).optional(),
   "description": zod.string().max(updateWorkspaceBodyDescriptionMax).optional().describe('Optional workspace description; empty clears it'),
   "name": zod.string().min(1).max(updateWorkspaceBodyNameMax).optional(),
@@ -2419,6 +2645,8 @@ export const updateWorkspaceResponseTagsItemValueMax = 50;
 
 export const UpdateWorkspaceResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "autoReindex": zod.boolean(),
+  "autoReparse": zod.boolean(),
   "capabilities": zod.object({
   "canComment": zod.boolean(),
   "canEdit": zod.boolean(),
@@ -2522,6 +2750,8 @@ export const CloneWorkspaceResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "workspace": zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "autoReindex": zod.boolean(),
+  "autoReparse": zod.boolean(),
   "capabilities": zod.object({
   "canComment": zod.boolean(),
   "canEdit": zod.boolean(),
@@ -2856,6 +3086,8 @@ export const updateWorkspaceSharingResponseTagsItemValueMax = 50;
 
 export const UpdateWorkspaceSharingResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "autoReindex": zod.boolean(),
+  "autoReparse": zod.boolean(),
   "capabilities": zod.object({
   "canComment": zod.boolean(),
   "canEdit": zod.boolean(),
@@ -3046,6 +3278,11 @@ export const GetWorkspaceStatsResponse = zod.object({
   "avgScore": zod.int(),
   "chapters": zod.int(),
   "files": zod.int(),
+  "indexed": zod.int(),
+  "notIndexable": zod.int(),
+  "notIndexed": zod.int(),
+  "pendingReindex": zod.int(),
+  "pendingReparse": zod.int(),
   "quizzes": zod.int()
 })
 
@@ -3070,6 +3307,8 @@ export const transferWorkspaceResponseTagsItemValueMax = 50;
 
 export const TransferWorkspaceResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "autoReindex": zod.boolean(),
+  "autoReparse": zod.boolean(),
   "capabilities": zod.object({
   "canComment": zod.boolean(),
   "canEdit": zod.boolean(),
@@ -3096,6 +3335,271 @@ export const TransferWorkspaceResponse = zod.object({
   "value": zod.string().min(1).max(transferWorkspaceResponseTagsItemValueMax)
 }))
 })
+
+
+/**
+ * @summary Revalidate source room access
+ */
+export const CheckSourceAccessParams = zod.object({
+  "id": zod.string()
+})
+
+
+
+
+export const CheckSourceAccessQueryParams = zod.object({
+  "actorId": zod.string().optional(),
+  "epoch": zod.int().min(1).optional(),
+  "edit": zod.boolean().optional()
+})
+
+export const CheckSourceAccessHeader = zod.object({
+  "X-Collaboration-Secret": zod.string().optional()
+})
+
+export const CheckSourceAccessResponse = zod.void()
+
+
+/**
+ * @summary Bootstrap an authorized source room
+ */
+export const BootstrapSourceDocumentParams = zod.object({
+  "id": zod.string()
+})
+
+export const BootstrapSourceDocumentQueryParams = zod.object({
+  "actorId": zod.string().optional()
+})
+
+export const BootstrapSourceDocumentHeader = zod.object({
+  "X-Collaboration-Secret": zod.string().optional()
+})
+
+export const BootstrapSourceDocumentResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "access": zod.enum(['write', 'read']),
+  "baseRevision": zod.int(),
+  "baseSourceSHA256": zod.string(),
+  "checkpoint": zod.int(),
+  "epoch": zod.int(),
+  "fileId": zod.string(),
+  "format": zod.enum(['docx', 'xlsx', 'pptx', 'text']),
+  "indexedCheckpoint": zod.int(),
+  "indexedState": zod.string(),
+  "netTokens": zod.int(),
+  "pendingEffects": zod.unknown(),
+  "room": zod.string(),
+  "sourceIdentity": zod.string(),
+  "sourceURL": zod.string(),
+  "state": zod.string(),
+  "workspaceId": zod.string()
+})
+
+
+/**
+ * @summary Persist an authorized source checkpoint
+ */
+export const CheckpointSourceDocumentParams = zod.object({
+  "id": zod.string()
+})
+
+export const CheckpointSourceDocumentHeader = zod.object({
+  "X-Collaboration-Secret": zod.string().optional()
+})
+
+
+
+export const checkpointSourceDocumentBodyExpectedCheckpointMin = 0;
+
+export const checkpointSourceDocumentBodyNetTokensMin = 0;
+
+
+
+export const CheckpointSourceDocumentBody = zod.object({
+  "actorIds": zod.array(zod.string()).min(1).nullable(),
+  "baseSourceSHA256": zod.string(),
+  "epoch": zod.int().min(1),
+  "expectedCheckpoint": zod.int().min(checkpointSourceDocumentBodyExpectedCheckpointMin),
+  "initialize": zod.boolean(),
+  "netTokens": zod.int().min(checkpointSourceDocumentBodyNetTokensMin),
+  "pendingEffects": zod.unknown(),
+  "state": zod.string()
+})
+
+export const CheckpointSourceDocumentResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "access": zod.enum(['write', 'read']),
+  "baseRevision": zod.int(),
+  "baseSourceSHA256": zod.string(),
+  "checkpoint": zod.int(),
+  "epoch": zod.int(),
+  "fileId": zod.string(),
+  "format": zod.enum(['docx', 'xlsx', 'pptx', 'text']),
+  "indexedCheckpoint": zod.int(),
+  "indexedState": zod.string(),
+  "netTokens": zod.int(),
+  "pendingEffects": zod.unknown(),
+  "room": zod.string(),
+  "sourceIdentity": zod.string(),
+  "sourceURL": zod.string(),
+  "state": zod.string(),
+  "workspaceId": zod.string()
+})
+
+
+/**
+ * @summary Publish a processed source checkpoint
+ */
+export const PublishSourceRefreshParams = zod.object({
+  "id": zod.string()
+})
+
+export const PublishSourceRefreshHeader = zod.object({
+  "X-Collaboration-Secret": zod.string().optional()
+})
+
+
+
+
+export const PublishSourceRefreshBody = zod.object({
+  "attemptId": zod.int().min(1),
+  "checkpoint": zod.int(),
+  "contentHash": zod.string(),
+  "contentId": zod.string(),
+  "epoch": zod.int(),
+  "expectedLatestCheckpoint": zod.int(),
+  "jobId": zod.string(),
+  "leaseToken": zod.string(),
+  "netTokens": zod.int(),
+  "pendingEffects": zod.unknown(),
+  "previewBlobPath": zod.string(),
+  "seed": zod.string(),
+  "sourceETag": zod.string()
+})
+
+export const PublishSourceRefreshResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "access": zod.enum(['write', 'read']),
+  "baseRevision": zod.int(),
+  "baseSourceSHA256": zod.string(),
+  "checkpoint": zod.int(),
+  "epoch": zod.int(),
+  "fileId": zod.string(),
+  "format": zod.enum(['docx', 'xlsx', 'pptx', 'text']),
+  "indexedCheckpoint": zod.int(),
+  "indexedState": zod.string(),
+  "netTokens": zod.int(),
+  "pendingEffects": zod.unknown(),
+  "room": zod.string(),
+  "sourceIdentity": zod.string(),
+  "sourceURL": zod.string(),
+  "state": zod.string(),
+  "workspaceId": zod.string()
+})
+
+
+/**
+ * @summary Admit a saved source refresh
+ */
+export const RequestSourceRefreshParams = zod.object({
+  "id": zod.string()
+})
+
+export const RequestSourceRefreshHeader = zod.object({
+  "X-Collaboration-Secret": zod.string().optional()
+})
+
+export const RequestSourceRefreshBody = zod.object({
+  "actorId": zod.string(),
+  "automatic": zod.boolean()
+})
+
+export const RequestSourceRefreshResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "checkpoint": zod.int(),
+  "fileId": zod.string(),
+  "jobId": zod.string(),
+  "status": zod.string()
+})
+
+
+/**
+ * @summary Claim a fixed source export
+ */
+export const ClaimSourceRefreshParams = zod.object({
+  "id": zod.string()
+})
+
+export const ClaimSourceRefreshQueryParams = zod.object({
+  "jobId": zod.string().optional()
+})
+
+export const ClaimSourceRefreshHeader = zod.object({
+  "X-Collaboration-Secret": zod.string().optional()
+})
+
+export const ClaimSourceRefreshResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "baseRevision": zod.int(),
+  "baseSourceSHA256": zod.string(),
+  "baseSourceURL": zod.string(),
+  "checkpoint": zod.int(),
+  "epoch": zod.int(),
+  "fileId": zod.string(),
+  "format": zod.string(),
+  "jobId": zod.string(),
+  "leaseToken": zod.string(),
+  "sourceBlobPath": zod.string(),
+  "state": zod.string(),
+  "uploadHeaders": zod.record(zod.string(), zod.string()),
+  "uploadURL": zod.string()
+})
+
+
+/**
+ * @summary Enqueue an uploaded candidate
+ */
+export const FinalizeSourceRefreshParams = zod.object({
+  "id": zod.string()
+})
+
+export const FinalizeSourceRefreshHeader = zod.object({
+  "X-Collaboration-Secret": zod.string().optional()
+})
+
+export const FinalizeSourceRefreshBody = zod.object({
+  "checkpoint": zod.int(),
+  "epoch": zod.int(),
+  "jobId": zod.string(),
+  "leaseToken": zod.string(),
+  "seed": zod.string(),
+  "sizeBytes": zod.int(),
+  "sourceETag": zod.string(),
+  "sourceSHA256": zod.string()
+})
+
+export const FinalizeSourceRefreshResponse = zod.void()
+
+
+/**
+ * @summary Discard an unsuccessful candidate
+ */
+export const FailSourceRefreshParams = zod.object({
+  "id": zod.string()
+})
+
+export const FailSourceRefreshHeader = zod.object({
+  "X-Collaboration-Secret": zod.string().optional()
+})
+
+export const FailSourceRefreshBody = zod.object({
+  "error": zod.string(),
+  "jobId": zod.string(),
+  "leaseToken": zod.string(),
+  "stale": zod.boolean()
+})
+
+export const FailSourceRefreshResponse = zod.void()
 
 
 /**

@@ -1,12 +1,29 @@
 # Pipeline tests
 
-Three tiers:
+Two tiers:
 
 | tier | files | needs | cost |
 | --- | --- | --- | --- |
 | **offline unit** | `test_chunking.py`, `test_retrieval_helpers.py`, `test_parser_client.py`, `test_parser_app.py`, `test_mineru_worker.py`, `test_figures.py`, `test_ingest_capacity.py`, `test_ingest_worker.py`, `test_parse_slots.py`, `test_ai_adapter.py` | nothing | free, ~2s |
-| **SQL integration** (`@pytest.mark.integration`) | `test_store_sql.py`, `test_model_configs_lock.py` | Docker | free, ~10s |
-| **cassette integration** (`@pytest.mark.cassette`) | `test_ingest_query.py`, `test_generate.py` | Docker + recorded cassettes | free on replay |
+| **SQL integration** (`@pytest.mark.integration`) | `test_store_sql.py`, `test_indexing.py`, `test_model_configs_lock.py` | Docker | free, ~13s |
+
+**No test asserts pipeline behaviour through a recorded model response.** There
+used to be a cassette tier that drove chunk → embed → summarize → search →
+answer with VCR-replayed provider traffic. It matched on the full JSON request
+body, which made every prompt edit a paid re-recording, and it tested retrieval
+logic through one specific model's output. Its cassettes were already stale and
+skipping silently. What it covered that is worth covering is covered without a
+model: hybrid search, file-filter scoping, reindex convergence, outline
+grouping and cascade deletes in `test_store_sql.py` against synthetic one-hot
+embeddings; `gather_context` scoping, quiz normalization, JSON extraction and
+summary failure handling in `test_retrieval_helpers.py`; and the
+chunk → embed → summarize → write orchestration in `test_indexing.py`, with the
+embedder and summarizer faked so the test is about the wiring rather than about
+what a model said.
+
+The one VCR cassette tier left is `test_model_replay.py`, which is not about
+this pipeline at all: it replays two recorded streaming turns per **catalog
+model** to prove that model emits tool calls in the shape the adapter parses.
 
 The retrieval index is owned by the numbered Go migrations
 (`server/migrations/0001_init.sql` today), so both Docker tiers start a stock
@@ -16,11 +33,8 @@ rename in a migration surfaces here rather than in production.
 
 The SQL tier writes synthetic one-hot embeddings, so it exercises every
 statement in `retrieval/store.py` (hybrid search, scoping, two-tier
-content summaries, cascade deletes) without a single model
-call. The cassette tier drives the real chunk → embed → summarize →
-search → answer path with model traffic replayed from
-[VCR](https://vcrpy.readthedocs.io) cassettes in `cassettes/`. Postgres and
-Redis are raw TCP, so VCR never touches them.
+content summaries, cascade deletes) and the `index_file` orchestration above
+them without a single model call.
 
 ## Running (replay — the default)
 
@@ -38,32 +52,13 @@ That command removes `CAPY_TEST_RECORD` before it starts pytest. It cannot make
 live model calls or rewrite a cassette, even if record mode is exported in the
 calling shell.
 
-Docker Desktop (or another daemon) is required for the two integration tiers.
-Cassette tests **skip** when their recording is missing, so a fresh checkout
-without optional ingest/generate cassettes still gives a meaningful green run.
+Docker Desktop (or another daemon) is required for the integration tier.
 Entries in `model_replay_certifications.json` are exact provider/model pairs
 that passed certification. A missing or incomplete tape is not certified. A
 tape that exists must contain two interactions and must match the manifest.
-Each ingest/generate test gets a throwaway workspace and deletes it
-afterwards; every `rag_*` row cascades from it, so isolation needs no
-table-by-table cleanup.
-
-## Re-recording cassettes
-
-Re-record when a request-shaping change alters an outbound body: prompt edits,
-model or embedding-dimension changes, or chunking changes. Recording hits the
-real services and costs tokens.
-
-```bash
-export DEEPINFRA_API_KEY="..." # seeded Qwen embedding and routed ZAI GLM
-export DEEPSEEK_API_KEY="..."   # summaries, answers
-export ANTHROPIC_API_KEY="..."  # first-party Anthropic if you certify a Claude slug
-
-export CAPY_TEST_RECORD=once       # record only interactions not already saved
-# delete the cassette(s) you want to refresh first, then:
-uv run --extra test pytest pipeline/tests/test_ingest_query.py -q
-unset CAPY_TEST_RECORD
-```
+Each integration test gets a throwaway workspace and deletes it afterwards;
+every `rag_*` row cascades from it, so isolation needs no table-by-table
+cleanup.
 
 ## Certifying or re-recording an agentic-loop model
 
@@ -115,7 +110,7 @@ generated source artifacts before adding the model to the Ops dashboard.
 ## How determinism is kept (why replay matches)
 
 Model responses are non-deterministic, but VCR matches on **requests**, and
-those are made deterministic so a recording keeps matching:
+those are made deterministic so a certification tape keeps matching:
 
 - **Matching** (`conftest.py`) ignores host/port and matches on `method` + URL
   `path` + a normalized JSON body. Each provider owns a distinct path
@@ -124,10 +119,11 @@ those are made deterministic so a recording keeps matching:
 - **Request-shaping config is pinned in `conftest.py`**, not read from
   `deploy/.env`, so model names and base-URL paths are byte-identical between
   record and replay.
-- **One embedding batch per file** (`CAPY_EMBEDDING_BATCH=1000`) gives the
-  `input` list a stable composition.
-- **Fresh workspace per test** means the prompts are a pure function of the
-  fixture content.
+
+Matching on the request body is why the pipeline tier could not stay: a prompt
+edit changed the body and invalidated every tape. The certification tier sends
+a fixed two-turn exchange that no application prompt feeds into, so it is not
+exposed to that.
 
 ## Platform notes
 
@@ -140,6 +136,3 @@ those are made deterministic so a recording keeps matching:
 ## Fixtures
 
 - `workspace` — a throwaway workspace with `add_chapter` / `add_file` / `scalar`.
-- `sample.txt` — photosynthesis, the primary ingest input.
-- `sample.pdf` — small real PDF (unused by the current suite; the parser client
-  is covered offline).

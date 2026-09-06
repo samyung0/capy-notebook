@@ -1,4 +1,6 @@
+import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
+import { api, isApiError } from '@/api/client';
 import { useGenerate } from '@/api/hooks';
 import type {
   Chapter,
@@ -13,6 +15,7 @@ import { ButtonCard } from '@/components/ui/ButtonCard';
 import type { IconName } from '@/components/ui/Icon';
 import type { OpenItem } from '@/features/materials/openItem';
 import { m } from '@/i18n';
+import { describeError } from '@/lib/errors';
 import { GenerateFormDialog, type GenerateMode } from './GenerateFormDialog';
 
 type GenerateResultData =
@@ -57,12 +60,25 @@ export function GeneratePanel({
   onOpenItem?: (item: OpenItem) => void;
   onGeneratingChange?: (mode: GenerateMode | null) => void;
 }) {
-  const { isPending: generateIsPending, mutateAsync: generate } =
-    useGenerate(workspaceId);
+  const { isPending: generateIsPending, mutateAsync: generate } = useGenerate(
+    workspaceId,
+    { errorToast: false }
+  );
+  const [failure, setFailure] = useState<string | null>(null);
+  const [pendingFileIds, setPendingFileIds] = useState<string[] | null>(null);
+  const { mutate: processChanges, isPending: processingChanges } = useMutation({
+    mutationFn: async (fileIds: string[]) => {
+      await Promise.all(
+        fileIds.map((id) => api.post(`/files/${id}/process-changes`, {}))
+      );
+    },
+  });
   const [mode, setMode] = useState<GenerateMode | null>(null);
   const [result, setResult] = useState<GenerateResultData | null>(null);
 
   async function handleGenerate(opts: GenerateOptions) {
+    setFailure(null);
+    setPendingFileIds(null);
     onGeneratingChange?.(opts.kind);
     setMode(null);
     try {
@@ -76,8 +92,20 @@ export function GeneratePanel({
             ? r.material?.id
             : r.material?.id;
       if (materialId) onOpenItem?.({ id: materialId, kind: 'material' });
-    } catch {
-      // The global mutation handler shows the normalized failure.
+    } catch (error) {
+      if (isApiError(error) && error.code === 'context_too_large') {
+        setPendingFileIds(
+          files
+            .filter(
+              (file) =>
+                (!opts.fileIds.length && !opts.chapters.length) ||
+                opts.fileIds.includes(file.id) ||
+                (file.chapterId !== null &&
+                  opts.chapters.includes(file.chapterId))
+            )
+            .map((file) => file.id)
+        );
+      } else setFailure(describeError(error).description);
     } finally {
       onGeneratingChange?.(null);
     }
@@ -100,6 +128,27 @@ export function GeneratePanel({
         ))}
       </div>
 
+      {failure && (
+        <p className="text-sm text-tint-error-fg" role="alert">
+          {failure}
+        </p>
+      )}
+      {pendingFileIds && (
+        <div
+          className="rounded-lg border border-line bg-surface p-3 text-sm"
+          role="status"
+        >
+          <p>{m.source_pending_context()}</p>
+          <Button
+            disabled={processingChanges}
+            onClick={() => processChanges(pendingFileIds)}
+            size="sm"
+            variant="ghost-hover"
+          >
+            {m.source_process_changes()}
+          </Button>
+        </div>
+      )}
       {result && <GenerateResult onOpenItem={onOpenItem} result={result} />}
 
       {mode && (

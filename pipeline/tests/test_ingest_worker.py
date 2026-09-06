@@ -193,7 +193,9 @@ def parse_stub(monkeypatch):
             (raw_dir / "preview.pdf").write_bytes(b"%PDF-preview")
         return content_list
 
-    async def _caption(*, content_list, raw_dir, file_name, source_sha256):
+    async def _caption(
+        *, file_id, content_list, raw_dir, file_name, source_sha256, refresh_job_id=None
+    ):
         state["captioned"] += 1
         content_list[1]["description"] = "A labelled chloroplast."
         return {
@@ -347,6 +349,9 @@ def _artifact() -> dict:
 
 
 class _Conn:
+    def execute(self, query, params):
+        assert query.startswith("UPDATE files SET ever_parsed_successfully=true")
+
     def __enter__(self):
         return self
 
@@ -1705,7 +1710,8 @@ async def test_final_provider_receipt_failure_does_not_requeue_ingest(monkeypatc
     assert events == [("terminal", "job_ingest")]
 
 
-async def test_direct_donor_cache_head_failure_falls_through(monkeypatch):
+@pytest.mark.parametrize("direct", ["image", "audio"])
+async def test_direct_donor_cache_failure_falls_through(monkeypatch, direct):
     async def embedding_pin(_workspace_id):
         return {
             "embedding_provider_slug": "provider",
@@ -1715,6 +1721,11 @@ async def test_direct_donor_cache_head_failure_falls_through(monkeypatch):
         }
 
     monkeypatch.setattr(worker.store, "workspace_embedding_pin", embedding_pin)
+
+    async def unavailable_caption(*_args):
+        raise OSError("B2 unavailable")
+
+    monkeypatch.setattr(worker.caption_cache, "lookup", unavailable_caption)
     monkeypatch.setattr(
         worker.blobstore,
         "object_info",
@@ -1735,7 +1746,11 @@ async def test_direct_donor_cache_head_failure_falls_through(monkeypatch):
         ws="ws_1",
         name="diagram.png",
         kind="image",
-        route=ingest_plan.IMAGE_CAPTION,
+        route=(
+            ingest_plan.IMAGE_CAPTION
+            if direct == "image"
+            else ingest_plan.AUDIO_TRANSCRIPTION
+        ),
         donor={
             "id": "content_donor",
             "content_hash": "hash",
@@ -1749,6 +1764,59 @@ async def test_direct_donor_cache_head_failure_falls_through(monkeypatch):
     )
 
     assert reused is False
+
+
+async def test_image_donor_reuses_authorized_caption_without_an_empty_artifact_key(
+    monkeypatch,
+):
+    async def pin(_workspace):
+        return {
+            "embedding_provider_slug": "provider",
+            "embedding_model_slug": "model",
+            "embedding_model_version": 1,
+            "embedding_dim": 1024,
+        }
+
+    async def caption(file_id, asset_id, digest, published, *, require_source_job):
+        assert require_source_job
+        assert (file_id, asset_id, digest, published) == ("f_1", None, "ab" * 32, True)
+        return "caption", "image-captions/eligible.json", 20
+
+    async def attached(**_kwargs):
+        return {"ready": True, "content_id": "content_donor"}
+
+    async def wait(association, **_kwargs):
+        return association
+
+    async def captions(**_kwargs):
+        return True
+
+    monkeypatch.setattr(worker.store, "workspace_embedding_pin", pin)
+    monkeypatch.setattr(worker.caption_cache, "lookup", caption)
+    monkeypatch.setattr(worker.store, "attach_file_content", attached)
+    monkeypatch.setattr(worker, "_wait_for_content", wait)
+    monkeypatch.setattr(worker.store, "attach_donor_captions", captions)
+    monkeypatch.setattr(worker, "_finish_ok", lambda *_a, **_k: True)
+    monkeypatch.setattr(worker, "_publish_progress", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        worker.blobstore,
+        "object_info",
+        lambda _key: (_ for _ in ()).throw(
+            AssertionError("image captions use resource lookup")
+        ),
+    )
+    assert await worker._reuse_donor(
+        job={"id": "job_ingest", "attempts": 1},
+        payload=_ingest_payload(),
+        file_id="f_1",
+        ws="ws_1",
+        name="diagram.png",
+        kind="image",
+        route=ingest_plan.IMAGE_CAPTION,
+        donor={"id": "content_donor", "content_hash": "hash"},
+        identity="pipeline",
+        source_sha256="ab" * 32,
+    )
 
 
 @pytest.mark.parametrize("during", ["requeue", "terminal"])
@@ -1797,3 +1865,52 @@ async def test_replacement_between_failure_check_and_job_write_closes_job(
     await worker._handle_job_failure(job, error)
 
     assert finished == [("job_raced_replacement", 1, "cr_1")]
+
+
+async def test_provider_busy_repends_until_the_cap_then_fails_the_file(monkeypatch):
+    """A busy provider hands the attempt back at most PROVIDER_WAITS_MAX times."""
+    from pipeline import elitellm
+    from pipeline.jobs import PROVIDER_WAITS_MAX
+
+    yields: list = []
+    terminal: list = []
+    requeued: list = []
+    monkeypatch.setattr(worker, "_require_current_source", lambda *_a, **_k: None)
+    monkeypatch.setattr(worker, "_read_name", lambda _fid: "notes.pdf")
+    monkeypatch.setattr(
+        worker, "_yield_for_capacity", lambda *a, **k: yields.append((a, k))
+    )
+    monkeypatch.setattr(worker, "_cleanup_payload_source", lambda _p: None)
+    monkeypatch.setattr(
+        worker, "_notify_ingest_terminal", lambda *a: terminal.append(a)
+    )
+    monkeypatch.setattr(worker.obs, "capture_error", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        worker, "_requeue", lambda *a, **_k: requeued.append(a) or "pending"
+    )
+
+    busy = elitellm.ProviderBusy(
+        "slow down", status_code=429, retry_after=12, provider_retry_after=12
+    )
+    payload = _ingest_payload()
+    payload["sourceRevision"] = 3
+    job = {
+        "id": "job_1",
+        "type": "ingest",
+        "attempts": 1,
+        "provider_waits": 0,
+        "payload": payload,
+    }
+    await worker._handle_job_failure(job, busy)
+    assert requeued == [] and terminal == []
+    ((args, kwargs),) = yields
+    assert args[0] is job and args[1] == "f_1" and args[2] == "ws_1"
+    assert args[7] == "waiting for the model to free up"
+    assert args[8] == 12 and args[9] == "provider_busy"
+    assert kwargs == {"count_provider_wait": True}
+
+    job["provider_waits"] = PROVIDER_WAITS_MAX
+    await worker._handle_job_failure(job, busy)
+    assert len(yields) == 1 and requeued == []
+    ((_fid, _ws, _job_id, _message, _attempts, _payload, category, code),) = terminal
+    assert (category, code) == ("provider", "provider_busy")

@@ -538,9 +538,7 @@ Sources: [upload expiry and pruning](../server/internal/store/uploads.go#L202),
 
 Physical deletion is coordinated through `pending_blob_deletions`, a durable
 database outbox. Reference-count triggers cover source objects, parsed objects,
-editor assets, and upload-session paths. Caption-cache paths are owned and
-referenced by `artifact_cache`; `files.caption_blob_path` is identity/debug
-metadata rather than a second reference. The triggers run for direct row deletion and
+editor assets, upload-session paths, source collaboration bases and refresh candidates. Image-caption payloads are owned by `image_caption_associations`; optional parse/audio caches use `artifact_cache`. `files.caption_blob_path` is identity/debug metadata rather than a second reference. The triggers run for direct row deletion and
 foreign-key cascades, so deleting a file, deleting a workspace, or purging an
 account all reach the same cleanup path without relying on an HTTP handler to
 enumerate bucket keys.
@@ -806,3 +804,31 @@ and [30-day lifecycle implementation](../server/internal/store/account_lifecycle
 - [Upload session lifecycle](../server/internal/store/uploads.go#L13)
 - [Blob deletion outbox](../server/internal/store/blobs.go#L9)
 - [Blob reaper and orphan report](../server/cmd/api/blob_workers.go#L11)
+
+## Source editing and private PDF marks
+
+Source collaboration uses the containing workspace's current owner/editor or
+shared editor permission. Tokens bind a file and editing epoch. The gateway
+rechecks access, account state and source identity when opening a room, saving
+a checkpoint and admitting processing; disconnected old-epoch buffers require
+explicit recovery. Source deletion, replacement, member/account changes and
+workspace transfer use the collaboration eviction/outbox and processing fences.
+
+Private PDF annotations belong to one actor and exact source identity. Reading
+and mutation require current file access, and one actor cannot read or modify
+another actor's marks. Clones and downloads do not include them.
+
+Image-caption reuse checks current containing resources. Private workspace
+reuse stays within that workspace. Private standalone material reuse stays
+within its owner. Link/public workspaces and standalone materials permit global
+reuse. Authorized reuse attaches a new resource reference; visibility changes
+affect subsequent lookups without moving payloads. A resource's existing
+association remains its own grant after the donor becomes private or is deleted.
+Pending source captions have unpublished associations. Clones and whole-source
+donors copy published associations only, and Office publication promotes the
+exact image hashes consumed by that candidate before dropping retired captions.
+
+Candidate source deletion has a one-day grace for a late presigned upload.
+Ordinary reference checks still protect current sources, active candidates and
+clones. Successful base replacement retains no original source or deleted
+package parts solely for Undo; current source and cache references remain.

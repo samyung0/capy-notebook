@@ -134,6 +134,7 @@ describe('ops API errors', () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(
         JSON.stringify({
+          attempts: [],
           bucket: 'month',
           contextSummary: {
             calls: 0,

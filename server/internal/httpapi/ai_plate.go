@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/samyung0/capy-notebook/server/internal/models"
@@ -350,6 +351,12 @@ func (a *api) aiCopilot(w http.ResponseWriter, r *http.Request) {
 		}
 		if code, msg, ok := llmKeyPayload(err); ok {
 			writeAIError(w, http.StatusBadRequest, code, msg, false)
+			return
+		}
+		var busy *providerBusyError
+		if errors.As(pipelineLLMError(err), &busy) {
+			w.Header().Set("Retry-After", strconv.Itoa(busy.retryAfter()))
+			writeAIError(w, http.StatusServiceUnavailable, "provider_busy", busy.Error(), true)
 			return
 		}
 		writeAIError(w, http.StatusBadGateway, "ai_unavailable", "AI service is unavailable", true)

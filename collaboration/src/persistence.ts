@@ -457,7 +457,7 @@ export class YjsDocumentStore {
       materialIdFromRoom(room),
       actorUserId
     );
-    if (access === 'comment') {
+    if (access === 'comment' || access === 'read') {
       denyCollaboration('material access was revoked');
     }
     return access;

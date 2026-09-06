@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-export type CollaborationAccess = 'comment' | 'write' | 'shrink';
+export type CollaborationAccess = 'comment' | 'read' | 'write' | 'shrink';
 
 export interface CollaborationClaims {
   access: CollaborationAccess;
@@ -27,6 +27,7 @@ export interface CollaborationContext {
 }
 
 export const MATERIAL_ROOM_PATTERN = /^material:([A-Za-z0-9_-]+):schema:(\d+)$/;
+export const SOURCE_ROOM_PATTERN = /^source:([A-Za-z0-9_-]+):epoch:(\d+)$/;
 const MATERIAL_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 function decodeJsonPart<T>(part: string): T {
@@ -82,7 +83,9 @@ export function mintCollaborationToken(input: {
   secret: string;
   userId: string;
 }): string {
-  const match = MATERIAL_ROOM_PATTERN.exec(input.room);
+  const match =
+    MATERIAL_ROOM_PATTERN.exec(input.room) ??
+    SOURCE_ROOM_PATTERN.exec(input.room);
   if (!match) throw new Error(`invalid collaboration room: ${input.room}`);
   const schema = Number(match[2]);
   const now = Math.floor(Date.now() / 1000);
@@ -121,7 +124,9 @@ export function verifyCollaborationToken(
   }
 
   const claims = decodeJsonPart<CollaborationClaims>(encodedPayload);
-  const roomMatch = MATERIAL_ROOM_PATTERN.exec(expectedRoom);
+  const roomMatch =
+    MATERIAL_ROOM_PATTERN.exec(expectedRoom) ??
+    SOURCE_ROOM_PATTERN.exec(expectedRoom);
   const expectedSchema = roomMatch ? Number(roomMatch[2]) : 0;
   if (
     roomMatch &&
@@ -137,7 +142,11 @@ export function verifyCollaborationToken(
     claims.iss !== 'capy-api' ||
     (claims.access !== 'write' &&
       claims.access !== 'comment' &&
+      claims.access !== 'read' &&
       claims.access !== 'shrink') ||
+    (SOURCE_ROOM_PATTERN.test(expectedRoom)
+      ? claims.access !== 'read' && claims.access !== 'write'
+      : claims.access === 'read') ||
     !claims.sub ||
     !claims.jti ||
     !Number.isSafeInteger(claims.iat) ||

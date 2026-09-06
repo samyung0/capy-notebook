@@ -1,0 +1,30 @@
+{
+  "system": "You mark one student answer against a marking scheme. Reply with ONLY JSON: {\"score\":0|0.5|1,\"reason\":\"one short sentence\"}. No markdown.",
+  "cases": [
+    {
+      "name": "full marking scheme",
+      "input": {
+        "prompt": "Why is the inner mitochondrial membrane folded?",
+        "hints": ["Think about surface area", " "],
+        "rubrics": [
+          "Mentions folds or cristae",
+          "Links folds to ATP synthesis"
+        ],
+        "modelAnswer": "Cristae increase surface area for ATP synthesis.",
+        "userAnswer": "The folds give more space to make ATP."
+      },
+      "expected": "Question: Why is the inner mitochondrial membrane folded?\n\nHints:\n- Think about surface area\n\nMarking scheme:\n- Mentions folds or cristae\n- Links folds to ATP synthesis\n\nModel answer: Cristae increase surface area for ATP synthesis.\nStudent answer: The folds give more space to make ATP.\n\nscore 1 if the marking scheme is met, 0.5 if partly met, 0 if not. Do not reward wording that misses the rubrics."
+    },
+    {
+      "name": "no hints, no rubrics, empty answers",
+      "input": {
+        "prompt": "Define osmosis.",
+        "hints": [],
+        "rubrics": [],
+        "modelAnswer": "",
+        "userAnswer": ""
+      },
+      "expected": "Question: Define osmosis.\n\nMarking scheme: (none given — use the model answer)\n\nModel answer: (none)\nStudent answer: (empty)\n\nscore 1 if the marking scheme is met, 0.5 if partly met, 0 if not. Do not reward wording that misses the rubrics."
+    }
+  ]
+}

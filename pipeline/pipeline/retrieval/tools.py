@@ -21,7 +21,7 @@ from typing import Any
 import requests
 
 from ..config import cfg
-from . import store
+from . import pending, store
 from .chunking import clip_to_tokens, estimate_tokens
 from .limits import TurnBudget
 from .search import Passage, SearchStats, search
@@ -56,6 +56,9 @@ class ToolContext:
     citations: list[Passage] = field(default_factory=list)
     assistant_message_id: str = ""
     budget: TurnBudget | None = None
+    pending_sources: pending.PendingSources = field(
+        default_factory=pending.PendingSources
+    )
     # One entry per search_workspace call this turn, written to
     # rag_search_events when the turn ends (agent.run_agent fills `cited`).
     search_events: list[dict[str, Any]] = field(default_factory=list)
@@ -163,7 +166,10 @@ async def _resolve_scope(
         chapter_names=[
             str(chapter_by_id[cid].get("name") or "") for cid in chapter_ids
         ],
-        indexed=any(int(file.get("chunks") or 0) > 0 for file in selected_files),
+        indexed=(
+            any(int(file.get("chunks") or 0) > 0 for file in selected_files)
+            or any(file["fileId"] in selected for file in ctx.pending_sources.files)
+        ),
     )
 
 
@@ -212,6 +218,7 @@ async def _search_workspace(args: dict[str, Any], ctx: ToolContext) -> ToolResul
     if ctx.budget is not None:
         ctx.budget.embedding_calls += 1
     stats = SearchStats()
+    await ctx.pending_sources.validate()
     passages = await search(
         workspace_id=ctx.workspace_id,
         query=query,
@@ -435,6 +442,7 @@ async def _generate_material(args: dict[str, Any], ctx: ToolContext) -> ToolResu
     }
 
     last_exc: BaseException | None = None
+    await ctx.pending_sources.validate()
     last_status = 0
     for attempt in range(4):
         try:
@@ -529,6 +537,31 @@ def _response_detail(resp: requests.Response) -> str:
         return str(resp.json().get("message") or "")
     except ValueError:
         return resp.text[:200]
+
+
+async def _resolve_source_change(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    file_id, change_id, checkpoint = (
+        args.get("file_id"),
+        args.get("change_id"),
+        args.get("checkpoint"),
+    )
+    if (
+        not isinstance(file_id, str)
+        or not isinstance(change_id, str)
+        or not isinstance(checkpoint, int)
+    ):
+        return _refused("A file id, change id and integer checkpoint are required.")
+    await pending.resolve(
+        sources=ctx.pending_sources,
+        workspace_id=ctx.workspace_id,
+        user_id=ctx.user_id,
+        file_id=file_id,
+        change_id=change_id,
+        checkpoint=checkpoint,
+    )
+    return _result(
+        "Resolved source image. Its full caption is in the protected pending-source context."
+    )
 
 
 REGISTRY: dict[str, ToolSpec] = {}
@@ -700,8 +733,43 @@ _register(
 )
 
 
+_register(
+    ToolSpec(
+        name="resolve_source_change",
+        schema=_schema(
+            "resolve_source_change",
+            "Describe an added or changed source image from an exact pending-change placeholder. Only use identifiers supplied in the pending-source evidence.",
+            {
+                "type": "object",
+                "properties": {
+                    "file_id": {"type": "string"},
+                    "change_id": {"type": "string"},
+                    "checkpoint": {"type": "integer"},
+                },
+                "required": ["file_id", "change_id", "checkpoint"],
+                "additionalProperties": False,
+            },
+        ),
+        handler=_resolve_source_change,
+        mutates=False,
+        uses_embedding=False,
+        concurrency_class="read",
+    )
+)
+
+
 def schemas_for(ctx: ToolContext) -> list[dict[str, Any]]:
     specs = list(REGISTRY.values())
+    if (
+        not ctx.user_id
+        or not _gateway_ready()
+        or not any(
+            change.get("assetRef")
+            for file in ctx.pending_sources.files
+            for change in file["changes"]
+        )
+    ):
+        specs = [s for s in specs if s.name != "resolve_source_change"]
     if not (_gateway_ready() and ctx.user_id):
         specs = [s for s in specs if s.name != "generate_material"]
     return [s.schema for s in specs]
@@ -717,7 +785,7 @@ async def run(name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         return _refused(f"No tool named {name}.")
     try:
         return await spec.handler(args, ctx)
-    except TurnFailed:
+    except (TurnFailed, pending.SourceChanged):
         raise
     except Exception as exc:
         log.exception("tool %s failed", name)

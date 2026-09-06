@@ -339,6 +339,11 @@ async def test_generate_refuses_empty_indexed_scope_before_model(monkeypatch):
 
     monkeypatch.setattr(service, "_bind_llm", lambda _req: None)
     monkeypatch.setattr(service.models, "resolve_query_model", lambda *_a, **_k: spec)
+
+    async def _pending(*_args):
+        return service.workflows.pending.PendingSources()
+
+    monkeypatch.setattr(service.workflows.pending, "load", _pending)
     monkeypatch.setattr(service.workflows, "gather_context", _gather)
     monkeypatch.setattr(service.workflows, "produce", _produce)
 

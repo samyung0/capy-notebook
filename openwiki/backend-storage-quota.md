@@ -181,7 +181,7 @@ Expiry marks the session expired and releases the reservation in the same
 transaction before best-effort blob cleanup (cleanup details in the
 authorization doc).
 
-An Office edit replaces an existing source rather than creating another file.
+Explicit source replacement keeps the logical file. Ordinary collaborative Office saves use durable checkpoints, as described below.
 Its upload session reserves `max(new_size - current_size, 0)`, so unchanged or
 smaller saves do not need free quota they will not consume. Finalization locks
 the file, verifies its expected revision, swaps the blob and size, then releases
@@ -190,6 +190,22 @@ byte delta. A same-size or smaller replacement is explicitly permitted while
 the storage owner is over quota, so Office editing provides a replacement-based
 recovery path. Suspended, deletion-pending, and deleted owners remain blocked.
 A stale editor or a file that is no longer ready cannot finalize.
+
+Collaborative source saves account `source_documents` state, indexed state and
+serialized pending JSON through generated `storage_bytes` and the same storage
+delta ledger. `source_refresh_candidates` accounts its captured state, new
+source bytes and fresh seed while processing. Owner changes transfer those
+charges with the file. Admission, checkpoint growth and publication run under
+source/workspace/account locks. Publication accounts the net size after
+replacing the old base and removing candidate storage, including any larger
+fresh Office seed. Negative changes remain negative ledger deltas.
+
+A candidate retains both old A and new B temporarily. Only a successful current
+Office handoff replaces A, clears Undo/Redo and releases old references. Text
+retains its existing editing lineage. Shared caption payloads are platform
+artifacts referenced by containing resources; published clones attach their
+own references and exclude pending captions. A failed candidate cannot remove
+the currently published source/index.
 
 Editor assets write to an `editor-assets/incoming/…` key and are promoted to
 an unpresigned stable `editor-assets/{id}/…` key before finalization, so the

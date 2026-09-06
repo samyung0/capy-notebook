@@ -114,7 +114,10 @@ export const healthSchema = z.object({
       contextToolTokens: countSchema,
       contextTotalTokens: countSchema,
       contextWindowTokens: countSchema,
+      errorCode: z.string(),
+      model: z.string(),
       openedAt: dateTimeSchema,
+      provider: z.string(),
       purpose: z.string(),
       reservationId: z.string(),
       reservationStatus: z.string(),
@@ -127,6 +130,13 @@ export const healthSchema = z.object({
   ),
   activeTurns: z.array(turnLifecycleSchema),
   appliedWithoutUsage24h: countSchema,
+  busyCalls: z.array(
+    z.object({
+      calls: countSchema,
+      model: z.string(),
+      provider: z.string(),
+    })
+  ),
   dataAsOf: dateTimeSchema,
   emailFailures24h: countSchema,
   expiredReservations: countSchema,
@@ -467,7 +477,24 @@ const costRowSchema = z.object({
   reasoningTokens: countSchema,
 });
 
+const providerAttemptRowSchema = z.object({
+  abandoned: countSchema,
+  applied: countSchema,
+  attempts: countSchema,
+  busy: countSchema,
+  cachedReadTokens: countSchema,
+  cacheWriteTokens: countSchema,
+  creditMicros: countSchema,
+  inputTokens: countSchema,
+  model: z.string(),
+  open: countSchema,
+  outputTokens: countSchema,
+  provider: z.string(),
+  reasoningTokens: countSchema,
+});
+
 export const costReportSchema = z.object({
+  attempts: z.array(providerAttemptRowSchema),
   bucket: z.enum(['day', 'month']),
   contextSummary: z.object({
     calls: countSchema,

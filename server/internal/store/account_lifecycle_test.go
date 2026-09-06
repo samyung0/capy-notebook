@@ -447,7 +447,7 @@ func waitForAccountLockWaiters(
 		var waiting int
 		if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity
 			WHERE wait_event_type='Lock'
-			  AND query LIKE '%deleted_at, deletion_requested_at%FOR UPDATE%'`).Scan(&waiting); err != nil {
+			  AND query LIKE '%deleted_at, deletion_requested_at%FOR%UPDATE%'`).Scan(&waiting); err != nil {
 			t.Fatal(err)
 		}
 		if waiting >= want {

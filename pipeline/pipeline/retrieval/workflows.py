@@ -19,9 +19,9 @@ import re
 from typing import Any
 
 from ..config import cfg
-from . import models, store
+from ..prompts import generate as generate_prompts
+from . import compact, models, pending, store
 from .chunking import estimate_tokens
-from .locale import response_language_rule
 from .search import Passage
 
 log = logging.getLogger("capy.retrieval.workflows")
@@ -33,6 +33,66 @@ class InvalidGenerateScope(ValueError):
 
 class GenerateNoContent(ValueError):
     """The resolved generation scope has no indexed passages."""
+
+
+class PendingSourceContextTooLarge(ValueError):
+    """Generation cannot include the complete current source evidence."""
+
+
+async def generation_context(
+    *,
+    workspace_id: str,
+    file_ids: list[str] | None,
+    instruction: str,
+    scope: str,
+    model: models.ModelConfig,
+    locale: str | None,
+) -> tuple[str, list[Passage], pending.PendingSources]:
+    changes = await pending.load(workspace_id, file_ids)
+    pending_message = changes.message()
+
+    def messages(context: str):
+        return pending.inject(
+            generate_prompts.generate_messages(
+                instruction=instruction, context=context, scope=scope, locale=locale
+            ),
+            pending_message,
+        )
+
+    remaining = (
+        compact.usable_input_limit(model)
+        - compact.request_context(messages(""), model).total_tokens
+    )
+    if remaining < 0:
+        if changes.files:
+            raise PendingSourceContextTooLarge(pending.NOTICE)
+        raise compact.ContextTooLarge(
+            "Generation instructions exceed the selected model's input limit."
+        )
+    context, passages = await gather_context(
+        workspace_id=workspace_id,
+        file_ids=file_ids,
+        budget=remaining,
+    )
+    if not passages and not changes.files:
+        raise GenerateNoContent("The requested scope has no source content.")
+    if not compact.fits_request(messages(context), model):
+        # Passage estimates bound the read. Select the final prefix using the
+        # same complete provider request as produce, keeping pending edits whole.
+        pieces = [passage.as_context(i) for i, passage in enumerate(passages, 1)]
+        low, high = 0, len(pieces)
+        while low < high:
+            middle = (low + high + 1) // 2
+            if compact.fits_request(messages("\n\n".join(pieces[:middle])), model):
+                low = middle
+            else:
+                high = middle - 1
+        context, passages = "\n\n".join(pieces[:low]), passages[:low]
+        if not passages and not changes.files:
+            raise compact.ContextTooLarge(
+                "Source passages exceed the selected model's input limit."
+            )
+    return context, passages, changes
 
 
 async def gather_context(
@@ -152,19 +212,21 @@ async def produce(
     model: models.ModelConfig,
     temperature: float = 0.4,
     locale: str | None = None,
+    pending_sources: pending.PendingSources | None = None,
 ) -> str:
-    system = (
-        "You create study materials strictly from the provided source passages. "
-        "Do not invent facts that are not in them. Follow the requested output "
-        "format exactly, with no commentary around it.\n"
-        + response_language_rule(locale)
+    messages = generate_prompts.generate_messages(
+        instruction=instruction, context=context, scope=scope, locale=locale
     )
-    user = instruction
-    if scope:
-        user += f"\n\nScope: {scope}."
-    user += "\n\nSource passages:\n" + (context or "(no indexed content)")
+    if pending_sources is not None:
+        messages = pending.inject(messages, pending_sources.message())
+    if not compact.fits_request(messages, model):
+        raise compact.ContextTooLarge(
+            "Source context exceeds the selected model's input limit."
+        )
+    if pending_sources is not None:
+        await pending_sources.validate()
     return await models.complete_text(
-        [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        messages,
         model=model,
         temperature=temperature,
     )

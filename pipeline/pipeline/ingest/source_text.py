@@ -28,7 +28,8 @@ import httpx
 
 from ..config import cfg
 from ..jobs import CapacityWait, RetryableError, TerminalError
-from ..retrieval import accounting, models
+from ..prompts.captioning import IMAGE_PROMPT
+from ..retrieval import accounting
 from ..store import blobstore, db
 
 log = logging.getLogger("capy.worker.source_text")
@@ -43,10 +44,6 @@ _AUDIO_CAPACITY_RENEW_SECONDS = 60
 _TABULAR_MAX_CELLS = 100_000
 _TABULAR_MAX_FIELD_CHARS = 8 << 20
 _TABULAR_MAX_OUTPUT_CHARS = 64 << 20
-
-_IMAGE_PROMPT = """Describe this image as a faithful, searchable record of everything visibly communicated.
-
-Include all readable text. Transcribe every title, label, legend, annotation, table cell, number, unit, date, axis, data point, and formula that is legible. State equations and mathematical notation precisely in plain text or LaTeX. Explain diagrams, charts, spatial relationships, trends, and comparisons. Preserve uncertainty: call out text or values that are unclear instead of guessing. Do not add facts that are not visible. Return coherent plain text, not JSON."""
 
 
 class ElevenLabsNotCalledError(TerminalError):
@@ -76,13 +73,8 @@ def extension(name: str) -> str:
 
 
 def artifact_key(source_sha256: str, direct: str) -> str:
-    if direct == "image":
-        return f"derived-text/{source_sha256}/image-{cfg.caption_version}.json"
     if direct == "audio":
-        return (
-            f"derived-text/{source_sha256}/elevenlabs-"
-            f"{cfg.elevenlabs_transcript_version}.json"
-        )
+        return f"derived-text/{source_sha256}/elevenlabs.json"
     return ""
 
 
@@ -229,35 +221,24 @@ def _encode_image(path: Path, name: str) -> str:
 
 
 async def caption_image_source(
-    *, local_path: str, name: str, source_sha256: str
+    *, local_path: str, name: str, source_sha256: str, file_id: str
 ) -> tuple[str, str, int, bool]:
-    """Return caption text, artifact path, byte size, and cache-hit state."""
-    key = artifact_key(source_sha256, "image")
-    identity = f"image-caption:{source_sha256}:{cfg.caption_version}"
-    async with _source_lock(identity):
-        cached = await asyncio.to_thread(_load_artifact, key)
-        if cached:
-            return (
-                str(cached["text"]),
-                key,
-                len(
-                    json.dumps(
-                        cached, ensure_ascii=False, separators=(",", ":")
-                    ).encode()
-                ),
-                True,
-            )
-        data_url = await asyncio.to_thread(_encode_image, Path(local_path), name)
-        text = (await models.caption_image(data_url, _IMAGE_PROMPT)).strip()
-        if not text:
-            raise RetryableError("image captioning produced no searchable text")
-        payload = {
-            "kind": "image_caption",
-            "text": text,
-            "version": cfg.caption_version,
-        }
-        size = await asyncio.to_thread(_save_artifact, key, payload)
-        return text, key if size is not None else "", size or 0, False
+    from ..parse import caption_cache
+
+    async def encode() -> str:
+        return await asyncio.to_thread(_encode_image, Path(local_path), name)
+
+    result = await caption_cache.caption(
+        file_id=file_id,
+        image_sha256=source_sha256,
+        data_url=encode,
+        prompt=IMAGE_PROMPT,
+        best_effort=False,
+        require_source_job=True,
+    )
+    if not result[0]:
+        raise RetryableError("image captioning produced no searchable text")
+    return result
 
 
 def audio_duration_seconds(path: Path) -> float:
@@ -470,7 +451,6 @@ def _audio_artifact_payload(
         if isinstance(response.get("words"), list)
         else [],
         "text": str(response["text"]).strip(),
-        "version": cfg.elevenlabs_transcript_version,
     }
 
 
@@ -483,7 +463,7 @@ async def transcribe_audio_source(
 ) -> tuple[str, str, int]:
     """Synchronously transcribe, settle usage, then cache the result."""
     key = artifact_key(source_sha256, "audio")
-    identity = f"elevenlabs:{source_sha256}:{cfg.elevenlabs_transcript_version}"
+    identity = f"elevenlabs:{source_sha256}"
     async with _source_lock(identity):
         cached = await asyncio.to_thread(_load_artifact, key)
         if cached:
@@ -517,7 +497,11 @@ async def transcribe_audio_source(
                 cfg.elevenlabs_sync_timeout_s,
             )
             await accounting.open_call(
-                call_id, kind=accounting.KIND_AUDIO, purpose="transcription"
+                call_id,
+                kind=accounting.KIND_AUDIO,
+                purpose="transcription",
+                provider="elevenlabs",
+                model="scribe_v2",
             )
             response: dict[str, Any] | None = None
             completed_error: ElevenLabsInvalidResponseError | None = None

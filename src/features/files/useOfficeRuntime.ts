@@ -1,11 +1,7 @@
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import * as Y from 'yjs';
 import type { SourceFile } from '@/api/types';
+import { m } from '@/i18n';
 import {
   isOfficeRuntimeMessage,
   OFFICE_PROTOCOL_VERSION,
@@ -15,20 +11,13 @@ import {
   type OfficeMode,
 } from './officeProtocol';
 import { getOfficeRuntimeConfig } from './officeRuntimeConfig';
-
-interface SavedOfficeFile {
-  revision: number;
-}
+import { SOURCE_IFRAME_ORIGIN, useSourceSession } from './useSourceSession';
 
 interface OfficeRuntimeOptions {
   canEdit: boolean;
   file: SourceFile;
   format: OfficeFormat;
   initialMode?: OfficeMode;
-  onSave?: (
-    bytes: Uint8Array,
-    expectedRevision: number
-  ) => Promise<SavedOfficeFile>;
   revision: number;
 }
 
@@ -36,15 +25,8 @@ export function officeRuntimeKey(
   file: Pick<SourceFile, 'id' | 'url'>,
   revision: number
 ): string {
-  return JSON.stringify([file.id, file.url ?? '', revision]);
-}
-
-export function isCurrentOfficeSave(
-  startedGeneration: number,
-  currentGeneration: number,
-  mounted: boolean
-): boolean {
-  return mounted && startedGeneration === currentGeneration;
+  void revision;
+  return file.id;
 }
 
 export function isCurrentOfficeRuntimeMessage(
@@ -54,238 +36,253 @@ export function isCurrentOfficeRuntimeMessage(
   return messageRevision === currentRevision;
 }
 
-export function resolveInitialOfficeMode(
-  requested: OfficeMode,
-  canEdit: boolean,
-  canSave: boolean
-): OfficeMode {
-  return requested === 'edit' && canEdit && canSave ? 'edit' : 'view';
-}
-
-export async function runOfficeSave({
-  bytes,
-  expectedRevision,
-  isCurrent,
-  onCommitted,
-  onRejected,
-  onSave,
-}: {
-  bytes: Uint8Array;
-  expectedRevision: number;
-  isCurrent: () => boolean;
-  onCommitted: (saved: SavedOfficeFile) => void;
-  onRejected: (error: Error) => void;
-  onSave: NonNullable<OfficeRuntimeOptions['onSave']>;
-}): Promise<void> {
-  let saved: SavedOfficeFile;
-  try {
-    saved = await onSave(bytes, expectedRevision);
-  } catch (value) {
-    if (isCurrent()) onRejected(toError(value));
-    return;
-  }
-  if (isCurrent()) onCommitted(saved);
-}
-
 export function useOfficeRuntime({
   canEdit,
   file,
   format,
   initialMode = 'view',
-  onSave,
   revision,
 }: OfficeRuntimeOptions) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const runtimeConfigRef = useRef(getOfficeRuntimeConfig());
-  const runtimeConfig = runtimeConfigRef.current;
-  const fetchAbortRef = useRef<AbortController | null>(null);
-  const initializedRef = useRef(false);
-  const loadedRuntimeKeyRef = useRef<string | null>(null);
-  const mountedRef = useRef(false);
-  const initialModeRef = useRef(
-    resolveInitialOfficeMode(initialMode, canEdit, Boolean(onSave))
-  );
-  const runtimeKey = officeRuntimeKey(file, revision);
-  const runtimeGenerationRef = useRef(0);
-  const revisionRef = useRef(revision);
-  const modeRef = useRef<OfficeMode>(initialModeRef.current);
-  const onSaveRef = useRef(onSave);
-  const savingRef = useRef(false);
+  const config = useRef(getOfficeRuntimeConfig()).current;
+  const [mode, setMode] = useState<OfficeMode>(canEdit ? initialMode : 'view');
+  const [joined, setJoined] = useState(canEdit && initialMode === 'edit');
   const [frameGeneration, setFrameGeneration] = useState(0);
   const [frameLoaded, setFrameLoaded] = useState(false);
-  const [sourceBytes, setSourceBytes] = useState<ArrayBuffer | null>(null);
+  const [frameBoot, setFrameBoot] = useState(0);
+  const [viewBytes, setViewBytes] = useState<ArrayBuffer | null>(null);
   const [analysis, setAnalysis] = useState<OfficeAnalysis | null>(null);
-  const [mode, setMode] = useState<OfficeMode>(initialModeRef.current);
-  const [requestedMode, setRequestedMode] = useState<OfficeMode>(
-    initialModeRef.current
+  const [error, setError] = useState<string | null>(config.error);
+  const [replicaReady, setReplicaReady] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const source = useSourceSession(file.id, joined);
+  const sourceRef = useRef(source);
+  sourceRef.current = source;
+  const revisionRef = useRef(revision);
+  const publishedRevision = useRef(revision);
+  const initializedFrame = useRef(-1);
+  const sourceDocument = useRef<Y.Doc | undefined>(undefined);
+  const frameRequests = useRef(
+    new Map<
+      string,
+      { resolve: (bytes: ArrayBuffer) => void; reject: (error: Error) => void }
+    >()
   );
-  const [runtimeRevision, setRuntimeRevision] = useState(revision);
-  const [dirty, setDirty] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(runtimeConfig.error);
-
-  useLayoutEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-      fetchAbortRef.current?.abort();
-      runtimeGenerationRef.current += 1;
-    };
-  }, []);
-
-  useLayoutEffect(() => {
-    onSaveRef.current = onSave;
-  }, [onSave]);
-
   const post = useCallback(
-    (message: OfficeHostMessage, transfer: Transferable[] = []) => {
+    (message: OfficeHostMessage, transfer: Transferable[] = []) =>
       iframeRef.current?.contentWindow?.postMessage(
         message,
-        runtimeConfig.origin,
+        config.origin,
         transfer
-      );
-    },
-    [runtimeConfig.origin]
+      ),
+    [config.origin]
   );
-
-  const replaceRuntime = useCallback(
-    ({
-      bytes,
-      nextMode,
-      nextRevision,
-      preserveAnalysis,
-    }: {
-      bytes?: ArrayBuffer;
-      nextMode: OfficeMode;
-      nextRevision: number;
-      preserveAnalysis: boolean;
-    }) => {
-      fetchAbortRef.current?.abort();
-      const generation = runtimeGenerationRef.current + 1;
-      runtimeGenerationRef.current = generation;
-      revisionRef.current = nextRevision;
-      loadedRuntimeKeyRef.current = officeRuntimeKey(file, nextRevision);
-      modeRef.current = nextMode;
-      savingRef.current = false;
-      setFrameLoaded(false);
-      setFrameGeneration(generation);
-      setRequestedMode(nextMode);
-      setRuntimeRevision(nextRevision);
-      setMode(nextMode);
-      setDirty(false);
-      setSaving(false);
-      setError(runtimeConfig.error);
-      setSourceBytes(bytes ?? null);
-      if (!preserveAnalysis) setAnalysis(null);
-
-      if (bytes || !file.url || runtimeConfig.error) return;
-      const controller = new AbortController();
-      fetchAbortRef.current = controller;
-      void fetch(file.url, { signal: controller.signal })
-        .then(async (response) => {
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          return response.arrayBuffer();
-        })
-        .then(
-          (loadedBytes) => {
-            if (
-              !controller.signal.aborted &&
-              runtimeGenerationRef.current === generation
-            ) {
-              setSourceBytes(loadedBytes);
-            }
+  const request = useCallback(
+    (kind: 'flush' | 'export') =>
+      new Promise<ArrayBuffer>((resolve, reject) => {
+        const id = crypto.randomUUID();
+        const timeout = setTimeout(() => {
+          frameRequests.current.delete(id);
+          reject(new Error(m.source_edit_save_failed()));
+        }, 30_000);
+        frameRequests.current.set(id, {
+          reject: (error) => {
+            clearTimeout(timeout);
+            reject(error);
           },
-          (value: unknown) => {
-            if (
-              !controller.signal.aborted &&
-              runtimeGenerationRef.current === generation
-            ) {
-              setError(toError(value).message);
-            }
+          resolve: (bytes) => {
+            clearTimeout(timeout);
+            resolve(bytes);
+          },
+        });
+        if (kind === 'flush') {
+          const epoch = sourceRef.current.session?.epoch;
+          if (epoch === undefined) {
+            frameRequests.current.delete(id);
+            reject(new Error(m.source_edit_session_changed()));
+            return;
           }
-        );
-    },
-    [file.id, file.url, runtimeConfig.error]
+          post({ epoch, id, type: 'flush', version: OFFICE_PROTOCOL_VERSION });
+        } else post({ id, type: 'export', version: OFFICE_PROTOCOL_VERSION });
+      }),
+    [post]
   );
+  const checkpoint = useCallback(async () => {
+    await sourceRef.current.save();
+  }, [request]);
 
   useEffect(() => {
-    if (initializedRef.current && loadedRuntimeKeyRef.current === runtimeKey) {
-      return;
-    }
-    const nextMode = initializedRef.current ? 'view' : initialModeRef.current;
-    initializedRef.current = true;
-    replaceRuntime({
-      nextMode,
-      nextRevision: revision,
-      preserveAnalysis: false,
-    });
-  }, [file.id, replaceRuntime, revision, runtimeKey]);
-
-  useEffect(() => {
-    if (!canEdit && modeRef.current === 'edit') {
-      replaceRuntime({
-        nextMode: 'view',
-        nextRevision: revisionRef.current,
-        preserveAnalysis: false,
-      });
-      return;
-    }
-    if (!frameLoaded) return;
-    post({
-      canEdit,
-      type: 'set-capabilities',
-      version: OFFICE_PROTOCOL_VERSION,
-    });
-  }, [canEdit, frameLoaded, post, replaceRuntime]);
-
-  useEffect(() => {
-    const target = iframeRef.current?.contentWindow;
-    if (!frameLoaded || !sourceBytes || !target) return;
-    const message: OfficeHostMessage = {
-      bytes: sourceBytes,
-      canEdit,
-      fileName: file.name,
-      format,
-      mode: requestedMode,
-      revision: runtimeRevision,
-      type: 'load',
-      version: OFFICE_PROTOCOL_VERSION,
+    source.flushHandler.current =
+      mode === 'edit'
+        ? async (pause = false) => {
+            if (pause)
+              post({
+                canEdit: false,
+                type: 'set-capabilities',
+                version: OFFICE_PROTOCOL_VERSION,
+              });
+            await request('flush');
+          }
+        : async () => {};
+    return () => {
+      source.flushHandler.current = null;
     };
-    target.postMessage(message, runtimeConfig.origin, [sourceBytes]);
-    setSourceBytes(null);
+  }, [mode, request, source.flushHandler, post]);
+
+  useEffect(() => {
+    const doc = source.doc;
+    if (!doc) return;
+    if (sourceDocument.current && sourceDocument.current !== doc) {
+      setFrameLoaded(false);
+      setFrameGeneration((value) => value + 1);
+      setAnalysis(null);
+      setError(null);
+    }
+    sourceDocument.current = doc;
+  }, [source.doc]);
+
+  useEffect(() => {
+    const changed = publishedRevision.current !== revision;
+    publishedRevision.current = revision;
+    if (!changed || mode !== 'view') return;
+    revisionRef.current = revision;
+    setFrameLoaded(false);
+    setFrameGeneration((value) => value + 1);
+    setViewBytes(null);
+    setAnalysis(null);
+    setError(config.error);
+  }, [revision, mode, config.error]);
+
+  useEffect(() => {
+    if (mode !== 'view' || viewBytes || config.error) return;
+    const controller = new AbortController();
+    void fetch(file.url ?? '', { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.arrayBuffer();
+      })
+      .then((bytes) => {
+        if (!controller.signal.aborted) setViewBytes(bytes);
+      })
+      .catch((value: unknown) => {
+        if (!controller.signal.aborted) setError(toError(value).message);
+      });
+    return () => controller.abort();
+  }, [file.id, file.url, revision, mode, config.error, viewBytes]);
+
+  useEffect(() => {
+    if (!frameLoaded || initializedFrame.current === frameGeneration) return;
+    if (
+      mode === 'edit' &&
+      (!source.doc ||
+        !source.session ||
+        !source.bytes ||
+        (!source.synced && source.status !== 'recovery'))
+    )
+      return;
+    if (mode === 'view' && !viewBytes) return;
+    const bytes =
+      mode === 'edit' ? source.bytes!.slice().buffer : viewBytes!.slice(0);
+    const collaboration =
+      mode === 'edit'
+        ? {
+            epoch: source.session!.epoch,
+            initialUpdate: Y.encodeStateAsUpdate(source.doc!).slice().buffer,
+          }
+        : undefined;
+    initializedFrame.current = frameGeneration;
+    post(
+      {
+        bytes,
+        canEdit,
+        collaboration,
+        fileName: file.name,
+        format,
+        mode,
+        revision: revisionRef.current,
+        type: 'load',
+        version: OFFICE_PROTOCOL_VERSION,
+      },
+      collaboration ? [bytes, collaboration.initialUpdate] : [bytes]
+    );
   }, [
+    frameLoaded,
+    frameGeneration,
+    frameBoot,
+    mode,
+    source.doc,
+    source.session,
+    source.bytes,
+    source.synced,
+    source.status,
+    viewBytes,
     canEdit,
     file.name,
     format,
-    frameLoaded,
-    requestedMode,
-    runtimeConfig.origin,
-    runtimeRevision,
-    sourceBytes,
+    post,
   ]);
 
   useEffect(() => {
-    if (!dirty) return;
-    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = '';
+    if (frameLoaded)
+      post({
+        canEdit:
+          canEdit &&
+          !source.handoff &&
+          source.status !== 'recovery' &&
+          (mode !== 'edit' ||
+            (!!source.doc &&
+              !source.discarding &&
+              source.status !== 'connecting')),
+        type: 'set-capabilities',
+        version: OFFICE_PROTOCOL_VERSION,
+      });
+  }, [
+    canEdit,
+    frameLoaded,
+    mode,
+    source.doc,
+    source.discarding,
+    source.handoff,
+    source.status,
+    post,
+  ]);
+
+  useEffect(() => {
+    const doc = source.doc;
+    if (!doc || mode !== 'edit' || !source.session) return;
+    const epoch = source.session.epoch;
+    const send = (update: Uint8Array, origin: unknown) => {
+      if (origin === SOURCE_IFRAME_ORIGIN) return;
+      const bytes = update.slice().buffer;
+      post({ bytes, epoch, type: 'update', version: OFFICE_PROTOCOL_VERSION }, [
+        bytes,
+      ]);
     };
-    window.addEventListener('beforeunload', warnBeforeUnload);
-    return () => window.removeEventListener('beforeunload', warnBeforeUnload);
-  }, [dirty]);
+    doc.on('update', send);
+    return () => doc.off('update', send);
+  }, [source.doc, source.session, mode, post]);
 
   useEffect(() => {
     const receive = (event: MessageEvent<unknown>) => {
       if (
-        event.origin !== runtimeConfig.origin ||
+        event.origin !== config.origin ||
         event.source !== iframeRef.current?.contentWindow ||
         !isOfficeRuntimeMessage(event.data)
       )
         return;
-      const message = event.data;
-      if (
-        !isCurrentOfficeRuntimeMessage(message.revision, revisionRef.current)
-      ) {
+      const message = event.data,
+        active = sourceRef.current;
+      if (message.type === 'initialized') {
+        setReplicaReady(false);
+        initializedFrame.current = -1;
+        setFrameLoaded(true);
+        setFrameBoot((value) => value + 1);
+        return;
+      }
+      if (!isCurrentOfficeRuntimeMessage(message.revision, revisionRef.current))
+        return;
+      if (message.type === 'dirty') {
+        active.pendingInput(message.dirty);
         return;
       }
       if (message.type === 'ready') {
@@ -293,79 +290,124 @@ export function useOfficeRuntime({
         setError(null);
         return;
       }
-      if (message.type === 'mode') {
-        modeRef.current = message.mode;
-        setMode(message.mode);
-        return;
-      }
-      if (message.type === 'dirty') {
-        setDirty(message.dirty);
-        return;
-      }
       if (message.type === 'error') {
         setError(message.message);
+        for (const waiter of frameRequests.current.values())
+          waiter.reject(new Error(message.message));
+        frameRequests.current.clear();
         return;
       }
-      const save = onSaveRef.current;
-      if (!save || savingRef.current) return;
-      const bytes = new Uint8Array(message.bytes);
-      const startedGeneration = runtimeGenerationRef.current;
-      savingRef.current = true;
-      setSaving(true);
-      void runOfficeSave({
-        bytes,
-        expectedRevision: message.revision,
-        isCurrent: () =>
-          isCurrentOfficeSave(
-            startedGeneration,
-            runtimeGenerationRef.current,
-            mountedRef.current
-          ),
-        onCommitted: (saved) => {
-          revisionRef.current = saved.revision;
-          replaceRuntime({
-            bytes: bytes.slice().buffer,
-            nextMode: 'view',
-            nextRevision: saved.revision,
-            preserveAnalysis: false,
-          });
-        },
-        onRejected: (saveError) => {
-          setError(saveError.message);
-          savingRef.current = false;
-          setSaving(false);
-        },
-        onSave: save,
-      });
+      if (message.type === 'collaboration-ready') setReplicaReady(true);
+      if (
+        message.type === 'update' ||
+        message.type === 'collaboration-ready' ||
+        message.type === 'flushed'
+      ) {
+        if (
+          !active.doc ||
+          message.epoch !== active.session?.epoch ||
+          active.status === 'recovery'
+        )
+          return;
+        Y.applyUpdate(
+          active.doc,
+          new Uint8Array(message.bytes),
+          SOURCE_IFRAME_ORIGIN
+        );
+        if (message.type === 'collaboration-ready') {
+          const bytes = Y.encodeStateAsUpdate(active.doc).slice().buffer;
+          post(
+            {
+              bytes,
+              epoch: message.epoch,
+              type: 'update',
+              version: OFFICE_PROTOCOL_VERSION,
+            },
+            [bytes]
+          );
+        }
+        if (message.type === 'flushed') {
+          frameRequests.current.get(message.id)?.resolve(message.bytes);
+          frameRequests.current.delete(message.id);
+        }
+        return;
+      }
+      if (message.type === 'exported') {
+        frameRequests.current.get(message.id)?.resolve(message.bytes);
+        frameRequests.current.delete(message.id);
+        return;
+      }
+      if (message.type === 'checkpoint' || message.type === 'save')
+        void checkpoint().catch((value: unknown) =>
+          setError(toError(value).message)
+        );
     };
     window.addEventListener('message', receive);
     return () => window.removeEventListener('message', receive);
-  }, [replaceRuntime, runtimeConfig.origin]);
+  }, [config.origin, post, checkpoint]);
+
+  const downloadDraft = useCallback(async () => {
+    const bytes = await request('export');
+    const url = URL.createObjectURL(new Blob([bytes]));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = file.name;
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }, [file.name, request]);
 
   const setRuntimeMode = useCallback(
-    (next: OfficeMode) => {
-      if (next === modeRef.current || (next === 'edit' && !canEdit)) return;
-      replaceRuntime({
-        nextMode: next,
-        nextRevision: revisionRef.current,
-        preserveAnalysis: next === 'edit',
-      });
+    async (next: OfficeMode) => {
+      if (next === mode || (next === 'edit' && !canEdit)) return;
+      if (next === 'view') {
+        setLeaving(true);
+        try {
+          await checkpoint();
+          const bytes = await request('export');
+          setViewBytes(bytes);
+        } catch (value) {
+          setError(toError(value).message);
+          setLeaving(false);
+          return;
+        }
+        setLeaving(false);
+      } else setJoined(true);
+      initializedFrame.current = -1;
+      setFrameLoaded(false);
+      setFrameGeneration((value) => value + 1);
+      setMode(next);
     },
-    [canEdit, replaceRuntime]
+    [canEdit, mode, checkpoint, request]
+  );
+
+  useEffect(
+    () => () => {
+      for (const waiter of frameRequests.current.values())
+        waiter.reject(new Error(m.source_edit_save_failed()));
+      frameRequests.current.clear();
+    },
+    []
   );
 
   return {
     analysis,
-    dirty,
-    error,
+    dirty: source.dirty,
+    discardDraft: source.discardDraft,
+    discarding: source.discarding,
+    downloadDraft,
+    error: error ?? source.error,
+    handoff: source.handoff,
     iframeKey: `${file.id}:${frameGeneration}`,
     iframeRef,
-    iframeSandbox: runtimeConfig.sandbox,
-    iframeUrl: runtimeConfig.url,
+    iframeSandbox: config.sandbox,
+    iframeUrl: config.url,
     mode,
-    saving,
+    ready: mode === 'view' ? !!analysis : replicaReady,
+    save: checkpoint,
+    saving: leaving || source.status === 'saving',
     setFrameLoaded,
     setRuntimeMode,
+    status: source.status,
   };
 }
 

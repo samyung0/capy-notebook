@@ -1757,6 +1757,9 @@ async def test_donor_copy_reuses_chunks_across_workspaces(workspace):
 
     import psycopg
 
+    workspace.scalar(
+        "UPDATE workspaces SET privacy='link' WHERE id=%s RETURNING id", (workspace.id,)
+    )
     src_file = workspace.add_file("lecture.txt")
     await _write(workspace, src_file, ["donor passage about osmosis"])
     donor_id = workspace.scalar(
@@ -1811,6 +1814,7 @@ async def test_donor_copy_reuses_chunks_across_workspaces(workspace):
     dest_file = other.add_file("copy.txt")
     pin = await store.workspace_embedding_pin(other.id)
     donor = await store.find_ready_donor(
+        workspace_id=other.id,
         source_sha256=sha,
         pipeline_identity=identity,
         embedding_provider_slug=pin["embedding_provider_slug"],
@@ -1832,6 +1836,7 @@ async def test_donor_copy_reuses_chunks_across_workspaces(workspace):
         donor_id=donor["id"],
         dest_content_id=association["content_id"],
         dest_workspace_id=other.id,
+        dest_file_id=dest_file,
         copy_vectors=True,
     )
     assert copied
@@ -1861,6 +1866,9 @@ async def test_donor_copy_skips_vectors_when_pins_differ(workspace):
 
     import psycopg
 
+    workspace.scalar(
+        "UPDATE workspaces SET privacy='link' WHERE id=%s RETURNING id", (workspace.id,)
+    )
     src_file = workspace.add_file("lecture.txt")
     await _write(workspace, src_file, ["donor passage about osmosis"])
     donor_id = workspace.scalar(
@@ -1888,6 +1896,7 @@ async def test_donor_copy_skips_vectors_when_pins_differ(workspace):
     dest_file = other.add_file("copy.txt")
     pin = await store.workspace_embedding_pin(other.id)
     donor = await store.find_ready_donor(
+        workspace_id=other.id,
         source_sha256=sha,
         pipeline_identity=identity,
         embedding_provider_slug=pin["embedding_provider_slug"],
@@ -1906,6 +1915,7 @@ async def test_donor_copy_skips_vectors_when_pins_differ(workspace):
         donor_id=donor["id"],
         dest_content_id=association["content_id"],
         dest_workspace_id=other.id,
+        dest_file_id=dest_file,
         copy_vectors=False,
     )
     assert copied
@@ -1958,6 +1968,9 @@ async def test_donor_lookup_prefers_matching_pin(workspace):
             "INSERT INTO workspaces (id, user_id, name, color) VALUES (%s, %s, %s, 'blue')",
             (other_id, workspace.user_id, "Other"),
         )
+    workspace.scalar(
+        "UPDATE workspaces SET privacy='link' WHERE id=%s RETURNING id", (other_id,)
+    )
     other = type(workspace)(workspace.dsn, other_id)
     dest_file = other.add_file("newer.txt")
     await _write(other, dest_file, ["donor passage about osmosis"])
@@ -1979,6 +1992,7 @@ async def test_donor_lookup_prefers_matching_pin(workspace):
 
     pin = await store.workspace_embedding_pin(workspace.id)
     donor = await store.find_ready_donor(
+        workspace_id=workspace.id,
         source_sha256=sha,
         pipeline_identity=identity,
         embedding_provider_slug=pin["embedding_provider_slug"],
@@ -1990,6 +2004,7 @@ async def test_donor_lookup_prefers_matching_pin(workspace):
     assert donor["id"] == matching_id
 
     other_space = await store.find_ready_donor(
+        workspace_id=workspace.id,
         source_sha256=sha,
         pipeline_identity=identity,
         embedding_provider_slug="other",
@@ -3139,3 +3154,47 @@ def test_deleting_a_file_fences_its_inflight_job(workspace):
         )
         == 0
     )
+
+
+def test_provider_busy_repend_hands_the_attempt_back_and_counts_the_wait(workspace):
+    """The whole busy re-pend transaction, including the attempt status the
+    CHECK constraint must allow, then the next claim seeing the count."""
+    import psycopg
+
+    file_id = workspace.add_file("busy.txt")
+    with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
+        job_id, attempt_id, _reservation = _install_running_pipeline_claim(
+            conn,
+            workspace_id=workspace.id,
+            file_id=file_id,
+            actor_user_id=workspace.user_id,
+        )
+        db.release_job_for_provider_busy(cur, job_id, 1, backoff_s=45)
+        db.finish_job_attempt(
+            cur,
+            attempt_id=attempt_id,
+            outcome="provider_busy",
+            error_category="provider",
+            error_code="provider_busy",
+        )
+        conn.commit()
+
+    with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT status, attempts, provider_waits, not_before > now() "
+            "FROM jobs WHERE id=%s",
+            (job_id,),
+        )
+        assert cur.fetchone() == ("pending", 0, 1, True)
+        cur.execute(
+            "SELECT status, error_code FROM ingest_job_attempts WHERE id=%s",
+            (attempt_id,),
+        )
+        assert cur.fetchone() == ("provider_busy", "provider_busy")
+        # Once the wait passes, the next claim carries the count with it.
+        cur.execute("UPDATE jobs SET not_before=now() WHERE id=%s", (job_id,))
+        _isolate_job(cur, job_id)
+        claimed = db.claim_job(cur, "ingest", 180)
+        conn.commit()
+    assert claimed is not None
+    assert claimed["id"] == job_id and claimed["provider_waits"] == 1

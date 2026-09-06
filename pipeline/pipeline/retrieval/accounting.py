@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import functools
 import json
 import logging
 import math
+import random
 import secrets
 import time
 from dataclasses import dataclass, field
@@ -19,7 +21,7 @@ from typing import Any
 
 import requests
 
-from .. import elitellm, obs
+from .. import elitellm, obs, registry
 from ..config import cfg
 from ..registry import ModelConfig
 from .usage_extract import NormalizedUsage
@@ -38,6 +40,8 @@ PURPOSE_CHECKPOINT = "checkpoint"
 _SETTLE_ATTEMPTS = 4
 _SETTLE_TIMEOUT_S = 10
 _RECEIPT_SETTLEMENT_GRACE_S = 300
+# Suggested client wait when the model's gate never opened within the budget.
+BUSY_RETRY_AFTER_S = 5.0
 CONTEXT_COUNTING_METHOD = "provider_shape_cjk_chars_latin_chars_div3"
 CONTEXT_COUNTING_VERSION = 2
 
@@ -173,6 +177,8 @@ class RequestAccounting:
     job_attempt_id: int | None = None
     job_stage: str = ""
     receipt_deadlines: dict[str, float] = field(default_factory=dict)
+    # Calls holding a per-model capacity lease, released when the call ends.
+    leased_calls: set[str] = field(default_factory=set)
 
 
 _accounting: contextvars.ContextVar[RequestAccounting | None] = contextvars.ContextVar(
@@ -229,6 +235,32 @@ def new_call_id() -> str:
     return "pc_" + secrets.token_hex(10)
 
 
+def model_capacity(
+    provider: str, model: str, settlement_mode: str
+) -> tuple[str, int] | None:
+    """Gate key and capacity for one platform-key call; None when ungated.
+
+    Interactive callers may use the model's whole total. Ingest callers stop at
+    total minus the interactive reserve, so a chat search never queues behind a
+    wave of captions. A user's own key answers to that user's provider limits
+    and is never gated here.
+    """
+    if registry.current_request_llm().paid_by == "user":
+        return None
+    limits = cfg.model_concurrency.get((provider, model))
+    if limits is None:
+        return None
+    total, reserve = limits
+    capacity = total - reserve if settlement_mode == "ingest" else total
+    return f"{provider}:{model}", max(0, capacity)
+
+
+def _gate_poll_s(settlement_mode: str) -> float:
+    if settlement_mode == "ingest":
+        return random.uniform(1.0, 2.0)
+    return random.uniform(0.1, 0.3)
+
+
 async def open_call(
     call_id: str,
     *,
@@ -236,12 +268,18 @@ async def open_call(
     purpose: str,
     thinking: str = "",
     context: ContextComposition | None = None,
+    spec: ModelConfig | None = None,
+    provider: str = "",
+    model: str = "",
+    deadline: float | None = None,
 ) -> None:
     """Insert the pending row before the provider HTTP call.
 
-    Unbound requests (ingest, offline tests) are a no-op. A bound request
-    without a database cannot prove the stub exists, so it must not call the
-    provider.
+    Unbound requests (offline tests) are a no-op. A bound request without a
+    database cannot prove the stub exists, so it must not call the provider.
+    A gated model takes its capacity lease in the same transaction as the row;
+    while the gate is full this polls until ``deadline`` (a monotonic instant)
+    and then raises ProviderBusy without inserting anything.
     """
     state = current()
     if state is None:
@@ -251,28 +289,125 @@ async def open_call(
     if not cfg.dsn:
         raise AccountingError("provider call open requires a database")
     call_context = context or ContextComposition()
+    if spec is not None:
+        provider = provider or elitellm.transport_provider_slug(spec)
+        model = model or elitellm.transport_model_slug(spec)
     if kind == KIND_AUDIO:
         provider_timeout_s = cfg.elevenlabs_sync_timeout_s
     elif state.settlement_mode == "ingest":
         provider_timeout_s = cfg.ingest_provider_timeout_s
     else:
-        provider_timeout_s = cfg.interactive_provider_timeout_s
+        # Interactive streams are bounded by the backstop, not the idle timer.
+        provider_timeout_s = cfg.interactive_stream_max_s
     receipt_timeout_s = (
         max(1, math.ceil(provider_timeout_s)) + _RECEIPT_SETTLEMENT_GRACE_S
     )
-    arguments: tuple[Any, ...] = (
-        state.session_id,
-        call_id,
-        kind,
-        purpose,
-        thinking,
-        call_context,
-        receipt_timeout_s,
+    lease = (
+        model_capacity(provider, model, state.settlement_mode)
+        if spec is not None
+        else None
     )
-    if state.job_attempt_id is not None or state.job_stage:
-        arguments += (state.job_attempt_id, state.job_stage)
-    await asyncio.to_thread(_open_call_sync, *arguments)
+    while True:
+        admission = asyncio.ensure_future(
+            asyncio.to_thread(
+                _open_call_sync,
+                state.session_id,
+                call_id,
+                kind,
+                purpose,
+                thinking,
+                call_context,
+                receipt_timeout_s,
+                provider,
+                model,
+                lease,
+                state.job_attempt_id,
+                state.job_stage,
+            )
+        )
+        try:
+            admitted = await asyncio.shield(admission)
+        except asyncio.CancelledError:
+            # The thread cannot be cancelled and may still commit the lease and
+            # the row. Undo whatever it commits once it finishes, without
+            # holding the cancellation up; the receipt window is the backstop.
+            admission.add_done_callback(functools.partial(_undo_admission, call_id))
+            raise
+        if admitted:
+            break
+        wait = _gate_poll_s(state.settlement_mode)
+        if deadline is None or time.monotonic() + wait > deadline:
+            raise elitellm.ProviderBusy(
+                f"{provider}/{model} is at its concurrency cap",
+                retry_after=BUSY_RETRY_AFTER_S,
+            )
+        await asyncio.sleep(wait)
+    if lease is not None:
+        state.leased_calls.add(call_id)
     state.receipt_deadlines[call_id] = time.monotonic() + receipt_timeout_s
+
+
+# Detached cleanup tasks, referenced so the loop cannot collect them early.
+_background: set[asyncio.Task[Any]] = set()
+
+
+def _undo_admission(call_id: str, admission: asyncio.Future[bool]) -> None:
+    """Done-callback for an admission whose request was cancelled.
+
+    Best effort: if the loop is already tearing down and the undo cannot be
+    scheduled, the lease expires with the receipt window and the row is
+    swept as ``receipt_timeout``.
+    """
+    try:
+        if (
+            admission.cancelled()
+            or admission.exception() is not None
+            or not admission.result()
+        ):
+            return
+        task = asyncio.ensure_future(asyncio.to_thread(_undo_admission_sync, call_id))
+    except Exception:
+        log.warning("could not undo cancelled admission %s", call_id, exc_info=True)
+        return
+    _background.add(task)
+    task.add_done_callback(_finish_background)
+
+
+def _finish_background(task: asyncio.Task[Any]) -> None:
+    _background.discard(task)
+    if not task.cancelled() and task.exception() is not None:
+        log.warning("cancelled admission undo failed", exc_info=task.exception())
+
+
+def _undo_admission_sync(call_id: str) -> None:
+    """Abandon the never-sent call row and free its lease in one transaction."""
+    from ..store import db
+
+    with db.connect() as conn:
+        with conn.cursor() as cur:
+            db.abandon_provider_call(
+                cur,
+                call_id,
+                error_category="client",
+                error_code="cancelled_before_send",
+            )
+            db.release_provider_capacity(cur, call_id)
+        conn.commit()
+
+
+async def release_call(call_id: str) -> None:
+    """Free the call's capacity lease once the provider is done. Best effort.
+
+    A lease that cannot be released expires with the receipt window.
+    """
+    state = current()
+    if state is None or call_id not in state.leased_calls:
+        return
+    state.leased_calls.discard(call_id)
+    try:
+        await asyncio.to_thread(_release_lease_sync, call_id)
+    except Exception:
+        log.warning("could not release capacity lease %s", call_id, exc_info=True)
 
 
 async def abandon_call(call_id: str, exc: BaseException | None = None) -> None:
@@ -294,13 +429,24 @@ def _open_call_sync(
     thinking: str,
     context: ContextComposition,
     receipt_timeout_s: int,
+    provider: str = "",
+    model: str = "",
+    lease: tuple[str, int] | None = None,
     job_attempt_id: int | None = None,
     job_stage: str = "",
-) -> None:
+) -> bool:
+    """Take the capacity lease and insert the row atomically. False when full."""
     from ..store import db
 
     with db.connect() as conn:
         with conn.cursor() as cur:
+            if lease is not None:
+                # Unlocked look first: a full gate returns without touching
+                # the session or call rows, and without the model-wide lock.
+                key, capacity = lease
+                if db.provider_capacity_used(cur, key) >= capacity:
+                    conn.rollback()
+                    return False
             db.open_provider_call(
                 cur,
                 session_id,
@@ -310,6 +456,8 @@ def _open_call_sync(
                 thinking,
                 job_attempt_id=job_attempt_id,
                 job_stage=job_stage,
+                provider=provider,
+                model=model,
                 context_system_tokens=context.system_tokens,
                 context_tool_tokens=context.tool_tokens,
                 context_conversation_tokens=context.conversation_tokens,
@@ -319,6 +467,31 @@ def _open_call_sync(
                 context_counting_version=context.counting_version,
                 receipt_timeout_seconds=receipt_timeout_s,
             )
+            if lease is not None:
+                # Last, so the model-wide advisory lock covers only the
+                # delete, sum and insert, never the row locks above.
+                key, capacity = lease
+                admitted = db.acquire_provider_capacity(
+                    cur,
+                    lease_id=call_id,
+                    provider=key,
+                    units=1,
+                    capacity=capacity,
+                    lease_seconds=receipt_timeout_s,
+                )
+                if not admitted:
+                    conn.rollback()
+                    return False
+        conn.commit()
+    return True
+
+
+def _release_lease_sync(call_id: str) -> None:
+    from ..store import db
+
+    with db.connect() as conn:
+        with conn.cursor() as cur:
+            db.release_provider_capacity(cur, call_id)
         conn.commit()
 
 

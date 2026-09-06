@@ -2049,6 +2049,118 @@ components:
         - emailMembership
         - emailBilling
       type: object
+    PDFAnnotation:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/PDFAnnotation.json
+          format: uri
+          readOnly: true
+          type: string
+        authorId:
+          type: string
+        color:
+          pattern: ^#[0-9a-fA-F]{6}$
+          type: string
+        createdAt:
+          format: date-time
+          type: string
+        fileId:
+          type: string
+        id:
+          type: string
+        kind:
+          enum:
+            - highlight
+            - rectangle
+            - ellipse
+          type: string
+        page:
+          format: int64
+          minimum: 1
+          type: integer
+        rects:
+          items:
+            $ref: "#/components/schemas/PDFRect"
+          maxItems: 1000
+          minItems: 1
+          type: array
+        sourceIdentity:
+          type: string
+        updatedAt:
+          format: date-time
+          type: string
+      required:
+        - id
+        - fileId
+        - authorId
+        - createdAt
+        - updatedAt
+        - sourceIdentity
+        - page
+        - kind
+        - rects
+        - color
+      type: object
+    PDFAnnotationBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/PDFAnnotationBody.json
+          format: uri
+          readOnly: true
+          type: string
+        color:
+          pattern: ^#[0-9a-fA-F]{6}$
+          type: string
+        kind:
+          enum:
+            - highlight
+            - rectangle
+            - ellipse
+          type: string
+        page:
+          format: int64
+          minimum: 1
+          type: integer
+        rects:
+          items:
+            $ref: "#/components/schemas/PDFRect"
+          maxItems: 1000
+          minItems: 1
+          type: array
+        sourceIdentity:
+          type: string
+      required:
+        - sourceIdentity
+        - page
+        - kind
+        - rects
+        - color
+      type: object
+    PDFRect:
+      additionalProperties: false
+      properties:
+        height:
+          format: double
+          type: number
+        width:
+          format: double
+          type: number
+        x:
+          format: double
+          type: number
+        "y":
+          format: double
+          type: number
+      required:
+        - x
+        - "y"
+        - width
+        - height
+      type: object
     PlanTier:
       enum:
         - free
@@ -2183,6 +2295,10 @@ components:
       properties:
         author:
           type: string
+        autoReindex:
+          type: boolean
+        autoReparse:
+          type: boolean
         capabilities:
           $ref: "#/components/schemas/AccessCapabilities"
         chapterCount:
@@ -2230,6 +2346,8 @@ components:
       required:
         - author
         - clones
+        - autoReparse
+        - autoReindex
         - description
         - id
         - name
@@ -2522,6 +2640,164 @@ components:
         - retrieval
         - captioning
       type: string
+    SourceCandidateResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/SourceCandidateResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        baseRevision:
+          format: int64
+          type: integer
+        baseSourceSHA256:
+          type: string
+        baseSourceURL:
+          type: string
+        checkpoint:
+          format: int64
+          type: integer
+        epoch:
+          format: int64
+          type: integer
+        fileId:
+          type: string
+        format:
+          type: string
+        jobId:
+          type: string
+        leaseToken:
+          type: string
+        sourceBlobPath:
+          type: string
+        state:
+          format: base64
+          type: string
+        uploadHeaders:
+          additionalProperties:
+            type: string
+          type: object
+        uploadURL:
+          type: string
+      required:
+        - uploadURL
+        - uploadHeaders
+        - fileId
+        - jobId
+        - epoch
+        - checkpoint
+        - leaseToken
+        - state
+        - sourceBlobPath
+        - format
+        - baseSourceURL
+        - baseSourceSHA256
+        - baseRevision
+      type: object
+    SourceCheckpoint:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/SourceCheckpoint.json
+          format: uri
+          readOnly: true
+          type: string
+        actorIds:
+          items:
+            type: string
+          minItems: 1
+          nullable: true
+          type: array
+        baseSourceSHA256:
+          type: string
+        epoch:
+          format: int64
+          minimum: 1
+          type: integer
+        expectedCheckpoint:
+          format: int64
+          minimum: 0
+          type: integer
+        initialize:
+          type: boolean
+        netTokens:
+          format: int64
+          minimum: 0
+          type: integer
+        pendingEffects: {}
+        state:
+          format: base64
+          type: string
+      required:
+        - actorIds
+        - epoch
+        - expectedCheckpoint
+        - state
+        - pendingEffects
+        - netTokens
+        - baseSourceSHA256
+        - initialize
+      type: object
+    SourceCollaborationToken:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/SourceCollaborationToken.json
+          format: uri
+          readOnly: true
+          type: string
+        access:
+          enum:
+            - write
+            - read
+          type: string
+        epoch:
+          format: int64
+          type: integer
+        expiresAt:
+          format: int64
+          type: integer
+        room:
+          type: string
+        token:
+          type: string
+        url:
+          type: string
+      required:
+        - token
+        - room
+        - url
+        - access
+        - expiresAt
+        - epoch
+      type: object
+    SourceFailureInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/SourceFailureInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        error:
+          type: string
+        jobId:
+          type: string
+        leaseToken:
+          type: string
+        stale:
+          type: boolean
+      required:
+        - jobId
+        - leaseToken
+        - error
+        - stale
+      type: object
     SourceImportAccepted:
       additionalProperties: false
       properties:
@@ -2576,6 +2852,215 @@ components:
         - jobId
         - status
         - name
+      type: object
+    SourceProcessResult:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/SourceProcessResult.json
+          format: uri
+          readOnly: true
+          type: string
+        checkpoint:
+          format: int64
+          type: integer
+        fileId:
+          type: string
+        jobId:
+          type: string
+        status:
+          type: string
+      required:
+        - fileId
+        - checkpoint
+        - status
+        - jobId
+      type: object
+    SourceRefreshFinalize:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/SourceRefreshFinalize.json
+          format: uri
+          readOnly: true
+          type: string
+        checkpoint:
+          format: int64
+          type: integer
+        epoch:
+          format: int64
+          type: integer
+        jobId:
+          type: string
+        leaseToken:
+          type: string
+        seed:
+          format: base64
+          type: string
+        sizeBytes:
+          format: int64
+          type: integer
+        sourceETag:
+          type: string
+        sourceSHA256:
+          type: string
+      required:
+        - jobId
+        - epoch
+        - checkpoint
+        - leaseToken
+        - sourceSHA256
+        - sizeBytes
+        - sourceETag
+        - seed
+      type: object
+    SourceRefreshInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/SourceRefreshInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        actorId:
+          type: string
+        automatic:
+          type: boolean
+      required:
+        - actorId
+        - automatic
+      type: object
+    SourceRefreshPublish:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/SourceRefreshPublish.json
+          format: uri
+          readOnly: true
+          type: string
+        attemptId:
+          format: int64
+          minimum: 1
+          type: integer
+        checkpoint:
+          format: int64
+          type: integer
+        contentHash:
+          type: string
+        contentId:
+          type: string
+        epoch:
+          format: int64
+          type: integer
+        expectedLatestCheckpoint:
+          format: int64
+          type: integer
+        jobId:
+          type: string
+        leaseToken:
+          type: string
+        netTokens:
+          format: int64
+          type: integer
+        pendingEffects: {}
+        previewBlobPath:
+          type: string
+        seed:
+          format: base64
+          type: string
+        sourceETag:
+          type: string
+      required:
+        - attemptId
+        - jobId
+        - epoch
+        - checkpoint
+        - leaseToken
+        - sourceETag
+        - contentId
+        - contentHash
+        - previewBlobPath
+        - seed
+        - pendingEffects
+        - netTokens
+        - expectedLatestCheckpoint
+      type: object
+    SourceSession:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/SourceSession.json
+          format: uri
+          readOnly: true
+          type: string
+        access:
+          enum:
+            - write
+            - read
+          type: string
+        baseRevision:
+          format: int64
+          type: integer
+        baseSourceSHA256:
+          type: string
+        checkpoint:
+          format: int64
+          type: integer
+        epoch:
+          format: int64
+          type: integer
+        fileId:
+          type: string
+        format:
+          enum:
+            - docx
+            - xlsx
+            - pptx
+            - text
+          type: string
+        indexedCheckpoint:
+          format: int64
+          type: integer
+        indexedState:
+          format: base64
+          type: string
+        netTokens:
+          format: int64
+          type: integer
+        pendingEffects: {}
+        room:
+          type: string
+        sourceIdentity:
+          type: string
+        sourceURL:
+          type: string
+        state:
+          format: base64
+          type: string
+        workspaceId:
+          type: string
+      required:
+        - fileId
+        - workspaceId
+        - format
+        - room
+        - epoch
+        - checkpoint
+        - indexedCheckpoint
+        - baseRevision
+        - sourceIdentity
+        - baseSourceSHA256
+        - sourceURL
+        - state
+        - indexedState
+        - pendingEffects
+        - netTokens
+        - access
       type: object
     SourceUploadKindPolicy:
       additionalProperties: false
@@ -3122,6 +3607,10 @@ components:
           format: uri
           readOnly: true
           type: string
+        autoReindex:
+          type: boolean
+        autoReparse:
+          type: boolean
         color:
           $ref: "#/components/schemas/UserColor"
         description:
@@ -3327,6 +3816,10 @@ components:
           format: uri
           readOnly: true
           type: string
+        autoReindex:
+          type: boolean
+        autoReparse:
+          type: boolean
         capabilities:
           $ref: "#/components/schemas/AccessCapabilities"
         chapterCount:
@@ -3369,6 +3862,8 @@ components:
             $ref: "#/components/schemas/Tag"
           type: array
       required:
+        - autoReparse
+        - autoReindex
         - description
         - id
         - name
@@ -3458,10 +3953,30 @@ components:
         files:
           format: int64
           type: integer
+        indexed:
+          format: int64
+          type: integer
+        notIndexable:
+          format: int64
+          type: integer
+        notIndexed:
+          format: int64
+          type: integer
+        pendingReindex:
+          format: int64
+          type: integer
+        pendingReparse:
+          format: int64
+          type: integer
         quizzes:
           format: int64
           type: integer
       required:
+        - indexed
+        - notIndexed
+        - notIndexable
+        - pendingReparse
+        - pendingReindex
         - chapters
         - files
         - quizzes
@@ -4186,6 +4701,174 @@ paths:
       summary: Update a file
       tags:
         - Content
+  /api/files/{id}/annotations:
+    get:
+      operationId: listPDFAnnotations
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/PDFAnnotation"
+                type: array
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Read private PDF annotations
+      tags:
+        - Source collaboration
+    post:
+      operationId: createPDFAnnotation
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PDFAnnotationBody"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PDFAnnotation"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Create a private PDF annotation
+      tags:
+        - Source collaboration
+  /api/files/{id}/annotations/{annotationId}:
+    delete:
+      operationId: deletePDFAnnotation
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: annotationId
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete an authored PDF annotation
+      tags:
+        - Source collaboration
+    patch:
+      operationId: updatePDFAnnotation
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: annotationId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PDFAnnotationBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PDFAnnotation"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Update an authored PDF annotation
+      tags:
+        - Source collaboration
+  /api/files/{id}/collaboration-token:
+    post:
+      operationId: createSourceCollaborationToken
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceCollaborationToken"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Create source room token
+      tags:
+        - Source collaboration
+  /api/files/{id}/process-changes:
+    post:
+      operationId: processSourceChanges
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceProcessResult"
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Process the latest saved source changes
+      tags:
+        - Source collaboration
   /api/files/{id}/replacement-uploads:
     post:
       operationId: createFileReplacementUpload
@@ -4247,6 +4930,31 @@ paths:
       summary: Complete a direct file replacement
       tags:
         - Content
+  /api/files/{id}/source-session:
+    get:
+      operationId: getSourceSession
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceSession"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Read source editing session
+      tags:
+        - Source collaboration
   /api/flashcards:
     get:
       operationId: listFlashcardSets
@@ -6720,6 +7428,282 @@ paths:
       summary: Transfer workspace ownership to another member
       tags:
         - Workspace collaboration
+  /internal/collaboration/files/{id}/access:
+    get:
+      operationId: checkSourceAccess
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Collaboration-Secret
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: actorId
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: epoch
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+        - explode: false
+          in: query
+          name: edit
+          schema:
+            type: boolean
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Revalidate source room access
+      tags:
+        - Source collaboration
+  /internal/collaboration/files/{id}/bootstrap:
+    get:
+      operationId: bootstrapSourceDocument
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Collaboration-Secret
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: actorId
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceSession"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Bootstrap an authorized source room
+      tags:
+        - Source collaboration
+  /internal/collaboration/files/{id}/checkpoint:
+    post:
+      operationId: checkpointSourceDocument
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Collaboration-Secret
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SourceCheckpoint"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceSession"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Persist an authorized source checkpoint
+      tags:
+        - Source collaboration
+  /internal/collaboration/files/{id}/publish:
+    post:
+      operationId: publishSourceRefresh
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Collaboration-Secret
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SourceRefreshPublish"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceSession"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Publish a processed source checkpoint
+      tags:
+        - Source collaboration
+  /internal/collaboration/files/{id}/refresh:
+    post:
+      operationId: requestSourceRefresh
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Collaboration-Secret
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SourceRefreshInputBody"
+        required: true
+      responses:
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceProcessResult"
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Admit a saved source refresh
+      tags:
+        - Source collaboration
+  /internal/collaboration/files/{id}/refresh-candidate:
+    get:
+      operationId: claimSourceRefresh
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Collaboration-Secret
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: jobId
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceCandidateResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Claim a fixed source export
+      tags:
+        - Source collaboration
+    post:
+      operationId: finalizeSourceRefresh
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Collaboration-Secret
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SourceRefreshFinalize"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Enqueue an uploaded candidate
+      tags:
+        - Source collaboration
+  /internal/collaboration/files/{id}/refresh-failure:
+    post:
+      operationId: failSourceRefresh
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Collaboration-Secret
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SourceFailureInputBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Discard an unsuccessful candidate
+      tags:
+        - Source collaboration
   /internal/collaboration/materials/{id}/projection:
     post:
       operationId: projectMaterialYjsDocument

@@ -83,6 +83,19 @@ func hErr(err error) error {
 			Errors: []*huma.ErrorDetail{{Message: "llm_key_failed"}},
 		}
 	}
+	var busy *providerBusyError
+	if errors.As(err, &busy) {
+		return &huma.ErrorModel{
+			Status: http.StatusServiceUnavailable,
+			Title:  http.StatusText(http.StatusServiceUnavailable),
+			Detail: busy.Error(),
+			Errors: []*huma.ErrorDetail{{
+				Message: "provider_busy",
+				// The browser spreads an object value into the error body.
+				Value: map[string]any{"retryAfterSeconds": busy.retryAfter()},
+			}},
+		}
+	}
 	if errors.Is(err, store.ErrLLMCredentialsUnavailable) {
 		return huma.Error503ServiceUnavailable("key storage is not configured")
 	}
@@ -121,6 +134,22 @@ func hErr(err error) error {
 			Title:  http.StatusText(http.StatusBadRequest),
 			Detail: errScopeNoIndexedContent.Error(),
 			Errors: []*huma.ErrorDetail{{Message: "scope_has_no_indexed_content"}},
+		}
+	}
+	if errors.Is(err, errContextTooLarge) {
+		return &huma.ErrorModel{
+			Status: http.StatusBadRequest,
+			Title:  http.StatusText(http.StatusBadRequest),
+			Detail: errContextTooLarge.Error(),
+			Errors: []*huma.ErrorDetail{{Message: "context_too_large"}},
+		}
+	}
+	if errors.Is(err, errSourceChanged) {
+		return &huma.ErrorModel{
+			Status: http.StatusConflict,
+			Title:  http.StatusText(http.StatusConflict),
+			Detail: errSourceChanged.Error(),
+			Errors: []*huma.ErrorDetail{{Message: "source_changed"}},
 		}
 	}
 	if errors.Is(err, store.ErrAuthorityUnavailable) {

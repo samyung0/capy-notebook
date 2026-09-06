@@ -218,6 +218,47 @@ export function HealthPage() {
 
       <Card className="shadow-sm">
         <CardHeader>
+          <CardTitle>Busy models</CardTitle>
+          <CardDescription>
+            Attempts abandoned in the last hour on a provider 429, 503 or 529
+            answer, by transport provider and model. This is the signal for
+            tuning CAPY_MODEL_CONCURRENCY; a gate refusal writes no row.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {data.busyCalls.length === 0 ? (
+            <p className="text-muted-foreground text-sm">
+              No busy attempts in the last hour.
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Provider / model</TableHead>
+                  <TableHead className="text-right">Busy attempts</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.busyCalls.map((row) => (
+                  <TableRow key={`${row.provider}/${row.model}`}>
+                    <TableCell className="font-mono text-xs">
+                      {row.provider && row.model
+                        ? `${row.provider} / ${row.model}`
+                        : '—'}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatCount(row.calls)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="shadow-sm">
+        <CardHeader>
           <CardTitle>Abandoned provider attempts</CardTitle>
           <CardDescription>
             Failed provider attempts from the last 24 hours. A completed turn
@@ -234,6 +275,7 @@ export function HealthPage() {
                   <TableHead>Opened</TableHead>
                   <TableHead>User / trace</TableHead>
                   <TableHead>Purpose</TableHead>
+                  <TableHead>Model / error</TableHead>
                   <TableHead>Turn outcome</TableHead>
                   <TableHead>Reservation</TableHead>
                   <TableHead className="text-right">Context estimate</TableHead>
@@ -256,6 +298,16 @@ export function HealthPage() {
                     <TableCell>
                       {row.purpose}
                       {row.thinking ? ` · ${row.thinking}` : ''}
+                    </TableCell>
+                    <TableCell>
+                      <span className="block font-mono text-xs">
+                        {row.provider && row.model
+                          ? `${row.provider} / ${row.model}`
+                          : '—'}
+                      </span>
+                      <span className="block text-muted-foreground text-xs">
+                        {row.errorCode || '—'}
+                      </span>
                     </TableCell>
                     <TableCell>{row.turnStatus || 'No turn'}</TableCell>
                     <TableCell>

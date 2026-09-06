@@ -10,3 +10,5 @@
 **/__pycache__
 **/dist
 **/node_modules
+vendor/betteroffice/target
+vendor/betteroffice/.git

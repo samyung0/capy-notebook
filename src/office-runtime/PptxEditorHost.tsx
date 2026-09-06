@@ -1,22 +1,36 @@
 import { PptxEditor, type PptxEditorApi } from '@betteroffice/pptx-react';
 import { useEffect, useRef, useState } from 'react';
 import { m } from '@/i18n';
+import type {
+  OfficeCollaboration,
+  OfficeExporter,
+} from './officeCollaboration';
 import { loadPptxFonts } from './pptxFonts';
 
 export function PptxEditorHost({
   bytes,
+  collaboration,
+  onExporter,
   fileName,
-  onDirty,
   onError,
   onSave,
 }: {
   bytes: Uint8Array;
+  collaboration: OfficeCollaboration;
+  onExporter: (exporter: OfficeExporter | null) => void;
   fileName: string;
-  onDirty: () => void;
   onError: (error: Error) => void;
   onSave: (bytes: Uint8Array) => void;
 }) {
   const apiRef = useRef<PptxEditorApi | null>(null);
+  useEffect(() => {
+    onExporter(async () => {
+      const api = apiRef.current;
+      if (!api) throw new Error('Editor is still loading');
+      return api.save();
+    });
+    return () => onExporter(null);
+  }, [onExporter]);
   const [fonts, setFonts] = useState<Awaited<
     ReturnType<typeof loadPptxFonts>
   > | null>(null);
@@ -48,10 +62,10 @@ export function PptxEditorHost({
     <div className="office-editor-host">
       <PptxEditor
         className="office-editor-host"
+        collaboration={collaboration}
         file={bytes}
         fileName={fileName}
         fonts={fonts}
-        onChange={onDirty}
         onError={onError}
         onReady={(api) => {
           apiRef.current = api;

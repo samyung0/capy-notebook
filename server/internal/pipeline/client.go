@@ -49,6 +49,9 @@ func (e *Error) Error() string {
 type ErrorBody struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	// RetryAfterSeconds accompanies provider_busy: how long the pipeline's
+	// own retry budget wants the caller to wait before trying again.
+	RetryAfterSeconds int `json:"retryAfterSeconds"`
 }
 
 func (e *Error) Decode() ErrorBody {
@@ -71,7 +74,8 @@ func (e *Error) Decode() ErrorBody {
 func errorBodyFrom(raw map[string]any) ErrorBody {
 	code, _ := raw["code"].(string)
 	message, _ := raw["message"].(string)
-	return ErrorBody{Code: code, Message: message}
+	seconds, _ := raw["retryAfterSeconds"].(float64)
+	return ErrorBody{Code: code, Message: message, RetryAfterSeconds: int(seconds)}
 }
 
 func (c *Client) applyHeaders(req *http.Request) {

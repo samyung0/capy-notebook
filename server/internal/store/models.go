@@ -30,6 +30,8 @@ type User struct {
 }
 
 type Workspace struct {
+	AutoReparse bool      `json:"autoReparse"`
+	AutoReindex bool      `json:"autoReindex"`
 	Description string    `json:"description"`
 	ID          string    `json:"id"`
 	Name        string    `json:"name"`
@@ -440,9 +442,14 @@ type PublicFlashcardSet struct {
 }
 
 type WorkspaceStats struct {
-	Chapters int `json:"chapters"`
-	Files    int `json:"files"`
-	Quizzes  int `json:"quizzes"`
-	Attempts int `json:"attempts"`
-	AvgScore int `json:"avgScore"`
+	Indexed        int `json:"indexed"`
+	NotIndexed     int `json:"notIndexed"`
+	NotIndexable   int `json:"notIndexable"`
+	PendingReparse int `json:"pendingReparse"`
+	PendingReindex int `json:"pendingReindex"`
+	Chapters       int `json:"chapters"`
+	Files          int `json:"files"`
+	Quizzes        int `json:"quizzes"`
+	Attempts       int `json:"attempts"`
+	AvgScore       int `json:"avgScore"`
 }

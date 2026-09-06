@@ -9,7 +9,7 @@ const MAX_CONTRIBUTOR_NONCE_BYTES = 128;
 const MAX_CONTRIBUTOR_USER_ID_BYTES = 255;
 
 export interface DocumentContributor {
-  access: Exclude<CollaborationAccess, 'comment'>;
+  access: Exclude<CollaborationAccess, 'comment' | 'read'>;
   key: string;
   nonce: string;
   userId: string;

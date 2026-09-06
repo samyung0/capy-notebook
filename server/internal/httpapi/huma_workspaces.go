@@ -134,6 +134,7 @@ func (a *api) updateWorkspace(ctx context.Context, in *updateWorkspaceInput) (*w
 	}
 	p := store.WorkspacePatch{
 		Name: in.Body.Name, Color: in.Body.Color, Description: in.Body.Description,
+		AutoReparse: in.Body.AutoReparse, AutoReindex: in.Body.AutoReindex,
 	}
 	if in.Body.Tags != nil {
 		t := apimodel.ToTagRefs(*in.Body.Tags)

@@ -15,9 +15,10 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 
-from .. import obs
+from .. import elitellm, obs
 from ..config import cfg
-from . import accounting, compact, events, models, store, tools
+from ..prompts import chat as chat_prompts
+from . import accounting, compact, events, models, pending, store, tools
 from .chunking import estimate_tokens
 from .limits import (
     MAX_CONCURRENT,
@@ -31,45 +32,10 @@ from .limits import (
     TOOLS_PER_TURN,
     TurnBudget,
 )
-from .locale import response_language_rule
 from .stream import AssembledResponse, StreamEvent, ToolCall
 from .tools import ToolContext, ToolResult, TurnFailed
 
 log = logging.getLogger("capy.retrieval.agent")
-
-SYSTEM_PROMPT = (
-    "You are a study assistant answering strictly from the user's own uploaded "
-    "sources.\n"
-    "\n"
-    "Rules:\n"
-    "- Search the sources before answering questions about them. Ground every "
-    "claim in retrieved passages. Cite them inline as [1], [2] using the "
-    "numbers shown with each passage.\n"
-    "- If the passages do not answer the question, say so plainly and say what "
-    "the sources do cover. Never fill a gap from general knowledge without "
-    "labelling it as outside the sources.\n"
-    "- One search_workspace per assistant message, with one focused query. "
-    "If a comparison spans documents, search once, then search again in the "
-    "next step if a side is missing. Attribute each side.\n"
-    "- Prefer listing sources, then describing or searching the few documents "
-    "that matter, over searching the whole workspace blindly. Use "
-    "read_document when a hit is a fragment.\n"
-    "- Emit independent reads in one assistant message when you already have "
-    "the ids. Do not batch a call that needs another call's result. Do not "
-    "mix generate_material with retrieval calls."
-)
-
-
-def system_prompt(locale: str | None) -> str:
-    return (
-        SYSTEM_PROMPT
-        + "\n- "
-        + response_language_rule(locale)
-        + "\n- If a retrieved passage supplies an identifier or refers to another source "
-        "that can answer the question, follow that reference with a search or document "
-        "read before deciding the answer is unavailable. A passage lacking the answer "
-        "does not establish that the workspace lacks it."
-    )
 
 
 def _parse_args(raw: str | None) -> dict[str, Any]:
@@ -143,6 +109,12 @@ def _client_error() -> dict[str, Any]:
     return _with_usage(events.error(CLIENT_ERROR, CLIENT_ERROR_CODE))
 
 
+def _busy_error(exc: elitellm.ProviderBusy) -> dict[str, Any]:
+    event = events.error(models.BUSY_ERROR, models.BUSY_ERROR_CODE)
+    event["retryAfterSeconds"] = models.busy_retry_after_s(exc)
+    return _with_usage(event)
+
+
 async def _admit_checkpoint(
     *,
     messages: list[dict[str, Any]],
@@ -152,8 +124,9 @@ async def _admit_checkpoint(
     schemas: list[dict[str, Any]],
     budget: TurnBudget,
     query_msg: dict[str, Any],
+    extra: int = 0,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
-    if not compact.needs_compact(messages, spec, schemas=schemas):
+    if not compact.needs_compact(messages, spec, schemas=schemas, extra=extra):
         return messages, None
     completed = [turn for turn in history if turn.get("id")]
     if not completed:
@@ -179,16 +152,7 @@ async def _admit_checkpoint(
         "modelVersion": spec.version,
         "estimatedTokens": estimate_tokens(folded),
     }
-    rebuilt = [messages[0]]
-    rebuilt.append(
-        {
-            "role": "user",
-            "content": "Earlier conversation:\n" + folded,
-            "_kind": "memory",
-            "_memory": folded,
-        }
-    )
-    rebuilt.append(query_msg)
+    rebuilt = [messages[0], chat_prompts.memory_message(folded), query_msg]
     budget.checkpoint_rewrites += 1
     return rebuilt, replacement
 
@@ -217,25 +181,21 @@ async def run_agent(
             yield _with_usage(events.error(active_scope.text(), "invalid_scope"))
             return
 
-    messages: list[dict[str, Any]] = [
-        {"role": "system", "content": system_prompt(locale)}
-    ]
-    if checkpoint and checkpoint.get("summary"):
-        messages.append(
-            {
-                "role": "user",
-                "content": "Earlier conversation:\n" + str(checkpoint["summary"]),
-                "_kind": "memory",
-                "_memory": str(checkpoint["summary"]),
-            }
-        )
+    ctx.pending_sources = await pending.load(ctx.workspace_id, ctx.file_ids or None)
     prior = _history_turns(history)
-    messages.extend({"role": t["role"], "content": t["content"]} for t in prior)
-    query_msg = {"role": "user", "content": query, "_kind": "query"}
-    messages.append(query_msg)
+    messages = chat_prompts.chat_messages(
+        locale=locale, checkpoint=checkpoint, history=prior, query=query
+    )
+    query_msg = messages[-1]
 
     schemas = tools.schemas_for(ctx)
+    _, pending_reserve, pending_omitted = pending.reserve(
+        messages, ctx.pending_sources, spec, schemas
+    )
+    if ctx.pending_sources.files:
+        yield ctx.pending_sources.event(pending_omitted)
     try:
+        await ctx.pending_sources.validate()
         messages, replacement = await _admit_checkpoint(
             messages=messages,
             history=prior,
@@ -244,7 +204,11 @@ async def run_agent(
             schemas=schemas,
             budget=budget,
             query_msg=query_msg,
+            extra=pending_reserve,
         )
+    except pending.SourceChanged as exc:
+        yield _with_usage(events.error(str(exc), exc.code))
+        return
     except models.UserKeyError as exc:
         yield _with_usage(dict(exc.as_event()))
         return
@@ -285,12 +249,20 @@ async def run_agent(
                 budget.completion_calls += 1
                 budget.compaction_calls += 1
 
+            pending_message, pending_reserve, omitted = pending.reserve(
+                messages, ctx.pending_sources, spec, active_schemas
+            )
+            if omitted != pending_omitted:
+                pending_omitted = omitted
+                yield ctx.pending_sources.event(omitted)
+            await ctx.pending_sources.validate()
             messages = await compact.compact_messages(
                 messages,
                 spec,
                 schemas=active_schemas,
                 protect_live_chain=True,
                 on_compact=_count,
+                extra=pending_reserve,
                 allow_summary=not terminal_call,
             )
             state = accounting.current()
@@ -309,12 +281,14 @@ async def run_agent(
                     schemas=active_schemas,
                     protect_live_chain=True,
                     allow_summary=False,
+                    extra=pending_reserve,
                 )
             if _client_gone(client):
                 budget.stop_reason = STOP_CLIENT_GONE
                 return
+            request_messages = pending.inject(messages, pending_message)
             budget.estimated_input_tokens += compact.request_context(
-                messages, spec, schemas=active_schemas
+                request_messages, spec, schemas=active_schemas
             ).total_tokens
             block_n += 1
             block_id = f"b{block_n}"
@@ -328,9 +302,10 @@ async def run_agent(
             budget.completion_calls += 1
             budget.planning_rounds += 1
             step += 1
+            await ctx.pending_sources.validate()
             stream_task = asyncio.create_task(
                 models.stream_agent_response(
-                    messages,
+                    request_messages,
                     model=spec,
                     tools=None if tools_off else schemas,
                     on_event=_on_event,
@@ -373,6 +348,11 @@ async def run_agent(
                         await asyncio.shield(stream_task)
                     except Exception:
                         log.exception("provider call failed after the SSE writer left")
+        except pending.SourceChanged as exc:
+            if not _client_gone(client):
+                yield _with_usage(events.error(str(exc), exc.code))
+            budget.stop_reason = STOP_ERROR
+            return
         except models.UserKeyError as exc:
             if not _client_gone(client):
                 yield _with_usage(dict(exc.as_event()))
@@ -392,6 +372,12 @@ async def run_agent(
                         "compaction_failed",
                     )
                 )
+            budget.stop_reason = STOP_ERROR
+            return
+        except elitellm.ProviderBusy as exc:
+            log.warning("agent step: provider busy: %s", exc)
+            if not _client_gone(client):
+                yield _busy_error(exc)
             budget.stop_reason = STOP_ERROR
             return
         except Exception:
@@ -473,6 +459,10 @@ async def run_agent(
                         citation_version += 1
                         event = {**event, "version": citation_version}
                     yield event
+            except pending.SourceChanged as exc:
+                yield _with_usage(events.error(str(exc), exc.code))
+                budget.stop_reason = STOP_ERROR
+                return
             except TurnFailed:
                 yield _client_error()
                 budget.stop_reason = STOP_TURN_FAILED

@@ -1,12 +1,50 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/samyung0/capy-notebook/server/internal/pipeline"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
+
+func TestSourceContextErrorsRelay(t *testing.T) {
+	for _, tc := range []struct {
+		code   string
+		status int
+	}{
+		{"context_too_large", http.StatusBadRequest},
+		{"source_changed", http.StatusConflict},
+	} {
+		t.Run(tc.code, func(t *testing.T) {
+			for _, raw := range []string{
+				fmt.Sprintf(`{"code":%q}`, tc.code),
+				fmt.Sprintf(`{"detail":{"code":%q}}`, tc.code),
+			} {
+				mapped := pipelineGenerateError(&pipeline.Error{Path: "/generate", Status: tc.status, Body: []byte(raw)})
+				var model *huma.ErrorModel
+				if !errors.As(hErr(mapped), &model) || model.Status != tc.status || len(model.Errors) != 1 || model.Errors[0].Message != tc.code {
+					t.Fatalf("generation lost source error: %s, %#v", raw, model)
+				}
+				rec := httptest.NewRecorder()
+				(&api{}).fail(rec, mapped)
+				var body map[string]string
+				if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || rec.Code != tc.status || body["code"] != tc.code {
+					t.Fatalf("raw error lost code: %d %s", rec.Code, rec.Body.String())
+				}
+				var event *chatEventError
+				if !errors.As(keyErrorFromEvent(tc.code, "source request failed"), &event) || event.Code != tc.code {
+					t.Fatalf("chat lost source error: %#v", event)
+				}
+			}
+		})
+	}
+}
 
 func TestPipelineLLMError(t *testing.T) {
 	invalid := &pipeline.Error{

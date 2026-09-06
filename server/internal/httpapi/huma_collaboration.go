@@ -82,6 +82,7 @@ type projectMaterialOutput struct {
 }
 
 func (a *api) registerCollaboration(api huma.API) {
+	a.registerSourceDocuments(api)
 	const tag = "Material collaboration"
 	reg(api, http.MethodGet, "/api/materials/{id}/revisions", "listMaterialRevisions", tag, "List material revisions", http.StatusOK, a.listMaterialRevisions)
 	reg(api, http.MethodGet, "/api/materials/{id}/discussions", "listMaterialDiscussions", tag, "List nested material comment discussions", http.StatusOK, a.listMaterialDiscussions)

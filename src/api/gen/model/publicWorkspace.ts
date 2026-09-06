@@ -14,6 +14,8 @@ import type { WorkspaceRole } from './workspaceRole.ts';
 
 export interface PublicWorkspace {
   author: string;
+  autoReindex: boolean;
+  autoReparse: boolean;
   capabilities: AccessCapabilities;
   chapterCount: number;
   clones: number;

@@ -1,24 +1,23 @@
 ---
 type: Frontend
 title: 'Office File Viewing and Editing'
-description: 'BetterOffice integration, browser runtime boundaries, upload analysis, and source replacement saves.'
+description: 'BetterOffice collaboration, durable source checkpoints, private PDF annotations and published source refreshes.'
 tags: [frontend, office, wasm, xlsx, pptx, uploads]
 ---
 
 # Office files
 
 Capy Notebook uses its BetterOffice fork for modern Word, spreadsheet, and
-presentation files. PDF stays on the PDF viewer, while CSV and TSV keep a small
-read-only table preview. Legacy `.doc`, `.xls`, and `.ppt` files and unknown
+presentation files. PDF stays on the PDF viewer, while CSV and TSV keep a small table preview alongside raw-source editing. Legacy `.doc`, `.xls`, and `.ppt` files and unknown
 formats may be uploaded within the plan byte limit, but remain store-only.
 
 | Format | View | Edit | Engine |
 | --- | --- | --- | --- |
 | XLSX | yes | yes | BetterOffice XLSX viewer/editor WASM |
 | PPTX | yes | yes | BetterOffice PPTX viewer/editor WASM |
-| CSV / TSV | yes | no | bounded SheetJS worker preview |
+| CSV / TSV | yes | yes | bounded table preview and shared raw Y.Text editor |
 | DOCX | yes | yes | BetterOffice DOCX viewer/editor WASM |
-| PDF | yes | no | React PDF over PDF.js |
+| PDF | yes | private annotations | React PDF over PDF.js |
 
 ## Repository boundary
 
@@ -37,7 +36,7 @@ git submodule update --init vendor/betteroffice
 
 `predev`, `prebuild`, `pretypecheck`, and `pretest` run
 `scripts/prepare-betteroffice.mjs`. It installs the fork's locked Bun workspace
-and builds missing DOCX/XLSX/PPTX viewer and editor WASM artifacts. A cold build
+and builds the scoped DOCX stylesheet plus DOCX/XLSX/PPTX viewer/editor WASM artifacts and the headless checkpoint bundle. The fork builder verifies source/output fingerprints before reusing WASM. A cold build
 requires Bun, Rust, `wasm-pack` 0.15.0, and `wasm-opt` from Binaryen. Existing,
 intact generated artifacts are reused.
 
@@ -60,14 +59,18 @@ Yrs projection, and viewer linear memory are absent during ordinary reading.
 Viewer analysis reuses the already-open handle, so sheet/slide metadata does not
 trigger a second parse.
 
-View and edit are separate iframe lifetimes rather than modes inside one
-long-lived JavaScript realm. Entering edit replaces the viewer iframe; Cancel
-replaces the editor with a new viewer; Save replaces it with a viewer seeded
-from the committed bytes. This is important for XLSX/PPTX because disposing a
-WASM object cannot shrink its module's linear memory. Destroying the iframe lets
-the browser reclaim the whole viewer or editor realm. Starting Edit from a PDF
-citation creates the editor iframe directly and does not warm the native Office
-viewer first.
+View and edit use separate iframe lifetimes so the browser can reclaim each
+WASM realm. Entering Edit replaces the viewer iframe. Leaving Edit keeps durable
+shared changes and previews the exported current replica. Saving requests a database
+checkpoint receipt and keeps the editor mounted. Ordinary metadata refetches do
+not recreate an active editor. A successful Office base handoff deliberately
+loads a fresh editing epoch and clears Undo/Redo. Starting Edit from a PDF
+citation creates the editor directly without warming the native Office viewer.
+
+The parent owns the Hocuspocus provider and Y.Doc. The isolated iframe exchanges
+raw Yrs updates with that parent through a versioned message protocol, and waits
+for provider sync before restoring its replica. The iframe receives base bytes
+and shared state, never an authentication token or protected source URL.
 
 The iframe sandbox allows scripts and its own origin, but the runtime origin is
 cross-origin from the app, cookie-less, and restricted to the app by CSP
@@ -152,53 +155,69 @@ allocation or preview object.
 
 ## Edit and save lifecycle
 
-BetterOffice reports semantic mutations to the host. Selection and navigation
-do not mark the file dirty. Dirty editors confirm before Cancel and register a
-browser `beforeunload` warning. The parent also receives dirty-state changes.
-It blocks workspace item navigation, route changes, active-file deletion, and
-closing or replacing the Files dialog viewer until the user confirms discard.
-The confirmation runs before citation state changes, so a same-file citation
-cannot replace a dirty native editor before the router blocker runs.
+DOCX, XLSX and PPTX edits share an authenticated `source:<fileId>:epoch:<n>`
+room. `source_documents` stores the current state, indexed state, exact net
+effects and durable checkpoint. The Go API rechecks current source access,
+epoch and account state through a small access-only endpoint for each incoming
+edit. Full current/indexed state is fetched for bootstrap and persistence;
+checkpoint writes also check storage growth. Saved means the server has
+acknowledged the requested checkpoint; Ctrl/Cmd+S flushes that same path.
+Credits gate parsing and AI work, independently of durable saving.
 
-Save serializes a complete OOXML file and sends it to the parent. The parent
-submits the current file revision with the replacement. A successful save:
+The browser retains unacknowledged edits in an IndexedDB draft for each actor,
+file and editing session. Reopening merges compatible drafts; a receipt removes
+only the exact draft versions it covers. Another tab's newer draft remains
+available. Save, export and handoff first commit open spreadsheet inputs and
+wait for active composition or gestures. Pending input counts as unsaved even
+before it reaches the shared document.
+Network and recoverable save failures leave drafts available. Before sending
+buffered updates after reconnect, the parent verifies the current epoch. An old
+epoch with unsaved changes enters recovery and permits draft download instead
+of merging incompatible updates. Recovery merges drafts from the same old
+epoch/base. An explicit Discard this draft action removes only those exact
+versions and advances to the next retained group, then the current file.
+Downloading alone leaves the drafts intact. A fully acknowledged client reloads the new
+base when it learns about a completed handoff.
 
-1. keeps the logical file id, name, chapter, and parse settings;
-2. increments `files.revision` and rejects stale editors with HTTP 409;
-3. swaps the source blob and invalidates the file's retrieval alias;
-4. queues full re-ingestion when parsing is enabled, or returns ready and
-   unindexed for store-only files.
+Office automatic refresh starts only after a prior successful parse, at least
+5,000 estimated net-change tokens, and 60 seconds without a server-observed
+edit. Every edit resets that idle interval; there is no maximum wait. Manual
+processing bypasses the threshold. Editing continues during processing. A newer
+checkpoint prevents the candidate from replacing the base, and the next fresh
+idle checkpoint can be processed. Successful publication briefly flushes and
+pauses connected writers, then atomically replaces the source, preview, index
+and fresh shared seed. All editors clear Undo/Redo only after that publication.
 
-The replacement response updates the individual-file, workspace-file, and
-global all-files query caches with the new revision. The global Files dialog
-stores only the selected file id and resolves the current object from that
-cache, so closing and reopening an edited file cannot reuse the pre-save
-revision for the next replacement.
+Text, JSON, Markdown, CSV and TSV use a raw UTF-8 Y.Text editor with local undo,
+selection tracking and IME composition support. Newlines and BOM are retained;
+invalid UTF-8 fails explicitly. Text refresh batches every 15 seconds even
+while typing continues. Its published checkpoint may lag the current document,
+with exact residual edits retained in the same Y.Text lineage and Undo history.
+The text preview follows that current shared text after Done, including remote
+edits; publication metadata does not replace a mounted editor's newer state.
 
-For a citation-initiated edit, the native viewer remains mounted while the
-replacement is re-ingested. The PDF citation preview returns only after the
-same or newer file revision is ready, so stale geometry is never drawn over new
-content.
+The published file remains readable and cloneable while a candidate is being
+exported or processed. Clones copy its published source/index and caption
+associations, without pending edits or jobs. Deleting or explicitly replacing a
+source fences its old room and cancels dependent work. Candidate sources live
+in B2; job-local downloads are temporary. Source base bytes are cached in the
+collaboration process by SHA within a bounded 128 MiB cache. Headless export,
+comparison and asset extraction run in a worker thread.
 
-The current integration does not attempt chunk-level dirty tracking. OOXML edits
-can change relationships, formulas, layouts, and shared parts, so full source
-replacement and re-ingestion is the smaller correct contract. While that job is
-pending, the workspace keeps the newly saved viewer visible and adds an ingest
-status banner.
+## Private PDF annotations
 
-Every ingest payload pins both the source revision and source ETag. Each worker
-mutation that can publish source-derived status, hashes, artifacts, retrieval
-associations, or notifications locks the file row and verifies that identity in
-the same transaction. Replacement cancels older ingest jobs and releases their
-credit reservations. Losing a job lease is handled separately: the stale
-attempt stops without closing the reservation that its successor still uses.
+Native PDFs support private text highlights, rectangles, ellipses and erasing.
+Annotations belong to the actor and exact source identity. They use normalized
+page coordinates and do not alter downloads, retrieval evidence or material
+collaboration. The toolbar follows the document cursor, chooses space above
+when needed and hides without document focus. Highlight mode applies marks to
+text selections. Selecting Eraser clears an existing selection immediately;
+otherwise pointer erasing removes touched marks.
 
-## Fixture proof
+## Verification
 
-The local proof uses BetterOffice's `sample.xlsx`, `betteroffice-demo.pptx`, and
-`feature-rich.docx` fixtures. It covers the unified details dialog,
-analysis cancellation/cache reuse, view-only loading, lazy editor loading, an
-XLSX cell save/reopen, a PPTX slide insertion/save, DOCX viewer isolation and
-editing-export separation, citation-preview switching, and the pending-to-ready
-viewer transition. BetterOffice's own round-trip and split-viewer tests remain
-in the fork and are intentionally excluded from Capy Notebook' test-file inventory.
+Focused tests cover source protocol/checkpoint receipts, raw-text selection and
+undo, private PDF geometry, pending counts/settings, Go lifecycle and quota
+fences, candidate processing and scoped caption reuse. The fork's tests cover
+Office CRDT convergence, structural operations, comments, headless restore and
+OOXML export. See [the test catalog](../test-catalog.md) for entry points.

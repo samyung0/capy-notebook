@@ -61,11 +61,11 @@ review_require_authorized_uat() {
   [[ "${UAT_API_URL:-}" == https://* ]] || review_die "UAT_API_URL must use https://"
   [[ "${UAT_COLLAB_URL:-}" == wss://* ]] || review_die "UAT_COLLAB_URL must use wss://"
 
-  if [[ -n "${UAT_OPS_URL:-}" ]]; then
-    host="$(review_url_host "$UAT_OPS_URL")" || review_die "UAT_OPS_URL is not a valid URL"
+  if [[ -n "${DEPLOYMENT_OPS_URL:-}" ]]; then
+    host="$(review_url_host "$DEPLOYMENT_OPS_URL")" || review_die "DEPLOYMENT_OPS_URL is not a valid URL"
     review_host_allowed "$host" ||
-      review_die "UAT_OPS_URL host '$host' is not listed in UAT_ALLOWED_HOSTS"
-    [[ "$UAT_OPS_URL" == https://* ]] || review_die "UAT_OPS_URL must use https://"
+      review_die "DEPLOYMENT_OPS_URL host '$host' is not listed in UAT_ALLOWED_HOSTS"
+    [[ "$DEPLOYMENT_OPS_URL" == https://* ]] || review_die "DEPLOYMENT_OPS_URL must use https://"
   fi
 
   if [[ -n "${PRODUCTION_APP_URL:-}" && "$UAT_APP_URL" == "$PRODUCTION_APP_URL" ]]; then

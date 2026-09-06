@@ -670,6 +670,7 @@ func (s *ReadStore) Health(ctx context.Context, stuckMinutes int) (Health, error
 		StaleTurns:     []TurnLifecycle{},
 		FailedTurns:    []TurnLifecycle{},
 		AbandonedCalls: []ProviderCallDiagnostic{},
+		BusyCalls:      []ModelBusyRow{},
 		DataAsOf:       time.Now().UTC(),
 	}
 	if stuckMinutes < 1 || stuckMinutes > 24*60 {
@@ -746,7 +747,37 @@ func (s *ReadStore) Health(ctx context.Context, stuckMinutes int) (Health, error
 	if out.AbandonedCalls, err = s.abandonedCalls(ctx); err != nil {
 		return out, err
 	}
+	if out.BusyCalls, err = s.busyCalls(ctx); err != nil {
+		return out, err
+	}
 	return out, nil
+}
+
+// busyCalls is the last hour's attempts abandoned on a provider 429, 503 or
+// 529 answer, per transport provider and model. A per-model gate refusal
+// writes no call row and is therefore not counted here.
+func (s *ReadStore) busyCalls(ctx context.Context) ([]ModelBusyRow, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT provider, model, count(*)::bigint
+		FROM provider_calls
+		WHERE status = 'abandoned'
+		  AND abandoned_at >= now() - interval '1 hour'
+		  AND provider_status IN (429, 503, 529)
+		GROUP BY provider, model
+		ORDER BY count(*) DESC, provider, model LIMIT 50`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []ModelBusyRow{}
+	for rows.Next() {
+		var item ModelBusyRow
+		if err := rows.Scan(&item.Provider, &item.Model, &item.Calls); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
 }
 
 func (s *ReadStore) Reconciliation(ctx context.Context) (ReconciliationStatus, error) {
@@ -877,7 +908,8 @@ func (s *ReadStore) abandonedCalls(ctx context.Context) ([]ProviderCallDiagnosti
 		       pc.context_system_tokens, pc.context_tool_tokens,
 		       pc.context_conversation_tokens, pc.context_total_tokens,
 		       pc.context_window_tokens, pc.context_counting_method,
-		       pc.context_counting_version, pc.opened_at
+		       pc.context_counting_version, pc.opened_at,
+		       pc.provider, pc.model, pc.error_code
 		FROM provider_calls pc
 		JOIN provider_sessions cr ON cr.id = pc.reservation_id
 		LEFT JOIN LATERAL (
@@ -902,7 +934,7 @@ func (s *ReadStore) abandonedCalls(ctx context.Context) ([]ProviderCallDiagnosti
 			&item.ContextToolTokens, &item.ContextConversationTokens,
 			&item.ContextTotalTokens, &item.ContextWindowTokens,
 			&item.ContextCountingMethod, &item.ContextCountingVersion,
-			&item.OpenedAt,
+			&item.OpenedAt, &item.Provider, &item.Model, &item.ErrorCode,
 		); err != nil {
 			return nil, err
 		}
@@ -1121,6 +1153,7 @@ func (s *ReadStore) Costs(
 	out := CostReport{
 		From: from.Format("2006-01-02"), To: to.Format("2006-01-02"),
 		Bucket: bucket, DataAsOf: time.Now().UTC(), Rows: []CostRow{},
+		Attempts: []ProviderAttemptRow{},
 	}
 	if from.After(to) || to.Sub(from) > 365*24*time.Hour {
 		return out, validation("usage range must be ordered and at most 366 days")
@@ -1227,5 +1260,43 @@ func (s *ReadStore) Costs(
 		&out.ContextSummary.CallsAtLeast90Percent,
 		&out.ContextSummary.CallsAtLeast95Percent,
 	)
-	return out, err
+	if err != nil {
+		return out, err
+	}
+	attemptRows, err := s.db.Query(ctx, fmt.Sprintf(`
+		SELECT provider, model,
+		       count(*)::bigint,
+		       count(*) FILTER (WHERE status = 'applied')::bigint,
+		       count(*) FILTER (WHERE status = 'abandoned')::bigint,
+		       count(*) FILTER (WHERE status = 'abandoned'
+		         AND provider_status IN (429, 503, 529))::bigint,
+		       count(*) FILTER (WHERE status = 'open')::bigint,
+		       COALESCE(sum(input_tokens), 0)::bigint,
+		       COALESCE(sum(output_tokens), 0)::bigint,
+		       COALESCE(sum(cached_read_tokens), 0)::bigint,
+		       COALESCE(sum(cache_write_tokens), 0)::bigint,
+		       COALESCE(sum(reasoning_tokens), 0)::bigint,
+		       COALESCE(sum(credit_micros), 0)::bigint
+		FROM provider_calls
+		WHERE opened_at >= $1 AND opened_at < $2
+		GROUP BY provider, model
+		ORDER BY count(*) DESC, provider, model LIMIT %d`, maxCostRows),
+		from, to.Add(24*time.Hour))
+	if err != nil {
+		return out, err
+	}
+	defer attemptRows.Close()
+	for attemptRows.Next() {
+		var item ProviderAttemptRow
+		if err := attemptRows.Scan(
+			&item.Provider, &item.Model, &item.Attempts, &item.Applied,
+			&item.Abandoned, &item.Busy, &item.Open, &item.InputTokens,
+			&item.OutputTokens, &item.CachedReadTokens, &item.CacheWriteTokens,
+			&item.ReasoningTokens, &item.CreditMicros,
+		); err != nil {
+			return out, err
+		}
+		out.Attempts = append(out.Attempts, item)
+	}
+	return out, attemptRows.Err()
 }

@@ -12,5 +12,10 @@ export interface WorkspaceStats {
   avgScore: number;
   chapters: number;
   files: number;
+  indexed: number;
+  notIndexable: number;
+  notIndexed: number;
+  pendingReindex: number;
+  pendingReparse: number;
   quizzes: number;
 }

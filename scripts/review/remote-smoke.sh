@@ -30,10 +30,10 @@ probe "application" "${app_url%/}/" '^[23][0-9][0-9]$'
 probe "gateway health" "${api_url%/}/healthz" '^2[0-9][0-9]$'
 probe "collab health" "$collab_health" '^2[0-9][0-9]$'
 
-if [[ -n "${UAT_OPS_URL:-}" ]]; then
-  ops_host="$(review_url_host "$UAT_OPS_URL")"
-  review_host_allowed "$ops_host" || review_die "UAT_OPS_URL host is not authorized"
-  probe "ops edge" "${UAT_OPS_URL%/}/" '^(200|30[1278]|401|403)$'
+if [[ -n "${DEPLOYMENT_OPS_URL:-}" ]]; then
+  ops_host="$(review_url_host "$DEPLOYMENT_OPS_URL")"
+  review_host_allowed "$ops_host" || review_die "DEPLOYMENT_OPS_URL host is not authorized"
+  probe "ops edge" "${DEPLOYMENT_OPS_URL%/}/" '^(200|30[1278]|401|403)$'
 fi
 
 if [[ -n "${EXPECTED_REVISION:-}" ]]; then

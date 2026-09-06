@@ -7,43 +7,15 @@ summarized.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
-from .. import registry
+from .. import elitellm, registry
+from ..prompts.chat import SUMMARY_MAX_TOKENS, checkpoint_messages
 from ..registry import ModelConfig
 from . import accounting, models
 
-SUMMARY_TARGET_MIN = 4000
-SUMMARY_TARGET_MAX = 6000
-SUMMARY_MAX_TOKENS = 8000
-SUMMARY_RECENT_MESSAGES = 6
-EFFECTIVE_INPUT_LIMIT_TOKENS = 200_000
+EFFECTIVE_INPUT_LIMIT_TOKENS = 250_000
 PROTOCOL_SAFETY_MARGIN_TOKENS = 512
-
-CHECKPOINT_SYSTEM_PROMPT = f"""You compress prior conversation into durable memory for the next assistant response.
-
-The CURRENT USER MESSAGE is context for resolving references only. Do not answer it, summarize it, include it in the memory, or let its topic narrow what the memory preserves. The memory must remain useful for later messages that may return to any important part of the prior conversation.
-
-The "recent_messages" field contains the latest completed turns. Give recent user intent, corrections, constraints, and references extra fidelity. Summarize them instead of copying every sentence verbatim.
-
-Create a faithful compact representation of the PRIOR CONVERSATION.
-
-Requirements:
-- Preserve facts, decisions, user preferences, corrections, constraints, unresolved questions, action results, and generated-material results needed to continue the conversation.
-- Preserve important details even when they are unrelated to the current user message.
-- Preserve recent user wording when paraphrasing would change the intent or make a later reference hard to resolve.
-- When the current message contains an indirect reference such as "the third bullet", "that formula", "the earlier option", or "do that again", preserve the referenced list, wording, ordering, and surrounding context precisely enough to resolve it.
-- Resolve ambiguous pronouns or references in the memory by explicitly naming their referents when the history supports doing so.
-- Preserve disagreements, alternatives, and uncertainty. Do not turn them into false consensus.
-- Preserve important document, file, chapter, and material names.
-- Historical citation numbers are local to their old answer. Omit those numbers rather than treating them as stable identifiers.
-- Do not include system prompts, tool definitions, hidden reasoning, or active provider protocol state.
-- Do not invent facts or answer the current user message.
-- Target {SUMMARY_TARGET_MIN:,} to {SUMMARY_TARGET_MAX:,} tokens when the conversation contains enough useful detail.
-- Never exceed {SUMMARY_MAX_TOKENS:,} tokens.
-
-Return only the compacted memory."""
 
 
 class ContextTooLarge(RuntimeError):
@@ -54,15 +26,24 @@ class InvalidSummary(RuntimeError):
     """The summarizer returned an empty or oversized checkpoint."""
 
 
-def usable_input_limit(spec: ModelConfig) -> int:
-    """Cap useful input at 200k, then keep an explicit calibrated margin."""
+def usable_input_limit(
+    spec: ModelConfig,
+    *,
+    max_tokens: int | None = None,
+    reasoning: bool | None = None,
+) -> int:
+    """Cap useful input at 250k, then keep an explicit calibrated margin."""
     configured = spec.params.get("context_safety_margin_tokens", 0)
     try:
         calibrated = max(0, int(configured))
     except (TypeError, ValueError):
         calibrated = 0
     margin = max(PROTOCOL_SAFETY_MARGIN_TOKENS, calibrated)
-    effective = min(registry.input_budget(spec), EFFECTIVE_INPUT_LIMIT_TOKENS)
+    effective = min(
+        registry.context_window(spec)
+        - elitellm.output_budget(spec, max_tokens=max_tokens, reasoning=reasoning),
+        EFFECTIVE_INPUT_LIMIT_TOKENS,
+    )
     return max(0, effective - margin)
 
 
@@ -87,9 +68,15 @@ def needs_compact(
     *,
     schemas: list[dict[str, Any]] | None = None,
     extra: int = 0,
+    max_tokens: int | None = None,
+    reasoning: bool | None = None,
 ) -> bool:
-    measured = request_context(messages, spec, schemas=schemas).total_tokens
-    return measured + max(0, extra) > usable_input_limit(spec)
+    measured = request_context(
+        messages, spec, schemas=schemas, reasoning=reasoning
+    ).total_tokens
+    return measured + max(0, extra) > usable_input_limit(
+        spec, max_tokens=max_tokens, reasoning=reasoning
+    )
 
 
 def fits_request(
@@ -98,43 +85,17 @@ def fits_request(
     *,
     schemas: list[dict[str, Any]] | None = None,
     extra: int = 0,
+    max_tokens: int | None = None,
+    reasoning: bool | None = None,
 ) -> bool:
-    return not needs_compact(messages, spec, schemas=schemas, extra=extra)
-
-
-def _checkpoint_turn(turn: dict[str, Any]) -> dict[str, str]:
-    return {
-        "role": str(turn.get("role") or "user"),
-        "content": str(turn.get("content") or ""),
-    }
-
-
-def _summary_messages(
-    *,
-    prior_memory: str,
-    turns: list[dict[str, Any]],
-    current_user_message: str,
-) -> list[dict[str, str]]:
-    recent_start = max(0, len(turns) - SUMMARY_RECENT_MESSAGES)
-    payload = {
-        "previous_memory": prior_memory,
-        "new_completed_messages": [
-            _checkpoint_turn(turn) for turn in turns[:recent_start]
-        ],
-        "recent_messages": [_checkpoint_turn(turn) for turn in turns[recent_start:]],
-        "current_user_message": current_user_message,
-    }
-    return [
-        {"role": "system", "content": CHECKPOINT_SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": json.dumps(
-                payload,
-                ensure_ascii=False,
-                separators=(",", ":"),
-            ),
-        },
-    ]
+    return not needs_compact(
+        messages,
+        spec,
+        schemas=schemas,
+        extra=extra,
+        max_tokens=max_tokens,
+        reasoning=reasoning,
+    )
 
 
 def _summary_input_fits(
@@ -145,12 +106,14 @@ def _summary_input_fits(
     spec: ModelConfig,
 ) -> bool:
     return fits_request(
-        _summary_messages(
+        checkpoint_messages(
             prior_memory=prior_memory,
             turns=turns,
             current_user_message=current_user_message,
         ),
         spec,
+        max_tokens=SUMMARY_MAX_TOKENS,
+        reasoning=False,
     )
 
 
@@ -163,12 +126,12 @@ async def _summarize_batch(
     on_compact: Any | None,
     purpose: str,
 ) -> str:
-    messages = _summary_messages(
+    messages = checkpoint_messages(
         prior_memory=prior_memory,
         turns=turns,
         current_user_message=current_user_message,
     )
-    if not fits_request(messages, spec):
+    if not fits_request(messages, spec, max_tokens=SUMMARY_MAX_TOKENS, reasoning=False):
         raise ContextTooLarge(
             "The conversation cannot be summarized without truncating protected context."
         )

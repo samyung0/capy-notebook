@@ -21,7 +21,6 @@ import {
   useReorderChapters,
   useReorderContent,
   useUpdateChapter,
-  useUpdateWorkspaceSharing,
   useWorkspace,
 } from '@/api/hooks';
 import type {
@@ -71,8 +70,8 @@ import {
 import { ChatPanel } from '@/features/workspace/ChatPanel';
 import type { GenerateMode } from '@/features/workspace/GenerateFormDialog';
 import { GeneratePanel } from '@/features/workspace/GeneratePanel';
-import { ShareDialog } from '@/features/workspace/ShareDialog';
 import { StorageOwnerBanner } from '@/features/workspace/StorageOwnerBanner';
+import { WorkspaceSettingsDialog } from '@/features/workspace/WorkspaceSettingsDialog';
 import { m } from '@/i18n';
 import { toastCloneError } from '@/lib/authToasts';
 import { cn } from '@/lib/cn';
@@ -133,8 +132,6 @@ export default function WorkspaceOpen() {
   const { mutate: createNote } = useCreateNote(workspaceId);
   const { isPending: cloneWorkspaceIsPending, mutate: cloneWorkspace } =
     useCloneWorkspace({ errorToast: false });
-  const { isPending: updateSharingIsPending, mutateAsync: updateSharing } =
-    useUpdateWorkspaceSharing();
 
   const searchedOpenItem = openItemFromSearch(search);
   const [citationTarget, setCitationTarget] = useState<{
@@ -552,16 +549,15 @@ export default function WorkspaceOpen() {
                     {m.action_add_file()}
                   </Button>
                 )}
-                {/* TODO: change share to settings or configure since there will be more workspace settings in future */}
                 {canShare && (
                   <Button
                     className="h-fit py-2"
-                    iconLeft="link"
+                    iconLeft="settings"
                     onClick={() => setShareOpen(true)}
                     size="md"
                     variant="surface"
                   >
-                    {m.action_share()}
+                    {m.workspace_settings()}
                   </Button>
                 )}
               </div>
@@ -848,19 +844,10 @@ export default function WorkspaceOpen() {
         )}
       </ResizablePanelGroup>
       {ws && (
-        <ShareDialog
-          link={`/w/${ws.id}`}
+        <WorkspaceSettingsDialog
           onClose={() => setShareOpen(false)}
-          onPrivacyChange={(privacy) => updateSharing({ id: ws.id, privacy })}
-          onShareRoleChange={(shareRole) =>
-            updateSharing({ id: ws.id, shareRole })
-          }
           open={shareOpen}
-          privacy={ws.privacy}
-          saving={updateSharingIsPending}
-          shareRole={ws.shareRole}
-          title={m.workspace_share_title()}
-          workspaceId={ws.id}
+          workspace={ws}
         />
       )}
       {chapterForm && (

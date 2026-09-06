@@ -14,6 +14,29 @@ from pipeline.jobs import (
 )
 
 
+def test_model_concurrency_rejects_a_reserve_that_starves_ingest():
+    from pipeline.config import parse_model_concurrency
+
+    assert parse_model_concurrency("deepinfra:m=200/120") == {
+        ("deepinfra", "m"): (200, 120)
+    }
+    # Inner whitespace would otherwise build a key no transport slug matches.
+    assert parse_model_concurrency(" deepinfra : m = 200 / 120 ") == {
+        ("deepinfra", "m"): (200, 120)
+    }
+    for raw in ("deepinfra:m=200/200", "deepinfra:m=0/0", "m=1/0", "deepinfra:m"):
+        with pytest.raises(ValueError):
+            parse_model_concurrency(raw)
+
+
+def test_provider_wait_backoff_follows_retry_after_then_doubles():
+    from pipeline.jobs import PROVIDER_WAIT_BACKOFF_S, provider_wait_backoff_s
+
+    assert provider_wait_backoff_s(7.2, 0) == 8
+    assert provider_wait_backoff_s(None, 0) == PROVIDER_WAIT_BACKOFF_S
+    assert provider_wait_backoff_s(0, 3) == PROVIDER_WAIT_BACKOFF_S * 8
+
+
 def test_unknown_errors_are_retryable():
     assert is_retryable(RuntimeError("provider 503"))
     assert is_retryable(RetryableError("chapter failed"))

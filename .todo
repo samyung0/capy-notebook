@@ -18,19 +18,11 @@ low priority:
 16. switch posthog to eu first
 
 high PRIORITIES:
-google drive import in dev
 workspace ownership transfer
-does headings/bullet point from image/audio captioning effect embedding/vector search? actually does html tags impact quality of vector search? if so -> clean html tags (which also solves the superscript/subscript issue) but preserve tables,formulaes,etc
 enrich agentic loop tools. Add edit files (both uploaded/imported files -> need a list of editable files (ppt, office, text, json, md), and materials)
 , then make categories like: list, read, create, edit (for how we display them in the UI). I dont think we need to set tool permissions yet or set available services for the tools (only chat right now).
 and make sure the context reporting (before + after)/ tool runtime, mostly i need in telementry and not something that needs to be reported to user.
-
-centralize provider prompts into a same folder, make it a function that accepts surrounding context and return a whole prompt that is directly fed into the request.
-
-MiB file size/workspace storage -> MB
-currently push to UAT and from UAT to prod can trigger the uat only security/ etc tests + manual run as well,
-remove the UAT to prod auto run, but requires the UAT environment to fully passes the tests first (stamp it or label it?) before being able to promote to prod,
-auto run on push to uat = manual run (same workflow, if any passes, can promote to prod)
+remove agentic review required to promote to prod
 1. separate orchestrator (go server + pythong) and worker flow (the Netcup ingest host currently does parsing and ingest)
 1. diagrams.net (generate have a 1 turn generate->QA->fix loop on server)
    we need to orchestrate the behavior for material generation for different surfaces (for anything that includes non-text):

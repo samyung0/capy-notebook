@@ -1295,9 +1295,10 @@ export function useDeleteConversation(wsId: string) {
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.conversations(wsId) }),
   });
 }
-export function useGenerate(wsId: string) {
+export function useGenerate(wsId: string, options?: MutationUiOptions) {
   const qc = useQueryClient();
   return useMutation({
+    meta: mutationMeta(options),
     mutationFn: (opts: GenerateOptions) =>
       api.post<unknown>(`/workspaces/${wsId}/generate`, opts),
     onError: (error, opts) => {

@@ -117,7 +117,9 @@ export function ShareDialog({
   workspaceId,
   shareRole,
   onShareRoleChange,
+  embedded = false,
 }: {
+  embedded?: boolean;
   open: boolean;
   onClose: () => void;
   title?: string;
@@ -221,24 +223,8 @@ export function ShareDialog({
 
   const confirmingDangerous = pendingDangerous !== null;
 
-  return (
-    <SimpleDialog
-      onClose={() => {
-        if (confirmingDangerous) return;
-        onClose();
-      }}
-      onEscapeKeyDown={(e) => {
-        if (confirmingDangerous) e.preventDefault();
-      }}
-      onInteractOutside={(e) => {
-        if (confirmingDangerous) e.preventDefault();
-      }}
-      onPointerDownOutside={(e) => {
-        if (confirmingDangerous) e.preventDefault();
-      }}
-      open={open}
-      title={title ?? m.action_share()}
-    >
+  const content = (
+    <>
       <div className="flex flex-col gap-6">
         <div className="mt-3 flex items-center justify-between gap-3">
           <div className="flex flex-col gap-1">
@@ -356,6 +342,28 @@ export function ShareDialog({
         open={confirmingDangerous}
         title={m.share_public_edit_title()}
       />
+    </>
+  );
+  if (embedded) return content;
+  return (
+    <SimpleDialog
+      onClose={() => {
+        if (confirmingDangerous) return;
+        onClose();
+      }}
+      onEscapeKeyDown={(e) => {
+        if (confirmingDangerous) e.preventDefault();
+      }}
+      onInteractOutside={(e) => {
+        if (confirmingDangerous) e.preventDefault();
+      }}
+      onPointerDownOutside={(e) => {
+        if (confirmingDangerous) e.preventDefault();
+      }}
+      open={open}
+      title={title ?? m.action_share()}
+    >
+      {content}
     </SimpleDialog>
   );
 }

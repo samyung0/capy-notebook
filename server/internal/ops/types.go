@@ -274,7 +274,11 @@ type Health struct {
 	StaleTurns                  []TurnLifecycle          `json:"staleTurns"`
 	FailedTurns                 []TurnLifecycle          `json:"failedTurns"`
 	AbandonedCalls              []ProviderCallDiagnostic `json:"abandonedCalls"`
-	DataAsOf                    time.Time                `json:"dataAsOf"`
+	// BusyCalls counts attempts abandoned on a provider 429, 503 or 529 answer
+	// in the last hour, the signal for tuning CAPY_MODEL_CONCURRENCY. A gate
+	// refusal writes no call row and is not counted.
+	BusyCalls []ModelBusyRow `json:"busyCalls"`
+	DataAsOf  time.Time      `json:"dataAsOf"`
 }
 
 type TurnLifecycle struct {
@@ -295,6 +299,30 @@ type TurnLifecycle struct {
 	LatestCallOpenedAt   *time.Time `json:"latestCallOpenedAt"`
 }
 
+type ModelBusyRow struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+	Calls    int64  `json:"calls"`
+}
+
+// ProviderAttemptRow aggregates every provider_calls row for one transport
+// provider and model, including attempts that never produced usage.
+type ProviderAttemptRow struct {
+	Provider         string `json:"provider"`
+	Model            string `json:"model"`
+	Attempts         int64  `json:"attempts"`
+	Applied          int64  `json:"applied"`
+	Abandoned        int64  `json:"abandoned"`
+	Busy             int64  `json:"busy"`
+	Open             int64  `json:"open"`
+	InputTokens      int64  `json:"inputTokens"`
+	OutputTokens     int64  `json:"outputTokens"`
+	CachedReadTokens int64  `json:"cachedReadTokens"`
+	CacheWriteTokens int64  `json:"cacheWriteTokens"`
+	ReasoningTokens  int64  `json:"reasoningTokens"`
+	CreditMicros     int64  `json:"creditMicros"`
+}
+
 type ProviderCallDiagnostic struct {
 	CallID                    string    `json:"callId"`
 	ReservationID             string    `json:"reservationId"`
@@ -304,6 +332,9 @@ type ProviderCallDiagnostic struct {
 	ReservationStatus         string    `json:"reservationStatus"`
 	Surface                   string    `json:"surface"`
 	Purpose                   string    `json:"purpose"`
+	Provider                  string    `json:"provider"`
+	Model                     string    `json:"model"`
+	ErrorCode                 string    `json:"errorCode"`
 	Thinking                  string    `json:"thinking"`
 	ContextSystemTokens       int64     `json:"contextSystemTokens"`
 	ContextToolTokens         int64     `json:"contextToolTokens"`
@@ -493,6 +524,10 @@ type CostReport struct {
 	DataAsOf       time.Time      `json:"dataAsOf"`
 	Rows           []CostRow      `json:"rows"`
 	ContextSummary ContextSummary `json:"contextSummary"`
+	// Attempts is the same range grouped by transport provider and model over
+	// provider_calls, so abandoned and busy attempts are visible next to the
+	// applied ones the ledger rows above are built from.
+	Attempts []ProviderAttemptRow `json:"attempts"`
 }
 
 type ContextSummary struct {

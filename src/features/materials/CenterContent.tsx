@@ -303,7 +303,7 @@ function FileBody({
     errorBoundary: false,
   });
   if (isLoading) return <FileLoading />;
-  if (!isLoading && isError) return <FileError />;
+  if (!file && isError) return <FileError />;
   if (file && fileIsIngesting(file.status) && !file.url) {
     const waiting = file.status === 'pending';
     return (

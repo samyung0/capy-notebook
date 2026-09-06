@@ -1,8 +1,8 @@
-from pipeline.retrieve.quiz_grade import (
-    build_grade_prompt,
-    parse_grade_response,
-    snap_award,
-)
+import json
+from pathlib import Path
+
+from pipeline.prompts.quiz import GRADE_SYSTEM, build_grade_prompt
+from pipeline.retrieve.quiz_grade import parse_grade_response, snap_award
 
 
 def test_build_grade_prompt_includes_rubrics_and_both_answers():
@@ -35,3 +35,29 @@ def test_parse_grade_response_snaps_scores():
     assert snap_award(0.8) == 1
     assert snap_award(0.4) == 0.5
     assert snap_award(0.1) == 0
+
+
+def test_grade_prompt_matches_the_golden_shared_with_the_browser_judge():
+    """The browser BYOK path builds this prompt in TypeScript.
+
+    ``src/features/quizzes/judge.test.ts`` asserts the same file, so a change to
+    either implementation that is not made to both fails here.
+    """
+    golden = json.loads(
+        (
+            Path(__file__).parents[1] / "pipeline/prompts/quiz_grade.golden.json"
+        ).read_text()
+    )
+    assert GRADE_SYSTEM == golden["system"]
+    for case in golden["cases"]:
+        given = case["input"]
+        assert (
+            build_grade_prompt(
+                prompt=given["prompt"],
+                hints=given["hints"],
+                rubrics=given["rubrics"],
+                model_answer=given["modelAnswer"],
+                user_answer=given["userAnswer"],
+            )
+            == case["expected"]
+        ), case["name"]

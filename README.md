@@ -23,16 +23,18 @@ Study workspace: notes, sources, quizzes, flashcards, schedule, and AI retrieval
 
 ## Get Restarted
 
+- Install Node.js
+- Install pnpm@11.20.0
+- Install Rust (cargo, rustup)
+  - **macOS:** `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
+  - **Windows:** run `rustup-init.exe` from [rustup.rs](https://rustup.rs), which
+    also prompts for the Visual Studio C++ build tools
+- Install Bun
+- Copy `deploy/.env.example` to `deploy/.env`.
+
 ### Office engine setup
 
-Run these steps from the Capy Notebook repository root. A submodule checkout
-provides the source; the JavaScript entry files and WASM binaries are generated
-locally and are not committed.
-
-1. Install Node.js and the pnpm version listed in `package.json`, plus Bun and
-   Rust via rustup. On Windows, Rust also needs the Visual Studio C++ build tools
-   and Windows SDK. Make sure `pnpm`, `bun`, `cargo`, and `rustup` are on PATH.
-2. Initialize the pinned fork and install the WASM build tools:
+1. Initialize the pinned fork and install the WASM build tools:
 
    ```sh
    git submodule update --init vendor/betteroffice
@@ -42,25 +44,16 @@ locally and are not committed.
 
    The fork checks for exactly `wasm-pack 0.15.0`.
 
-3. Install **Binaryen**, which supplies `wasm-opt`. CI uses version 132.
+2. Install **Binaryen**, which supplies `wasm-opt`. CI uses version 132.
 
-   **Windows:** download the archive for your architecture from the
-   [Binaryen 132 release](https://github.com/WebAssembly/binaryen/releases/tag/version_132):
+   **Windows:** [Binaryen 132 release](https://github.com/WebAssembly/binaryen/releases/tag/version_132):
    `binaryen-version_132-x86_64-windows.tar.gz` for Intel/AMD PCs, or
-   `binaryen-version_132-arm64-windows.tar.gz` for Windows on ARM. Extract it
-   with `tar -xzf <archive>` or an archive manager. Keep the extracted directory
-   intact and add its `bin` directory, containing `wasm-opt.exe`, to your user
-   PATH using **Edit environment variables for your account > Path > New**.
-   Reopen the terminal and restart your IDE so they pick up the updated PATH.
+   `binaryen-version_132-arm64-windows.tar.gz` for Windows on ARM. Add `bin` directory to your user
+   PATH.
 
-   **macOS:** `brew install binaryen`.
+   **macOS:** `brew install binaryen`
 
-   **Ubuntu/Debian:** `sudo apt-get update` then `sudo apt-get install binaryen`.
-
-   Package-manager versions may differ from CI. To match CI, use the version
-   132 release archive for your OS and architecture and add its `bin` to PATH.
-
-4. Verify the tools, install app dependencies, and generate the Office assets:
+3. Verify the tools, install app dependencies, and generate the Office assets:
 
    ```sh
    bun --version
@@ -71,12 +64,7 @@ locally and are not committed.
    pnpm run office:prepare
    ```
 
-   `office:prepare` installs the fork's dependencies with
-   `bun install --frozen-lockfile` and runs the DOCX, XLSX, and PPTX WASM builds
-   for engines with missing entry files. The first build downloads dependencies
-   and compiles Rust, so allow several minutes. A successful build produces
-   these entry files under `vendor/betteroffice/`, together with their WASM
-   binaries and supporting modules:
+  These files should be created:
 
    ```text
    packages/docx/src/wasm/generated/edit/docx_edit.js
@@ -87,15 +75,7 @@ locally and are not committed.
    packages/pptx/src/wasm/generated/viewer/pptx_view_wasm.js
    ```
 
-`pnpm dev`, `pnpm build`, `pnpm typecheck`, and `pnpm test` also run
-`office:prepare` through their pre-scripts. It skips preparation when all six
-entry files exist. If it reports `wasm-opt is required`, check that
-`wasm-opt --version` works in the same terminal before retrying.
-
-See [`openwiki/frontend/office-files.md`](openwiki/frontend/office-files.md)
-for the Office runtime integration.
-
-- Copy `deploy/.env.example` to `deploy/.env`.
+See [`openwiki/frontend/office-files.md`](openwiki/frontend/office-files.md) for more.
 
 ### UI/Frontend Only:
 
@@ -116,7 +96,7 @@ Otherwise:
 Ask for your origin to be added to `COLLABORATION_ALLOWED_ORIGINS`, or
 notes will not connect.
 
-**Full Stack**
+### Full Stack
 
 Everything local, on the Clerk development instance (UAT). 
 

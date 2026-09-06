@@ -9,6 +9,7 @@ are called via ``asyncio.to_thread``.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
 import secrets
 import threading
@@ -27,6 +28,124 @@ _pool_lock = threading.Lock()
 _telemetry_maintenance_lock = threading.Lock()
 _telemetry_maintenance_at = 0.0
 log = logging.getLogger(__name__)
+
+
+# The worker binds one source candidate for its task. asyncio.to_thread copies
+# this context, while heartbeats pass their durable job payload explicitly.
+_source_refresh: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar(
+    "source_refresh", default=None
+)
+
+
+def bind_source_refresh(job: dict[str, Any]):
+    payload = job.get("payload") or {}
+    value = {
+        **payload,
+        "_jobId": str(job["id"]),
+        "_attempt": int(job.get("attempts") or 1),
+    }
+    return _source_refresh.set(value)
+
+
+def reset_source_refresh(token) -> None:
+    _source_refresh.reset(token)
+
+
+def pipeline_source_for(file_id: str) -> dict[str, Any] | None:
+    value = _source_refresh.get()
+    return value if value is not None and value.get("fileId") == file_id else None
+
+
+def source_refresh_for(file_id: str) -> dict[str, Any] | None:
+    value = pipeline_source_for(file_id)
+    return value if value is not None and value.get("sourceRefresh") is True else None
+
+
+def source_refresh_for_job(job_id: str) -> dict[str, Any] | None:
+    value = _source_refresh.get()
+    return (
+        value
+        if value is not None
+        and value.get("sourceRefresh") is True
+        and value.get("_jobId") == job_id
+        else None
+    )
+
+
+def source_boundary_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    active = source_refresh_for(str(payload.get("fileId") or ""))
+    return {**active, **payload} if active is not None else payload
+
+
+def stage_source_candidate(cur, file_id: str, fields: dict[str, Any]) -> bool:
+    active = source_refresh_for(file_id)
+    if active is None:
+        return False
+    allowed = {
+        "parse_artifact_key",
+        "parse_artifact_fingerprint",
+        "parse_artifact_version",
+        "preview_blob_path",
+        "source_sha256",
+        "content_hash",
+    }
+    if not fields or not set(fields).issubset(allowed):
+        raise ValueError("invalid candidate fields")
+    # Every caller first takes the source/attempt fence in this transaction.
+    assignments = ",".join(f"{column}=%s" for column in fields)
+    cur.execute(
+        f"UPDATE source_refresh_candidates SET {assignments} WHERE file_id=%s AND job_id=%s AND lease_token=%s",
+        (*fields.values(), file_id, active["_jobId"], active["sourceLeaseToken"]),
+    )
+    if not cur.rowcount:
+        raise SourceSupersededError("source candidate was superseded")
+    return True
+
+
+def transfer_source_candidate(
+    cur, payload: dict[str, Any], previous: str, following: str
+) -> None:
+    if payload.get("sourceRefresh") is not True:
+        return
+    cur.execute(
+        """UPDATE source_refresh_candidates SET job_id=%s
+        WHERE file_id=%s AND job_id=%s AND lease_token=%s""",
+        (following, payload["fileId"], previous, payload["sourceLeaseToken"]),
+    )
+    if not cur.rowcount:
+        raise SourceSupersededError("source candidate was superseded")
+    cur.execute(
+        "UPDATE source_documents SET running_job_id=%s WHERE file_id=%s AND running_job_id=%s",
+        (following, payload["fileId"], previous),
+    )
+
+
+def discard_source_candidate(
+    cur, payload: dict[str, Any], job_id: str, error: str, *, stale: bool
+) -> None:
+    if payload.get("sourceRefresh") is not True:
+        return
+    cur.execute(
+        """UPDATE source_documents d SET running_job_id=NULL,
+            desired_checkpoint=CASE WHEN %s THEN checkpoint ELSE desired_checkpoint END,
+            refresh_error=CASE WHEN %s THEN NULL ELSE %s END
+        WHERE d.file_id=%s AND d.running_job_id=%s AND EXISTS(
+            SELECT 1 FROM source_refresh_candidates c WHERE c.file_id=d.file_id
+            AND c.job_id=%s AND c.lease_token=%s)""",
+        (
+            stale,
+            stale,
+            error[:2000],
+            payload["fileId"],
+            job_id,
+            job_id,
+            payload["sourceLeaseToken"],
+        ),
+    )
+    cur.execute(
+        "DELETE FROM source_refresh_candidates WHERE file_id=%s AND job_id=%s AND lease_token=%s",
+        (payload["fileId"], job_id, payload["sourceLeaseToken"]),
+    )
 
 
 class SourceSupersededError(TerminalError):
@@ -270,7 +389,7 @@ def claim_job(cur, job_type: str, lease_s: int) -> dict[str, Any] | None:
               AND (not_before IS NULL OR not_before <= now())
             ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1
         )
-        RETURNING id, type, payload, attempts, queued_at
+        RETURNING id, type, payload, attempts, queued_at, provider_waits
         """,
         (lease_s, job_type),
     )
@@ -283,6 +402,7 @@ def claim_job(cur, job_type: str, lease_s: int) -> dict[str, Any] | None:
         "payload": row[2],
         "attempts": row[3],
         "queued_at": row[4],
+        "provider_waits": row[5],
     }
 
 
@@ -495,6 +615,12 @@ def _pipeline_source_cancellation(
     exact attempt. This prevents lifecycle deletion/replacement from forming a
     file-to-user or job-to-workspace cycle with a worker.
     """
+    payload = source_boundary_payload(payload)
+    if payload.get("sourceRefresh") is True:
+        cur.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+            (str(payload.get("fileId") or ""),),
+        )
     if file_lock not in {"SHARE", "UPDATE"}:
         raise ValueError("invalid pipeline file lock")
     file_id = str(payload.get("fileId") or "")
@@ -582,7 +708,14 @@ def _pipeline_source_cancellation(
             (workspace_id, actor_user_id),
         )
         membership = cur.fetchone()
-        if membership is None or str(membership[0]) != "editor":
+        shared_editor = False
+        if payload.get("sourceRefresh") is True:
+            cur.execute(
+                "SELECT privacy IN ('link','public') AND share_role='editor' FROM workspaces WHERE id=%s",
+                (workspace_id,),
+            )
+            shared_editor = bool(cur.fetchone()[0])
+        if not shared_editor and (membership is None or str(membership[0]) != "editor"):
             return (
                 "failed",
                 "authorization",
@@ -607,6 +740,34 @@ def _pipeline_source_cancellation(
         or str(source_owner or "") != owner_user_id
     ):
         return ("failed", "lifecycle", "source_deleted", "source moved")
+    if payload.get("sourceRefresh") is True:
+        if payload.get("sourcePublishedCheckpoint") == payload.get("sourceCheckpoint"):
+            return None
+        cur.execute(
+            """SELECT 1 FROM source_refresh_candidates c
+            JOIN source_documents d ON d.file_id=c.file_id JOIN jobs j ON j.id=c.job_id
+            WHERE c.file_id=%s AND c.epoch=%s AND c.checkpoint=%s AND c.lease_token=%s
+              AND d.epoch=c.epoch AND d.base_revision=%s AND d.running_job_id=c.job_id
+              AND j.payload->>'sourceETag'=%s
+              AND (d.format='text' OR d.checkpoint=c.checkpoint)
+            FOR UPDATE OF c,d""",
+            (
+                file_id,
+                payload.get("sourceEpoch"),
+                payload.get("sourceCheckpoint"),
+                payload.get("sourceLeaseToken"),
+                source_revision,
+                source_etag,
+            ),
+        )
+        if int(current_revision) == source_revision and cur.fetchone() is not None:
+            return None
+        return (
+            "superseded",
+            "superseded",
+            "source_superseded",
+            "source checkpoint was superseded",
+        )
     if int(current_revision) != source_revision or str(current_etag) != source_etag:
         return (
             "superseded",
@@ -640,6 +801,8 @@ def _cancel_pipeline_heartbeat_claim(
 
 def fail_pipeline_file_if_current(cur, payload: dict[str, Any]) -> bool:
     """Fail only the file revision named by a cancelled pipeline claim."""
+    if payload.get("sourceRefresh") is True:
+        return False
     file_id = str(payload.get("fileId") or "")
     source_etag = str(payload.get("sourceETag") or "")
     try:
@@ -744,6 +907,7 @@ def lock_pipeline_claim_boundary(
     Returns ``current``, ``lost``, or ``cancelled``. The caller must commit a
     cancelled result so the terminal job/session transition remains durable.
     """
+    payload = source_boundary_payload(payload)
     cancellation = _pipeline_source_cancellation(cur, payload, file_lock=file_lock)
     cur.execute(
         """
@@ -766,6 +930,10 @@ def lock_pipeline_claim_boundary(
         "sourceETag",
         "sourceRevision",
         "workspaceId",
+        "sourceRefresh",
+        "sourceEpoch",
+        "sourceCheckpoint",
+        "sourceLeaseToken",
     )
     identity_changed = any(
         str(locked_payload.get(key) or "") != str(payload.get(key) or "")
@@ -819,6 +987,33 @@ def release_job_for_capacity(cur, job_id: str, attempt: int, *, backoff_s: int) 
         UPDATE jobs SET
             status='pending',
             attempts=GREATEST(attempts-1, 0),
+            error=NULL,
+            not_before=now() + make_interval(secs => %s),
+            lease_expires_at=NULL,
+            queued_at=now(),
+            updated_at=now()
+        WHERE id=%s AND status='running' AND attempts=%s
+        """,
+        (backoff_s, job_id, attempt),
+    )
+
+
+def release_job_for_provider_busy(
+    cur, job_id: str, attempt: int, *, backoff_s: int
+) -> None:
+    """Re-pend a job whose provider stayed busy past the in-call budget.
+
+    Like ``release_job_for_capacity`` the attempt is handed back; the re-pend is
+    counted on ``provider_waits`` so the worker can cap it. ``created_at`` is
+    untouched, so the claim order puts the job ahead of anything newer once
+    ``not_before`` passes.
+    """
+    cur.execute(
+        """
+        UPDATE jobs SET
+            status='pending',
+            attempts=GREATEST(attempts-1, 0),
+            provider_waits=provider_waits+1,
             error=NULL,
             not_before=now() + make_interval(secs => %s),
             lease_expires_at=NULL,
@@ -910,6 +1105,16 @@ def acquire_provider_capacity(
     return True
 
 
+def provider_capacity_used(cur, provider: str) -> int:
+    """Unexpired units for one key, read without the advisory lock."""
+    cur.execute(
+        "SELECT COALESCE(SUM(units),0) FROM provider_capacity_leases "
+        "WHERE provider=%s AND expires_at>now()",
+        (provider,),
+    )
+    return int(cur.fetchone()[0])
+
+
 def release_provider_capacity(cur, lease_id: str) -> None:
     cur.execute("DELETE FROM provider_capacity_leases WHERE id=%s", (lease_id,))
 
@@ -939,7 +1144,7 @@ def reclaim_expired_leases(
         SELECT id, type, payload, attempts, error
         FROM jobs
         WHERE status='running' AND lease_expires_at IS NOT NULL
-          AND lease_expires_at < now()
+          AND type IN ('import','parse','ingest') AND lease_expires_at < now()
         """
     )
     candidates = cur.fetchall()
@@ -970,6 +1175,26 @@ def reclaim_expired_leases(
             continue
         job_id, job_type, payload, attempts, error = locked
         payload = payload or {}
+        if payload.get("sourceRefresh") is True and payload.get(
+            "sourcePublishedCheckpoint"
+        ) == payload.get("sourceCheckpoint"):
+            set_job(cur, job_id, "done")
+            settle_credit_reservation(cur, str(payload.get("reservationId") or ""))
+            cur.execute(
+                "UPDATE ingest_job_attempts SET status='succeeded',finished_at=now() WHERE job_id=%s AND status='running'",
+                (job_id,),
+            )
+            reclaimed.append(
+                {
+                    "id": job_id,
+                    "type": job_type,
+                    "payload": payload,
+                    "attempts": attempts,
+                    "outcome": "done",
+                    "file_failed": False,
+                }
+            )
+            continue
         if job_type in {"parse", "ingest"}:
             # The dead worker never ran abandon_content. Drop the claim it
             # created so a waiter (or this job's retry) can recreate it. Keyed
@@ -1004,6 +1229,7 @@ def reclaim_expired_leases(
         file_failed = False
         if outcome == "failed" and job_type in {"parse", "ingest"}:
             file_failed = fail_pipeline_file_if_current(cur, payload)
+            discard_source_candidate(cur, payload, job_id, note, stale=False)
             close_credit_reservation(cur, str(payload.get("reservationId") or ""))
         cur.execute(
             """
@@ -1038,15 +1264,21 @@ def reclaim_expired_leases(
 
 
 def set_file_status(cur, file_id: str, status: str) -> None:
+    if source_refresh_for(file_id) is not None:
+        return
     cur.execute("UPDATE files SET status=%s WHERE id=%s", (status, file_id))
 
 
 def set_file_indexed(cur, file_id: str, indexed: bool) -> None:
+    if source_refresh_for(file_id) is not None:
+        return
     cur.execute("UPDATE files SET indexed=%s WHERE id=%s", (indexed, file_id))
 
 
 def set_file_content_hash(cur, file_id: str, content_hash: str) -> None:
     """Record the hash of the parsed text, used to skip duplicate indexing."""
+    if stage_source_candidate(cur, file_id, {"content_hash": content_hash}):
+        return
     cur.execute("UPDATE files SET content_hash=%s WHERE id=%s", (content_hash, file_id))
 
 
@@ -1057,6 +1289,16 @@ def set_file_parse_artifact(
     fingerprint: str,
     parser_version: str,
 ) -> None:
+    if stage_source_candidate(
+        cur,
+        file_id,
+        {
+            "parse_artifact_key": blob_path,
+            "parse_artifact_fingerprint": fingerprint,
+            "parse_artifact_version": parser_version,
+        },
+    ):
+        return
     cur.execute(
         """UPDATE files
         SET parsed_blob_path=%s, parsed_fingerprint=%s, parsed_parser_version=%s
@@ -1066,6 +1308,16 @@ def set_file_parse_artifact(
 
 
 def clear_file_parse_artifact(cur, file_id: str) -> None:
+    if stage_source_candidate(
+        cur,
+        file_id,
+        {
+            "parse_artifact_key": None,
+            "parse_artifact_fingerprint": None,
+            "parse_artifact_version": None,
+        },
+    ):
+        return
     cur.execute(
         """UPDATE files
         SET parsed_blob_path=NULL, parsed_fingerprint=NULL, parsed_parser_version=NULL
@@ -1075,6 +1327,8 @@ def clear_file_parse_artifact(cur, file_id: str) -> None:
 
 
 def set_file_caption_blob(cur, file_id: str, blob_path: str) -> None:
+    if source_refresh_for(file_id) is not None:
+        return
     cur.execute(
         "UPDATE files SET caption_blob_path=%s WHERE id=%s",
         (blob_path, file_id),
@@ -1082,6 +1336,8 @@ def set_file_caption_blob(cur, file_id: str, blob_path: str) -> None:
 
 
 def set_file_preview_blob(cur, file_id: str, blob_path: str | None) -> None:
+    if stage_source_candidate(cur, file_id, {"preview_blob_path": blob_path}):
+        return
     cur.execute(
         "UPDATE files SET preview_blob_path=%s WHERE id=%s",
         (blob_path, file_id),
@@ -1101,6 +1357,18 @@ def require_current_file_source(
     its parse outcome into the replacement after the replacement transaction
     has cleared the old association.
     """
+    refresh = source_refresh_for(file_id)
+    if refresh is not None:
+        if (
+            int(refresh["sourceRevision"]) != int(source_revision)
+            or str(refresh.get("sourceETag") or "") != source_etag
+        ):
+            raise SourceSupersededError("source candidate identity changed")
+        if _pipeline_source_cancellation(cur, refresh, file_lock="UPDATE") is not None:
+            raise SourceSupersededError("source candidate was superseded")
+        if not claim_is_current(cur, refresh["_jobId"], refresh["_attempt"]):
+            raise SourceSupersededError("source candidate lost its attempt lease")
+        return
     cur.execute(
         "SELECT revision, COALESCE(source_etag, '') FROM files WHERE id=%s FOR UPDATE",
         (file_id,),
@@ -1273,6 +1541,8 @@ def file_exists(cur, file_id: str) -> bool:
 
 
 def set_file_source_sha256(cur, file_id: str, source_sha256: str) -> None:
+    if stage_source_candidate(cur, file_id, {"source_sha256": source_sha256}):
+        return
     cur.execute(
         "UPDATE files SET source_sha256=%s WHERE id=%s", (source_sha256, file_id)
     )
@@ -1534,6 +1804,8 @@ def open_provider_call(
     *,
     job_attempt_id: int | None = None,
     job_stage: str = "",
+    provider: str = "",
+    model: str = "",
     context_system_tokens: int = 0,
     context_tool_tokens: int = 0,
     context_conversation_tokens: int = 0,
@@ -1670,13 +1942,13 @@ def open_provider_call(
         """
         INSERT INTO provider_calls (
           id, reservation_id, actor_user_id, job_attempt_id, job_stage,
-          kind, purpose, thinking,
+          kind, purpose, thinking, provider, model,
           context_system_tokens, context_tool_tokens,
           context_conversation_tokens, context_total_tokens,
           context_window_tokens, context_counting_method,
           context_counting_version, receipt_deadline_at
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                 now() + (%s * interval '1 second'))
         """,
         (
@@ -1688,6 +1960,8 @@ def open_provider_call(
             kind,
             purpose,
             thinking,
+            provider[:120],
+            model[:200],
             context_system_tokens,
             context_tool_tokens,
             context_conversation_tokens,
@@ -2118,6 +2392,9 @@ def ingest_accounts_active(cur, file_id: str, actor_user_id: str) -> bool:
     """
     if not file_id:
         return False
+    refresh = source_refresh_for(file_id)
+    if refresh is not None:
+        return _pipeline_source_cancellation(cur, refresh, file_lock="UPDATE") is None
     cur.execute(
         """
         SELECT workspace_id, revision, COALESCE(source_etag, ''),

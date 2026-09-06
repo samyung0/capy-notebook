@@ -134,7 +134,7 @@
     "test": "vitest run --dir src && vitest run --dir e2e/perf",
     "test:collaboration": "vitest run --dir collaboration",
     "test:pipeline": "uv run --extra test pytest",
-    "test:pipeline:offline": "uv run --extra test pytest -q -m \"not cassette and not integration\"",
+    "test:pipeline:offline": "uv run --extra test pytest -q -m \"not integration\"",
     "test:pipeline:replay": "uv run --extra test python pipeline/scripts/replay_model_cassettes.py",
     "test:go": "cd server && go run ./cmd/testdb",
     "e2e": "playwright test",

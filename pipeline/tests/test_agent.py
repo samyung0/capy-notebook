@@ -10,11 +10,19 @@ import pytest
 
 from pipeline import obs
 from pipeline.registry import ModelConfig
-from pipeline.retrieval import accounting, agent, tools
+from pipeline.retrieval import accounting, agent, pending, tools
 from pipeline.retrieval.search import Passage
 from pipeline.retrieval.stream import AssembledResponse, StreamEvent, ToolCall
 from pipeline.retrieval.tools import ToolContext, ToolResult, TurnFailed
 from pipeline.retrieval.usage_extract import NormalizedUsage
+
+
+@pytest.fixture(autouse=True)
+def no_pending_sources(monkeypatch):
+    async def load(*_args, **_kwargs):
+        return pending.PendingSources()
+
+    monkeypatch.setattr(pending, "load", load)
 
 
 def _model() -> ModelConfig:

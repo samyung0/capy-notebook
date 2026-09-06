@@ -54,6 +54,10 @@ include = ["pipeline*"]
 [tool.setuptools.package-data]
 pipeline = ["elitellm/providers.json"]
 
+[tool.ruff]
+extend-exclude = ["scripts/grading_benchmark"]
+force-exclude = true
+
 [tool.ruff.lint.isort]
 # Keep first-party grouping stable whether Ruff is invoked from the repo root
 # (Cursor/IDE) or from pipeline/ (local CLI). Without this, `pipeline` is treated
@@ -65,7 +69,6 @@ testpaths = ["pipeline/tests"]
 asyncio_mode = "auto"
 markers = [
   "integration: needs Docker (fresh Postgres+Redis), but makes no model calls",
-  "cassette: integration test that replays recorded HTTP via a VCR cassette (starts fresh Docker Postgres+Redis)",
 ]
 
 [tool.ty.environment]

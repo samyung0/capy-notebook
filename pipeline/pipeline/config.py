@@ -33,9 +33,52 @@ def platform_api_key(provider_slug: str) -> str:
     return _env(env_name_for_provider(provider_slug))
 
 
+def parse_model_concurrency(raw: str) -> dict[tuple[str, str], tuple[int, int]]:
+    """Parse ``provider:model=total/reserve`` entries separated by commas."""
+    out: dict[tuple[str, str], tuple[int, int]] = {}
+    for entry in raw.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        key, sep, limits = entry.rpartition("=")
+        provider, colon, model = key.strip().partition(":")
+        provider, model = provider.strip(), model.strip()
+        total_text, _slash, reserve_text = limits.strip().partition("/")
+        total_text, reserve_text = total_text.strip(), reserve_text.strip()
+        try:
+            total = int(total_text)
+            reserve = int(reserve_text) if reserve_text else 0
+        except ValueError:
+            total = reserve = -1
+        # reserve == total would leave ingest with no capacity at all and
+        # fail every file as busy without naming the configuration.
+        if not (
+            sep and colon and provider and model and total >= 1 and 0 <= reserve < total
+        ):
+            raise ValueError(
+                "CAPY_MODEL_CONCURRENCY entries must look like "
+                f"provider:model=total/reserve with 0 <= reserve < total, got {entry!r}"
+            )
+        out[(provider, model)] = (total, reserve)
+    return out
+
+
+def require_model_concurrency_in_production() -> None:
+    """Refuse to serve provider calls ungated in production.
+
+    Called by the two processes that call providers, so a deploy that forgot
+    the variable fails at startup instead of running with no cap.
+    """
+    if cfg.app_env == "production" and not cfg.model_concurrency:
+        raise ValueError(
+            "CAPY_MODEL_CONCURRENCY must name the per-model caps under APP_ENV=production"
+        )
+
+
 class Config:
     # ---- shared infra -----------------------------------------------------
     release_sha: str = _env("RELEASE_SHA", "dev")
+    app_env: str = _env("APP_ENV", "development")
     dsn: str = _env(
         "DATABASE_URL", "postgres://capy:capy@localhost:5432/capy?sslmode=disable"
     )
@@ -76,12 +119,27 @@ class Config:
     parse_zip_ttl_hours: int = int(_env("CAPY_PARSE_ZIP_TTL_HOURS", "6"))
     parse_source_ttl_hours: int = int(_env("CAPY_PARSE_SOURCE_TTL_HOURS", "2"))
     # Interactive calls should fail while the browser request is still useful.
-    # Background ingest has its own larger bound and remains retryable.
+    # For a stream this is an idle bound that restarts on every provider event;
+    # a non-streaming interactive call (embeddings) gets it as a whole-call
+    # bound. Background ingest has its own larger bound and remains retryable.
     interactive_provider_timeout_s: float = float(
-        _env("CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S", "25")
+        _env("CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S", "15")
+    )
+    # Hard wall clock on one interactive stream. The receipt window for every
+    # interactive call derives from it, so it must exceed the longest stream a
+    # model can legitimately produce.
+    interactive_stream_max_s: float = float(
+        _env("CAPY_INTERACTIVE_STREAM_MAX_S", "600")
     )
     ingest_provider_timeout_s: float = float(
         _env("CAPY_INGEST_PROVIDER_TIMEOUT_S", "120")
+    )
+    # Per-model outbound concurrency, keyed by transport provider and model:
+    # "deepinfra:zai-org/GLM-5.3-Flash=200/120,deepinfra:Qwen/Qwen3-Embedding-4B=200/80".
+    # total/reserve: interactive callers may use the whole total, ingest callers
+    # total minus the reserve. A model without an entry is ungated.
+    model_concurrency: dict[tuple[str, str], tuple[int, int]] = parse_model_concurrency(
+        _env("CAPY_MODEL_CONCURRENCY", "")
     )
 
     # ---- provider imports (Drive / OneDrive) -----------------------------
@@ -200,9 +258,6 @@ class Config:
     # this size, which is well past the resolution a caption needs and keeps the
     # image-token count (and the upload) small.
     caption_max_edge: int = int(_env("CAPY_CAPTION_MAX_EDGE", "1280"))
-    # Bumped whenever the prompt, the model or the filters change, so cached
-    # captions from an older definition are not reused.
-    caption_version: str = _env("CAPY_CAPTION_VERSION", "v2")
     # Standalone image uploads use the same vision pin and caption definition
     # as parsed figures, but get a source-level artifact rather than a block
     # caption map. Decoded pixels are bounded independently of compressed
@@ -215,9 +270,6 @@ class Config:
     elevenlabs_base_url: str = _env("ELEVENLABS_BASE_URL", "https://api.elevenlabs.io")
     elevenlabs_sync_timeout_s: int = int(
         _env("CAPY_ELEVENLABS_SYNC_TIMEOUT_S", "43200")
-    )
-    elevenlabs_transcript_version: str = _env(
-        "CAPY_ELEVENLABS_TRANSCRIPT_VERSION", "scribe-v2-1"
     )
     elevenlabs_concurrency_units: int = int(
         _env("CAPY_ELEVENLABS_CONCURRENCY_UNITS", "12")
@@ -255,6 +307,7 @@ if cfg.image_max_pixels <= 0:
 for key, value in (
     ("CAPY_PARSE_SLICE_TIMEOUT", cfg.parse_slice_timeout),
     ("CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S", cfg.interactive_provider_timeout_s),
+    ("CAPY_INTERACTIVE_STREAM_MAX_S", cfg.interactive_stream_max_s),
     ("CAPY_INGEST_PROVIDER_TIMEOUT_S", cfg.ingest_provider_timeout_s),
     ("CAPY_ELEVENLABS_CONCURRENCY_UNITS", cfg.elevenlabs_concurrency_units),
     ("CAPY_ELEVENLABS_SYNC_TIMEOUT_S", cfg.elevenlabs_sync_timeout_s),
@@ -262,6 +315,11 @@ for key, value in (
 ):
     if value <= 0:
         raise ValueError(f"{key} must be positive")
+
+if cfg.interactive_stream_max_s <= cfg.interactive_provider_timeout_s:
+    raise ValueError(
+        "CAPY_INTERACTIVE_STREAM_MAX_S must exceed CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S"
+    )
 
 if cfg.parse_zip_ttl_hours <= 0 or cfg.parse_source_ttl_hours <= 0:
     raise ValueError("local parse spool TTLs must be positive")

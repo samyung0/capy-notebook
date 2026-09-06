@@ -34,6 +34,7 @@ If the gateway is unhealthy, check these before anything else:
 | Gateway exits complaining about the email secret | `EMAIL_UNSUBSCRIBE_SECRET` needs 32+ characters across 3 character classes. Plain hex fails. |
 | Gateway refuses to start with Clerk configured | `CLERK_SECRET_KEY` or `CLERK_WEBHOOK_SECRET` is blank. Both are required unless `AUTH_DISABLED` or `E2E_AUTH` is on. |
 | Variables changed but the container behaves as before | Coolify's compose parse is cached and only refreshes on deploy. Redeploy rather than restart. |
+| Retrieval or an ingest worker exits naming `CAPY_MODEL_CONCURRENCY` | The variable is required under `APP_ENV=production`; set UAT's own per-model caps (see the runbook §1.4). |
 
 ## 2. Clerk webhook
 

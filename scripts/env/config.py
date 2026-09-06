@@ -308,7 +308,7 @@ def apply_coolify(values):
         if key.startswith("CAPY_")
         and key in MANIFEST
         and "coolify" in MANIFEST[key]["targets"]
-    } | {"IMPORT_RELAY_ENQUEUE_URL", "IMPORT_RELAY_SECRET"}
+    } | {"EVO_QUERY_MODEL", "IMPORT_RELAY_ENQUEUE_URL", "IMPORT_RELAY_SECRET"}
     obsolete = [
         row
         for row in actual

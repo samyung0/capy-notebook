@@ -29,20 +29,31 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from .. import obs, plan_limits, progress, registry, use_compatible_event_loop
-from ..config import cfg
+import requests
+
+from .. import (
+    elitellm,
+    obs,
+    plan_limits,
+    progress,
+    registry,
+    use_compatible_event_loop,
+)
+from ..config import cfg, require_model_concurrency_in_production
 from ..jobs import (
     CONTENT_CLAIM_STALE_S,
     CONTENT_CLAIM_WAIT_S,
     POLICIES,
+    PROVIDER_WAITS_MAX,
     CapacityWait,
     RetryableError,
     TerminalError,
     backoff_s,
     is_retryable,
     policy_for,
+    provider_wait_backoff_s,
 )
-from ..parse import figures, parser_client, slots
+from ..parse import caption_cache, figures, parser_client, slots
 from ..retrieval import accounting, indexing, store
 from ..retrieval.chunking import (
     CHUNKER_VERSION,
@@ -73,6 +84,13 @@ _resource_rates: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
 _PARSE_ROUTES = {
     "fast": parser_client.ROUTE_FAST,
 }
+
+
+def _publish_progress(workspace_id: str, file_id: str, *args, **kwargs) -> None:
+    if db.source_refresh_for(file_id) is not None and kwargs.get("status") != "ready":
+        kwargs.pop("status", None)
+        kwargs.pop("indexed", None)
+    progress.publish(workspace_id, file_id, *args, **kwargs)
 
 
 def _set_stage(name: str) -> None:
@@ -144,13 +162,15 @@ def _announce_reclaimed(row: dict) -> None:
     if row.get("outcome") != "failed" or not payload.get("fileId"):
         return
     _cleanup_payload_source(payload)
+    if payload.get("sourceRefresh") is True:
+        return
     if not row.get("file_failed"):
         return
     error = f"{row.get('type') or 'pipeline'} worker died before the job completed"
     workspace_id = str(payload.get("workspaceId") or "")
     file_id = str(payload.get("fileId") or "")
     if workspace_id:
-        progress.publish(
+        _publish_progress(
             workspace_id,
             file_id,
             "failed",
@@ -257,6 +277,7 @@ def _lost_claim(
     if attempt is None:
         return False
     if payload is not None:
+        payload = db.source_boundary_payload(payload)
         boundary = db.lock_pipeline_claim_boundary(
             cur,
             job_id=job_id,
@@ -277,6 +298,113 @@ def _lost_claim(
     return True
 
 
+def _source_refresh_published(job_id: str, payload: dict) -> bool:
+    with db.connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT 1 FROM jobs WHERE id=%s AND payload->>'sourcePublishedCheckpoint'=%s",
+            (job_id, str(payload.get("sourceCheckpoint"))),
+        )
+        return cur.fetchone() is not None
+
+
+def _settle_published_source_refresh(job_id: str, payload: dict) -> None:
+    usage = obs.take_parse_usage()
+    with db.connect() as conn, conn.cursor() as cur:
+        _record_parse_usage_tx(
+            cur,
+            usage=usage,
+            file_id=str(payload["fileId"]),
+            workspace_id=str(payload["workspaceId"]),
+            actor_user_id=str(payload["actorUserId"]),
+            reservation_id=_reservation_id(payload),
+            job_id=job_id,
+            attempt=int(payload.get("_attempt") or 1),
+            outcome="succeeded",
+        )
+        db.settle_credit_reservation(cur, _reservation_id(payload))
+        db.set_job(cur, job_id, "done")
+        db.finish_job_attempt(
+            cur,
+            attempt_id=telemetry.current_attempt_id(),
+            outcome="succeeded",
+            snapshot=telemetry.snapshot(),
+        )
+        conn.commit()
+
+
+def _finish_source_refresh(
+    file_id: str,
+    job_id: str,
+    content_hash: str | None,
+    artifact_key: str | None,
+    fingerprint: str | None,
+    version: str | None,
+) -> bool:
+    payload = db.source_refresh_for(file_id)
+    if payload is None:
+        raise TerminalError("source refresh context is missing")
+    if _source_refresh_published(job_id, payload):
+        _settle_published_source_refresh(job_id, payload)
+        return True
+    with db.connect() as conn, conn.cursor() as cur:
+        if _lost_claim(cur, job_id, payload["_attempt"], payload):
+            return False
+        if artifact_key:
+            db.set_file_parse_artifact(
+                cur, file_id, artifact_key, fingerprint or "", version or ""
+            )
+        cur.execute(
+            "SELECT content_id,content_hash,COALESCE(preview_blob_path,'') FROM source_refresh_candidates WHERE file_id=%s AND job_id=%s AND lease_token=%s",
+            (file_id, job_id, payload["sourceLeaseToken"]),
+        )
+        candidate = cur.fetchone()
+        if candidate is None or not candidate[0] or candidate[1] != content_hash:
+            raise db.SourceSupersededError("source candidate index is missing")
+        conn.commit()
+    if not cfg.gateway_url or not cfg.pipeline_secret:
+        raise TerminalError(
+            "GATEWAY_URL and PIPELINE_SECRET are required for source refresh"
+        )
+    body = {
+        "fileId": file_id,
+        "jobId": job_id,
+        "epoch": payload["sourceEpoch"],
+        "checkpoint": payload["sourceCheckpoint"],
+        "leaseToken": payload["sourceLeaseToken"],
+        "sourceETag": payload["sourceETag"],
+        "contentId": candidate[0],
+        "contentHash": candidate[1],
+        "previewBlobPath": candidate[2],
+        "attemptId": telemetry.current_attempt_id(),
+    }
+    try:
+        response = requests.post(
+            cfg.gateway_url.rstrip("/") + "/api/internal/source-refresh/publish",
+            json=body,
+            headers={"X-Pipeline-Secret": cfg.pipeline_secret},
+            timeout=60,
+        )
+    except (requests.Timeout, requests.ConnectionError) as exc:
+        if not _source_refresh_published(job_id, payload):
+            raise RetryableError("source publication gateway was unavailable") from exc
+    else:
+        if response.status_code == 409:
+            if not _source_refresh_published(job_id, payload):
+                raise db.SourceSupersededError(
+                    "source checkpoint advanced before publication"
+                )
+        elif response.status_code >= 500 or response.status_code == 429:
+            raise RetryableError(
+                f"source publication gateway returned {response.status_code}"
+            )
+        elif response.status_code != 200:
+            raise TerminalError(
+                f"source publication gateway returned {response.status_code}"
+            )
+    _settle_published_source_refresh(job_id, payload)
+    return True
+
+
 def _finish_ok(
     file_id: str,
     name: str,
@@ -294,6 +422,16 @@ def _finish_ok(
     source_revision: int | None = None,
     source_etag: str = "",
 ) -> bool:
+    refresh = db.source_refresh_for(file_id)
+    if refresh is not None:
+        return _finish_source_refresh(
+            file_id,
+            job_id,
+            content_hash,
+            artifact_key,
+            artifact_fingerprint,
+            artifact_version,
+        )
     notification = None
     usage = obs.take_parse_usage()
     try:
@@ -333,6 +471,10 @@ def _finish_ok(
                 db.set_file_indexed(cur, file_id, indexed)
                 if content_hash is not None:
                     db.set_file_content_hash(cur, file_id, content_hash)
+                cur.execute(
+                    r"UPDATE files SET ever_parsed_successfully=true WHERE id=%s AND (kind='pdf' OR lower(name) ~ '\.(docx|xlsx|pptx)$') AND parse_mode='fast'",
+                    (file_id,),
+                )
                 if artifact_key:
                     db.set_file_parse_artifact(
                         cur,
@@ -428,6 +570,10 @@ def _finish_fail(
                 db.set_file_preview_blob(cur, file_id, None)
             db.set_job(cur, job_id, "failed", error[:500])
             db.close_credit_reservation(cur, reservation_id)
+            if file_id:
+                active = db.source_refresh_for(file_id)
+                if active is not None:
+                    db.discard_source_candidate(cur, active, job_id, error, stale=False)
             db.finish_job_attempt(
                 cur,
                 attempt_id=telemetry.current_attempt_id(),
@@ -478,6 +624,11 @@ def _finish_superseded(
         # Replacement normally closes this while canceling the old job. This
         # also covers the SKIP LOCKED race where the worker held the job row.
         db.close_credit_reservation(cur, reservation_id)
+        active = db.source_refresh_for_job(job_id)
+        if active is not None:
+            db.discard_source_candidate(
+                cur, active, job_id, "source checkpoint superseded", stale=True
+            )
         conn.commit()
 
 
@@ -567,7 +718,7 @@ def _notify_ingest_terminal(
     if not committed:
         return
     if ws:
-        progress.publish(
+        _publish_progress(
             ws,
             file_id,
             "failed",
@@ -863,6 +1014,8 @@ def _clear_parse_artifact_reference(
 ) -> None:
     if not object_path:
         return
+    if file_id and db.source_refresh_for(file_id) is not None:
+        return
     with db.connect() as conn, conn.cursor() as cur:
         if file_id:
             if source_revision is not None:
@@ -1031,14 +1184,24 @@ def _yield_for_capacity(
     message: str = "waiting for a parser slot",
     backoff_s: int = slots.YIELD_BACKOFF_S,
     outcome: str = "capacity_wait",
+    count_provider_wait: bool = False,
 ) -> None:
-    """Give the parse slot back to the queue. File stays pending; attempt is undone."""
+    """Give the slot back to the queue. File stays pending; attempt is undone.
+
+    A provider that stayed busy is the same wait with its own counter, so the
+    worker can cap how often one job comes back for the same model.
+    """
     attempt = int(job.get("attempts") or 1)
     payload = job.get("payload") or {}
     with db.connect() as conn, conn.cursor() as cur:
         if _lost_claim(cur, job["id"], attempt, payload):
             return
-        db.release_job_for_capacity(cur, job["id"], attempt, backoff_s=backoff_s)
+        if count_provider_wait:
+            db.release_job_for_provider_busy(
+                cur, job["id"], attempt, backoff_s=backoff_s
+            )
+        else:
+            db.release_job_for_capacity(cur, job["id"], attempt, backoff_s=backoff_s)
         db.set_file_status(cur, file_id, "pending")
         cur.execute("SELECT not_before FROM jobs WHERE id=%s", (job["id"],))
         row = cur.fetchone()
@@ -1052,7 +1215,7 @@ def _yield_for_capacity(
             next_retry_at=row[0] if row else None,
         )
         conn.commit()
-    progress.publish(
+    _publish_progress(
         workspace_id,
         file_id,
         "queued",
@@ -1084,15 +1247,18 @@ def _pipeline_identity(
     elif processing_plan.route == ingest_plan.DELIMITED_TEXT:
         direct = f"direct:tabular:{cfg.tabular_text_version}"
     elif processing_plan.route == ingest_plan.IMAGE_CAPTION:
-        direct = f"direct:image:{cfg.caption_version}"
+        direct = "direct:image"
     elif processing_plan.route == ingest_plan.AUDIO_TRANSCRIPTION:
-        direct = f"direct:elevenlabs:{cfg.elevenlabs_transcript_version}"
+        direct = "direct:elevenlabs"
     else:
         direct = ""
     if direct:
         return f"plan-v{processing_plan.version}:{direct}:{CHUNKER_VERSION}"
     route = _parse_route(processing_plan.parser_route)
-    cap = cfg.caption_version if processing_plan.caption_embedded_images else "none"
+    # Whether figures were captioned changes the parsed content_list, so a parse
+    # done without them cannot be reused for one that needs them. The caption
+    # text itself is cached separately, by image bytes.
+    cap = "captions" if processing_plan.caption_embedded_images else "none"
     return (
         f"plan-v{processing_plan.version}:{cfg.parse_method}:{route}:"
         f"{parser_client.parser_version(route)}"
@@ -1268,6 +1434,10 @@ def _handoff_parsed_artifact(
                 outcome="succeeded",
             )
             db.enqueue_job(cur, continuation_id, "ingest", continuation_payload)
+            db.transfer_source_candidate(cur, payload, job["id"], continuation_id)
+            cur.execute(
+                "UPDATE files SET ever_parsed_successfully=true WHERE id=%s", (file_id,)
+            )
             db.set_job(cur, job["id"], "done")
             db.finish_job_attempt(
                 cur,
@@ -1317,6 +1487,7 @@ def _handoff_for_artifact_repair(
             return False
         db.clear_file_parse_artifact(cur, file_id)
         db.enqueue_job(cur, repair_id, "parse", repair_payload)
+        db.transfer_source_candidate(cur, payload, job["id"], repair_id)
         db.set_job(cur, job["id"], "done")
         db.set_file_status(cur, file_id, "pending")
         db.finish_job_attempt(
@@ -1360,7 +1531,7 @@ async def _ensure_document_artifact(
             str(payload.get("sourceETag") or ""),
             str(payload.get("actorUserId") or ""),
         )
-        progress.publish(workspace_id, file_id, "parsing", 15, status="processing")
+        _publish_progress(workspace_id, file_id, "parsing", 15, status="processing")
         try:
             _set_stage("mineru_parse")
             artifact = await asyncio.to_thread(
@@ -1441,7 +1612,7 @@ async def _chunks_for(
             )
         _set_stage("text_normalization")
         text = await asyncio.to_thread(_read_text, local_path)
-        progress.publish(ws, file_id, "indexing", 40, status="processing")
+        _publish_progress(ws, file_id, "indexing", 40, status="processing")
         return chunk_markdown(text), None, None, None
 
     direct = {
@@ -1459,7 +1630,7 @@ async def _chunks_for(
                 source_etag,
                 str(payload.get("actorUserId") or ""),
             )
-        progress.publish(
+        _publish_progress(
             ws,
             file_id,
             "captioning"
@@ -1482,6 +1653,7 @@ async def _chunks_for(
                 derived_size,
                 caption_cached,
             ) = await source_text.caption_image_source(
+                file_id=file_id,
                 local_path=local_path,
                 name=name,
                 source_sha256=source_sha256,
@@ -1526,7 +1698,7 @@ async def _chunks_for(
                     source_etag,
                     str(payload.get("actorUserId") or ""),
                 )
-        progress.publish(ws, file_id, "indexing", 50, status="processing")
+        _publish_progress(ws, file_id, "indexing", 50, status="processing")
         return chunk_markdown(text), None, None, None
 
     if processing_plan.route != ingest_plan.DOCUMENT_PARSE:
@@ -1575,7 +1747,7 @@ async def _chunks_for(
             )
         if processing_plan.office_preview and not published_preview:
             raise RetryableError("required Office preview could not be published")
-        progress.publish(
+        _publish_progress(
             ws,
             file_id,
             "captioning" if processing_plan.caption_embedded_images else "indexing",
@@ -1587,10 +1759,12 @@ async def _chunks_for(
             # the figure stays invisible to both.
             _set_stage("figure_captioning")
             counts = await figures.caption_figures(
+                file_id=file_id,
                 content_list=content_list,
                 raw_dir=raw_dir,
                 file_name=name,
                 source_sha256=source_sha256,
+                refresh_job_id=job_id if payload.get("sourceRefresh") is True else None,
             )
             log.info("captioned figures for %s: %s", name, counts)
             selected = max(0, int(counts.get("selected") or 0))
@@ -1621,7 +1795,7 @@ async def _chunks_for(
                         str(payload.get("actorUserId") or ""),
                     )
         _set_stage("chunking")
-        progress.publish(ws, file_id, "indexing", 55)
+        _publish_progress(ws, file_id, "indexing", 55)
         return (
             chunk_content_list(content_list),
             artifact_key,
@@ -1663,6 +1837,14 @@ async def process_job(job: dict) -> None:
 
 
 async def process_ingest_job(job: dict) -> None:
+    token = db.bind_source_refresh(job)
+    try:
+        await _process_ingest_job_bound(job)
+    finally:
+        db.reset_source_refresh(token)
+
+
+async def _process_ingest_job_bound(job: dict) -> None:
     _set_stage("validating")
     payload = job["payload"] or {}
     _require_ingest_payload(payload)
@@ -1828,7 +2010,19 @@ async def _reuse_donor(
         ingest_plan.IMAGE_CAPTION: "image",
         ingest_plan.AUDIO_TRANSCRIPTION: "audio",
     }.get(route)
-    if direct in {"image", "audio"}:
+    if direct == "image":
+        try:
+            cached = await caption_cache.lookup(
+                file_id, None, source_sha256, True, require_source_job=True
+            )
+        except TerminalError:
+            raise
+        except Exception:
+            log.warning("could not read eligible image caption", exc_info=True)
+            return False
+        if cached is None:
+            return False
+    elif direct == "audio":
         derived_key = source_text.artifact_key(source_sha256, direct)
         try:
             info = await asyncio.to_thread(blobstore.object_info, derived_key)
@@ -1879,6 +2073,10 @@ async def _reuse_donor(
         source_etag=source_etag,
     )
     if association["ready"]:
+        if not await store.attach_donor_captions(
+            donor_id=donor["id"], dest_workspace_id=ws, dest_file_id=file_id
+        ):
+            return False
         if preview_blob_path and not await asyncio.to_thread(
             _reuse_office_preview,
             file_id=file_id,
@@ -1909,11 +2107,12 @@ async def _reuse_donor(
         )
         if not committed:
             return False
-        progress.publish(
+        _publish_progress(
             ws, file_id, "done", 100, status="ready", message=note, indexed=True
         )
         return True
     copied = await store.copy_content_from_donor(
+        dest_file_id=file_id,
         donor_id=donor["id"],
         dest_content_id=association["content_id"],
         dest_workspace_id=ws,
@@ -2002,7 +2201,7 @@ async def _reuse_donor(
     )
     if not committed:
         return False
-    progress.publish(ws, file_id, "done", 100, status="ready", indexed=True)
+    _publish_progress(ws, file_id, "done", 100, status="ready", indexed=True)
     log.info("indexed %s from donor: %s", name, result)
     return True
 
@@ -2055,11 +2254,11 @@ async def _process_ingest_job(
         )
         if not committed:
             return
-        progress.publish(
+        _publish_progress(
             ws, file_id, "failed", 100, status="failed", message=note, indexed=False
         )
         return
-    progress.publish(ws, file_id, "queued", 5, status="pending")
+    _publish_progress(ws, file_id, "queued", 5, status="pending")
 
     if processing_plan.route == ingest_plan.STORE_ONLY:
         _set_stage("store_only")
@@ -2080,7 +2279,7 @@ async def _process_ingest_job(
         )
         if not committed:
             return
-        progress.publish(
+        _publish_progress(
             ws, file_id, "done", 100, status="ready", message=note, indexed=False
         )
         return
@@ -2116,6 +2315,7 @@ async def _process_ingest_job(
     pin = await store.workspace_embedding_pin(ws)
     donor = None
     donor = await store.find_ready_donor(
+        workspace_id=ws,
         source_sha256=source_sha256,
         pipeline_identity=identity,
         embedding_provider_slug=pin["embedding_provider_slug"],
@@ -2183,7 +2383,7 @@ async def _process_ingest_job(
             artifact=artifact,
         )
         if handed_off:
-            progress.publish(
+            _publish_progress(
                 ws,
                 file_id,
                 "indexing",
@@ -2227,7 +2427,7 @@ async def _process_ingest_job(
             file_id=file_id,
         )
         if repaired:
-            progress.publish(
+            _publish_progress(
                 ws,
                 file_id,
                 "queued",
@@ -2236,7 +2436,9 @@ async def _process_ingest_job(
                 message=f"{name}: parse artifact was invalid; parsing once more.",
             )
         return
-    if not chunks:
+    if not chunks and not (
+        payload.get("sourceRefresh") is True and payload.get("format") == "text"
+    ):
         raise RetryableError("parse produced no indexable content")
     telemetry.record(chunks_created=len(chunks))
 
@@ -2291,7 +2493,7 @@ async def _process_ingest_job(
         )
         if not committed:
             return
-        progress.publish(
+        _publish_progress(
             ws, file_id, "done", 100, status="ready", message=note, indexed=True
         )
         await asyncio.to_thread(
@@ -2316,7 +2518,9 @@ async def _process_ingest_job(
             file_id=file_id,
             file_name=name,
             chunks=chunks,
-            on_progress=lambda pct: progress.publish(ws, file_id, "indexing", pct),
+            allow_empty=payload.get("sourceRefresh") is True
+            and payload.get("format") == "text",
+            on_progress=lambda pct: _publish_progress(ws, file_id, "indexing", pct),
             claim_job_id=job["id"],
         )
     except BaseException:
@@ -2352,7 +2556,7 @@ async def _process_ingest_job(
         source_revision,
         source_etag,
     )
-    progress.publish(ws, file_id, "done", 100, status="ready", indexed=True)
+    _publish_progress(ws, file_id, "done", 100, status="ready", indexed=True)
     log.info("indexed %s: %s", name, result)
 
 
@@ -2516,9 +2720,22 @@ async def main_async(job_type: str = "ingest") -> None:
 
 
 async def _handle_job_failure(job: dict, exc: BaseException) -> None:
+    token = db.bind_source_refresh(job)
+    try:
+        await _handle_job_failure_bound(job, exc)
+    finally:
+        db.reset_source_refresh(token)
+
+
+async def _handle_job_failure_bound(job: dict, exc: BaseException) -> None:
     payload = job.get("payload") or {}
     fid = payload.get("fileId")
     ws = payload.get("workspaceId")
+    if payload.get("sourceRefresh") is True and await asyncio.to_thread(
+        _source_refresh_published, job["id"], payload
+    ):
+        await asyncio.to_thread(_settle_published_source_refresh, job["id"], payload)
+        return
     job_type = (job.get("type") or "").strip()
     policy = POLICIES.get(job_type)
     attempts = int(job.get("attempts") or 1)
@@ -2543,6 +2760,29 @@ async def _handle_job_failure(job: dict, exc: BaseException) -> None:
             # the logical file points at B.
             exc = superseded
             error_category, error_code, _provider_status = telemetry.classify_error(exc)
+    if isinstance(exc, elitellm.ProviderBusy) and job_type == "ingest" and fid and ws:
+        # The in-call busy budget is spent. Re-pend without spending an attempt
+        # until the per-job cap, then fail the file as busy.
+        waits = int(job.get("provider_waits") or 0)
+        if waits < PROVIDER_WAITS_MAX:
+            name = await asyncio.to_thread(_read_name, str(fid))
+            await asyncio.to_thread(
+                _yield_for_capacity,
+                job,
+                str(fid),
+                str(ws),
+                name,
+                int(payload.get("sourceRevision") or 0),
+                str(payload.get("sourceETag") or ""),
+                str(payload.get("actorUserId") or ""),
+                "waiting for the model to free up",
+                provider_wait_backoff_s(exc.provider_retry_after, waits),
+                "provider_busy",
+                count_provider_wait=True,
+            )
+            return
+        error_category, error_code = "provider", "provider_busy"
+        exc = TerminalError(f"the model stayed busy across {waits} waits: {exc}")
     retry = (
         policy is not None
         and not isinstance(exc, accounting.SettlementError)
@@ -2593,6 +2833,14 @@ async def _handle_job_failure(job: dict, exc: BaseException) -> None:
                 _reservation_id(payload),
             )
             return
+        if (
+            outcome == "stale"
+            and payload.get("sourceRefresh") is True
+            and await asyncio.to_thread(_source_refresh_published, job["id"], payload)
+        ):
+            await asyncio.to_thread(
+                _settle_published_source_refresh, job["id"], payload
+            )
         log.info("job %s requeued (%s)", job["id"], outcome)
         return
     await asyncio.to_thread(_cleanup_payload_source, payload)
@@ -2622,6 +2870,10 @@ async def _handle_job_failure(job: dict, exc: BaseException) -> None:
 
 
 def main(job_type: str = "ingest") -> None:
+    if job_type == "ingest":
+        # Parse and import roles never call a provider and are not given the
+        # variable; only the role that spends against the gate must have it.
+        require_model_concurrency_in_production()
     use_compatible_event_loop()
     asyncio.run(main_async(job_type))
 

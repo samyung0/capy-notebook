@@ -5,8 +5,8 @@ Ingest prompts are intentionally not covered: they must stay English.
 
 from __future__ import annotations
 
-from pipeline.retrieval.agent import system_prompt
-from pipeline.retrieval.locale import (
+from pipeline.prompts.chat import system_prompt
+from pipeline.prompts.locale import (
     language_name,
     normalize_locale,
     response_language_rule,

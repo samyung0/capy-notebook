@@ -181,6 +181,8 @@ CREATE TABLE IF NOT EXISTS workspaces (
   privacy          text NOT NULL DEFAULT 'private',
   -- Role granted to link/public visitors who are not explicit members.
   share_role       text NOT NULL DEFAULT 'viewer',
+  auto_reparse     boolean NOT NULL DEFAULT true,
+  auto_reindex     boolean NOT NULL DEFAULT true,
   -- The vector space this workspace's index lives in. Pinned once at creation
   -- from the registry embedding default and never changed afterwards: there is
   -- no reindex job, so ingest and query must keep resolving this exact pin for
@@ -252,6 +254,7 @@ CREATE TABLE IF NOT EXISTS files (
   -- True after ingest has written retrieval chunks. Viewable files uploaded
   -- with parseMode=none (audio, store-only) stay false.
   indexed               boolean NOT NULL DEFAULT false,
+  ever_parsed_successfully boolean NOT NULL DEFAULT false,
   parser                text,
   engine                text,
   blob_path             text,
@@ -954,6 +957,9 @@ CREATE TABLE IF NOT EXISTS jobs (
   payload    jsonb NOT NULL DEFAULT '{}',
   status     text NOT NULL DEFAULT 'pending',  -- pending | running | done | failed
   attempts   int NOT NULL DEFAULT 0,
+  -- Times a busy provider sent this job back to pending without spending an
+  -- attempt. The worker fails the job past its cap.
+  provider_waits int NOT NULL DEFAULT 0,
   error      text,
   locked_at  timestamptz,
   -- Claimable only once this instant has passed. Backoff after a retryable
@@ -999,7 +1005,7 @@ CREATE TABLE IF NOT EXISTS ingest_job_attempts (
   status                text NOT NULL DEFAULT 'running'
     CHECK (status IN (
       'running', 'succeeded', 'retrying', 'failed', 'superseded',
-      'lease_expired', 'capacity_wait'
+      'lease_expired', 'capacity_wait', 'provider_busy'
     )),
   stage                 text NOT NULL DEFAULT 'claimed',
   error_category        text NOT NULL DEFAULT '',
@@ -1258,7 +1264,7 @@ BEGIN
   WHERE c.id = OLD.content_id
     AND NOT EXISTS (
       SELECT 1 FROM rag_file_contents fc WHERE fc.content_id = OLD.content_id
-    );
+    ) AND NOT EXISTS (SELECT 1 FROM source_refresh_candidates sc WHERE sc.content_id=OLD.content_id);
   RETURN NULL;
 END $$ LANGUAGE plpgsql;
 
@@ -1371,6 +1377,91 @@ CREATE INDEX IF NOT EXISTS editor_assets_workspace_idx
   ON editor_assets(workspace_id, status);
 CREATE INDEX IF NOT EXISTS editor_assets_material_idx
   ON editor_assets(material_id, status);
+
+-- Authored shared source state is separate from the last published file/index.
+CREATE TABLE IF NOT EXISTS source_documents (
+  user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  file_id text PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
+  format text NOT NULL CHECK (format IN ('docx','xlsx','pptx','text')),
+  epoch bigint NOT NULL DEFAULT 1 CHECK (epoch > 0),
+  checkpoint bigint NOT NULL DEFAULT 0 CHECK (checkpoint >= 0),
+  indexed_checkpoint bigint NOT NULL DEFAULT 0 CHECK (indexed_checkpoint >= 0 AND indexed_checkpoint <= checkpoint),
+  base_revision bigint NOT NULL CHECK (base_revision > 0),
+  base_blob_path text NOT NULL,
+  base_source_sha256 text NOT NULL DEFAULT '',
+  state bytea NOT NULL DEFAULT '',
+  indexed_state bytea NOT NULL DEFAULT '',
+  pending_effects jsonb NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(pending_effects)='array'),
+  storage_bytes bigint GENERATED ALWAYS AS (octet_length(state)::bigint+octet_length(indexed_state)+octet_length(pending_effects::text)) STORED,
+  net_tokens bigint NOT NULL DEFAULT 0 CHECK (net_tokens >= 0),
+  last_edited_at timestamptz NOT NULL DEFAULT now(),
+  last_refresh_requested_at timestamptz NOT NULL DEFAULT now(),
+  desired_checkpoint bigint,
+  desired_manual boolean NOT NULL DEFAULT false,
+  running_job_id text REFERENCES jobs(id) ON DELETE SET NULL,
+  refresh_error text,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS source_documents_pending_idx ON source_documents(last_edited_at)
+  WHERE checkpoint > indexed_checkpoint;
+
+-- One fixed in-flight export. A newer desired checkpoint remains on the room.
+CREATE TABLE IF NOT EXISTS source_refresh_candidates (
+  user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  file_id text PRIMARY KEY REFERENCES source_documents(file_id) ON DELETE CASCADE,
+  job_id text NOT NULL UNIQUE REFERENCES jobs(id) ON DELETE CASCADE,
+  epoch bigint NOT NULL,
+  checkpoint bigint NOT NULL,
+  lease_token text NOT NULL,
+  state bytea NOT NULL,
+  source_blob_path text,
+  source_sha256 text,
+  size_bytes bigint NOT NULL DEFAULT 0 CHECK (size_bytes >= 0),
+  seed bytea,
+  preview_blob_path text,
+  parse_artifact_key text,
+  parse_artifact_fingerprint text,
+  parse_artifact_version text,
+  content_id text REFERENCES rag_contents(id) ON DELETE SET NULL,
+  content_hash text,
+  image_sha256s text[] NOT NULL DEFAULT '{}',
+  storage_bytes bigint GENERATED ALWAYS AS (octet_length(state)::bigint+COALESCE(octet_length(seed),0)+size_bytes) STORED,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TRIGGER source_refresh_candidate_content_cleanup
+AFTER DELETE OR UPDATE OF content_id ON source_refresh_candidates
+FOR EACH ROW EXECUTE FUNCTION delete_unreferenced_rag_content();
+
+CREATE TABLE IF NOT EXISTS pdf_annotations (
+  id text PRIMARY KEY,
+  file_id text NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+  author_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  source_identity text NOT NULL,
+  page integer NOT NULL CHECK (page > 0),
+  kind text NOT NULL CHECK (kind IN ('highlight','rectangle','ellipse')),
+  rects jsonb NOT NULL CHECK (jsonb_typeof(rects)='array' AND jsonb_array_length(rects) BETWEEN 1 AND 1000),
+  color text NOT NULL CHECK (color ~ '^#[0-9a-fA-F]{6}$'),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS pdf_annotations_author_file_idx ON pdf_annotations(author_id,file_id,source_identity,page);
+
+-- Resource ownership, never an image hash alone, authorizes caption reuse.
+CREATE TABLE IF NOT EXISTS image_caption_associations (
+  id text PRIMARY KEY,
+  file_id text REFERENCES files(id) ON DELETE CASCADE,
+  editor_asset_id text REFERENCES editor_assets(id) ON DELETE CASCADE,
+  image_sha256 text NOT NULL CHECK (image_sha256 ~ '^[0-9a-f]{64}$'),
+  caption_blob_path text NOT NULL,
+  published boolean NOT NULL DEFAULT true,
+  size_bytes bigint NOT NULL CHECK (size_bytes >= 0),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CHECK ((file_id IS NOT NULL) <> (editor_asset_id IS NOT NULL)),
+  UNIQUE (file_id,image_sha256),
+  UNIQUE (editor_asset_id,image_sha256)
+);
+CREATE INDEX IF NOT EXISTS image_caption_associations_sha_idx ON image_caption_associations(image_sha256);
 
 -- One reservation table for both upload flows. They were separate tables with
 -- ~90% identical columns, one shared reservation trigger and two near-duplicate
@@ -2298,6 +2389,13 @@ CREATE INDEX IF NOT EXISTS provider_calls_unbilled_idx
 CREATE INDEX IF NOT EXISTS provider_calls_receipt_deadline_idx
   ON provider_calls(receipt_deadline_at)
   WHERE status = 'open';
+-- Ops groups every attempt by provider and model over a date range, and
+-- reads the last hour's busy-abandoned attempts.
+CREATE INDEX IF NOT EXISTS provider_calls_opened_idx
+  ON provider_calls(opened_at);
+CREATE INDEX IF NOT EXISTS provider_calls_abandoned_idx
+  ON provider_calls(abandoned_at)
+  WHERE status = 'abandoned';
 CREATE INDEX IF NOT EXISTS provider_calls_reservation_idx
   ON provider_calls(reservation_id, kind, status, opened_at DESC);
 CREATE INDEX IF NOT EXISTS provider_calls_job_attempt_idx
@@ -2916,7 +3014,7 @@ BEGIN
       -- Reference before dereference, so a path moving between two rows in one
       -- statement is never briefly unreferenced and queued for deletion.
       PERFORM blob_ref(new_path);
-      PERFORM blob_unref(old_path, interval '0');
+      PERFORM blob_unref(old_path, CASE WHEN TG_TABLE_NAME='source_refresh_candidates' AND col='source_blob_path' THEN interval '1 day' ELSE interval '0' END);
     END IF;
   END LOOP;
   RETURN NULL;
@@ -2982,7 +3080,7 @@ BEGIN
     SELECT id, payload->>'reservationId' AS reservation_id
     FROM jobs
     WHERE id=ANY(COALESCE(target_job_ids, ARRAY[]::text[]))
-      AND type IN ('parse','ingest') AND status IN ('pending','running')
+      AND type IN ('parse','ingest','source_refresh') AND status IN ('pending','running')
     FOR UPDATE
   ), closed_attempts AS (
     UPDATE ingest_job_attempts a SET
@@ -2996,7 +3094,14 @@ BEGIN
     UPDATE jobs j SET status='failed', error=terminal_detail,
       locked_at=NULL, lease_expires_at=NULL, updated_at=now()
     FROM candidates c WHERE j.id=c.id
-    RETURNING c.reservation_id
+    RETURNING c.reservation_id,j.id
+  ), cleared_source AS (
+    UPDATE source_documents d SET running_job_id=NULL,
+      refresh_error=CASE WHEN attempt_outcome='superseded' THEN NULL ELSE terminal_detail END,
+      desired_checkpoint=CASE WHEN attempt_outcome='superseded' THEN d.checkpoint ELSE d.desired_checkpoint END
+    FROM cancelled j WHERE d.running_job_id=j.id
+  ), discarded_source AS (
+    DELETE FROM source_refresh_candidates c USING cancelled j WHERE c.job_id=j.id
   ), closed AS (
     UPDATE provider_sessions ps SET
       status=CASE WHEN EXISTS (
@@ -3034,7 +3139,7 @@ BEGIN
   INTO target_job_ids
   FROM (
     SELECT id FROM jobs
-    WHERE type IN ('parse','ingest')
+    WHERE type IN ('parse','ingest','source_refresh')
       AND payload->>'fileId'=OLD.id
       AND status IN ('pending','running')
     FOR UPDATE SKIP LOCKED
@@ -3090,7 +3195,7 @@ BEGIN
     FROM jobs j
     LEFT JOIN files f ON f.id=j.payload->>'fileId'
     LEFT JOIN workspaces w ON w.id=f.workspace_id
-    WHERE j.type IN ('import','parse','ingest')
+    WHERE j.type IN ('import','parse','ingest','source_refresh')
       AND j.status IN ('pending','running')
       AND (j.payload->>'actorUserId'=target_user_id OR w.user_id=target_user_id)
     FOR UPDATE OF j SKIP LOCKED
@@ -3116,7 +3221,12 @@ BEGIN
     UPDATE jobs j SET status='failed', error='account deletion requested',
       locked_at=NULL, lease_expires_at=NULL, updated_at=now()
     FROM candidates c WHERE j.id=c.id
-    RETURNING c.reservation_id
+    RETURNING c.reservation_id,j.id
+  ), cleared_source AS (
+    UPDATE source_documents d SET running_job_id=NULL,refresh_error='account deletion requested'
+    FROM cancelled j WHERE d.running_job_id=j.id
+  ), discarded_source AS (
+    DELETE FROM source_refresh_candidates c USING cancelled j WHERE c.job_id=j.id
   ), provider_targets AS (
     SELECT reservation_id AS id FROM cancelled WHERE reservation_id IS NOT NULL
     UNION
@@ -3376,6 +3486,19 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION enqueue_source_collaboration_eviction(target_file_id text,eviction_mode text DEFAULT 'discard')
+RETURNS void LANGUAGE plpgsql AS $$
+DECLARE source_epoch bigint; eviction_id text;
+BEGIN
+ SELECT epoch INTO source_epoch FROM source_documents WHERE file_id=target_file_id;
+ IF source_epoch IS NULL THEN RETURN; END IF;
+ eviction_id:='cev_'||substr(md5(random()::text||clock_timestamp()::text||target_file_id),1,24);
+ INSERT INTO collaboration_eviction_outbox(id,channel,payload)
+ VALUES(eviction_id,
+ 'capy:collaboration:evict',jsonb_build_object('evictionId',eviction_id,'fileId',target_file_id,'room','source:'||target_file_id||':epoch:'||source_epoch::text,'type','access-changed','mode',eviction_mode));
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION enqueue_workspace_collaboration_evictions(
   target_workspace_id text,
   eviction_mode text DEFAULT 'discard'
@@ -3392,6 +3515,9 @@ BEGIN
     PERFORM enqueue_material_collaboration_eviction(
       material_row.id, 'access-changed', eviction_mode
     );
+  END LOOP;
+  FOR material_row IN SELECT id FROM files WHERE workspace_id=target_workspace_id LOOP
+    PERFORM enqueue_source_collaboration_eviction(material_row.id,eviction_mode);
   END LOOP;
 END;
 $$;
@@ -3612,6 +3738,65 @@ DROP TRIGGER IF EXISTS materials_clone_count_cleanup ON materials;
 CREATE TRIGGER materials_clone_count_cleanup
 BEFORE DELETE ON materials
 FOR EACH ROW EXECUTE FUNCTION cleanup_clone_count_trigger();
+
+
+CREATE TRIGGER source_documents_blob_refs_after
+AFTER INSERT OR UPDATE OR DELETE ON source_documents
+FOR EACH ROW EXECUTE FUNCTION account_blob_refs('base_blob_path');
+CREATE TRIGGER source_refresh_candidates_blob_refs_after
+AFTER INSERT OR UPDATE OR DELETE ON source_refresh_candidates
+FOR EACH ROW EXECUTE FUNCTION account_blob_refs('source_blob_path','preview_blob_path');
+CREATE TRIGGER image_caption_associations_blob_refs_after
+AFTER INSERT OR UPDATE OR DELETE ON image_caption_associations
+FOR EACH ROW EXECUTE FUNCTION account_blob_refs('caption_blob_path');
+
+CREATE OR REPLACE FUNCTION set_source_storage_owner() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  SELECT user_id INTO NEW.user_id FROM files WHERE id=NEW.file_id;
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER source_documents_owner_before BEFORE INSERT OR UPDATE OF file_id ON source_documents
+FOR EACH ROW EXECUTE FUNCTION set_source_storage_owner();
+CREATE TRIGGER source_refresh_candidates_owner_before BEFORE INSERT OR UPDATE OF file_id ON source_refresh_candidates
+FOR EACH ROW EXECUTE FUNCTION set_source_storage_owner();
+CREATE OR REPLACE FUNCTION account_source_storage() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP='INSERT' THEN
+    PERFORM append_user_storage_delta(NEW.user_id,NEW.storage_bytes);
+  ELSIF TG_OP='DELETE' THEN
+    PERFORM append_user_storage_delta(OLD.user_id,-OLD.storage_bytes);
+  ELSIF OLD.user_id IS DISTINCT FROM NEW.user_id THEN
+    PERFORM append_user_storage_delta(OLD.user_id,-OLD.storage_bytes);
+    PERFORM append_user_storage_delta(NEW.user_id,NEW.storage_bytes);
+  ELSE
+    PERFORM append_user_storage_delta(NEW.user_id,NEW.storage_bytes-OLD.storage_bytes);
+  END IF;
+  RETURN NULL;
+END;
+$$;
+CREATE TRIGGER source_documents_storage_after AFTER INSERT OR UPDATE OR DELETE ON source_documents
+FOR EACH ROW EXECUTE FUNCTION account_source_storage();
+CREATE TRIGGER source_refresh_candidates_storage_after AFTER INSERT OR UPDATE OR DELETE ON source_refresh_candidates
+FOR EACH ROW EXECUTE FUNCTION account_source_storage();
+CREATE OR REPLACE FUNCTION transfer_source_storage_owner() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  UPDATE source_documents SET user_id=NEW.user_id WHERE file_id=NEW.id;
+  UPDATE source_refresh_candidates SET user_id=NEW.user_id WHERE file_id=NEW.id;
+  RETURN NULL;
+END;
+$$;
+CREATE TRIGGER files_source_owner_after AFTER UPDATE OF user_id ON files
+FOR EACH ROW WHEN (OLD.user_id IS DISTINCT FROM NEW.user_id) EXECUTE FUNCTION transfer_source_storage_owner();
+
+CREATE OR REPLACE FUNCTION source_delete_eviction_trigger() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+ PERFORM enqueue_source_collaboration_eviction(OLD.id,'discard');
+ RETURN OLD;
+END;
+$$;
+CREATE TRIGGER files_source_delete_eviction_before BEFORE DELETE ON files
+FOR EACH ROW EXECUTE FUNCTION source_delete_eviction_trigger();
 
 -- PostgreSQL grants function execution to PUBLIC by default. Keep operational
 -- roles deny-by-default; deployment grants each narrow SECURITY DEFINER entry

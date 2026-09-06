@@ -6,6 +6,7 @@ import {
   isLLMKeyError,
   isLLMKeyFailedError,
   isModelUnavailableError,
+  isProviderBusyError,
   isStorageQuotaError,
   isTooManyIngestLeasesError,
   isWorkspaceLimitError,
@@ -23,8 +24,10 @@ export type ErrorKind =
   | 'credits'
   | 'ingest'
   | 'model'
+  | 'busy'
   | 'llmKey'
   | 'validation'
+  | 'sourceChanged'
   | 'server'
   | 'chunkLoad'
   | 'cancelled'
@@ -68,9 +71,11 @@ export function errorKind(error: unknown): ErrorKind {
   if (isCreditsExhaustedError(error)) return 'credits';
   if (isTooManyIngestLeasesError(error)) return 'ingest';
   if (isModelUnavailableError(error)) return 'model';
+  if (isProviderBusyError(error)) return 'busy';
   if (isLLMKeyError(error)) return 'llmKey';
 
   if (isApiError(error)) {
+    if (error.code === 'source_changed') return 'sourceChanged';
     if (error.code === 'account_over_quota' || error.code === 'account_locked')
       return 'quota';
     if (error.status === 401) return 'auth';
@@ -165,12 +170,24 @@ export function describeError(error: unknown): ErrorDescription {
         description: m.error_model_unavailable_body(),
         title: m.error_model_unavailable_title(),
       };
+    case 'busy':
+      return {
+        action: 'retry',
+        description: m.error_provider_busy_body(),
+        title: m.error_provider_busy_title(),
+      };
     case 'llmKey':
       return {
         description: isInvalidLLMKeyError(error)
           ? m.settings_llm_key_invalid()
           : m.settings_llm_key_failed(),
         title: m.error_llm_key_title(),
+      };
+    case 'sourceChanged':
+      return {
+        action: 'retry',
+        description: m.error_source_changed_body(),
+        title: m.error_source_changed_title(),
       };
     case 'validation':
       return {
