@@ -38,6 +38,10 @@ Archive and verify all new artifacts locally, check source and original lab
 fingerprints, delete only this run's conversations and scratch schema, remove
 the temporary service and credential files, and return retained containers
 to their original stopped state.
+The archived `audit.py` compares the chat-layer freeze with the DeepSeek run
+and verifies the archive hash, embedded manifest and conversation ownership
+before deletion. Retain append-only lab accounting records under the same
+cleanup scope as the earlier experiment.
 
 The questions have already been evaluated. Results are a repeated comparison
 on known fixtures, not a fresh holdout. Codex source review is not independent

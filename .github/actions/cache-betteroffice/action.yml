@@ -1,0 +1,17 @@
+name: Cache BetterOffice WASM
+description: Restore compiled WASM outputs for the fork's source and toolchain fingerprint.
+
+runs:
+  using: composite
+  steps:
+    - name: Fingerprint BetterOffice WASM inputs
+      id: wasm
+      shell: bash
+      working-directory: vendor/betteroffice
+      run: |
+        fingerprint=$(bun scripts/wasm-cache-key.ts)
+        echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache@v4
+      with:
+        path: vendor/betteroffice/target/wasm-pack
+        key: betteroffice-wasm-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.wasm.outputs.fingerprint }}

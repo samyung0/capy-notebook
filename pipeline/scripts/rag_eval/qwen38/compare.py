@@ -217,8 +217,9 @@ def main():
             "cached_tokens", 0
         )
     result["qwen_provider"] = {
-        "primary_attempts": len(requests),
-        "failed_attempts": sum(bool(r.get("error")) for r in requests),
+        "primary_evaluation_attempts": len(new),
+        "provider_request_attempts": len(requests),
+        "failed_provider_request_attempts": sum(bool(r.get("error")) for r in requests),
         "usage": dict(usage),
         "tool_calls_returned_without_tool_definitions": sum(
             not r["body"].get("tools")

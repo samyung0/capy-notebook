@@ -40,6 +40,17 @@ and builds the scoped DOCX stylesheet plus DOCX/XLSX/PPTX viewer/editor WASM art
 requires Bun, Rust, `wasm-pack` 0.15.0, and `wasm-opt` from Binaryen. Existing,
 intact generated artifacts are reused.
 
+Frontend CI, browser E2E CI, and SPA deployment restore
+`vendor/betteroffice/target/wasm-pack` through
+`.github/actions/cache-betteroffice`. The cache key uses the fork's
+`scripts/wasm-cache-key.ts` fingerprint plus runner OS and architecture. It
+covers Rust sources, Cargo configuration, compiler/optimizer versions, build
+flags, and WASM build scripts, so a compiler change can invalidate the cache
+even with an unchanged submodule pin. Preparation still validates cached output
+hashes and copies intact builds into the generated package directories; a miss
+rebuilds normally. CSS, the checkpoint bundle, and the environment-specific Vite
+output are rebuilt on each run.
+
 ## Browser loading model
 
 `office-runtime.html` is a second Vite entry rendered from the separate origin

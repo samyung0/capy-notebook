@@ -43,6 +43,9 @@ async def main():
                 json.dumps(original["body"], sort_keys=True).encode()
             ).hexdigest(),
             "only_request_change": {"tool_choice": "none"},
+            "replay_body_sha256": hashlib.sha256(
+                json.dumps(wire, sort_keys=True).encode()
+            ).hexdigest(),
             "responses": [],
         }
         start = time.perf_counter()

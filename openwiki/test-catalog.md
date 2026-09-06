@@ -33,6 +33,11 @@ including Office WASM with Binaryen's version and verified archive checksum from
 the pinned BetterOffice checkout. On ARM hosts, run
 `DOCKER_DEFAULT_PLATFORM=linux/amd64 pnpm e2e:slow` for its x86_64 Linux toolchain.
 
+The frontend and browser E2E CI jobs reuse compiled browser WASM through
+`.github/actions/cache-betteroffice`; normal `office:prepare` source and output
+hash validation still runs before consuming the restored artifacts. This cache
+does not cover the separate collaboration Docker build.
+
 The local grading checks in [`scripts/grading_benchmark/test_benchmark.py`](../scripts/grading_benchmark/test_benchmark.py) cover invalid-score handling, family split integrity, interrupted result recovery, separation of run configurations and changed coverage, exclusion of anchors/ambiguous labels from primary matched/native metrics, complete hash-matched comparison with invalid paired scores, and native/browser pairing restricted to identical cases, model hashes and explicit decoding controls. [`test_browser.mjs`](../scripts/grading_benchmark/test_browser.mjs) checks that a runtime exception saves bounded diagnostic logs, stops requests to the failed worker, releases it, permits the next model to run and visibly reports the failure. Model evaluations are opt-in experiments described in [`scripts/grading_benchmark/README.md`](../scripts/grading_benchmark/README.md), with artifacts under ignored `data/grading-benchmark/`.
 
 ---
