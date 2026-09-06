@@ -127,6 +127,12 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
 2. **API + collab.** Pick one of §1.1 Coolify (typical), §1.2 bare compose, or
    §1.3 public A records. Retrieval, worker, Postgres, and Redis stay off
    public DNS in every option.
+   The collaboration Docker build reads Binaryen's version and archive checksum
+   from the pinned BetterOffice checkout's `.github/actions/wasm-toolchain/action.yml`,
+   also used by frontend CI. Update the BetterOffice commit pin to update that
+   optimizer configuration. The current checksum covers Linux x86_64; on ARM
+   hosts, use `DOCKER_DEFAULT_PLATFORM=linux/amd64` for Compose or
+   `docker build --platform=linux/amd64`.
 3. **Same-origin API.** The site Worker forwards `/api/*` only to its explicit
    `API_ORIGIN` and streams request/response bodies. It passes Go's file redirects
    back to the browser without following them with credentials. `/webhooks/*`

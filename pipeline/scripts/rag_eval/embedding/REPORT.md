@@ -122,6 +122,12 @@ route measurements from one session, not an SLA or an intrinsic model-speed rank
 
 ## Agent answers
 
+See the [follow-up trace analysis](TRACE-ANALYSIS.md) for the exact point where
+chains break, matched intermediate queries and examples of early stopping. The
+public retrieval benchmark and curated agent benchmark use different questions
+and sources; their aggregate scores are not a causal comparison on identical
+agent inputs.
+
 The selected challenger, Voyage, and the 4B baseline each answered the same
 48 curated questions twice: 80 answerable and 16 missing-information attempts
 per condition. All 192 first attempts completed without transport or tool errors.

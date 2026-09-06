@@ -1,7 +1,23 @@
 FROM oven/bun:1.3.14 AS bun
 FROM rust:1.98-bookworm AS office
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
-RUN apt-get update && apt-get install -y --no-install-recommends binaryen && rm -rf /var/lib/apt/lists/*
+COPY vendor/betteroffice/.github/actions/wasm-toolchain/action.yml /tmp/wasm-toolchain.yml
+# The pinned BetterOffice checkout owns the optimizer version and checksum.
+RUN <<'SH'
+set -eu
+if [ "$(uname -m)" != x86_64 ]; then
+    echo 'BetterOffice pins an x86_64 Linux toolchain; build with --platform=linux/amd64.' >&2
+    exit 1
+fi
+bun -e 'const {inputs} = Bun.YAML.parse(await Bun.file("/tmp/wasm-toolchain.yml").text()); console.log(inputs.binaryen.default, inputs.sha256.default)' > /tmp/binaryen-pin
+read -r binaryen sha256 < /tmp/binaryen-pin
+curl -fsSL -o /tmp/binaryen.tar.gz "https://github.com/WebAssembly/binaryen/releases/download/$binaryen/binaryen-$binaryen-x86_64-linux.tar.gz"
+echo "$sha256  /tmp/binaryen.tar.gz" | sha256sum -c -
+mkdir -p /opt/binaryen
+tar -xzf /tmp/binaryen.tar.gz -C /opt/binaryen --strip-components=1
+rm /tmp/binaryen.tar.gz /tmp/binaryen-pin /tmp/wasm-toolchain.yml
+SH
+ENV PATH="/opt/binaryen/bin:${PATH}"
 RUN rustup target add wasm32-unknown-unknown
 RUN cargo install wasm-pack --version 0.15.0 --locked
 WORKDIR /office
