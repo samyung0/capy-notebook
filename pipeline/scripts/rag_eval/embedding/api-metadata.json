@@ -1,0 +1,202 @@
+{
+  "openrouter_models": {
+    "url": "https://openrouter.ai/api/v1/embeddings/models",
+    "response": {
+      "data": [
+        {
+          "id": "voyageai/voyage-4-large",
+          "canonical_slug": "voyageai/voyage-4-large-20260727",
+          "hugging_face_id": null,
+          "name": "VoyageAI by MongoDB: voyage-4-large",
+          "created": 1785188624,
+          "description": "voyage-4-large is a state-of-the-art general-purpose and multilingual embedding optimized for retrieval quality. Enabled by Matryoshka learning and quantization-aware training, voyage-4-large supports embeddings in 2048, 1024, 512, and 256 dimensions, with...",
+          "context_length": 32000,
+          "architecture": {
+            "modality": "text->embeddings",
+            "input_modalities": ["text"],
+            "output_modalities": ["embeddings"],
+            "tokenizer": "Other",
+            "instruct_type": null
+          },
+          "pricing": {
+            "prompt": "0.00000012",
+            "completion": "0"
+          },
+          "top_provider": {
+            "context_length": 32000,
+            "max_completion_tokens": null,
+            "is_moderated": false
+          },
+          "per_request_limits": null,
+          "supported_parameters": [],
+          "default_parameters": {},
+          "supported_voices": null,
+          "knowledge_cutoff": null,
+          "expiration_date": null,
+          "links": {
+            "details": "/api/v1/models/voyageai/voyage-4-large-20260727/endpoints"
+          }
+        },
+        {
+          "id": "perplexity/pplx-embed-v1-4b",
+          "canonical_slug": "perplexity/pplx-embed-v1-4B",
+          "hugging_face_id": "",
+          "name": "Perplexity: Embed V1 4B",
+          "created": 1773625372,
+          "description": "pplx-embed-v1 -4B is one of Perplexity's state-of-the-art text embedding models built for real-world, web-scale retrieval. pplx-embed-v1 is optimized for standard dense text retrieval with the 4B parameter model maximizing retrieval...",
+          "context_length": 32000,
+          "architecture": {
+            "modality": "text->embeddings",
+            "input_modalities": ["text"],
+            "output_modalities": ["embeddings"],
+            "tokenizer": "Other",
+            "instruct_type": null
+          },
+          "pricing": {
+            "prompt": "0.00000003",
+            "completion": "0"
+          },
+          "top_provider": {
+            "context_length": 32000,
+            "max_completion_tokens": null,
+            "is_moderated": false
+          },
+          "per_request_limits": null,
+          "supported_parameters": [
+            "frequency_penalty",
+            "max_tokens",
+            "presence_penalty",
+            "temperature",
+            "top_k",
+            "top_p",
+            "web_search_options"
+          ],
+          "default_parameters": {
+            "temperature": null,
+            "top_p": null,
+            "top_k": null,
+            "frequency_penalty": null,
+            "presence_penalty": null,
+            "repetition_penalty": null
+          },
+          "supported_voices": null,
+          "knowledge_cutoff": null,
+          "expiration_date": null,
+          "links": {
+            "details": "/api/v1/models/perplexity/pplx-embed-v1-4B/endpoints"
+          }
+        }
+      ]
+    }
+  },
+  "voyage_endpoints": {
+    "url": "https://openrouter.ai/api/v1/models/voyageai/voyage-4-large/endpoints",
+    "response": {
+      "data": {
+        "id": "voyageai/voyage-4-large",
+        "name": "VoyageAI by MongoDB: voyage-4-large",
+        "created": 1785188624,
+        "description": "voyage-4-large is a state-of-the-art general-purpose and multilingual embedding optimized for retrieval quality. Enabled by Matryoshka learning and quantization-aware training, voyage-4-large supports embeddings in 2048, 1024, 512, and 256 dimensions, with...",
+        "architecture": {
+          "tokenizer": "Other",
+          "instruct_type": null,
+          "modality": "text->embeddings",
+          "input_modalities": ["text"],
+          "output_modalities": ["embeddings"]
+        },
+        "endpoints": [
+          {
+            "name": "VoyageAI by MongoDB | voyageai/voyage-4-large-20260727",
+            "model_id": "voyageai/voyage-4-large",
+            "model_name": "VoyageAI by MongoDB: voyage-4-large",
+            "context_length": 32000,
+            "pricing": {
+              "prompt": "0.00000012",
+              "completion": "0",
+              "discount": 0
+            },
+            "provider_name": "VoyageAI by MongoDB",
+            "tag": "voyageai",
+            "quantization": "unknown",
+            "max_completion_tokens": 28800,
+            "max_prompt_tokens": null,
+            "supported_parameters": [],
+            "supports_tool_choice": {
+              "none": true,
+              "auto": true,
+              "required": true,
+              "function": true
+            },
+            "status": 0,
+            "uptime_last_30m": 100,
+            "uptime_last_5m": 100,
+            "uptime_last_1d": 100,
+            "supports_implicit_caching": false,
+            "supports_voice_cloning": false,
+            "latency_last_30m": null,
+            "throughput_last_30m": null
+          }
+        ]
+      }
+    }
+  },
+  "pplx_endpoints": {
+    "url": "https://openrouter.ai/api/v1/models/perplexity/pplx-embed-v1-4b/endpoints",
+    "response": {
+      "data": {
+        "id": "perplexity/pplx-embed-v1-4b",
+        "name": "Perplexity: Embed V1 4B",
+        "created": 1773625372,
+        "description": "pplx-embed-v1 -4B is one of Perplexity's state-of-the-art text embedding models built for real-world, web-scale retrieval. pplx-embed-v1 is optimized for standard dense text retrieval with the 4B parameter model maximizing retrieval...",
+        "architecture": {
+          "tokenizer": "Other",
+          "instruct_type": null,
+          "modality": "text->embeddings",
+          "input_modalities": ["text"],
+          "output_modalities": ["embeddings"]
+        },
+        "endpoints": [
+          {
+            "name": "Perplexity | perplexity/pplx-embed-v1-4B",
+            "model_id": "perplexity/pplx-embed-v1-4b",
+            "model_name": "Perplexity: Embed V1 4B",
+            "context_length": 32000,
+            "pricing": {
+              "prompt": "0.00000003",
+              "completion": "0",
+              "discount": 0
+            },
+            "provider_name": "Perplexity",
+            "tag": "perplexity/int8",
+            "quantization": "int8",
+            "max_completion_tokens": 28800,
+            "max_prompt_tokens": null,
+            "supported_parameters": [
+              "max_tokens",
+              "temperature",
+              "top_p",
+              "top_k",
+              "frequency_penalty",
+              "presence_penalty",
+              "web_search_options"
+            ],
+            "supports_tool_choice": {
+              "none": true,
+              "auto": true,
+              "required": true,
+              "function": true
+            },
+            "status": 0,
+            "uptime_last_30m": 100,
+            "uptime_last_5m": 100,
+            "uptime_last_1d": 100,
+            "supports_implicit_caching": false,
+            "supports_voice_cloning": false,
+            "latency_last_30m": null,
+            "throughput_last_30m": null
+          }
+        ]
+      }
+    }
+  }
+}
