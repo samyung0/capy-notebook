@@ -1,0 +1,82 @@
+name: Deploy Ops
+run-name: Deploy Ops ${{ inputs.environment_name }} ${{ inputs.revision || github.sha }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment_name:
+        description: Ops environment to deploy
+        required: true
+        type: choice
+        options: [uat, production]
+      revision:
+        description: Full main-branch SHA; blank uses the selected main revision
+        required: false
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  statuses: read
+
+# Share the app promotion lock so Ops cannot restart during schema migrations.
+concurrency:
+  group: uat-promotion-flow
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment:
+      name: ${{ inputs.environment_name }}
+      url: ${{ vars.DEPLOYMENT_OPS_URL }}
+    env:
+      TARGET_ENVIRONMENT: ${{ inputs.environment_name }}
+      DEPLOY_REVISION: ${{ inputs.revision || github.sha }}
+      COOLIFY_API_URL: ${{ vars.COOLIFY_API_URL }}
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+      COOLIFY_RESOURCE_UUID: ${{ vars.COOLIFY_OPS_RESOURCE_UUID }}
+      COOLIFY_MAIN_RESOURCE_UUID: ${{ vars.COOLIFY_RESOURCE_UUID }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.revision || github.sha }}
+          fetch-depth: 0
+      - name: Validate candidate and require successful CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [[ "$GITHUB_REF" == refs/heads/main ]]
+          [[ "$TARGET_ENVIRONMENT" == uat || "$TARGET_ENVIRONMENT" == production ]]
+          [[ "$DEPLOY_REVISION" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$(git rev-parse HEAD)" == "$DEPLOY_REVISION" ]]
+          git merge-base --is-ancestor "$DEPLOY_REVISION" origin/main
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$DEPLOY_REVISION&status=success&per_page=100" \
+            --jq '.workflow_runs | any(.head_branch == "main" and (.event == "push" or .event == "workflow_dispatch"))' \
+            | grep -qx true || { echo "Candidate needs successful main-branch CI." >&2; exit 1; }
+      - name: Require production review and prior Ops UAT deployment
+        if: inputs.environment_name == 'production'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          scripts/review/require-statuses.sh "$DEPLOY_REVISION" source/codex-security uat/strix
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/deploy-ops.yml/runs?status=success&event=workflow_dispatch&per_page=100" \
+            --jq ".workflow_runs | any(.head_branch == \"main\" and .display_title == \"Deploy Ops uat $DEPLOY_REVISION\")" \
+            | grep -qx true || { echo "Deploy this Ops revision to UAT successfully first." >&2; exit 1; }
+      - name: Verify the separate Ops application
+        run: |
+          [[ -n "$COOLIFY_RESOURCE_UUID" && -n "$COOLIFY_MAIN_RESOURCE_UUID" ]]
+          python3 scripts/env/config.py verify-ops-target
+      - name: Render Ops configuration from GitHub
+        env:
+          CAPY_GITHUB_VARS: ${{ toJSON(vars) }}
+          CAPY_GITHUB_SECRETS: ${{ toJSON(secrets) }}
+        run: python3 scripts/env/config.py render-ops --environment "$TARGET_ENVIRONMENT" --revision "$DEPLOY_REVISION" --output "$RUNNER_TEMP/capy-ops-config"
+      - name: Synchronize and verify Ops configuration
+        run: python3 scripts/env/config.py apply-coolify --file "$RUNNER_TEMP/capy-ops-config/ops.json"
+      - name: Deploy only the pinned Ops revision
+        run: scripts/deploy/coolify-deploy.sh
+      - name: Remove runner configuration
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/capy-ops-config"

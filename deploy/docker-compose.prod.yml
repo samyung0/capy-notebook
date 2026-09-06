@@ -11,7 +11,7 @@
 # - /migrate runs once per deploy; the API has MIGRATE=false
 # - no host port publishes (Coolify Traefik + the tunnel own the public path)
 # - Postgres password comes from the environment
-# - ops stays behind the `ops` profile until §8 roles exist
+# - Ops deploys separately using docker-compose.ops.yml
 
 x-observability: &observability
   APP_ENV: production
@@ -187,57 +187,6 @@ services:
         "--port",
         "8001",
       ]
-    depends_on:
-      db:
-        condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
-    restart: unless-stopped
-
-  ops:
-    profiles:
-      - ops
-    build:
-      context: ..
-      dockerfile: ops/Dockerfile
-      args:
-        VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:-}
-        VITE_SENTRY_DSN: ${VITE_SENTRY_DSN_OPS:-}
-        VITE_APP_ENV: ${SENTRY_ENVIRONMENT:-production}
-        VITE_RELEASE_SHA: ${SOURCE_COMMIT:-${RELEASE_SHA:-}}
-    environment:
-      <<: *observability
-      OPS_ADDR: ":8082"
-      OPS_STATIC_DIR: /app/static
-      # Required before enabling COMPOSE_PROFILES=ops. Interpolated even when
-      # the profile is off, so these cannot use :? on first deploy.
-      OPS_DATABASE_URL: ${OPS_DATABASE_URL:-}
-      OPS_ADMIN_DATABASE_URL: ${OPS_ADMIN_DATABASE_URL:-}
-      # Must match CAPY_INGEST_ENVIRONMENT on the workers writing to this
-      # database; the ingest pages filter on it. UAT deploys this same file and
-      # must override it to `uat`, or its ingest dashboard reads empty.
-      OPS_INGEST_PRIMARY_ENVIRONMENT: ${OPS_INGEST_PRIMARY_ENVIRONMENT:-production}
-      OPS_INGEST_UAT_DATABASE_URL: ${OPS_INGEST_UAT_DATABASE_URL:-}
-      OPS_INGEST_LOCAL_DATABASE_URL: ${OPS_INGEST_LOCAL_DATABASE_URL:-}
-      OPS_CF_ACCESS_ISSUER: ${OPS_CF_ACCESS_ISSUER:-}
-      OPS_CF_ACCESS_AUDIENCE: ${OPS_CF_ACCESS_AUDIENCE:-}
-      OPS_CF_ACCESS_JWKS_URL: ${OPS_CF_ACCESS_JWKS_URL:-}
-      OPS_ACCESS_DISABLED: "false"
-      OPS_AUTH_DISABLED: "false"
-      OPS_UNSAFE_DEVELOPMENT: "false"
-      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:?set CLERK_SECRET_KEY}
-      SENTRY_DSN: ${SENTRY_DSN_OPS:-}
-      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
-      DEEPINFRA_API_KEY: ${DEEPINFRA_API_KEY:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-    expose:
-      - "8082"
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8082/healthz"]
-      interval: 5s
-      timeout: 3s
-      retries: 12
     depends_on:
       db:
         condition: service_healthy

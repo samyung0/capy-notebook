@@ -7,7 +7,7 @@
     },
     "ANTHROPIC_API_KEY": {
       "kind": "secret",
-      "targets": ["coolify", "ingest-production", "ingest-queue"]
+      "targets": ["coolify", "ingest-production", "ingest-queue", "ops"]
     },
     "API_URL": {
       "kind": "variable",
@@ -362,12 +362,13 @@
     },
     "CLERK_PUBLISHABLE_KEY": {
       "kind": "variable",
-      "targets": ["workflow"]
+      "targets": ["workflow", "ops"],
+      "required_for": ["ops"]
     },
     "CLERK_SECRET_KEY": {
       "kind": "secret",
-      "targets": ["coolify"],
-      "required_for": ["coolify"]
+      "targets": ["coolify", "ops"],
+      "required_for": ["coolify", "ops"]
     },
     "CLERK_WEBHOOK_SECRET": {
       "kind": "secret",
@@ -427,11 +428,11 @@
     },
     "DEEPINFRA_API_KEY": {
       "kind": "secret",
-      "targets": ["coolify", "ingest-production", "ingest-queue"]
+      "targets": ["coolify", "ingest-production", "ingest-queue", "ops"]
     },
     "DEEPSEEK_API_KEY": {
       "kind": "secret",
-      "targets": ["coolify", "ingest-production", "ingest-queue"]
+      "targets": ["coolify", "ingest-production", "ingest-queue", "ops"]
     },
     "DEPLOYMENT_API_URL": {
       "kind": "variable",
@@ -533,7 +534,7 @@
     },
     "OPENAI_API_KEY": {
       "kind": "secret",
-      "targets": ["coolify", "ingest-production", "ingest-queue"]
+      "targets": ["coolify", "ingest-production", "ingest-queue", "ops"]
     },
     "OPS_ACCESS_DISABLED": {
       "kind": "variable",
@@ -541,7 +542,8 @@
     },
     "OPS_ADMIN_DATABASE_URL": {
       "kind": "secret",
-      "targets": ["coolify"]
+      "targets": ["ops"],
+      "required_for": ["ops"]
     },
     "OPS_AUTH_DISABLED": {
       "kind": "variable",
@@ -549,19 +551,22 @@
     },
     "OPS_CF_ACCESS_AUDIENCE": {
       "kind": "variable",
-      "targets": ["coolify"]
+      "targets": ["ops"],
+      "required_for": ["ops"]
     },
     "OPS_CF_ACCESS_ISSUER": {
       "kind": "variable",
-      "targets": ["coolify"]
+      "targets": ["ops"],
+      "required_for": ["ops"]
     },
     "OPS_CF_ACCESS_JWKS_URL": {
       "kind": "variable",
-      "targets": ["coolify"]
+      "targets": ["ops"]
     },
     "OPS_DATABASE_URL": {
       "kind": "secret",
-      "targets": ["coolify"]
+      "targets": ["ops"],
+      "required_for": ["ops"]
     },
     "OPS_DEV_USER_ID": {
       "kind": "variable",
@@ -569,15 +574,16 @@
     },
     "OPS_INGEST_LOCAL_DATABASE_URL": {
       "kind": "secret",
-      "targets": ["coolify"]
+      "targets": ["ops"]
     },
     "OPS_INGEST_PRIMARY_ENVIRONMENT": {
       "kind": "variable",
-      "targets": ["coolify"]
+      "targets": ["ops"],
+      "required_for": ["ops"]
     },
     "OPS_INGEST_UAT_DATABASE_URL": {
       "kind": "secret",
-      "targets": ["coolify"]
+      "targets": ["ops"]
     },
     "OPS_UNSAFE_DEVELOPMENT": {
       "kind": "variable",
@@ -653,7 +659,7 @@
     },
     "SENTRY_DSN_OPS": {
       "kind": "variable",
-      "targets": ["coolify"]
+      "targets": ["ops"]
     },
     "SENTRY_DSN_RETRIEVAL": {
       "kind": "variable",
@@ -665,7 +671,7 @@
     },
     "SENTRY_ENVIRONMENT": {
       "kind": "variable",
-      "targets": ["coolify", "ingest-production"]
+      "targets": ["coolify", "ingest-production", "ops"]
     },
     "SENTRY_ORG": {
       "kind": "variable",
@@ -677,7 +683,7 @@
     },
     "SENTRY_TRACES_SAMPLE_RATE": {
       "kind": "variable",
-      "targets": ["coolify", "ingest-production", "ingest-shared"]
+      "targets": ["coolify", "ingest-production", "ingest-shared", "ops"]
     },
     "SENTRY_URL": {
       "kind": "variable",
@@ -863,7 +869,7 @@
     },
     "VITE_SENTRY_DSN_OPS": {
       "kind": "variable",
-      "targets": ["coolify"]
+      "targets": ["ops"]
     },
     "VITE_USE_MSW": {
       "kind": "variable",
@@ -872,6 +878,10 @@
     "WORKER_REPLICAS": {
       "kind": "variable",
       "targets": ["ingest-production"]
+    },
+    "COOLIFY_OPS_RESOURCE_UUID": {
+      "kind": "variable",
+      "targets": ["workflow"]
     },
     "COMPOSE_PROFILES": {
       "kind": "variable",

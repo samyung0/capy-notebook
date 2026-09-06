@@ -120,6 +120,90 @@ class ConfigTest(unittest.TestCase):
                 api.call_args_list[0].args, ("PATCH", "/envs/bulk", payload)
             )
 
+    def test_ops_render_needs_only_ops_config_and_excludes_app_secrets(self):
+        values = {
+            key: "configured"
+            for key, rule in config.MANIFEST.items()
+            if "ops" in rule.get("required_for", [])
+        }
+        values.update(
+            OPS_INGEST_PRIMARY_ENVIRONMENT="uat",
+            POSTGRES_PASSWORD="app-owner-secret",
+            STRIPE_SECRET_KEY="billing-secret",
+            OPS_AUTH_DISABLED="true",
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                config.render_ops(values, "uat", temp, "a" * 40)
+            self.assertEqual(list(Path(temp).iterdir()), [Path(temp, "ops.json")])
+            rendered = json.loads(Path(temp, "ops.json").read_text())
+            self.assertEqual(rendered["VITE_CLERK_PUBLISHABLE_KEY"], "configured")
+            self.assertEqual(rendered["RELEASE_SHA"], "a" * 40)
+            self.assertEqual(rendered["SENTRY_ENVIRONMENT"], "uat")
+            self.assertEqual(rendered["OPS_INGEST_LOCAL_DATABASE_URL"], "")
+            self.assertNotIn("CLERK_PUBLISHABLE_KEY", rendered)
+            self.assertNotIn("POSTGRES_PASSWORD", rendered)
+            self.assertNotIn("STRIPE_SECRET_KEY", rendered)
+            self.assertNotIn("OPS_AUTH_DISABLED", rendered)
+            self.assertEqual(Path(temp, "ops.json").stat().st_mode & 0o777, 0o600)
+            self.assertNotIn("configured", output.getvalue())
+            self.assertNotIn("coolify", config.MANIFEST["OPS_DATABASE_URL"]["targets"])
+
+    def test_ops_render_rejects_missing_required_config_and_wrong_environment(self):
+        values = {
+            key: "configured"
+            for key, rule in config.MANIFEST.items()
+            if "ops" in rule.get("required_for", [])
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            with self.assertRaisesRegex(ValueError, "must match"):
+                config.render_ops(values, "uat", temp, "a" * 40)
+            values["OPS_INGEST_PRIMARY_ENVIRONMENT"] = "uat"
+            values["OPS_DATABASE_URL"] = ""
+            with self.assertRaisesRegex(ValueError, "OPS_DATABASE_URL is required"):
+                config.render_ops(values, "uat", temp, "a" * 40)
+            self.assertFalse(Path(temp, "ops.json").exists())
+
+    def test_ops_target_refuses_main_stack_or_wrong_compose(self):
+        with (
+            patch.dict(
+                config.os.environ,
+                {
+                    "COOLIFY_RESOURCE_UUID": "main",
+                    "COOLIFY_MAIN_RESOURCE_UUID": "main",
+                },
+            ),
+            patch.object(config, "coolify_request") as api,
+        ):
+            with self.assertRaisesRegex(ValueError, "separate"):
+                config.verify_ops_target()
+            api.assert_not_called()
+            config.os.environ["COOLIFY_RESOURCE_UUID"] = "ops"
+            api.return_value = {
+                "docker_compose_location": "/deploy/docker-compose.prod.yml"
+            }
+            with self.assertRaisesRegex(ValueError, "docker-compose.ops.yml"):
+                config.verify_ops_target()
+            api.return_value = {
+                "docker_compose_location": "/deploy/docker-compose.ops.yml",
+                "settings": {"connect_to_docker_network": True},
+                "destination_id": 0,
+                "destination_type": "App\\Models\\StandaloneDocker",
+            }
+            with contextlib.redirect_stdout(io.StringIO()):
+                config.verify_ops_target()
+            self.assertTrue(all(call.args[0] == "GET" for call in api.call_args_list))
+            ops = api.return_value
+            api.side_effect = [
+                ops,
+                {**ops, "settings": {"connect_to_docker_network": False}},
+            ]
+            with self.assertRaisesRegex(ValueError, "Predefined Network"):
+                config.verify_ops_target()
+            api.side_effect = [ops, {**ops, "destination_id": 1}]
+            with self.assertRaisesRegex(ValueError, "share a Coolify destination"):
+                config.verify_ops_target()
+
     def test_coolify_removes_replaced_and_retired_keys_after_verification(
         self,
     ):

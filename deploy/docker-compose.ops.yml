@@ -1,0 +1,47 @@
+# Independent Ops application on the same Coolify host as the main stack.
+# The main stack owns Postgres and migrations. Enable Connect to Predefined
+# Network on both Coolify applications and use the database container hostname.
+services:
+  ops:
+    build:
+      context: ..
+      dockerfile: ops/Dockerfile
+      args:
+        VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:?set VITE_CLERK_PUBLISHABLE_KEY}
+        VITE_SENTRY_DSN: ${VITE_SENTRY_DSN_OPS:-}
+        VITE_APP_ENV: ${SENTRY_ENVIRONMENT:-production}
+        VITE_RELEASE_SHA: ${SOURCE_COMMIT:-${RELEASE_SHA:-}}
+    environment:
+      APP_ENV: production
+      RELEASE_SHA: ${SOURCE_COMMIT:-${RELEASE_SHA:?set RELEASE_SHA}}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:?set SENTRY_ENVIRONMENT}
+      SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.1}
+      OPS_ADDR: ":8082"
+      OPS_STATIC_DIR: /app/static
+      OPS_DATABASE_URL: ${OPS_DATABASE_URL:?set OPS_DATABASE_URL}
+      OPS_ADMIN_DATABASE_URL: ${OPS_ADMIN_DATABASE_URL:?set OPS_ADMIN_DATABASE_URL}
+      # Must match CAPY_INGEST_ENVIRONMENT on the workers writing to this
+      # database; the renderer requires the selected deployment environment.
+      OPS_INGEST_PRIMARY_ENVIRONMENT: ${OPS_INGEST_PRIMARY_ENVIRONMENT:?set OPS_INGEST_PRIMARY_ENVIRONMENT}
+      OPS_INGEST_UAT_DATABASE_URL: ${OPS_INGEST_UAT_DATABASE_URL:-}
+      OPS_INGEST_LOCAL_DATABASE_URL: ${OPS_INGEST_LOCAL_DATABASE_URL:-}
+      OPS_CF_ACCESS_ISSUER: ${OPS_CF_ACCESS_ISSUER:?set OPS_CF_ACCESS_ISSUER}
+      OPS_CF_ACCESS_AUDIENCE: ${OPS_CF_ACCESS_AUDIENCE:?set OPS_CF_ACCESS_AUDIENCE}
+      OPS_CF_ACCESS_JWKS_URL: ${OPS_CF_ACCESS_JWKS_URL:-}
+      OPS_ACCESS_DISABLED: "false"
+      OPS_AUTH_DISABLED: "false"
+      OPS_UNSAFE_DEVELOPMENT: "false"
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:?set CLERK_SECRET_KEY}
+      SENTRY_DSN: ${SENTRY_DSN_OPS:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPINFRA_API_KEY: ${DEEPINFRA_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    expose:
+      - "8082"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8082/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped

@@ -469,3 +469,9 @@ threads/replies/resolve, preserved anchors, OOXML export/reopen and stable numer
 comment-ID mapping. Generated WASM must match those fork sources before testing.
 
 The vendored `packages/xlsx-react/src/XlsxEditor.test.tsx` also checks host-triggered flush of open cell and formula drafts before checkpoint/export, without relying on blur.
+
+Independent Ops deployment checks in `scripts/env/test_config.py` cover scoped
+configuration rendering, excluded application secrets and auth bypasses, required
+Ops settings, environment matching, and refusal to target the main Coolify stack
+or applications without a shared destination and predefined networking.
+Run `pnpm test:deployment`.

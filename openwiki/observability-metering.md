@@ -124,8 +124,8 @@ consumers.
 
 Two projects, EU region. `capy-web` takes the browser SPA; `capy-backend` takes
 the gateway, retrieval, worker, and collaboration, which separate by the
-`service` tag each already sets. `capy-ops` joins when the ops profile is
-enabled, so operator alerts stay off the product rules. The browser DSN is
+`service` tag each already sets. `capy-ops` joins when the Ops application is
+deployed, so operator alerts stay off the product rules. The browser DSN is
 public and belongs only to `capy-web`.
 
 The SPA build generates hidden source maps, uploads them, and deletes them

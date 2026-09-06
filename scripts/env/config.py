@@ -134,7 +134,6 @@ def render(values, environment, output, revision):
     coolify["DATABASE_URL"] = (
         f"postgres://capy:{quote(password, safe='')}@db:5432/capy?sslmode=disable"
     )
-    coolify["VITE_CLERK_PUBLISHABLE_KEY"] = values.get("CLERK_PUBLISHABLE_KEY", "")
     coolify["RELEASE_SHA"] = revision
     private_write(output / "coolify.json", json.dumps(coolify))
     build = target_values(values, "build")
@@ -176,6 +175,22 @@ def render(values, environment, output, revision):
         output / ("nonprod.env" if environment == "uat" else "prod.env"), dotenv(shared)
     )
     print(f"rendered {environment} configuration; values redacted")
+
+
+def render_ops(values, environment, output, revision):
+    if not re.fullmatch("[0-9a-f]{40}", revision):
+        fail("revision must be a lowercase full Git SHA")
+    ops = target_values(values, "ops")
+    if ops["OPS_INGEST_PRIMARY_ENVIRONMENT"] != environment:
+        fail("OPS_INGEST_PRIMARY_ENVIRONMENT must match the deployment environment")
+    ops["VITE_CLERK_PUBLISHABLE_KEY"] = ops.pop("CLERK_PUBLISHABLE_KEY")
+    ops["SENTRY_ENVIRONMENT"] = environment
+    ops["RELEASE_SHA"] = revision
+    output = Path(output)
+    output.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(output, 0o700)
+    private_write(output / "ops.json", json.dumps(ops))
+    print(f"rendered {environment} Ops configuration; values redacted")
 
 
 def run_gh(args, value=None):
@@ -263,6 +278,30 @@ def verify_coolify_terminal(deployment_uuid):
     print("Coolify deployment is terminal; safe to inspect the backend revision")
 
 
+def verify_ops_target():
+    main_uuid = os.environ["COOLIFY_MAIN_RESOURCE_UUID"]
+    if not re.fullmatch("[A-Za-z0-9_-]+", main_uuid):
+        fail("invalid main Coolify application UUID")
+    if os.environ["COOLIFY_RESOURCE_UUID"] == main_uuid:
+        fail("Ops must use a separate Coolify application")
+    app = coolify_request("GET", "")
+    if (
+        app.get("docker_compose_location", "").lstrip("/")
+        != "deploy/docker-compose.ops.yml"
+    ):
+        fail("Ops application must use deploy/docker-compose.ops.yml")
+    main = coolify_request("GET", "/applications/" + main_uuid, application=False)
+    for resource in (app, main):
+        if not (resource.get("settings") or {}).get("connect_to_docker_network"):
+            fail("Enable Connect to Predefined Network on both Coolify applications")
+    if any(
+        app.get(key) is None or app.get(key) != main.get(key)
+        for key in ("destination_id", "destination_type")
+    ):
+        fail("Ops and the main stack must share a Coolify destination")
+    print("Verified separate Ops Coolify application")
+
+
 def coolify_payload(values):
     # Verified against coollabsio/coolify v4.3.14 ApplicationsController::create_bulk_envs.
     return {
@@ -340,6 +379,8 @@ def main():
             "check",
             "push",
             "render",
+            "render-ops",
+            "verify-ops-target",
             "apply-coolify",
             "build",
             "verify-coolify-terminal",
@@ -352,6 +393,9 @@ def main():
     parser.add_argument("--revision")
     parser.add_argument("--deployment-uuid")
     args = parser.parse_args()
+    if args.command == "verify-ops-target":
+        verify_ops_target()
+        return
     if args.command == "verify-coolify-terminal":
         verify_coolify_terminal(args.deployment_uuid)
         return
@@ -376,7 +420,8 @@ def main():
     else:
         if not args.environment or not args.output or not args.revision:
             fail("render requires --environment, --output, and --revision")
-        render(values, args.environment, args.output, args.revision)
+        renderer = render_ops if args.command == "render-ops" else render
+        renderer(values, args.environment, args.output, args.revision)
 
 
 if __name__ == "__main__":

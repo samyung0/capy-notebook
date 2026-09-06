@@ -156,8 +156,8 @@ The prod file runs `/migrate` once per deploy, starts the API with
    Leave **Base Directory** empty (repository root). Contexts are relative to
    the compose file (`../server` is `server/` in the repo).
 4. **Environment Variables:** paste `deploy/.env.prod.example`, fill values,
-   and mark passwords/keys as secrets. Do **not** set `COMPOSE_PROFILES=ops`
-   on the first deploy — ops needs the §8 roles first. Do **not** set
+   and mark passwords/keys as secrets. Ops has its own application, described
+   below, and needs the §8 roles first. Do **not** set
    `AUTH_DISABLED=true` or `MIGRATE=true`. In Advanced settings, enable
    **Include Source Commit in Build** so Coolify supplies `SOURCE_COMMIT` to
    the Compose build and runtime; the release verifier depends on it.
@@ -174,7 +174,7 @@ The prod file runs `/migrate` once per deploy, starts the API with
    | ----------------------------------------------- | ------------------------------ |
    | `server`                                        | `http://api.abcd.com:8080`     |
    | `collaboration`                                 | `http://collab.abcd.com:1234`  |
-   | `ops` (after step 8)                            | `http://ops.capynotebook.com:8082` |
+   | `ops` (separate application, after step 8)       | `http://ops.capynotebook.com:8082` |
    | `db`, `redis`, `migrate`, `worker`, `retrieval` | no domain                      |
 
    Redeploy or wait for the proxy to pick up the domains.
@@ -183,10 +183,9 @@ The prod file runs `/migrate` once per deploy, starts the API with
    `git_commit_sha`, starts the deployment through the Coolify API, polls its
    result, and verifies the reported commit. A native Coolify webhook would
    bypass the UAT and production gates.
-8. After §8 grants and Access are ready: add the two Ops database URLs
-   values, Access issuer/audience, `VITE_CLERK_PUBLISHABLE_KEY`, then
-   `COMPOSE_PROFILES=ops`, and redeploy. Assign the ops domain. A
-   `VITE_*` change rebuilds the ops image; runtime-only env does not.
+8. After §8 grants and Access are ready, create the independent Ops application
+   below. Deploy it through **Deploy Ops**; the main workflow does not build
+   or restart Ops.
 
 CLI equivalent (same file, from the repo root):
 
@@ -197,7 +196,8 @@ docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod up 
 docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod logs migrate
 ```
 
-Enable ops on a later CLI deploy with `COMPOSE_PROFILES=ops` in `.env.prod`.
+Ops uses `deploy/docker-compose.ops.yml` with a distinct Compose project name
+and database URLs pointing to the existing application database.
 Storage and Stripe reconciliation is scheduled and claimed by the gateway's
 database-backed runner; no Coolify task is required. To ensure today's runs are
 queued and drain any pending work from a one-off container, use:
@@ -225,10 +225,9 @@ Details that are easy to get wrong:
 - Run `cloudflared` as a **Coolify service** (or systemd on the host), not as a
   service in either compose file. A compose restart must not drop every
   hostname on the server.
-- Enable the compose `ops` profile in Coolify (`COMPOSE_PROFILES=ops`) only
-  after §8. Set the `VITE_CLERK_PUBLISHABLE_KEY`, `VITE_SENTRY_DSN_OPS`, and
-  `RELEASE_SHA` / `SOURCE_COMMIT` build values before that ops image build.
-  Runtime-only changes do not rebuild the static dashboard.
+- Deploy the separate Ops application only after §8. **Deploy Ops** supplies
+  `VITE_CLERK_PUBLISHABLE_KEY`, `VITE_SENTRY_DSN_OPS`, and `RELEASE_SHA`
+  from GitHub before building its dashboard and Go backend together.
 - Enter Coolify domains as **`http://`**. Cloudflare terminates TLS. `https://`
   here makes Traefik request Let's Encrypt and usually 301-loops.
 - App env vars still use `https://` / `wss://` — those are what browsers, Clerk,
@@ -382,7 +381,8 @@ outside development.
 
 Set `VITE_CLERK_PUBLISHABLE_KEY` at image build time and `CLERK_SECRET_KEY` at
 runtime. They must belong to the same Clerk instance as the product. Start the
-service with the compose `ops` profile. Do not set any database URL in browser
+service through **Deploy Ops**. Local development still uses the compose
+`ops` profile. Do not set any database URL in browser
 build arguments.
 
 In Clerk, add `https://ops.capynotebook.com` to the production instance's allowed
@@ -640,7 +640,7 @@ re-embedding stays on the parse path and is handled later by ingest.
 2. Create two projects: `capy-web` (browser) and `capy-backend`, shared by
    `SENTRY_DSN_GATEWAY`, `_RETRIEVAL`, `_WORKER`, `_COLLABORATION`, and the
    ingest host's `SENTRY_DSN`. Those four separate by the `service` tag each
-   already sets. Add `capy-ops` when the ops profile is enabled (§8) — operator
+   already sets. Add `capy-ops` when the Ops application is deployed (§8) — operator
    failures must not share product alert rules — and set `SENTRY_DSN_OPS` for
    the Go process and `VITE_SENTRY_DSN_OPS` for its browser build. A browser
    DSN is public and belongs only to a browser project.
@@ -1444,8 +1444,8 @@ authentication strategy.
    checks. Set `SENTRY_ENVIRONMENT=uat`, which is the only thing keeping UAT
    errors out of production's Sentry bucket. Set
    `OPS_INGEST_PRIMARY_ENVIRONMENT=uat` and leave
-   `OPS_INGEST_UAT_DATABASE_URL` unset: the compose default is `production`,
-   which would silently empty the UAT ingest dashboard (§8). Use the UAT origins in `APP_URL`, CORS, collaboration, OAuth, Sentry,
+   `OPS_INGEST_UAT_DATABASE_URL` unset. The standalone Ops renderer requires the
+   primary environment to match the deployment target (§8). Use the UAT origins in `APP_URL`, CORS, collaboration, OAuth, Sentry,
    and browser build variables.
 6. The deployment publishes Worker `capy-notebook-uat` with the built assets and
    live summary handler. Attach only the UAT site domain after verifying it,
@@ -1770,11 +1770,63 @@ path. Keep `UAT_DEPLOYMENT_ENABLED=false` as a separate **repository** variable
 until the first manual baseline passes. The local scanner authorization flag
 still requires explicit permission to scan that UAT target.
 
-Use **Deploy UAT** for the coordinated app/backend/ingest/site release and
-**Deploy ingest** for an explicit ingest-only run against an already matching
-backend SHA. Both apply the selected GitHub config on every run. Native Coolify
+Use **Deploy UAT** for the coordinated app/backend/ingest/site release,
+**Deploy ingest** for an ingest-only run against an already matching backend
+SHA, and **Deploy Ops** for the independent dashboard and its Go backend. All
+apply their selected GitHub configuration on every run. Native Coolify
 Git auto-deploy stays disabled. Production promotion retains UAT, editor-perf,
 source-security, Strix, and protected-environment gates.
+
+### Independent Ops application
+
+Ops is a separate Coolify Git application on the same host as the main stack.
+It builds `ops/Dockerfile`, containing the dashboard and Go Ops API, using
+`deploy/docker-compose.ops.yml`. The main stack owns Postgres and migrations.
+
+One-time setup per environment:
+
+1. Deploy the main stack and complete the Ops database roles/grants in §8.
+2. Create a Coolify Git application from this repository and `main`, using the
+   Docker Compose build pack, repository-root base directory, and
+   `/deploy/docker-compose.ops.yml`. Disable automatic and preview deployment;
+   enable Include Source Commit in Build.
+3. Set GitHub environment variable `COOLIFY_OPS_RESOURCE_UUID` to the new
+   application UUID. Keep `COOLIFY_RESOURCE_UUID` pointing to the main stack.
+4. Enable **Connect to Predefined Network** on both applications, using the
+   same Coolify destination. Redeploy the main stack once to attach its
+   database container. Use the full database container hostname shown in
+   Coolify, typically `db-<main-resource-uuid>`, rather than the stack-local
+   `db` alias. No additional database port needs to be published for Ops.
+   See [Coolify networking](https://coolify.io/docs/applications/build-packs/docker-compose#connect-to-predefined-networks).
+5. Set `OPS_DATABASE_URL` and `OPS_ADMIN_DATABASE_URL` using their restricted
+   database roles and that full database hostname. Configure Access
+   issuer/audience, Clerk, and optional telemetry/provider values through the
+   same GitHub environment. Ops-specific keys target only the Ops resource;
+   the renderer excludes the application owner's Postgres password, billing
+   credentials, ingest SSH keys, and development auth bypasses.
+6. Assign the existing Ops hostname to this application's `ops` service on
+   port `8082`, such as `http://uat-ops.capynotebook.com:8082`. Keep its
+   Cloudflare Access protection. If migrating an already-running Ops service,
+   move the hostname from the old application and retire that service before
+   starting the new one. Remove `COMPOSE_PROFILES=ops` from old configuration.
+7. Run **Deploy Ops** from `main`, select `uat`, and choose a full commit SHA
+   or leave it blank for the selected main revision. Successful CI is required.
+
+Each run verifies that its target is a different Coolify application with the
+Ops Compose file and a shared Coolify destination with predefined networking
+enabled on both applications, synchronizes and reads back GitHub configuration, and deploys
+that exact commit. The provider deployment result verifies the commit, and the
+container health check probes the Ops Go process. Verify dashboard sign-in and
+an authenticated read after the first deployment. Ops does not run migrations
+or redeploy the main app, ingest workers, or frontend Workers.
+
+Production additionally requires a successful **Deploy Ops uat** run for the
+same SHA, the existing source-security/Strix commit statuses, and the GitHub
+production environment protection. The workflow shares the main promotion
+concurrency group so it cannot restart Ops during an app migration. Ops may
+use a newer code revision than the main app for schema-compatible changes;
+changes requiring new database tables/columns must deploy the main migrations
+first. Roll back compatible Ops changes by selecting a previous passing SHA.
 
 ### 12.8 Baseline, automation, and release gate
 
