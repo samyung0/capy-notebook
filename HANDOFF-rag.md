@@ -1,7 +1,8 @@
 # RAG handoff
 
-Updated 6 September 2026 with experiments completed on 5 September. The service
-state below was last verified at 14:04 UTC on 5 September.
+Updated 6 September 2026 with the embedding comparison. The latest lab service
+state was verified at 16:01 UTC on 6 September: all retained lab containers are
+stopped; their existing data and volumes remain.
 
 ## Current position
 
@@ -23,7 +24,7 @@ were too easy to establish a broader core-answer improvement. Its strongest
 finding was a loss of relevant passages during hybrid ranking, especially on
 argument retrieval.
 
-No ranking change, graph implementation, embedding-model tuning or production
+No production ranking or embedding-model change, graph implementation, or
 deployment resulted from these experiments. The frozen baseline is revision
 `a903b8e917144701186b9c6cd2a6bbeea1bd15f9`. It does not describe today's HEAD or
 establish what is deployed. The selected candidate is `follow_links_ids` in the
@@ -31,6 +32,35 @@ experiment artifacts.
 
 Read the [decision log](human/agentic-retrieval.md) before changing behavior and
 [OpenWiki](openwiki/agentic-retrieval.md) for the current pipeline.
+
+## Embedding comparison, 6 September
+
+[Full report](pipeline/scripts/rag_eval/embedding/REPORT.md),
+[metrics](pipeline/scripts/rag_eval/embedding/summary.json),
+[192 source reviews](pipeline/scripts/rag_eval/embedding/answer-reviews.json), and
+[cleanup verification](pipeline/scripts/rag_eval/embedding/cleanup.json).
+
+Five embedding conditions reused the frozen 19,821 chunks and 360 broad questions:
+Qwen3 4B at 2,560 dimensions, Qwen3 8B at 2,560 and 4,000, Perplexity embed-v1-4b
+at 2,560, and Voyage 4 large at 2,048. Every paired nDCG interval included zero.
+The 4,000-dimension HNSW index doubled in size without a relevance gain. The tested
+8B route had much longer query latency than 4B. The recommendation is to retain
+4B; it is not a production configuration change.
+
+Voyage had the highest hybrid nDCG and was selected for the agent comparison.
+On the 80 answerable attempts per condition, 4B gave 75 correct answers and Voyage
+65; 67 and 52 respectively also passed claim and citation support checks. Both
+still failed reference-following and missing-information cases. These are Codex
+source checks on reused questions with dependent repeats, not independent human
+or fresh held-out evaluation.
+
+New raw artifacts and the separate vector cache are saved under
+`/Users/sam/Downloads/capy-embedding-eval-20260906/`. Both archives and every member
+were verified before cleanup. The scratch schema, temporary credentials and
+container, new VM files, and 195 experiment conversations were removed. The older
+lab artifacts, data and volumes remain; all retained lab containers were restored
+to their initially stopped state. The report distinguishes current cleanup from
+the earlier service state recorded below.
 
 ## Earlier concept-removal evidence
 
@@ -298,8 +328,9 @@ hashes. The broad completion audit checked all 144 unique attempts, model and
 workspace attribution, source/index stability and unchanged hashes of the four
 earlier curated runs.
 
-At the last verification, gateway, retrieval, PostgreSQL, Redis and MinIO remained
-available on loopback. Gateway `8082/healthz` and retrieval `8002/healthz` returned
+At the end of the 5 September broad run, gateway, retrieval, PostgreSQL, Redis
+and MinIO remained available on loopback. All are now stopped after the
+6 September embedding cleanup. Gateway `8082/healthz` and retrieval `8002/healthz` returned
 HTTP 200. PostgreSQL uses port 55434, Redis 6381 and MinIO 9002 with console 9003.
 The parser's configured port is 8092.
 

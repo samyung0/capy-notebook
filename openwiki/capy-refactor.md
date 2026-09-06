@@ -58,7 +58,7 @@ and the product is Capy Notebook.
 - [x] Upload UAT configuration and the approved dedicated deployment key to GitHub.
 
 The GitHub repository is now `samyung0/capy-notebook`; the BetterOffice integration
-branch is `codex/capy-integration`, at the same pinned commit. Coolify project,
+branch is `capy-ci`, renamed from `codex/capy-integration` on 2026-09-07 at the same pinned commit. Coolify project,
 application, and private-key labels and its repository URL are updated. Cloudflare
 tunnels are `capy-uat` and `capy-dev-sam`. The ingest account and host are
 `capy-ingest`, with `/opt/capy-ingest` and `/etc/capy-ingest`; its existing UID and

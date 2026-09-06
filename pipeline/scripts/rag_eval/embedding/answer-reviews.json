@@ -1,0 +1,1922 @@
+[
+  {
+    "ordinal": 0,
+    "id": "version-30",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 1,
+    "id": "table-21",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 2,
+    "id": "table-29",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 3,
+    "id": "absent-2",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Correctly withholds species identification and cites the course brief. The categorical claim that CT-103 appears nowhere exceeds the observed searches; source snapshot confirms absence, but the returned evidence does not establish exhaustive coverage."
+  },
+  {
+    "ordinal": 4,
+    "id": "lookup-23",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 5,
+    "id": "absent-3",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Correctly withholds a correction, but asserts exhaustive workspace absence after ranked search and partial reads and provides no citations."
+  },
+  {
+    "ordinal": 6,
+    "id": "bridge-09",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 7,
+    "id": "lookup-20",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 8,
+    "id": "bridge-12",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 9,
+    "id": "lookup-20",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 10,
+    "id": "crosslang-fr",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": false,
+    "note": "Correct French answer; all four evidence groups reached. The glossary mapping to West Mere is not cited; other links are supported."
+  },
+  {
+    "ordinal": 11,
+    "id": "bridge-10",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 12,
+    "id": "crosslang-ja",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 13,
+    "id": "version-13",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 14,
+    "id": "crosslang-zh",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 15,
+    "id": "version-02",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 16,
+    "id": "missing-15",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Correctly withholds settings, but stops after the observation and seminar notes without searching CT-322 or the register. The categorical workspace-wide absence claim is not established by those passages."
+  },
+  {
+    "ordinal": 17,
+    "id": "version-13",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 18,
+    "id": "bridge-15",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": false,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Incorrectly says no incubation applies. Stops at the field observation and seminar distractors; never follows CT-322 to the available AX-236 assignment and 73 C / 143 minute procedure."
+  },
+  {
+    "ordinal": 19,
+    "id": "table-03",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 20,
+    "id": "lookup-16",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 21,
+    "id": "bridge-09",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 22,
+    "id": "version-30",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 23,
+    "id": "compare-16",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": false,
+    "note": "Correct comparison and both times; all evidence reached, but both specimen-to-accession links lack field-note citations."
+  },
+  {
+    "ordinal": 24,
+    "id": "bridge-00",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 25,
+    "id": "lookup-23",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 26,
+    "id": "bridge-00",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 27,
+    "id": "bridge-13",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 28,
+    "id": "compare-07",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": false,
+    "note": "Correct comparison and both times; all evidence reached, but citations cover only the two procedures, not the specimen/accession/assignment links."
+  },
+  {
+    "ordinal": 29,
+    "id": "absent-2",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Correctly withholds species identification and cites the course brief; categorical CT-103 absence exceeds observed search coverage."
+  },
+  {
+    "ordinal": 30,
+    "id": "version-30",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 31,
+    "id": "crosslang-fr",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": false,
+    "note": "Correct answer with all evidence reached, but the French glossary mapping is not cited."
+  },
+  {
+    "ordinal": 32,
+    "id": "version-23",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 33,
+    "id": "bridge-02",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct required chain and values. Ancillary rosette/frond/shoot accession distinctions also match returned field-note passages."
+  },
+  {
+    "ordinal": 34,
+    "id": "bridge-11",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 35,
+    "id": "lookup-19",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 36,
+    "id": "bridge-14",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 37,
+    "id": "bridge-02",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 38,
+    "id": "bridge-14",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 39,
+    "id": "bridge-08",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 40,
+    "id": "version-23",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 41,
+    "id": "bridge-15",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": false,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Incorrect absence answer after one search; never follows CT-322 to the available AX-236 assignment and 73 C / 143 minute procedure."
+  },
+  {
+    "ordinal": 42,
+    "id": "bridge-09",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": false,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Incorrectly says no settings apply after observation/nearby field-note reads; never follows CT-910 to the available AX-750 procedure."
+  },
+  {
+    "ordinal": 43,
+    "id": "absent-0",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": false,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Withholds a sequence, but says no DNA sequence was measured. The course brief establishes only that no sequence is provided. Ancillary assay and instrument values are supported."
+  },
+  {
+    "ordinal": 44,
+    "id": "crosslang-ja",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 45,
+    "id": "table-29",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 46,
+    "id": "absent-2",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Correctly withholds species identification and cites the course brief; categorical CT-103 absence exceeds observed search coverage."
+  },
+  {
+    "ordinal": 47,
+    "id": "lookup-22",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 48,
+    "id": "absent-1",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Correctly withholds pH, but asserts exhaustive absence of AX-104/pH and restricts all occurrences of 104 from ranked searches. Citations support the unrelated count and incubation duration only."
+  },
+  {
+    "ordinal": 49,
+    "id": "bridge-08",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 50,
+    "id": "bridge-11",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 51,
+    "id": "lookup-21",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 52,
+    "id": "lookup-16",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 53,
+    "id": "bridge-13",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": false,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Incorrect absence answer. Both repeats receive identical first-search passages; this repeat stops after a different second query, while the other continues to the register and answers correctly."
+  },
+  {
+    "ordinal": 54,
+    "id": "bridge-07",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": false,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Incorrectly says no settings apply. Never follows CT-597 to the available AX-515 assignment and 28 C / 93 minute procedure."
+  },
+  {
+    "ordinal": 55,
+    "id": "bridge-01",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 56,
+    "id": "lookup-17",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 57,
+    "id": "missing-05",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Correctly withholds settings, but categorical assignment absence rests on two ranked searches without checking the source inventory or course brief."
+  },
+  {
+    "ordinal": 58,
+    "id": "missing-15",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct cannot-determine answer. The complete source inventory lacks the accession registers; targeted searches and the cited course brief establish why the assignment cannot be inferred."
+  },
+  {
+    "ordinal": 59,
+    "id": "lookup-22",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 60,
+    "id": "absent-3",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Correctly withholds a correction, but scoped ranked searches and a source inventory do not prove the asserted absence from every current manual and archive."
+  },
+  {
+    "ordinal": 61,
+    "id": "bridge-12",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": false,
+    "note": "Correct values with all evidence reached, but no citation for the specimen-to-CT-343 field-note link."
+  },
+  {
+    "ordinal": 62,
+    "id": "lookup-18",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 63,
+    "id": "absent-0",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": false,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Withholds a DNA sequence but incorrectly asserts no sequence was measured; the brief establishes only that no sequence is provided."
+  },
+  {
+    "ordinal": 64,
+    "id": "missing-00",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct cannot-determine answer. Checks source inventory, course brief and targeted CT-711 searches; separates shipping labels, instrument values and unrelated assay settings from the missing assignment."
+  },
+  {
+    "ordinal": 65,
+    "id": "compare-07",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": false,
+    "note": "Correct comparison and both times; citations cover only the procedures, not the two specimen/accession/assignment links."
+  },
+  {
+    "ordinal": 66,
+    "id": "bridge-13",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 67,
+    "id": "lookup-20",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 68,
+    "id": "lookup-19",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 69,
+    "id": "bridge-10",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": false,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Incorrect absence answer. Never retrieves CT-861 to AX-159; stops after a broad follow-up query returns unrelated procedures."
+  },
+  {
+    "ordinal": 70,
+    "id": "bridge-07",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": false,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Incorrect absence answer. Never retrieves CT-597 to AX-515 despite the available register."
+  },
+  {
+    "ordinal": 71,
+    "id": "lookup-18",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 72,
+    "id": "bridge-03",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Gives the correct requested seedling settings but invents ambiguity and claims there are three ivory-striped specimens. The corpus has four, and seedling identifies CT-844 unambiguously. Each of the three listed chains is otherwise supported."
+  },
+  {
+    "ordinal": 73,
+    "id": "bridge-00",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 74,
+    "id": "version-13",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 75,
+    "id": "bridge-03",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 76,
+    "id": "missing-00",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Correctly withholds settings, but categorical assignment absence rests on two ranked searches without checking the source inventory or course brief."
+  },
+  {
+    "ordinal": 77,
+    "id": "bridge-04",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 78,
+    "id": "absent-0",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": false,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Withholds a DNA sequence but says no sequence was measured; the course brief establishes only that no sequence is provided."
+  },
+  {
+    "ordinal": 79,
+    "id": "bridge-14",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": false,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Incorrect absence answer; never follows CT-415 to the available AX-409 assignment and 60 C / 30 minute procedure."
+  },
+  {
+    "ordinal": 80,
+    "id": "bridge-09",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": false,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Incorrectly says no settings apply after one search; never follows CT-910 to AX-750."
+  },
+  {
+    "ordinal": 81,
+    "id": "lookup-22",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 82,
+    "id": "bridge-02",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": false,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Incorrect absence answer; stops at the CT-195 field note instead of retrieving AX-924. The diagnostic 25 match is from an unrelated demonstration temperature."
+  },
+  {
+    "ordinal": 83,
+    "id": "missing-05",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": false,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Says no incubation settings apply instead of saying they cannot be determined. Stops after observation/nearby reads without checking the missing assignment source."
+  },
+  {
+    "ordinal": 84,
+    "id": "missing-00",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correctly withholds parameters; complete source inventory lacks accession registers, and course brief plus target searches establish the missing assignment. Verbose answer includes process narration."
+  },
+  {
+    "ordinal": 85,
+    "id": "lookup-19",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 86,
+    "id": "bridge-15",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": false,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Premature absence claim after field-note search/read; never follows CT-322 to AX-236."
+  },
+  {
+    "ordinal": 87,
+    "id": "lookup-21",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 88,
+    "id": "version-02",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 89,
+    "id": "table-21",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 90,
+    "id": "lookup-18",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 91,
+    "id": "bridge-14",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 92,
+    "id": "version-02",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 93,
+    "id": "crosslang-ja",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": false,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Uses the silver-rimmed seedling/frond chain CT-386/AX-787 instead of the glossary-defined target AX-750; wrong 41 C/116 min answer."
+  },
+  {
+    "ordinal": 94,
+    "id": "bridge-06",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 95,
+    "id": "missing-12",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": false,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Contradicts its own cannot-determine explanation by asserting that no incubation temperature or time applies. Missing assignment does not establish non-applicability."
+  },
+  {
+    "ordinal": 96,
+    "id": "lookup-17",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 97,
+    "id": "bridge-05",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": false,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Stops after field-note search/read; claims no CT-635 assignment although register maps it to AX-209."
+  },
+  {
+    "ordinal": 98,
+    "id": "bridge-04",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 99,
+    "id": "compare-00",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": false,
+    "note": "Correct comparison and both times; cites only assay manuals, omitting observed field-note and assignment evidence supporting the named specimens."
+  },
+  {
+    "ordinal": 100,
+    "id": "crosslang-es",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 101,
+    "id": "table-29",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 102,
+    "id": "bridge-01",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 103,
+    "id": "lookup-20",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 104,
+    "id": "bridge-01",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": false,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Premature absence claim after two searches; does not follow CT-386 to its assignment AX-787."
+  },
+  {
+    "ordinal": 105,
+    "id": "compare-00",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 106,
+    "id": "compare-07",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": false,
+    "note": "Correct comparison and both times; cites only manuals and historical versions, omitting the specimen-to-assay links."
+  },
+  {
+    "ordinal": 107,
+    "id": "bridge-05",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 108,
+    "id": "crosslang-es",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 109,
+    "id": "bridge-08",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 110,
+    "id": "missing-05",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Withholds numerical parameters correctly, but claims no assignment across the sources after only field-note search/read; does not inspect the missing assignment source or inventory."
+  },
+  {
+    "ordinal": 111,
+    "id": "crosslang-zh",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": false,
+    "note": "Correct current parameters and assignment chain, but glossary evidence for the Chinese target is not cited."
+  },
+  {
+    "ordinal": 112,
+    "id": "bridge-05",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 113,
+    "id": "crosslang-fr",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": false,
+    "note": "Correct current parameters and assignment chain, but glossary evidence for the French target is not cited."
+  },
+  {
+    "ordinal": 114,
+    "id": "bridge-10",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 115,
+    "id": "crosslang-es",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": false,
+    "note": "Correct parameters and assignment chain; glossary defining the Spanish target is not cited."
+  },
+  {
+    "ordinal": 116,
+    "id": "lookup-17",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 117,
+    "id": "bridge-07",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": false,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Incorrect absence claim after field-note search/read; never retrieves CT-597 assignment to AX-515."
+  },
+  {
+    "ordinal": 118,
+    "id": "table-03",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 119,
+    "id": "bridge-04",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 120,
+    "id": "table-10",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 121,
+    "id": "missing-15",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Correctly withholds parameters but asserts no assignment exists across supplied sources from a field-note search/read only."
+  },
+  {
+    "ordinal": 122,
+    "id": "table-10",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 123,
+    "id": "absent-1",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Withholds pH correctly but asserts exhaustive absence of AX-104 and pH measurements from ranked searches and source summaries without complete text coverage or a supporting citation."
+  },
+  {
+    "ordinal": 124,
+    "id": "bridge-11",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 125,
+    "id": "lookup-18",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 126,
+    "id": "lookup-16",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 127,
+    "id": "table-10",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 128,
+    "id": "lookup-22",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 129,
+    "id": "crosslang-zh",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": false,
+    "note": "Correct parameters and assignment chain; glossary for the Chinese target is not cited."
+  },
+  {
+    "ordinal": 130,
+    "id": "table-03",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 131,
+    "id": "lookup-21",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 132,
+    "id": "missing-05",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": false,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Invents a CT-635 to AX-635 assignment from matching numeric suffixes in the missing-register control. The actual accession has no supplied assignment; manual only defines AX-635 and cannot support that link."
+  },
+  {
+    "ordinal": 133,
+    "id": "absent-0",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Correctly distinguishes the 1.13 instrument response from a DNA sequence, but asserts no sequence anywhere in the workspace after ranked searches; cited passages do not establish that exhaustive absence."
+  },
+  {
+    "ordinal": 134,
+    "id": "bridge-03",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": false,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Incorrect absence claim; searches specimen names and a generic procedure phrase but does not follow CT-844 to AX-702."
+  },
+  {
+    "ordinal": 135,
+    "id": "missing-12",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Withholds parameters correctly, but two ranked searches do not establish that no assignment exists throughout the sources."
+  },
+  {
+    "ordinal": 136,
+    "id": "table-10",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 137,
+    "id": "bridge-08",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 138,
+    "id": "compare-00",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": false,
+    "note": "Correct comparison and times; manuals do not support attached specimen-to-assay links, whose retrieved field notes and registers are not cited."
+  },
+  {
+    "ordinal": 139,
+    "id": "compare-16",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 140,
+    "id": "crosslang-fr",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 141,
+    "id": "absent-3",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Correctly withholds an official correction but asserts exhaustive absence of AX-102 using ranked searches/source summaries and gives uncited alternative assay values."
+  },
+  {
+    "ordinal": 142,
+    "id": "bridge-11",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": false,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Incorrectly says no parameters apply and any value would be invented; stops before following CT-777 to AX-855."
+  },
+  {
+    "ordinal": 143,
+    "id": "lookup-23",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 144,
+    "id": "compare-07",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": false,
+    "note": "Correct comparison and times; cites manuals only, omitting observed specimen identity and assignment evidence."
+  },
+  {
+    "ordinal": 145,
+    "id": "absent-1",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Correctly withholds pH, but a source-summary inventory and ranked searches do not establish exhaustive absence of AX-104 or pH; no supporting citations."
+  },
+  {
+    "ordinal": 146,
+    "id": "lookup-23",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 147,
+    "id": "bridge-06",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 148,
+    "id": "absent-2",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Course brief supports withholding species identification, but answer also asserts CT-103 appears nowhere in registers, notes or shipping records without exhaustive coverage."
+  },
+  {
+    "ordinal": 149,
+    "id": "bridge-01",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 150,
+    "id": "lookup-19",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 151,
+    "id": "crosslang-es",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": false,
+    "note": "Correct parameters and assignment chain; glossary for the Spanish target is not cited."
+  },
+  {
+    "ordinal": 152,
+    "id": "version-23",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 153,
+    "id": "version-30",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 154,
+    "id": "bridge-03",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": false,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Incorrect absence/non-applicability answer, overgeneralized to every accession; never follows CT-844 to AX-702."
+  },
+  {
+    "ordinal": 155,
+    "id": "absent-3",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Correctly withholds a correction, but repeated ranked searches/source summaries do not prove AX-102 appears nowhere; no supporting citations."
+  },
+  {
+    "ordinal": 156,
+    "id": "bridge-06",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 157,
+    "id": "bridge-15",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": false,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Premature absence claim; does not follow CT-322 to its AX-236 assignment."
+  },
+  {
+    "ordinal": 158,
+    "id": "version-13",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 159,
+    "id": "bridge-06",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 160,
+    "id": "table-03",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 161,
+    "id": "bridge-02",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 162,
+    "id": "bridge-12",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 163,
+    "id": "missing-12",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct cannot-determine answer supported by complete source inventory without accession registers, course brief, target searches and shipping/field-note citations."
+  },
+  {
+    "ordinal": 164,
+    "id": "version-02",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 165,
+    "id": "missing-12",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Withholds values correctly, but a single ranked search establishes only that its returned passages lack an assignment, not that all sources do."
+  },
+  {
+    "ordinal": 166,
+    "id": "table-21",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 167,
+    "id": "compare-24",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 168,
+    "id": "lookup-21",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 169,
+    "id": "absent-1",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Withholds pH correctly, but asserts AX-104 appears nowhere and no document mentions solvent pH from ranked searches, summaries and course brief; no supporting citations."
+  },
+  {
+    "ordinal": 170,
+    "id": "compare-24",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": false,
+    "note": "Correct comparison and times; assignment/manual citations omit the field-note evidence identifying the named shoots."
+  },
+  {
+    "ordinal": 171,
+    "id": "compare-24",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": false,
+    "note": "Correct comparison and times; cites only manuals, not the observed specimen identities and assay assignments."
+  },
+  {
+    "ordinal": 172,
+    "id": "bridge-00",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 173,
+    "id": "bridge-04",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 174,
+    "id": "crosslang-zh",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 175,
+    "id": "compare-00",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": false,
+    "note": "Correct comparison and times; cites manuals only, omitting specimen identity and assignment evidence."
+  },
+  {
+    "ordinal": 176,
+    "id": "bridge-07",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 177,
+    "id": "lookup-16",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 178,
+    "id": "compare-16",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": false,
+    "note": "Correct comparison and times; cites only manuals, omitting observed specimen identity and assignment evidence."
+  },
+  {
+    "ordinal": 179,
+    "id": "version-23",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 180,
+    "id": "bridge-05",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 181,
+    "id": "crosslang-ja",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": false,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Does not resolve the glossary-defined Japanese target: offers CT-813/AX-164 and CT-910/AX-750 as ambiguous alternatives despite reaching the glossary. Correct target values appear, but requested relationship is left unresolved and glossary/field notes are not cited."
+  },
+  {
+    "ordinal": 182,
+    "id": "table-29",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 183,
+    "id": "bridge-13",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 184,
+    "id": "bridge-12",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 185,
+    "id": "missing-00",
+    "variant": "qwen4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Withholds values correctly, but two ranked searches and a field-note read do not establish workspace-wide absence of the assignment."
+  },
+  {
+    "ordinal": 186,
+    "id": "lookup-17",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 187,
+    "id": "compare-16",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": false,
+    "note": "Correct comparison and times; manual citations omit the observed specimen identities and assay assignments."
+  },
+  {
+    "ordinal": 188,
+    "id": "missing-15",
+    "variant": "voyage4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": false,
+    "citations_supported": false,
+    "note": "Withholds parameters correctly, but ranked searches and a field-note read do not establish absence from all supplied sources."
+  },
+  {
+    "ordinal": 189,
+    "id": "bridge-10",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 190,
+    "id": "table-21",
+    "variant": "voyage4",
+    "repeat": 0,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  },
+  {
+    "ordinal": 191,
+    "id": "compare-24",
+    "variant": "qwen4",
+    "repeat": 1,
+    "task_correct": true,
+    "grounded": true,
+    "citations_supported": true,
+    "note": "Correct answer and relationships; required evidence is reached and cited."
+  }
+]

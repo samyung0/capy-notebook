@@ -1,5 +1,9 @@
 # Embedding comparison
 
+Read [REPORT.md](REPORT.md) for the results and [summary.json](summary.json) for
+the complete metrics. [answer-reviews.json](answer-reviews.json) records the
+source check of every curated answer under [review-protocol.md](review-protocol.md).
+
 See [PLAN.md](PLAN.md) for the conditions and selection rule fixed before the
 run. The experiment reuses the corpora described in
 [HANDOFF-rag.md](../../../../HANDOFF-rag.md). It changes only the embeddings and
@@ -37,7 +41,8 @@ python /lab/embedding/run.py latency
 The immutable freeze includes source and runtime hashes and per-workspace chunk
 fingerprints. A source/code change fails the guard. Successful corpus batches
 are cached; failures are recorded and require inspection before a resumed run.
-Latency requests bypass the cache and are never retried. Model/role shaping and
+Latency requests bypass the application cache and are never retried. Provider
+caching is not controlled. Model/role shaping and
 response validation have a self-check in `embed.py`. The existing broad metric
 self-check runs with each freeze, and the existing curated grading check covers
 evidence chains and numeric boundaries.
@@ -82,8 +87,14 @@ denominator. The account locale is restored after the run.
 - `chat.jsonl`, `tool-evidence.jsonl`, and `chat-sources.json` retain answers,
   streams, searches, reads and source text for review.
 - `summary.json` separates retrieval, paired changes, latency, index cost and
-  automated chat diagnostics. Diagnostic answer-value matching is not a
-  semantic or citation-support review.
+  automated chat diagnostics from the source-review labels. Diagnostic
+  answer-value matching is not a semantic or citation-support review.
+- `answer-reviews.json` records answer correctness, grounded claims and citation
+  support separately. These are Codex source checks, not independent human
+  grading. `review-integrity.json` checks review coverage, returned source text,
+  citation references and stable source inventories.
+- `artifact-manifest.json`, `pre-cleanup-audit.json` and `cleanup.json` record
+  archive hashes, source stability and the final cleanup state.
 
 MIRACL pools are reduced, public benchmark labels are incomplete, and previously
 inspected questions are development/comparison data. Cohort-stratified paired
@@ -95,3 +106,11 @@ Archive results and their hashes locally before removing the scratch schema,
 temporary VM directory, credential file and new container. Restore reused lab
 containers to their initially stopped state. The older retained labs remain
 separate from this experiment's cleanup.
+
+The saved raw artifacts are under
+`/Users/sam/Downloads/capy-embedding-eval-20260906/`. The result archive is
+`capy-embedding-results-20260906.tar.gz`; the vector cache is separately stored in
+`capy-embedding-vector-cache-20260906.tar.gz`. Both are needed for the full record.
+The cache was checkpointed and archived while the last chat cases continued;
+chat calls do not write to that cache, and API latency testing had finished.
+Hashes of both archives and the vector member are verified before VM cleanup.

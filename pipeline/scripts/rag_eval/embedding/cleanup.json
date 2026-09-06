@@ -1,0 +1,56 @@
+{
+  "completed_utc": "2026-09-06T16:01:41.271433+00:00",
+  "database": {
+    "original_conversations": 315,
+    "experiment_conversations": 195,
+    "completed_chat_attempts": 192,
+    "older_artifacts_unchanged": 478,
+    "workspace_pins_unchanged": 31,
+    "chunk_fingerprints_unchanged": true,
+    "deleted_conversations": 195,
+    "deleted_messages": 390,
+    "scratch_schema_absent": true,
+    "original_conversations_preserved": true
+  },
+  "archives": {
+    "results_archive": "capy-embedding-results-20260906.tar.gz",
+    "results_sha256": "38dfadc082cda5b770dbc9939a519107f8dc49b70dc6fa45c9ae9babe5b0f8a5",
+    "results_bytes": 32348874,
+    "result_members_verified": 147,
+    "vector_archive": {
+      "archive": "capy-embedding-vector-cache-20260906.tar.gz",
+      "sha256": "90d60f898ff583bcfa9b913fe7810b66d247f7db36ea7775b12a9ff0af5933aa",
+      "vector_sha256": "9cd83b8232cecc510baaf686aa2638a2ccccf8cf6e6e53f46218bbcdfbe8dda8",
+      "archive_hash_verified": true,
+      "vector_member_hash_verified": true,
+      "bytes": 647752998
+    },
+    "credential_scan": {
+      "known_secret_values": 7,
+      "matches": 0,
+      "scope": "All regular result files; gzip contents also scanned; links constrained to result directory"
+    },
+    "all_result_and_vector_hashes_verified": true
+  },
+  "temporary_container_absent": true,
+  "reused_lab_container_states": {
+    "capy-rag-curated-retrieval-1": "exited",
+    "capy-rag-curated-server-1": "exited",
+    "capy-rag-curated-parser-1": "exited",
+    "capy-rag-curated-parse-coordinator-1": "exited",
+    "capy-rag-curated-worker-1": "exited",
+    "capy-rag-curated-db-1": "exited",
+    "capy-rag-curated-minio-1": "exited",
+    "capy-rag-curated-redis-1": "exited",
+    "capy-rag-curated-spool-init-1": "exited"
+  },
+  "temporary_paths_absent": [
+    "/opt/capy-rag-curated-20260905/embedding",
+    "/opt/capy-rag-curated-20260905/embedding-secrets.json",
+    "/opt/capy-rag-curated-20260905/embedding-chat.env",
+    "/opt/capy-embedding-results-20260906.tar.gz",
+    "/opt/capy-embedding-vector-cache-20260906.tar.gz"
+  ],
+  "older_artifact_hashes_unchanged_after_file_cleanup": 478,
+  "older_lab_volumes_and_billing_records_preserved": true
+}

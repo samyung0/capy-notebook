@@ -92,7 +92,14 @@ paraglide is used for internationalization. use paraglide functions to support i
 
 - Do not make a PR unless requested.
 - Always use `file-pr` when available.
-- Rebase onto main branch before opening.
+- Capy Notebook current stage dont make new branches, work on main directly.
+- BetterOffice PRs follow the workflow below.
+
+## BetterOffice workflow
+
+- BetterOffice's `main` tracks upstream changes. `capy-ci` is the Capy integration branch used for pinning `vendor/betteroffice`.
+- Create BetterOffice feature branches from `origin/capy-ci` and rebase them onto the latest `origin/capy-ci` before merging into `capy-ci`.
+- Update the submodule pin to a reviewed commit on `capy-ci` after merging. Commit the exact submodule SHA in Capy Notebook; builds use that pin.
 
 ## Frontend Pitfalls
 

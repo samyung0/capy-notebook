@@ -1,0 +1,14 @@
+{
+  "reviewed_answers": 192,
+  "returned_passages_verified": 2923,
+  "all_citation_ids_resolve": true,
+  "source_inventories": {
+    "complete": [
+      "d637bd75ff277cc1a656e641a515ddbcc2bec9eb811c8e2c288f8a1981aa8c6c"
+    ],
+    "missing_bridge": [
+      "f35a4ae090b9c879549c25e854224869433ad055f58dc17972e4aab611a66f0a"
+    ]
+  },
+  "source_inventory_ids_and_counts_match": true
+}

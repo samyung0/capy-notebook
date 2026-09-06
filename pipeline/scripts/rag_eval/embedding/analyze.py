@@ -46,6 +46,67 @@ def aggregate(records):
     }
 
 
+def reviewed_answers(root, chat_rows):
+    path = root / "answer-reviews.json"
+    if not path.exists():
+        return {}
+    reviews = json.loads(path.read_text())
+    assert len(reviews) == len(chat_rows) == 192
+    groups = defaultdict(list)
+    for ordinal, (review, row) in enumerate(zip(reviews, chat_rows, strict=True)):
+        assert review["ordinal"] == ordinal
+        assert all(review[k] == row[k] for k in ("id", "variant", "repeat"))
+        strict = (
+            all(review[k] for k in ("task_correct", "grounded", "citations_supported"))
+            and row["status"] == "complete"
+            and not row["errors"]
+        )
+        groups[row["variant"]].append(
+            review | {"strict_success": strict, "category": row["category"]}
+        )
+
+    def counts(rows):
+        return {"attempts": len(rows)} | {
+            k: sum(r[k] for r in rows)
+            for k in (
+                "task_correct",
+                "grounded",
+                "citations_supported",
+                "strict_success",
+            )
+        }
+
+    result = {}
+    for condition, rows in groups.items():
+        positive = [
+            r for r in rows if r["category"] not in {"missing_bridge", "unanswerable"}
+        ]
+        negative = [r for r in rows if r not in positive]
+        questions = defaultdict(list)
+        for r in rows:
+            questions[r["id"]].append(r["strict_success"])
+        assert len(rows) == 96 and len(positive) == 80 and len(negative) == 16
+        assert len(questions) == 48 and all(len(v) == 2 for v in questions.values())
+        result[condition] = {
+            "all": counts(rows),
+            "positive": counts(positive),
+            "negative": counts(negative),
+            "categories": {
+                c: counts([r for r in rows if r["category"] == c])
+                for c in sorted({r["category"] for r in rows})
+            },
+            "questions_both_repeats_strict": sum(all(v) for v in questions.values()),
+            "questions_one_repeat_strict": sum(sum(v) == 1 for v in questions.values()),
+            "questions_neither_repeat_strict": sum(
+                not any(v) for v in questions.values()
+            ),
+            "strict_failure_ordinals": [
+                r["ordinal"] for r in rows if not r["strict_success"]
+            ],
+        }
+    return result
+
+
 def summarize(root):
     quality = {}
     raw = {}
@@ -184,7 +245,9 @@ def summarize(root):
     chat_rows = read(root / "chat.jsonl")
     for condition in sorted({r["variant"] for r in chat_rows}):
         rows = [r for r in chat_rows if r["variant"] == condition]
-        positives = [r for r in rows if r["score"]["evidence_groups"]]
+        positives = [
+            r for r in rows if r["category"] not in {"missing_bridge", "unanswerable"}
+        ]
         chat[condition] = {
             "attempts": len(rows),
             "completed": sum(
@@ -219,6 +282,7 @@ def summarize(root):
         "latency": latency,
         "embedding_costs": costs,
         "chat_diagnostics": chat,
+        "chat_source_review": reviewed_answers(root, chat_rows),
         "indexes": {
             p.stem.removeprefix("index-"): json.loads(p.read_text())
             for p in root.glob("index-*.json")

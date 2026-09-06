@@ -906,6 +906,12 @@ and are not sent back as LLM history.
    rejected document reads. Its separate 360-query diagnostic favored dense over
    current hybrid ranking overall, with task-specific tradeoffs; no ranking change
    was selected from those evaluation scores.
+   The [2026-09-06 embedding comparison](../pipeline/scripts/rag_eval/embedding/REPORT.md)
+   reused those 360 retrieval cases across Qwen3 4B, Qwen3 8B at two dimensions,
+   Perplexity and Voyage. Every paired nDCG improvement interval included zero.
+   Qwen3 8B at 4,000 dimensions doubled the measured HNSW allocation without a
+   relevance gain. The report separates exact relevance, filtered ANN behavior,
+   route latency and source-checked agent answers; it does not change model pins.
 3. Every tool-capable model response is streamed. Text that arrives with tool
    calls is a narration block. The first completed response with text and no
    tools is the persisted answer. There is no unconditional second answer

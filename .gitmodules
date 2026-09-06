@@ -1,4 +1,4 @@
 [submodule "vendor/betteroffice"]
 	path = vendor/betteroffice
 	url = https://github.com/samyung0/betteroffice.git
-	branch = codex/capy-integration
+	branch = capy-ci

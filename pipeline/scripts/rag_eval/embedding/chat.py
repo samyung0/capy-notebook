@@ -24,7 +24,6 @@ sys.path.insert(0, "/lab")
 import run_agent
 
 from pipeline.config import cfg
-from pipeline.prompts import chat as chat_prompts
 from pipeline.retrieval import agent, models, store, tools
 
 
@@ -75,7 +74,7 @@ def serve():
         "(v.embedding <=> %(vector)s::halfvec) + 0",
     )
     models.embed = embed_query
-    chat_prompts.system_prompt = prompt
+    agent.system_prompt = prompt
     tools.render_result = render
     uvicorn.run("pipeline.retrieve.service:app", host="127.0.0.1", port=8002)
 
