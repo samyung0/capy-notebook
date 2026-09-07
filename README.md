@@ -37,6 +37,7 @@ Study workspace: notes, sources, quizzes, flashcards, schedule, and AI retrieval
 1. Initialize the pinned fork and install the WASM build tools:
 
    ```sh
+   git config push.recurseSubmodules check
    git submodule update --init vendor/betteroffice
    rustup target add wasm32-unknown-unknown
    cargo install wasm-pack --version 0.15.0 --locked

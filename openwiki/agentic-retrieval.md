@@ -91,7 +91,7 @@ network and no pin.
 | `chat.py` | `chat` | Agent system prompt and full message list; the checkpoint compaction prompt |
 | `generate.py` | `generate` | Material grounding rules, plus the flashcards / mindmap / diagram / quiz instructions |
 | `editor.py` | `editor` | Plate menu prompts: generate, edit, comment, table cells |
-| `quiz.py` | `quiz` | Open-answer marking. Import-free: `scripts/grading_benchmark` loads it by path, and `src/features/quizzes/judge.ts` is its browser twin |
+| `quiz.py` | `quiz` | Open-answer marking. Import-free: `bench/grading` loads it by path, and `src/features/quizzes/judge.ts` is its browser twin |
 | `ingest.py` | `ingest` | File descriptor and summary, and `SUMMARY_VERSION` |
 | `captioning.py` | `captioning` | Figure captions and whole-image captions |
 | `retrieval.py` | `retrieval` | The Qwen3 instruct prefix for embedding queries |
@@ -752,7 +752,7 @@ its short TTL remains; after that it re-parses if there is no donor row.
    removed on 2026-09-04: on the lab corpus 910 of 1,663 concepts were named
    in a single chunk and could only point back at the passage already shown,
    and no chat trace showed the model following a footer name into another
-   document. A 13-question two-document set (`scripts/rag_eval/questions-*-bridge.json`)
+   document. A 13-question two-document set (`bench/rag/fixtures/questions-*-bridge.json`)
    run twice against each build reached and cited the target passage in 24
    of 26 turns with the footer and 23 of 26 without, with every turn on both
    builds answering across the documents. See `human/agentic-retrieval.md`
@@ -896,17 +896,17 @@ and are not sent back as LLM history.
    The prompt instructs the agent to follow relevant identifiers and source
    references before deciding an answer is unavailable; a missing answer in one
    passage does not establish absence from the workspace. In the
-   [2026-09-05 curated lab comparison](../pipeline/scripts/rag_eval/curated/REPORT.md),
+   [2026-09-05 curated lab comparison](../bench/rag/curated/reports/2026-09-05-curated.md),
    this instruction plus readable file locations raised complete-evidence answers
    from 14/20 to 19/20 held-out turns; missing-evidence wording remained imperfect.
-   The subsequent [public-data comparison](../pipeline/scripts/rag_eval/broad/REPORT.md)
+   The subsequent [public-data comparison](../bench/rag/broad/reports/2026-09-05-broad.md)
    used seven native source languages and scientific/argument retrieval. Both chat
    conditions matched the expected core answer on 60/60 positive turns; supporting
    every added claim and citing it remained weaker. The location change removed
    rejected document reads. Its separate 360-query diagnostic favored dense over
    current hybrid ranking overall, with task-specific tradeoffs; no ranking change
    was selected from those evaluation scores.
-   The [2026-09-06 embedding comparison](../pipeline/scripts/rag_eval/embedding/REPORT.md)
+   The [2026-09-06 embedding comparison](../bench/rag/embedding/reports/2026-09-06-embedding.md)
    reused those 360 retrieval cases across Qwen3 4B, Qwen3 8B at two dimensions,
    Perplexity and Voyage. Every paired nDCG improvement interval included zero.
    Qwen3 8B at 4,000 dimensions doubled the measured HNSW allocation without a

@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * Editor feature matrix. Run with: pnpm e2e:editor
+ * Editor feature matrix. Run with: pnpm e2e:msw:editor
  *
  * Like the perf harness (and unlike the functional sharing suite) this runs
  * against the Vite dev server with MSW mocks — no Docker stack. Everything the
@@ -55,7 +55,7 @@ export default defineConfig({
       VITE_E2E_EDITOR_SEED: 'true',
       VITE_USE_MSW: 'true',
     },
-    reuseExistingServer: true,
+    reuseExistingServer: false,
     timeout: 120_000,
     url: baseURL,
   },

@@ -22,8 +22,7 @@
       "!!**/public/mockServiceWorker.js",
       "!!**/src/styles/tailwind.css",
       "!!**/litellm_catalog.json",
-      "!!artifacts/architecture",
-      "!!scripts/grading_benchmark"
+      "!!bench/grading"
     ]
   },
   "linter": {
@@ -136,7 +135,12 @@
       }
     },
     {
-      "includes": ["e2e/**", "src/mocks/**", "playwright.config.ts"],
+      "includes": [
+        "e2e/**",
+        "bench/editor/**",
+        "src/mocks/**",
+        "playwright.config.ts"
+      ],
       "linter": {
         "rules": {
           "performance": {

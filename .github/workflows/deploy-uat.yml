@@ -1,14 +1,9 @@
 name: Deploy UAT
-run-name: Deploy UAT ${{ github.event.workflow_run.head_sha || inputs.revision || github.sha }}
+run-name: Deploy UAT ${{ inputs.revision || github.sha }}
 
+# Manual only: the UAT deploy plus its deterministic gate is heavy, so a person
+# picks the revision instead of every green CI run staging itself.
 on:
-  workflow_run:
-    workflows:
-      - CI
-    branches:
-      - main
-    types:
-      - completed
   workflow_dispatch:
     inputs:
       revision:
@@ -30,11 +25,6 @@ concurrency:
 
 jobs:
   resolve_revision:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.conclusion == 'success' &&
-      vars.UAT_DEPLOYMENT_ENABLED == 'true')
     runs-on: ubuntu-24.04
     outputs:
       revision: ${{ steps.revision.outputs.revision }}
@@ -46,9 +36,9 @@ jobs:
       - name: Resolve and validate the UAT revision
         id: revision
         env:
-          CANDIDATE_REVISION: ${{ github.event.workflow_run.head_sha || inputs.revision || github.sha }}
+          CANDIDATE_REVISION: ${{ inputs.revision || github.sha }}
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "$GITHUB_REF" != "refs/heads/main" ]]; then
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
             echo "Run this deployment workflow from main." >&2
             exit 1
           fi

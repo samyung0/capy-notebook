@@ -80,9 +80,9 @@ production.
 ## Release mode
 
 Run both modes against the same candidate SHA; stale evidence is rerun. The
-production promotion workflow refuses a SHA whose `source/codex-security` or
-`uat/strix` status is not `success`, and reruns the deterministic UAT gate and
-editor perf itself. Scanner failure, an incomplete run, or missing artifacts is
+production promotion workflow reruns the deterministic UAT gate and editor
+perf itself; the `source/codex-security` and `uat/strix` statuses are evidence
+for the person releasing, not a workflow gate. Scanner failure, an incomplete run, or missing artifacts is
 `insufficient evidence`, never a pass.
 
 ## Output

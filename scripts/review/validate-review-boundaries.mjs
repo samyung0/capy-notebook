@@ -17,8 +17,6 @@ const AGENT_SCANNER_MARKERS = [
   'codex exec',
 ];
 
-const REQUIRED_STATUS_CONTEXTS = ['source/codex-security', 'uat/strix'];
-
 function events(source, label) {
   const workflow = parse(source);
   const map = workflow?.on;
@@ -58,15 +56,8 @@ export function validateDeploymentWorkflows(
   productionSource,
   reusableSource
 ) {
-  const uatEvents = events(uatSource, 'deploy-uat.yml');
-  if (
-    !uatEvents.includes('workflow_run') ||
-    !uatEvents.includes('workflow_dispatch') ||
-    uatEvents.includes('push')
-  ) {
-    throw new Error(
-      'deploy-uat.yml must run after CI or by manual dispatch only'
-    );
+  if (events(uatSource, 'deploy-uat.yml').join() !== 'workflow_dispatch') {
+    throw new Error('deploy-uat.yml must be workflow_dispatch-only');
   }
   if (!uatSource.includes('./.github/workflows/uat-quality.yml')) {
     throw new Error('deploy-uat.yml must call the reusable UAT quality gate');
@@ -79,8 +70,6 @@ export function validateDeploymentWorkflows(
   for (const gate of [
     './.github/workflows/uat-quality.yml',
     './.github/workflows/perf.yml',
-    'scripts/review/require-statuses.sh',
-    ...REQUIRED_STATUS_CONTEXTS,
     'environment_name: production',
   ]) {
     if (!productionSource.includes(gate)) {

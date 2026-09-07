@@ -3,11 +3,11 @@
 This directory contains the reproducible checks for the dedicated ingest host.
 The production decision records are:
 
-- [`netcup-2026-08-28.md`](netcup-2026-08-28.md): parser accuracy and the
+- [`netcup-2026-08-28.md`](reports/2026-08-28-parser-accuracy.md): parser accuracy and the
   earlier Marker/RapidOCR capacity decision.
-- [`netcup-2026-08-31-stress.md`](netcup-2026-08-31-stress.md): current MinerU
+- [`netcup-2026-08-31-stress.md`](reports/2026-08-31-worker-stress.md): current MinerU
   capacity, OOM, process-pool, timeout, health, and restart behavior.
-- [`results/capy-ingest-1-netcup-rs-2000-g12-2026-08-31/`](results/capy-ingest-1-netcup-rs-2000-g12-2026-08-31/):
+- [`reports/2026-08-31-capy-ingest-1-netcup-rs-2000-g12/`](reports/2026-08-31-capy-ingest-1-netcup-rs-2000-g12/):
   versionable raw results, machine specifications, artifact inventory, and
   supplemental measurements for the August 31 run.
 
@@ -19,12 +19,12 @@ returned bounding boxes, places extracted text beside each page, checks native
 text and explicit visual canaries, and runs a concurrency sweep.
 
 ```sh
-python bench/parsers/accuracy_report.py \
+python bench/parsers/scripts/accuracy_report.py \
   --url http://10.77.0.2:8090/file_parse \
-  --docs bench/parsers/docs \
-  --canaries bench/parsers/canaries.example.json \
+  --docs bench/parsers/fixtures/docs \
+  --canaries bench/parsers/fixtures/canaries.example.json \
   --sweep 1,2,4,6,8 \
-  --out bench/parsers/out/netcup
+  --out bench/parsers/reports/local/netcup
 ```
 
 The command writes `report.html` for visual review and `report.json` for the
@@ -46,12 +46,12 @@ VM. `bench_mixed_lanes.py` fills four digital slots and two OCR-heavy slots,
 then verifies representative text in every returned bundle.
 
 ```sh
-python bench/parsers/bench_parse.py \
-  --file bench/parsers/docs/metabolic_pathway.pdf \
+python bench/parsers/scripts/bench_parse.py \
+  --file bench/parsers/fixtures/docs/metabolic_pathway.pdf \
   --parse-method marker_only \
   --sweep 1,2,4,6,8
 
-python bench/parsers/bench_mixed_lanes.py
+python bench/parsers/scripts/bench_mixed_lanes.py
 ```
 
 Both scripts read `PARSER_URL` and `PARSER_TOKEN`, or accept matching flags.
@@ -68,13 +68,13 @@ is written for the dedicated ingest host paths recorded in the 2026-08-31
 decision report.
 
 ```sh
-python bench/parsers/build_worker_stress_fixtures.py \
+python bench/parsers/scripts/build_worker_stress_fixtures.py \
   --digital /inputs/digital.pdf \
   --ocr /inputs/scanned.pdf \
   --output-dir /opt/capy-ingest/stress-spool/sources \
   --tag candidate-1
 
-bash bench/parsers/run_worker_stress.sh \
+bash bench/parsers/scripts/run_worker_stress.sh \
   digital auto digital-candidate 512m 768m 1.0
 ```
 
@@ -87,13 +87,13 @@ keeps fixture-builder allocations out of the measured cgroup. The two shell
 harnesses measure one candidate limit and concurrent worker-plus-parser overlap:
 
 ```sh
-python bench/parsers/bench_worker_memory.py build \
+python bench/parsers/scripts/bench_worker_memory.py build \
   --output /opt/capy-ingest/stress-current/worker-memory/content-120.json \
   --target-mib 120
 
-MIBS=120 bash bench/parsers/run_worker_memory_stress.sh 1g 1g 1.0
-bash bench/parsers/run_worker_memory_concurrency.sh 8 120 1g 1g 1.0 5
-bash bench/parsers/run_worker_parser_overlap.sh unique-run-tag
+MIBS=120 bash bench/parsers/scripts/run_worker_memory_stress.sh 1g 1g 1.0
+bash bench/parsers/scripts/run_worker_memory_concurrency.sh 8 120 1g 1g 1.0 5
+bash bench/parsers/scripts/run_worker_parser_overlap.sh unique-run-tag
 ```
 
 The overlap harness is tied to the isolated paths and stress images recorded in
@@ -109,10 +109,10 @@ contract survives. Each backend should run in its own container because model
 memory retained by an earlier backend can distort later results.
 
 ```sh
-docker build -t capy-parse-bench bench/parsers
+docker build -t capy-parse-bench bench/parsers/scripts
 docker run --rm --cpus=4 \
-  -v "$PWD/bench/parsers/docs:/bench/docs:ro" \
-  -v "$PWD/bench/parsers/out:/out" \
+  -v "$PWD/bench/parsers/fixtures/docs:/bench/docs:ro" \
+  -v "$PWD/bench/parsers/reports/local:/out" \
   -v capy-parse-models:/models \
   capy-parse-bench --threads 4
 ```

@@ -11,4 +11,3 @@ chmod 600 "$config"
 python3 "$root/scripts/env/config.py" check --file "$config"
 printf '\nUpload the completed file using the manifest-backed uploader:\n'
 printf '  pnpm env:push --file deploy/.env.uat --environment uat --repo OWNER/REPO\n'
-printf 'Keep UAT_DEPLOYMENT_ENABLED=false until the first manual deployment passes.\n'

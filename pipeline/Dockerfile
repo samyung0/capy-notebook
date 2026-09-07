@@ -23,6 +23,9 @@ COPY pipeline ./pipeline
 COPY server/internal/models/elitellm_providers.json ./server/internal/models/elitellm_providers.json
 COPY server/internal/sourceupload/text_extensions.json ./server/internal/sourceupload/text_extensions.json
 RUN uv sync --frozen --no-dev --no-editable
+# Retrieval diagnostics run inside this image via `docker compose exec`.
+COPY bench/rag/scripts ./bench/rag/scripts
+COPY bench/rag/fixtures ./bench/rag/fixtures
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONPATH="/app/pipeline"
 

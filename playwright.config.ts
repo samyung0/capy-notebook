@@ -69,10 +69,10 @@ export default defineConfig({
   reporter: [['list'], ['html', { open: 'never' }]],
   retries: process.env.CI ? 1 : 0,
   testDir: path.join(root, 'e2e'),
-  // Sharing/error specs only. The editor matrix and editor-perf suites have
-  // their own configs (pnpm e2e:editor / pnpm perf). e2e/perf also holds
-  // Vitest files (*.test.ts) that Playwright's default matcher would load.
-  testIgnore: ['**/editor/**', '**/perf/**', '**/uat/**'],
+  // Sharing/error specs only. The editor matrix has its own config
+  // (pnpm e2e:msw:editor); the editor perf suite lives in bench/editor,
+  // outside this testDir entirely (pnpm bench:editor).
+  testIgnore: ['**/editor/**', '**/uat/**'],
   testMatch: '**/*.spec.ts',
   timeout: 60_000,
   use: {

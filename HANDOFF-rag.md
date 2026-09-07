@@ -35,10 +35,10 @@ Read the [decision log](human/agentic-retrieval.md) before changing behavior and
 
 ## Embedding comparison, 6 September
 
-[Full report](pipeline/scripts/rag_eval/embedding/REPORT.md),
-[metrics](pipeline/scripts/rag_eval/embedding/summary.json),
-[192 source reviews](pipeline/scripts/rag_eval/embedding/answer-reviews.json), and
-[cleanup verification](pipeline/scripts/rag_eval/embedding/cleanup.json).
+[Full report](bench/rag/embedding/reports/2026-09-06-embedding.md),
+[metrics](bench/rag/embedding/summary.json),
+[192 source reviews](bench/rag/embedding/answer-reviews.json), and
+[cleanup verification](bench/rag/embedding/cleanup.json).
 
 Five embedding conditions reused the frozen 19,821 chunks and 360 broad questions:
 Qwen3 4B at 2,560 dimensions, Qwen3 8B at 2,560 and 4,000, Perplexity embed-v1-4b
@@ -85,10 +85,10 @@ but did not establish reliable bridging on harder data.
 
 ## Curated reference-chain experiment
 
-[Full report](pipeline/scripts/rag_eval/curated/REPORT.md),
-[results](pipeline/scripts/rag_eval/curated/results.json),
-[78 held-out reviews](pipeline/scripts/rag_eval/curated/heldout-review.json), and
-[reproduction instructions](pipeline/scripts/rag_eval/curated/README.md).
+[Full report](bench/rag/curated/reports/2026-09-05-curated.md),
+[results](bench/rag/curated/results.json),
+[78 held-out reviews](bench/rag/curated/heldout-review.json), and
+[reproduction instructions](bench/rag/curated/README.md).
 
 The corpus contains 23 fictional course documents with 32 specimen-to-accession-
 to-assay chains, invented measurements, a retired manual, distractors, bilingual
@@ -139,10 +139,10 @@ corpus and sometimes reuse records, so they are not an independent domain test.
 
 ## Broad language and domain evaluation
 
-[Full report](pipeline/scripts/rag_eval/broad/REPORT.md),
-[results and frozen metadata](pipeline/scripts/rag_eval/broad/results.json),
-[144 reviews](pipeline/scripts/rag_eval/broad/chat-review.json), and
-[reproduction and source attribution](pipeline/scripts/rag_eval/broad/README.md).
+[Full report](bench/rag/broad/reports/2026-09-05-broad.md),
+[results and frozen metadata](bench/rag/broad/results.json),
+[144 reviews](bench/rag/broad/chat-review.json), and
+[reproduction and source attribution](bench/rag/broad/README.md).
 
 This evaluation froze the existing settings before querying fresh public sources.
 It used our actual Qwen embeddings, not precomputed vectors from another model.
@@ -282,8 +282,8 @@ and reviewed answers to establish a bridging failure.
 | [store.py](pipeline/pipeline/retrieval/store.py) | Hybrid SQL, lexical weight, short-query rule and scope |
 | [chunking.py](pipeline/pipeline/retrieval/chunking.py) | Chunk packing and lexical preprocessing |
 | [test_agent.py](pipeline/tests/test_agent.py) | Search-location-to-document-read test |
-| [curated suite](pipeline/scripts/rag_eval/curated/README.md) | Corpus, ingestion checks, variants, traces and grading |
-| [broad suite](pipeline/scripts/rag_eval/broad/README.md) | Public sources, retrieval comparisons, chat and review |
+| [curated suite](bench/rag/curated/README.md) | Corpus, ingestion checks, variants, traces and grading |
+| [broad suite](bench/rag/broad/README.md) | Public sources, retrieval comparisons, chat and review |
 
 The tested runtime used chunker v5, top five passages, per-file cap four,
 40 candidates and lexical weight 0.5 with the existing short-query exception.
@@ -309,15 +309,16 @@ The SSH key used successfully for these runs was:
 
 ```sh
 ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
-  -i ~/.ssh/id_ed25519_evo_ingest root@159.195.61.195
+  -i ~/.ssh/id_ed25519_capy_ingest root@159.195.61.195
 ```
 
-The earlier handoff named `id_ed25519_capy_ingest`; that was not the key used.
+The key was renamed from `id_ed25519_evo_ingest` on 7 September 2026 with the
+rest of the project rename; the key material is unchanged.
 
 | VM path | Contents |
 | --- | --- |
-| `/opt/evo-rag-lab` | Original concept-removal lab, preserved separately |
-| `/opt/evo-rag-lab/bridge` | Earlier footer comparison streams and runner |
+| `/opt/capy-rag-lab` | Original concept-removal lab, preserved separately |
+| `/opt/capy-rag-lab/bridge` | Earlier footer comparison streams and runner |
 | `/opt/capy-rag-curated-20260905` | Isolated lab, Compose project `capy-rag-curated` |
 | `/opt/capy-rag-curated-20260905/corpus` | Fictional sources, questions, manifest and workspace IDs |
 | `/opt/capy-rag-curated-20260905/tool-evidence.jsonl` | Curated tool results keyed by assistant message ID |

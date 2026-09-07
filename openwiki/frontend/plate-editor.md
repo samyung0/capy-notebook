@@ -449,7 +449,7 @@ validation and are not rendered.
   actions) must be identity-stable; the `decorate` and `onKeyDown` props of
   `PlateContent` must be stable, because Plate treats new editable props as a
   full re-render; and save/footer state must not reach `NoteEditorContent`,
-  which is memoized for that reason. `e2e/perf/editor.perf.ts` guards this with
+  which is memoized for that reason. `bench/editor/scripts/editor.perf.ts` guards this with
   a save-cycle blocking budget, and `saveCycleProfile.perf.ts` attributes a
   regression to functions. How to run those specs and the manual GitHub Actions
   checkpoint is in [editor-perf.md](../editor-perf.md).

@@ -169,14 +169,14 @@
         that:
           - ansible_facts.services[item].state != 'running'
         fail_msg: Retire the legacy stack launcher in a planned cutover before provisioning.
-      loop: [evo-ingest.service, capy-ingest.service]
+      loop: [capy-ingest.service]
       when: item in ansible_facts.services
 
     - name: Disable the inactive legacy stack launchers
       ansible.builtin.systemd_service:
         name: "{{ item }}"
         enabled: false
-      loop: [evo-ingest.service, capy-ingest.service]
+      loop: [capy-ingest.service]
       when: item in ansible_facts.services
 
     - name: Stop legacy watchdogs
@@ -184,7 +184,7 @@
         name: "{{ item }}"
         enabled: false
         state: stopped
-      loop: [evo-ingest-watchdog.service, capy-ingest-watchdog.service]
+      loop: [capy-ingest-watchdog.service]
       when: item in ansible_facts.services
 
     - name: Remove retired launcher and watchdog units
@@ -192,9 +192,7 @@
         path: "/etc/systemd/system/{{ item }}"
         state: absent
       loop:
-        - evo-ingest.service
         - capy-ingest.service
-        - evo-ingest-watchdog.service
         - capy-ingest-watchdog.service
       notify: Reload systemd
 

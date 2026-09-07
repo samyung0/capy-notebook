@@ -21,12 +21,12 @@ at the top of each section.
 | Certified model cassette replay  | `pnpm test:pipeline:replay`                                      |
 | Playwright sharing/API e2e       | `pnpm e2e` / serialized: `pnpm e2e:slow`                         |
 | Playwright accessibility quality | `pnpm e2e:quality` (also included by `pnpm e2e`)                 |
-| Playwright editor (MSW)          | `pnpm e2e:editor`                                                |
-| Playwright editor perf           | `pnpm perf`                                                      |
+| Playwright editor (MSW)          | `pnpm e2e:msw:editor`                                            |
+| Playwright editor perf           | `pnpm bench:editor`                                              |
 | Playwright authorized UAT        | `pnpm e2e:uat`                                                   |
 | Review automation contracts      | `pnpm review:validate-boundaries` / `pnpm review:validate-scanners` |
-| Local grading comparison         | `python -m unittest discover -s scripts/grading_benchmark -p test_benchmark.py` |
-| Browser grading failure lifecycle | `node scripts/grading_benchmark/test_browser.mjs` |
+| Local grading comparison         | `python -m unittest discover -s bench/grading/scripts -p test_benchmark.py` |
+| Browser grading failure lifecycle | `node bench/grading/scripts/test_browser.mjs` |
 
 Playwright's sharing/API global setup builds the collaboration Docker image,
 including Office WASM with Binaryen's version and verified archive checksum from
@@ -38,11 +38,11 @@ The frontend and browser E2E CI jobs reuse compiled browser WASM through
 hash validation still runs before consuming the restored artifacts. This cache
 does not cover the separate collaboration Docker build.
 
-The local grading checks in [`scripts/grading_benchmark/test_benchmark.py`](../scripts/grading_benchmark/test_benchmark.py) cover invalid-score handling, family split integrity, interrupted result recovery, separation of run configurations and changed coverage, exclusion of anchors/ambiguous labels from primary matched/native metrics, complete hash-matched comparison with invalid paired scores, and native/browser pairing restricted to identical cases, model hashes and explicit decoding controls. [`test_browser.mjs`](../scripts/grading_benchmark/test_browser.mjs) checks that a runtime exception saves bounded diagnostic logs, stops requests to the failed worker, releases it, permits the next model to run and visibly reports the failure. Model evaluations are opt-in experiments described in [`scripts/grading_benchmark/README.md`](../scripts/grading_benchmark/README.md), with artifacts under ignored `data/grading-benchmark/`.
+The local grading checks in [`bench/grading/scripts/test_benchmark.py`](../bench/grading/scripts/test_benchmark.py) cover invalid-score handling, family split integrity, interrupted result recovery, separation of run configurations and changed coverage, exclusion of anchors/ambiguous labels from primary matched/native metrics, complete hash-matched comparison with invalid paired scores, and native/browser pairing restricted to identical cases, model hashes and explicit decoding controls. [`test_browser.mjs`](../bench/grading/scripts/test_browser.mjs) checks that a runtime exception saves bounded diagnostic logs, stops requests to the failed worker, releases it, permits the next model to run and visibly reports the failure. Model evaluations are opt-in experiments described in [`bench/grading/README.md`](../bench/grading/README.md), with artifacts under ignored `data/grading-benchmark/`.
 
 ---
 
-## Frontend Vitest (`src/`, `e2e/perf/`)
+## Frontend Vitest (`src/`, `bench/editor/`)
 
 ### API
 
@@ -102,7 +102,7 @@ The local grading checks in [`scripts/grading_benchmark/test_benchmark.py`](../s
 
 | File                                                        | About                                                                                                                                   |
 | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| [`e2e/perf/snapshot.test.ts`](../e2e/perf/snapshot.test.ts) | First-run reports, warn-only deltas against the median of the newest five green snapshots and the best retained one, mixed-CPU warnings, and exclusion of noisy context metrics from relative comparison. |
+| [`bench/editor/scripts/snapshot.test.ts`](../bench/editor/scripts/snapshot.test.ts) | First-run reports, warn-only deltas against the median of the newest five green snapshots and the best retained one, mixed-CPU warnings, and exclusion of noisy context metrics from relative comparison. |
 
 ### Quizzes / workspace
 
@@ -384,7 +384,7 @@ by the authorization and UI-quality suites.
 
 ## Playwright e2e — editor feature matrix (`e2e/editor/`)
 
-MSW + Vite only (`pnpm e2e:editor`); no Docker.
+MSW + Vite only (`pnpm e2e:msw:editor`); no Docker.
 
 | File                                                                                | About                                                                                                                                   |
 | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
@@ -395,20 +395,20 @@ MSW + Vite only (`pnpm e2e:editor`); no Docker.
 
 ---
 
-## Playwright perf (`e2e/perf/`)
+## Playwright perf (`bench/editor/`)
 
-MSW + Vite (`pnpm perf`). 6 cases total: 4 budget specs always run; 2 diagnostic V8 profiles are skipped unless `PERF_PROFILE=1`. Budgets are regression tripwires under CPU throttle, not UX targets. How to run the suite, what the GHA snapshot compare does, and why deltas stay warn-only: [editor-perf.md](editor-perf.md).
+MSW + Vite (`pnpm bench:editor`). 6 cases total: 4 budget specs always run; 2 diagnostic V8 profiles are skipped unless `PERF_PROFILE=1`. Budgets are regression tripwires under CPU throttle, not UX targets. How to run the suite, what the GHA snapshot compare does, and why deltas stay warn-only: [editor-perf.md](editor-perf.md).
 
 | File                                                                        | About                                                                                                                                                   |
 | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`e2e/perf/editor.perf.ts`](../e2e/perf/editor.perf.ts)                     | 4 cases: open cost (near-limit), typing latency (small), typing + save cycle (near-limit), scroll FPS (near-limit).                                     |
-| [`e2e/perf/saveCycleProfile.perf.ts`](../e2e/perf/saveCycleProfile.perf.ts) | 1 case, opt-in (`PERF_PROFILE=1`): V8 CPU profile of the near-limit save cycle (diagnostic, no budget assert).                                          |
-| [`e2e/perf/typingProfile.perf.ts`](../e2e/perf/typingProfile.perf.ts)       | 1 case, opt-in (`PERF_PROFILE=1`): V8 CPU profile of idle, heading typing, and body typing with per-suspect attribution (diagnostic, no budget assert). |
+| [`bench/editor/scripts/editor.perf.ts`](../bench/editor/scripts/editor.perf.ts)                     | 4 cases: open cost (near-limit), typing latency (small), typing + save cycle (near-limit), scroll FPS (near-limit).                                     |
+| [`bench/editor/scripts/saveCycleProfile.perf.ts`](../bench/editor/scripts/saveCycleProfile.perf.ts) | 1 case, opt-in (`PERF_PROFILE=1`): V8 CPU profile of the near-limit save cycle (diagnostic, no budget assert).                                          |
+| [`bench/editor/scripts/typingProfile.perf.ts`](../bench/editor/scripts/typingProfile.perf.ts)       | 1 case, opt-in (`PERF_PROFILE=1`): V8 CPU profile of idle, heading typing, and body typing with per-suspect attribution (diagnostic, no budget assert). |
 
-Supporting (not tests): [`e2e/perf/metrics.ts`](../e2e/perf/metrics.ts) instrumentation and per-case snapshot output,
-[`e2e/perf/snapshot.ts`](../e2e/perf/snapshot.ts) typed assembly/comparison,
-[`e2e/perf/compare-cli.ts`](../e2e/perf/compare-cli.ts) workflow adapter, and
-[`e2e/perf/cpuProfile.ts`](../e2e/perf/cpuProfile.ts) profile capture/attribution shared by the two diagnostics.
+Supporting (not tests): [`bench/editor/scripts/metrics.ts`](../bench/editor/scripts/metrics.ts) instrumentation and per-case snapshot output,
+[`bench/editor/scripts/snapshot.ts`](../bench/editor/scripts/snapshot.ts) typed assembly/comparison,
+[`bench/editor/scripts/compare-cli.ts`](../bench/editor/scripts/compare-cli.ts) workflow adapter, and
+[`bench/editor/scripts/cpuProfile.ts`](../bench/editor/scripts/cpuProfile.ts) profile capture/attribution shared by the two diagnostics.
 
 ---
 
@@ -416,7 +416,7 @@ Supporting (not tests): [`e2e/perf/metrics.ts`](../e2e/perf/metrics.ts) instrume
 
 | File                                                                                                          | About                                                                                                                                                                                                                                                                                                  |
 | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`scripts/review/validate-review-boundaries.test.mjs`](../scripts/review/validate-review-boundaries.test.mjs) | Checked-in and synthetic workflows prove no workflow is scheduled or invokes Strix or Codex Security, the UAT gate and editor perf stay dispatchable and callable, UAT deployment calls the gate, and production promotion calls the gate, perf, and the local-status check. |
+| [`scripts/review/validate-review-boundaries.test.mjs`](../scripts/review/validate-review-boundaries.test.mjs) | Checked-in and synthetic workflows prove no workflow is scheduled or invokes Strix or Codex Security, the UAT gate and editor perf stay dispatchable and callable, UAT deployment is dispatch-only and calls the gate, and production promotion calls the gate and perf. |
 | [`scripts/review/validate-strix-run.test.mjs`](../scripts/review/validate-strix-run.test.mjs)                 | Synthetic Strix result trees prove report-only behavior, high-severity enforcement, budget saturation, and fail-closed handling of incomplete runs.                                                                                                                          |
 | [`scripts/review/validate-codex-scan.test.mjs`](../scripts/review/validate-codex-scan.test.mjs)               | Synthetic Codex Security bundles prove a sealed completed manifest with findings and report passes, high/critical findings block, and missing or unsealed artifacts fail closed.                                                                                             |
 
@@ -426,14 +426,14 @@ Supporting (not tests): [`e2e/perf/metrics.ts`](../e2e/perf/metrics.ts) instrume
 
 | File                                                                                                | About                                                                                                                       |
 | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| [`pipeline/scripts/rag_eval/curated/`](../pipeline/scripts/rag_eval/curated/) | Fictional 23-document RAG corpus with 48 pre-labelled questions and a missing-register control workspace; real upload/parse/ingest, source-span verification, full search/read evidence, resumable sequential agent comparisons, and isolated retrieval/prompt variants. `python pipeline/scripts/rag_eval/curated/check_grading.py` verifies required hops and numeric/decimal fidelity. Generated sources and raw runs stay on the ingest VM. |
-| [`pipeline/scripts/rag_eval/broad/`](../pipeline/scripts/rag_eval/broad/) | Frozen public-data RAG evaluation: seven native MIRACL language pools, full BEIR SciFact/ArguAna corpora, 360 hybrid/dense/exact retrieval queries, and 36 native/cross-language/multi-document/missing-source chat cases under two conditions and two repeats. Component indexes are separate from normal Markdown QA uploads. `run_retrieval.self_check()` verifies passage-position metrics, duplicate chunks, aliases, and misses; chat scoring requires source checks and explicit answer review. Raw data stays in the isolated VM lab. |
-| [`pipeline/scripts/rag_eval/embedding/`](../pipeline/scripts/rag_eval/embedding/) | Five embedding conditions over the frozen 360-query corpus, exact hybrid/dense relevance, separate filtered HNSW overlap, storage/build cost, 1,080 uncached latency requests, and baseline/challenger agent comparison on 48 curated cases twice. `embed.self_check()` checks response shape and cache role separation; source fingerprints guard reuse. Raw attempts, sources and semantic reviews are archived locally before removing experiment resources from the VM. |
-| [`pipeline/scripts/rag_eval/qwen38/`](../pipeline/scripts/rag_eval/qwen38/) | Qwen3.8 Flash through Alibaba Cloud with the same 48 curated questions, two repeats and Qwen4/Voyage embeddings. Reuses frozen document vectors and agent code; `qwen38.self_check()` guards the thinking-mode translation, live pilots verify streaming tool calls, `compare.py` joins all source-reviewed answers to the prior DeepSeek run with question-cluster intervals, and `probe.py` separately replays empty final responses with explicit tool disabling. Results and the audited archive/cleanup scope are in `REPORT.md`. |
-| [`bench/parsers/bench_parse.py`](../bench/parsers/bench_parse.py)                                   | Manual parser throughput and resource benchmark against the persistent VM endpoint.                                         |
-| [`bench/parsers/bench_mixed_lanes.py`](../bench/parsers/bench_mixed_lanes.py)                       | Manual mixed-lane load: four digital jobs plus two OCR-heavy jobs; checks the returned bundles contain representative text. |
-| [`bench/parsers/build_worker_stress_fixtures.py`](../bench/parsers/build_worker_stress_fixtures.py) | Builds unique 26-page digital-to-OCR lane fixtures for worker resource tests.                                               |
-| [`bench/parsers/run_worker_stress.sh`](../bench/parsers/run_worker_stress.sh)                       | Runs four real worker containers and records host, parser, and worker cgroup resource use.                                  |
+| [`bench/rag/curated/`](../bench/rag/curated/) | Fictional 23-document RAG corpus with 48 pre-labelled questions and a missing-register control workspace; real upload/parse/ingest, source-span verification, full search/read evidence, resumable sequential agent comparisons, and isolated retrieval/prompt variants. `python bench/rag/curated/scripts/check_grading.py` verifies required hops and numeric/decimal fidelity. Generated sources and raw runs stay on the ingest VM. |
+| [`bench/rag/broad/`](../bench/rag/broad/) | Frozen public-data RAG evaluation: seven native MIRACL language pools, full BEIR SciFact/ArguAna corpora, 360 hybrid/dense/exact retrieval queries, and 36 native/cross-language/multi-document/missing-source chat cases under two conditions and two repeats. Component indexes are separate from normal Markdown QA uploads. `run_retrieval.self_check()` verifies passage-position metrics, duplicate chunks, aliases, and misses; chat scoring requires source checks and explicit answer review. Raw data stays in the isolated VM lab. |
+| [`bench/rag/embedding/`](../bench/rag/embedding/) | Five embedding conditions over the frozen 360-query corpus, exact hybrid/dense relevance, separate filtered HNSW overlap, storage/build cost, 1,080 uncached latency requests, and baseline/challenger agent comparison on 48 curated cases twice. `embed.self_check()` checks response shape and cache role separation; source fingerprints guard reuse. Raw attempts, sources and semantic reviews are archived locally before removing experiment resources from the VM. |
+| [`bench/rag/qwen38/`](../bench/rag/qwen38/) | Qwen3.8 Flash through Alibaba Cloud with the same 48 curated questions, two repeats and Qwen4/Voyage embeddings. Reuses frozen document vectors and agent code; `qwen38.self_check()` guards the thinking-mode translation, live pilots verify streaming tool calls, `compare.py` joins all source-reviewed answers to the prior DeepSeek run with question-cluster intervals, and `probe.py` separately replays empty final responses with explicit tool disabling. Results and the audited archive/cleanup scope are in `reports/2026-09-06-qwen38.md`. |
+| [`bench/parsers/scripts/bench_parse.py`](../bench/parsers/scripts/bench_parse.py)                                   | Manual parser throughput and resource benchmark against the persistent VM endpoint.                                         |
+| [`bench/parsers/scripts/bench_mixed_lanes.py`](../bench/parsers/scripts/bench_mixed_lanes.py)                       | Manual mixed-lane load: four digital jobs plus two OCR-heavy jobs; checks the returned bundles contain representative text. |
+| [`bench/parsers/scripts/build_worker_stress_fixtures.py`](../bench/parsers/scripts/build_worker_stress_fixtures.py) | Builds unique 26-page digital-to-OCR lane fixtures for worker resource tests.                                               |
+| [`bench/parsers/scripts/run_worker_stress.sh`](../bench/parsers/scripts/run_worker_stress.sh)                       | Runs four real worker containers and records host, parser, and worker cgroup resource use.                                  |
 
 ## Site Worker and deployment configuration
 

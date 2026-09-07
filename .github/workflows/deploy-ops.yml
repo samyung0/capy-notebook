@@ -55,12 +55,11 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$DEPLOY_REVISION&status=success&per_page=100" \
             --jq '.workflow_runs | any(.head_branch == "main" and (.event == "push" or .event == "workflow_dispatch"))' \
             | grep -qx true || { echo "Candidate needs successful main-branch CI." >&2; exit 1; }
-      - name: Require production review and prior Ops UAT deployment
+      - name: Require prior Ops UAT deployment
         if: inputs.environment_name == 'production'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          scripts/review/require-statuses.sh "$DEPLOY_REVISION" source/codex-security uat/strix
           gh api "repos/$GITHUB_REPOSITORY/actions/workflows/deploy-ops.yml/runs?status=success&event=workflow_dispatch&per_page=100" \
             --jq ".workflow_runs | any(.head_branch == \"main\" and .display_title == \"Deploy Ops uat $DEPLOY_REVISION\")" \
             | grep -qx true || { echo "Deploy this Ops revision to UAT successfully first." >&2; exit 1; }

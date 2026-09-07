@@ -52,7 +52,7 @@ Prototype collision behavior before completing the schema: independent inserts s
 
 "Full structural collaboration" covers the existing editor's supported single-user operations. Existing serializer refusals for unsupported pivot/custom-part references remain until the fork can preserve those parts correctly. Supporting every Excel feature is a separate scope.
 
-The vendored pin is `71524815b5b4704fa72a34ef0d9a3310fc21e1dd`; the separate `evo-office` checkout is `fc25f8930c23bca449af5df82de2a564c3b0913a` and has existing PoC edits. Reconcile the intended checkout with the pinned fork before implementation, preserving other work.
+The vendored pin is `71524815b5b4704fa72a34ef0d9a3310fc21e1dd`; the separate office checkout (then `evo-office`, no longer present locally) is `fc25f8930c23bca449af5df82de2a564c3b0913a` and has existing PoC edits. Reconcile the intended checkout with the pinned fork before implementation, preserving other work.
 
 ### DOCX/PPTX and assets
 

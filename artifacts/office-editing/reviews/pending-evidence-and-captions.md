@@ -37,7 +37,7 @@ The temporary ASGI proof, `/private/tmp/test_capy_context_error_relay_rereview.p
 ## Checks run independently
 
 - `UV_CACHE_DIR=/private/tmp/capy-uv-cache pnpm test:pipeline -- pipeline/tests/test_caption_cache.py pipeline/tests/test_pending_baseline.py pipeline/tests/test_pending_sources.py pipeline/tests/test_compact.py pipeline/tests/test_ingest_worker.py pipeline/tests/test_figures.py -q -k 'caption or pending or baseline or compact or image_donor or figure'`: **78 passed, 54 deselected**, 25.89 seconds.
-- `PYTHONPATH=/private/tmp:/Users/sam/web/evo-notes/pipeline:/Users/sam/web/evo-notes/pipeline/tests UV_CACHE_DIR=/private/tmp/capy-uv-cache pnpm test:pipeline -- -c pyproject.toml /private/tmp/test_capy_pending_fixed_rereview.py -q`: **3 passed**, 5.49 seconds. These adapt the original independent SQL reproductions and assert the fixes.
+- `PYTHONPATH=/private/tmp:/Users/sam/web/capy-notebook/pipeline:/Users/sam/web/capy-notebook/pipeline/tests UV_CACHE_DIR=/private/tmp/capy-uv-cache pnpm test:pipeline -- -c pyproject.toml /private/tmp/test_capy_pending_fixed_rereview.py -q`: **3 passed**, 5.49 seconds. These adapt the original independent SQL reproductions and assert the fixes.
 - `GOCACHE=/private/tmp/capy-go-cache pnpm test:go -- ./internal/httpapi -run 'TestSourceContextErrorsRelay|TestPipelineGenerateError|TestChatEventError' -count=1`: **passed**, package 0.364 seconds, using the disposable root Go database harness.
 - Temporary ordinary-context error proof after root correction: **1 passed**, 8.90 seconds, verifying HTTP 400 `context_too_large`. The preceding run reproduced the missing mapping with HTTP 500.
 

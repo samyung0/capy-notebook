@@ -37,9 +37,10 @@ and the product is Capy Notebook.
 - Both repository worktrees are clean at the starting point.
 - UAT VM `159.195.250.206` runs Coolify 4.3.14 and its dependencies. No application
   containers or application volumes are present.
-- Ingest VM `159.195.61.195` runs the existing `evo-rag-lab` stack. Its data stays
-  untouched. `evo-ingest.service` is disabled; `/opt/evo-ingest` and
-  `/etc/evo-ingest` exist.
+- Ingest VM `159.195.61.195` runs the existing `capy-rag-lab` stack. Its data stays
+  untouched. At the starting point `evo-ingest.service` was disabled and
+  `/opt/evo-ingest` and `/etc/evo-ingest` existed; all three were renamed to
+  `capy-*` during the migration and no longer exist under the old names.
 - Local Docker has no containers. No application database has been reset.
 - The release script predates the import worker. The new deployment flow must
   include it in prepare, activate, health verification, and rollback handling.
@@ -105,8 +106,8 @@ manual deployments; ingest must match the running backend revision.
 
 The Worker now owns `uat.capynotebook.com`, and its isolated Office runtime is
 live at `uat-office.capynotebook.com`. Both custom domains and their assets were
-verified. The detached `evo-notes-uat` Pages project remains available for
-rollback. After the backend creates its application database, run the explicit
+verified. The detached `evo-notes-uat` Pages project was kept for rollback and
+deleted on 7 September 2026. After the backend creates its application database, run the explicit
 UAT seed initializer and activation checks before enabling automatic post-CI
 deployments.
 

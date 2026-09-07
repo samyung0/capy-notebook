@@ -1,4 +1,4 @@
-/** Fixture identity for the editor performance harness (e2e/perf).
+/** Fixture identity for the editor performance harness (bench/editor).
  *
  * The near-limit document itself is the shared load-test note built by
  * `noteContent/loadTest.ts` — a ~2MB, feature-mixed document sized against the

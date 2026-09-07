@@ -21,8 +21,8 @@ full_commands=(
   "pnpm test:go"
   "pnpm test:pipeline"
   "pnpm e2e"
-  "pnpm e2e:editor"
-  "pnpm perf"
+  "pnpm e2e:msw:editor"
+  "pnpm bench:editor"
 )
 
 if [[ "$mode" == "--list" ]]; then

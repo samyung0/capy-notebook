@@ -1,0 +1,180 @@
+{
+  "schema": "capy-rag-lab-samples-v1",
+  "recorded": "2026-09-07",
+  "host": "capy-ingest-1 (159.195.61.195)",
+  "location": "/opt/capy-rag-lab/samples",
+  "note": "Real-world multilingual corpus backing bench/rag/fixtures/questions*.json. Gathered ad hoc; there is no fetch script and no upstream manifest, so these bytes exist only on the ingest host. The question sets label (file, chunk_idx) pairs against this corpus indexed at CHUNKER_VERSION v5 — re-chunking moves the indices. If this corpus is lost the question sets cannot be re-run.",
+  "totals": {
+    "files": 16,
+    "bytes": 60997152
+  },
+  "files": [
+    {
+      "path": "de/grosse-sprachmodelle.pdf",
+      "sha256": "9b27898e9bd5262a304574fedbc364c3a69a3b7f66c5870a4c3607b9d5740697",
+      "bytes": 1304129,
+      "referenced_by": [
+        "questions-de-hard.json",
+        "questions-de-ids.json",
+        "questions-de.json"
+      ]
+    },
+    {
+      "path": "de/putnam-einleitung.pdf",
+      "sha256": "0e392986257630db63b1d138c344f958dacd17f6cae1c3f1a56f7405e00e15d2",
+      "bytes": 134687,
+      "referenced_by": [
+        "questions-de-hard.json",
+        "questions-de-ids.json",
+        "questions-de.json"
+      ]
+    },
+    {
+      "path": "en/biology-ib-chapter-1.pdf",
+      "sha256": "8cd19abeee7dcb324a9cc8a0809aa4b8efa285b1cf29aa065f9231d8ee9c229e",
+      "bytes": 472650,
+      "referenced_by": [
+        "questions-en-asked-zh.json",
+        "questions-hard.json",
+        "questions-ids.json",
+        "questions.json"
+      ]
+    },
+    {
+      "path": "en/biology-ib-convergent-targets.pdf",
+      "sha256": "7301d4c0b13d5662c434916c941897b75979cf975ea2cddeb5d1a97317e06071",
+      "bytes": 549551,
+      "referenced_by": [
+        "questions-en-asked-zh.json",
+        "questions-hard.json",
+        "questions-ids.json",
+        "questions.json"
+      ]
+    },
+    {
+      "path": "en/biology-ib-sample-16-pages.pdf",
+      "sha256": "3dfd95d688b13d32414f2ad4f46c436a200cc102313f5837247d7c7fbc59daf9",
+      "bytes": 17449334,
+      "referenced_by": [
+        "questions-en-asked-zh.json",
+        "questions-hard.json",
+        "questions-ids.json",
+        "questions.json"
+      ]
+    },
+    {
+      "path": "en/newspaper_scan.pdf",
+      "sha256": "9a4d01e6b17f17d336eb4c56d8bcdd9be25f63d13c1cfdfab83c7d385d405ef1",
+      "bytes": 547936,
+      "referenced_by": ["questions-en-asked-zh.json", "questions.json"]
+    },
+    {
+      "path": "es/sesgo-linguistico-digital.pdf",
+      "sha256": "a86f91bf87765a23a9e0b27b32c8b260242ffbc4a94de61074b57b7d856c0cbb",
+      "bytes": 803479,
+      "referenced_by": [
+        "questions-es-bridge.json",
+        "questions-es-hard.json",
+        "questions-es-ids.json",
+        "questions-es.json"
+      ]
+    },
+    {
+      "path": "es/variedades-espanol.pdf",
+      "sha256": "6e9ee0972e0932c99b3d26e2fb9a8618edfbf06b883c8c3c3f872aa76d43cb24",
+      "bytes": 377243,
+      "referenced_by": [
+        "questions-es-bridge.json",
+        "questions-es-hard.json",
+        "questions-es-ids.json",
+        "questions-es.json"
+      ]
+    },
+    {
+      "path": "fr/camembert-taln.pdf",
+      "sha256": "5499969bf0f52657722c22220ee8f6f7fe763629d438a9a67d376b05e115dff3",
+      "bytes": 596820,
+      "referenced_by": [
+        "questions-fr-bridge.json",
+        "questions-fr-hard.json",
+        "questions-fr-ids.json",
+        "questions-fr.json"
+      ]
+    },
+    {
+      "path": "fr/wikiner-fr-gold.pdf",
+      "sha256": "d8c5b3f432b8c928224816ed8f155983b5e53ad48ac4e906f9d1c0c8918716ca",
+      "bytes": 170894,
+      "referenced_by": [
+        "questions-fr-bridge.json",
+        "questions-fr-hard.json",
+        "questions-fr-ids.json",
+        "questions-fr.json"
+      ]
+    },
+    {
+      "path": "ja/jp_llm2.pptx",
+      "sha256": "6890415a45b3241052808254d0743abcd453069eedbf7cccd0a5fd87247dd681",
+      "bytes": 24390706,
+      "referenced_by": [
+        "questions-ja-bridge.json",
+        "questions-ja-hard.json",
+        "questions-ja-ids.json",
+        "questions-ja.json"
+      ]
+    },
+    {
+      "path": "ja/jp_llm.pdf",
+      "sha256": "28fbf744d91750133f60ebb1ad4bf50854d234441ceaae692400a874276c2c7b",
+      "bytes": 666745,
+      "referenced_by": [
+        "questions-ja-bridge.json",
+        "questions-ja-hard.json",
+        "questions-ja-ids.json",
+        "questions-ja.json"
+      ]
+    },
+    {
+      "path": "zh/mixed_zh_en.pdf",
+      "sha256": "7e55b0ee27cbd801f20e3c9ee9c659b501a809bd373777fc5f9b7f18813f4932",
+      "bytes": 1002478,
+      "referenced_by": [
+        "questions-mixed-asked-en.json",
+        "questions-mixed-asked-zh.json",
+        "questions-mixed-lexical.json",
+        "questions-zh-bridge.json",
+        "questions-zh-hard.json",
+        "questions-zh-ids.json",
+        "questions-zh.json"
+      ]
+    },
+    {
+      "path": "zh/zh-CN.pdf",
+      "sha256": "73e000eadee1d6fcfc374c1b37803b0492b648a3afdda95c1f01cf75cbc0f1dd",
+      "bytes": 2773687,
+      "referenced_by": [
+        "questions-zh-asked-en.json",
+        "questions-zh-hard.json",
+        "questions-zh-ids.json",
+        "questions-zh.json"
+      ]
+    },
+    {
+      "path": "zh/zh_HK.pdf",
+      "sha256": "37ee98f3cc724c6eb69a8fc8120e87ddccdf8c7169a57339402daa12311e9211",
+      "bytes": 1000295,
+      "referenced_by": [
+        "questions-zh-asked-en.json",
+        "questions-zh-hard.json",
+        "questions-zh-ids.json",
+        "questions-zh.json"
+      ]
+    },
+    {
+      "path": "zh/zh_TW_llm.pptx",
+      "sha256": "92168d5e03378df332fb671b0b403f7b39d6fac2771658497fa82e8efd2d836e",
+      "bytes": 8756518,
+      "referenced_by": null
+    }
+  ]
+}

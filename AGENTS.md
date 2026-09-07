@@ -84,6 +84,24 @@ Cross-links: plate-editor defers structural ACL to authorization and editor perf
 - Update `test-catalog.md`
 - Prefer `e2e:slow` on local machines, it uses only one worker and does not drain resources.
 
+## Benchmarks (`bench/`)
+
+All performance, capacity and model-quality measurement lives under `bench/`, one
+directory per family. Read [`bench/README.md`](bench/README.md) before running or
+changing any of them.
+
+| Family          | Measures                                                                         | Runs in CI |
+| --------------- | -------------------------------------------------------------------------------- | ---------- |
+| `bench/editor`  | Editor open cost, typing latency, save cycle, scroll FPS (`pnpm bench:editor`)    | Yes        |
+| `bench/parsers` | Ingest-host parser accuracy, OCR modes, concurrency, worker memory and OOM        | No, VM     |
+| `bench/grading` | Small local models against the production quiz-grading rubric, native and browser | No         |
+| `bench/rag`     | Live retrieval diagnostic plus four frozen retrieval/agent experiments            | No, lab    |
+
+Every family separates `scripts/` (runnable) from `fixtures/` (input data) and
+`reports/` (findings and raw run records, never executed). Reports are named
+`YYYY-MM-DD-<topic>.md`. Keep new benchmarks inside this layout rather than
+adding a fifth location.
+
 ## I18n
 
 paraglide is used for internationalization. use paraglide functions to support i18n when appropriate.

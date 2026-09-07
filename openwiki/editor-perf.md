@@ -7,9 +7,9 @@ tags: [frontend, testing, playwright, performance, github-actions]
 
 # Editor performance checkpoints
 
-`pnpm perf` measures the Plate editor against a Vite **dev** build and MSW. It
+`pnpm bench:editor` measures the Plate editor against a Vite **dev** build and MSW. It
 is a regression tripwire, not a production SLO. Absolute `BUDGET` ceilings in
-[`e2e/perf/editor.perf.ts`](../e2e/perf/editor.perf.ts) are the only hard fail
+[`bench/editor/scripts/editor.perf.ts`](../bench/editor/scripts/editor.perf.ts) are the only hard fail
 and they gate production promotion. GitHub Actions adds a delta table on top
 so a human can see drift against recent and best green runs.
 
@@ -20,7 +20,7 @@ and why a save cycle must not re-render the tree live in
 ## Local run
 
 ```bash
-pnpm perf
+pnpm bench:editor
 ```
 
 Four budget specs always run. Two V8 profile specs run only with
@@ -32,7 +32,7 @@ different Chromium raster path, different CPU. Keep local runs for debugging
 (`typingProfile.perf.ts` / `saveCycleProfile.perf.ts`). Use Actions for
 deltas.
 
-`.github/workflows/ci.yml` does not run `pnpm perf`.
+`.github/workflows/ci.yml` does not run `pnpm bench:editor`.
 
 ## GitHub Actions
 
@@ -41,16 +41,16 @@ dispatch and by `workflow_call` from `promote-production.yml`, which passes the
 candidate SHA as `revision`. Pin is `ubuntu-24.04`. Typical wall time is 15 to
 25 minutes.
 
-1. Run `pnpm perf` with `PERF_SNAPSHOT_DIR` set. `reportMetrics` writes one JSON
+1. Run `pnpm bench:editor` with `PERF_SNAPSHOT_DIR` set. `reportMetrics` writes one JSON
    file per budget case.
-2. [`e2e/perf/compare-cli.ts`](../e2e/perf/compare-cli.ts) assembles a
+2. [`bench/editor/scripts/compare-cli.ts`](../bench/editor/scripts/compare-cli.ts) assembles a
    `PerfSnapshot` (commit, CPU model, Playwright version, `PERF_CPU`, cases).
    `PERF_COMMIT` carries the measured revision because `GITHUB_SHA` is the
    caller's SHA under `workflow_call`.
 3. Download `perf-snapshot` from the last 10 successful runs of `perf.yml` and
    of `promote-production.yml` (promotions call this workflow, so their green
    runs count). Expired or missing artifacts are skipped.
-4. [`e2e/perf/snapshot.ts`](../e2e/perf/snapshot.ts) sorts them by creation
+4. [`bench/editor/scripts/snapshot.ts`](../bench/editor/scripts/snapshot.ts) sorts them by creation
    time and writes two columns: vs the **median of the newest 5** ("are we
    drifting") and vs the **best over all retained** (a floor that cannot creep
    upward one checkpoint at a time). Artifacts expire at 90 days, which bounds
@@ -66,7 +66,7 @@ You can dispatch from any branch. Baselines are not automatically `main`.
 
 ## What the relative table includes
 
-[`e2e/perf/snapshot.ts`](../e2e/perf/snapshot.ts) `RELATIVE_METRICS` (lower is
+[`bench/editor/scripts/snapshot.ts`](../bench/editor/scripts/snapshot.ts) `RELATIVE_METRICS` (lower is
 better):
 
 - large-document interactive `openMs`

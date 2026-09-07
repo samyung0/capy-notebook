@@ -7,16 +7,16 @@ tags: [security, review, uat, strix, codex, playwright, ci]
 
 # Repository review automation
 
-Deterministic checks run in GitHub Actions. Agent-driven work runs on the
-developer's machine and reports back through commit statuses. Nothing has a
-schedule.
+Deterministic checks run in GitHub Actions. Code review and agent-driven scans
+run on the developer's machine and are never a promotion gate. Nothing has a
+schedule and nothing deploys on push.
 
 | Runs in Actions                                                                   | Runs locally                                                                                              |
 | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | `ci.yml`: lint, types, unit, Go/Postgres, pipeline, Playwright, boundary contract | `$review-repository` skill: reviewer lanes, challenger, report                                            |
 | `uat-quality.yml`: smoke, release SHA, 5-role authz matrix, axe, 320px reflow     | Codex Security source scan, `scripts/review/codex-security-scan.sh`, posts `source/codex-security`        |
 | `perf.yml`: editor budgets plus warn-only delta table                             | Strix dynamic UAT scan, `scripts/review/strix-scan.sh`, posts `uat/strix`                                 |
-| `promote-production.yml`: reruns both gates, requires the two statuses, deploys   | Ingest capacity benchmarks in `bench/parsers` against the ingest host (UAT is capped at one slice/worker) |
+| `promote-production.yml`: reruns both gates, then deploys                          | Ingest capacity benchmarks in `bench/parsers` against the ingest host (UAT is capped at one slice/worker) |
 
 GitHub holds no LLM key and no scanner instructions. Strix is
 `uv tool install strix-agent==1.5.3` plus Docker on the developer machine;
@@ -34,18 +34,20 @@ that exact SHA:
 1. `uat-quality.yml` is green after re-staging UAT to the SHA.
 2. `perf.yml` is green (absolute `BUDGET` ceilings; deltas are warn-only, see
    [editor-perf.md](editor-perf.md)).
-3. Commit statuses `source/codex-security` and `uat/strix` are `success`.
-   `scripts/review/require-statuses.sh` reads the combined status endpoint,
-   which returns only the latest state per context.
+Local scans post `source/codex-security` and `uat/strix` commit statuses as
+evidence, but promotion does not read them.
 
 Then the protected `production` environment approval is the release action.
+`deploy-uat.yml` is manual dispatch only: every UAT staging plus its gate is a
+person's decision, not a side effect of green CI.
 
 ## Local scans and how they reach GitHub
 
 `scripts/review/report-status.sh <context> <success|failure> <description> <sha>`
 posts one commit status through `gh api`. It needs `gh auth login` and a
 token that can write statuses. Each scan script calls it after validation,
-so a failed or incomplete scan posts `failure`, never silence. The one-line
+so a failed or incomplete scan posts `failure`, never silence. The status is
+a record for the person releasing, not a workflow input. The one-line
 description (140 characters) is the only evidence GitHub keeps; the full
 bundle stays under the ignored `review-results/`.
 
@@ -80,7 +82,7 @@ Other local commands:
 | `node scripts/review/source-snapshot.mjs`  | Record revision and source-tree metadata under `review-results/`.         |
 | `pnpm review:uat:smoke`                    | Probe the authorized UAT SPA, gateway, collab, and optional ops edge.     |
 | `pnpm e2e:uat`                             | Clerk-backed authz matrix, accessibility, and reflow checks against UAT.  |
-| `pnpm review:validate-boundaries`          | Prove no workflow is scheduled or runs a scanner, and promote gates.      |
+| `pnpm review:validate-boundaries`          | Prove no workflow is scheduled, runs a scanner, or stages UAT on push.    |
 | `pnpm review:validate-scanners`            | Test the Strix and Codex result validators.                               |
 
 `deploy/.env.uat.example` documents the values; copy it to the ignored
@@ -102,9 +104,9 @@ when it was unavailable or not run, and a clean report without a scan is
 when any workflow declares `schedule` or contains a scanner invocation
 (`strix-scan.sh`, `strix-agent`, `codex-security-scan.sh`, `codex exec`), when
 `uat-quality.yml` or `perf.yml` stops being both dispatchable and callable,
-when `deploy-uat.yml` runs on `push`, or when `promote-production.yml` drops
-the UAT gate, the perf call, `require-statuses.sh`, either status context, or
-the `production` environment.
+when `deploy-uat.yml` has any trigger besides `workflow_dispatch`, or when
+`promote-production.yml` drops the UAT gate, the perf call, or the
+`production` environment.
 
 ## Coverage gaps
 

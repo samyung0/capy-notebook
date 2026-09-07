@@ -38,13 +38,13 @@ jobs:
       - name: Run editor performance budgets
         id: perf
         continue-on-error: true
-        run: pnpm perf
+        run: pnpm bench:editor
         env:
           PERF_CPU: 4
-          PERF_SNAPSHOT_DIR: e2e/perf/.results
+          PERF_SNAPSHOT_DIR: bench/editor/.results
       - name: Assemble performance snapshot
         if: always()
-        run: pnpm exec tsx e2e/perf/compare-cli.ts assemble e2e/perf/.results perf-snapshot.json
+        run: pnpm exec tsx bench/editor/scripts/compare-cli.ts assemble bench/editor/.results perf-snapshot.json
         env:
           PERF_COMMIT: ${{ inputs.revision || github.sha }}
           PERF_CPU: 4
@@ -79,7 +79,7 @@ jobs:
       - name: Write performance comparison
         if: always()
         continue-on-error: true
-        run: pnpm exec tsx e2e/perf/compare-cli.ts compare perf-snapshot.json baselines/*/perf-snapshot.json >> "$GITHUB_STEP_SUMMARY"
+        run: pnpm exec tsx bench/editor/scripts/compare-cli.ts compare perf-snapshot.json baselines/*/perf-snapshot.json >> "$GITHUB_STEP_SUMMARY"
       - name: Upload performance snapshot
         if: always()
         uses: actions/upload-artifact@v4

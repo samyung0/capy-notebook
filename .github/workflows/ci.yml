@@ -9,6 +9,42 @@ permissions:
   contents: read
 
 jobs:
+  # The pin is a gitlink: Git records the SHA without checking that it exists
+  # anywhere but the machine that staged it. An unpushed or off-branch pin
+  # builds fine locally and breaks every fresh clone, so verify it here and
+  # print what the bump actually contains.
+  office_pin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Verify vendor/betteroffice pin
+        run: |
+          set -euo pipefail
+          pin=$(git ls-tree HEAD vendor/betteroffice | awk '{print $3}')
+          url=$(git config -f .gitmodules submodule.vendor/betteroffice.url)
+          branch=$(git config -f .gitmodules submodule.vendor/betteroffice.branch)
+          previous=$(git ls-tree HEAD^ vendor/betteroffice 2>/dev/null | awk '{print $3}' || true)
+
+          git init -q fork
+          cd fork
+          git remote add origin "$url"
+          git fetch -q --filter=blob:none --no-tags origin "$branch"
+
+          if ! git cat-file -e "$pin^{commit}" 2>/dev/null ||
+             ! git merge-base --is-ancestor "$pin" FETCH_HEAD; then
+            echo "::error::vendor/betteroffice pin $pin is not reachable from $branch on $url. Push the commit to $branch before pinning it."
+            exit 1
+          fi
+
+          echo "Pinned $pin on $branch:"
+          git log -1 --format='  %h %s' "$pin"
+          if [ -n "$previous" ] && [ "$previous" != "$pin" ]; then
+            echo "Bumped from $previous:"
+            git log --oneline --no-decorate "$previous..$pin" || true
+          fi
+
   frontend_check:
     runs-on: ubuntu-latest
     steps:
@@ -74,7 +110,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run e2e:install
       - run: pnpm run e2e
-      - run: pnpm run e2e:editor
+      - run: pnpm run e2e:msw:editor
       # Docker/Vite make these suites timing sensitive, and a failure that only
       # reproduces on the runner is undiagnosable without the traces.
       - if: failure()

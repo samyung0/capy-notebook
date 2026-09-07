@@ -21,21 +21,20 @@ are not deployment environments.
 
 This repository defines deployment as follows:
 
-1. **Push to UAT:** merge or push to `main`; `CI` must succeed. The **Deploy
-   UAT** workflow then deploys the exact CI `head_sha` to the isolated UAT
-   Coolify and Cloudflare Worker resources and calls the reusable
-   **Deterministic UAT quality** workflow. Set repository variable
-   `UAT_DEPLOYMENT_ENABLED=true` only after the first manual baseline.
+1. **Stage UAT:** push to `main` and let `CI` succeed, then manually dispatch
+   **Deploy UAT** from `main` with a full SHA (blank takes the selected main
+   revision). It deploys that SHA to the isolated UAT Coolify and Cloudflare
+   Worker resources and calls the reusable **Deterministic UAT quality**
+   workflow. Nothing stages UAT on push.
 2. **Push to production:** manually dispatch **Promote revision to production**
    from `main` with a full 40-character SHA. The workflow re-deploys that SHA
-   to UAT, re-runs the deterministic UAT gate and the editor perf budgets, and
-   requires the `source/codex-security` and `uat/strix` commit statuses to be
-   `success` on that SHA. Only then does it reach the protected `production`
-   GitHub environment. Approving that environment is the release action.
-3. **Agent-driven review:** `$review-repository`, the Codex Security source
-   scan, and the Strix UAT scan run only on a developer machine when a person
-   starts them. They post the commit statuses above; GitHub Actions never runs
-   them. See `review-automation.md`.
+   to UAT and re-runs the deterministic UAT gate and the editor perf budgets;
+   all must pass. Only then does it reach the protected `production` GitHub
+   environment. Approving that environment is the release action.
+3. **Code review and agent scans:** `$review-repository`, the Codex Security
+   source scan, and the Strix UAT scan run only on a developer machine when a
+   person starts them. Their commit statuses are evidence for the releaser;
+   no workflow reads them. See `review-automation.md`.
 
 Configure `main` branch protection to require `CI`. Configure the `uat`
 environment without a reviewer so post-CI deployment can run unattended.
@@ -765,7 +764,7 @@ those services start.
    Verify parser `/healthz` through WireGuard. It must return HTTP 200 with `ok=true`,
    `state=ready`, and a `release_sha` equal to the app's deployed revision. No
    parser port may listen on the public address.
-7. Run `bench/parsers/accuracy_report.py` across representative PDF, DOC/DOCX,
+7. Run `bench/parsers/scripts/accuracy_report.py` across representative PDF, DOC/DOCX,
    PPT/PPTX, and XLS/XLSX inputs in `auto`, `txt`, and `ocr` modes. Review every
    rejected row and the rendered page comparisons. A 610-page PDF should yield
    24 slices at the 26-page default. Record wall time, peak RAM, swap, and
@@ -873,7 +872,7 @@ underlying parser version has not changed.
 ### 7.2 Parser capacity and failure handling
 
 The current MinerU capacity and failure-injection record is
-[`bench/parsers/netcup-2026-08-31-stress.md`](../bench/parsers/netcup-2026-08-31-stress.md).
+[`bench/parsers/reports/2026-08-31-worker-stress.md`](../bench/parsers/reports/2026-08-31-worker-stress.md).
 Keep both the Redis document admission cap and the parser slice concurrency at
 four. Eight concurrent slices completed, but filled the parser's 14 GiB memory
 cgroup, used 5.32 GiB of swap, left about 450 MiB available on the host, and
@@ -1772,16 +1771,15 @@ UAT merely to fill a missing input.
 
 Deterministic quality URLs, authorization flag, synthetic account emails and
 fixture IDs belong in the GitHub `uat` environment and use the same upload
-path. Keep `UAT_DEPLOYMENT_ENABLED=false` as a separate **repository** variable
-until the first manual baseline passes. The local scanner authorization flag
-still requires explicit permission to scan that UAT target.
+path. The local scanner authorization flag still requires explicit permission
+to scan that UAT target.
 
 Use **Deploy UAT** for the coordinated app/backend/ingest/site release,
 **Deploy ingest** for an ingest-only run against an already matching backend
 SHA, and **Deploy Ops** for the independent dashboard and its Go backend. All
 apply their selected GitHub configuration on every run. Native Coolify
-Git auto-deploy stays disabled. Production promotion retains UAT, editor-perf,
-source-security, Strix, and protected-environment gates.
+Git auto-deploy stays disabled. Production promotion retains the UAT,
+editor-perf, and protected-environment gates.
 
 ### Independent Ops application
 
@@ -1827,8 +1825,7 @@ an authenticated read after the first deployment. Ops does not run migrations
 or redeploy the main app, ingest workers, or frontend Workers.
 
 Production additionally requires a successful **Deploy Ops uat** run for the
-same SHA, the existing source-security/Strix commit statuses, and the GitHub
-production environment protection. The workflow shares the main promotion
+same SHA and the GitHub production environment protection. The workflow shares the main promotion
 concurrency group so it cannot restart Ops during an app migration. Ops may
 use a newer code revision than the main app for schema-compatible changes;
 changes requiring new database tables/columns must deploy the main migrations
@@ -1836,40 +1833,35 @@ first. Roll back compatible Ops changes by selecting a previous passing SHA.
 
 ### 12.8 Baseline, automation, and release gate
 
-1. Leave `UAT_DEPLOYMENT_ENABLED=false` initially. This prevents successful CI
-   runs from deploying to a half-configured target.
-2. Manually dispatch **Deploy UAT** from `main`. It deploys the selected SHA and
+1. Manually dispatch **Deploy UAT** from `main`. It deploys the selected SHA and
    automatically calls **Deterministic UAT quality**. Inspect Coolify, Worker,
    smoke, and Playwright evidence, including release-SHA, accessibility, and
    320 CSS-pixel reflow checks.
-3. Repair the fixture and tune only documented budgets or exclusions. Do not
+2. Repair the fixture and tune only documented budgets or exclusions. Do not
    weaken authorization assertions or allow-host guards to make a run green.
-4. After a stable baseline, set `UAT_DEPLOYMENT_ENABLED=true`. Every successful
-   `CI` run for `main` then deploys its exact SHA to UAT and calls the same gate.
-   Dispatch **Editor perf** once so later runs have a baseline to diff. No
-   workflow has a schedule.
-5. Before a promotion, on the developer machine with `gh auth login` done:
+3. Dispatch **Editor perf** once so later runs have a baseline to diff. No
+   workflow has a schedule and no workflow stages UAT on push.
+4. Before a promotion, on the developer machine with `gh auth login` done:
    run `pnpm review:source:codex` on the clean candidate checkout, and
    `pnpm review:uat:strix` while UAT serves that SHA. Each posts its commit
-   status (`source/codex-security`, `uat/strix`) on the SHA. Triage candidates
-   rather than suppressing unexplained results. When the release warrants the
-   full review, invoke `$review-repository` in `release` mode; it runs both
-   scans as part of its procedure.
-6. Perform the manual Stripe sandbox sequence in §12.4 plus the release checks
+   status (`source/codex-security`, `uat/strix`) on the SHA as evidence for
+   the releaser. Triage candidates rather than suppressing unexplained results.
+   When the release warrants the full review, invoke `$review-repository` in
+   `release` mode; it runs both scans as part of its procedure.
+5. Perform the manual Stripe sandbox sequence in §12.4 plus the release checks
    for over-quota/suspension, ingest/index/search, cleanup, reconciliation,
    collaboration revocation, and recovery until dedicated synthetic fixtures
    automate them.
-7. Dispatch **Promote revision to production** with the exact full SHA. The
+6. Dispatch **Promote revision to production** with the exact full SHA. The
    workflow re-stages UAT, re-runs the deterministic gate and editor perf on
-   that SHA, refuses the SHA unless both scanner statuses are `success`, waits
-   for production approval, deploys both production resources, and verifies
+   that SHA, waits for production approval, deploys both production resources, and verifies
    the public release SHA and health. Then perform the bounded login, upload,
    collaboration, webhook, and observability checks in §10. Production is not
    a penetration-test target.
 
-Set `UAT_DEPLOYMENT_ENABLED=false` immediately if UAT is being rebuilt, its
-fixture is invalid, or allowed-host ownership changes. Manual deployment and
-quality dispatch remain available for repair. Rotate Clerk and LLM secrets
+Do not dispatch **Deploy UAT** while UAT is being rebuilt, its fixture is
+invalid, or allowed-host ownership changes; quality dispatch remains available
+for repair. Rotate Clerk and LLM secrets
 after exposure or personnel changes. Delete stale artifacts under the
 repository's retention policy; they should contain sanitized evidence, but
 they are still security-sensitive. Local `review-results/` bundles are
@@ -1884,12 +1876,12 @@ deploy and does not apply migrations or reset data.
 
 ```sh
 pnpm uat:seed --file deploy/.env.uat \
-  --ssh-key ~/.ssh/id_ed25519_evo_uat \
+  --ssh-key ~/.ssh/id_ed25519_capy_uat \
   --db-container <actual-UAT-Postgres-container>
 ```
 
 Find the exact Postgres container name in the UAT Coolify resource or with
-`ssh -i ~/.ssh/id_ed25519_evo_uat root@159.195.250.206 docker ps`.
+`ssh -i ~/.ssh/id_ed25519_capy_uat root@159.195.250.206 docker ps`.
 The script targets only this UAT host and checks the database schema before
 creating accounts. The ignored environment file must select the UAT URLs and
 contain the UAT Clerk backend key. The script also verifies the key's primary

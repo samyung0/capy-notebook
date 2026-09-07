@@ -8,20 +8,19 @@ import {
 } from './validate-review-boundaries.mjs';
 
 const uat =
-  'on:\n  workflow_run:\n  workflow_dispatch:\njobs:\n  gate:\n    uses: ./.github/workflows/uat-quality.yml\n';
+  'on:\n  workflow_dispatch:\njobs:\n  gate:\n    uses: ./.github/workflows/uat-quality.yml\n';
 const reusable = 'on:\n  workflow_call:\n';
 const production = [
   'on:\n  workflow_dispatch:\njobs:',
   '  gate:\n    uses: ./.github/workflows/uat-quality.yml',
   '  perf:\n    uses: ./.github/workflows/perf.yml',
-  '  evidence:\n    steps:\n      - run: scripts/review/require-statuses.sh "$SHA" source/codex-security uat/strix',
   '  deploy:\n    with:\n      environment_name: production\n',
 ].join('\n');
 
 const SCHEDULED = /must not be scheduled/;
 const RUNS_LOCALLY = /must run locally/;
 const CALLABLE = /callable by deployment flows/;
-const STRIX_STATUS = /must include 'uat\/strix'/;
+const UAT_MANUAL = /deploy-uat\.yml must be workflow_dispatch-only/;
 const PERF_CALL = /perf\.yml/;
 
 test('the checked-in workflows keep agent work local and gates callable', () => {
@@ -64,11 +63,14 @@ test('production promotion cannot drop a required gate', () => {
   assert.throws(
     () =>
       validateDeploymentWorkflows(
-        uat,
-        production.replace('uat/strix', ''),
+        uat.replace(
+          'workflow_dispatch:',
+          'workflow_run:\n  workflow_dispatch:'
+        ),
+        production,
         reusable
       ),
-    STRIX_STATUS
+    UAT_MANUAL
   );
   assert.throws(
     () =>
