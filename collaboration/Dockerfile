@@ -2,16 +2,16 @@ FROM oven/bun:1.3.14 AS bun
 FROM rust:1.98-bookworm AS office
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 COPY vendor/betteroffice/.github/actions/wasm-toolchain/action.yml /tmp/wasm-toolchain.yml
-# The pinned BetterOffice checkout owns the optimizer version and checksum.
+# The pinned BetterOffice checkout owns the optimizer version and checksums.
 RUN <<'SH'
 set -eu
-if [ "$(uname -m)" != x86_64 ]; then
-    echo 'BetterOffice pins an x86_64 Linux toolchain; build with --platform=linux/amd64.' >&2
-    exit 1
-fi
-bun -e 'const {inputs} = Bun.YAML.parse(await Bun.file("/tmp/wasm-toolchain.yml").text()); console.log(inputs.binaryen.default, inputs.sha256.default)' > /tmp/binaryen-pin
+case "$(uname -m)" in
+    x86_64|aarch64) arch="$(uname -m)" ;;
+    *) echo "BetterOffice pins no binaryen for $(uname -m)" >&2; exit 1 ;;
+esac
+bun -e 'const {inputs} = Bun.YAML.parse(await Bun.file("/tmp/wasm-toolchain.yml").text()); console.log(inputs.binaryen.default, inputs["sha256_" + process.argv[1]].default)' "$arch" > /tmp/binaryen-pin
 read -r binaryen sha256 < /tmp/binaryen-pin
-curl -fsSL -o /tmp/binaryen.tar.gz "https://github.com/WebAssembly/binaryen/releases/download/$binaryen/binaryen-$binaryen-x86_64-linux.tar.gz"
+curl -fsSL -o /tmp/binaryen.tar.gz "https://github.com/WebAssembly/binaryen/releases/download/$binaryen/binaryen-$binaryen-$arch-linux.tar.gz"
 echo "$sha256  /tmp/binaryen.tar.gz" | sha256sum -c -
 mkdir -p /opt/binaryen
 tar -xzf /tmp/binaryen.tar.gz -C /opt/binaryen --strip-components=1
