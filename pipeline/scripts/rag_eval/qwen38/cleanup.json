@@ -1,0 +1,93 @@
+{
+  "completed_utc": "2026-09-06T17:11:02.994518+00:00",
+  "archive_verification": {
+    "remote_archive_path": "/lab/capy-qwen38-results-20260907.tar.gz",
+    "local_archive_path": "/Users/sam/Downloads/capy-qwen38-results-20260907.tar.gz",
+    "remote_sha256": "73a6fd1793fac2ba080f8e2bbac3595150e4d6c1e7a95a3623c172aaaf0204b9",
+    "local_sha256": "73a6fd1793fac2ba080f8e2bbac3595150e4d6c1e7a95a3623c172aaaf0204b9",
+    "artifact_manifest_sha256": "47e70a686b3da4dda696c05625cee897b0e2c85c8e9bbe411d1eddcf76276004",
+    "conversation_ids_sha256": "06dad49f6c0fa5a4fdb5c3528ed7dd81ee7cfcbfa11dda7679e1ea552e4d02bf",
+    "bytes": 28667454,
+    "verified_files": 86,
+    "verified_utc": "2026-09-06T17:08:36.572763+00:00",
+    "remote_host_archive_path": "/opt/capy-rag-curated-20260905/capy-qwen38-results-20260907.tar.gz",
+    "archive_verification_container": "capy-qwen38-chat-20260907"
+  },
+  "vm_cleanup": {
+    "completed_utc": "2026-09-06T17:10:50.470280+00:00",
+    "removed_container": "capy-qwen38-chat-20260907",
+    "removed_container_id": "73567fc76912c2a0dc407e7bec9c82ea1c832420e7d3817bfae8da9fa013caf0",
+    "retained_containers": [
+      {
+        "name": "capy-rag-curated-db-1",
+        "id": "7fbd74d3308b9bbb300c9f1a84de103f681dff995be8b3d87a30213ae6040ae9",
+        "status": "exited"
+      },
+      {
+        "name": "capy-rag-curated-redis-1",
+        "id": "53efb83013d078f0a1b07ea3701e929534eb8234bc9ef0d979aa7d05687ac990",
+        "status": "exited"
+      },
+      {
+        "name": "capy-rag-curated-minio-1",
+        "id": "8859f34b307da6fd857a899af1669469dbc0981c8bea35aaa62b7a13e71da026",
+        "status": "exited"
+      },
+      {
+        "name": "capy-rag-curated-server-1",
+        "id": "b0c6895b53a825ab8bdc43d787e422a678e91c0dab084dab161b6c87b81dbb1b",
+        "status": "exited"
+      },
+      {
+        "name": "capy-rag-curated-retrieval-1",
+        "id": "dcab78a1355caea8aca169a409e5e3d3c979627e412b4c93f8648ff29a8d8a39",
+        "status": "exited"
+      },
+      {
+        "name": "capy-rag-curated-parser-1",
+        "id": "1c85c2a8e88a6c769c8182fb04ada3d0b58f3bff589b157b2af6f7d345772e83",
+        "status": "exited"
+      },
+      {
+        "name": "capy-rag-curated-parse-coordinator-1",
+        "id": "8278b2de39a835eba3d3facdb49d588e654777b4b587534c68f2296d39f40af0",
+        "status": "exited"
+      },
+      {
+        "name": "capy-rag-curated-worker-1",
+        "id": "4adabcf295bb6eb6523d9b436fe72691c0a1ed5fd3b5bd6c090806a16fb6aae8",
+        "status": "exited"
+      }
+    ],
+    "removed_paths": [
+      "/opt/capy-rag-curated-20260905/qwen38",
+      "/opt/capy-rag-curated-20260905/qwen38-chat.env",
+      "/opt/capy-rag-curated-20260905/embedding-secrets.json",
+      "/opt/capy-rag-curated-20260905/capy-qwen38-results-20260907.tar.gz"
+    ],
+    "verified_archive_sha256": "73a6fd1793fac2ba080f8e2bbac3595150e4d6c1e7a95a3623c172aaaf0204b9",
+    "database_cleanup": {
+      "original_conversations": 315,
+      "experiment_conversations": 194,
+      "experiment_messages": 388,
+      "primary_attempts": 192,
+      "primary_complete": 192,
+      "older_artifacts_unchanged": 478,
+      "workspace_pins_unchanged": 31,
+      "source_fingerprints_unchanged": true,
+      "adapter_hash_verified": true,
+      "baseline_chat_files_verified": 6,
+      "baseline_chat_runtime_modules_verified": 4,
+      "deleted_conversations": 194,
+      "deleted_messages": 388,
+      "scratch_schema_absent": true,
+      "original_conversations_preserved": true,
+      "archive_sha256_verified": "73a6fd1793fac2ba080f8e2bbac3595150e4d6c1e7a95a3623c172aaaf0204b9",
+      "artifact_manifest_verified": true
+    },
+    "older_lab_directory_retained": true,
+    "images_and_volumes_removed": false,
+    "append_only_accounting_retained": true
+  },
+  "local_temporary_credential_file_removed": true
+}

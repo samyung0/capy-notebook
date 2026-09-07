@@ -1,5 +1,6 @@
 import { expect, test } from '../fixtures/actors';
 import { apiEndsWith, waitForApi } from '../helpers/api';
+import { openWorkspaceSharing } from '../helpers/workspace';
 
 test.describe('workspace sharing', () => {
   test('owner can open and edit a private workspace', async ({
@@ -21,7 +22,7 @@ test.describe('workspace sharing', () => {
       ownerPage.getByRole('heading', { name: seed.privateWorkspace.name })
     ).toBeVisible();
     await expect(
-      ownerPage.getByRole('button', { name: 'Share' })
+      ownerPage.getByRole('button', { name: 'Workspace settings' })
     ).toBeVisible();
     await expect(
       ownerPage.getByRole('button', { name: /Add file/i })
@@ -49,9 +50,9 @@ test.describe('workspace sharing', () => {
     await expect(
       editorPage.getByRole('button', { name: /Add file/i })
     ).toBeVisible();
-    await expect(editorPage.getByRole('button', { name: 'Share' })).toHaveCount(
-      0
-    );
+    await expect(
+      editorPage.getByRole('button', { name: 'Workspace settings' })
+    ).toHaveCount(0);
     await expect(
       editorPage.getByRole('button', { name: 'Clone workspace' })
     ).toHaveCount(0);
@@ -87,7 +88,7 @@ test.describe('workspace sharing', () => {
       await expect(
         ownerPage.getByRole('heading', { name: seed.mutateWorkspace.name })
       ).toBeVisible();
-      await ownerPage.getByRole('button', { name: 'Share' }).click();
+      await openWorkspaceSharing(ownerPage);
 
       const patchPromise = waitForApi(
         ownerPage,

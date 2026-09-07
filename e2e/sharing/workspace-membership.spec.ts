@@ -1,6 +1,7 @@
 import { expect, test } from '../fixtures/actors';
 import { apiEndsWith, waitForApi } from '../helpers/api';
 import { waitForEmail } from '../helpers/mail';
+import { openWorkspaceSharing } from '../helpers/workspace';
 
 test.describe('workspace invitations', () => {
   test('private exact-identifier invite is visible only to its recipient', async ({
@@ -16,7 +17,7 @@ test.describe('workspace invitations', () => {
       name: 'E2E Invite Only Workspace',
     });
     await ownerPage.goto(`/workspaces/${workspace.id}`);
-    await ownerPage.getByRole('button', { name: 'Share' }).click();
+    await openWorkspaceSharing(ownerPage);
     await expect(
       ownerPage.getByRole('combobox', { name: 'Visibility' })
     ).toContainText('Invite only');
@@ -126,7 +127,7 @@ test.describe('workspace invitations', () => {
     );
 
     await ownerPage.reload();
-    await ownerPage.getByRole('button', { name: 'Share' }).click();
+    await openWorkspaceSharing(ownerPage);
     await expect(
       ownerPage.getByText('commenter@capynotebook.test')
     ).toBeVisible();

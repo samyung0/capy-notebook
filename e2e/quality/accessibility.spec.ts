@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { expect, test } from '../fixtures/actors';
+import { openWorkspaceSharing } from '../helpers/workspace';
 
 const wcagTags = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
 
@@ -34,7 +35,7 @@ test.describe('representative accessibility surfaces', () => {
     ).toBeVisible();
     await expectNoAutomatedAccessibilityViolations(ownerPage);
 
-    await ownerPage.getByRole('button', { name: 'Share' }).click();
+    await openWorkspaceSharing(ownerPage);
     await expect(ownerPage.getByRole('dialog')).toBeVisible();
     await expectNoAutomatedAccessibilityViolations(ownerPage);
   });

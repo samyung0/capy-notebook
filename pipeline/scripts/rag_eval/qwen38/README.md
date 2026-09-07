@@ -46,6 +46,9 @@ cleanup scope as the earlier experiment.
 The questions have already been evaluated. Results are a repeated comparison
 on known fixtures, not a fresh holdout. Codex source review is not independent
 human grading, and the two repetitions are dependent observations.
+The results archive includes unchanged paired baseline answers and reviews in
+`baseline/`; run `python compare.py baseline .` from its extracted root to
+recompute the comparison without provider access.
 
 After all primary attempts finish, `probe.py` replays each empty answer's last
 provider request with only `tool_choice="none"` added. It records the original
@@ -53,3 +56,6 @@ response ID and request hash alongside the new response. This diagnostic does
 not replace primary results, rerun the agent, or alter stored conversations.
 Alibaba documents explicit tool disabling in its
 [OpenAI-compatible Chat API](https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions).
+The archived `schema_probe.py` also restores the original tool definitions for
+two representative terminal requests while retaining `tool_choice="none"`.
+See `REPORT.md` for the completed scores, diagnostic results and limitations.
