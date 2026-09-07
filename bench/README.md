@@ -37,8 +37,9 @@ committed reports.
 Needs the dedicated ingest host. `scripts/accuracy_report.py` decides OCR mode
 by rendering pages with bounding boxes for side-by-side review; the `bench_*`
 and `run_*` scripts measure throughput, mixed lanes, and worker memory ceilings.
-`fixtures/docs/` is gitignored — it holds real uploads. Local output goes to
-`reports/local/`, also gitignored.
+`fixtures/docs/` is tracked, so the load benchmarks run from a clean clone;
+its files are generated stand-ins or public documents, and anything added there
+must be safe to commit. Local output goes to `reports/local/`, gitignored.
 
 Decision records: [parser accuracy](parsers/reports/2026-08-28-parser-accuracy.md),
 [worker stress](parsers/reports/2026-08-31-worker-stress.md).

@@ -118,7 +118,6 @@
   },
   "name": "capy-notebook",
   "scripts": {
-    "predev": "pnpm run office:prepare",
     "dev": "vite",
     "dev:public": "VITE_DEV_PUBLIC=true vite",
     "dev:tunnel": "scripts/dev/tunnel.sh",

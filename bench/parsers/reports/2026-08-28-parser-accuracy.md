@@ -1,5 +1,12 @@
 # Netcup ingest host benchmark — 2026-08-28
 
+> **Superseded on 2026-08-31.** This run measured the parser stack that preceded
+> MinerU. Its modes (`marker_only`, `selective_rapidocr`, `all_rapidocr`), its
+> harness, and the libraries it names were all removed when MinerU replaced them.
+> Kept for the reasoning and the numbers behind the selective-OCR decision; do not
+> read it as describing the current parser. See
+> [`2026-08-31-worker-stress.md`](2026-08-31-worker-stress.md).
+
 This run used the dedicated 8-vCPU, 15 GiB Debian VM and the CPU-only parser
 image. The image was 2.68 GB. Warm idle parser memory was about 3.0 GB cgroup
 usage. No swap was configured or used.

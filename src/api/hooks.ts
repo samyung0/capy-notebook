@@ -1010,7 +1010,7 @@ export function useUploadSource(wsId: string) {
       kind: SourceFile['kind'];
       chapterId?: string | null;
       chapterName?: string | null;
-      /** fast = Marker + RapidOCR on scanned pages, none = store-only for
+      /** fast = MinerU, with OCR on scanned pages; none = store-only for
        * non-text kinds (no parse, not indexed). Text kinds (txt/md/json)
        * still index under none — there is no GPU parse route to pick. */
       parseMode?: 'fast' | 'none';

@@ -3,41 +3,23 @@
 This directory contains the reproducible checks for the dedicated ingest host.
 The production decision records are:
 
-- [`netcup-2026-08-28.md`](reports/2026-08-28-parser-accuracy.md): parser accuracy and the
-  earlier Marker/RapidOCR capacity decision.
+- [`netcup-2026-08-28.md`](reports/2026-08-28-parser-accuracy.md): superseded. The
+  accuracy and capacity decision taken on the parser stack that preceded MinerU,
+  kept for the reasoning; its modes and tooling no longer exist.
 - [`netcup-2026-08-31-stress.md`](reports/2026-08-31-worker-stress.md): current MinerU
   capacity, OOM, process-pool, timeout, health, and restart behavior.
 - [`reports/2026-08-31-capy-ingest-1-netcup-rs-2000-g12/`](reports/2026-08-31-capy-ingest-1-netcup-rs-2000-g12/):
   versionable raw results, machine specifications, artifact inventory, and
   supplemental measurements for the August 31 run.
 
-## Production accuracy and capacity
+## Office fixtures
 
-`accuracy_report.py` calls the ingest-host parser endpoint in `marker_only`,
-`selective_rapidocr`, and `all_rapidocr` modes. It renders source pages, draws
-returned bounding boxes, places extracted text beside each page, checks native
-text and explicit visual canaries, and runs a concurrency sweep.
+`build_office_fixtures.py` creates deterministic DOCX, PPTX, and XLSX canaries
+whose marker strings must survive Office conversion and parsing.
 
-```sh
-python bench/parsers/scripts/accuracy_report.py \
-  --url http://10.77.0.2:8090/file_parse \
-  --docs bench/parsers/fixtures/docs \
-  --canaries bench/parsers/fixtures/canaries.example.json \
-  --sweep 1,2,4,6,8 \
-  --out bench/parsers/reports/local/netcup
-```
-
-The command writes `report.html` for visual review and `report.json` for the
-decision record. A mode is rejected when it loses most healthy native text,
-misses a required canary, drops too many bounding boxes, duplicates substantial
-text, degrades a native table, or makes all-page OCR substantially slower
-without recovering useful content. Smaller OCR errors stay visible in the
-side-by-side report without automatically rejecting a mode.
-
-`build_office_fixtures.py` creates deterministic DOCX, PPTX, and XLSX canaries.
-The measured decision was to use generous selective OCR. All-page OCR recovered
-no additional text from native and mixed documents while taking 84 to 127
-percent longer.
+There is no committed accuracy harness. The one that produced the August 28
+record was written against the previous parser stack and was removed with it;
+an accuracy check for MinerU has to be written against the artifact endpoint.
 
 ## Endpoint load checks
 
@@ -47,8 +29,8 @@ then verifies representative text in every returned bundle.
 
 ```sh
 python bench/parsers/scripts/bench_parse.py \
-  --file bench/parsers/fixtures/docs/metabolic_pathway.pdf \
-  --parse-method marker_only \
+  --file bench/parsers/fixtures/docs/lecture_deck.pdf \
+  --parse-method txt \
   --sweep 1,2,4,6,8
 
 python bench/parsers/scripts/bench_mixed_lanes.py
@@ -100,39 +82,3 @@ The overlap harness is tied to the isolated paths and stress images recorded in
 the 2026-08-31 report. It binds its parser only to `127.0.0.1`, uses
 byte-distinct PDFs to defeat artifact reuse, and removes every test container
 on exit.
-
-## Local backend comparison
-
-`run_bench.py` is the earlier CPU comparison harness for Marker and Docling.
-It measures throughput per vCPU and how much of the shared `content_list`
-contract survives. Each backend should run in its own container because model
-memory retained by an earlier backend can distort later results.
-
-```sh
-docker build -t capy-parse-bench bench/parsers/scripts
-docker run --rm --cpus=4 \
-  -v "$PWD/bench/parsers/fixtures/docs:/bench/docs:ro" \
-  -v "$PWD/bench/parsers/reports/local:/out" \
-  -v capy-parse-models:/models \
-  capy-parse-bench --threads 4
-```
-
-Available backends:
-
-| Backend                | Purpose                        |
-| ---------------------- | ------------------------------ |
-| `marker-fast-noocr`    | Marker without OCR.            |
-| `marker-fast`          | Marker with its CPU VLM path.  |
-| `docling-textonly`     | Layout and reading order only. |
-| `docling-tables`       | Adds TableFormer.              |
-| `docling-ocr`          | OCR on bitmap regions.         |
-| `docling-ocr-fullpage` | OCR on every page.             |
-| `docling-formula`      | Adds formula-to-LaTeX.         |
-
-`normalize.py` maps candidate output into the active contract. Bounding boxes
-use `page-1000-topleft`: `[x0, y0, x1, y1]` on a 1000 by 1000 page with a
-top-left origin.
-
-`--max-pages N` clips PDFs into `out/_capped/` before parsing so every backend
-receives byte-identical bounded input. `--doc-timeout` limits pathological
-documents that would otherwise stall a run.

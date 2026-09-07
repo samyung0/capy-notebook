@@ -1,6 +1,7 @@
-# Benchmark inputs and local outputs are artifacts, not source.
-# fixtures/docs/ holds real uploads (possibly someone's lecture notes) — never commit it.
-fixtures/docs/
+# Local run outputs are artifacts, not source.
+# fixtures/docs/ is tracked: the committed files are generated stand-ins or
+# publicly available documents. Anything dropped there must be safe to commit —
+# that check is the developer's, not this file's.
 reports/local/
 .DS_Store
 *.failure.log

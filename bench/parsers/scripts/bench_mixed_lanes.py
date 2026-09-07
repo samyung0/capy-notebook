@@ -1,12 +1,11 @@
 """Mixed-lane load: four digital lecture jobs plus two OCR jobs on the ingest host.
 
-The ingest host has four digital Marker slots and two RapidOCR slots. This script fills
-the digital lane with a lecture deck whose text layer keeps it out of OCR. It
-fills both OCR slots with a combined PDF containing those slides plus two
-full-page newspaper scans.
+The ingest host splits parse capacity between a digital lane and an OCR lane.
+This script fills the digital lane with a lecture deck whose text layer keeps
+it out of OCR. It fills the OCR lane with a combined PDF containing those
+slides plus two full-page newspaper scans.
 
-The original bench files (``metabolic_pathway.pdf``,
-``newspaper-scan-sample.pdf``) live in gitignored ``bench/parsers/fixtures/docs/``.
+The bench files live in ``bench/parsers/fixtures/docs/`` and are committed.
 If they are missing, stand-in PDFs with the same mix are written there.
 
     python bench/parsers/scripts/bench_mixed_lanes.py
@@ -312,7 +311,7 @@ def _pages_with(body: dict, needle: str) -> list[int]:
 def _check_combined(body: dict, lecture_page_count: int) -> list[str]:
     """Return problem strings. Empty list = the mixed PDF parsed as we hoped."""
     problems: list[str] = []
-    lane = body.get("_fast_lane")
+    lane = body.get("_parse_lane")
     if lane != "ocr":
         problems.append(f"expected OCR lane, got {lane!r}")
     blob = _text_blob(body)
@@ -335,7 +334,7 @@ def _check_combined(body: dict, lecture_page_count: int) -> list[str]:
             )
     scan_pages = [_pages_with(body, canary) for canary in SCAN_CANARIES]
     if ocr_pages is None and not any(scan_pages):
-        problems.append("no _ocr_pages and no scan text — RapidOCR did not run")
+        problems.append("no _ocr_pages and no scan text — OCR did not run")
     full_page_scans = 0
     for item in body.get("content_list") or []:
         if item.get("type") != "image":
@@ -387,12 +386,12 @@ def main() -> int:
     url = _parse_url(args)
     _healthz(url, token, args.timeout)
 
-    # Lecture jobs use txt so they stay on the digital Marker lane even if a
-    # real deck's text layer is thin. Combined uses ocr so the newspaper pages
-    # take the RapidOCR lane.
-    jobs: list[tuple[str, bytes, str]] = [
-        ("lecture_deck.pdf", lecture, "marker_only")
-    ] * 4 + [(combined_path.name, combined, args.parse_method)] * 2
+    # Lecture jobs use txt so they stay on the digital lane even if a real
+    # deck's text layer is thin. Combined uses ocr so the newspaper pages take
+    # the OCR lane.
+    jobs: list[tuple[str, bytes, str]] = [("lecture_deck.pdf", lecture, "txt")] * 4 + [
+        (combined_path.name, combined, args.parse_method)
+    ] * 2
     print(f"\n-- 4 digital lecture + 2 combined OCR  ({len(jobs)} HTTP) --")
     t0 = time.perf_counter()
     results: list[tuple[str, float, dict | None, str | None]] = []
@@ -436,7 +435,7 @@ def main() -> int:
         ("lecture", digital, "digital"),
         ("combined", mixed, "ocr"),
     ):
-        lanes = [(row[2] or {}).get("_fast_lane") for row in rows]
+        lanes = [(row[2] or {}).get("_parse_lane") for row in rows]
         ok = all(lane == want and row[3] is None for row, lane in zip(rows, lanes))
         print(f"  {label}: {lanes}  {'ok' if ok else 'NOT ' + want}")
 
@@ -452,7 +451,7 @@ def main() -> int:
         if args.save_json and not saved:
             slim = {
                 "filename": name,
-                "_fast_lane": payload.get("_fast_lane"),
+                "_parse_lane": payload.get("_parse_lane"),
                 "_ocr_pages": payload.get("_ocr_pages"),
                 "_server_parse_s": payload.get("_server_parse_s"),
                 "content_list": payload.get("content_list"),
@@ -463,7 +462,7 @@ def main() -> int:
             saved = True
         ocr_pages = payload.get("_ocr_pages")
         print(
-            f"  combined[{i}]  lane={payload.get('_fast_lane')}  "
+            f"  combined[{i}]  lane={payload.get('_parse_lane')}  "
             f"ocr_pages={ocr_pages}  blocks={len(payload.get('content_list') or [])}  "
             f"chars={len(_text_blob(payload))}"
         )
