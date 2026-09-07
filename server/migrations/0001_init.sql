@@ -53,8 +53,8 @@ ON CONFLICT (plan_tier) DO NOTHING;
 -- operational recovery, but nothing in the application performs one.
 CREATE TABLE IF NOT EXISTS users (
   id                    text PRIMARY KEY,
-  name                  text NOT NULL,
-  email                 text,
+  name                  text NOT NULL CHECK (char_length(name) <= 60),
+  email                 text CHECK (email IS NULL OR char_length(email) <= 254),
   avatar_url            text,
   class_label           text,
   streak                int  NOT NULL DEFAULT 0,
@@ -175,8 +175,8 @@ CREATE INDEX IF NOT EXISTS users_session_revoke_due_idx
 CREATE TABLE IF NOT EXISTS workspaces (
   id               text PRIMARY KEY,
   user_id          text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  name             text NOT NULL,
-  description      text NOT NULL DEFAULT '' CHECK (char_length(description) <= 1000),
+  name             text NOT NULL CHECK (char_length(name) <= 80),
+  description      text NOT NULL DEFAULT '' CHECK (char_length(description) <= 500),
   color            text NOT NULL DEFAULT 'green',
   privacy          text NOT NULL DEFAULT 'private',
   -- Role granted to link/public visitors who are not explicit members.
@@ -223,7 +223,7 @@ CREATE INDEX IF NOT EXISTS workspaces_privacy_idx ON workspaces(privacy) WHERE p
 CREATE TABLE IF NOT EXISTS chapters (
   id           text PRIMARY KEY,
   workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-  name         text NOT NULL,
+  name         text NOT NULL CHECK (char_length(name) <= 60),
   position     int  NOT NULL DEFAULT 0,
   -- Redundant with the primary key, but it is the target every composite
   -- (chapter_id, workspace_id) foreign key below needs, which is what stops a
@@ -242,7 +242,7 @@ CREATE TABLE IF NOT EXISTS files (
   -- files from a workspace they do not own.
   created_by            text REFERENCES users(id) ON DELETE SET NULL,
   chapter_id            text,
-  name                  text NOT NULL,
+  name                  text NOT NULL CHECK (char_length(name) <= 120),
   kind                  text NOT NULL DEFAULT 'pdf',
   -- Mixed file/material order within a chapter (and the unfiled bucket).
   -- clock_timestamp() so concurrent inserts do not collide on now().
@@ -323,14 +323,14 @@ CREATE TABLE IF NOT EXISTS materials (
   -- Storage owner: the workspace owner, or the creator for standalone
   -- materials. This is the accounting axis, hence CASCADE.
   owner_user_id  text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  workspace_name text NOT NULL DEFAULT '',
+  workspace_name text NOT NULL DEFAULT '' CHECK (char_length(workspace_name) <= 80),
   -- Membership: which chapter the material is filed under in the workspace
   -- tree (mirrors files.chapter_id). Nullable = unfiled; unfiles on chapter
   -- delete. Orthogonal to scope_chapters/scope_file_names, which record
   -- generation provenance as display-name snapshots rather than references.
   chapter_id     text,
   kind           text NOT NULL,
-  title          text NOT NULL DEFAULT '',
+  title          text NOT NULL DEFAULT '' CHECK (char_length(title) <= 120),
   content        jsonb NOT NULL DEFAULT
     '{"schemaVersion":1,"value":[{"type":"p","children":[{"text":""}]}]}'::jsonb,
   scope_chapters text[] NOT NULL DEFAULT '{}',
@@ -398,7 +398,7 @@ CREATE TABLE IF NOT EXISTS material_revisions (
   parent_revision        bigint,
   event_type             text NOT NULL DEFAULT 'create'
                            CHECK (event_type IN ('create','edit')),
-  title                  text NOT NULL,
+  title                  text NOT NULL CHECK (char_length(title) <= 120),
   content                jsonb NOT NULL,
   event_metadata         jsonb NOT NULL DEFAULT '{}'::jsonb
                            CHECK (jsonb_typeof(event_metadata) = 'object'),
@@ -476,8 +476,8 @@ CREATE TABLE IF NOT EXISTS attempts (
   id             text PRIMARY KEY,
   user_id        text REFERENCES users(id) ON DELETE CASCADE,
   material_id    text REFERENCES materials(id) ON DELETE SET NULL,
-  quiz_name      text NOT NULL DEFAULT '',
-  workspace_name text NOT NULL DEFAULT '',
+  quiz_name      text NOT NULL DEFAULT '' CHECK (char_length(quiz_name) <= 120),
+  workspace_name text NOT NULL DEFAULT '' CHECK (char_length(workspace_name) <= 80),
   chapters       text[] NOT NULL DEFAULT '{}',
   -- Points awarded / points possible. Half-points are allowed (open questions).
   correct        numeric NOT NULL DEFAULT 0,
@@ -514,7 +514,7 @@ CREATE TABLE IF NOT EXISTS tags (
   id         text PRIMARY KEY,
   user_id    text REFERENCES users(id) ON DELETE CASCADE,
   kind       text NOT NULL,               -- 'workspace' | 'material'
-  name       text NOT NULL,
+  name       text NOT NULL CHECK (char_length(name) <= 35),
   metadata   jsonb NOT NULL DEFAULT '{}',
   created_at timestamptz NOT NULL DEFAULT now()
 );
@@ -555,7 +555,7 @@ CREATE TABLE IF NOT EXISTS labels (
   id      text PRIMARY KEY,
   -- Labels are user-owned calendar categories: ownership axis, so CASCADE.
   user_id text REFERENCES users(id) ON DELETE CASCADE,
-  name    text NOT NULL,
+  name    text NOT NULL CHECK (char_length(name) <= 35),
   color   text NOT NULL DEFAULT 'green'
 );
 CREATE INDEX IF NOT EXISTS labels_user_idx ON labels(user_id);
@@ -563,10 +563,10 @@ CREATE INDEX IF NOT EXISTS labels_user_idx ON labels(user_id);
 CREATE TABLE IF NOT EXISTS events (
   id        text PRIMARY KEY,
   user_id   text REFERENCES users(id) ON DELETE CASCADE,
-  title     text NOT NULL,
+  title     text NOT NULL CHECK (char_length(title) <= 60),
   start_at  timestamptz NOT NULL,
   end_at    timestamptz NOT NULL,
-  location  text,
+  location  text CHECK (location IS NULL OR char_length(location) <= 100),
   note      text
 );
 CREATE INDEX IF NOT EXISTS events_user_idx ON events(user_id);
@@ -584,7 +584,7 @@ CREATE INDEX IF NOT EXISTS event_labels_label_idx ON event_labels(label_id);
 CREATE TABLE IF NOT EXISTS tasks (
   id       text PRIMARY KEY,
   user_id  text REFERENCES users(id) ON DELETE CASCADE,
-  title    text NOT NULL,
+  title    text NOT NULL CHECK (char_length(title) <= 80),
   meta     text,
   done     boolean NOT NULL DEFAULT false,
   due_date timestamptz NOT NULL
@@ -594,7 +594,7 @@ CREATE INDEX IF NOT EXISTS tasks_user_idx ON tasks(user_id);
 CREATE TABLE IF NOT EXISTS canvases (
   id         text PRIMARY KEY,
   user_id    text REFERENCES users(id) ON DELETE CASCADE,
-  name       text NOT NULL,
+  name       text NOT NULL CHECK (char_length(name) <= 120),
   updated_at timestamptz NOT NULL DEFAULT now(),
   scene      jsonb
 );
@@ -620,7 +620,7 @@ CREATE INDEX IF NOT EXISTS workspace_members_user_idx
 CREATE TABLE IF NOT EXISTS workspace_invites (
   id              text PRIMARY KEY,
   workspace_id    text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-  email           text NOT NULL,
+  email           text NOT NULL CHECK (char_length(email) <= 254),
   invited_user_id text REFERENCES users(id) ON DELETE CASCADE,
   role            text NOT NULL CHECK (role IN ('editor','commenter','viewer')),
   token_hash      bytea NOT NULL UNIQUE CHECK (octet_length(token_hash) = 32),
@@ -775,7 +775,7 @@ CREATE TABLE IF NOT EXISTS conversations (
   id           text PRIMARY KEY,
   user_id      text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-  title        text,
+  title        text CHECK (title IS NULL OR char_length(title) <= 60),
   metadata     jsonb NOT NULL DEFAULT '{}',   -- system prompt, RAG filters, etc.
   created_at   timestamptz NOT NULL DEFAULT now(),
   updated_at   timestamptz NOT NULL DEFAULT now()
@@ -1348,7 +1348,7 @@ CREATE TABLE IF NOT EXISTS editor_assets (
   material_id  text REFERENCES materials(id) ON DELETE CASCADE,
   user_id      text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   created_by   text REFERENCES users(id) ON DELETE SET NULL,
-  name         text NOT NULL CHECK (length(name) BETWEEN 1 AND 255),
+  name         text NOT NULL CHECK (char_length(name) BETWEEN 1 AND 120),
   purpose      text NOT NULL CHECK (purpose IN ('image','audio','pdf','file')),
   object_path  text NOT NULL,
   content_type text NOT NULL,
@@ -1493,8 +1493,8 @@ CREATE TABLE IF NOT EXISTS upload_sessions (
     CHECK (status IN ('pending','completed','expired')),
   -- Source-only: the file tree placement and parser selection.
   chapter_id    text,
-  chapter_name  text NOT NULL DEFAULT '',
-  name          text NOT NULL DEFAULT '',
+  chapter_name  text NOT NULL DEFAULT '' CHECK (char_length(chapter_name) <= 60),
+  name          text NOT NULL DEFAULT '' CHECK (char_length(name) <= 120),
   kind          text NOT NULL DEFAULT '',
   parse_mode    text NOT NULL DEFAULT '',
   -- Whether the ingest worker should describe the figures this parse extracts.
@@ -2419,7 +2419,7 @@ CREATE TABLE IF NOT EXISTS reconcile_runs (
     CHECK (status IN ('pending', 'running', 'succeeded', 'partial', 'failed')),
   schedule_slot     timestamptz,
   requested_by_id   text REFERENCES users(id) ON DELETE SET NULL,
-  requested_by_name text NOT NULL DEFAULT '',
+  requested_by_name text NOT NULL DEFAULT '' CHECK (char_length(requested_by_name) <= 60),
   requested_at      timestamptz NOT NULL DEFAULT now(),
   started_at        timestamptz,
   finished_at       timestamptz,

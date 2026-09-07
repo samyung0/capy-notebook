@@ -19,7 +19,7 @@ export interface UpdateMaterialReq {
   scopeFileNames?: string[];
   /**
      * @minLength 1
-     * @maxLength 200
+     * @maxLength 120
      */
   title?: string;
 }

@@ -159,6 +159,7 @@ func TestRelayChatNilPipeDoesNotInventTokens(t *testing.T) {
 	err := a.relayChat(
 		context.Background(),
 		"",
+		false,
 		store.Conversation{ID: "c", WorkspaceID: "w"},
 		resolvedLLM{},
 		"cr_1",
@@ -185,6 +186,7 @@ func TestRelayChatRejectsEOFBeforeDone(t *testing.T) {
 	err := a.relayChat(
 		context.Background(),
 		"",
+		false,
 		store.Conversation{ID: "c", WorkspaceID: "w"},
 		resolvedLLM{},
 		"cr_1",
@@ -201,9 +203,6 @@ func TestRelayChatRejectsEOFBeforeDone(t *testing.T) {
 func TestNormalizeGenerateTitle(t *testing.T) {
 	if _, err := normalizeGenerateTitle("  "); err == nil {
 		t.Fatal("blank title was accepted")
-	}
-	if _, err := normalizeGenerateTitle(strings.Repeat("a", 201)); err == nil {
-		t.Fatal("overlong title was accepted")
 	}
 	got, err := normalizeGenerateTitle("  Cell quiz  ")
 	if err != nil {

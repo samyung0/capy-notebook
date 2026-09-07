@@ -12,7 +12,7 @@ export interface CreateQuizReq {
   readonly $schema?: string;
   /** @nullable */
   chapters?: string[] | null;
-  /** @maxLength 200 */
+  /** @maxLength 120 */
   name?: string;
   privacy?: Privacy;
   /** @nullable */

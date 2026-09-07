@@ -112,7 +112,7 @@ func (a *api) getQuiz(ctx context.Context, in *quizIDInput) (*quizOutput, error)
 
 func (a *api) createQuiz(ctx context.Context, in *createQuizInput) (*quizOutput, error) {
 	b := in.Body
-	name := b.Name
+	name := string(b.Name)
 	if name == "" {
 		name = copytext.T(a.userLocale(ctx, userID(ctx)), copytext.UntitledQuiz)
 	}
@@ -165,7 +165,7 @@ func (a *api) updateQuizMetadata(ctx context.Context, in *updateQuizMetadataInpu
 		return nil, hErr(err)
 	}
 	res, err := a.s.UpdateQuizMetadata(ctx, in.ID, store.QuizMetadataPatch{
-		Name: in.Body.Name, Chapters: in.Body.Chapters, UpdatedBy: userID(ctx),
+		Name: apimodel.Str(in.Body.Name), Chapters: in.Body.Chapters, UpdatedBy: userID(ctx),
 	})
 	if err != nil {
 		return nil, hErr(err)

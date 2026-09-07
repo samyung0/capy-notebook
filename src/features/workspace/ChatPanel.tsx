@@ -207,10 +207,13 @@ function AssistantBubble({
 export function ChatPanel({
   workspaceId,
   color,
+  canReprocess,
   onOpenCitation,
 }: {
   workspaceId: string;
   color?: UserColor;
+  /** Owner-only: shows the process-changes button under the pending notice. */
+  canReprocess?: boolean;
   /** Opens and highlights a cited source in the center pane. */
   onOpenCitation?: (citation: Citation) => void;
 }) {
@@ -346,14 +349,16 @@ export function ChatPanel({
             role="status"
           >
             <p>{m.source_pending_context()}</p>
-            <Button
-              disabled={processingChanges}
-              onClick={() => processChanges(pendingSources.fileIds)}
-              size="sm"
-              variant="ghost-hover"
-            >
-              {m.source_process_changes()}
-            </Button>
+            {canReprocess && (
+              <Button
+                disabled={processingChanges}
+                onClick={() => processChanges(pendingSources.fileIds)}
+                size="sm"
+                variant="ghost-hover"
+              >
+                {m.source_process_changes()}
+              </Button>
+            )}
           </div>
         )}
         {messages.map((msg) =>

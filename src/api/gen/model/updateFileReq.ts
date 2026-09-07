@@ -11,7 +11,7 @@ export interface UpdateFileReq {
   chapterId?: string;
   /**
      * @minLength 1
-     * @maxLength 512
+     * @maxLength 120
      */
   name?: string;
 }

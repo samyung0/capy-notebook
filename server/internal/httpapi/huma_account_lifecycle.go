@@ -121,7 +121,7 @@ func (a *api) requestAccountDeletion(ctx context.Context, in *requestDeletionInp
 	}
 	// Typing the email is the confirmation gesture. It is checked server-side
 	// because this is the one irreversible endpoint in the API.
-	if in.Body.ConfirmEmail == "" || !strings.EqualFold(in.Body.ConfirmEmail, u.Email) {
+	if in.Body.ConfirmEmail == "" || !strings.EqualFold(string(in.Body.ConfirmEmail), u.Email) {
 		return nil, huma.Error400BadRequest("confirmation does not match the account email")
 	}
 	blocker, err := a.liveSubscriptionBlocker(ctx, uid)

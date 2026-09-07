@@ -88,8 +88,8 @@ def chat_messages(
 # ------------------------------------------------------------------ compaction
 
 SUMMARY_TARGET_MIN = 4000
-SUMMARY_TARGET_MAX = 6000
-SUMMARY_MAX_TOKENS = 8000
+SUMMARY_TARGET_MAX = 10000
+SUMMARY_MAX_TOKENS = 12000
 SUMMARY_RECENT_MESSAGES = 6
 
 CHECKPOINT_SYSTEM_PROMPT = f"""You compress prior conversation into durable memory for the next assistant response.

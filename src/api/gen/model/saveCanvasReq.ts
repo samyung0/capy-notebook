@@ -10,7 +10,7 @@ export interface SaveCanvasReq {
   readonly $schema?: string;
   /**
      * @minLength 1
-     * @maxLength 200
+     * @maxLength 120
      */
   name?: string;
   scene?: unknown;

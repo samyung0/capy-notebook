@@ -13,19 +13,19 @@ import (
 // CreateWorkspaceReq is the body for POST /api/workspaces. New workspaces are
 // always private; visibility is configured later through the sharing endpoint.
 type CreateWorkspaceReq struct {
-	Name  string          `json:"name" minLength:"1" maxLength:"100" doc:"Workspace name"`
+	Name  WorkspaceName   `json:"name" minLength:"1" doc:"Workspace name"`
 	Color store.UserColor `json:"color,omitempty" default:"graphite" doc:"User color"`
 	Tags  []TagInput      `json:"tags,omitempty" maxItems:"5" doc:"Tags; at most 5; reuse existing by id or create new by value"`
 }
 
 // UpdateWorkspaceReq updates general workspace settings only.
 type UpdateWorkspaceReq struct {
-	AutoReparse *bool            `json:"autoReparse,omitempty"`
-	AutoReindex *bool            `json:"autoReindex,omitempty"`
-	Description *string          `json:"description,omitempty" maxLength:"1000" doc:"Optional workspace description; empty clears it"`
-	Name        *string          `json:"name,omitempty" minLength:"1" maxLength:"100"`
-	Color       *store.UserColor `json:"color,omitempty"`
-	Tags        *[]TagInput      `json:"tags,omitempty" maxItems:"5" doc:"Tags; at most 5"`
+	AutoReparse *bool                 `json:"autoReparse,omitempty"`
+	AutoReindex *bool                 `json:"autoReindex,omitempty"`
+	Description *WorkspaceDescription `json:"description,omitempty" doc:"Optional workspace description; empty clears it"`
+	Name        *WorkspaceName        `json:"name,omitempty" minLength:"1"`
+	Color       *store.UserColor      `json:"color,omitempty"`
+	Tags        *[]TagInput           `json:"tags,omitempty" maxItems:"5" doc:"Tags; at most 5"`
 }
 
 // UpdateWorkspaceSharingReq updates visibility and nonmember permissions.
@@ -35,12 +35,12 @@ type UpdateWorkspaceSharingReq struct {
 }
 
 type AddChapterReq struct {
-	Name string `json:"name" minLength:"1" maxLength:"255" doc:"Chapter name"`
+	Name ChapterName `json:"name" minLength:"1" doc:"Chapter name"`
 }
 
 type UpdateChapterReq struct {
-	Name  *string `json:"name,omitempty" minLength:"1" maxLength:"255"`
-	Order *int    `json:"order,omitempty"`
+	Name  *ChapterName `json:"name,omitempty" minLength:"1"`
+	Order *int         `json:"order,omitempty"`
 }
 
 type ReorderChaptersReq struct {
@@ -60,14 +60,14 @@ type ReorderContentReq struct {
 // UpdateFileReq is the (partial) body for PATCH /api/files/{id} — rename and/or
 // move to a chapter.
 type UpdateFileReq struct {
-	Name      *string `json:"name,omitempty" minLength:"1" maxLength:"512"`
-	ChapterID *string `json:"chapterId,omitempty"`
+	Name      *FileName `json:"name,omitempty" minLength:"1"`
+	ChapterID *string   `json:"chapterId,omitempty"`
 }
 
 // CreateMaterialReq is the body for POST /api/workspaces/{id}/materials.
 type CreateMaterialReq struct {
 	Kind           store.MaterialKind    `json:"kind" doc:"Material kind"`
-	Title          string                `json:"title,omitempty" maxLength:"200"`
+	Title          MaterialTitle         `json:"title,omitempty"`
 	Content        *materialdoc.Envelope `json:"content,omitempty" doc:"Versioned Plate document"`
 	ScopeChapters  []string              `json:"scopeChapters,omitempty"`
 	ScopeFileNames []string              `json:"scopeFileNames,omitempty"`
@@ -80,11 +80,11 @@ type CreateMaterialReq struct {
 // empty-string sentinel is needed because JSON null is indistinguishable from
 // an omitted field with a single pointer.
 type UpdateMaterialReq struct {
-	Title            *string   `json:"title,omitempty" minLength:"1" maxLength:"200"`
-	ExpectedRevision *int64    `json:"expectedRevision,omitempty" minimum:"1" doc:"Required when changing title"`
-	ChapterID        *string   `json:"chapterId,omitempty" doc:"Chapter to file under; empty string unfiles; omit to leave unchanged"`
-	ScopeChapters    *[]string `json:"scopeChapters,omitempty"`
-	ScopeFileNames   *[]string `json:"scopeFileNames,omitempty"`
+	Title            *MaterialTitle `json:"title,omitempty" minLength:"1"`
+	ExpectedRevision *int64         `json:"expectedRevision,omitempty" minimum:"1" doc:"Required when changing title"`
+	ChapterID        *string        `json:"chapterId,omitempty" doc:"Chapter to file under; empty string unfiles; omit to leave unchanged"`
+	ScopeChapters    *[]string      `json:"scopeChapters,omitempty"`
+	ScopeFileNames   *[]string      `json:"scopeFileNames,omitempty"`
 }
 
 type UpdateStandaloneSharingReq struct {
@@ -92,7 +92,7 @@ type UpdateStandaloneSharingReq struct {
 }
 
 type CreateWorkspaceInviteReq struct {
-	Identifier string               `json:"identifier" minLength:"1" maxLength:"320" doc:"Exact user ID or email address"`
+	Identifier Email                `json:"identifier" minLength:"1" doc:"Exact user ID or email address"`
 	Role       store.AssignableRole `json:"role"`
 }
 
@@ -130,7 +130,7 @@ type UpdateCommentReq struct {
 }
 
 type CreateQuizReq struct {
-	Name         string           `json:"name,omitempty" maxLength:"200"`
+	Name         MaterialTitle    `json:"name,omitempty"`
 	WorkspaceID  string           `json:"workspaceId,omitempty"`
 	Chapters     []string         `json:"chapters,omitempty"`
 	Questions    []map[string]any `json:"questions,omitempty"`
@@ -144,8 +144,8 @@ type UpdateQuizContentReq struct {
 }
 
 type UpdateQuizMetadataReq struct {
-	Name     *string   `json:"name,omitempty" minLength:"1" maxLength:"200"`
-	Chapters *[]string `json:"chapters,omitempty"`
+	Name     *MaterialTitle `json:"name,omitempty" minLength:"1"`
+	Chapters *[]string      `json:"chapters,omitempty"`
 }
 
 type CreateAttemptReq struct {
@@ -157,7 +157,7 @@ type CreateAttemptReq struct {
 }
 
 type CreateFlashcardSetReq struct {
-	Name        string          `json:"name,omitempty" maxLength:"200"`
+	Name        MaterialTitle   `json:"name,omitempty"`
 	Color       store.UserColor `json:"color,omitempty" default:"green"`
 	WorkspaceID string          `json:"workspaceId,omitempty"`
 }
@@ -179,20 +179,20 @@ type GenerateReq struct {
 	Chapters     []string                     `json:"chapters,omitempty" nullable:"false"`
 	FileIds      []string                     `json:"fileIds,omitempty" nullable:"false"`
 	TimeLimitMin *int                         `json:"timeLimitMin,omitempty" minimum:"1" maximum:"180"`
-	Title        string                       `json:"title" minLength:"1" maxLength:"200"`
+	Title        MaterialTitle                `json:"title" minLength:"1"`
 }
 
 // CreateSourceUploadReq reserves a direct-to-blob PUT. Empty kind and parseMode
 // are inferred from name, then validated. That inference is not a product default.
 type CreateSourceUploadReq struct {
-	Name          string  `json:"name"`
-	Kind          string  `json:"kind,omitempty"`
-	ChapterID     *string `json:"chapterId,omitempty"`
-	ChapterName   string  `json:"chapterName,omitempty"`
-	ParseMode     string  `json:"parseMode,omitempty"`
-	CaptionImages bool    `json:"captionImages"`
-	SizeBytes     int64   `json:"sizeBytes"`
-	ContentType   string  `json:"contentType,omitempty"`
+	Name          FileName    `json:"name" minLength:"1"`
+	Kind          string      `json:"kind,omitempty"`
+	ChapterID     *string     `json:"chapterId,omitempty"`
+	ChapterName   ChapterName `json:"chapterName,omitempty"`
+	ParseMode     string      `json:"parseMode,omitempty"`
+	CaptionImages bool        `json:"captionImages"`
+	SizeBytes     int64       `json:"sizeBytes"`
+	ContentType   string      `json:"contentType,omitempty"`
 }
 
 // SourceUploadReservation is the presigned PUT the browser uses after reserve.
@@ -215,14 +215,14 @@ type CreateFileReplacementUploadReq struct {
 
 // ImportSourcesReq pulls files from a connected Drive/OneDrive account.
 type ImportSourcesReq struct {
-	Provider      string   `json:"provider" enum:"google,microsoft"`
-	FileIds       []string `json:"fileIds" minItems:"1" maxItems:"20" nullable:"false"`
-	DriveIds      []string `json:"driveIds,omitempty" nullable:"false"`
-	ChapterID     *string  `json:"chapterId,omitempty"`
-	ChapterName   string   `json:"chapterName,omitempty" maxLength:"255"`
-	ParseMode     string   `json:"parseMode,omitempty" enum:"fast,none"`
-	CaptionImages bool     `json:"captionImages,omitempty"`
-	RequestID     string   `json:"requestId,omitempty" maxLength:"128"`
+	Provider      string      `json:"provider" enum:"google,microsoft"`
+	FileIds       []string    `json:"fileIds" minItems:"1" maxItems:"20" nullable:"false"`
+	DriveIds      []string    `json:"driveIds,omitempty" nullable:"false"`
+	ChapterID     *string     `json:"chapterId,omitempty"`
+	ChapterName   ChapterName `json:"chapterName,omitempty"`
+	ParseMode     string      `json:"parseMode,omitempty" enum:"fast,none"`
+	CaptionImages bool        `json:"captionImages,omitempty"`
+	RequestID     string      `json:"requestId,omitempty" maxLength:"128"`
 }
 
 type SourceImportAccepted struct {
@@ -251,7 +251,7 @@ type SourceImportStatus struct {
 
 // UpdateFlashcardSetReq changes relational metadata only.
 type UpdateFlashcardSetReq struct {
-	Name  *string          `json:"name,omitempty" minLength:"1" maxLength:"200"`
+	Name  *MaterialTitle   `json:"name,omitempty" minLength:"1"`
 	Color *store.UserColor `json:"color,omitempty"`
 }
 
@@ -271,45 +271,45 @@ type UpdateCardStudyStateReq struct {
 }
 
 type CreateEventReq struct {
-	Title    string    `json:"title" minLength:"1" maxLength:"200"`
-	Start    time.Time `json:"start"`
-	End      time.Time `json:"end"`
-	LabelIDs []string  `json:"labelIds,omitempty"`
-	Location *string   `json:"location,omitempty" maxLength:"200"`
-	Note     *string   `json:"note,omitempty" maxLength:"2000"`
+	Title    EventTitle     `json:"title" minLength:"1"`
+	Start    time.Time      `json:"start"`
+	End      time.Time      `json:"end"`
+	LabelIDs []string       `json:"labelIds,omitempty"`
+	Location *EventLocation `json:"location,omitempty"`
+	Note     *string        `json:"note,omitempty" maxLength:"2000"`
 }
 
 type UpdateEventReq struct {
-	Title    *string    `json:"title,omitempty" minLength:"1" maxLength:"200"`
-	Start    *time.Time `json:"start,omitempty"`
-	End      *time.Time `json:"end,omitempty"`
-	LabelIDs *[]string  `json:"labelIds,omitempty"`
-	Location *string    `json:"location,omitempty" maxLength:"200"`
-	Note     *string    `json:"note,omitempty" maxLength:"2000"`
+	Title    *EventTitle    `json:"title,omitempty" minLength:"1"`
+	Start    *time.Time     `json:"start,omitempty"`
+	End      *time.Time     `json:"end,omitempty"`
+	LabelIDs *[]string      `json:"labelIds,omitempty"`
+	Location *EventLocation `json:"location,omitempty"`
+	Note     *string        `json:"note,omitempty" maxLength:"2000"`
 }
 
 type UpdateLabelReq struct {
-	Name  *string          `json:"name,omitempty" minLength:"1" maxLength:"60"`
+	Name  *LabelName       `json:"name,omitempty" minLength:"1"`
 	Color *store.UserColor `json:"color,omitempty"`
 }
 
 type UpdateTaskReq struct {
-	Title *string `json:"title,omitempty" minLength:"1" maxLength:"200"`
-	Meta  *string `json:"meta,omitempty" maxLength:"500"`
-	Done  *bool   `json:"done,omitempty"`
+	Title *TaskTitle `json:"title,omitempty" minLength:"1"`
+	Meta  *string    `json:"meta,omitempty" maxLength:"500"`
+	Done  *bool      `json:"done,omitempty"`
 }
 
 type CreateConversationReq struct {
-	Title string `json:"title,omitempty" maxLength:"200" doc:"Optional thread title"`
+	Title ConversationTitle `json:"title,omitempty" doc:"Optional thread title"`
 }
 
 type CreateCanvasReq struct {
-	Name string `json:"name,omitempty" maxLength:"200"`
+	Name MaterialTitle `json:"name,omitempty"`
 }
 
 type SaveCanvasReq struct {
-	Name  *string `json:"name,omitempty" minLength:"1" maxLength:"200"`
-	Scene any     `json:"scene,omitempty"`
+	Name  *MaterialTitle `json:"name,omitempty" minLength:"1"`
+	Scene any            `json:"scene,omitempty"`
 }
 
 type BillingCheckoutReq struct {
@@ -388,6 +388,6 @@ func EncodeRaw(v any) json.RawMessage {
 // RequestAccountDeletionReq confirms an irreversible action. The email is
 // re-typed by the user and verified server-side.
 type RequestAccountDeletionReq struct {
-	ConfirmEmail        string `json:"confirmEmail" required:"true" minLength:"1" maxLength:"320"`
-	LifecycleGeneration int64  `json:"lifecycleGeneration" required:"true" minimum:"0"`
+	ConfirmEmail        Email `json:"confirmEmail" required:"true" minLength:"1"`
+	LifecycleGeneration int64 `json:"lifecycleGeneration" required:"true" minimum:"0"`
 }

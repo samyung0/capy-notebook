@@ -10,7 +10,7 @@ export interface RequestAccountDeletionReq {
   readonly $schema?: string;
   /**
      * @minLength 1
-     * @maxLength 320
+     * @maxLength 254
      */
   confirmEmail: string;
   /** @minimum 0 */

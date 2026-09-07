@@ -89,7 +89,7 @@ def test_material_tool_is_hidden_without_a_gateway(monkeypatch):
     assert "search_workspace" in names
 
 
-def test_material_tool_is_hidden_without_a_user(monkeypatch):
+def test_material_tool_needs_a_user_who_can_generate(monkeypatch):
     monkeypatch.setattr(tools.cfg, "gateway_url", "http://gateway")
     monkeypatch.setattr(tools.cfg, "pipeline_secret", "secret")
     ctx = ToolContext(workspace_id="ws")
@@ -98,6 +98,10 @@ def test_material_tool_is_hidden_without_a_user(monkeypatch):
         s["function"]["name"] for s in tools.schemas_for(ctx)
     ]
     ctx.user_id = "u_1"
+    assert "generate_material" not in [
+        s["function"]["name"] for s in tools.schemas_for(ctx)
+    ]
+    ctx.can_generate = True
     assert "generate_material" in [
         s["function"]["name"] for s in tools.schemas_for(ctx)
     ]
@@ -365,6 +369,7 @@ async def test_pipeline_chat_defense_rejects_query_token_overflow():
         thinking="instant",
         query="光" * (service.QUERY_MAX_ESTIMATED_TOKENS + 1),
         workspaceId="ws_1",
+        canGenerate=False,
         spendSessionId="cr_1",
     )
 

@@ -80,7 +80,7 @@ func (a *api) createFlashcardSet(ctx context.Context, in *createFlashcardSetInpu
 			return nil, hErr(err)
 		}
 	}
-	res, err := a.s.CreateFlashcardSet(ctx, userID(ctx), in.Body.Name, in.Body.Color, in.Body.WorkspaceID)
+	res, err := a.s.CreateFlashcardSet(ctx, userID(ctx), string(in.Body.Name), in.Body.Color, in.Body.WorkspaceID)
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -109,7 +109,7 @@ func (a *api) updateFlashcardSet(ctx context.Context, in *updateFlashcardSetInpu
 		return nil, hErr(err)
 	}
 	set, err := a.s.UpdateFlashcardSet(ctx, in.ID, store.FlashcardSetPatch{
-		Name: in.Body.Name, Color: in.Body.Color, UpdatedBy: userID(ctx),
+		Name: apimodel.Str(in.Body.Name), Color: in.Body.Color, UpdatedBy: userID(ctx),
 	})
 	if err != nil {
 		return nil, hErr(err)

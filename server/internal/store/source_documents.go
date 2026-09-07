@@ -273,12 +273,14 @@ func (s *Store) RequestSourceRefresh(ctx context.Context, actor, fileID string, 
 		return SourceProcessResult{}, err
 	}
 	result := SourceProcessResult{FileID: fileID, Checkpoint: doc.Checkpoint, Status: "pending"}
+	// Reprocessing is owner-only whether manual or automatic; editors only see
+	// the pending-context label.
+	if actor != owner {
+		return result, ErrForbidden
+	}
 	if automatic {
 		if refreshError != nil {
 			return result, ErrConflict
-		}
-		if actor != owner {
-			return result, ErrForbidden
 		}
 		if doc.Checkpoint <= doc.IndexedCheckpoint || doc.NetTokens == 0 {
 			return result, ErrConflict

@@ -33,7 +33,8 @@ cannot accept it.
 | Read and create comments                       | Yes   | Yes           | Yes              | No            |
 | Create/reorder chapters and materials          | Yes   | Yes           | No               | No            |
 | Upload, rename, move, and delete files         | Yes   | Yes           | No               | No            |
-| Use workspace chat and generation              | Yes   | Yes           | No               | No            |
+| Use workspace chat                             | Yes   | Yes           | Yes              | Yes           |
+| Generate materials                             | Yes   | Yes           | No               | No            |
 | See the workspace member list                  | Yes   | Yes           | Yes              | Yes           |
 | Invite/remove members or change their roles    | Yes   | No            | No               | No            |
 | Change workspace name, color, tags, or sharing | Yes   | No            | No               | No            |
@@ -70,7 +71,7 @@ queue, R2 or KV invalidation is involved. More than 1000 chapters or a projectio
 larger than 256 KiB returns `422` rather than a truncated outline.
 
 Owners edit an optional description through ordinary workspace PATCH. It accepts
-at most 1000 characters; omission preserves the value and an empty string clears
+at most 500 characters; omission preserves the value and an empty string clears
 it. Clones copy the description. Existing name/color/tag and lifecycle
 permissions remain in force.
 
@@ -104,8 +105,9 @@ collaboration to every **signed-in** caller:
 Important boundaries:
 
 - A share role applies to **material collaboration**, not structural workspace
-  authorization. Shared editors cannot add chapters, upload files, use
-  workspace chat/generation, manage members, or change sharing.
+  authorization. Shared editors cannot add chapters, upload files, generate
+  materials, manage members, or change sharing. Chat follows the effective
+  role instead (see the workspace chat section below).
 - Anonymous visitors cannot read workspace contents, standalone materials,
   files, previews, editor assets, quizzes, flashcards, or Explore. They cannot
   obtain material collaboration access. The public summary is their only
@@ -320,16 +322,27 @@ Sources: [quiz read/attempt rules](../server/internal/httpapi/huma_quizzes.go#L7
 
 ### Workspace chat, AI completion, and generation
 
-- Persisted streaming chat, chat history, editor completion, and generation
-  require owner or explicit editor membership. Conversations are private to the
-  user who created them, even inside the same workspace. Chat and generate
+- Persisted streaming chat and chat history are open to any signed-in actor
+  with an effective workspace role (`WorkspaceEffectiveRole`: membership raised
+  by link/public privacy and share role), so link-shared and public workspaces
+  let viewers, commenters, and editors chat. Conversations are private to the
+  user who created them, even inside the same workspace, and are never cloned.
+  Revoking privacy leaves old threads in place but unreadable. Chat and generate
   model choice is an account preference (**Settings → LLM**), snapshotted onto
   new conversations; the browser cannot pick a model per request. Editor AI
   uses the `users.editor_model_provider_slug` / `users.editor_model_slug` pair
   the same way, including provider-scoped
   single-key BYOK, and is gated by
   `VITE_FEATURE_EDITOR_AI`.
-- Shared editors who are not members cannot use workspace chat or generation.
+- Generation, the chat `generate_material` tool, and the internal material
+  callback stay structural: owner or explicit member editor only, never a
+  share-role editor. The gateway sends `canGenerate` to the pipeline, which
+  omits the tool from the prompt and refuses calls otherwise.
+- Pending-source context: the gateway forwards the `pending_sources` chat event
+  only to actors whose effective role can edit (owner, member editor, or
+  link/public share-role editor), so viewers and commenters never see the notice.
+  Manual and automatic reprocessing (`RequestSourceRefresh`) are owner-only;
+  editors see the label without the process-now button.
 - Generated material storage is charged to the workspace owner. The actor is
   recorded as author but does not become storage owner.
 - Inference credits are billed to the actor (`BeginProviderSession` /
@@ -344,8 +357,8 @@ Sources: [quiz read/attempt rules](../server/internal/httpapi/huma_quizzes.go#L7
   healthy owner's workspace, while suspended, deletion-pending, deleted, and
   access-revoked actors cannot start or continue billed work.
 
-Sources: [chat ownership and editor guard](../server/internal/store/chat.go#L44),
-[generation editor guard](../server/internal/httpapi/server.go#L496), and
+Sources: [chat effective-role guard](../server/internal/store/chat.go#L191),
+[chat stream admission](../server/internal/httpapi/server.go#L487), and
 [generation credit policy](../server/internal/httpapi/generation_credits.go#L3).
 
 ### Personal account features

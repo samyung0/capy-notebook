@@ -47,7 +47,7 @@ func (a *api) createCanvas(ctx context.Context, in *createCanvasInput) (*canvasO
 	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
-	res, err := a.s.CreateCanvas(ctx, userID(ctx), in.Body.Name)
+	res, err := a.s.CreateCanvas(ctx, userID(ctx), string(in.Body.Name))
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -70,7 +70,7 @@ func (a *api) saveCanvas(ctx context.Context, in *saveCanvasInput) (*canvasOutpu
 	if in.Body.Scene != nil {
 		scene = apimodel.EncodeRaw(in.Body.Scene)
 	}
-	res, err := a.s.SaveCanvas(ctx, userID(ctx), in.ID, in.Body.Name, scene)
+	res, err := a.s.SaveCanvas(ctx, userID(ctx), in.ID, apimodel.Str(in.Body.Name), scene)
 	if err != nil {
 		return nil, hErr(err)
 	}

@@ -8,6 +8,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
+
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 )
 
 func validationRouter() http.Handler {
@@ -44,7 +46,7 @@ func TestRequestBodyValidation(t *testing.T) {
 			name:   "create workspace name too long",
 			method: http.MethodPost,
 			path:   "/api/workspaces",
-			body:   `{"name":"` + strings.Repeat("a", 101) + `"}`,
+			body:   `{"name":"` + strings.Repeat("a", fieldlimits.WorkspaceName+1) + `"}`,
 		},
 		{
 			name:   "update workspace empty name",
@@ -98,7 +100,7 @@ func TestRequestBodyValidation(t *testing.T) {
 			name:   "update label name too long",
 			method: http.MethodPatch,
 			path:   "/api/labels/lb_1",
-			body:   `{"name":"` + strings.Repeat("a", 61) + `"}`,
+			body:   `{"name":"` + strings.Repeat("a", fieldlimits.LabelName+1) + `"}`,
 		},
 		{
 			name:   "account deletion empty email",

@@ -21,6 +21,7 @@ from typing import Any
 import requests
 
 from ..config import cfg
+from ..generated import MATERIAL_TITLE_MAX
 from . import pending, store
 from .chunking import clip_to_tokens, estimate_tokens
 from .limits import TurnBudget
@@ -52,6 +53,8 @@ class ToolResult:
 class ToolContext:
     workspace_id: str
     user_id: str = ""
+    # Set by the gateway: the actor is the workspace owner or a member editor.
+    can_generate: bool = False
     file_ids: list[str] = field(default_factory=list)
     citations: list[Passage] = field(default_factory=list)
     assistant_message_id: str = ""
@@ -403,8 +406,8 @@ def _is_transient(exc: BaseException | None, status: int) -> bool:
 
 
 async def _generate_material(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    if not _gateway_ready() or not ctx.user_id:
-        return _refused("Material creation is unavailable in this deployment.")
+    if not _gateway_ready() or not ctx.user_id or not ctx.can_generate:
+        return _refused("Material creation is unavailable for this user.")
     if not ctx.assistant_message_id:
         return _refused("Material creation needs the assistant message id.")
     kind_value = args.get("kind")
@@ -431,7 +434,9 @@ async def _generate_material(args: dict[str, Any], ctx: ToolContext) -> ToolResu
         "workspaceId": ctx.workspace_id,
         "userId": ctx.user_id,
         "kind": kind,
-        "title": args.get("title") or "",
+        # Model output must fit the materials.title column; the API disambiguates
+        # duplicates and only reserves room for its own suffix.
+        "title": str(args.get("title") or "").strip()[:MATERIAL_TITLE_MAX].strip(),
         "cards": args.get("cards") or [],
         "questions": args.get("questions") or [],
         "content": args.get("content") or "",
@@ -684,7 +689,7 @@ _register(
                         "type": "string",
                         "enum": ["quiz", "flashcards", "mindmap", "diagram", "note"],
                     },
-                    "title": {"type": "string"},
+                    "title": {"type": "string", "maxLength": MATERIAL_TITLE_MAX},
                     "cards": {
                         "type": "array",
                         "description": "flashcards only",
@@ -770,7 +775,7 @@ def schemas_for(ctx: ToolContext) -> list[dict[str, Any]]:
         )
     ):
         specs = [s for s in specs if s.name != "resolve_source_change"]
-    if not (_gateway_ready() and ctx.user_id):
+    if not (_gateway_ready() and ctx.user_id and ctx.can_generate):
         specs = [s for s in specs if s.name != "generate_material"]
     return [s.schema for s in specs]
 

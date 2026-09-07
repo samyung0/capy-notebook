@@ -10,7 +10,7 @@ export interface CreateConversationReq {
   readonly $schema?: string;
   /**
      * Optional thread title
-     * @maxLength 200
+     * @maxLength 60
      */
   title?: string;
 }

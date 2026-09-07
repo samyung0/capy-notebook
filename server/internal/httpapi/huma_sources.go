@@ -13,10 +13,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/samyung0/capy-notebook/server/internal/blob"
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/integrations"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
@@ -180,22 +182,19 @@ func (a *api) createSourceUpload(ctx context.Context, in *createSourceUploadInpu
 		return nil, huma.Error503ServiceUnavailable("blob store not configured")
 	}
 	body := in.Body
-	body.Name = strings.TrimSpace(body.Name)
-	body.ChapterName = strings.TrimSpace(body.ChapterName)
-	if body.Name == "" || len(body.Name) > 512 {
-		return nil, huma.Error400BadRequest("file name is required and must be at most 512 characters")
+	name := strings.TrimSpace(string(body.Name))
+	chapterName := strings.TrimSpace(string(body.ChapterName))
+	if name == "" {
+		return nil, huma.Error400BadRequest("file name is required")
 	}
-	if len(body.ChapterName) > 255 {
-		return nil, huma.Error400BadRequest("chapter name must be at most 255 characters")
-	}
-	if body.ChapterID != nil && body.ChapterName != "" {
+	if body.ChapterID != nil && chapterName != "" {
 		return nil, huma.Error400BadRequest("chapterId and chapterName cannot both be set")
 	}
 	if body.Kind == "" {
-		body.Kind = kindFromName(body.Name)
+		body.Kind = kindFromName(name)
 	}
 	if body.ParseMode == "" {
-		body.ParseMode = defaultParseMode(body.Name, body.Kind)
+		body.ParseMode = sourceupload.DefaultParseMode(name, body.Kind)
 	}
 	maxBytes, err := a.sourceMaxBytes(ctx, wsID)
 	if err != nil {
@@ -204,11 +203,11 @@ func (a *api) createSourceUpload(ctx context.Context, in *createSourceUploadInpu
 	if body.SizeBytes < 0 || body.SizeBytes > maxBytes {
 		return nil, huma.Error400BadRequest(fmt.Sprintf("uploads support files up to %d MB", maxBytes>>20))
 	}
-	if err := validateParseMode(body.ParseMode, body.Name, body.Kind, body.SizeBytes, maxBytes); err != nil {
+	if err := sourceupload.Validate(name, body.Kind, body.ParseMode, body.SizeBytes, maxBytes); err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	body.CaptionImages = sourceupload.NormalizeCaptionImages(body.Kind, body.ParseMode, body.CaptionImages)
-	if sourceupload.NeedsIngestJob(body.Name, body.Kind, body.ParseMode) {
+	if sourceupload.NeedsIngestJob(name, body.Kind, body.ParseMode) {
 		if err := a.s.AssertCreditsAvailable(ctx, userID(ctx)); err != nil {
 			return nil, hErr(err)
 		}
@@ -228,7 +227,7 @@ func (a *api) createSourceUpload(ctx context.Context, in *createSourceUploadInpu
 
 	uploadID := randID("up")
 	blobID := randID("blob")
-	ext := strings.ToLower(filepath.Ext(body.Name))
+	ext := strings.ToLower(filepath.Ext(name))
 	if len(ext) > 12 {
 		ext = ""
 	}
@@ -240,8 +239,8 @@ func (a *api) createSourceUpload(ctx context.Context, in *createSourceUploadInpu
 	}
 	session, err := a.s.CreateUploadSession(ctx, store.NewUploadSession{
 		ID: uploadID, WorkspaceID: wsID, CreatedBy: userID(ctx),
-		ChapterID: body.ChapterID, ChapterName: body.ChapterName,
-		ObjectPath: incoming, FinalPath: finalPath, Name: body.Name, Kind: body.Kind,
+		ChapterID: body.ChapterID, ChapterName: chapterName,
+		ObjectPath: incoming, FinalPath: finalPath, Name: name, Kind: body.Kind,
 		ContentType: body.ContentType, DeclaredSize: body.SizeBytes,
 		ParseMode: body.ParseMode, CaptionImages: body.CaptionImages,
 		ExpiresAt: signed.ExpiresAt,
@@ -497,9 +496,9 @@ func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourc
 	if len(in.Body.FileIds) == 0 {
 		return nil, huma.Error400BadRequest("provider and fileIds required")
 	}
-	in.Body.ChapterName = strings.TrimSpace(in.Body.ChapterName)
+	chapterName := strings.TrimSpace(string(in.Body.ChapterName))
 	in.Body.ParseMode = strings.ToLower(strings.TrimSpace(in.Body.ParseMode))
-	if in.Body.ChapterID != nil && in.Body.ChapterName != "" {
+	if in.Body.ChapterID != nil && chapterName != "" {
 		return nil, huma.Error400BadRequest("chapterId and chapterName cannot both be set")
 	}
 	requestID := strings.TrimSpace(in.Body.RequestID)
@@ -532,7 +531,7 @@ func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourc
 	}{
 		CaptionImages: in.Body.CaptionImages,
 		ChapterID:     in.Body.ChapterID,
-		ChapterName:   in.Body.ChapterName,
+		ChapterName:   chapterName,
 		ParseMode:     in.Body.ParseMode,
 		Provider:      in.Body.Provider,
 		Refs:          refs,
@@ -643,7 +642,7 @@ func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourc
 			continue
 		}
 		meta.Name = strings.TrimSpace(meta.Name)
-		if meta.Name == "" || len(meta.Name) > 512 {
+		if meta.Name == "" || utf8.RuneCountInString(meta.Name) > fieldlimits.FileName {
 			rejected = append(rejected, apimodel.SourceImportRejected{
 				FileID: ref.ID,
 				Code:   "invalid_name",
@@ -666,9 +665,9 @@ func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourc
 		kind := integrations.KindFromName(meta.Name)
 		mode := in.Body.ParseMode
 		if mode == "" {
-			mode = defaultParseMode(meta.Name, kind)
+			mode = sourceupload.DefaultParseMode(meta.Name, kind)
 		}
-		if err := validateParseMode(mode, meta.Name, kind, reservedSize, maxBytes); err != nil {
+		if err := sourceupload.Validate(meta.Name, kind, mode, reservedSize, maxBytes); err != nil {
 			rejected = append(rejected, apimodel.SourceImportRejected{
 				FileID: ref.ID,
 				Code:   "unsupported_file",
@@ -703,7 +702,7 @@ func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourc
 			JobID: jobID,
 			Upload: store.NewUploadSession{
 				ID: uploadID, WorkspaceID: wsID, CreatedBy: actor,
-				ChapterID: in.Body.ChapterID, ChapterName: in.Body.ChapterName,
+				ChapterID: in.Body.ChapterID, ChapterName: chapterName,
 				ObjectPath: incomingObjectKey(uploadID, blobID+ext),
 				FinalPath:  sourceObjectKey(blobID + ext),
 				Name:       meta.Name, Kind: kind, ContentType: contentType,

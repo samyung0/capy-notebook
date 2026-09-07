@@ -13,6 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/models"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
@@ -56,9 +57,11 @@ func chatQueryTooLong(text string) bool {
 
 // pipeChatEvent is one event line from the Python retrieval service.
 // Type is one of: phase | block_start | block_delta | block_end | tool_start |
-// tool_end | citations | checkpoint | done | error.
+// tool_end | citations | checkpoint | pending_sources | done | error.
 type pipeChatEvent struct {
 	Type              string                `json:"type"`
+	FileIDs           []string              `json:"fileIds,omitempty"`
+	Omitted           *bool                 `json:"omitted,omitempty"` // pointer so false survives serialization
 	Phase             string                `json:"phase,omitempty"`
 	BlockID           string                `json:"blockId,omitempty"`
 	Kind              string                `json:"kind,omitempty"`
@@ -90,7 +93,8 @@ type pipeChatEvent struct {
 // is the final answer only.
 func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 	wsID := id(r)
-	if !a.assertWS(w, r, wsID) {
+	access, ok := a.assertWSChat(w, r, wsID)
+	if !ok {
 		return
 	}
 	flusher, ok := w.(http.Flusher)
@@ -209,7 +213,7 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		usage       pipeUsage
 	)
 
-	streamErr := a.relayChat(ctx, userID, conv, llm, charge.id, req.Text, assistant.ID, prompt, func(ev pipeChatEvent) {
+	streamErr := a.relayChat(ctx, userID, access.canGenerate, conv, llm, charge.id, req.Text, assistant.ID, prompt, func(ev pipeChatEvent) {
 		switch ev.Type {
 		case "checkpoint":
 			cpCtx, cpCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -241,6 +245,11 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 			send(ev)
 		case "phase", "tool_start", "tool_end":
 			send(ev)
+		case "pending_sources":
+			// Viewers and commenters never learn that sources have pending edits.
+			if access.canSeePending {
+				send(ev)
+			}
 		case "done", "error":
 			if !ev.Usage.empty() {
 				usage = ev.Usage
@@ -318,6 +327,7 @@ func (a *api) resolveConversation(ctx context.Context, userID, wsID, convID stri
 func (a *api) relayChat(
 	ctx context.Context,
 	userID string,
+	canGenerate bool,
 	conv store.Conversation,
 	llm resolvedLLM,
 	spendSessionID string,
@@ -345,6 +355,7 @@ func (a *api) relayChat(
 		"query":              query,
 		"workspaceId":        conv.WorkspaceID,
 		"userId":             userID,
+		"canGenerate":        canGenerate,
 		"history":            history,
 		"assistantMessageId": assistantID,
 		"spendSessionId":     spendSessionID,
@@ -413,9 +424,8 @@ func (a *api) relayChat(
 
 func titleFrom(text string) string {
 	text = strings.TrimSpace(strings.ReplaceAll(text, "\n", " "))
-	const max = 60
-	if len(text) <= max {
+	if utf8.RuneCountInString(text) <= fieldlimits.ConversationTitle {
 		return text
 	}
-	return strings.TrimSpace(text[:max]) + "…"
+	return fieldlimits.Clamp(text, fieldlimits.ConversationTitle-1) + "…"
 }

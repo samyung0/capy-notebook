@@ -111,7 +111,7 @@ components:
           type: string
         name:
           description: Chapter name
-          maxLength: 255
+          maxLength: 60
           minLength: 1
           type: string
       required:
@@ -560,7 +560,7 @@ components:
           readOnly: true
           type: string
         name:
-          maxLength: 200
+          maxLength: 120
           type: string
       type: object
     CreateCardReq:
@@ -616,7 +616,7 @@ components:
           type: string
         title:
           description: Optional thread title
-          maxLength: 200
+          maxLength: 60
           type: string
       type: object
     CreateDiscussionReq:
@@ -674,7 +674,7 @@ components:
           nullable: true
           type: array
         location:
-          maxLength: 200
+          maxLength: 100
           type: string
         note:
           maxLength: 2000
@@ -683,7 +683,7 @@ components:
           format: date-time
           type: string
         title:
-          maxLength: 200
+          maxLength: 60
           minLength: 1
           type: string
       required:
@@ -727,7 +727,7 @@ components:
           $ref: "#/components/schemas/UserColor"
           default: green
         name:
-          maxLength: 200
+          maxLength: 120
           type: string
         workspaceId:
           type: string
@@ -758,7 +758,7 @@ components:
           nullable: true
           type: array
         title:
-          maxLength: 200
+          maxLength: 120
           type: string
       required:
         - kind
@@ -778,7 +778,7 @@ components:
           nullable: true
           type: array
         name:
-          maxLength: 200
+          maxLength: 120
           type: string
         privacy:
           $ref: "#/components/schemas/Privacy"
@@ -810,12 +810,15 @@ components:
         chapterId:
           type: string
         chapterName:
+          maxLength: 60
           type: string
         contentType:
           type: string
         kind:
           type: string
         name:
+          maxLength: 120
+          minLength: 1
           type: string
         parseMode:
           type: string
@@ -838,7 +841,7 @@ components:
           type: string
         identifier:
           description: Exact user ID or email address
-          maxLength: 320
+          maxLength: 254
           minLength: 1
           type: string
         role:
@@ -862,7 +865,7 @@ components:
           description: User color
         name:
           description: Workspace name
-          maxLength: 100
+          maxLength: 80
           minLength: 1
           type: string
         tags:
@@ -1305,7 +1308,7 @@ components:
           minimum: 1
           type: integer
         title:
-          maxLength: 200
+          maxLength: 120
           minLength: 1
           type: string
         types:
@@ -1356,7 +1359,7 @@ components:
         chapterId:
           type: string
         chapterName:
-          maxLength: 255
+          maxLength: 60
           type: string
         driveIds:
           items:
@@ -2547,7 +2550,7 @@ components:
           readOnly: true
           type: string
         confirmEmail:
-          maxLength: 320
+          maxLength: 254
           minLength: 1
           type: string
         lifecycleGeneration:
@@ -2568,7 +2571,7 @@ components:
           readOnly: true
           type: string
         name:
-          maxLength: 200
+          maxLength: 120
           minLength: 1
           type: string
         scene: {}
@@ -3248,7 +3251,7 @@ components:
         id:
           type: string
         value:
-          maxLength: 50
+          maxLength: 35
           minLength: 1
           type: string
       required:
@@ -3261,7 +3264,7 @@ components:
         id:
           type: string
         value:
-          maxLength: 50
+          maxLength: 35
           minLength: 1
           type: string
       required:
@@ -3364,7 +3367,7 @@ components:
           readOnly: true
           type: string
         name:
-          maxLength: 255
+          maxLength: 60
           minLength: 1
           type: string
         order:
@@ -3421,7 +3424,7 @@ components:
             type: string
           type: array
         location:
-          maxLength: 200
+          maxLength: 100
           type: string
         note:
           maxLength: 2000
@@ -3430,7 +3433,7 @@ components:
           format: date-time
           type: string
         title:
-          maxLength: 200
+          maxLength: 60
           minLength: 1
           type: string
       type: object
@@ -3446,7 +3449,7 @@ components:
         chapterId:
           type: string
         name:
-          maxLength: 512
+          maxLength: 120
           minLength: 1
           type: string
       type: object
@@ -3462,7 +3465,7 @@ components:
         color:
           $ref: "#/components/schemas/UserColor"
         name:
-          maxLength: 200
+          maxLength: 120
           minLength: 1
           type: string
       type: object
@@ -3478,7 +3481,7 @@ components:
         color:
           $ref: "#/components/schemas/UserColor"
         name:
-          maxLength: 60
+          maxLength: 35
           minLength: 1
           type: string
       type: object
@@ -3508,7 +3511,7 @@ components:
             type: string
           type: array
         title:
-          maxLength: 200
+          maxLength: 120
           minLength: 1
           type: string
       type: object
@@ -3546,7 +3549,7 @@ components:
             type: string
           type: array
         name:
-          maxLength: 200
+          maxLength: 120
           minLength: 1
           type: string
       type: object
@@ -3580,7 +3583,7 @@ components:
           maxLength: 500
           type: string
         title:
-          maxLength: 200
+          maxLength: 80
           minLength: 1
           type: string
       type: object
@@ -3615,10 +3618,10 @@ components:
           $ref: "#/components/schemas/UserColor"
         description:
           description: Optional workspace description; empty clears it
-          maxLength: 1000
+          maxLength: 500
           type: string
         name:
-          maxLength: 100
+          maxLength: 80
           minLength: 1
           type: string
         tags:
@@ -7219,6 +7222,73 @@ paths:
       summary: Update workspace sharing
       tags:
         - Workspaces
+  /api/workspaces/{id}/sources:
+    post:
+      operationId: uploadSource
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          multipart/form-data:
+            encoding:
+              captionImages:
+                contentType: text/plain
+              chapterId:
+                contentType: text/plain
+              chapterName:
+                contentType: text/plain
+              file:
+                contentType: application/octet-stream
+              kind:
+                contentType: text/plain
+              name:
+                contentType: text/plain
+              parseMode:
+                contentType: text/plain
+            schema:
+              properties:
+                captionImages:
+                  type: boolean
+                chapterId:
+                  type: string
+                chapterName:
+                  maxLength: 60
+                  type: string
+                file:
+                  format: binary
+                  type: string
+                  x-contentEncoding: binary
+                  x-contentMediaType: application/octet-stream
+                kind:
+                  type: string
+                name:
+                  maxLength: 120
+                  type: string
+                parseMode:
+                  type: string
+              required:
+                - file
+              type: object
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/File"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Upload a source through the API
+      tags:
+        - Content
   /api/workspaces/{id}/sources/import:
     post:
       operationId: importSources

@@ -118,6 +118,7 @@ import type {
   UpdateWorkspaceMemberReq,
   UpdateWorkspaceReq,
   UpdateWorkspaceSharingReq,
+  UploadSourceBody,
   UpsertLLMCredentialReq,
   UsageReport,
   User,
@@ -6544,6 +6545,79 @@ export const updateWorkspaceSharing = async (id: string,
 
   const data: updateWorkspaceSharingResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as updateWorkspaceSharingResponse
+}
+
+
+
+export type uploadSourceResponse201 = {
+  data: File
+  status: 201
+}
+
+export type uploadSourceResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 201>
+}
+
+export type uploadSourceResponseSuccess = (uploadSourceResponse201) & {
+  headers: Headers;
+};
+export type uploadSourceResponseError = (uploadSourceResponseDefault) & {
+  headers: Headers;
+};
+
+export type uploadSourceResponse = (uploadSourceResponseSuccess | uploadSourceResponseError)
+
+export const getUploadSourceUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/sources`
+}
+
+/**
+ * @summary Upload a source through the API
+ */
+export const uploadSource = async (id: string,
+    uploadSourceBody?: UploadSourceBody, options?: RequestInit): Promise<uploadSourceResponse> => {
+    const formData = new FormData();
+if(uploadSourceBody?.captionImages !== undefined) {
+ formData.append(`captionImages`, uploadSourceBody.captionImages.toString())
+ }
+if(uploadSourceBody?.chapterId !== undefined) {
+ formData.append(`chapterId`, uploadSourceBody.chapterId instanceof Blob ? uploadSourceBody.chapterId : new Blob([uploadSourceBody.chapterId], { type: 'text/plain' }));
+ }
+if(uploadSourceBody?.chapterName !== undefined) {
+ formData.append(`chapterName`, uploadSourceBody.chapterName instanceof Blob ? uploadSourceBody.chapterName : new Blob([uploadSourceBody.chapterName], { type: 'text/plain' }));
+ }
+if(uploadSourceBody?.file !== undefined) {
+ formData.append(`file`, uploadSourceBody.file);
+ }
+if(uploadSourceBody?.kind !== undefined) {
+ formData.append(`kind`, uploadSourceBody.kind instanceof Blob ? uploadSourceBody.kind : new Blob([uploadSourceBody.kind], { type: 'text/plain' }));
+ }
+if(uploadSourceBody?.name !== undefined) {
+ formData.append(`name`, uploadSourceBody.name instanceof Blob ? uploadSourceBody.name : new Blob([uploadSourceBody.name], { type: 'text/plain' }));
+ }
+if(uploadSourceBody?.parseMode !== undefined) {
+ formData.append(`parseMode`, uploadSourceBody.parseMode instanceof Blob ? uploadSourceBody.parseMode : new Blob([uploadSourceBody.parseMode], { type: 'text/plain' }));
+ }
+
+  const res = await fetch(getUploadSourceUrl(id),
+  {
+    ...options,
+    method: 'POST'
+    ,
+    body: formData
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: uploadSourceResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as uploadSourceResponse
 }
 
 

@@ -6,8 +6,10 @@ import (
 	"errors"
 	"sort"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/models"
 )
@@ -1081,7 +1083,8 @@ func (s *Store) cloneWorkspaceOnce(
 	newID := uid("ws")
 	name := src.Name
 	if isOwner {
-		name += " (copy)"
+		const suffix = " (copy)"
+		name = fieldlimits.Clamp(name, fieldlimits.WorkspaceName-utf8.RuneCountInString(suffix)) + suffix
 	}
 	// The clone inherits the source's embedding pin instead of taking the current
 	// default. cloneRetrievalIndex copies vectors verbatim rather than

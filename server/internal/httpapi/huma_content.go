@@ -89,7 +89,7 @@ func (a *api) addChapter(ctx context.Context, in *addChapterInput) (*chapterOutp
 	if err := a.assertWorkspaceEditor(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	res, err := a.s.AddChapter(ctx, in.ID, userID(ctx), in.Body.Name)
+	res, err := a.s.AddChapter(ctx, in.ID, userID(ctx), string(in.Body.Name))
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -100,7 +100,7 @@ func (a *api) updateChapter(ctx context.Context, in *updateChapterInput) (*chapt
 	if err := a.assertChapterEditor(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	res, err := a.s.UpdateChapter(ctx, userID(ctx), in.ID, store.ChapterPatch{Name: in.Body.Name, Order: in.Body.Order})
+	res, err := a.s.UpdateChapter(ctx, userID(ctx), in.ID, store.ChapterPatch{Name: apimodel.Str(in.Body.Name), Order: in.Body.Order})
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -175,7 +175,7 @@ func (a *api) updateFile(ctx context.Context, in *updateFileInput) (*fileOutput,
 	if err := a.assertFileEditor(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	patch := store.FilePatch{Name: in.Body.Name}
+	patch := store.FilePatch{Name: apimodel.Str(in.Body.Name)}
 	// chapterId: "" unfiles (NULL), a real id files it, omitted leaves it.
 	if in.Body.ChapterID != nil {
 		if *in.Body.ChapterID == "" {

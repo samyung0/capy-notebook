@@ -112,7 +112,7 @@ func (a *api) createMaterial(ctx context.Context, in *createMaterialInput) (*mat
 	default:
 		return nil, huma.Error400BadRequest("unsupported material kind")
 	}
-	title := in.Body.Title
+	title := string(in.Body.Title)
 	if title == "" {
 		var err error
 		title, err = a.s.DisambiguateMaterialTitle(ctx, in.ID, copytext.T(a.userLocale(ctx, userID(ctx)), copytext.UntitledNote))
@@ -191,7 +191,7 @@ func (a *api) updateMaterial(
 		return nil, huma.Error400BadRequest("expectedRevision is required when changing title")
 	}
 	patch := store.MaterialPatch{
-		Title:            in.Body.Title,
+		Title:            apimodel.Str(in.Body.Title),
 		ScopeChapters:    in.Body.ScopeChapters,
 		ScopeFileNames:   in.Body.ScopeFileNames,
 		ExpectedRevision: in.Body.ExpectedRevision,

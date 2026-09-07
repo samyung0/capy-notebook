@@ -161,7 +161,7 @@
     "bench:editor": "playwright test --config=bench/editor/scripts/playwright.perf.config.ts",
     "chaos:peers": "pnpm --filter @capy-notebook/collaboration chaos --",
     "check": "ultracite check && pnpm run typecheck",
-    "gen:openapi": "cd server && go run ./cmd/openapi -o ../openapi.yaml -python-slots ../pipeline/pipeline/generated/slot.py",
+    "gen:openapi": "cd server && go run ./cmd/openapi -o ../openapi.yaml -python-slots ../pipeline/pipeline/generated/slot.py -python-limits ../pipeline/pipeline/generated/limits.py",
     "gen:api": "pnpm gen:api:clean && orval && node scripts/sync-slot-contracts.mjs",
     "gen:api:clean": "node scripts/clean-api-gen.mjs",
     "gen:api:full": "pnpm gen:openapi && pnpm gen:api",

@@ -765,7 +765,7 @@ export default function WorkspaceOpen() {
         <ResizableHandle withHandle />
         <ResizablePanel
           className="overflow-visible!"
-          defaultSize={readOnly ? '82%' : '52%'}
+          defaultSize="52%"
           minSize="400px"
         >
           {/* Center: content viewer */}
@@ -786,62 +786,63 @@ export default function WorkspaceOpen() {
             </AppErrorBoundary>
           </Panel>
         </ResizablePanel>
-        {!readOnly && (
-          <>
-            <ResizableHandle withHandle />
-            <ResizablePanel
-              className="overflow-visible!"
-              defaultSize="26%"
-              maxSize="700px"
-              minSize="320px"
+        <ResizableHandle withHandle />
+        <ResizablePanel
+          className="overflow-visible!"
+          defaultSize="26%"
+          maxSize="700px"
+          minSize="320px"
+        >
+          {/* Right column: top bar + AI. Chat is open to every signed-in role;
+              generation stays edit-only. */}
+          <div className="flex h-full w-full flex-col gap-2.5">
+            <TopInsetBar className="w-full" />
+            <Panel
+              className="flex-1"
+              sectionClassName="gap-0 min-h-full overflow-hidden"
             >
-              {/* Right column: top bar + AI */}
-              <div className="flex h-full w-full flex-col gap-2.5">
-                <TopInsetBar className="w-full" />
-                <Panel
-                  className="flex-1"
-                  sectionClassName="gap-0 min-h-full overflow-hidden"
-                >
-                  <div className="flex items-center justify-between py-2.5">
-                    <Tabs
-                      className="px-3"
-                      onChange={setMode}
-                      tabs={[
-                        { label: m.workspace_tab_chat(), value: 'chat' },
-                        {
-                          label: m.workspace_tab_generate(),
-                          value: 'generate',
-                        },
-                      ]}
-                      value={mode}
+              {!readOnly && (
+                <div className="flex items-center justify-between py-2.5">
+                  <Tabs
+                    className="px-3"
+                    onChange={setMode}
+                    tabs={[
+                      { label: m.workspace_tab_chat(), value: 'chat' },
+                      {
+                        label: m.workspace_tab_generate(),
+                        value: 'generate',
+                      },
+                    ]}
+                    value={mode}
+                  />
+                </div>
+              )}
+              <div className="h-full flex-1 overflow-hidden">
+                {mode === 'chat' || readOnly ? (
+                  <AppErrorBoundary resetKeys={[workspaceId, mode]}>
+                    <ChatPanel
+                      canReprocess={ws?.isOwner}
+                      color={ws?.color}
+                      onOpenCitation={openCitation}
+                      workspaceId={workspaceId}
                     />
-                  </div>
-                  <div className="h-full flex-1 overflow-hidden">
-                    {mode === 'chat' ? (
-                      <AppErrorBoundary resetKeys={[workspaceId, mode]}>
-                        <ChatPanel
-                          color={ws?.color}
-                          onOpenCitation={openCitation}
-                          workspaceId={workspaceId}
-                        />
-                      </AppErrorBoundary>
-                    ) : (
-                      <GeneratePanel
-                        chapters={chapters ?? []}
-                        existingTitles={(materials ?? []).map((mt) => mt.title)}
-                        files={files ?? []}
-                        onGeneratingChange={setGenerating}
-                        onOpenItem={setOpenItem}
-                        workspaceId={workspaceId}
-                        workspaceName={ws?.name ?? ''}
-                      />
-                    )}
-                  </div>
-                </Panel>
+                  </AppErrorBoundary>
+                ) : (
+                  <GeneratePanel
+                    canReprocess={ws?.isOwner}
+                    chapters={chapters ?? []}
+                    existingTitles={(materials ?? []).map((mt) => mt.title)}
+                    files={files ?? []}
+                    onGeneratingChange={setGenerating}
+                    onOpenItem={setOpenItem}
+                    workspaceId={workspaceId}
+                    workspaceName={ws?.name ?? ''}
+                  />
+                )}
               </div>
-            </ResizablePanel>
-          </>
-        )}
+            </Panel>
+          </div>
+        </ResizablePanel>
       </ResizablePanelGroup>
       {ws && (
         <WorkspaceSettingsDialog

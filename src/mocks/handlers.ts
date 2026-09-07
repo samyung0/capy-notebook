@@ -1,5 +1,10 @@
 import { zipSync } from 'fflate';
 import { delay, HttpResponse, http } from 'msw';
+import {
+  createConversationBodyTitleMax,
+  createMaterialBodyTitleMax,
+  createSourceUploadBodyNameMax,
+} from '@/api/gen/validators';
 import type {
   Chapter,
   Flashcard,
@@ -330,6 +335,18 @@ function completeMockSourceImport(sourceImport: MockSourceImport) {
       .find((chapter) => chapter.id === sourceImport.chapterId)
       ?.fileIds.push(file.id);
   }
+}
+
+function clampFileName(name: string): string {
+  if ([...name].length <= createSourceUploadBodyNameMax) return name;
+  const dot = name.lastIndexOf('.');
+  const ext = dot > 0 && name.length - dot <= 12 ? name.slice(dot) : '';
+  const base = ext ? name.slice(0, dot) : name;
+  return (
+    [...base]
+      .slice(0, createSourceUploadBodyNameMax - [...ext].length)
+      .join('') + ext
+  );
 }
 
 export const handlers = [
@@ -1541,35 +1558,23 @@ export const handlers = [
   ),
   http.post('/api/workspaces/:id/sources', async ({ params, request }) => {
     await delay(500);
-    // Real uploads are multipart (file bytes); fall back to JSON for any
-    // legacy/metadata-only callers.
-    let name = '';
-    let kind: SourceKindFix = 'pdf';
-    let chapterId: string | null = null;
-    let chapterName: string | null = null;
-    let uploadedFile: File | null = null;
-    const ct = request.headers.get('content-type') ?? '';
-    if (ct.includes('multipart/form-data')) {
-      const form = await request.formData();
-      const file = form.get('file');
-      uploadedFile = file instanceof File ? file : null;
-      name = String(form.get('name') || uploadedFile?.name || 'Untitled');
-      kind = (String(form.get('kind') || '') ||
-        getFileKind(name, sourceUploadPolicy)) as SourceKindFix;
-      chapterId = (form.get('chapterId') as string) || null;
-      chapterName = (form.get('chapterName') as string) || null;
-    } else {
-      const body = (await request.json()) as {
-        name: string;
-        kind: SourceKindFix;
-        chapterId?: string | null;
-        chapterName?: string | null;
-      };
-      name = body.name;
-      kind = body.kind ?? getFileKind(name, sourceUploadPolicy);
-      chapterId = body.chapterId ?? null;
-      chapterName = body.chapterName ?? null;
+    const form = await request.formData();
+    const file = form.get('file');
+    const uploadedFile = file instanceof File ? file : null;
+    const sentName = String(form.get('name') || '');
+    if ([...sentName].length > createSourceUploadBodyNameMax) {
+      return HttpResponse.json(
+        { message: 'validation failed' },
+        { status: 422 }
+      );
     }
+    // Like the server, a filename taken from the file part is clamped, not
+    // rejected, keeping its extension.
+    const name = sentName || clampFileName(uploadedFile?.name || 'Untitled');
+    const kind = (String(form.get('kind') || '') ||
+      getFileKind(name, sourceUploadPolicy)) as SourceKindFix;
+    let chapterId = (form.get('chapterId') as string) || null;
+    const chapterName = (form.get('chapterName') as string) || null;
     const expectedKind = getFileKind(name, sourceUploadPolicy);
     if (chapterId && chapterName?.trim()) {
       return HttpResponse.json(
@@ -1705,7 +1710,10 @@ export const handlers = [
       };
       db.conversations.push(conv);
     }
-    if (!conv.title) conv.title = body.text.slice(0, 60);
+    if (!conv.title)
+      conv.title = [...body.text]
+        .slice(0, createConversationBodyTitleMax)
+        .join('');
     db.chatMessages.push({
       citations: null,
       content: body.text,
@@ -1958,10 +1966,10 @@ export const handlers = [
         { status: 400 }
       );
     }
-    if (title.length > 200) {
+    if ([...title].length > createMaterialBodyTitleMax) {
       return HttpResponse.json(
-        { message: 'title must be at most 200 characters' },
-        { status: 400 }
+        { message: 'validation failed' },
+        { status: 422 }
       );
     }
     const titleTaken = db.materials.some(

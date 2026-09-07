@@ -932,7 +932,7 @@ and are not sent back as LLM history.
    exact current query may resolve references, but it must not narrow the durable
    memory, appear in it, or be answered by the summarizer. Large
    histories fold in chronological batches with no message-count cap or prefix
-   clipping. The target is 4,000 to 6,000 tokens with a hard 8,000-token output
+   clipping. The target is 4,000 to 10,000 tokens with a hard 12,000-token output
    limit. Empty or oversized output does not advance the checkpoint.
 
    Before every agent model call, live admission measures the provider-shaped

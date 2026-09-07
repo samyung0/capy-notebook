@@ -12,7 +12,7 @@ export interface ImportSourcesReq {
   readonly $schema?: string;
   captionImages?: boolean;
   chapterId?: string;
-  /** @maxLength 255 */
+  /** @maxLength 60 */
   chapterName?: string;
   driveIds?: string[];
   /**

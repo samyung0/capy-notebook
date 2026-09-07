@@ -15,7 +15,7 @@ export interface CreateWorkspaceReq {
   /**
      * Workspace name
      * @minLength 1
-     * @maxLength 100
+     * @maxLength 80
      */
   name: string;
   /**

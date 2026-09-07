@@ -25,8 +25,9 @@ func testRefreshRequest(t *testing.T, s *Store, owner, actor string) (Workspace,
 		t.Fatal(err)
 	}
 	s.SetModelRegistry(reg)
+	// The actor edits; only the owner may request a manual refresh.
 	doc := sourceTestEdit(t, s, actor, sourceTestSeed(t, s, owner, file.ID), "new-state")
-	job, err := s.RequestSourceRefresh(ctx, actor, file.ID, false)
+	job, err := s.RequestSourceRefresh(ctx, owner, file.ID, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,81 +45,6 @@ func testRefreshFinalize(t *testing.T, s *Store, doc SourceSession, job SourcePr
 		t.Fatal(err)
 	}
 	return candidate
-}
-
-func TestSourceExportAndPublicationRecheckRequestingActor(t *testing.T) {
-	for _, stage := range []string{"claim", "finalize", "publish"} {
-		t.Run(stage, func(t *testing.T) {
-			s := openAccessTestStore(t)
-			ctx := context.Background()
-			owner := newBlobTestUser(t, s, "lifecycle_owner")
-			actor := newBlobTestUser(t, s, "lifecycle_actor")
-			ws, file, doc, job := testRefreshRequest(t, s, owner, actor)
-			var candidate SourceRefreshCandidate
-			var err error
-			if stage != "claim" {
-				candidate, err = s.ClaimSourceRefresh(ctx, file.ID, job.JobID)
-				if err != nil {
-					t.Fatal(err)
-				}
-			}
-			finalize := SourceRefreshFinalize{JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 120, SourceETag: "etag-b", Seed: []byte("fresh-seed")}
-			publish := SourceRefreshPublish{}
-			if stage == "publish" {
-				if err = s.FinalizeSourceRefresh(ctx, file.ID, finalize); err != nil {
-					t.Fatal(err)
-				}
-				if _, err = s.pool.Exec(ctx, `UPDATE jobs SET status='running',attempts=1,lease_expires_at=now()+interval '5 minutes' WHERE id=$1`, job.JobID); err != nil {
-					t.Fatal(err)
-				}
-				content := uid("rc")
-				if _, err = s.pool.Exec(ctx, `INSERT INTO rag_contents(id,workspace_id,content_hash,status) VALUES($1,$2,'actor-b','ready')`, content, ws.ID); err != nil {
-					t.Fatal(err)
-				}
-				if _, err = s.pool.Exec(ctx, `UPDATE source_refresh_candidates SET content_id=$2,content_hash='actor-b',preview_blob_path='previews/actor-b' WHERE file_id=$1`, file.ID, content); err != nil {
-					t.Fatal(err)
-				}
-				publish = SourceRefreshPublish{AttemptID: sourceTestAttempt(t, s, job.JobID), JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceETag: "etag-b", ContentID: content, ContentHash: "actor-b", PreviewBlobPath: "previews/actor-b", ExpectedLatestCheckpoint: doc.Checkpoint}
-			}
-			if err = s.SetWorkspaceMemberRole(ctx, owner, ws.ID, actor, RoleViewer); err != nil {
-				t.Fatal(err)
-			}
-			switch stage {
-			case "claim":
-				_, err = s.ClaimSourceRefresh(ctx, file.ID, job.JobID)
-			case "finalize":
-				err = s.FinalizeSourceRefresh(ctx, file.ID, finalize)
-			case "publish":
-				_, err = s.PublishSourceRefresh(ctx, file.ID, publish)
-			}
-			if !errors.Is(err, ErrNotFound) {
-				t.Fatalf("demoted requester accepted at %s: %v", stage, err)
-			}
-			if stage == "claim" {
-				retry, retryErr := s.RequestSourceRefresh(ctx, owner, file.ID, false)
-				if retryErr != nil || retry.JobID == job.JobID {
-					t.Fatalf("revoked claim stranded manual retry: %+v %v", retry, retryErr)
-				}
-			}
-			if stage == "publish" {
-				if err = s.SetWorkspaceMemberRole(ctx, owner, ws.ID, actor, RoleEditor); err != nil {
-					t.Fatal(err)
-				}
-				if _, err = s.PublishSourceRefresh(ctx, file.ID, publish); err != nil {
-					t.Fatal(err)
-				}
-				if err = s.SetWorkspaceMemberRole(ctx, owner, ws.ID, actor, RoleViewer); err != nil {
-					t.Fatal(err)
-				}
-				if _, err = s.pool.Exec(ctx, `UPDATE users SET suspended_at=now(),suspended_reason='test' WHERE id=$1`, actor); err != nil {
-					t.Fatal(err)
-				}
-				if replay, err := s.PublishSourceRefresh(ctx, file.ID, publish); err != nil || replay.BaseRevision != 2 {
-					t.Fatalf("committed receipt rejected after actor change: %+v %v", replay, err)
-				}
-			}
-		})
-	}
 }
 
 func TestSourceLostFinalizeAcknowledgmentPreservesAcceptedWork(t *testing.T) {
@@ -212,33 +138,25 @@ func TestSourceCaptionAdmissionAndDerivedTokens(t *testing.T) {
 }
 
 func TestSourceAccountCancellationAllowsManualRetry(t *testing.T) {
-	for _, cancelOwner := range []bool{false, true} {
-		t.Run(map[bool]string{false: "requester", true: "owner"}[cancelOwner], func(t *testing.T) {
-			s := openAccessTestStore(t)
-			ctx := context.Background()
-			owner := newBlobTestUser(t, s, "cancel_owner")
-			actor := newBlobTestUser(t, s, "cancel_actor")
-			_, file, _, job := testRefreshRequest(t, s, owner, actor)
-			target := actor
-			if cancelOwner {
-				target = owner
-			}
-			if _, err := s.pool.Exec(ctx, `SELECT cancel_user_async_work($1)`, target); err != nil {
-				t.Fatal(err)
-			}
-			var running *string
-			var candidates int
-			var state string
-			if err := s.pool.QueryRow(ctx, `SELECT running_job_id,convert_from(state,'UTF8'),(SELECT count(*) FROM source_refresh_candidates WHERE file_id=$1) FROM source_documents WHERE file_id=$1`, file.ID).Scan(&running, &state, &candidates); err != nil {
-				t.Fatal(err)
-			}
-			if running != nil || candidates != 0 || state != "new-state" {
-				t.Fatalf("cancellation stranded state: %v %d %s", running, candidates, state)
-			}
-			retry, err := s.RequestSourceRefresh(ctx, owner, file.ID, false)
-			if err != nil || retry.JobID == job.JobID {
-				t.Fatalf("manual retry remained blocked: %+v %v", retry, err)
-			}
-		})
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "cancel_owner")
+	actor := newBlobTestUser(t, s, "cancel_actor")
+	_, file, _, job := testRefreshRequest(t, s, owner, actor)
+	if _, err := s.pool.Exec(ctx, `SELECT cancel_user_async_work($1)`, owner); err != nil {
+		t.Fatal(err)
+	}
+	var running *string
+	var candidates int
+	var state string
+	if err := s.pool.QueryRow(ctx, `SELECT running_job_id,convert_from(state,'UTF8'),(SELECT count(*) FROM source_refresh_candidates WHERE file_id=$1) FROM source_documents WHERE file_id=$1`, file.ID).Scan(&running, &state, &candidates); err != nil {
+		t.Fatal(err)
+	}
+	if running != nil || candidates != 0 || state != "new-state" {
+		t.Fatalf("cancellation stranded state: %v %d %s", running, candidates, state)
+	}
+	retry, err := s.RequestSourceRefresh(ctx, owner, file.ID, false)
+	if err != nil || retry.JobID == job.JobID {
+		t.Fatalf("manual retry remained blocked: %+v %v", retry, err)
 	}
 }

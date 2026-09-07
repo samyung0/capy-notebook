@@ -51,7 +51,7 @@ func (a *api) listConversations(ctx context.Context, in *wsConversationsInput) (
 }
 
 func (a *api) createConversation(ctx context.Context, in *createConversationInput) (*conversationOutput, error) {
-	res, err := a.s.CreateConversation(ctx, userID(ctx), in.ID, in.Body.Title)
+	res, err := a.s.CreateConversation(ctx, userID(ctx), in.ID, string(in.Body.Title))
 	if err != nil {
 		return nil, hErr(err)
 	}

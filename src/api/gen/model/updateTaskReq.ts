@@ -13,7 +13,7 @@ export interface UpdateTaskReq {
   meta?: string;
   /**
      * @minLength 1
-     * @maxLength 200
+     * @maxLength 80
      */
   title?: string;
 }

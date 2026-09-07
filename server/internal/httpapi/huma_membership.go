@@ -106,7 +106,7 @@ func (a *api) createWorkspaceInvite(ctx context.Context, in *createWorkspaceInvi
 		return nil, collaborationError(err)
 	}
 	notification, created, err := a.s.CreateWorkspaceInviteWithResult(
-		ctx, in.ID, in.Body.Identifier, in.Body.Role.WorkspaceRole(), userID(ctx),
+		ctx, in.ID, string(in.Body.Identifier), in.Body.Role.WorkspaceRole(), userID(ctx),
 	)
 	if err != nil {
 		return nil, collaborationError(err)

@@ -10,7 +10,7 @@ export interface CreateFlashcardSetReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   color?: UserColor;
-  /** @maxLength 200 */
+  /** @maxLength 120 */
   name?: string;
   workspaceId?: string;
 }

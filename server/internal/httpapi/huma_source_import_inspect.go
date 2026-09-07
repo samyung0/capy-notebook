@@ -7,10 +7,13 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/integrations"
+	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 )
 
 type inspectSourceImportsReq struct {
@@ -138,7 +141,7 @@ func (a *api) inspectSourceImports(
 		}
 
 		meta.Name = strings.TrimSpace(meta.Name)
-		if meta.Name == "" || len(meta.Name) > 512 {
+		if meta.Name == "" || utf8.RuneCountInString(meta.Name) > fieldlimits.FileName {
 			response.Rejected = append(response.Rejected, inspectSourceImportRejected{
 				FileID: ref.ID,
 				Code:   "invalid_name",
@@ -161,8 +164,8 @@ func (a *api) inspectSourceImports(
 			continue
 		}
 		kind := integrations.KindFromName(meta.Name)
-		mode := defaultParseMode(meta.Name, kind)
-		if err := validateParseMode(mode, meta.Name, kind, sizeBytes, maxBytes); err != nil {
+		mode := sourceupload.DefaultParseMode(meta.Name, kind)
+		if err := sourceupload.Validate(meta.Name, kind, mode, sizeBytes, maxBytes); err != nil {
 			response.Rejected = append(response.Rejected, inspectSourceImportRejected{
 				FileID: ref.ID,
 				Code:   "unsupported_file",

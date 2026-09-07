@@ -47,7 +47,7 @@ export function validateGenerateTitle(
   if (!trimmed) {
     return m.generate_name_required();
   }
-  if (trimmed.length > GENERATE_TITLE_MAX) {
+  if ([...trimmed].length > GENERATE_TITLE_MAX) {
     return m.generate_name_too_long({ max: GENERATE_TITLE_MAX });
   }
   const key = trimmed.toLowerCase();

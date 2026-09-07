@@ -10,7 +10,7 @@ export interface UpdateChapterReq {
   readonly $schema?: string;
   /**
      * @minLength 1
-     * @maxLength 255
+     * @maxLength 60
      */
   name?: string;
   order?: number;

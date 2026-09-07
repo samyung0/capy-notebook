@@ -186,6 +186,9 @@ def _bind_llm(req: LLMPin) -> None:
 class ChatStreamReq(LLMPin):
     query: str = Field(min_length=1, max_length=65_536)
     workspaceId: str
+    # Gateway-resolved: the actor is the workspace owner or a member editor, so
+    # the generate_material tool may be offered. Required so an older gateway fails loudly.
+    canGenerate: bool
     fileIds: list[str] | None = None
     model: str | None = None  # ignored; the provider/model/version pin is authoritative
     # Prior turns as OpenAI-style role/content pairs, sent to the LLM only.
@@ -330,6 +333,7 @@ async def _chat_events(req: ChatStreamReq, request: Request):
     ctx = ToolContext(
         workspace_id=req.workspaceId,
         user_id=req.userId or "",
+        can_generate=req.canGenerate,
         file_ids=list(req.fileIds or []),
         assistant_message_id=req.assistantMessageId or "",
     )

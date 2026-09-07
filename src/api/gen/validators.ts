@@ -9,9 +9,9 @@ import * as zod from 'zod';
 /**
  * @summary What account deletion would destroy, and what blocks it
  */
-export const getDeletionPreflightResponseWorkspacesNeedingTransferItemTagsItemValueMax = 50;
+export const getDeletionPreflightResponseWorkspacesNeedingTransferItemTagsItemValueMax = 35;
 
-export const getDeletionPreflightResponseWorkspacesToDestroyItemTagsItemValueMax = 50;
+export const getDeletionPreflightResponseWorkspacesToDestroyItemTagsItemValueMax = 35;
 
 
 
@@ -93,7 +93,7 @@ export const GetDeletionPreflightResponse = zod.object({
 /**
  * @summary Schedule account deletion
  */
-export const requestAccountDeletionBodyConfirmEmailMax = 320;
+export const requestAccountDeletionBodyConfirmEmailMax = 254;
 
 export const requestAccountDeletionBodyLifecycleGenerationMin = 0;
 
@@ -234,7 +234,7 @@ export const UpdateChapterParams = zod.object({
   "id": zod.string()
 })
 
-export const updateChapterBodyNameMax = 255;
+export const updateChapterBodyNameMax = 60;
 
 
 
@@ -423,11 +423,11 @@ export const ListEventsResponse = zod.array(ListEventsResponseItem)
 /**
  * @summary Create an event
  */
-export const createEventBodyLocationMax = 200;
+export const createEventBodyLocationMax = 100;
 
 export const createEventBodyNoteMax = 2000;
 
-export const createEventBodyTitleMax = 200;
+export const createEventBodyTitleMax = 60;
 
 
 
@@ -469,11 +469,11 @@ export const UpdateEventParams = zod.object({
   "id": zod.string()
 })
 
-export const updateEventBodyLocationMax = 200;
+export const updateEventBodyLocationMax = 100;
 
 export const updateEventBodyNoteMax = 2000;
 
-export const updateEventBodyTitleMax = 200;
+export const updateEventBodyTitleMax = 60;
 
 
 
@@ -543,7 +543,7 @@ export const ExploreQuizzesResponse = zod.array(ExploreQuizzesResponseItem)
 /**
  * @summary Public workspaces
  */
-export const exploreWorkspacesResponseTagsItemValueMax = 50;
+export const exploreWorkspacesResponseTagsItemValueMax = 35;
 
 
 
@@ -647,7 +647,7 @@ export const UpdateFileParams = zod.object({
   "id": zod.string()
 })
 
-export const updateFileBodyNameMax = 512;
+export const updateFileBodyNameMax = 120;
 
 
 
@@ -966,7 +966,7 @@ export const ListFlashcardSetsResponse = zod.array(ListFlashcardSetsResponseItem
  * @summary Create flashcards
  */
 export const createFlashcardSetBodyColorDefault = `green`;
-export const createFlashcardSetBodyNameMax = 200;
+export const createFlashcardSetBodyNameMax = 120;
 
 
 
@@ -1210,7 +1210,7 @@ export const UpdateFlashcardSetParams = zod.object({
   "id": zod.string()
 })
 
-export const updateFlashcardSetBodyNameMax = 200;
+export const updateFlashcardSetBodyNameMax = 120;
 
 
 
@@ -1331,7 +1331,7 @@ export const UpdateLabelParams = zod.object({
   "id": zod.string()
 })
 
-export const updateLabelBodyNameMax = 60;
+export const updateLabelBodyNameMax = 35;
 
 
 
@@ -1567,7 +1567,7 @@ export const UpdateMaterialParams = zod.object({
 })
 
 
-export const updateMaterialBodyTitleMax = 200;
+export const updateMaterialBodyTitleMax = 120;
 
 
 
@@ -1998,7 +1998,7 @@ export const ListQuizzesResponse = zod.array(ListQuizzesResponseItem)
 /**
  * @summary Create a quiz
  */
-export const createQuizBodyNameMax = 200;
+export const createQuizBodyNameMax = 120;
 
 export const createQuizBodyTimeLimitMinMax = 180;
 
@@ -2159,7 +2159,7 @@ export const UpdateQuizMetadataParams = zod.object({
   "id": zod.string()
 })
 
-export const updateQuizMetadataBodyNameMax = 200;
+export const updateQuizMetadataBodyNameMax = 120;
 
 
 
@@ -2266,7 +2266,7 @@ export const ListTagsQueryParams = zod.object({
   "kind": zod.string().optional().describe('Tag kind: workspace | quiz | card')
 })
 
-export const listTagsResponseValueMax = 50;
+export const listTagsResponseValueMax = 35;
 
 
 
@@ -2310,7 +2310,7 @@ export const UpdateTaskParams = zod.object({
 
 export const updateTaskBodyMetaMax = 500;
 
-export const updateTaskBodyTitleMax = 200;
+export const updateTaskBodyTitleMax = 80;
 
 
 
@@ -2346,7 +2346,7 @@ export const ListCanvasesResponse = zod.array(ListCanvasesResponseItem)
 /**
  * @summary Create a canvas
  */
-export const createCanvasBodyNameMax = 200;
+export const createCanvasBodyNameMax = 120;
 
 
 
@@ -2386,7 +2386,7 @@ export const SaveCanvasParams = zod.object({
   "id": zod.string()
 })
 
-export const saveCanvasBodyNameMax = 200;
+export const saveCanvasBodyNameMax = 120;
 
 
 
@@ -2463,7 +2463,7 @@ export const ListWorkspacesQueryParams = zod.object({
   "tag": zod.string().optional().describe('Comma-separated tags; OR-matched with colors')
 })
 
-export const listWorkspacesResponseTagsItemValueMax = 50;
+export const listWorkspacesResponseTagsItemValueMax = 35;
 
 
 
@@ -2504,9 +2504,9 @@ export const ListWorkspacesResponse = zod.array(ListWorkspacesResponseItem)
  * @summary Create a workspace
  */
 export const createWorkspaceBodyColorDefault = `graphite`;
-export const createWorkspaceBodyNameMax = 100;
+export const createWorkspaceBodyNameMax = 80;
 
-export const createWorkspaceBodyTagsItemValueMax = 50;
+export const createWorkspaceBodyTagsItemValueMax = 35;
 
 export const createWorkspaceBodyTagsMax = 5;
 
@@ -2521,7 +2521,7 @@ export const CreateWorkspaceBody = zod.object({
 })).max(createWorkspaceBodyTagsMax).nullish().describe('Tags; at most 5; reuse existing by id or create new by value')
 })
 
-export const createWorkspaceResponseTagsItemValueMax = 50;
+export const createWorkspaceResponseTagsItemValueMax = 35;
 
 
 
@@ -2574,7 +2574,7 @@ export const GetWorkspaceParams = zod.object({
   "id": zod.string()
 })
 
-export const getWorkspaceResponseTagsItemValueMax = 50;
+export const getWorkspaceResponseTagsItemValueMax = 35;
 
 
 
@@ -2617,11 +2617,11 @@ export const UpdateWorkspaceParams = zod.object({
   "id": zod.string()
 })
 
-export const updateWorkspaceBodyDescriptionMax = 1000;
+export const updateWorkspaceBodyDescriptionMax = 500;
 
-export const updateWorkspaceBodyNameMax = 100;
+export const updateWorkspaceBodyNameMax = 80;
 
-export const updateWorkspaceBodyTagsItemValueMax = 50;
+export const updateWorkspaceBodyTagsItemValueMax = 35;
 
 export const updateWorkspaceBodyTagsMax = 5;
 
@@ -2639,7 +2639,7 @@ export const UpdateWorkspaceBody = zod.object({
 })).max(updateWorkspaceBodyTagsMax).optional().describe('Tags; at most 5')
 })
 
-export const updateWorkspaceResponseTagsItemValueMax = 50;
+export const updateWorkspaceResponseTagsItemValueMax = 35;
 
 
 
@@ -2700,7 +2700,7 @@ export const AddChapterParams = zod.object({
   "id": zod.string()
 })
 
-export const addChapterBodyNameMax = 255;
+export const addChapterBodyNameMax = 60;
 
 
 
@@ -2742,7 +2742,7 @@ export const CloneWorkspaceParams = zod.object({
   "id": zod.string()
 })
 
-export const cloneWorkspaceResponseWorkspaceTagsItemValueMax = 50;
+export const cloneWorkspaceResponseWorkspaceTagsItemValueMax = 35;
 
 
 
@@ -2843,7 +2843,7 @@ export const CreateConversationParams = zod.object({
   "id": zod.string().describe('Workspace id')
 })
 
-export const createConversationBodyTitleMax = 200;
+export const createConversationBodyTitleMax = 60;
 
 
 
@@ -2901,7 +2901,7 @@ export const generateBodyDetailDefault = `standard`;
 export const generateBodyDiagramTypeDefault = `auto`;
 export const generateBodyTimeLimitMinMax = 180;
 
-export const generateBodyTitleMax = 200;
+export const generateBodyTitleMax = 120;
 
 
 
@@ -2932,7 +2932,7 @@ export const CreateWorkspaceInviteParams = zod.object({
   "id": zod.string()
 })
 
-export const createWorkspaceInviteBodyIdentifierMax = 320;
+export const createWorkspaceInviteBodyIdentifierMax = 254;
 
 
 
@@ -2973,7 +2973,7 @@ export const CreateMaterialParams = zod.object({
   "id": zod.string()
 })
 
-export const createMaterialBodyTitleMax = 200;
+export const createMaterialBodyTitleMax = 120;
 
 
 
@@ -3080,7 +3080,7 @@ export const UpdateWorkspaceSharingBody = zod.object({
   "shareRole": zod.enum(['editor', 'commenter', 'viewer']).optional()
 })
 
-export const updateWorkspaceSharingResponseTagsItemValueMax = 50;
+export const updateWorkspaceSharingResponseTagsItemValueMax = 35;
 
 
 
@@ -3117,13 +3117,49 @@ export const UpdateWorkspaceSharingResponse = zod.object({
 
 
 /**
+ * @summary Upload a source through the API
+ */
+export const UploadSourceParams = zod.object({
+  "id": zod.string()
+})
+
+export const UploadSourceBody = zod.object({
+  "captionImages": zod.boolean().optional(),
+  "chapterId": zod.instanceof(File).or(zod.string()).optional(),
+  "chapterName": zod.instanceof(File).or(zod.string()).optional(),
+  "file": zod.instanceof(File),
+  "kind": zod.instanceof(File).or(zod.string()).optional(),
+  "name": zod.instanceof(File).or(zod.string()).optional(),
+  "parseMode": zod.instanceof(File).or(zod.string()).optional()
+})
+
+export const UploadSourceResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "addedAt": zod.iso.datetime({"offset":true}),
+  "chapterId": zod.string().nullable(),
+  "content": zod.string().optional(),
+  "id": zod.string(),
+  "indexed": zod.boolean(),
+  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
+  "name": zod.string(),
+  "position": zod.int(),
+  "previewUrl": zod.string().optional(),
+  "revision": zod.int(),
+  "sizeBytes": zod.int(),
+  "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
+  "url": zod.string().optional(),
+  "workspaceId": zod.string()
+})
+
+
+/**
  * @summary Queue sources from a connected drive
  */
 export const ImportSourcesParams = zod.object({
   "id": zod.string()
 })
 
-export const importSourcesBodyChapterNameMax = 255;
+export const importSourcesBodyChapterNameMax = 60;
 
 export const importSourcesBodyFileIdsMax = 20;
 
@@ -3217,13 +3253,19 @@ export const CreateSourceUploadParams = zod.object({
   "id": zod.string()
 })
 
+export const createSourceUploadBodyChapterNameMax = 60;
+
+export const createSourceUploadBodyNameMax = 120;
+
+
+
 export const CreateSourceUploadBody = zod.object({
   "captionImages": zod.boolean(),
   "chapterId": zod.string().optional(),
-  "chapterName": zod.string().optional(),
+  "chapterName": zod.string().max(createSourceUploadBodyChapterNameMax).optional(),
   "contentType": zod.string().optional(),
   "kind": zod.string().optional(),
-  "name": zod.string(),
+  "name": zod.string().min(1).max(createSourceUploadBodyNameMax),
   "parseMode": zod.string().optional(),
   "sizeBytes": zod.int()
 })
@@ -3301,7 +3343,7 @@ export const TransferWorkspaceBody = zod.object({
   "recipientId": zod.string().min(1)
 })
 
-export const transferWorkspaceResponseTagsItemValueMax = 50;
+export const transferWorkspaceResponseTagsItemValueMax = 35;
 
 
 

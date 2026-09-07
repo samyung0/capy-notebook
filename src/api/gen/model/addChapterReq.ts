@@ -11,7 +11,7 @@ export interface AddChapterReq {
   /**
      * Chapter name
      * @minLength 1
-     * @maxLength 255
+     * @maxLength 60
      */
   name: string;
 }

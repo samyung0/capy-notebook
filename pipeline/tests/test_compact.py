@@ -50,12 +50,12 @@ def test_compaction_caps_large_model_input_at_250k():
     )
 
 
-def test_checkpoint_summary_has_8000_token_budget():
+def test_checkpoint_summary_has_12000_token_budget():
     assert chat_prompts.SUMMARY_TARGET_MIN == 4000
-    assert chat_prompts.SUMMARY_TARGET_MAX == 6000
-    assert chat_prompts.SUMMARY_MAX_TOKENS == 8000
-    assert "Target 4,000 to 6,000 tokens" in chat_prompts.CHECKPOINT_SYSTEM_PROMPT
-    assert "Never exceed 8,000 tokens" in chat_prompts.CHECKPOINT_SYSTEM_PROMPT
+    assert chat_prompts.SUMMARY_TARGET_MAX == 10000
+    assert chat_prompts.SUMMARY_MAX_TOKENS == 12000
+    assert "Target 4,000 to 10,000 tokens" in chat_prompts.CHECKPOINT_SYSTEM_PROMPT
+    assert "Never exceed 12,000 tokens" in chat_prompts.CHECKPOINT_SYSTEM_PROMPT
 
 
 def test_catalog_margin_can_apply_calibrated_estimation_error():
@@ -225,7 +225,9 @@ async def test_checkpoint_folds_every_turn_in_chronological_batches(monkeypatch)
         prior_summary="prior",
         turns=turns,
         current_user_message="current",
-        spec=_spec(context_window_tokens=12_000),
+        # 16k window less the 12k summary reserve leaves the same small usable
+        # input this test needs to force more than one chronological batch.
+        spec=_spec(context_window_tokens=16_000),
     )
 
     assert len(payloads) > 1

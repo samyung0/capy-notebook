@@ -12,6 +12,7 @@ import (
 
 	"github.com/samyung0/capy-notebook/server/internal/copytext"
 	"github.com/samyung0/capy-notebook/server/internal/embeddingpins"
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/models"
 )
@@ -941,37 +942,6 @@ func (s *Store) GetFile(ctx context.Context, id string) (File, error) {
 	return f, err
 }
 
-func (s *Store) AddSource(ctx context.Context, wsID, actorID, name, kind string, chapterID *string, sizeBytes int64) (File, error) {
-	id := uid("f")
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return File{}, err
-	}
-	defer tx.Rollback(ctx)
-	ownerID, err := s.lockWorkspaceEditorMutationTx(ctx, tx, wsID, actorID)
-	if err != nil {
-		return File{}, err
-	}
-	if err := s.gateStorageTx(ctx, tx, ownerID, sizeBytes); err != nil {
-		return File{}, err
-	}
-	if err := s.gateWorkspaceFilesTx(ctx, tx, wsID, 1); err != nil {
-		return File{}, err
-	}
-	// Phase 1: no pipeline yet, so sources land 'ready'. Phase 2 sets
-	// 'processing' and enqueues an ingest job in the same transaction.
-	if _, err := tx.Exec(ctx, `INSERT INTO files
-			(id, workspace_id, user_id, created_by, chapter_id, name, kind, size_bytes, status)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ready')`,
-		id, wsID, ownerID, nullStr(actorID), chapterID, name, kind, sizeBytes); err != nil {
-		return File{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return File{}, err
-	}
-	return s.GetFile(ctx, id)
-}
-
 // FilePatch carries the mutable fields for a file rename / re-file.
 type FilePatch struct {
 	Name      *string
@@ -1220,8 +1190,6 @@ func (s *Store) CreateMaterial(ctx context.Context, mt Material) (Material, erro
 	return s.GetMaterial(ctx, mt.ID)
 }
 
-const materialTitleMaxRunes = 200
-
 // MaterialTitleTaken reports whether another material in the workspace already
 // uses this title (trimmed, case-insensitive). Empty workspace id is never taken.
 func (s *Store) MaterialTitleTaken(ctx context.Context, workspaceID, title string) (bool, error) {
@@ -1244,10 +1212,7 @@ func (s *Store) DisambiguateMaterialTitle(ctx context.Context, workspaceID, desi
 	if desired == "" {
 		desired = "Untitled"
 	}
-	if utf8.RuneCountInString(desired) > materialTitleMaxRunes {
-		desired = string([]rune(desired)[:materialTitleMaxRunes])
-		desired = strings.TrimSpace(desired)
-	}
+	desired = fieldlimits.Clamp(desired, fieldlimits.MaterialTitle)
 	taken, err := s.MaterialTitleTaken(ctx, workspaceID, desired)
 	if err != nil {
 		return "", err
@@ -1256,16 +1221,8 @@ func (s *Store) DisambiguateMaterialTitle(ctx context.Context, workspaceID, desi
 		return desired, nil
 	}
 	for n := 2; n < 10000; n++ {
-		candidate := fmt.Sprintf("%s %d", desired, n)
-		if utf8.RuneCountInString(candidate) > materialTitleMaxRunes {
-			base := []rune(desired)
-			suffix := fmt.Sprintf(" %d", n)
-			keep := materialTitleMaxRunes - utf8.RuneCountInString(suffix)
-			if keep < 1 {
-				return "", ErrTitleTaken
-			}
-			candidate = string(base[:keep]) + suffix
-		}
+		suffix := fmt.Sprintf(" %d", n)
+		candidate := fieldlimits.Clamp(desired, fieldlimits.MaterialTitle-utf8.RuneCountInString(suffix)) + suffix
 		taken, err = s.MaterialTitleTaken(ctx, workspaceID, candidate)
 		if err != nil {
 			return "", err

@@ -3,6 +3,7 @@ import { useCallback } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import {
   UpdateWorkspaceBody,
+  updateWorkspaceBodyDescriptionMax,
   updateWorkspaceBodyTagsMax,
 } from '@/api/gen/validators';
 import type { UpdateWorkspaceReq, Workspace } from '@/api/types';
@@ -93,7 +94,7 @@ export function WorkspaceFormEditDialog({
               <Textarea
                 {...field}
                 aria-invalid={fieldState.invalid}
-                maxLength={1000}
+                maxLength={updateWorkspaceBodyDescriptionMax}
                 placeholder={m.summary_description_placeholder()}
                 value={field.value ?? ''}
               />

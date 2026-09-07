@@ -12,7 +12,7 @@ export interface UpdateLabelReq {
   color?: UserColor;
   /**
      * @minLength 1
-     * @maxLength 60
+     * @maxLength 35
      */
   name?: string;
 }

@@ -10,9 +10,14 @@ export interface CreateSourceUploadReq {
   readonly $schema?: string;
   captionImages: boolean;
   chapterId?: string;
+  /** @maxLength 60 */
   chapterName?: string;
   contentType?: string;
   kind?: string;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
   name: string;
   parseMode?: string;
   sizeBytes: number;

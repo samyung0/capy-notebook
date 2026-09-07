@@ -15,12 +15,12 @@ export interface UpdateWorkspaceReq {
   color?: UserColor;
   /**
      * Optional workspace description; empty clears it
-     * @maxLength 1000
+     * @maxLength 500
      */
   description?: string;
   /**
      * @minLength 1
-     * @maxLength 100
+     * @maxLength 80
      */
   name?: string;
   /**

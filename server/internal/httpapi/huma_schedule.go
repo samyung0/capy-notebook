@@ -83,8 +83,8 @@ func (a *api) createEvent(ctx context.Context, in *createEventInput) (*eventOutp
 		return nil, huma.Error422UnprocessableEntity("end must be after start")
 	}
 	e := store.Event{
-		Title: in.Body.Title, Start: in.Body.Start, End: in.Body.End,
-		LabelIDs: in.Body.LabelIDs, Location: in.Body.Location, Note: in.Body.Note,
+		Title: string(in.Body.Title), Start: in.Body.Start, End: in.Body.End,
+		LabelIDs: in.Body.LabelIDs, Location: apimodel.Str(in.Body.Location), Note: in.Body.Note,
 	}
 	res, err := a.s.CreateEvent(ctx, userID(ctx), e)
 	if err != nil {
@@ -104,8 +104,8 @@ func (a *api) updateEvent(ctx context.Context, in *updateEventInput) (*eventOutp
 		return nil, huma.Error422UnprocessableEntity("end must be after start")
 	}
 	p := store.EventPatch{
-		Title: in.Body.Title, Start: in.Body.Start, End: in.Body.End,
-		LabelIDs: in.Body.LabelIDs, Location: in.Body.Location, Note: in.Body.Note,
+		Title: apimodel.Str(in.Body.Title), Start: in.Body.Start, End: in.Body.End,
+		LabelIDs: in.Body.LabelIDs, Location: apimodel.Str(in.Body.Location), Note: in.Body.Note,
 	}
 	res, err := a.s.UpdateEvent(ctx, userID(ctx), in.ID, p)
 	if err != nil {
@@ -136,7 +136,7 @@ func (a *api) updateLabel(ctx context.Context, in *updateLabelInput) (*labelOutp
 	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
-	res, err := a.s.UpdateLabel(ctx, userID(ctx), in.ID, store.LabelPatch{Name: in.Body.Name, Color: in.Body.Color})
+	res, err := a.s.UpdateLabel(ctx, userID(ctx), in.ID, store.LabelPatch{Name: apimodel.Str(in.Body.Name), Color: in.Body.Color})
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -165,7 +165,7 @@ func (a *api) updateTask(ctx context.Context, in *updateTaskInput) (*taskOutput,
 	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
-	res, err := a.s.UpdateTask(ctx, userID(ctx), in.ID, store.TaskPatch{Title: in.Body.Title, Meta: in.Body.Meta, Done: in.Body.Done})
+	res, err := a.s.UpdateTask(ctx, userID(ctx), in.ID, store.TaskPatch{Title: apimodel.Str(in.Body.Title), Meta: in.Body.Meta, Done: in.Body.Done})
 	if err != nil {
 		return nil, hErr(err)
 	}

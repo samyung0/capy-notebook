@@ -12,7 +12,7 @@ export interface CreateWorkspaceInviteReq {
   /**
      * Exact user ID or email address
      * @minLength 1
-     * @maxLength 320
+     * @maxLength 254
      */
   identifier: string;
   role: AssignableRole;

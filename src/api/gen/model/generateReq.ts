@@ -35,7 +35,7 @@ export interface GenerateReq {
   timeLimitMin?: number;
   /**
      * @minLength 1
-     * @maxLength 200
+     * @maxLength 120
      */
   title: string;
   /** @minItems 1 */

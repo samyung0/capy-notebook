@@ -287,3 +287,38 @@ Sources: [storage gate and reconciliation](../server/internal/store/storage.go),
 [collab limits](../collaboration/src/limits.ts),
 [collab document validation](../collaboration/src/materialDocument.ts),
 [compaction config](../collaboration/src/config.ts).
+
+## Text field limits
+
+`server/internal/fieldlimits` is the single source of truth for user-visible
+text lengths, counted in runes. Request fields carry them through the named
+types in `httpapi/apimodel/limits.go` (a `huma.SchemaTransformer` sets
+`maxLength`), so `openapi.yaml`, the orval validators in
+`src/api/gen/validators.ts`, and `pipeline/pipeline/generated/limits.py`
+(rendered by `cmd/openapi -python-limits`) all derive from the constants.
+`0001_init.sql` repeats each value as a `char_length` CHECK and
+`TestColumnLimits` fails when a CHECK and its constant disagree, in either
+direction.
+
+| Field | Runes |
+| --- | ---: |
+| Workspace name / description | 80 / 500 |
+| Chapter name (add, update, upload, import) | 60 |
+| File name (upload, import, rename, editor asset) | 120 |
+| Material, quiz, flashcard set, canvas, generate title | 120 |
+| Conversation title | 60 |
+| Event title / location | 60 / 100 |
+| Task title | 80 |
+| Label name, tag value | 35 |
+| Email (invite identifier, deletion confirm, users.email) | 254 |
+| Profile name | 60 |
+
+User-typed values are rejected with a 422; the source details dialog refuses
+oversized file names before upload. Values the user did not type are clamped
+before insert: Clerk profile names (the profile sync runs on every authenticated request,
+so a rejection would lock the account out; an oversized Clerk email is dropped
+and the stored email kept),
+LLM-authored material titles, editor asset names and the multipart upload's
+`Content-Disposition` filename when no `name` part is sent (both
+extension-preserving), workspace clone names (suffix-preserving), and
+auto-derived conversation titles.

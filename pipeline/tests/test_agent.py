@@ -303,7 +303,9 @@ async def test_describe_requires_ids_and_read_rejects_foreign_file(monkeypatch):
 
 
 async def test_generate_material_persists_resolved_scope(monkeypatch):
-    ctx = ToolContext(workspace_id="ws_1", user_id="u1", assistant_message_id="m_1")
+    ctx = ToolContext(
+        workspace_id="ws_1", user_id="u1", can_generate=True, assistant_message_id="m_1"
+    )
     ctx._scope_outline = {
         "chapters": [{"id": "ch_1", "name": "Chapter one"}],
         "files": [{"id": "f_1", "name": "one.pdf", "chapter_id": "ch_1", "chunks": 1}],
@@ -340,8 +342,46 @@ async def test_generate_material_persists_resolved_scope(monkeypatch):
     assert seen["chapters"] == ["Chapter one"]
 
 
+async def test_generate_material_clamps_model_title(monkeypatch):
+    ctx = ToolContext(
+        workspace_id="ws_1", user_id="u1", can_generate=True, assistant_message_id="m_1"
+    )
+    ctx._scope_outline = {
+        "chapters": [],
+        "files": [{"id": "f_1", "name": "one.pdf", "chapter_id": None, "chunks": 1}],
+    }
+    monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
+    monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
+    seen = {}
+
+    class _Resp:
+        status_code = 200
+
+        def json(self):
+            return {"kind": "note", "title": "Note", "materialId": "mat_abc"}
+
+    def _post(*_args, **kwargs):
+        seen.update(json.loads(kwargs["data"]))
+        return _Resp()
+
+    monkeypatch.setattr(tools.requests, "post", _post)
+    await tools._generate_material(
+        {
+            "kind": "note",
+            "content": "body",
+            "title": "光" * 300,
+            "_tool_call_id": "call_1",
+        },
+        ctx,
+    )
+
+    assert len(seen["title"]) == tools.MATERIAL_TITLE_MAX
+
+
 async def test_generate_material_rejects_scope_without_indexed_content(monkeypatch):
-    ctx = ToolContext(workspace_id="ws_1", user_id="u1", assistant_message_id="m_1")
+    ctx = ToolContext(
+        workspace_id="ws_1", user_id="u1", can_generate=True, assistant_message_id="m_1"
+    )
     ctx._scope_outline = {
         "chapters": [],
         "files": [{"id": "f_1", "name": "one.pdf", "chapter_id": None, "chunks": 0}],
@@ -894,7 +934,9 @@ def test_material_id_is_deterministic_and_wide():
 
 
 async def test_material_confirmed_404_is_a_tool_failure(monkeypatch):
-    ctx = ToolContext(workspace_id="ws_1", user_id="u1", assistant_message_id="m_1")
+    ctx = ToolContext(
+        workspace_id="ws_1", user_id="u1", can_generate=True, assistant_message_id="m_1"
+    )
     ctx._scope_outline = {
         "chapters": [],
         "files": [{"id": "f_1", "name": "source.pdf", "chapter_id": None, "chunks": 1}],
@@ -938,7 +980,9 @@ async def test_material_confirmed_404_is_a_tool_failure(monkeypatch):
 
 
 async def test_material_uncertain_get_fails_the_turn(monkeypatch):
-    ctx = ToolContext(workspace_id="ws_1", user_id="u1", assistant_message_id="m_1")
+    ctx = ToolContext(
+        workspace_id="ws_1", user_id="u1", can_generate=True, assistant_message_id="m_1"
+    )
     ctx._scope_outline = {
         "chapters": [],
         "files": [{"id": "f_1", "name": "source.pdf", "chapter_id": None, "chunks": 1}],
@@ -964,7 +1008,9 @@ async def test_material_uncertain_get_fails_the_turn(monkeypatch):
 
 
 async def test_repeated_material_post_returns_original(monkeypatch):
-    ctx = ToolContext(workspace_id="ws_1", user_id="u1", assistant_message_id="m_1")
+    ctx = ToolContext(
+        workspace_id="ws_1", user_id="u1", can_generate=True, assistant_message_id="m_1"
+    )
     ctx._scope_outline = {
         "chapters": [],
         "files": [{"id": "f_1", "name": "source.pdf", "chapter_id": None, "chunks": 1}],

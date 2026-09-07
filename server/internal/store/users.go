@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/samyung0/capy-notebook/server/internal/copytext"
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/models"
 )
 
@@ -406,6 +408,12 @@ func (s *Store) UpsertUserFromClerk(ctx context.Context, id, name, email, avatar
 		var locale string
 		_ = s.pool.QueryRow(ctx, `SELECT locale FROM users WHERE id=$1`, id).Scan(&locale)
 		name = copytext.T(locale, copytext.User)
+	}
+	// Clerk-sourced values must fit the column: this runs on every
+	// authenticated request, so a rejected write would lock the account out.
+	name = fieldlimits.Clamp(name, fieldlimits.UserName)
+	if utf8.RuneCountInString(email) > fieldlimits.Email {
+		email = ""
 	}
 	// Most calls are profile refreshes for an existing account. Handle those
 	// without consulting the model registry: changing or temporarily disabling

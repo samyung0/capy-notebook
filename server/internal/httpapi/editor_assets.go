@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -90,10 +91,10 @@ func validateEditorAssetMetadata(
 	storageCeiling int64,
 ) (name, ext, contentType string, err error) {
 	name = strings.TrimSpace(in.Name)
-	name = path.Base(strings.ReplaceAll(name, `\`, "/"))
+	name = fieldlimits.ClampFileName(path.Base(strings.ReplaceAll(name, `\`, "/")))
 	hasControl := strings.IndexFunc(name, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0
-	if name == "" || name == "." || len(name) > 255 || hasControl {
-		return "", "", "", errors.New("file name is required and must be at most 255 characters")
+	if name == "" || name == "." || hasControl {
+		return "", "", "", errors.New("file name is required")
 	}
 	rule, ok := editorAssetRules[in.Purpose]
 	if !ok {

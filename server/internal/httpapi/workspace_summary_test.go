@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
@@ -133,7 +134,7 @@ func TestWorkspaceDescriptionEditAndPrivateSummary(t *testing.T) {
 			t.Fatalf("description = %q", workspace.Description)
 		}
 	}
-	rec := doReq(t, h, http.MethodPatch, path, "u_owner", map[string]any{"description": strings.Repeat("a", 1001)})
+	rec := doReq(t, h, http.MethodPatch, path, "u_owner", map[string]any{"description": strings.Repeat("a", fieldlimits.WorkspaceDescription+1)})
 	if rec.Code != 422 {
 		t.Fatalf("description limit %d %s", rec.Code, rec.Body.String())
 	}

@@ -2,13 +2,10 @@ package store
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
-
-const uploadChapterNameMaxLength = 255
 
 // resolveUploadChapterID validates an existing chapter or find-or-creates a
 // named chapter inside the caller's transaction. Locking the workspace row
@@ -39,9 +36,6 @@ func resolveUploadChapterID(
 	chapterName = strings.TrimSpace(chapterName)
 	if chapterName == "" {
 		return nil, nil
-	}
-	if len(chapterName) > uploadChapterNameMaxLength {
-		return nil, fmt.Errorf("chapter name must be at most %d characters", uploadChapterNameMaxLength)
 	}
 
 	var lockedWorkspaceID string

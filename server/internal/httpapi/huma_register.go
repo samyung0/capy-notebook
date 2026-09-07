@@ -290,10 +290,11 @@ func regWithMaxBody[I, O any](
 // Empty is the output for endpoints that return 204 No Content.
 type Empty struct{}
 
-// registerRoutes wires every JSON operation onto the huma API. Streaming,
-// multipart, redirect, webhook, pipeline-passthrough, and /api/internal/*
-// endpoints stay on raw chi (see server.go) and are intentionally absent
-// from the spec so Orval does not generate a browser client for them.
+// registerRoutes wires every JSON operation and the multipart source upload
+// onto the huma API. Streaming, redirect, webhook, pipeline-passthrough, and
+// /api/internal/* endpoints stay on raw chi (see server.go) and are
+// intentionally absent from the spec so Orval does not generate a browser
+// client for them.
 func registerRoutes(api huma.API, a *api) {
 	a.registerAccount(api)
 	a.registerModels(api)
@@ -303,6 +304,7 @@ func registerRoutes(api huma.API, a *api) {
 	a.registerChat(api)
 	a.registerContent(api)
 	a.registerSourceUploads(api)
+	a.registerSourceUpload(api)
 	a.registerGenerate(api)
 	a.registerMaterials(api)
 	a.registerQuizzes(api)

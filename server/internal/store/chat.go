@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/samyung0/capy-notebook/server/internal/models"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 )
@@ -108,8 +109,10 @@ type msgMetadata struct {
 
 // ListConversations returns a workspace's conversations for a user, newest
 // activity first. Ownership is enforced via the user_id + workspace_id pair.
+// Chat is open to any effective role (membership raised by link/public
+// privacy), so shared viewers get their own private threads.
 func (s *Store) ListConversations(ctx context.Context, userID, wsID string) ([]Conversation, error) {
-	if err := s.AssertWorkspaceEditor(ctx, userID, wsID); err != nil {
+	if _, err := s.WorkspaceEffectiveRole(ctx, userID, wsID); err != nil {
 		return nil, err
 	}
 	rows, err := s.pool.Query(ctx,
@@ -131,20 +134,17 @@ func (s *Store) ListConversations(ctx context.Context, userID, wsID string) ([]C
 	return out, rows.Err()
 }
 
-// CreateConversation opens a new thread in a workspace the user can edit.
+// CreateConversation opens a new thread in a workspace where the user holds
+// any effective role.
 // The model is resolved per assistant turn, not snapshotted here: Settings
 // changes apply to the next message in an existing thread.
 func (s *Store) CreateConversation(ctx context.Context, userID, wsID, title string) (Conversation, error) {
-	if err := s.AssertWorkspaceEditor(ctx, userID, wsID); err != nil {
-		return Conversation{}, err
-	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Conversation{}, err
 	}
 	defer tx.Rollback(ctx)
-	_, err = s.lockWorkspaceEditorMutationTx(ctx, tx, wsID, userID)
-	if err != nil {
+	if err := s.lockWorkspaceChatTx(ctx, tx, wsID, userID); err != nil {
 		return Conversation{}, err
 	}
 	id := uid("conv")
@@ -165,20 +165,13 @@ func (s *Store) CreateConversation(ctx context.Context, userID, wsID, title stri
 }
 
 // GetConversation loads one conversation the user owns (used to authorize
-// streaming/history requests). Returns ErrNotFound when absent or not owned.
+// streaming/history requests). Returns ErrNotFound when absent, not owned, or
+// when the user no longer holds any effective role in the workspace.
 func (s *Store) GetConversation(ctx context.Context, userID, convID string) (Conversation, error) {
 	var c Conversation
 	err := s.pool.QueryRow(ctx,
-		`SELECT c.id, c.workspace_id, COALESCE(c.title,''), c.created_at, c.updated_at
-		   FROM conversations c
-		   JOIN workspaces w ON w.id=c.workspace_id
-		   JOIN users owner ON owner.id=w.user_id
-		   LEFT JOIN workspace_members wm
-		     ON wm.workspace_id=w.id AND wm.user_id=$2
-		  WHERE c.id=$1 AND c.user_id=$2
-		    AND owner.deleted_at IS NULL
-		    AND owner.deletion_requested_at IS NULL
-		    AND (w.user_id=$2 OR wm.role IN ('owner','editor'))`, convID, userID).
+		`SELECT id, workspace_id, COALESCE(title,''), created_at, updated_at
+		   FROM conversations WHERE id=$1 AND user_id=$2`, convID, userID).
 		Scan(&c.ID, &c.WorkspaceID, &c.Title, &c.CreatedAt, &c.UpdatedAt)
 	if isNoRows(err) {
 		return Conversation{}, ErrNotFound
@@ -186,7 +179,34 @@ func (s *Store) GetConversation(ctx context.Context, userID, convID string) (Con
 	if err != nil {
 		return Conversation{}, err
 	}
+	if _, err := s.WorkspaceEffectiveRole(ctx, userID, c.WorkspaceID); err != nil {
+		return Conversation{}, err
+	}
 	return c, nil
+}
+
+// lockWorkspaceChatTx is the chat counterpart of lockWorkspaceEditorMutationTx:
+// same lock order, but admission is any effective role so shared viewers can
+// hold their own threads. The workspace row is locked before the role read, so
+// a concurrent privacy change or removal is observed.
+func (s *Store) lockWorkspaceChatTx(ctx context.Context, tx pgx.Tx, wsID, userID string) error {
+	if userID == "" {
+		return ErrNotFound
+	}
+	if _, err := s.lockWorkspaceMutationTx(ctx, tx, wsID, userID); err != nil {
+		return err
+	}
+	var allowed bool
+	err := tx.QueryRow(ctx, `SELECT w.user_id=$2
+		OR EXISTS(SELECT 1 FROM workspace_members m WHERE m.workspace_id=w.id AND m.user_id=$2)
+		OR w.privacy IN ('link','public')
+		FROM workspaces w JOIN users owner ON owner.id=w.user_id
+		WHERE w.id=$1 AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL`,
+		wsID, userID).Scan(&allowed)
+	if isNoRows(err) || (err == nil && !allowed) {
+		return ErrNotFound
+	}
+	return err
 }
 
 // DeleteConversation removes a conversation (messages cascade).
@@ -204,7 +224,7 @@ func (s *Store) DeleteConversation(ctx context.Context, userID, convID string) e
 		}
 		return err
 	}
-	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, userID); err != nil {
+	if err := s.lockWorkspaceChatTx(ctx, tx, workspaceID, userID); err != nil {
 		return err
 	}
 	tag, err := tx.Exec(ctx,
@@ -234,7 +254,7 @@ func (s *Store) RenameConversation(ctx context.Context, userID, convID, title st
 		}
 		return err
 	}
-	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, userID); err != nil {
+	if err := s.lockWorkspaceChatTx(ctx, tx, workspaceID, userID); err != nil {
 		return err
 	}
 	tag, err := tx.Exec(ctx,
@@ -305,7 +325,7 @@ func (s *Store) AddUserMessage(ctx context.Context, userID, convID, content stri
 		}
 		return Message{}, err
 	}
-	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, userID); err != nil {
+	if err := s.lockWorkspaceChatTx(ctx, tx, workspaceID, userID); err != nil {
 		return Message{}, err
 	}
 	id := uid("m")
@@ -347,7 +367,7 @@ func (s *Store) StartAssistantMessage(ctx context.Context, userID, convID string
 		}
 		return Message{}, err
 	}
-	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, userID); err != nil {
+	if err := s.lockWorkspaceChatTx(ctx, tx, workspaceID, userID); err != nil {
 		return Message{}, err
 	}
 	id := uid("m")

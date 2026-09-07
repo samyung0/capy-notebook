@@ -23,23 +23,23 @@ import (
 // The object wrapping (vs a bare string) also lets react-hook-form's
 // useFieldArray bind each row.
 type Tag struct {
-	ID    string `json:"id"`
-	Value string `json:"value" minLength:"1" maxLength:"50"`
+	ID    string   `json:"id"`
+	Value TagValue `json:"value" minLength:"1"`
 }
 
 // TagInput is one tag on an incoming write. A non-null ID reuses that existing
 // catalog tag; a null/absent ID asks the backend to find-or-create a tag from
 // Value.
 type TagInput struct {
-	ID    *string `json:"id,omitempty"`
-	Value string  `json:"value" minLength:"1" maxLength:"50"`
+	ID    *string  `json:"id,omitempty"`
+	Value TagValue `json:"value" minLength:"1"`
 }
 
 // WrapTags turns the DB tag shape into the wire response shape.
 func WrapTags(ts []store.Tag) []Tag {
 	out := make([]Tag, len(ts))
 	for i, t := range ts {
-		out[i] = Tag{ID: t.ID, Value: t.Value}
+		out[i] = Tag{ID: t.ID, Value: TagValue(t.Value)}
 	}
 	return out
 }
@@ -48,7 +48,7 @@ func WrapTags(ts []store.Tag) []Tag {
 func ToTagRefs(vs []TagInput) []store.TagRef {
 	out := make([]store.TagRef, len(vs))
 	for i, v := range vs {
-		out[i] = store.TagRef{ID: v.ID, Value: v.Value}
+		out[i] = store.TagRef{ID: v.ID, Value: string(v.Value)}
 	}
 	return out
 }

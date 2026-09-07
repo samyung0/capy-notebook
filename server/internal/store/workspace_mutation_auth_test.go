@@ -76,11 +76,12 @@ func TestUploadFinalizationRechecksCreatorMembership(t *testing.T) {
 	}
 }
 
-func TestConversationRequiresCurrentWorkspaceEditor(t *testing.T) {
+func TestConversationFollowsEffectiveRole(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_chat_acl_owner")
 	editorID := newBlobTestUser(t, s, "u_chat_acl_editor")
+	visitorID := newBlobTestUser(t, s, "u_chat_acl_visitor")
 	workspace, err := s.CreateWorkspace(ctx, ownerID, "Chat ACL", ColorGreen, []TagRef{})
 	if err != nil {
 		t.Fatal(err)
@@ -90,15 +91,40 @@ func TestConversationRequiresCurrentWorkspaceEditor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A demoted viewer keeps chatting: chat needs any effective role, not edit.
 	if _, err := s.pool.Exec(ctx, `UPDATE workspace_members SET role='viewer'
 		WHERE workspace_id=$1 AND user_id=$2`, workspace.ID, editorID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.GetConversation(ctx, editorID, conversation.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("viewer chat read error = %v, want not found", err)
+	if _, err := s.GetConversation(ctx, editorID, conversation.ID); err != nil {
+		t.Fatalf("viewer chat read error = %v", err)
 	}
-	if _, err := s.AddUserMessage(ctx, editorID, conversation.ID, "late"); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("viewer chat write error = %v, want forbidden", err)
+	if _, err := s.AddUserMessage(ctx, editorID, conversation.ID, "still here"); err != nil {
+		t.Fatalf("viewer chat write error = %v", err)
+	}
+	// Threads are private per user even inside one workspace.
+	if _, err := s.GetConversation(ctx, ownerID, conversation.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("owner reading another user's thread error = %v, want not found", err)
+	}
+	// Non-members chat only while the workspace is link/public.
+	if _, err := s.CreateConversation(ctx, visitorID, workspace.ID, ""); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("private workspace visitor chat error = %v, want not found", err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='link' WHERE id=$1`, workspace.ID); err != nil {
+		t.Fatal(err)
+	}
+	visitorConv, err := s.CreateConversation(ctx, visitorID, workspace.ID, "")
+	if err != nil {
+		t.Fatalf("link visitor chat error = %v", err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='private' WHERE id=$1`, workspace.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetConversation(ctx, visitorID, visitorConv.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("revoked visitor chat read error = %v, want not found", err)
+	}
+	if _, err := s.AddUserMessage(ctx, visitorID, visitorConv.ID, "late"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("revoked visitor chat write error = %v, want not found", err)
 	}
 	if _, err := s.pool.Exec(ctx, `UPDATE users SET deletion_requested_at=now(),
 		purge_after=now()+interval '30 days' WHERE id=$1`, ownerID); err != nil {

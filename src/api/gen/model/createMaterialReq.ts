@@ -18,6 +18,6 @@ export interface CreateMaterialReq {
   scopeChapters?: string[] | null;
   /** @nullable */
   scopeFileNames?: string[] | null;
-  /** @maxLength 200 */
+  /** @maxLength 120 */
   title?: string;
 }

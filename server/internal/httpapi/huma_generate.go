@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -51,7 +50,7 @@ func (a *api) generate(ctx context.Context, in *generateInput) (*generateOutput,
 	}
 	defer charge.release(ctx)
 
-	title, err := normalizeGenerateTitle(in.Body.Title)
+	title, err := normalizeGenerateTitle(string(in.Body.Title))
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
@@ -135,15 +134,12 @@ func generateOptsFrom(req apimodel.GenerateReq, title string) generateOpts {
 	}
 }
 
-const generateTitleMaxRunes = 200
-
+// normalizeGenerateTitle trims the title; its length is validated by the
+// request schema (apimodel.MaterialTitle).
 func normalizeGenerateTitle(title string) (string, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return "", errors.New("title is required")
-	}
-	if utf8.RuneCountInString(title) > generateTitleMaxRunes {
-		return "", errors.New("title must be at most 200 characters")
 	}
 	return title, nil
 }

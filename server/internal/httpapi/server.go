@@ -101,7 +101,7 @@ type api struct {
 
 // New builds the full HTTP handler. huma owns every JSON operation (and the
 // live OpenAPI spec at /openapi.yaml + docs at /docs); a handful of endpoints
-// huma can't model — streaming SSE, multipart upload, blob download redirects,
+// huma can't model — streaming SSE, blob download redirects,
 // webhooks, and the pipeline chat passthrough — stay on raw chi and are
 // intentionally absent from the spec. /api/internal/* stays off Huma so Orval
 // does not generate a browser client for the service-to-service secret.
@@ -187,7 +187,6 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	if cfg.E2EAuth && a.mailRecorder != nil {
 		r.Get("/api/e2e/emails", a.e2eEmails)
 	}
-	r.Post("/api/workspaces/{id}/sources", a.addSource)
 	r.Post("/api/workspaces/{id}/editor-assets/uploads", a.reserveEditorAsset)
 	r.Post("/api/workspaces/{id}/editor-assets/uploads/{uploadId}/complete", a.completeEditorAssetUpload)
 	r.Get("/api/workspaces/{id}/ingest-events", a.ingestEvents)
@@ -472,6 +471,35 @@ func (a *api) assertWS(w http.ResponseWriter, r *http.Request, wsID string) bool
 	return true
 }
 
+// chatAccess is what the chat stream needs to know about the actor.
+type chatAccess struct {
+	// canGenerate is structural: owner or member editor, never a share-role
+	// editor, matching CreateMaterial.
+	canGenerate bool
+	// canSeePending follows the effective role, so link/public share-role
+	// editors get the pending-context label while viewers/commenters do not.
+	canSeePending bool
+}
+
+// assertWSChat admits any effective role (owner, member, or link/public
+// visitor) and reports what the actor may do beyond chatting.
+func (a *api) assertWSChat(w http.ResponseWriter, r *http.Request, wsID string) (chatAccess, bool) {
+	effective, err := a.s.WorkspaceEffectiveRole(r.Context(), uid(r), wsID)
+	if err != nil {
+		a.fail(w, err)
+		return chatAccess{}, false
+	}
+	member, err := a.s.WorkspaceRole(r.Context(), uid(r), wsID)
+	if err != nil {
+		a.fail(w, err)
+		return chatAccess{}, false
+	}
+	return chatAccess{
+		canGenerate:   store.RoleCanEdit(member),
+		canSeePending: store.RoleCanEdit(effective),
+	}, true
+}
+
 func (a *api) assertWSRead(w http.ResponseWriter, r *http.Request, wsID string) bool {
 	if _, err := a.s.WorkspaceAccess(r.Context(), uid(r), wsID); err != nil {
 		a.fail(w, err)
@@ -481,170 +509,6 @@ func (a *api) assertWSRead(w http.ResponseWriter, r *http.Request, wsID string) 
 }
 
 /* ------------------------------------------------------ raw source handlers */
-
-// addSource handles both the real upload (multipart: stores bytes, marks the
-// file 'pending', enqueues an ingest job) and the mock-compatible JSON
-// metadata path (no bytes, lands 'ready').
-//
-// Storage is charged to the workspace owner. The store also gates the actor's
-// terminal lifecycle state; an over-quota editor may still contribute to a
-// healthy owner's workspace, but a suspended/deletion-pending actor may not.
-func (a *api) addSource(w http.ResponseWriter, r *http.Request) {
-	if !a.assertWS(w, r, id(r)) {
-		return
-	}
-	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
-		a.uploadSource(w, r)
-		return
-	}
-	var b struct {
-		Name      string  `json:"name"`
-		Kind      string  `json:"kind"`
-		ChapterID *string `json:"chapterId"`
-	}
-	if err := decode(r, &b); err != nil {
-		a.fail(w, err)
-		return
-	}
-	if b.Kind == "" {
-		b.Kind = kindFromName(b.Name)
-	}
-	res, err := a.s.AddSource(r.Context(), id(r), uid(r), b.Name, b.Kind, b.ChapterID, int64(randInt(200, 3200)))
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	writeJSON(w, 201, res)
-}
-
-func defaultParseMode(name, kind string) string {
-	return sourceupload.DefaultParseMode(name, kind)
-}
-
-func validateParseMode(mode, name, kind string, size, maxBytes int64) error {
-	return sourceupload.Validate(name, kind, mode, size, maxBytes)
-}
-
-func (a *api) sourceMaxBytes(ctx context.Context, wsID string) (int64, error) {
-	if wsID != "" {
-		tier, err := a.s.WorkspaceOwnerPlan(ctx, wsID)
-		if err != nil {
-			return 0, err
-		}
-		limits, err := a.s.PlanLimits(tier)
-		if err != nil {
-			return 0, err
-		}
-		return limits.SourceFileBytes, nil
-	}
-	me, err := a.s.Me(ctx, userID(ctx))
-	if err != nil {
-		return 0, err
-	}
-	limits, err := a.s.PlanLimits(me.PlanTier)
-	if err != nil {
-		return 0, err
-	}
-	return limits.SourceFileBytes, nil
-}
-
-func (a *api) uploadSource(w http.ResponseWriter, r *http.Request) {
-	if a.blob == nil {
-		a.fail(w, errors.New("blob store not configured"))
-		return
-	}
-	maxSourceBytes, err := a.s.MaxSourceFileBytes()
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	// The plan-aware per-file check happens after owner lookup. This absolute
-	// process snapshot plus multipart headroom rejects impossible bodies early.
-	r.Body = http.MaxBytesReader(w, r.Body, maxSourceBytes+(4<<20))
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "upload too large or malformed: " + err.Error()})
-		return
-	}
-	file, hdr, err := r.FormFile("file")
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	defer file.Close()
-
-	name := r.FormValue("name")
-	if name == "" {
-		name = hdr.Filename
-	}
-	kind := r.FormValue("kind")
-	if kind == "" {
-		kind = kindFromName(name)
-	}
-	var chapterID *string
-	if c := r.FormValue("chapterId"); c != "" {
-		chapterID = &c
-	}
-	chapterName := strings.TrimSpace(r.FormValue("chapterName"))
-	if len(chapterName) > 255 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "chapter name must be at most 255 characters"})
-		return
-	}
-	if chapterID != nil && chapterName != "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "chapterId and chapterName cannot both be set"})
-		return
-	}
-	if chapterID != nil {
-		chapterWorkspace, err := a.s.ChapterWorkspaceID(r.Context(), *chapterID)
-		if err != nil || chapterWorkspace != id(r) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"message": "chapter does not belong to this workspace"})
-			return
-		}
-	}
-	parseMode := r.FormValue("parseMode")
-	if parseMode == "" {
-		parseMode = defaultParseMode(name, kind)
-	}
-	maxBytes, err := a.sourceMaxBytes(r.Context(), id(r))
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	if err := validateParseMode(parseMode, name, kind, hdr.Size, maxBytes); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
-		return
-	}
-	captionImages := sourceupload.NormalizeCaptionImages(kind, parseMode, r.FormValue("captionImages") == "true")
-
-	if sourceupload.NeedsIngestJob(name, kind, parseMode) {
-		if err := a.s.AssertCreditsAvailable(r.Context(), uid(r)); err != nil {
-			a.fail(w, err)
-			return
-		}
-	}
-
-	blobPath, size, err := a.blob.Put(sourceObjectKey(randID("blob")), file)
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	if !sourceupload.NeedsIngestJob(name, kind, parseMode) {
-		res, err := a.s.CreateSourceReady(r.Context(), id(r), uid(r), name, kind, chapterID, chapterName, size, blobPath)
-		if err != nil {
-			_ = a.blob.Delete(r.Context(), blobPath)
-			a.fail(w, err)
-			return
-		}
-		writeJSON(w, 201, res)
-		return
-	}
-	res, _, err := a.s.CreateSourceWithJob(r.Context(), id(r), uid(r), name, kind, chapterID, chapterName, size, blobPath, a.parser, a.engine, parseMode, captionImages)
-	if err != nil {
-		_ = a.blob.Delete(r.Context(), blobPath)
-		a.fail(w, err)
-		return
-	}
-	writeJSON(w, 201, res)
-}
 
 func (a *api) getFileRaw(w http.ResponseWriter, r *http.Request) {
 	// Owners plus link/public viewers (shared workspaces expose their sources).

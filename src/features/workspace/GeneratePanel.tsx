@@ -49,11 +49,14 @@ export function GeneratePanel({
   chapters,
   files,
   existingTitles,
+  canReprocess,
   onOpenItem,
   onGeneratingChange,
 }: {
   workspaceId: string;
   workspaceName: string;
+  /** Owner-only: shows the process-changes button under the pending notice. */
+  canReprocess?: boolean;
   chapters: Chapter[];
   files: SourceFile[];
   existingTitles: string[];
@@ -139,14 +142,16 @@ export function GeneratePanel({
           role="status"
         >
           <p>{m.source_pending_context()}</p>
-          <Button
-            disabled={processingChanges}
-            onClick={() => processChanges(pendingFileIds)}
-            size="sm"
-            variant="ghost-hover"
-          >
-            {m.source_process_changes()}
-          </Button>
+          {canReprocess && (
+            <Button
+              disabled={processingChanges}
+              onClick={() => processChanges(pendingFileIds)}
+              size="sm"
+              variant="ghost-hover"
+            >
+              {m.source_process_changes()}
+            </Button>
+          )}
         </div>
       )}
       {result && <GenerateResult onOpenItem={onOpenItem} result={result} />}

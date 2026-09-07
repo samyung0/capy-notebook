@@ -12,7 +12,7 @@ export interface UpdateFlashcardSetReq {
   color?: UserColor;
   /**
      * @minLength 1
-     * @maxLength 200
+     * @maxLength 120
      */
   name?: string;
 }

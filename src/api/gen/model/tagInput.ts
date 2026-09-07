@@ -9,7 +9,7 @@ export interface TagInput {
   id?: string;
   /**
      * @minLength 1
-     * @maxLength 50
+     * @maxLength 35
      */
   value: string;
 }

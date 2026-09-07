@@ -116,7 +116,7 @@ func (a *api) createWorkspace(ctx context.Context, in *createWorkspaceInput) (*w
 	res, err := a.s.CreateWorkspace(
 		ctx,
 		userID(ctx),
-		in.Body.Name,
+		string(in.Body.Name),
 		in.Body.Color,
 		apimodel.ToTagRefs(in.Body.Tags),
 	)
@@ -133,7 +133,7 @@ func (a *api) updateWorkspace(ctx context.Context, in *updateWorkspaceInput) (*w
 		return nil, err
 	}
 	p := store.WorkspacePatch{
-		Name: in.Body.Name, Color: in.Body.Color, Description: in.Body.Description,
+		Name: apimodel.Str(in.Body.Name), Color: in.Body.Color, Description: apimodel.Str(in.Body.Description),
 		AutoReparse: in.Body.AutoReparse, AutoReindex: in.Body.AutoReindex,
 	}
 	if in.Body.Tags != nil {

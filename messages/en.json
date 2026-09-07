@@ -464,6 +464,7 @@
   "source_import_rejected_count": "{count} selected file(s): {reason}",
   "source_import_file_too_large": "The file is too large to import.",
   "source_import_file_unavailable": "The cloud provider could not make this file available.",
+  "source_name_too_long": "File names must be {max} characters or shorter. Rename the file and add it again.",
   "source_import_invalid_name": "The file has an invalid name.",
   "source_import_cancelled": "The import was cancelled.",
   "source_import_invalid_response": "The import service returned an invalid response. Please try again.",

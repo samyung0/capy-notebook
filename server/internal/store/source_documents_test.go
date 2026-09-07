@@ -94,6 +94,20 @@ func TestSourceCheckpointAuthorizationAndCreditIndependence(t *testing.T) {
 		t.Fatalf("save changed published file: %+v", persisted)
 	}
 }
+
+func TestSourceRefreshManualIsOwnerOnly(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "source_refresh_owner_only")
+	editor := newBlobTestUser(t, s, "source_refresh_editor")
+	ws, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
+	addWorkspaceEditor(t, s, ws.ID, editor)
+	sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "candidate-state")
+	if _, err := s.RequestSourceRefresh(ctx, editor, file.ID, false); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("editor manual refresh error = %v, want forbidden", err)
+	}
+}
+
 func TestSourceRefreshClaimPublicationAndStaleOffice(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()

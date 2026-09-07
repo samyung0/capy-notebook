@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func TestSourceCheckpointSerializesRequesterCancellation(t *testing.T) {
+func TestSourceCheckpointSerializesEditorCancellation(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -55,14 +55,15 @@ func TestSourceCheckpointSerializesRequesterCancellation(t *testing.T) {
 	}
 	var locked *AccountLockedError
 	if err = <-done; !errors.As(err, &locked) || locked.State != AccountDeletionPending {
-		t.Fatalf("checkpoint after requester deletion = %v", err)
+		t.Fatalf("checkpoint after editing actor deletion = %v", err)
 	}
 	var state string
 	var running *string
 	if err = s.pool.QueryRow(ctx, `SELECT convert_from(state,'UTF8'),running_job_id FROM source_documents WHERE file_id=$1`, file.ID).Scan(&state, &running); err != nil {
 		t.Fatal(err)
 	}
-	if state != "new-state" || running != nil {
-		t.Fatalf("cancellation lost authored state or kept work: %s %v", state, running)
+	// The refresh belongs to the owner, so an editor's deletion leaves it running.
+	if state != "new-state" || running == nil {
+		t.Fatalf("editor cancellation lost authored state or the owner's refresh: %s %v", state, running)
 	}
 }

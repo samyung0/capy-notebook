@@ -9,6 +9,7 @@ import {
   isTooManyIngestLeasesError,
   qk,
 } from '@/api/client';
+import { createSourceUploadBodyNameMax } from '@/api/gen/validators';
 import {
   useChapters,
   useImportSources,
@@ -35,7 +36,7 @@ import {
 } from '@/components/ui/Dialog';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
-import { Input } from '@/components/ui/Input';
+import { Input, InputError } from '@/components/ui/Input';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import {
   Select,
@@ -274,6 +275,11 @@ function fileLimitToast(
     description: m.error_files_limit_body({ limit }),
     title: m.error_files_limit_title(),
   };
+}
+
+/** Server limit on files.name, counted in code points like the API. */
+function nameTooLong(name: string): boolean {
+  return [...name].length > createSourceUploadBodyNameMax;
 }
 
 function sourceImportFailureReason(code: string) {
@@ -1372,7 +1378,10 @@ function SourceDetailsDialog({
         <ul className="flex max-h-[54dvh] flex-col gap-3 overflow-y-auto pr-1">
           {sources.map((source) => (
             <li
-              className="flex flex-col gap-2 rounded-card border border-line px-3 py-2.5"
+              className={cn(
+                'flex flex-col gap-2 rounded-card border border-line px-3 py-2.5',
+                { 'border-solid-error': nameTooLong(source.name) }
+              )}
               key={source.key}
             >
               <div className="flex items-center justify-between gap-2">
@@ -1391,6 +1400,13 @@ function SourceDetailsDialog({
                   variant="ghost-hover"
                 />
               </div>
+              {nameTooLong(source.name) && (
+                <InputError>
+                  {m.source_name_too_long({
+                    max: createSourceUploadBodyNameMax,
+                  })}
+                </InputError>
+              )}
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span className="t-meta text-fg-muted">
                   {formatSize(source.sizeBytes, source.sizeEstimate)} ·{' '}
@@ -1553,7 +1569,10 @@ function SourceDetailsDialog({
               sources.length === 0 ||
               isSubmitting ||
               waitingForAnalysis ||
-              sources.some((source) => source.analysisStatus === 'error')
+              sources.some(
+                (source) =>
+                  source.analysisStatus === 'error' || nameTooLong(source.name)
+              )
             }
             onClick={() => void handleSubmit()}
             size="lg"

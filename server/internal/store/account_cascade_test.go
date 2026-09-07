@@ -43,7 +43,7 @@ func TestUserDeleteCascadeSplitsOwnershipFromAuthorship(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ownFile, err := s.AddSource(ctx, ownWS.ID, leaverID, "own.md", "md", nil, 10)
+	ownFile, err := s.CreateSourceReady(ctx, ownWS.ID, leaverID, "own.md", "md", nil, "", 10, "sources/own")
 	if err != nil {
 		t.Fatal(err)
 	}
