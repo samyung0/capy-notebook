@@ -284,6 +284,37 @@ class ReleaseTest(unittest.TestCase):
         )
         self.assertFalse((self.state / "pending").exists())
 
+    def test_reclaim_settles_a_finished_runs_release_under_its_owner(self):
+        self.run_phase("prepare")
+        # A normal release still needs the live backend revision.
+        self.run_phase("reclaim", "run-2", success=False)
+        self.assertTrue((self.state / "pending").exists())
+        self.run_phase("reclaim", "run-2", backend=PREVIOUS)
+        self.assertEqual(
+            self.state_data()["running"],
+            {service: PREVIOUS for service in ["parser", *self.consumers]},
+        )
+        self.assertFalse((self.state / "pending").exists())
+        self.run_phase("prepare", "run-3")
+        self.run_phase("reclaim", "run-4", backend=CANDIDATE)
+        self.assertEqual((self.state / "active").read_text().strip(), CANDIDATE)
+        self.assertEqual(
+            self.state_data()["running"],
+            {service: CANDIDATE for service in ["parser", *self.consumers]},
+        )
+
+    def test_reclaim_rolls_back_a_bootstrap_without_a_backend(self):
+        self.clear_active()
+        self.run_phase("bootstrap-prepare")
+        result = self.run_phase("reclaim", "run-2")
+        self.assertIn("from run run-1", result.stdout)
+        self.assertEqual(self.state_data()["running"], {})
+        self.assertFalse((self.state / "active").exists())
+        self.assertFalse((self.state / "pending").exists())
+        self.assertTrue((self.state / "failed-bootstrap-run-1").is_dir())
+        result = self.run_phase("reclaim", "run-2")
+        self.assertIn("No pending ingest release", result.stdout)
+
     def test_uat_refuses_local_consumers_without_mutating_them(self):
         data = self.state_data()
         data["local_running"] = True

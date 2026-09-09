@@ -12,12 +12,12 @@ on:
         required: true
         type: string
       bootstrap_ingest:
-        description: Explicit first-time initialization of this environment's ingest stack
+        description: Init ingest stack (once only)
         required: false
         default: false
         type: boolean
       reclaim_pending:
-        description: Finish or roll back a pending ingest release left by a finished run before preparing
+        description: Cleanup pending release
         required: false
         default: false
         type: boolean

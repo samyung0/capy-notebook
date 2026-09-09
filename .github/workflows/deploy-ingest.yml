@@ -51,10 +51,12 @@ on:
 permissions:
   contents: read
 
-# Shared with the app deployments: a pending release owner on the host is then
-# always a finished run, which is what makes reclaim safe.
+# A manual dispatch shares the app deployments' group, so a pending release
+# owner on the host is always a finished run, which is what makes reclaim safe.
+# A call already runs inside its caller's group: reusing that name here waits
+# on itself and GitHub cancels the run as a deadlock, so each phase gets its own.
 concurrency:
-  group: uat-promotion-flow
+  group: ${{ inputs.phase && format('deploy-ingest-{0}-{1}', github.run_id, inputs.phase) || 'uat-promotion-flow' }}
   cancel-in-progress: false
 
 jobs:
