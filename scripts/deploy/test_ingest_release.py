@@ -32,8 +32,12 @@ if args[0]=='ps':
  if data.get('local_running'):print('local-container')
  sys.exit(0)
 if args[0]=='inspect':
- service=args[-1]
- print(data['running'][service] if 'Labels' in args[2] else ('healthy' if 'Health' in args[2] else 'true'))
+ service=args[-1];fmt=args[2]
+ if 'Labels' in fmt:print(data['running'][service])
+ elif 'RestartCount' in fmt:print(data.get('restarts',0))
+ elif 'ExitCode' in fmt:print(data.get('exit_code',0))
+ elif 'Health' in fmt:print('healthy')
+ else:print('true')
  sys.exit(0)
 if args[0]=='compose':
  if 'build' in args and os.environ.get('CAPY_FAIL_BUILD'):sys.exit(1)
@@ -175,6 +179,16 @@ class ReleaseTest(unittest.TestCase):
             (self.state / "current/nonprod.env").read_text(), "PARSER_TOKEN=previous\n"
         )
         self.assertEqual((self.state / "active").read_text().strip(), PREVIOUS)
+
+    def test_crash_looping_parser_fails_the_wait_immediately(self):
+        data = self.state_data()
+        data["restarts"] = 3
+        data["exit_code"] = 1
+        (self.root / "mock.json").write_text(json.dumps(data))
+        result = self.run_phase("prepare", success=False)
+        self.assertIn("Parser restarted 3 times", result.stderr)
+        self.assertIn("exit code 1", result.stderr)
+        self.assertTrue((self.state / "pending").exists())
 
     def test_failed_build_restores_checkout_before_pending_exists(self):
         self.env["CAPY_FAIL_BUILD"] = "1"

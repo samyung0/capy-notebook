@@ -91,7 +91,9 @@ parser_ready() {
       # The restart policy would retry a crashing parser for the whole wait;
       # surface it now. Logs stay on the host: Actions logs are public.
       restarts="$(docker inspect --format '{{.RestartCount}}' "$container")"
-      if ((restarts >= 3)); then
+      # Arithmetic on an unexpected value would abort the wait; an unreadable
+      # count just means no early exit, and the poll bound still applies.
+      if [[ "$restarts" =~ ^[0-9]+$ ]] && ((restarts >= 3)); then
         printf 'Parser restarted %s times, last exit code %s; run docker logs on the host.\n' \
           "$restarts" "$(docker inspect --format '{{.State.ExitCode}}' "$container")" >&2
         return 1
