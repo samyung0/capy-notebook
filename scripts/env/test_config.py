@@ -69,6 +69,15 @@ class ConfigTest(unittest.TestCase):
             self.assertRaisesRegex(ValueError, "unknown GitHub configuration keys"),
         ):
             config.github_values()
+        # Actions injects its automatic token lowercase; it is not our configuration.
+        with patch.dict(
+            config.os.environ,
+            {
+                "CAPY_GITHUB_VARS": "{}",
+                "CAPY_GITHUB_SECRETS": json.dumps({"github_token": "runner"}),
+            },
+        ):
+            self.assertEqual(config.github_values(), {})
 
     def test_render_clears_optional_values_and_encodes_credentials(self):
         values = {
