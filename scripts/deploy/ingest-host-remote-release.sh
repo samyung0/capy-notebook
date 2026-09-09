@@ -2,6 +2,10 @@
 # One persistent pending release per stack; the owner survives separate workflow jobs.
 set -euo pipefail
 umask 077
+# A cancelled runner closes our pipes without a SIGHUP (no tty). Route the
+# resulting write failure and plain kills through exit so the EXIT cleanup
+# runs and operation.lock is released instead of an orphan holding it.
+trap 'exit 1' HUP TERM PIPE
 
 die() { printf 'ingest-host-release: %s\n' "$1" >&2; exit 1; }
 mode="${1:-}"; revision="${2:-}"; environment="${3:-}"; owner="${4:-}"; staging="${5:-}"; repository_url="${6:-}"; backend_revision="${7:-}"
@@ -79,15 +83,31 @@ verify() {
   done <<<"$ids"
 }
 parser_ready() {
-  local sha="$1" remaining=100 container health
+  local sha="$1" remaining=100 container health restarts
   while ((remaining > 0)); do
     container="$(dc "$sha" ps -q parser)"
-    if [[ -n "$container" ]] && verify "$sha" parser; then
-      health="$(docker inspect --format '{{.State.Health.Status}}' "$container")"
-      # The Compose healthcheck calls /healthz on the configured parser port.
-      # That endpoint returns 503 until the parser workers are ready.
-      [[ "$health" != healthy ]] || return 0
+    health=pending
+    if [[ -n "$container" ]]; then
+      # The restart policy would retry a crashing parser for the whole wait;
+      # surface it now. Logs stay on the host: Actions logs are public.
+      restarts="$(docker inspect --format '{{.RestartCount}}' "$container")"
+      if ((restarts >= 3)); then
+        printf 'Parser restarted %s times, last exit code %s; run docker logs on the host.\n' \
+          "$restarts" "$(docker inspect --format '{{.State.ExitCode}}' "$container")" >&2
+        return 1
+      fi
+      if verify "$sha" parser; then
+        health="$(docker inspect --format '{{.State.Health.Status}}' "$container")"
+        # The Compose healthcheck calls /healthz on the configured parser port.
+        # That endpoint returns 503 until the parser workers are ready.
+        [[ "$health" != healthy ]] || return 0
+      fi
     fi
+    # A first boot downloads MinerU models into the empty parser_models volume,
+    # which the Compose healthcheck budgets 15m for. Report each check so the
+    # wait is distinguishable from a stalled deployment; the write also fails
+    # fast once the runner has gone away.
+    printf 'Waiting for the %s parser: %s (%d checks left).\n' "$environment" "$health" "$remaining"
     remaining=$((remaining-1)); sleep 15
   done
   return 1

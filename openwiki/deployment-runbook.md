@@ -813,6 +813,10 @@ and lock before restarting an unhealthy existing parser.
 
 For a failed or canceled deployment, inspect the exact Coolify deployment and
 live backend revision before invoking recovery with the original run owner.
+Cancelling a run does not signal the remote script (no tty), but its next
+parser poll write fails and exits through cleanup, so `operation.lock` is free
+within about 15 seconds; `pending` keeps the original owner. A parser that
+restarts three times fails the wait immediately; read its logs on the host.
 Do not delete pending state or blindly roll back only ingest. After committed
 activation, promote the previous compatible revision through the whole app
 workflow; this does not reverse database migrations automatically.

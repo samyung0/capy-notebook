@@ -46,7 +46,9 @@ COPY parser/requirements.txt ./parser/requirements.txt
 RUN pip install --no-cache-dir --require-hashes \
         -r parser/requirements.txt
 
-COPY parser/app.py parser/mineru_worker.py ./parser/
+# The ingest host clones the build context under umask 077, so copy the runtime
+# sources with an explicit mode: USER parser below cannot read 0600 root files.
+COPY --chmod=644 parser/app.py parser/mineru_worker.py ./parser/
 
 RUN useradd --create-home --uid 10001 parser \
     && mkdir -p /models/config /models/huggingface /models/torch /run/capy-parser/output \

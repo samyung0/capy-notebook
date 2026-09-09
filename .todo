@@ -34,6 +34,7 @@ check how search files/chunks work
 5. persist quiz attemp in localstorage or some kind of cache, so closing tab or refreshing doesnt lose the progress
 5. track material generations and display progress bar like how filelistitem does it?
 6. remove time limit for quiz
+some live updates are reconnecting -> layout thrashing + blinking issue
 7. if copy and pasting markdown, render it directly rather than inside a code block (? what determines if a code block gets inserted or not?)
 8. enable ordering of doucments within chapters with drag and drop (right now it just drops in the chapter)
 9.  add icons for common file format
