@@ -1,0 +1,4 @@
+reports/local/
+*.tar.gz
+.DS_Store
+*.failure.log

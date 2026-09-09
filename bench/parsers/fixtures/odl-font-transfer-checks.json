@@ -1,0 +1,28 @@
+{
+  "provenance": "Frozen after source-only rendering and the unchanged font gate audit, before any Java candidate extraction. AI transcription of original source page 6; known same-publisher transfer, not independently certified ground truth.",
+  "cases": [
+    {
+      "id": "ccl-cot",
+      "pdf_sha256": "87bb845a8843bde1527827dcfa2e0070a5207087f9f93739497c5997cf270e0b",
+      "page": 6,
+      "table_bbox_top_left_points": [70, 70, 530, 178],
+      "columns": ["#Docs", "#Cluster", "#Sentences Doc", "#Sentences Sum-en", "#Sentences Sum-zh", "#Words Doc", "#Words Sum-en", "#Words Sum-zh", "#Tokens Doc", "#Tokens Sum-en", "#Tokens Sum-zh"],
+      "rows": [
+        {"label": "SDS AI", "values": ["1.00", "60", "51.23", "7.48", "4.90", "1,103.93", "196.83", "246.28", "1,335.82", "223.05", "253.77"]},
+        {"label": "SDS Medical", "values": ["1.00", "61", "18.33", "4.15", "4.23", "474.69", "161.29", "320.57", "630.52", "197.39", "375.31"]},
+        {"label": "SDS Overall", "values": ["1.00", "121", "34.64", "5.80", "4.56", "786.71", "178.91", "283.27", "980.26", "210.11", "315.04"]},
+        {"label": "MDS AI", "values": ["2.52", "50", "125.36", "7.34", "7.34", "2,712.72", "261.96", "496.78", "3,274.94", "296.22", "514.42"]},
+        {"label": "MDS Medical", "values": ["2.72", "50", "49.48", "6.82", "6.74", "1,302.00", "273.28", "514.16", "1,749.58", "328.82", "628.28"]},
+        {"label": "MDS Overall", "values": ["2.62", "100", "87.42", "7.08", "7.04", "2,007.36", "257.62", "505.47", "2,512.26", "312.52", "584.80"]}
+      ],
+      "identifiers": ["Qwen1.5-7B-Chat", "Llama-2", "GPT-3.5-turbo", "gpt-3.5-turbo-0125", "ROUGE-1", "ROUGE-2", "ROUGE-L", "BERTScore", "Fluency", "Coherence", "Consistency", "Relevance"],
+      "meaning_checks": ["SDS and MDS each span AI, Medical and Overall rows.", "Doc, Sum-en and Sum-zh are nested under each of Sentences, Words and Tokens. Numeric presence alone does not establish this grouping."]
+    },
+    {
+      "id": "ccl-children",
+      "pdf_sha256": "e7d6af6e204d97a2ad61730d8fbdd518df227fcd50cc0446e675444d762be80c",
+      "page": 4,
+      "negative_control": "Font rule must abstain. Source includes GPT-4 and a legible 8-row article-count table; abstention is unchanged behavior, not proof of whole-page parser fidelity."
+    }
+  ]
+}

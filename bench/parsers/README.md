@@ -246,6 +246,155 @@ uv run python bench/parsers/scripts/replay_java_page_cache.py \
 Use a new output path for each replay. For the matched MinerU control, pass its
 completed `results/<run>` directory as the native input instead.
 
+## Native OpenDataLoader accuracy follow-up
+
+The [September 9 accuracy follow-up](reports/2026-09-09-odl-accuracy-followup.md)
+tests font-map repair, source-confirmed column continuations, native table
+context and literal table-cell background annotations. All are benchmark-only.
+They reuse the eight-document corpus and retain failed variants and source
+checks. No Qwen request or production change is involved.
+
+`experiment_odl_font_recovery.py` audits embedded Type1 encodings and compares
+removing or rebuilding a contradictory Unicode map in temporary PDF copies.
+It reruns Java and verifies rendered-pixel identity. `experiment_odl_reading_order.py`
+reorders eligible native prose, moves a source-confirmed vertical heading and
+splits a continuation sentence while retaining the original citation boxes.
+`experiment_odl_native_tables.py` compares production, strict structured and
+explicit bounded packing; the bounded arm keeps unsupported native tables on
+ordinary packing and records every rejection. `experiment_odl_source_styles.py`
+matches opaque yellow rectangles to exact native cell text and geometry.
+
+```sh
+uv run --with 'pypdf[crypto]==6.18.0' python bench/parsers/scripts/experiment_odl_font_recovery.py check
+uv run --with pymupdf==1.28.2 python bench/parsers/scripts/experiment_odl_reading_order.py --self-check
+uv run python bench/parsers/scripts/experiment_odl_native_tables.py --check
+uv run --with pymupdf==1.28.2 python bench/parsers/scripts/experiment_odl_source_styles.py --check
+```
+
+`replay_odl_accuracy.py` composes explicit completed native experiment directories
+and applies bounded table packing. It rejects baseline mismatches and overlapping
+font/style and reading-order edits. The result is an offline interaction check,
+not a measured combined parser execution. Use fresh output directories and the
+exact source/runtime snapshots recorded with each run. The scripts' `--help`
+lists required paths; on Windows, use Python `-X utf8` when replaying older scripts
+that read source text using the platform encoding.
+
+## Native OpenDataLoader second pass
+
+The [second-pass report](reports/2026-09-09-odl-accuracy-second-pass.md) extends
+the native experiments with source-backed heading context, hidden OCR-layer
+reading order, fresh integrated timings and a
+[neighboring-paper font transfer](reports/2026-09-09-odl-font-transfer.md).
+These remain manual benchmark experiments; production parsing is unchanged.
+
+The continuing evaluation adds source-confirmed
+[native text repairs](reports/2026-09-09-odl-native-text-experiment.md),
+[scientific exponents](reports/2026-09-09-odl-exponent-recovery.md), selective
+[formula recovery](reports/2026-09-09-odl-math-recovery-experiment.md), and full-source
+table integration audits. Failed table candidates are preserved and excluded
+from the selected pipeline. Independent source identities and source-rendered
+checks are in `fixtures/odl-independent-sources.json` and
+`fixtures/odl-independent-checks.json`. The row/prose diagnostic
+`score_odl_independent.py --check` is offline; its run scorer requires completed
+content lists and actual chunks, and does not certify complete table meaning.
+
+The [third-pass report](reports/2026-09-09-odl-accuracy-third-pass.md) compares
+the composed native candidate with a fresh full MinerU run on 335 pages, with
+430 additional regression pages. Its [table comparison](reports/2026-09-09-odl-mineru-table-comparison.md)
+separates selected development tables from the independent source rubric.
+`refine_odl_output.py --sources MANIFEST --output NEW_DIR --arm tables` replays
+the native repairs before one final chunk pass. It binds Java JSON to the
+parsed PDF, repairs list descendant geometry before glyph proofs, restores
+source scientific exponents and column continuations, integrates fully covered
+source tables, and retains omitted source text after chunking.
+`measure_odl_native_pipeline.py ROOT NEW_DIR --variant refined` runs this path
+with fresh parsing. `--table-method default` and `--exclude-header-footer` are
+explicit configuration experiments; existing argument defaults remain unchanged.
+`score_odl_refined.py --local bench/parsers/reports/local --runs RUN_DIR... --output NEW.json`
+applies the frozen literal/context rubrics to final chunks from either parser.
+These scores do not certify general parser accuracy or complete table meaning.
+The selected final arm keeps cluster detection and header/footer inclusion,
+propagating explicit footer ancestry only. The global exclusion control loses
+real Japanese table headers and is rejected. `refine_odl_output.py --check`
+verifies footer/header separation, unique identity and unchanged raw fields.
+
+The focused `--check` modes in `experiment_odl_list_text.py`,
+`experiment_odl_list_geometry.py`, `experiment_odl_column_continuation.py`,
+`experiment_odl_heading_retention.py` and `experiment_odl_exponents.py` exercise
+their guards without VM or provider calls. Source selection, all accepted edits,
+rejected candidates and actual chunk citations are retained in the dated raw
+directories referenced by each report.
+
+[`experiment_odl_heading_context.py`](scripts/experiment_odl_heading_context.py)
+compares saved-output heading treatments against frozen source checks. Its
+selected `structure` arm uses source fonts, orientation and repeated furniture
+to repair section paths while retaining content and citation boxes. It preserves
+continuing sections across pages. See the
+[heading-context report](reports/2026-09-09-odl-heading-context-experiment.md).
+
+[`experiment_odl_ocr_disagreement.py`](scripts/experiment_odl_ocr_disagreement.py)
+has `prepare`, `ocr`, `replay` and `check` modes. The selected helper reorders
+existing native blocks only on source-confirmed hidden OCR-layer pages with a
+supported column gutter. New OCR text replacement was rejected because even
+high-confidence replacements introduced errors. The
+[OCR-disagreement report](reports/2026-09-09-odl-ocr-disagreement-experiment.md)
+retains the rejected variants, source checks and timing scopes.
+
+[`experiment_odl_table_geometry.py`](scripts/experiment_odl_table_geometry.py)
+extracts bounded ruled-table candidates from source geometry and typography;
+`--row-label-spans` is a separate experimental variant. Its replacement helper
+abstains when native blocks only partially overlap a candidate region or lack
+position metadata. Explicit partial-overlap oracle runs are diagnostics, not
+accepted repairs. This geometry experiment is not part of the integrated arms.
+[`evaluate_odl_table_geometry.py`](scripts/evaluate_odl_table_geometry.py) replays
+the eight explicitly reviewed tables with `integrate`, then checks complete
+source grids, final chunks and separately scoped timing with `score`. It uses
+the retained, fixed experiment inputs and records the automatic and manual
+override results separately.
+
+```sh
+uv run --with pymupdf==1.28.2 python bench/parsers/scripts/experiment_odl_heading_context.py --check
+uv run python bench/parsers/scripts/experiment_odl_ocr_disagreement.py check
+uv run --with pymupdf==1.28.2 python bench/parsers/scripts/experiment_odl_table_geometry.py --check
+uv run --with pymupdf==1.28.2 python -X utf8 bench/parsers/scripts/evaluate_odl_table_geometry.py integrate
+uv run --with pymupdf==1.28.2 python -X utf8 bench/parsers/scripts/evaluate_odl_table_geometry.py score
+```
+
+[`measure_odl_native_pipeline.py`](scripts/measure_odl_native_pipeline.py) runs
+fresh Java parsing, adaptation and one chunk pass. `baseline` uses the original
+native path; `native` adds the four first-pass repairs; `extended` also adds the
+selected heading and native hidden-layer order repairs. Run arms sequentially
+in the pinned Java runtime on an idle VM, using a new directory for each repeat:
+
+```sh
+python bench/parsers/scripts/measure_odl_native_pipeline.py /path/to/corpus /path/to/baseline-r1 --variant baseline
+python bench/parsers/scripts/measure_odl_native_pipeline.py /path/to/corpus /path/to/native-r1 --variant native
+python bench/parsers/scripts/measure_odl_native_pipeline.py /path/to/corpus /path/to/extended-r1 --variant extended
+```
+
+The corpus root supplies `corpus.json` and its hashed PDFs. Each run records
+source snapshots, phase timings, sampled memory, raw blocks and actual chunks.
+This measures the native parser core, excluding OCR, Qwen captions, indexing
+and application queues.
+
+The executable evidence scorers consume completed artifacts without rerunning
+Java. [`score_odl_font_transfer.py`](scripts/score_odl_font_transfer.py) checks
+the frozen neighboring-paper numeric sequences and clean-font control; recovered
+values alone do not establish correct table semantics.
+[`score_odl_native_pipeline.py`](scripts/score_odl_native_pipeline.py) verifies
+three repeats of all three arms, eight-document/254-page coverage, stable output
+hashes, conserved blocks and the frozen heading, table and continuation checks.
+It expects the related dated experiment directories beneath `reports/local`.
+`--extended-prefix extended-prefilter` verifies the final equivalent source-reader
+variant and compares its heading evidence and chunks with the original expanded
+arm. The report distinguishes output equivalence from observed timing.
+Use fresh outputs:
+
+```sh
+uv run --with pymupdf==1.28.2 python -X utf8 bench/parsers/scripts/score_odl_font_transfer.py bench/parsers/reports/local/2026-09-09-odl-font-transfer/r2 bench/parsers/reports/local/2026-09-09-odl-font-transfer/inputs/ccl-cot.pdf bench/parsers/reports/local/2026-09-09-odl-font-transfer/r2/source-checks.json /path/to/new-font-score
+uv run --with pymupdf==1.28.2 python -X utf8 bench/parsers/scripts/score_odl_native_pipeline.py bench/parsers/reports/local /path/to/new-verification.json
+```
+
 ## Endpoint load checks
 
 `bench_parse.py` measures one request and concurrent bursts against a running

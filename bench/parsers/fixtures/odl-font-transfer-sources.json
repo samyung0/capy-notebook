@@ -1,0 +1,37 @@
+{
+  "selection": "The two papers immediately adjacent to 2024.ccl-1.10 in the same proceedings. IDs fixed before downloading or auditing their PDF bytes. This is same-publisher transfer, not an independent corruption-mechanism sample.",
+  "sources": [
+    {
+      "id": "ccl-cot",
+      "title": "Cross-lingual Multi-document Summarization Based on Chain-of-Thought",
+      "url": "https://aclanthology.org/2024.ccl-1.9.pdf",
+      "lang": "zh",
+      "role": "validation",
+      "kind": "native_or_mixed",
+      "screen_pages": [
+        1,
+        2,
+        4,
+        6
+      ],
+      "raster_pages": [],
+      "sha256": "87bb845a8843bde1527827dcfa2e0070a5207087f9f93739497c5997cf270e0b"
+    },
+    {
+      "id": "ccl-children",
+      "title": "Text Styles and Thematic Framework Guided Large Modeling to Aid Children's News Generation",
+      "url": "https://aclanthology.org/2024.ccl-1.11.pdf",
+      "lang": "zh",
+      "role": "validation",
+      "kind": "native_or_mixed",
+      "screen_pages": [
+        1,
+        2,
+        4,
+        6
+      ],
+      "raster_pages": [],
+      "sha256": "e7d6af6e204d97a2ad61730d8fbdd518df227fcd50cc0446e675444d762be80c"
+    }
+  ]
+}

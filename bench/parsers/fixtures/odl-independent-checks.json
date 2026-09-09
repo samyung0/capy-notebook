@@ -1,0 +1,907 @@
+{
+  "provenance": "Source-rendered and transcribed before any OpenDataLoader or MinerU output on these PDFs was read. Source pages are one-based. Complete numeric rows and missing-value marks are frozen; table meaning requires headers, groups, units, notes, emphasis and captions in the actual chunk, assessed separately from number presence. These are development-independent documents, not a random corpus sample.",
+  "sources": {
+    "bert": {
+      "sha256": "5692a5514787a8c6727b4ff3b726a3385798bc68e12138d1d4af83947e2acf6e",
+      "pages": 16
+    },
+    "resnet": {
+      "sha256": "1e0651b6810ecba34a3dbc5b5b0209226f889004607c1f203540a48d64e5a93a",
+      "pages": 12
+    },
+    "nist-shot": {
+      "sha256": "0bdb43c9e1be39acf0dbafe76d1aa3cbd69efd706425bfb27bba979b1fd36763",
+      "pages": 8
+    }
+  },
+  "tables": [
+    {
+      "id": "bert-table-1",
+      "document": "bert",
+      "page": 6,
+      "table": 1,
+      "headers": [
+        "System",
+        "MNLI-(m/mm)",
+        "QQP",
+        "QNLI",
+        "SST-2",
+        "CoLA",
+        "STS-B",
+        "MRPC",
+        "RTE",
+        "Average"
+      ],
+      "rows": [
+        {
+          "label": "Pre-OpenAI SOTA",
+          "values": [
+            "80.6/80.1",
+            "66.1",
+            "82.3",
+            "93.2",
+            "35.0",
+            "81.0",
+            "86.0",
+            "61.7",
+            "74.0"
+          ]
+        },
+        {
+          "label": "BiLSTM+ELMo+Attn",
+          "values": [
+            "76.4/76.1",
+            "64.8",
+            "79.8",
+            "90.4",
+            "36.0",
+            "73.3",
+            "84.9",
+            "56.8",
+            "71.0"
+          ]
+        },
+        {
+          "label": "OpenAI GPT",
+          "values": [
+            "82.1/81.4",
+            "70.3",
+            "87.4",
+            "91.3",
+            "45.4",
+            "80.0",
+            "82.3",
+            "56.0",
+            "75.1"
+          ]
+        },
+        {
+          "label": "BERT_BASE",
+          "values": [
+            "84.6/83.4",
+            "71.2",
+            "90.5",
+            "93.5",
+            "52.1",
+            "85.8",
+            "88.9",
+            "66.4",
+            "79.6"
+          ]
+        },
+        {
+          "label": "BERT_LARGE",
+          "values": [
+            "86.7/85.9",
+            "72.1",
+            "92.7",
+            "94.9",
+            "60.5",
+            "86.5",
+            "89.3",
+            "70.1",
+            "82.1"
+          ]
+        }
+      ],
+      "training_examples": [
+        "392k",
+        "363k",
+        "108k",
+        "67k",
+        "8.5k",
+        "5.7k",
+        "3.5k",
+        "2.5k",
+        "-"
+      ],
+      "meaning": [
+        "GLUE test results",
+        "Average excludes WNLI",
+        "QQP and MRPC use F1",
+        "STS-B uses Spearman correlation",
+        "other tasks use accuracy"
+      ],
+      "bold_rows": [
+        "BERT_LARGE"
+      ]
+    },
+    {
+      "id": "bert-table-2",
+      "document": "bert",
+      "page": 7,
+      "table": 2,
+      "headers": [
+        "System",
+        "Dev EM",
+        "Dev F1",
+        "Test EM",
+        "Test F1"
+      ],
+      "rows": [
+        {
+          "label": "Human",
+          "values": [
+            "-",
+            "-",
+            "82.3",
+            "91.2"
+          ]
+        },
+        {
+          "label": "#1 Ensemble - nlnet",
+          "values": [
+            "-",
+            "-",
+            "86.0",
+            "91.7"
+          ]
+        },
+        {
+          "label": "#2 Ensemble - QANet",
+          "values": [
+            "-",
+            "-",
+            "84.5",
+            "90.5"
+          ]
+        },
+        {
+          "label": "BiDAF+ELMo (Single)",
+          "values": [
+            "-",
+            "85.6",
+            "-",
+            "85.8"
+          ]
+        },
+        {
+          "label": "R.M. Reader (Ensemble)",
+          "values": [
+            "81.2",
+            "87.9",
+            "82.3",
+            "88.5"
+          ]
+        },
+        {
+          "label": "BERT_BASE (Single)",
+          "values": [
+            "80.8",
+            "88.5",
+            "-",
+            "-"
+          ]
+        },
+        {
+          "label": "BERT_LARGE (Single)",
+          "values": [
+            "84.1",
+            "90.9",
+            "-",
+            "-"
+          ]
+        },
+        {
+          "label": "BERT_LARGE (Ensemble)",
+          "values": [
+            "85.8",
+            "91.8",
+            "-",
+            "-"
+          ]
+        },
+        {
+          "label": "BERT_LARGE (Sgl.+TriviaQA)",
+          "values": [
+            "84.2",
+            "91.1",
+            "85.1",
+            "91.8"
+          ]
+        },
+        {
+          "label": "BERT_LARGE (Ens.+TriviaQA)",
+          "values": [
+            "86.2",
+            "92.2",
+            "87.4",
+            "93.2"
+          ]
+        }
+      ],
+      "row_groups": [
+        {
+          "label": "Top Leaderboard Systems (Dec 10th, 2018)",
+          "rows": [
+            0,
+            1,
+            2
+          ]
+        },
+        {
+          "label": "Published",
+          "rows": [
+            3,
+            4
+          ]
+        },
+        {
+          "label": "Ours",
+          "rows": [
+            5,
+            6,
+            7,
+            8,
+            9
+          ]
+        }
+      ],
+      "meaning": [
+        "SQuAD 1.1",
+        "BERT ensemble uses 7 systems with different pre-training checkpoints and fine-tuning seeds"
+      ],
+      "bold_rows": [
+        "BERT_LARGE (Sgl.+TriviaQA)",
+        "BERT_LARGE (Ens.+TriviaQA)"
+      ]
+    },
+    {
+      "id": "bert-table-3",
+      "document": "bert",
+      "page": 7,
+      "table": 3,
+      "headers": [
+        "System",
+        "Dev EM",
+        "Dev F1",
+        "Test EM",
+        "Test F1"
+      ],
+      "rows": [
+        {
+          "label": "Human",
+          "values": [
+            "86.3",
+            "89.0",
+            "86.9",
+            "89.5"
+          ]
+        },
+        {
+          "label": "#1 Single - MIR-MRC (F-Net)",
+          "values": [
+            "-",
+            "-",
+            "74.8",
+            "78.0"
+          ]
+        },
+        {
+          "label": "#2 Single - nlnet",
+          "values": [
+            "-",
+            "-",
+            "74.2",
+            "77.1"
+          ]
+        },
+        {
+          "label": "unet (Ensemble)",
+          "values": [
+            "-",
+            "-",
+            "71.4",
+            "74.9"
+          ]
+        },
+        {
+          "label": "SLQA+ (Single)",
+          "values": [
+            "-",
+            "-",
+            "71.4",
+            "74.4"
+          ]
+        },
+        {
+          "label": "BERT_LARGE (Single)",
+          "values": [
+            "78.7",
+            "81.9",
+            "80.0",
+            "83.1"
+          ]
+        }
+      ],
+      "row_groups": [
+        {
+          "label": "Top Leaderboard Systems (Dec 10th, 2018)",
+          "rows": [
+            0,
+            1,
+            2
+          ]
+        },
+        {
+          "label": "Published",
+          "rows": [
+            3,
+            4
+          ]
+        },
+        {
+          "label": "Ours",
+          "rows": [
+            5
+          ]
+        }
+      ],
+      "meaning": [
+        "SQuAD 2.0",
+        "Excludes entries that use BERT as one of their components"
+      ]
+    },
+    {
+      "id": "bert-table-4",
+      "document": "bert",
+      "page": 7,
+      "table": 4,
+      "headers": [
+        "System",
+        "Dev",
+        "Test"
+      ],
+      "rows": [
+        {
+          "label": "ESIM+GloVe",
+          "values": [
+            "51.9",
+            "52.7"
+          ]
+        },
+        {
+          "label": "ESIM+ELMo",
+          "values": [
+            "59.1",
+            "59.2"
+          ]
+        },
+        {
+          "label": "OpenAI GPT",
+          "values": [
+            "-",
+            "78.0"
+          ]
+        },
+        {
+          "label": "BERT_BASE",
+          "values": [
+            "81.6",
+            "-"
+          ]
+        },
+        {
+          "label": "BERT_LARGE",
+          "values": [
+            "86.6",
+            "86.3"
+          ]
+        },
+        {
+          "label": "Human (expert)",
+          "values": [
+            "-",
+            "85.0"
+          ]
+        },
+        {
+          "label": "Human (5 annotations)",
+          "values": [
+            "-",
+            "88.0"
+          ]
+        }
+      ],
+      "meaning": [
+        "SWAG Dev and Test accuracies",
+        "Both human rows measured with 100 samples"
+      ],
+      "bold_rows": [
+        "BERT_LARGE"
+      ]
+    },
+    {
+      "id": "resnet-table-2",
+      "document": "resnet",
+      "page": 5,
+      "table": 2,
+      "headers": [
+        "",
+        "plain",
+        "ResNet"
+      ],
+      "rows": [
+        {
+          "label": "18 layers",
+          "values": [
+            "27.94",
+            "27.88"
+          ]
+        },
+        {
+          "label": "34 layers",
+          "values": [
+            "28.54",
+            "25.03"
+          ]
+        }
+      ],
+      "meaning": [
+        "ImageNet validation",
+        "Top-1 error percent",
+        "10-crop testing",
+        "ResNets have no extra parameters compared with plain counterparts"
+      ],
+      "bold_cells": [
+        [
+          "34 layers",
+          "ResNet"
+        ]
+      ]
+    },
+    {
+      "id": "resnet-table-3",
+      "document": "resnet",
+      "page": 6,
+      "table": 3,
+      "headers": [
+        "model",
+        "top-1 err.",
+        "top-5 err."
+      ],
+      "rows": [
+        {
+          "label": "VGG-16 [41]",
+          "values": [
+            "28.07",
+            "9.33"
+          ]
+        },
+        {
+          "label": "GoogLeNet [44]",
+          "values": [
+            "-",
+            "9.15"
+          ]
+        },
+        {
+          "label": "PReLU-net [13]",
+          "values": [
+            "24.27",
+            "7.38"
+          ]
+        },
+        {
+          "label": "plain-34",
+          "values": [
+            "28.54",
+            "10.02"
+          ]
+        },
+        {
+          "label": "ResNet-34 A",
+          "values": [
+            "25.03",
+            "7.76"
+          ]
+        },
+        {
+          "label": "ResNet-34 B",
+          "values": [
+            "24.52",
+            "7.46"
+          ]
+        },
+        {
+          "label": "ResNet-34 C",
+          "values": [
+            "24.19",
+            "7.40"
+          ]
+        },
+        {
+          "label": "ResNet-50",
+          "values": [
+            "22.85",
+            "6.71"
+          ]
+        },
+        {
+          "label": "ResNet-101",
+          "values": [
+            "21.75",
+            "6.05"
+          ]
+        },
+        {
+          "label": "ResNet-152",
+          "values": [
+            "21.43",
+            "5.71"
+          ]
+        }
+      ],
+      "meaning": [
+        "Error rates percent",
+        "10-crop testing",
+        "ImageNet validation",
+        "VGG-16 based on our test",
+        "ResNet-50/101/152 option B uses projection only for increasing dimensions"
+      ],
+      "bold_rows": [
+        "ResNet-152"
+      ]
+    },
+    {
+      "id": "resnet-table-4",
+      "document": "resnet",
+      "page": 6,
+      "table": 4,
+      "headers": [
+        "method",
+        "top-1 err.",
+        "top-5 err."
+      ],
+      "rows": [
+        {
+          "label": "VGG [41] (ILSVRC'14)",
+          "values": [
+            "-",
+            "8.43"
+          ]
+        },
+        {
+          "label": "GoogLeNet [44] (ILSVRC'14)",
+          "values": [
+            "-",
+            "7.89"
+          ]
+        },
+        {
+          "label": "VGG [41] (v5)",
+          "values": [
+            "24.4",
+            "7.1"
+          ]
+        },
+        {
+          "label": "PReLU-net [13]",
+          "values": [
+            "21.59",
+            "5.71"
+          ]
+        },
+        {
+          "label": "BN-inception [16]",
+          "values": [
+            "21.99",
+            "5.81"
+          ]
+        },
+        {
+          "label": "ResNet-34 B",
+          "values": [
+            "21.84",
+            "5.71"
+          ]
+        },
+        {
+          "label": "ResNet-34 C",
+          "values": [
+            "21.53",
+            "5.60"
+          ]
+        },
+        {
+          "label": "ResNet-50",
+          "values": [
+            "20.74",
+            "5.25"
+          ]
+        },
+        {
+          "label": "ResNet-101",
+          "values": [
+            "19.87",
+            "4.60"
+          ]
+        },
+        {
+          "label": "ResNet-152",
+          "values": [
+            "19.38",
+            "4.49"
+          ]
+        }
+      ],
+      "meaning": [
+        "Error rates percent",
+        "single-model",
+        "ImageNet validation except marked VGG ILSVRC14 top-5 8.43 is test set"
+      ],
+      "bold_rows": [
+        "ResNet-152"
+      ],
+      "marked_test_cell": [
+        "VGG [41] (ILSVRC'14)",
+        "top-5 err."
+      ]
+    },
+    {
+      "id": "resnet-table-5",
+      "document": "resnet",
+      "page": 6,
+      "table": 5,
+      "headers": [
+        "method",
+        "top-5 err. (test)"
+      ],
+      "rows": [
+        {
+          "label": "VGG [41] (ILSVRC'14)",
+          "values": [
+            "7.32"
+          ]
+        },
+        {
+          "label": "GoogLeNet [44] (ILSVRC'14)",
+          "values": [
+            "6.66"
+          ]
+        },
+        {
+          "label": "VGG [41] (v5)",
+          "values": [
+            "6.8"
+          ]
+        },
+        {
+          "label": "PReLU-net [13]",
+          "values": [
+            "4.94"
+          ]
+        },
+        {
+          "label": "BN-inception [16]",
+          "values": [
+            "4.82"
+          ]
+        },
+        {
+          "label": "ResNet (ILSVRC'15)",
+          "values": [
+            "3.57"
+          ]
+        }
+      ],
+      "meaning": [
+        "Error rates percent",
+        "ensembles",
+        "ImageNet test set reported by test server"
+      ],
+      "bold_rows": [
+        "ResNet (ILSVRC'15)"
+      ]
+    },
+    {
+      "id": "resnet-table-7",
+      "document": "resnet",
+      "page": 8,
+      "table": 7,
+      "headers": [
+        "training data",
+        "07+12",
+        "07++12"
+      ],
+      "rows": [
+        {
+          "label": "test data",
+          "values": [
+            "VOC 07 test",
+            "VOC 12 test"
+          ]
+        },
+        {
+          "label": "VGG-16",
+          "values": [
+            "73.2",
+            "70.4"
+          ]
+        },
+        {
+          "label": "ResNet-101",
+          "values": [
+            "76.4",
+            "73.8"
+          ]
+        }
+      ],
+      "meaning": [
+        "Object detection mAP percent",
+        "PASCAL VOC 2007/2012 test sets",
+        "baseline Faster R-CNN"
+      ],
+      "bold_rows": [
+        "ResNet-101"
+      ]
+    },
+    {
+      "id": "resnet-table-8",
+      "document": "resnet",
+      "page": 8,
+      "table": 8,
+      "headers": [
+        "metric",
+        "mAP@.5",
+        "mAP@[.5, .95]"
+      ],
+      "rows": [
+        {
+          "label": "VGG-16",
+          "values": [
+            "41.5",
+            "21.2"
+          ]
+        },
+        {
+          "label": "ResNet-101",
+          "values": [
+            "48.4",
+            "27.2"
+          ]
+        }
+      ],
+      "meaning": [
+        "Object detection mAP percent",
+        "COCO validation set",
+        "baseline Faster R-CNN"
+      ],
+      "bold_rows": [
+        "ResNet-101"
+      ]
+    }
+  ],
+  "prose": [
+    {
+      "id": "bert-p5-column-continuation",
+      "document": "bert",
+      "page": 5,
+      "text": "question-passage pairs in question answering, and (4) a degenerate text-∅ pair in text classification or sequence tagging.",
+      "requirement": "Correct consecutive body sequence, with no intervening figures, headings or unrelated prose."
+    },
+    {
+      "id": "bert-p6-column-continuation",
+      "document": "bert",
+      "page": 6,
+      "text": "Given a question and a passage from Wikipedia containing the answer, the task is to predict the answer text span in the passage.",
+      "requirement": "Correct sequence across left-column end and right-column beginning, no intervening footnotes."
+    },
+    {
+      "id": "bert-p7-math-continuation",
+      "document": "bert",
+      "page": 7,
+      "text": "For prediction, we compare the score of the no-answer span",
+      "formulae": [
+        "s_null = S·C + E·C",
+        "s_hat_i,j = max_(j≥i) S·T_i + E·T_j",
+        "s_hat_i,j > s_null + τ"
+      ],
+      "requirement": "Complete equations, superscript/subscript and max scope preserved; correct left-to-right column body continuation."
+    },
+    {
+      "id": "resnet-p6-column-continuation",
+      "document": "resnet",
+      "page": 6,
+      "text": "We have shown that parameter-free, identity shortcuts help with training.",
+      "requirement": "One body sentence across column boundary; Figure 5 and caption excluded from sentence."
+    },
+    {
+      "id": "resnet-p8-column-continuation",
+      "document": "resnet",
+      "page": 8,
+      "text": "The testing result of this 1202-layer network is worse than that of our 110-layer network, although both have similar training error.",
+      "requirement": "Correct consecutive body sequence across column boundary."
+    }
+  ],
+  "complex_tables": [
+    {
+      "id": "resnet-table-1",
+      "document": "resnet",
+      "page": 5,
+      "headers": [
+        "layer name",
+        "output size",
+        "18-layer",
+        "34-layer",
+        "50-layer",
+        "101-layer",
+        "152-layer"
+      ],
+      "stage_outputs": [
+        "112×112",
+        "56×56",
+        "28×28",
+        "14×14",
+        "7×7",
+        "1×1"
+      ],
+      "stage_repetitions": {
+        "conv2_x": [
+          "2",
+          "3",
+          "3",
+          "3",
+          "3"
+        ],
+        "conv3_x": [
+          "2",
+          "4",
+          "4",
+          "4",
+          "8"
+        ],
+        "conv4_x": [
+          "2",
+          "6",
+          "6",
+          "23",
+          "36"
+        ],
+        "conv5_x": [
+          "2",
+          "3",
+          "3",
+          "3",
+          "3"
+        ]
+      },
+      "FLOPs": [
+        "1.8×10^9",
+        "3.6×10^9",
+        "3.8×10^9",
+        "7.6×10^9",
+        "11.3×10^9"
+      ],
+      "meaning": [
+        "Shared conv1 7×7 64 stride2 applies to all five models",
+        "Shared 3×3 max pool stride2 before conv2_x applies to all five models",
+        "Basic blocks in18/34 and three-layer bottlenecks in50/101/152 retain channels and exact sequence",
+        "Shared average pool 1000-d fc softmax applies to all five models",
+        "Downsampling conv3_1 conv4_1 conv5_1 with stride2",
+        "Each repetition count applies to its entire bracketed block, not only final line"
+      ],
+      "scoring": "Source visual assessment of full table; FLOPs and repetitions are diagnostic only, not complete-table correctness."
+    }
+  ]
+}

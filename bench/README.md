@@ -57,12 +57,18 @@ files and run artifacts live in the gitignored `data/grading-benchmark/`.
 `rag/scripts/rag_eval.py` is the one live tool here: a retrieval diagnostic that
 runs the production `search()` against a real workspace inside the pipeline
 image. Its question sets in `rag/fixtures/` are keyed to `CHUNKER_VERSION` and to
-a corpus that is **not in this repo**: 16 real documents across six languages at
+a corpus that is **not tracked in Git**: 16 real documents across six languages at
 `/opt/capy-rag-lab/samples` on the ingest host. That corpus was gathered ad hoc
-and has no fetch script, so those bytes exist in one place only —
+and has no fetch script.
 [`rag/fixtures/samples-manifest.json`](rag/fixtures/samples-manifest.json)
-records its checksums and which question set uses each file. Lose the corpus and
-the question sets become unusable.
+records its checksums and which question set uses each file.
+
+The September 9 ODL agentic evaluation has a verified local inspection copy at
+[`rag/fixtures/local/2026-09-09-odl-agentic/README.md`](rag/fixtures/local/2026-09-09-odl-agentic/README.md).
+It includes all 29 evaluation PDFs, the two original PowerPoint files, and an
+index mapping documents to questions. This covers the 16 legacy originals as
+well as the additional parser sources. The binary files are gitignored and are
+not included in a clean clone; preserve the VM corpus or this local copy.
 
 The `expect` labels are `(file, chunk_idx)` pairs, so a `CHUNKER_VERSION` bump
 moves every index. That is expected and cheap to absorb: the labels were written

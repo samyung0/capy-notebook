@@ -3,7 +3,7 @@
   "recorded": "2026-09-07",
   "host": "capy-ingest-1 (159.195.61.195)",
   "location": "/opt/capy-rag-lab/samples",
-  "note": "Real-world multilingual corpus backing bench/rag/fixtures/questions*.json. Gathered ad hoc; there is no fetch script and no upstream manifest, so these bytes exist only on the ingest host. The question sets label (file, chunk_idx) pairs against this corpus indexed at CHUNKER_VERSION v5 — re-chunking moves the indices. If this corpus is lost the question sets cannot be re-run.",
+  "note": "Real-world multilingual corpus backing bench/rag/fixtures/questions*.json. Gathered ad hoc; there is no fetch script or upstream manifest. A hash-verified local inspection copy now exists under bench/rag/fixtures/local/2026-09-09-odl-agentic, with its README and sources.json mapping the original files to local PDFs and PowerPoints. That directory is gitignored and absent from a clean clone. The question sets label (file, chunk_idx) pairs against this corpus indexed at CHUNKER_VERSION v5; re-chunking moves the indices. Preserve the VM corpus or the local copy to rerun these question sets.",
   "totals": {
     "files": 16,
     "bytes": 60997152

@@ -3,5 +3,6 @@
 # publicly available documents. Anything dropped there must be safe to commit —
 # that check is the developer's, not this file's.
 reports/local/
+.tar.gz
 .DS_Store
 *.failure.log

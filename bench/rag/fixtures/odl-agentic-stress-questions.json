@@ -1,0 +1,775 @@
+{
+  "schema": "odl-agentic-questions-v1",
+  "evaluation_kind": "diagnostic_known_failures",
+  "sources": {
+    "rag__de__grosse-sprachmodelle": {
+      "id": "rag__de__grosse-sprachmodelle",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__de__grosse-sprachmodelle.pdf",
+      "coordinate_pdf_sha256": "9b27898e9bd5262a304574fedbc364c3a69a3b7f66c5870a4c3607b9d5740697",
+      "original_source_sha256": "9b27898e9bd5262a304574fedbc364c3a69a3b7f66c5870a4c3607b9d5740697",
+      "pages": 34,
+      "vm_original_source": "/opt/capy-rag-lab/samples/de/grosse-sprachmodelle.pdf",
+      "source_kind": "legacy",
+      "original_filename": "grosse-sprachmodelle.pdf"
+    },
+    "rag__de__putnam-einleitung": {
+      "id": "rag__de__putnam-einleitung",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__de__putnam-einleitung.pdf",
+      "coordinate_pdf_sha256": "0e392986257630db63b1d138c344f958dacd17f6cae1c3f1a56f7405e00e15d2",
+      "original_source_sha256": "0e392986257630db63b1d138c344f958dacd17f6cae1c3f1a56f7405e00e15d2",
+      "pages": 21,
+      "vm_original_source": "/opt/capy-rag-lab/samples/de/putnam-einleitung.pdf",
+      "source_kind": "legacy",
+      "original_filename": "putnam-einleitung.pdf"
+    },
+    "rag__en__biology-ib-chapter-1": {
+      "id": "rag__en__biology-ib-chapter-1",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__en__biology-ib-chapter-1.pdf",
+      "coordinate_pdf_sha256": "8cd19abeee7dcb324a9cc8a0809aa4b8efa285b1cf29aa065f9231d8ee9c229e",
+      "original_source_sha256": "8cd19abeee7dcb324a9cc8a0809aa4b8efa285b1cf29aa065f9231d8ee9c229e",
+      "pages": 11,
+      "vm_original_source": "/opt/capy-rag-lab/samples/en/biology-ib-chapter-1.pdf",
+      "source_kind": "legacy",
+      "original_filename": "biology-ib-chapter-1.pdf"
+    },
+    "rag__en__biology-ib-convergent-targets": {
+      "id": "rag__en__biology-ib-convergent-targets",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__en__biology-ib-convergent-targets.pdf",
+      "coordinate_pdf_sha256": "7301d4c0b13d5662c434916c941897b75979cf975ea2cddeb5d1a97317e06071",
+      "original_source_sha256": "7301d4c0b13d5662c434916c941897b75979cf975ea2cddeb5d1a97317e06071",
+      "pages": 2,
+      "vm_original_source": "/opt/capy-rag-lab/samples/en/biology-ib-convergent-targets.pdf",
+      "source_kind": "legacy",
+      "original_filename": "biology-ib-convergent-targets.pdf"
+    },
+    "rag__en__biology-ib-sample-16-pages": {
+      "id": "rag__en__biology-ib-sample-16-pages",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__en__biology-ib-sample-16-pages.pdf",
+      "coordinate_pdf_sha256": "3dfd95d688b13d32414f2ad4f46c436a200cc102313f5837247d7c7fbc59daf9",
+      "original_source_sha256": "3dfd95d688b13d32414f2ad4f46c436a200cc102313f5837247d7c7fbc59daf9",
+      "pages": 16,
+      "vm_original_source": "/opt/capy-rag-lab/samples/en/biology-ib-sample-16-pages.pdf",
+      "source_kind": "legacy",
+      "original_filename": "biology-ib-sample-16-pages.pdf"
+    },
+    "rag__en__newspaper_scan": {
+      "id": "rag__en__newspaper_scan",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__en__newspaper_scan.pdf",
+      "coordinate_pdf_sha256": "9a4d01e6b17f17d336eb4c56d8bcdd9be25f63d13c1cfdfab83c7d385d405ef1",
+      "original_source_sha256": "9a4d01e6b17f17d336eb4c56d8bcdd9be25f63d13c1cfdfab83c7d385d405ef1",
+      "pages": 2,
+      "vm_original_source": "/opt/capy-rag-lab/samples/en/newspaper_scan.pdf",
+      "source_kind": "legacy",
+      "original_filename": "newspaper_scan.pdf"
+    },
+    "rag__es__sesgo-linguistico-digital": {
+      "id": "rag__es__sesgo-linguistico-digital",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__es__sesgo-linguistico-digital.pdf",
+      "coordinate_pdf_sha256": "a86f91bf87765a23a9e0b27b32c8b260242ffbc4a94de61074b57b7d856c0cbb",
+      "original_source_sha256": "a86f91bf87765a23a9e0b27b32c8b260242ffbc4a94de61074b57b7d856c0cbb",
+      "pages": 25,
+      "vm_original_source": "/opt/capy-rag-lab/samples/es/sesgo-linguistico-digital.pdf",
+      "source_kind": "legacy",
+      "original_filename": "sesgo-linguistico-digital.pdf"
+    },
+    "rag__es__variedades-espanol": {
+      "id": "rag__es__variedades-espanol",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__es__variedades-espanol.pdf",
+      "coordinate_pdf_sha256": "6e9ee0972e0932c99b3d26e2fb9a8618edfbf06b883c8c3c3f872aa76d43cb24",
+      "original_source_sha256": "6e9ee0972e0932c99b3d26e2fb9a8618edfbf06b883c8c3c3f872aa76d43cb24",
+      "pages": 10,
+      "vm_original_source": "/opt/capy-rag-lab/samples/es/variedades-espanol.pdf",
+      "source_kind": "legacy",
+      "original_filename": "variedades-espanol.pdf"
+    },
+    "rag__fr__camembert-taln": {
+      "id": "rag__fr__camembert-taln",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__fr__camembert-taln.pdf",
+      "coordinate_pdf_sha256": "5499969bf0f52657722c22220ee8f6f7fe763629d438a9a67d376b05e115dff3",
+      "original_source_sha256": "5499969bf0f52657722c22220ee8f6f7fe763629d438a9a67d376b05e115dff3",
+      "pages": 12,
+      "vm_original_source": "/opt/capy-rag-lab/samples/fr/camembert-taln.pdf",
+      "source_kind": "legacy",
+      "original_filename": "camembert-taln.pdf"
+    },
+    "rag__fr__wikiner-fr-gold": {
+      "id": "rag__fr__wikiner-fr-gold",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__fr__wikiner-fr-gold.pdf",
+      "coordinate_pdf_sha256": "d8c5b3f432b8c928224816ed8f155983b5e53ad48ac4e906f9d1c0c8918716ca",
+      "original_source_sha256": "d8c5b3f432b8c928224816ed8f155983b5e53ad48ac4e906f9d1c0c8918716ca",
+      "pages": 6,
+      "vm_original_source": "/opt/capy-rag-lab/samples/fr/wikiner-fr-gold.pdf",
+      "source_kind": "legacy",
+      "original_filename": "wikiner-fr-gold.pdf"
+    },
+    "rag__ja__jp_llm2": {
+      "id": "rag__ja__jp_llm2",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__ja__jp_llm2.pdf",
+      "coordinate_pdf_sha256": "6002cc3109039bc7815f66076e107e4e3c8c2ca98869d45c7100b458f7ee7fbc",
+      "original_source_sha256": "6890415a45b3241052808254d0743abcd453069eedbf7cccd0a5fd87247dd681",
+      "pages": 84,
+      "vm_original_source": "/opt/capy-rag-lab/samples/ja/jp_llm2.pptx",
+      "source_kind": "legacy",
+      "original_filename": "jp_llm2.pptx"
+    },
+    "rag__ja__jp_llm": {
+      "id": "rag__ja__jp_llm",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__ja__jp_llm.pdf",
+      "coordinate_pdf_sha256": "28fbf744d91750133f60ebb1ad4bf50854d234441ceaae692400a874276c2c7b",
+      "original_source_sha256": "28fbf744d91750133f60ebb1ad4bf50854d234441ceaae692400a874276c2c7b",
+      "pages": 26,
+      "vm_original_source": "/opt/capy-rag-lab/samples/ja/jp_llm.pdf",
+      "source_kind": "legacy",
+      "original_filename": "jp_llm.pdf"
+    },
+    "rag__zh__mixed_zh_en": {
+      "id": "rag__zh__mixed_zh_en",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__zh__mixed_zh_en.pdf",
+      "coordinate_pdf_sha256": "7e55b0ee27cbd801f20e3c9ee9c659b501a809bd373777fc5f9b7f18813f4932",
+      "original_source_sha256": "7e55b0ee27cbd801f20e3c9ee9c659b501a809bd373777fc5f9b7f18813f4932",
+      "pages": 20,
+      "vm_original_source": "/opt/capy-rag-lab/samples/zh/mixed_zh_en.pdf",
+      "source_kind": "legacy",
+      "original_filename": "mixed_zh_en.pdf"
+    },
+    "rag__zh__zh-CN": {
+      "id": "rag__zh__zh-CN",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__zh__zh-CN.pdf",
+      "coordinate_pdf_sha256": "73e000eadee1d6fcfc374c1b37803b0492b648a3afdda95c1f01cf75cbc0f1dd",
+      "original_source_sha256": "73e000eadee1d6fcfc374c1b37803b0492b648a3afdda95c1f01cf75cbc0f1dd",
+      "pages": 11,
+      "vm_original_source": "/opt/capy-rag-lab/samples/zh/zh-CN.pdf",
+      "source_kind": "legacy",
+      "original_filename": "zh-CN.pdf"
+    },
+    "rag__zh__zh_HK": {
+      "id": "rag__zh__zh_HK",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__zh__zh_HK.pdf",
+      "coordinate_pdf_sha256": "37ee98f3cc724c6eb69a8fc8120e87ddccdf8c7169a57339402daa12311e9211",
+      "original_source_sha256": "37ee98f3cc724c6eb69a8fc8120e87ddccdf8c7169a57339402daa12311e9211",
+      "pages": 15,
+      "vm_original_source": "/opt/capy-rag-lab/samples/zh/zh_HK.pdf",
+      "source_kind": "legacy",
+      "original_filename": "zh_HK.pdf"
+    },
+    "rag__zh__zh_TW_llm": {
+      "id": "rag__zh__zh_TW_llm",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__zh__zh_TW_llm.pdf",
+      "coordinate_pdf_sha256": "d55d954482a9a6404b9fe0b120aabf734de1c2045cd1928ba7fa1f544a32c92b",
+      "original_source_sha256": "92168d5e03378df332fb671b0b403f7b39d6fac2771658497fa82e8efd2d836e",
+      "pages": 33,
+      "vm_original_source": "/opt/capy-rag-lab/samples/zh/zh_TW_llm.pptx",
+      "source_kind": "legacy",
+      "original_filename": "zh_TW_llm.pptx"
+    },
+    "attention": {
+      "id": "attention",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-pass/inputs/attention.pdf",
+      "coordinate_pdf_sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697",
+      "original_source_sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697",
+      "pages": 15,
+      "vm_original_source": null,
+      "source_kind": "parser_development",
+      "original_filename": "attention.pdf"
+    },
+    "taln-complexity": {
+      "id": "taln-complexity",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-pass/inputs/taln-complexity.pdf",
+      "coordinate_pdf_sha256": "bf082a428310d35390cc83cb475094f143642dd8cfc1c165a2144cca85215294",
+      "original_source_sha256": "bf082a428310d35390cc83cb475094f143642dd8cfc1c165a2144cca85215294",
+      "pages": 13,
+      "vm_original_source": null,
+      "source_kind": "parser_development",
+      "original_filename": "taln-complexity.pdf"
+    },
+    "ccl-feedback": {
+      "id": "ccl-feedback",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-pass/inputs/ccl-feedback.pdf",
+      "coordinate_pdf_sha256": "6a67443bc89ae7d493464d1d2610f100b192745b6428909e8fc1fc889504b1a1",
+      "original_source_sha256": "6a67443bc89ae7d493464d1d2610f100b192745b6428909e8fc1fc889504b1a1",
+      "pages": 16,
+      "vm_original_source": null,
+      "source_kind": "parser_development",
+      "original_filename": "ccl-feedback.pdf"
+    },
+    "spain-figures": {
+      "id": "spain-figures",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-pass/inputs/spain-figures.pdf",
+      "coordinate_pdf_sha256": "a27e7a5b5982fd5fbf27dc90044b94aedf7dab257f29788ebe2cd32364185867",
+      "original_source_sha256": "a27e7a5b5982fd5fbf27dc90044b94aedf7dab257f29788ebe2cd32364185867",
+      "pages": 60,
+      "vm_original_source": null,
+      "source_kind": "parser_development",
+      "original_filename": "spain-figures.pdf"
+    },
+    "japan-migration": {
+      "id": "japan-migration",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-pass/inputs/japan-migration.pdf",
+      "coordinate_pdf_sha256": "ff4812aac97b8fdfe1919bd7c04a446aa7326eebc56ca047a777081c64e80f4a",
+      "original_source_sha256": "ff4812aac97b8fdfe1919bd7c04a446aa7326eebc56ca047a777081c64e80f4a",
+      "pages": 54,
+      "vm_original_source": null,
+      "source_kind": "parser_development",
+      "original_filename": "japan-migration.pdf"
+    },
+    "german-education": {
+      "id": "german-education",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-pass/inputs/german-education.pdf",
+      "coordinate_pdf_sha256": "2608aecd1c675ee8dcd7de740bae4f87b497229f18889ae67454966176691dfd",
+      "original_source_sha256": "2608aecd1c675ee8dcd7de740bae4f87b497229f18889ae67454966176691dfd",
+      "pages": 32,
+      "vm_original_source": null,
+      "source_kind": "parser_development",
+      "original_filename": "german-education.pdf"
+    },
+    "hongkong-figures": {
+      "id": "hongkong-figures",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-pass/inputs/hongkong-figures.pdf",
+      "coordinate_pdf_sha256": "c3490cc7c1664ce8e75edcce55898be58dc21fceade53b3c1cbfd7f30411f2d9",
+      "original_source_sha256": "c3490cc7c1664ce8e75edcce55898be58dc21fceade53b3c1cbfd7f30411f2d9",
+      "pages": 53,
+      "vm_original_source": null,
+      "source_kind": "parser_development",
+      "original_filename": "hongkong-figures.pdf"
+    },
+    "nist-accelerometers": {
+      "id": "nist-accelerometers",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-pass/inputs/nist-accelerometers.pdf",
+      "coordinate_pdf_sha256": "64e632778f0bf38409575a82fb8115f9c4a451c3caa275118cec7a5973a1ae7a",
+      "original_source_sha256": "64e632778f0bf38409575a82fb8115f9c4a451c3caa275118cec7a5973a1ae7a",
+      "pages": 11,
+      "vm_original_source": null,
+      "source_kind": "parser_development",
+      "original_filename": "nist-accelerometers.pdf"
+    },
+    "ccl-cot": {
+      "id": "ccl-cot",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-font-transfer/inputs/ccl-cot.pdf",
+      "coordinate_pdf_sha256": "87bb845a8843bde1527827dcfa2e0070a5207087f9f93739497c5997cf270e0b",
+      "original_source_sha256": "87bb845a8843bde1527827dcfa2e0070a5207087f9f93739497c5997cf270e0b",
+      "pages": 24,
+      "vm_original_source": null,
+      "source_kind": "parser_development",
+      "original_filename": "ccl-cot.pdf"
+    },
+    "ccl-children": {
+      "id": "ccl-children",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-font-transfer/inputs/ccl-children.pdf",
+      "coordinate_pdf_sha256": "e7d6af6e204d97a2ad61730d8fbdd518df227fcd50cc0446e675444d762be80c",
+      "original_source_sha256": "e7d6af6e204d97a2ad61730d8fbdd518df227fcd50cc0446e675444d762be80c",
+      "pages": 21,
+      "vm_original_source": null,
+      "source_kind": "parser_development",
+      "original_filename": "ccl-children.pdf"
+    },
+    "bert": {
+      "id": "bert",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-independent/inputs/bert.pdf",
+      "coordinate_pdf_sha256": "5692a5514787a8c6727b4ff3b726a3385798bc68e12138d1d4af83947e2acf6e",
+      "original_source_sha256": "5692a5514787a8c6727b4ff3b726a3385798bc68e12138d1d4af83947e2acf6e",
+      "pages": 16,
+      "vm_original_source": null,
+      "source_kind": "parser_development",
+      "original_filename": "bert.pdf"
+    },
+    "resnet": {
+      "id": "resnet",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-independent/inputs/resnet.pdf",
+      "coordinate_pdf_sha256": "1e0651b6810ecba34a3dbc5b5b0209226f889004607c1f203540a48d64e5a93a",
+      "original_source_sha256": "1e0651b6810ecba34a3dbc5b5b0209226f889004607c1f203540a48d64e5a93a",
+      "pages": 12,
+      "vm_original_source": null,
+      "source_kind": "parser_development",
+      "original_filename": "resnet.pdf"
+    },
+    "nist-shot": {
+      "id": "nist-shot",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-independent/inputs/nist-shot.pdf",
+      "coordinate_pdf_sha256": "0bdb43c9e1be39acf0dbafe76d1aa3cbd69efd706425bfb27bba979b1fd36763",
+      "original_source_sha256": "0bdb43c9e1be39acf0dbafe76d1aa3cbd69efd706425bfb27bba979b1fd36763",
+      "pages": 8,
+      "vm_original_source": null,
+      "source_kind": "parser_development",
+      "original_filename": "nist-shot.pdf"
+    }
+  },
+  "protocol": {
+    "agent_input_fields": [
+      "id",
+      "question",
+      "language",
+      "scope_source_ids"
+    ],
+    "gold_fields_never_sent_to_agent": [
+      "source_ids",
+      "required_claims",
+      "evidence",
+      "legacy_provenance",
+      "rubric_notes",
+      "tags",
+      "answerability",
+      "family",
+      "split",
+      "provenance"
+    ],
+    "scope_source_ids_null_means": "all 29 shared corpus sources",
+    "split_policy": "All five questions use split=heldout only for runner compatibility. This is a known-failure diagnostic, NOT a fresh held-out set. Report separately from the primary16development/48heldout questions.",
+    "parser_policy": "Primary comparison uses final refined native ODL and full MinerU parsing. Any hybrid OCR/formula arm must be reported separately.",
+    "grading": "Semantic answer correctness, all-claim source support, observed-evidence coverage, citation support, and missing-evidence behavior are separate. Literal text matching is diagnostic only.",
+    "explicit_scope_policy": "Restrict both search and read_document to the listed logical source IDs mapped to arm-specific file IDs; show the permitted filenames to the agent. Gold source_ids never defines tool scope.",
+    "equivalent_evidence_policy": "Accept semantically equivalent source-supported answers and citations from another permitted source when the question does not name a particular source, table or figure. The listed source_ids are expected gold evidence, not an exclusive evidence allowlist.",
+    "freeze_note": "Frozen before diagnostic agent answers after independent original-PDF review confirmed all five required-answer rubrics. One unrelated supporting-table BLEU transcription was corrected before freeze; required claims were unchanged. Primary fixture remains unchanged.",
+    "evaluation_kind": "diagnostic_known_failures",
+    "provenance": "known parser failures from prior evaluation",
+    "run_policy": "Run only after selecting and freezing the retrieval candidate. Never use these questions or outcomes for candidate tuning. Never blend these results into the primary48-question held-out score.",
+    "primary_fixture_sha256": "262346659ff2c096c7a08e7b658ac8dfc7f70fe5fad258ab025ac218609be0ce",
+    "selection_note": "Known parser failure families selected by root before this diagnostic was authored. No new caption or agent answer was inspected; original PDF pixels were reviewed and primary question overlap was checked.",
+    "overlap_note": "CCLchildren exact model identifier is also present in primary048; the diagnostic asks a distinct Table1 minimum and grouped score lookup, and does not count identifier spelling as a novel independent test.",
+    "independent_source_review": "bench/rag/reports/local/2026-09-09-odl-agentic-source/diagnostic-source-review.md"
+  },
+  "questions": [
+    {
+      "id": "odl-agentic-stress-001",
+      "split": "heldout",
+      "family": "diagnostic-resnet-table3",
+      "language": "en",
+      "question": "In Table 3 of Deep Residual Learning for Image Recognition, give the top-1 and top-5 error rates for ResNet-50, ResNet-101 and ResNet-152. State the evaluation split and crop setting used for that table.",
+      "scope_source_ids": null,
+      "source_ids": [
+        "resnet"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "diagnostic_known_failures",
+        "table",
+        "row-column-association"
+      ],
+      "required_claims": [
+        "ResNet-50: top-1 error 22.85%, top-5 error 6.71%.",
+        "ResNet-101: top-1 error 21.75%, top-5 error 6.05%.",
+        "ResNet-152: top-1 error 21.43%, top-5 error 5.71%.",
+        "Table 3 uses ImageNet validation with 10-crop testing."
+      ],
+      "evidence": [
+        {
+          "source_id": "resnet",
+          "pdf_page": 6,
+          "source_cells_or_image_transcription": {
+            "Table3": {
+              "columns": [
+                "model",
+                "top-1 err.",
+                "top-5 err."
+              ],
+              "ResNet-50": [
+                "22.85",
+                "6.71"
+              ],
+              "ResNet-101": [
+                "21.75",
+                "6.05"
+              ],
+              "ResNet-152": [
+                "21.43",
+                "5.71"
+              ],
+              "caption": "Error rates (%, 10-crop testing) on ImageNet validation."
+            }
+          },
+          "review_method": "original coordinate PDF pixels, freshly rendered and visually reviewed before these diagnostic agent answers",
+          "coordinate_pdf_sha256": "1e0651b6810ecba34a3dbc5b5b0209226f889004607c1f203540a48d64e5a93a",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/diagnostic-source-pages/resnet-p6.png",
+              "sha256": "09a6299f273cf2507636e8bd149ae2b2808669196bb6da7bea41624caacdd063"
+            }
+          ]
+        }
+      ],
+      "provenance": "known parser failures from prior evaluation",
+      "legacy_provenance": {
+        "kind": "diagnostic_known_failures",
+        "selection": "Previously observed parser failure; source rubric rechecked before diagnostic agent answers."
+      },
+      "rubric_notes": [
+        "Use Table 3, not the different single-model Table 4 or ensemble Table 5 on the same source page. Primary questions051/064 concern Table2 and057 concerns FLOPs/Figure5, so none tests these six Table3 cells."
+      ]
+    },
+    {
+      "id": "odl-agentic-stress-002",
+      "split": "heldout",
+      "family": "diagnostic-bert-glue-table1",
+      "language": "en",
+      "question": "Using Table 1 of BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding, report BERT_LARGE’s MNLI matched/mismatched, QQP, STS-B, MRPC and Average scores. What metrics does the caption specify for QQP, MRPC and STS-B, and which task is excluded from this Average?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "bert"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "diagnostic_known_failures",
+        "table",
+        "row-column-association",
+        "metric-notes"
+      ],
+      "required_claims": [
+        "BERT_LARGE MNLI matched/mismatched scores are 86.7/85.9, in that order.",
+        "BERT_LARGE QQP score is 72.1.",
+        "BERT_LARGE STS-B score is 86.5.",
+        "BERT_LARGE MRPC score is 89.3.",
+        "BERT_LARGE Average is 82.1.",
+        "QQP and MRPC are reported as F1 scores.",
+        "STS-B is reported as Spearman correlation.",
+        "The table Average excludes WNLI and therefore differs from the official GLUE score."
+      ],
+      "evidence": [
+        {
+          "source_id": "bert",
+          "pdf_page": 6,
+          "source_cells_or_image_transcription": {
+            "Table1 BERT_LARGE row": {
+              "MNLI-(m/mm)": "86.7/85.9",
+              "QQP": "72.1",
+              "QNLI": "92.7",
+              "SST-2": "94.9",
+              "CoLA": "60.5",
+              "STS-B": "86.5",
+              "MRPC": "89.3",
+              "RTE": "70.1",
+              "Average": "82.1"
+            },
+            "caption_metric_notes": [
+              "F1 scores are reported for QQP and MRPC.",
+              "Spearman correlations are reported for STS-B.",
+              "Accuracy scores are reported for the other tasks.",
+              "Average excludes the problematic WNLI set and is slightly different from the official GLUE score."
+            ]
+          },
+          "review_method": "original coordinate PDF pixels, freshly rendered and visually reviewed before these diagnostic agent answers",
+          "coordinate_pdf_sha256": "5692a5514787a8c6727b4ff3b726a3385798bc68e12138d1d4af83947e2acf6e",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/diagnostic-source-pages/bert-p6.png",
+              "sha256": "ea669c6b0b24007cdde10bda6533b9e4e5f3478a2e0ef5fa710fef45b5840e7e"
+            }
+          ]
+        }
+      ],
+      "provenance": "known parser failures from prior evaluation",
+      "legacy_provenance": {
+        "kind": "diagnostic_known_failures",
+        "selection": "Previously observed parser failure; source rubric rechecked before diagnostic agent answers."
+      },
+      "rubric_notes": [
+        "Do not swap QQP/MRPC/STS-B columns or reinterpret all values as accuracy. Primary questions049/050 concern SQuAD2.0, not GLUE Table1."
+      ]
+    },
+    {
+      "id": "odl-agentic-stress-003",
+      "split": "heldout",
+      "family": "diagnostic-nist-complete-equations",
+      "language": "en",
+      "question": "In Calibration of Accelerometers, transcribe the complete equations (1) and (3) used for the shaking table, including their constants, exponents and subscripts. Define a, g, S and D in equation (1), then explain S_0, D_0 and S_r in equation (3) and how the two equations are used together during coasting.",
+      "scope_source_ids": null,
+      "source_ids": [
+        "nist-accelerometers"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "diagnostic_known_failures",
+        "historical-scan",
+        "complete-formula",
+        "subscripts",
+        "cross-equation-relationship"
+      ],
+      "required_claims": [
+        "Equation (1): a = 14.2 g (S/1000)^2 D. The square applies to the full S/1000 ratio.",
+        "In equation (1), a is peak acceleration, g is acceleration of gravity, S is frequency in cycles per minute, and D is double amplitude in inches.",
+        "Equation (3): D = D_0 (1 - S_r^2/S_0^2) / (1 - S_r^2/S^2). Both numerator and denominator must be complete and correctly associated.",
+        "S_0 and D_0 are the initial frequency and double amplitude; S is the frequency while coasting; S_r is the resonant speed of the table.",
+        "During coasting, obtain S directly from the record, calculate its corresponding D with equation (3), and substitute S and D into equation (1) to calculate peak acceleration."
+      ],
+      "evidence": [
+        {
+          "source_id": "nist-accelerometers",
+          "pdf_page": 3,
+          "source_cells_or_image_transcription": {
+            "equation1_latex": "a=14.2g\\left(\\frac{S}{1000}\\right)^2D",
+            "equation1_definitions": {
+              "a": "peak acceleration",
+              "g": "acceleration of gravity",
+              "S": "frequency in cycles per minute",
+              "D": "double amplitude in inches"
+            },
+            "equation3_latex": "D=D_0\\frac{1-S_r^2/S_0^2}{1-S_r^2/S^2}",
+            "coasting_relationship": "Table coasts from initial frequency S_0 and double amplitude D_0; current S is read directly from the record, D is computed by equation3, S_r is resonant speed; substitute S and D in equation1."
+          },
+          "review_method": "original coordinate PDF pixels, freshly rendered and visually reviewed before these diagnostic agent answers",
+          "coordinate_pdf_sha256": "64e632778f0bf38409575a82fb8115f9c4a451c3caa275118cec7a5973a1ae7a",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/diagnostic-source-pages/nist-accelerometers-p3.png",
+              "sha256": "053dbe6bd16d6bab73fe42e77bccad94135de39fc42934e2b836508aa4fa4a7f"
+            }
+          ]
+        }
+      ],
+      "provenance": "known parser failures from prior evaluation",
+      "legacy_provenance": {
+        "kind": "diagnostic_known_failures",
+        "selection": "Previously observed parser failure; source rubric rechecked before diagnostic agent answers."
+      },
+      "rubric_notes": [
+        "Equivalent algebra is acceptable only if the complete source expression and variable meanings are preserved. Do not substitute equation5 centrifuge meanings: its S is rpm and its D is circle diameter. Prior source freeze: bench/parsers/reports/local/2026-09-09-odl-math-recovery/full-formula-checks.json. Primary questions043/044 cover calibrator ranges/assembly, not mathematical transcription."
+      ]
+    },
+    {
+      "id": "odl-agentic-stress-004",
+      "split": "heldout",
+      "family": "diagnostic-children-model-table",
+      "language": "zh",
+      "question": "儿童新闻篇章结构框架论文的表1中，在未加TNC的Zero-Shot模型里，哪个模型的BLEU-1最低？请按原文写出完整模型标识符及该分数，再给出它在One-Shot下未加TNC和加TNC时各自的BLEU-1、BLEU-2分数。",
+      "scope_source_ids": null,
+      "source_ids": [
+        "ccl-children"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "diagnostic_known_failures",
+        "table",
+        "exact-identifier",
+        "row-group-association"
+      ],
+      "required_claims": [
+        "The lowest BLEU-1 among the four unmodified Zero-Shot models is Gemini-1.0-pro, spelled exactly with the 1.0-pro suffix; the score is 40.9%.",
+        "In One-Shot, Gemini-1.0-pro has BLEU-1 42.15% and BLEU-2 35.15%.",
+        "In One-Shot, TNC+Gemini-1.0-pro has BLEU-1 45.95% and BLEU-2 37.63%."
+      ],
+      "evidence": [
+        {
+          "source_id": "ccl-children",
+          "pdf_page": 9,
+          "source_cells_or_image_transcription": {
+            "Table1_columns": [
+              "Zero-Shot BLEU-1",
+              "Zero-Shot BLEU-2",
+              "One-Shot BLEU-1",
+              "One-Shot BLEU-2"
+            ],
+            "Table1_rows": {
+              "Gemini-1.0-pro": [
+                "40.9",
+                "33.74",
+                "42.15",
+                "35.15"
+              ],
+              "TNC+Gemini-1.0-pro": [
+                "43.03",
+                "35.8",
+                "45.95",
+                "37.63"
+              ],
+              "GPT-3.5-turbo-16k": [
+                "41.19",
+                "33.89",
+                "43.98",
+                "35.92"
+              ],
+              "TNC+GPT-3.5-turbo-16k": [
+                "50.35",
+                "41.11",
+                "51.48",
+                "41.71"
+              ],
+              "讯飞星火-v3.5": [
+                "44.38",
+                "36.5",
+                "44.89",
+                "37.05"
+              ],
+              "TNC+讯飞星火-v3.5": [
+                "46.06",
+                "38.04",
+                "52.07",
+                "45.41"
+              ],
+              "ERNIE-3.5": [
+                "41.02",
+                "33.33",
+                "42.53",
+                "34.27"
+              ],
+              "TNC+ERNIE-3.5": [
+                "44.73",
+                "35.38",
+                "48.41",
+                "40.32"
+              ]
+            },
+            "unit": "percent"
+          },
+          "review_method": "original coordinate PDF pixels, freshly rendered and visually reviewed before these diagnostic agent answers",
+          "coordinate_pdf_sha256": "e7d6af6e204d97a2ad61730d8fbdd518df227fcd50cc0446e675444d762be80c",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/diagnostic-source-pages/ccl-children-p9.png",
+              "sha256": "19ff95dd2964f496a3fa8a90db7cac9d1bdb23062ecd97a6853f3a7d6017fe3d"
+            }
+          ]
+        }
+      ],
+      "provenance": "known parser failures from prior evaluation",
+      "legacy_provenance": {
+        "kind": "diagnostic_known_failures",
+        "selection": "Previously observed parser failure; source rubric rechecked before diagnostic agent answers."
+      },
+      "rubric_notes": [
+        "Primary048 already names the four models, including Gemini-1.0-pro. This question therefore tests a new Table1 minimum lookup and grouped One-Shot values; it does not claim independent evidence for identifier spelling alone. Formatting spaces are harmless; replacing 1.0 with 10 or changing the model version is not."
+      ]
+    },
+    {
+      "id": "odl-agentic-stress-005",
+      "split": "heldout",
+      "family": "diagnostic-feedback-model-table",
+      "language": "zh",
+      "question": "《面向语言学习者的跨语言反馈评语生成方法》表3中，分别给出两个预训练语言模型的原文标识符、使各自BLEU最高的输入策略及BLEU分数，并给出对应行的BERTScore F1。",
+      "scope_source_ids": null,
+      "source_ids": [
+        "ccl-feedback"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "diagnostic_known_failures",
+        "table",
+        "corrupted-font",
+        "exact-identifier",
+        "row-column-association"
+      ],
+      "required_claims": [
+        "For mBART, Edit+EV gives its highest BLEU, 50.317; the corresponding BERTScore F1 is 86.589.",
+        "For mT5, GTs gives its highest BLEU, 47.953; the corresponding BERTScore F1 is 85.100."
+      ],
+      "evidence": [
+        {
+          "source_id": "ccl-feedback",
+          "pdf_page": 8,
+          "source_cells_or_image_transcription": {
+            "Table3_columns": [
+              "mBART BLEU",
+              "mBART BERTScore P",
+              "mBART BERTScore R",
+              "mBART BERTScore F1",
+              "mT5 BLEU",
+              "mT5 BERTScore P",
+              "mT5 BERTScore R",
+              "mT5 BERTScore F1"
+            ],
+            "Table3_rows": {
+              "Bare": [
+                "47.739",
+                "84.497",
+                "83.463",
+                "83.906",
+                "40.521",
+                "83.668",
+                "82.787",
+                "83.158"
+              ],
+              "Edit": [
+                "43.472",
+                "85.571",
+                "84.154",
+                "84.784",
+                "42.126",
+                "84.946",
+                "84.473",
+                "84.625"
+              ],
+              "EV": [
+                "45.141",
+                "84.135",
+                "83.381",
+                "83.700",
+                "41.180",
+                "83.515",
+                "82.664",
+                "83.011"
+              ],
+              "GTs": [
+                "48.951",
+                "86.973",
+                "86.144",
+                "86.490",
+                "47.953",
+                "85.662",
+                "84.693",
+                "85.100"
+              ],
+              "GP+Edit": [
+                "49.581",
+                "86.942",
+                "85.979",
+                "86.391",
+                "46.211",
+                "84.972",
+                "84.725",
+                "84.781"
+              ],
+              "GP+EV": [
+                "47.546",
+                "86.793",
+                "85.153",
+                "85.896",
+                "45.901",
+                "85.116",
+                "84.329",
+                "84.644"
+              ],
+              "Edit+EV": [
+                "50.317",
+                "86.982",
+                "86.308",
+                "86.589",
+                "42.693",
+                "84.198",
+                "83.413",
+                "83.736"
+              ],
+              "GP+Edit+EV": [
+                "48.503",
+                "86.803",
+                "85.961",
+                "86.313",
+                "44.538",
+                "85.069",
+                "83.961",
+                "84.442"
+              ]
+            }
+          },
+          "review_method": "original coordinate PDF pixels, freshly rendered and visually reviewed before these diagnostic agent answers",
+          "coordinate_pdf_sha256": "6a67443bc89ae7d493464d1d2610f100b192745b6428909e8fc1fc889504b1a1",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/diagnostic-source-pages/ccl-feedback-p8.png",
+              "sha256": "40d0154c20bc298add714d04f4f51babc74cf181694ff848e70afc22639e4aac"
+            },
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/diagnostic-source-pages/ccl-feedback-p8-edit-row.png",
+              "sha256": "eb53e82dc80abef046826548606f95fea7e54a57bdd2b395eea330480c7e03ad",
+              "review_note": "4x original-PDF crop confirms Edit BLEU43.472 and precision85.571; only off-target BLEU transcription corrected before freeze."
+            }
+          ]
+        }
+      ],
+      "provenance": "known parser failures from prior evaluation",
+      "legacy_provenance": {
+        "kind": "diagnostic_known_failures",
+        "selection": "Previously observed parser failure; source rubric rechecked before diagnostic agent answers."
+      },
+      "rubric_notes": [
+        "Use Table3 automatic metrics, not Table10 human strict/relaxed scores tested by primary033. Preserve mBART and mT5 model identities, and distinguish F1 from precision/recall. Numerically equivalent formatting such as85.1 is acceptable."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,3086 @@
+{
+  "schema": "odl-agentic-questions-v1",
+  "sources": {
+    "rag__de__grosse-sprachmodelle": {
+      "id": "rag__de__grosse-sprachmodelle",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__de__grosse-sprachmodelle.pdf",
+      "coordinate_pdf_sha256": "9b27898e9bd5262a304574fedbc364c3a69a3b7f66c5870a4c3607b9d5740697",
+      "original_source_sha256": "9b27898e9bd5262a304574fedbc364c3a69a3b7f66c5870a4c3607b9d5740697",
+      "pages": 34,
+      "vm_original_source": "/opt/capy-rag-lab/samples/de/grosse-sprachmodelle.pdf",
+      "source_kind": "legacy",
+      "original_filename": "grosse-sprachmodelle.pdf"
+    },
+    "rag__de__putnam-einleitung": {
+      "id": "rag__de__putnam-einleitung",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__de__putnam-einleitung.pdf",
+      "coordinate_pdf_sha256": "0e392986257630db63b1d138c344f958dacd17f6cae1c3f1a56f7405e00e15d2",
+      "original_source_sha256": "0e392986257630db63b1d138c344f958dacd17f6cae1c3f1a56f7405e00e15d2",
+      "pages": 21,
+      "vm_original_source": "/opt/capy-rag-lab/samples/de/putnam-einleitung.pdf",
+      "source_kind": "legacy",
+      "original_filename": "putnam-einleitung.pdf"
+    },
+    "rag__en__biology-ib-chapter-1": {
+      "id": "rag__en__biology-ib-chapter-1",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__en__biology-ib-chapter-1.pdf",
+      "coordinate_pdf_sha256": "8cd19abeee7dcb324a9cc8a0809aa4b8efa285b1cf29aa065f9231d8ee9c229e",
+      "original_source_sha256": "8cd19abeee7dcb324a9cc8a0809aa4b8efa285b1cf29aa065f9231d8ee9c229e",
+      "pages": 11,
+      "vm_original_source": "/opt/capy-rag-lab/samples/en/biology-ib-chapter-1.pdf",
+      "source_kind": "legacy",
+      "original_filename": "biology-ib-chapter-1.pdf"
+    },
+    "rag__en__biology-ib-convergent-targets": {
+      "id": "rag__en__biology-ib-convergent-targets",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__en__biology-ib-convergent-targets.pdf",
+      "coordinate_pdf_sha256": "7301d4c0b13d5662c434916c941897b75979cf975ea2cddeb5d1a97317e06071",
+      "original_source_sha256": "7301d4c0b13d5662c434916c941897b75979cf975ea2cddeb5d1a97317e06071",
+      "pages": 2,
+      "vm_original_source": "/opt/capy-rag-lab/samples/en/biology-ib-convergent-targets.pdf",
+      "source_kind": "legacy",
+      "original_filename": "biology-ib-convergent-targets.pdf"
+    },
+    "rag__en__biology-ib-sample-16-pages": {
+      "id": "rag__en__biology-ib-sample-16-pages",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__en__biology-ib-sample-16-pages.pdf",
+      "coordinate_pdf_sha256": "3dfd95d688b13d32414f2ad4f46c436a200cc102313f5837247d7c7fbc59daf9",
+      "original_source_sha256": "3dfd95d688b13d32414f2ad4f46c436a200cc102313f5837247d7c7fbc59daf9",
+      "pages": 16,
+      "vm_original_source": "/opt/capy-rag-lab/samples/en/biology-ib-sample-16-pages.pdf",
+      "source_kind": "legacy",
+      "original_filename": "biology-ib-sample-16-pages.pdf"
+    },
+    "rag__en__newspaper_scan": {
+      "id": "rag__en__newspaper_scan",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__en__newspaper_scan.pdf",
+      "coordinate_pdf_sha256": "9a4d01e6b17f17d336eb4c56d8bcdd9be25f63d13c1cfdfab83c7d385d405ef1",
+      "original_source_sha256": "9a4d01e6b17f17d336eb4c56d8bcdd9be25f63d13c1cfdfab83c7d385d405ef1",
+      "pages": 2,
+      "vm_original_source": "/opt/capy-rag-lab/samples/en/newspaper_scan.pdf",
+      "source_kind": "legacy",
+      "original_filename": "newspaper_scan.pdf"
+    },
+    "rag__es__sesgo-linguistico-digital": {
+      "id": "rag__es__sesgo-linguistico-digital",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__es__sesgo-linguistico-digital.pdf",
+      "coordinate_pdf_sha256": "a86f91bf87765a23a9e0b27b32c8b260242ffbc4a94de61074b57b7d856c0cbb",
+      "original_source_sha256": "a86f91bf87765a23a9e0b27b32c8b260242ffbc4a94de61074b57b7d856c0cbb",
+      "pages": 25,
+      "vm_original_source": "/opt/capy-rag-lab/samples/es/sesgo-linguistico-digital.pdf",
+      "source_kind": "legacy",
+      "original_filename": "sesgo-linguistico-digital.pdf"
+    },
+    "rag__es__variedades-espanol": {
+      "id": "rag__es__variedades-espanol",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__es__variedades-espanol.pdf",
+      "coordinate_pdf_sha256": "6e9ee0972e0932c99b3d26e2fb9a8618edfbf06b883c8c3c3f872aa76d43cb24",
+      "original_source_sha256": "6e9ee0972e0932c99b3d26e2fb9a8618edfbf06b883c8c3c3f872aa76d43cb24",
+      "pages": 10,
+      "vm_original_source": "/opt/capy-rag-lab/samples/es/variedades-espanol.pdf",
+      "source_kind": "legacy",
+      "original_filename": "variedades-espanol.pdf"
+    },
+    "rag__fr__camembert-taln": {
+      "id": "rag__fr__camembert-taln",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__fr__camembert-taln.pdf",
+      "coordinate_pdf_sha256": "5499969bf0f52657722c22220ee8f6f7fe763629d438a9a67d376b05e115dff3",
+      "original_source_sha256": "5499969bf0f52657722c22220ee8f6f7fe763629d438a9a67d376b05e115dff3",
+      "pages": 12,
+      "vm_original_source": "/opt/capy-rag-lab/samples/fr/camembert-taln.pdf",
+      "source_kind": "legacy",
+      "original_filename": "camembert-taln.pdf"
+    },
+    "rag__fr__wikiner-fr-gold": {
+      "id": "rag__fr__wikiner-fr-gold",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__fr__wikiner-fr-gold.pdf",
+      "coordinate_pdf_sha256": "d8c5b3f432b8c928224816ed8f155983b5e53ad48ac4e906f9d1c0c8918716ca",
+      "original_source_sha256": "d8c5b3f432b8c928224816ed8f155983b5e53ad48ac4e906f9d1c0c8918716ca",
+      "pages": 6,
+      "vm_original_source": "/opt/capy-rag-lab/samples/fr/wikiner-fr-gold.pdf",
+      "source_kind": "legacy",
+      "original_filename": "wikiner-fr-gold.pdf"
+    },
+    "rag__ja__jp_llm2": {
+      "id": "rag__ja__jp_llm2",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__ja__jp_llm2.pdf",
+      "coordinate_pdf_sha256": "6002cc3109039bc7815f66076e107e4e3c8c2ca98869d45c7100b458f7ee7fbc",
+      "original_source_sha256": "6890415a45b3241052808254d0743abcd453069eedbf7cccd0a5fd87247dd681",
+      "pages": 84,
+      "vm_original_source": "/opt/capy-rag-lab/samples/ja/jp_llm2.pptx",
+      "source_kind": "legacy",
+      "original_filename": "jp_llm2.pptx"
+    },
+    "rag__ja__jp_llm": {
+      "id": "rag__ja__jp_llm",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__ja__jp_llm.pdf",
+      "coordinate_pdf_sha256": "28fbf744d91750133f60ebb1ad4bf50854d234441ceaae692400a874276c2c7b",
+      "original_source_sha256": "28fbf744d91750133f60ebb1ad4bf50854d234441ceaae692400a874276c2c7b",
+      "pages": 26,
+      "vm_original_source": "/opt/capy-rag-lab/samples/ja/jp_llm.pdf",
+      "source_kind": "legacy",
+      "original_filename": "jp_llm.pdf"
+    },
+    "rag__zh__mixed_zh_en": {
+      "id": "rag__zh__mixed_zh_en",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__zh__mixed_zh_en.pdf",
+      "coordinate_pdf_sha256": "7e55b0ee27cbd801f20e3c9ee9c659b501a809bd373777fc5f9b7f18813f4932",
+      "original_source_sha256": "7e55b0ee27cbd801f20e3c9ee9c659b501a809bd373777fc5f9b7f18813f4932",
+      "pages": 20,
+      "vm_original_source": "/opt/capy-rag-lab/samples/zh/mixed_zh_en.pdf",
+      "source_kind": "legacy",
+      "original_filename": "mixed_zh_en.pdf"
+    },
+    "rag__zh__zh-CN": {
+      "id": "rag__zh__zh-CN",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__zh__zh-CN.pdf",
+      "coordinate_pdf_sha256": "73e000eadee1d6fcfc374c1b37803b0492b648a3afdda95c1f01cf75cbc0f1dd",
+      "original_source_sha256": "73e000eadee1d6fcfc374c1b37803b0492b648a3afdda95c1f01cf75cbc0f1dd",
+      "pages": 11,
+      "vm_original_source": "/opt/capy-rag-lab/samples/zh/zh-CN.pdf",
+      "source_kind": "legacy",
+      "original_filename": "zh-CN.pdf"
+    },
+    "rag__zh__zh_HK": {
+      "id": "rag__zh__zh_HK",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__zh__zh_HK.pdf",
+      "coordinate_pdf_sha256": "37ee98f3cc724c6eb69a8fc8120e87ddccdf8c7169a57339402daa12311e9211",
+      "original_source_sha256": "37ee98f3cc724c6eb69a8fc8120e87ddccdf8c7169a57339402daa12311e9211",
+      "pages": 15,
+      "vm_original_source": "/opt/capy-rag-lab/samples/zh/zh_HK.pdf",
+      "source_kind": "legacy",
+      "original_filename": "zh_HK.pdf"
+    },
+    "rag__zh__zh_TW_llm": {
+      "id": "rag__zh__zh_TW_llm",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__zh__zh_TW_llm.pdf",
+      "coordinate_pdf_sha256": "d55d954482a9a6404b9fe0b120aabf734de1c2045cd1928ba7fa1f544a32c92b",
+      "original_source_sha256": "92168d5e03378df332fb671b0b403f7b39d6fac2771658497fa82e8efd2d836e",
+      "pages": 33,
+      "vm_original_source": "/opt/capy-rag-lab/samples/zh/zh_TW_llm.pptx",
+      "source_kind": "legacy",
+      "original_filename": "zh_TW_llm.pptx"
+    },
+    "attention": {
+      "id": "attention",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-pass/inputs/attention.pdf",
+      "coordinate_pdf_sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697",
+      "original_source_sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697",
+      "pages": 15,
+      "vm_original_source": null,
+      "source_kind": "parser_development",
+      "original_filename": "attention.pdf"
+    },
+    "taln-complexity": {
+      "id": "taln-complexity",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-pass/inputs/taln-complexity.pdf",
+      "coordinate_pdf_sha256": "bf082a428310d35390cc83cb475094f143642dd8cfc1c165a2144cca85215294",
+      "original_source_sha256": "bf082a428310d35390cc83cb475094f143642dd8cfc1c165a2144cca85215294",
+      "pages": 13,
+      "vm_original_source": null,
+      "source_kind": "parser_development",
+      "original_filename": "taln-complexity.pdf"
+    },
+    "ccl-feedback": {
+      "id": "ccl-feedback",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-pass/inputs/ccl-feedback.pdf",
+      "coordinate_pdf_sha256": "6a67443bc89ae7d493464d1d2610f100b192745b6428909e8fc1fc889504b1a1",
+      "original_source_sha256": "6a67443bc89ae7d493464d1d2610f100b192745b6428909e8fc1fc889504b1a1",
+      "pages": 16,
+      "vm_original_source": null,
+      "source_kind": "parser_development",
+      "original_filename": "ccl-feedback.pdf"
+    },
+    "spain-figures": {
+      "id": "spain-figures",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-pass/inputs/spain-figures.pdf",
+      "coordinate_pdf_sha256": "a27e7a5b5982fd5fbf27dc90044b94aedf7dab257f29788ebe2cd32364185867",
+      "original_source_sha256": "a27e7a5b5982fd5fbf27dc90044b94aedf7dab257f29788ebe2cd32364185867",
+      "pages": 60,
+      "vm_original_source": null,
+      "source_kind": "parser_development",
+      "original_filename": "spain-figures.pdf"
+    },
+    "japan-migration": {
+      "id": "japan-migration",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-pass/inputs/japan-migration.pdf",
+      "coordinate_pdf_sha256": "ff4812aac97b8fdfe1919bd7c04a446aa7326eebc56ca047a777081c64e80f4a",
+      "original_source_sha256": "ff4812aac97b8fdfe1919bd7c04a446aa7326eebc56ca047a777081c64e80f4a",
+      "pages": 54,
+      "vm_original_source": null,
+      "source_kind": "parser_development",
+      "original_filename": "japan-migration.pdf"
+    },
+    "german-education": {
+      "id": "german-education",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-pass/inputs/german-education.pdf",
+      "coordinate_pdf_sha256": "2608aecd1c675ee8dcd7de740bae4f87b497229f18889ae67454966176691dfd",
+      "original_source_sha256": "2608aecd1c675ee8dcd7de740bae4f87b497229f18889ae67454966176691dfd",
+      "pages": 32,
+      "vm_original_source": null,
+      "source_kind": "parser_development",
+      "original_filename": "german-education.pdf"
+    },
+    "hongkong-figures": {
+      "id": "hongkong-figures",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-pass/inputs/hongkong-figures.pdf",
+      "coordinate_pdf_sha256": "c3490cc7c1664ce8e75edcce55898be58dc21fceade53b3c1cbfd7f30411f2d9",
+      "original_source_sha256": "c3490cc7c1664ce8e75edcce55898be58dc21fceade53b3c1cbfd7f30411f2d9",
+      "pages": 53,
+      "vm_original_source": null,
+      "source_kind": "parser_development",
+      "original_filename": "hongkong-figures.pdf"
+    },
+    "nist-accelerometers": {
+      "id": "nist-accelerometers",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-pass/inputs/nist-accelerometers.pdf",
+      "coordinate_pdf_sha256": "64e632778f0bf38409575a82fb8115f9c4a451c3caa275118cec7a5973a1ae7a",
+      "original_source_sha256": "64e632778f0bf38409575a82fb8115f9c4a451c3caa275118cec7a5973a1ae7a",
+      "pages": 11,
+      "vm_original_source": null,
+      "source_kind": "parser_development",
+      "original_filename": "nist-accelerometers.pdf"
+    },
+    "ccl-cot": {
+      "id": "ccl-cot",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-font-transfer/inputs/ccl-cot.pdf",
+      "coordinate_pdf_sha256": "87bb845a8843bde1527827dcfa2e0070a5207087f9f93739497c5997cf270e0b",
+      "original_source_sha256": "87bb845a8843bde1527827dcfa2e0070a5207087f9f93739497c5997cf270e0b",
+      "pages": 24,
+      "vm_original_source": null,
+      "source_kind": "parser_development",
+      "original_filename": "ccl-cot.pdf"
+    },
+    "ccl-children": {
+      "id": "ccl-children",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-font-transfer/inputs/ccl-children.pdf",
+      "coordinate_pdf_sha256": "e7d6af6e204d97a2ad61730d8fbdd518df227fcd50cc0446e675444d762be80c",
+      "original_source_sha256": "e7d6af6e204d97a2ad61730d8fbdd518df227fcd50cc0446e675444d762be80c",
+      "pages": 21,
+      "vm_original_source": null,
+      "source_kind": "parser_development",
+      "original_filename": "ccl-children.pdf"
+    },
+    "bert": {
+      "id": "bert",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-independent/inputs/bert.pdf",
+      "coordinate_pdf_sha256": "5692a5514787a8c6727b4ff3b726a3385798bc68e12138d1d4af83947e2acf6e",
+      "original_source_sha256": "5692a5514787a8c6727b4ff3b726a3385798bc68e12138d1d4af83947e2acf6e",
+      "pages": 16,
+      "vm_original_source": null,
+      "source_kind": "parser_development",
+      "original_filename": "bert.pdf"
+    },
+    "resnet": {
+      "id": "resnet",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-independent/inputs/resnet.pdf",
+      "coordinate_pdf_sha256": "1e0651b6810ecba34a3dbc5b5b0209226f889004607c1f203540a48d64e5a93a",
+      "original_source_sha256": "1e0651b6810ecba34a3dbc5b5b0209226f889004607c1f203540a48d64e5a93a",
+      "pages": 12,
+      "vm_original_source": null,
+      "source_kind": "parser_development",
+      "original_filename": "resnet.pdf"
+    },
+    "nist-shot": {
+      "id": "nist-shot",
+      "coordinate_pdf": "bench/parsers/reports/local/2026-09-09-odl-independent/inputs/nist-shot.pdf",
+      "coordinate_pdf_sha256": "0bdb43c9e1be39acf0dbafe76d1aa3cbd69efd706425bfb27bba979b1fd36763",
+      "original_source_sha256": "0bdb43c9e1be39acf0dbafe76d1aa3cbd69efd706425bfb27bba979b1fd36763",
+      "pages": 8,
+      "vm_original_source": null,
+      "source_kind": "parser_development",
+      "original_filename": "nist-shot.pdf"
+    }
+  },
+  "protocol": {
+    "agent_input_fields": [
+      "id",
+      "question",
+      "language",
+      "scope_source_ids"
+    ],
+    "gold_fields_never_sent_to_agent": [
+      "source_ids",
+      "required_claims",
+      "evidence",
+      "legacy_provenance",
+      "rubric_notes",
+      "tags",
+      "answerability",
+      "family",
+      "split"
+    ],
+    "scope_source_ids_null_means": "all 29 shared corpus sources",
+    "split_policy": "Fixed question-family split over shared sources. This is not an independent source-domain holdout. No agent answer was inspected during selection.",
+    "parser_policy": "Primary comparison uses final refined native ODL and full MinerU parsing. Any hybrid OCR/formula arm must be reported separately.",
+    "grading": "Semantic answer correctness, all-claim source support, observed-evidence coverage, citation support, and missing-evidence behavior are separate. Literal text matching is diagnostic only.",
+    "explicit_scope_policy": "Restrict both search and read_document to the listed logical source IDs mapped to arm-specific file IDs; show the permitted filenames to the agent. Gold source_ids never defines tool scope.",
+    "equivalent_evidence_policy": "Accept semantically equivalent source-supported answers and citations from another permitted source when the question does not name a particular source, table or figure. The listed source_ids are expected gold evidence, not an exclusive evidence allowlist.",
+    "freeze_note": "Frozen before new agent answers, following source audit and independent source review. Any subsequent rubric correction requires a separately recorded revision and score recomputation."
+  },
+  "questions": [
+    {
+      "id": "odl-agentic-001",
+      "split": "development",
+      "family": "normal-spread",
+      "language": "en",
+      "question": "What percentage of values fall within one standard deviation of the mean in a normal distribution?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__en__biology-ib-chapter-1"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "ordinary"
+      ],
+      "required_claims": [
+        "68% lie within one standard deviation above or below the mean."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__en__biology-ib-chapter-1",
+          "pdf_page": 2,
+          "literal_source_text": "refore it has the same units as the values.\nIn a normal distribution, 68% of all the values in a sample fall within \n±1 standard deviation of the mean, and this increases to 95% within ±2 \nstandard deviations of the mean (Figure 1.2).\nFigure 1.1 A normal distribution.\nFigure 1.2 Two different normal distribution curves – for both, 68% of the values fall \nwithin 1 standard deviation of the mean, and 95% fall within 2 standard deviations.\nmean\nValue (for example, height)\nFrequency\n(for example, number of\nstudents at each height)\nmean\nmean\nValue\n1s\nValue\nFrequency\nFrequency\n=68%\n68%\n95%\n+–\n2s\n=95%\n+–\nThese percentages are the same for all shapes of normal distribution \ncurves. The standard deviation tells us how much the data spreads out each \nside of the mean – that is, whether the distribution is tall and narrow or \nwide and ﬂ at – and this allows us to compare sets of data.\n1 In Figure 1.2, which sample shows the greatest variation?\nCalculating the standard deviation\nThe symbol for standard deviation is s. Remember that s is normally \ncalculated for a sample from the population. Standard deviation is calculated \nby entering the data into a scientiﬁ c o",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "8cd19abeee7dcb324a9cc8a0809aa4b8efa285b1cf29aa065f9231d8ee9c229e",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__en__biology-ib-chapter-1.pdf",
+          "text_locator_pdf_sha256": "8cd19abeee7dcb324a9cc8a0809aa4b8efa285b1cf29aa065f9231d8ee9c229e"
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions.json",
+        "index": 0,
+        "sha256": "12aec1b7ee5dc6ba54d8865f121651ccda17d1ff0b81fbf841776565fdac1cdd",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-002",
+      "split": "heldout",
+      "family": "t-degrees",
+      "language": "en",
+      "question": "How do you work out the degrees of freedom for a t-test?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__en__biology-ib-chapter-1"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "formula"
+      ],
+      "required_claims": [
+        "For the two-sample t-test described, df = n1 + n2 - 2.",
+        "n1 and n2 are the two sample sizes."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__en__biology-ib-chapter-1",
+          "pdf_page": 5,
+          "literal_source_text": "7\n← decreasing signiﬁ cance increasing →\nTable 1.4 Table of t-values.\n‘Degrees of freedom’ is calculated from the sum of the sample sizes of \nthe two groups of data, minus 2:\ndegrees of freedom = (n1 + n2) − 2\nwhere n1 is the number of values in sample 1 and n2 is the number of \nvalues in sample 2.\nRemember, to use the t-test, there must be a minimum of 10 to 15 values \nfor each sample and they must form a normal, or near-normal, distribution.\n",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "8cd19abeee7dcb324a9cc8a0809aa4b8efa285b1cf29aa065f9231d8ee9c229e",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__en__biology-ib-chapter-1.pdf",
+          "text_locator_pdf_sha256": "8cd19abeee7dcb324a9cc8a0809aa4b8efa285b1cf29aa065f9231d8ee9c229e"
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions.json",
+        "index": 1,
+        "sha256": "12aec1b7ee5dc6ba54d8865f121651ccda17d1ff0b81fbf841776565fdac1cdd",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-003",
+      "split": "heldout",
+      "family": "soybean-test",
+      "language": "en",
+      "question": "In the soybean fertiliser experiment, was the difference in growth significant?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__en__biology-ib-chapter-1"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "table",
+        "reasoning"
+      ],
+      "required_claims": [
+        "Yes, the mean growth difference is significant at 5%.",
+        "df is 18; calculated t=5.96 exceeds the critical value 2.10."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__en__biology-ib-chapter-1",
+          "pdf_page": 6,
+          "literal_source_text": " a signiﬁ cant diﬀ erence in \ngrowth between the two sets of \nplants?\nStep 1 Determine the number of degrees of freedom for the data:\n \ndegrees of freedom = (10 + 10) − 2\n \n \n= 18\nStep 2 Go down the degrees of freedom column on the t-table in Table 1.4 to the 18 value.\nStep 3 Go across the table and ﬁ nd the critical value of t – that is, the number in the ‘5% or 0.05’ column. In this \nexample, it is 2.10.\nStep 4 Calculate a value for t, using the appropriate statistical formula in your calculator or spreadsheet. In this \ncase, the calculated value for t is 5.96.\nStep 5 Compare the calculated value for t with the critical value from the table. If the calculated value of t \nis greater than this critical value, then there is a signiﬁ cant diﬀ erence between the sets of data. If the \ncalculated value of t is lower than the critical value, then the diﬀ erence is due to chance.\nIn this case, 5.96 is greater than 2.10, so we conclude that there is a signiﬁ cant diﬀ erence between the means. \nThis indicates that the fertiliser may have caused the increase in growth.\n Use Table 1.4 to help you answer these questions.\n3 In an investigation to compare two groups of plants grown with different \nlevels of minerals, the degrees of freedom (df) was 20 and the calculated \nvalue for t was 4.02. Was there a signiﬁ cant difference between the two \nsets of data?\n4 In another investigation the body mass of crabs living on a west-facing \nshore was compared with that of crabs from an east-facing shore. The \ndegrees o",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "8cd19abeee7dcb324a9cc8a0809aa4b8efa285b1cf29aa065f9231d8ee9c229e",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__en__biology-ib-chapter-1.pdf",
+          "text_locator_pdf_sha256": "8cd19abeee7dcb324a9cc8a0809aa4b8efa285b1cf29aa065f9231d8ee9c229e"
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions.json",
+        "index": 5,
+        "sha256": "12aec1b7ee5dc6ba54d8865f121651ccda17d1ff0b81fbf841776565fdac1cdd",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": [
+        "Do not require the source’s simplified probability wording."
+      ]
+    },
+    {
+      "id": "odl-agentic-004",
+      "split": "heldout",
+      "family": "convergent-evolution",
+      "language": "en",
+      "question": "What is convergent evolution? Give an example.",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__en__biology-ib-convergent-targets"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "ordinary",
+        "figure"
+      ],
+      "required_claims": [
+        "Different ancestors develop similar functional characteristics.",
+        "Bat and insect wings are the source example."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__en__biology-ib-convergent-targets",
+          "pdf_page": 1,
+          "literal_source_text": "OPTION D  EVOLUTION\n373\nbat wing\ninsect wing\nConvergent evolution\nsimilar characteristics but\ndifferent ancestors\nDivergent evolution\ndifferent characteristics but\nsame ancestor\nFigure D.13 The bat’s wing is structurally very different from the insect’s wing, yet \nthey perform a similar function. This is an example of convergent evolution.\nFigure D.14 These diagrams show the difference between convergent and divergent \nevolution.\n– they make it more likely that an organisms will survive and reproduce \nsuccessfully in that environment. This is known as convergent evolution. \nAn example is the wing of a bat and the wing of an insect (Figure D.13). \nThe wings serve similar functions but they are derived from completely \ndiﬀ erent structures. Bats and insects are not closely related.\nFigure D.14 summarises the diﬀ erences between convergent and \ndivergent evolution.\nThe pace of evolution: gradualism and punctuated \nequilibrium\nDarwin viewed evolution as a slow, steady process called gradualism, \nwhereby changes slowly accumulated over many generations and led to \nspeciation. For many species, this seems to be true. A good example o",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "7301d4c0b13d5662c434916c941897b75979cf975ea2cddeb5d1a97317e06071",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__en__biology-ib-convergent-targets.pdf",
+          "text_locator_pdf_sha256": "7301d4c0b13d5662c434916c941897b75979cf975ea2cddeb5d1a97317e06071"
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions.json",
+        "index": 9,
+        "sha256": "12aec1b7ee5dc6ba54d8865f121651ccda17d1ff0b81fbf841776565fdac1cdd",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-005",
+      "split": "heldout",
+      "family": "water-polarity",
+      "language": "en",
+      "question": "Why is water a polar molecule?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__en__biology-ib-sample-16-pages"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "figure",
+        "ordinary"
+      ],
+      "required_claims": [
+        "Oxygen attracts the bonding electrons, giving oxygen a small negative charge and the hydrogen atoms small positive charges.",
+        "The unequal charge distribution makes the molecule polar."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__en__biology-ib-sample-16-pages",
+          "pdf_page": 5,
+          "source_cells_or_image_transcription": {
+            "Figure 3.1": "Oxygen atom pulls bonding electrons towards it; oxygen slightly negative, hydrogen slightly positive; two hydrogens on one side of oxygen."
+          },
+          "review_method": "original coordinate PDF pixels",
+          "coordinate_pdf_sha256": "3dfd95d688b13d32414f2ad4f46c436a200cc102313f5837247d7c7fbc59daf9",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/rag__en__biology-ib-sample-16-pages-p5.png",
+              "sha256": "f9e19343dcf756f3e6f1906fee4b9e6dfea580ff991c117acfcbf32dc0318cab"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions.json",
+        "index": 12,
+        "sha256": "12aec1b7ee5dc6ba54d8865f121651ccda17d1ff0b81fbf841776565fdac1cdd",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-006",
+      "split": "heldout",
+      "family": "newspaper-harbour",
+      "language": "en",
+      "question": "What happened at the city council harbour vote?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__en__newspaper_scan"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "scan",
+        "partial_information"
+      ],
+      "required_claims": [
+        "The city council voted on the harbour plan the previous night."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__en__newspaper_scan",
+          "pdf_page": 1,
+          "source_cells_or_image_transcription": {
+            "headline": "Harbour vote shocks city",
+            "body": "City council voted last night on the harbour plan."
+          },
+          "review_method": "original coordinate PDF pixels",
+          "coordinate_pdf_sha256": "9a4d01e6b17f17d336eb4c56d8bcdd9be25f63d13c1cfdfab83c7d385d405ef1",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/rag__en__newspaper_scan-p1.png",
+              "sha256": "e5831906530179d1157cf65a3a9a6c2e194fe062d5e780f92c73853bc62de4d5"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions.json",
+        "index": 18,
+        "sha256": "12aec1b7ee5dc6ba54d8865f121651ccda17d1ff0b81fbf841776565fdac1cdd",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": [
+        "Do not invent a decision outcome from the headline. Synthetic scan, not a real news report.",
+        "The scan does not state approval/rejection, vote counts, or the city name. These omissions need not be volunteered, but no such detail may be invented."
+      ]
+    },
+    {
+      "id": "odl-agentic-007",
+      "split": "development",
+      "family": "prompt-engineering",
+      "language": "de",
+      "question": "Was versteht man unter Prompt Engineering?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__de__grosse-sprachmodelle"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "ordinary"
+      ],
+      "required_claims": [
+        "Systematic design of prompts to obtain optimal results for a task.",
+        "It adapts model use without fine-tuning or retraining."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__de__grosse-sprachmodelle",
+          "pdf_page": 14,
+          "literal_source_text": "aben-\nstellungen zu spezialisieren.\nMöglichkeiten der Modellanpassung\nPrompt Engineering: Als Prompt wird eine Anfrage an ein Sprachmodell bezeichnet. \nPrompt Engineering entspricht daher systematischen Vorgehensweisen, um solche \nAnfragen so zu gestalten, dass sie zu optimalen Ergebnissen führen. Auf diese Weise \nkann das Modell effektiv für spezifische Aufgaben angepasst werden, ohne dass ein Fine \nTuning oder Nachtrainieren des Modells notwendig wird.\nFew-Shot Learning: Unter diesem Begriff werden Techniken und Methoden zusammen-\ngefasst, die eine effektive und effiziente Anpassung eines vortrainierten Machine-Learning-\nModells an bisher unbekannte Klassen oder Problemstellungen ermöglichen. Few-Shot-\nLearning-Methoden erlauben die Anpassung eines Modells an eine neue Problemstellung \ndurch die Nutzung weniger Beispiele, um dennoch zuverlässige Vorhersageergebnisse zu \nerzielen.\nFine Tuning: Unter Feinabstimmung versteht man in der maschinellen Sprachverarbeitung \ndas erneute Trainieren eines vortrainierten Sprachmodells mit eigenen Daten. Als Ergebnis \ndes Fein-Tunings werden die Gewichte des ursprünglichen Modells aktualisiert, um die \nEigenschaft",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "9b27898e9bd5262a304574fedbc364c3a69a3b7f66c5870a4c3607b9d5740697",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__de__grosse-sprachmodelle.pdf",
+          "text_locator_pdf_sha256": "9b27898e9bd5262a304574fedbc364c3a69a3b7f66c5870a4c3607b9d5740697"
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions-de.json",
+        "index": 0,
+        "sha256": "f9730dfc260ea91e815ad4701e46ebbd5500e9ab103fa8ab2a10dd23a869c36e",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-008",
+      "split": "heldout",
+      "family": "llm-inputs",
+      "language": "de",
+      "question": "Welche vier Komponenten braucht man um große Sprachmodelle zu erstellen?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__de__grosse-sprachmodelle"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "list"
+      ],
+      "required_claims": [
+        "High-quality data; computing power; high-performance algorithms; staff and experts with specific knowledge and skills."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__de__grosse-sprachmodelle",
+          "pdf_page": 6,
+          "literal_source_text": "Um große Sprachmodelle zu erstellen, sind vier Komponenten notwendig: (1) Daten in hoher Qualität und \nGüte, (2) Rechenleistung, (3) hochperformante Algorithmen, die auf Basis der Daten und der Rechenleistung \neffizient angewendet werden können, sowie (4) Mitarbeitende und Fachleute mit spezifischen Kenntnissen \nund Fertigkeiten (z. B. Fertigkeiten, um Modelle des maschinellen Lernens in der Anwendung zuverlässig \nund effizient einzusetzen und zu warten, Wissen zu maschinellem Lernen und Transformern usw.). Welches \nPotenzial durch eine effiziente Kombination dieser vier Komponenten freigesetzt werden kann, macht die \nEntwicklung zu großen KI-Modellen besonders deutlich. ChatGPT ist eines der bekanntesten Sprachmodelle \nfür Dialoge (Stand: 2023). Es basiert auf dem vortrainierten Sprachmodell GPT-3.5, das in der Lage ist, Texte \nzu generieren, und wurde mit der sogenannten Transf",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "9b27898e9bd5262a304574fedbc364c3a69a3b7f66c5870a4c3607b9d5740697",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__de__grosse-sprachmodelle.pdf",
+          "text_locator_pdf_sha256": "9b27898e9bd5262a304574fedbc364c3a69a3b7f66c5870a4c3607b9d5740697"
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions-de.json",
+        "index": 2,
+        "sha256": "f9730dfc260ea91e815ad4701e46ebbd5500e9ab103fa8ab2a10dd23a869c36e",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-009",
+      "split": "heldout",
+      "family": "putnam-carnap",
+      "language": "de",
+      "question": "Wo traf Putnam Rudolf Carnap?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__de__putnam-einleitung"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "ordinary"
+      ],
+      "required_claims": [
+        "Putnam met Carnap in Princeton."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__de__putnam-einleitung",
+          "pdf_page": 2,
+          "literal_source_text": " eine Stelle als Assistant Professor an der \nrenommierten Universität Princeton antreten. Dort traf er einen weiteren \nwichtigen Mentor: Rudolf Carnap. Dieser Philosoph lehrte seit 1936 in \nden USA und galt inzwischen als einer der führenden Köpfe im Lande. In \nden folgenden beiden Jahren führte Putnam zahlreiche Gespräche mit \nCarnap in dessen Haus. Neben den Klassikern des Pragmatismus (Peirce, \nDewey, James) hat Putnam später immer wieder auf die Bedeutung seiner \nbeiden \nLehrer \nhingewiesen. \nIn \nPrinceton \nbegann \ner \nseine \nPublikationstätigkeit (wie in der Bibliographie in diesem Band \nnachzulesen) mit Aufsätzen zu sprachphilosophischen Themen, zum \nProblem der Analytizität und zur Philosophie der Mathematik; außerdem \ngriff er mit der Frage, ob die Quantenmechanik eine neue, nicht-klassische \nLogik erfordert (eine ‹Quantenlogik›), ein Thema Reichenba",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "0e392986257630db63b1d138c344f958dacd17f6cae1c3f1a56f7405e00e15d2",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__de__putnam-einleitung.pdf",
+          "text_locator_pdf_sha256": "0e392986257630db63b1d138c344f958dacd17f6cae1c3f1a56f7405e00e15d2"
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions-de.json",
+        "index": 9,
+        "sha256": "f9730dfc260ea91e815ad4701e46ebbd5500e9ab103fa8ab2a10dd23a869c36e",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-010",
+      "split": "heldout",
+      "family": "distributional-hypothesis",
+      "language": "de",
+      "question": "Wie erklärt die Distributional Hypothesis die Bedeutung von Wörtern?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__de__grosse-sprachmodelle"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "ordinary"
+      ],
+      "required_claims": [
+        "Words occurring in similar contexts tend to have similar meanings.",
+        "Embeddings encode words or word parts as vectors; contextual similarity is represented mathematically."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__de__grosse-sprachmodelle",
+          "pdf_page": 8,
+          "literal_source_text": "die in gleichen Kontexten vorkommen, ähnliche Bedeutungen haben (sog. Distributional Hypo-\nthesis). In der Umsetzung werden zunächst Wörter bzw. Wortteile in Vektoren, auch Embeddings genannt, \nüberführt, die das Wort mathematisch abstrakt beschreiben. Solche Vektoren können beim maschinellen Ler-\nnen mit neuronalen Netzen verarbeitet werden. Sie werden in einem weiteren Schritt in hochdimensionalen \nRäumen angeordnet, um ein Maß zu erhalten, wie ähnlich sich zwei Vektoren sind. Sinnhaft ähnliche \nBegriffe erhalten eine ähnliche Vektordarstellung. Für Synonyme sind dann diese Ähnlichkeiten zum Beispiel \nbesonders groß (das heißt, die Abstände sind im Vektorraum klein).\nDie einzelnen Schichten des Transformers spezialisieren sich auf unterschiedliche Aufgaben, obwohl die \nArchitektur in jeder Schicht identisch ist (siehe hierzu z. B. Van Aken et al., 2019). Beispielsweise klassifizieren \ndie unteren Schichte",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "9b27898e9bd5262a304574fedbc364c3a69a3b7f66c5870a4c3607b9d5740697",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__de__grosse-sprachmodelle.pdf",
+          "text_locator_pdf_sha256": "9b27898e9bd5262a304574fedbc364c3a69a3b7f66c5870a4c3607b9d5740697"
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions-de.json",
+        "index": 13,
+        "sha256": "f9730dfc260ea91e815ad4701e46ebbd5500e9ab103fa8ab2a10dd23a869c36e",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-011",
+      "split": "development",
+      "family": "digital-linguistic-bias",
+      "language": "es",
+      "question": "Qué es el sesgo lingüístico digital en los modelos de lenguaje?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__es__sesgo-linguistico-digital"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "ordinary"
+      ],
+      "required_claims": [
+        "Training data and language technologies overrepresent some languages, dialects and social varieties while making others less visible.",
+        "The resulting models inadequately reflect Spanish linguistic and dialectal diversity."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__es__sesgo-linguistico-digital",
+          "pdf_page": 4,
+          "literal_source_text": "os \nmuchos sesgos que es necesario identificar, investigar y mitigar.\nLa lengua no está libre de los sesgos inherentes a la IA, considerando especialmente que se trata \nde la principal materia prima que alimenta los MLM. Estos modelos, también conocidos como \ngrandes modelos de lenguaje, modelos de lenguaje de gran tamaño o a gran escala, se nutren de una \ncombinación de corpus textuales existentes y de datos recopilados de internet, como páginas web, \nlibros, artículos, materiales académicos y otros contenidos textuales digitales en redes sociales. \nAdemás, incluyen textos de diversos dominios, como documentos jurídicos, informes financieros \no publicaciones médicas (Amaratunga, 2023; Liu et al., 2024). A pesar de que en la IA generativa \n“la diversidad cultural y lingüística de la región puede ser una fuente de ventajas competitivas al \npermitir el desarrollo de soluciones adaptadas a sus peculiaridades” (Peláez Agudo, 2023, p. 18), \nlos actuales MLM no logran reflejar adecuadamente esta diversidad lingüística y dialectal, sino \nque existe “una criba dialectal y sociolectal […] que incluye y visibiliza ciertos dialectos mientras \nque excluye e invisibiliza otros” (Company Company, 2019, p. 109). Estos modelos no contienen \nporcentajes suficientemente representativos de las particularidades e idiosincrasias del idioma; es \nmás, cuentan con una base en lengua inglesa que, en algunos casos, puede llegar al 90 % de \nsu corpus documental y que se convierten al español mediante traducción automática (Portal \nAdministración Electrónica, 2024).\nSi el trazado de isoglosas o líneas que dividen zonas geográficas con características dialectales \nespecíficas ya es difícil de realizar consistentemente dentro de un mismo territorio desde una \nmetodologí",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "a86f91bf87765a23a9e0b27b32c8b260242ffbc4a94de61074b57b7d856c0cbb",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__es__sesgo-linguistico-digital.pdf",
+          "text_locator_pdf_sha256": "a86f91bf87765a23a9e0b27b32c8b260242ffbc4a94de61074b57b7d856c0cbb"
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions-es.json",
+        "index": 0,
+        "sha256": "20995729b49516db5be81fa6d5e75504ccb844d560c18ff71b21b4c2104ada29",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-012",
+      "split": "heldout",
+      "family": "andean-model",
+      "language": "es",
+      "question": "Qué modelo reconoce mejor el español andino?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__es__variedades-espanol"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "table"
+      ],
+      "required_claims": [
+        "GPT-4o is the best-performing model for Andean Spanish in this study."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__es__variedades-espanol",
+          "pdf_page": 4,
+          "source_cells_or_image_transcription": {
+            "Table3, GPT-4o": {
+              "Puntuación": "17.6/30",
+              "Aciertos": "21/30"
+            },
+            "section3.1": "El modelo con mejor rendimiento es GPT-4o."
+          },
+          "review_method": "original coordinate PDF pixels",
+          "coordinate_pdf_sha256": "6e9ee0972e0932c99b3d26e2fb9a8618edfbf06b883c8c3c3f872aa76d43cb24",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/rag__es__variedades-espanol-p4.png",
+              "sha256": "b29db43f9bf804edf8a265271889d40e36d6fec217a19ed28ddb558a8cd1ba44"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions-es.json",
+        "index": 3,
+        "sha256": "20995729b49516db5be81fa6d5e75504ccb844d560c18ff71b21b4c2104ada29",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-013",
+      "split": "heldout",
+      "family": "aguila-languages",
+      "language": "es",
+      "question": "En qué lenguas se entrenó el modelo Águila 7B?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__es__sesgo-linguistico-digital"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "table",
+        "ordinary"
+      ],
+      "required_claims": [
+        "Catalan, Spanish and English."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__es__sesgo-linguistico-digital",
+          "pdf_page": 10,
+          "literal_source_text": "iniciativa, dentro del Plan ILENIA, ha sido el desarrollo del modelo Ǎguila 7B, entrenado \nen catalán, español e inglés. En este caso, el porcentaje de cada lengua en el dataset fue de un 41.38 \n% español, un 41.79 % catalán y un 16.84 % inglés (Tabla 2). Por su lado, el modelo FLOR 6.3, \notro MLM multilingüe entrenado en catalán, español e inglés, se ha construido sobre el modelo \nmultilingüe BLOOM, al contrario que Ǎguila 7B, que parte de un modelo monolingüe inglés (Falcon) \n(Projecte-aina, 2024a, 2024b). El gallego también cuenta con dos nuevos modelos: Carballo-bloom-\n1.3B, basado en el modelo multilingüe BLOOM 1.7B y FLOR6.3, y Carballo-cerebras-1.3B, basado \nen el modelo monolingüe Cerebras-GPT-1.3B y un modelo trilingüe análogo. Ambos tuvieron un \npreentrenamiento continuo en catalán, español e inglés con los modelos trilingües del proyecto AINA \ny un posterior entrenamiento solo en gallego (Gamallo et al., 2024). En el momento de escribir este \nar",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "a86f91bf87765a23a9e0b27b32c8b260242ffbc4a94de61074b57b7d856c0cbb",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__es__sesgo-linguistico-digital.pdf",
+          "text_locator_pdf_sha256": "a86f91bf87765a23a9e0b27b32c8b260242ffbc4a94de61074b57b7d856c0cbb"
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions-es.json",
+        "index": 6,
+        "sha256": "20995729b49516db5be81fa6d5e75504ccb844d560c18ff71b21b4c2104ada29",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": [
+        "If proportions are added, Spanish41.38%, Catalan41.79%, English16.84%. Minor printed rounding is acceptable."
+      ]
+    },
+    {
+      "id": "odl-agentic-014",
+      "split": "heldout",
+      "family": "maria-bridge",
+      "language": "es",
+      "question": "En el artículo sobre si los LLMs distinguen las variedades del español se menciona un proyecto cuyos modelos RoBERTa y GPT-2 se entrenaron con el archivo web de la Biblioteca Nacional. Según el otro documento, ¿qué centro lanzó ese proyecto y en qué año?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__es__variedades-espanol",
+        "rag__es__sesgo-linguistico-digital"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "cross_source"
+      ],
+      "required_claims": [
+        "The project identified in the varieties paper is MarIA.",
+        "The other source associates it with Barcelona Supercomputing Center/Centro Nacional de Supercomputación and its start in 2021."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__es__variedades-espanol",
+          "pdf_page": 2,
+          "literal_source_text": "trimento de otras.  \nEjemplos de ello los encontramos en modelos \ndel proyecto MarIA como RoBERTa y GPT-2, \ncuyos datos de entrenamiento, además de los del \ninglés, se obtuvieron de la Biblioteca Nacional \nEspañola, representando en un 50% a la variedad \nespañola peninsular (Muñoz-Basols et al. 2024: \n631). Lo mismo ocurre con el proyecto \nCEREAL (Corpus del Español REAL), dedicado \na compilar y a anotar documentos en español \nrecopilados de la web, puesto que la mayoría de \nsus datos, extraídos de OSCAR (Open Super-\nlarge \nCrawled \nALMAnaCH \nRepository), \nrepresentaban la variedad de español peninsular \n(España-Bonet y Barrón-Cedeño 2024: 3691).  \nEsta desproporción de datos no solo afecta a la \ncapacidad del modelo para interpretar y generar \nnuevos textos y",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "6e9ee0972e0932c99b3d26e2fb9a8618edfbf06b883c8c3c3f872aa76d43cb24",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__es__variedades-espanol.pdf",
+          "text_locator_pdf_sha256": "6e9ee0972e0932c99b3d26e2fb9a8618edfbf06b883c8c3c3f872aa76d43cb24"
+        },
+        {
+          "source_id": "rag__es__sesgo-linguistico-digital",
+          "pdf_page": 7,
+          "literal_source_text": ".\nRAE y ASALE, Telefóni-\nca, Google, X, Microsoft, \nAmazon, Facebook.\nMarIA\n(iniciado en 2021)\nPrimeros MLM para el \nespañol desarrollados con \nGPT-2.\n- Crear MLM entrenados \nen español.\nCentro Nacional de Super-\ncomputación \nBarcelona \n(CNS) - Supercomputing \nCenter (BSC), Biblioteca \nNacional de España.\nILENIA (impulso de las \nLenguas e Inteligencia \nArtificial). \nDentro \nde \nILENIA:\n- NEL-AINA (catalán) \n- NEL-VIVES (valenciano)\n- NEL-GAITU (euskera)\n- NEL-NÓS (gallego)\nImpulsar en España la \nnueva economía digi-\ntal basada en el lenguaje \nnatural que promueva el \nespañol y las lenguas coo-\nficiales (catalán, euskera, \ngallego y valenciano).\n- Recursos multilingües \nde texto, voz y traducción \nautomática en ",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "a86f91bf87765a23a9e0b27b32c8b260242ffbc4a94de61074b57b7d856c0cbb",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__es__sesgo-linguistico-digital.pdf",
+          "text_locator_pdf_sha256": "a86f91bf87765a23a9e0b27b32c8b260242ffbc4a94de61074b57b7d856c0cbb"
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions-es-bridge.json",
+        "index": 0,
+        "sha256": "3ba82a4b87a1b457ba29d61f0ba1e6d2016e2a82ba62356460ce1b217919d03d",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": [
+        "The National Library of Spain may be named as collaborator; BSC/CNS and2021 are required."
+      ]
+    },
+    {
+      "id": "odl-agentic-015",
+      "split": "development",
+      "family": "oscar-ccnet",
+      "language": "fr",
+      "question": "Quelle est la différence entre OSCAR et CCNet?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__fr__camembert-taln"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "ordinary"
+      ],
+      "required_claims": [
+        "Both derive from Common Crawl.",
+        "OSCAR uses language classification; CCNet filters with a Wikipedia-trained language model, reducing noise and making its data more Wikipedia-like."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__fr__camembert-taln",
+          "pdf_page": 3,
+          "literal_source_text": "Wenzek et al., 2019) et un snapshot récent de la Wikipedia française.\n— OSCAR (Ortiz Suárez et al., 2019) est un ensemble de corpus monolingues extraits de Common\nCrawl (dump de novembre 2018). Les corpus ont été sélectionnés par un modèle de classiﬁcation\npar langues en suivant l’approche de (Grave et al., 2018) s’appuyant sur le classiﬁeur linéaire\nFASTTEXT (Grave et al., 2017; Joulin et al., 2016) pré-entraîné sur les corpus Wikipedia,\nTatoeba et SETimes, et couvrant 176 langues.\n— CCNet (Wenzek et al., 2019), un jeu de données extrait lui aussi de Common Crawl mais avec\nun ﬁltrage différent de celui d’OSCAR. Il a été construit avec un modèle de langue entraîné sur\nWikipedia, lui permettant ainsi de ﬁltrer le bruit (code, tables, etc.). CCNET contient ainsi des\ndocuments plus longs en moyenne qu’OSCAR. Ce ﬁltrage a pour effet de biaiser les données\nen leur donnant un aspect « Wikipedia » et nous permet de considérer CCNET comme se\npositionnant entre OSCAR, peu ﬁltré voire bruité, et WIKIPEDIA, totalement édité.\n— Wikipedia, un corpus homogène en termes de genre et de style. Nous utilisons le dump français\nofﬁciel de Wikipedia (avril 2019). Le corpus est prétraité à l’aide de WikiExtractor 2.\nAﬁn de pouvoir comparer équitablement l’impact du type de données de pré-entraînement, nous\ncréons des échantillons aléatoires à partir de OSCAR et CCNET, et ce au niveau du document,\nde la même taille que celle de notre WIKIPEDIA, soit 4Go de texte brut non compressé. Ceci nous\npermet d’étudier également les effets de la taille des données d’entraînemen",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "5499969bf0f52657722c22220ee8f6f7fe763629d438a9a67d376b05e115dff3",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__fr__camembert-taln.pdf",
+          "text_locator_pdf_sha256": "5499969bf0f52657722c22220ee8f6f7fe763629d438a9a67d376b05e115dff3"
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions-fr.json",
+        "index": 1,
+        "sha256": "800d64097c3ed478ea00c384fc330d37c3f51dfdadfe58d6e74326d38d4bd97b",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-016",
+      "split": "heldout",
+      "family": "wikiner-size",
+      "language": "fr",
+      "question": "Combien de phrases contient le corpus WikiNER-fr-gold?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__fr__wikiner-fr-gold"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "ordinary",
+        "cross_language"
+      ],
+      "required_claims": [
+        "WikiNER-fr-gold contains 26,818 sentences."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__fr__wikiner-fr-gold",
+          "pdf_page": 1,
+          "literal_source_text": "s consists of randomly\nsampled 20% of the original French sub-corpus (26,818 sentences with 700k tokens). We start by summarizing the\nentity types included in each category in order to define an annotation guideline, and then we proceed to revise\nthe corpus. Finally we present an analysis of errors and inconsistency observed in the WikiNER-fr corpus, and we\ndiscuss potential future work directions.\nKeywords: Annotated corpus, resource production, Named Entity Recognition (NER), French\n1.\nIntroduction\nIn Natural Language Processing (NLP), Named\nEntity Recognition (NER) is a task that focuses\non identifying entities within unstructured text. The\ngoal of an NER sys",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "d8c5b3f432b8c928224816ed8f155983b5e53ad48ac4e906f9d1c0c8918716ca",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__fr__wikiner-fr-gold.pdf",
+          "text_locator_pdf_sha256": "d8c5b3f432b8c928224816ed8f155983b5e53ad48ac4e906f9d1c0c8918716ca"
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions-fr.json",
+        "index": 7,
+        "sha256": "800d64097c3ed478ea00c384fc330d37c3f51dfdadfe58d6e74326d38d4bd97b",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-017",
+      "split": "heldout",
+      "family": "bioes",
+      "language": "fr",
+      "question": "Comment le format BIOES annote-t-il les entités?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__fr__wikiner-fr-gold"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "list",
+        "ordinary",
+        "cross_language"
+      ],
+      "required_claims": [
+        "B=beginning, I=inside, E=end, S=single-token entity, O=outside an entity."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__fr__wikiner-fr-gold",
+          "pdf_page": 2,
+          "literal_source_text": "les.\n3.2.\nAnnotation format and tool\nThe annotations are formatted in BIOES format.\nWithin each entity, we distinguish the beginning (B),\ninside (I), and end (E) of the entity. This format\nhelps highlight the boundaries of entities. For ex-\nample, in \"général de Gaulle (General de Gaulle)\",\nthe three tokens receive the labels B-PER, I-PER,\nand E-PER, respectively. For entities consisting of\na single word, we use the label S (for single). So,\nthe entity \"France\" is annotated as S-LOC. Tokens\noutside entities are labeled as O, indicating they\nare not part of any entity. There are a total of 17\nformatted labels.\nWe use the labeling tool provided by (anonymous\nreference). The advantage of this tool lies in its\nability to customize candidate labels and their visual\nrepresentation. Thanks to this, a color scheme\ncould be defined that facilitates the understanding\nof the category and boundaries of the entity. Figure\n1 provides an overview of the tool’s interface.\n3.3.\nError analysis and correction\nDuring the corpus review, we observed very few\nclear-cut errors,",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "d8c5b3f432b8c928224816ed8f155983b5e53ad48ac4e906f9d1c0c8918716ca",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__fr__wikiner-fr-gold.pdf",
+          "text_locator_pdf_sha256": "d8c5b3f432b8c928224816ed8f155983b5e53ad48ac4e906f9d1c0c8918716ca"
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions-fr.json",
+        "index": 8,
+        "sha256": "800d64097c3ed478ea00c384fc330d37c3f51dfdadfe58d6e74326d38d4bd97b",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-018",
+      "split": "heldout",
+      "family": "wikipedia-corpus-bridge",
+      "language": "fr",
+      "question": "Quel dump de Wikipédia française CamemBERT utilise-t-il, et combien de tokens contient le sous-corpus français de WikiNER ?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__fr__camembert-taln",
+        "rag__fr__wikiner-fr-gold"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "cross_source",
+        "cross_language"
+      ],
+      "required_claims": [
+        "CamemBERT uses the official French Wikipedia dump from April 2019.",
+        "The original French WikiNER subcorpus has approximately 3.5 million tokens."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__fr__camembert-taln",
+          "pdf_page": 3,
+          "literal_source_text": " entre OSCAR, peu ﬁltré voire bruité, et WIKIPEDIA, totalement édité.\n— Wikipedia, un corpus homogène en termes de genre et de style. Nous utilisons le dump français\nofﬁciel de Wikipedia (avril 2019). Le corpus est prétraité à l’aide de WikiExtractor 2.\nAﬁn de pouvoir comparer équitablement l’impact du type de données de pré-entraînement, nous\ncréons des échantillons aléatoires à partir de OSCAR et CCNET, et ce au niveau du document,\nde la même taille que celle de notre WIKIPEDIA, soit 4Go de texte brut non compressé. Ceci nous\npermet d’étudier également les effets de la taille des données d’entraînement sur les performances\ndes modèles.\n2. https://github.com/attardi/wikiextractor\n56\n",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "5499969bf0f52657722c22220ee8f6f7fe763629d438a9a67d376b05e115dff3",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__fr__camembert-taln.pdf",
+          "text_locator_pdf_sha256": "5499969bf0f52657722c22220ee8f6f7fe763629d438a9a67d376b05e115dff3"
+        },
+        {
+          "source_id": "rag__fr__wikiner-fr-gold",
+          "pdf_page": 1,
+          "literal_source_text": "PER), location (LOC), organi-\nzation (ORG), and miscellaneous (MISC). All ten\nsub-corpora have the same size, comprising ap-\nproximately 3.5 million tokens, making it a very sub-\nstantial dataset. The annotations were produced\nin a semi-supervised manner, and there was no\nmanual verification for the corpus. Therefore, it is\nconsidered a silver standard corpus.\nIn this article, we describe the manual correction\nprocess implemented to create a gold standard\nversion of WikiNER. We will refer to this new cor-\npus as WikiNER-fr-gold in the following discussion.\nThis work involved manual correction of 20% of\nthe French portion of WikiNER, which we will re-\nfer to as WikiNER-fr. WikiNER-fr-gold comprises\n26,818 senten",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "d8c5b3f432b8c928224816ed8f155983b5e53ad48ac4e906f9d1c0c8918716ca",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__fr__wikiner-fr-gold.pdf",
+          "text_locator_pdf_sha256": "d8c5b3f432b8c928224816ed8f155983b5e53ad48ac4e906f9d1c0c8918716ca"
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions-fr-bridge.json",
+        "index": 2,
+        "sha256": "586b47a3e3d2e3ea67b6984aa71b495a238fdc47b9302424be7c889c9ee92e59",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": [
+        "700,000 tokens belongs to the revised20% gold subset; an answer may distinguish both, but must not substitute that figure for the original French subcorpus."
+      ]
+    },
+    {
+      "id": "odl-agentic-019",
+      "split": "development",
+      "family": "moe-routing",
+      "language": "ja",
+      "question": "Mixture of Expertsはなぜ計算量を抑えられるのか",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__ja__jp_llm2"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "figure",
+        "ordinary"
+      ],
+      "required_claims": [
+        "A router sends each input/token to only some experts, so all parameters are not activated for every input.",
+        "This reduces computation despite a small extra routing cost."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__ja__jp_llm2",
+          "pdf_page": 34,
+          "literal_source_text": "5 by 東京大学松尾・岩澤研究室 is licensed under CC BY-NC-ND \n4.0\n混合エキスパート(MoE)\n34\n複数個のエキスパート( ニューラルネットワーク) を用意しておき, 入力の値\nに応じて, 一部のエキスパートだけにフォワードする. \n \n→すべてのパラメータ\nを使う事にはならないので, 計算量を抑えられる.\nエキスパートA\n（というネットワーク）\nエキスパートB\n（というネットワーク）\nエキスパートC\n（というネットワーク）\n入力\n出力\n＊厳密にいうと, どのエキスパートに振り分ける\nかを決めるための小さなネットワーク（ルーター\nネットワーク）が追加で必要となるため, その分 \n若干計算量は増える.\n",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "6002cc3109039bc7815f66076e107e4e3c8c2ca98869d45c7100b458f7ee7fbc",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__ja__jp_llm2.pdf",
+          "text_locator_pdf_sha256": "6002cc3109039bc7815f66076e107e4e3c8c2ca98869d45c7100b458f7ee7fbc"
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions-ja.json",
+        "index": 2,
+        "sha256": "1ef3f8aec8d14c86a047d1d9b188d08f0842c6951750a071092b5c35ca5b614f",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-020",
+      "split": "heldout",
+      "family": "flashattention",
+      "language": "ja",
+      "question": "FlashAttentionはどうやって高速化するのか",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__ja__jp_llm2"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "ordinary"
+      ],
+      "required_claims": [
+        "Memory I/O is the bottleneck.",
+        "Tiling inputs avoids reading/writing the complete sequence-length-squared attention matrix, performs more work in SRAM and reduces slower HBM accesses."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__ja__jp_llm2",
+          "pdf_page": 29,
+          "literal_source_text": "座 講義資料 © 2025 by 東京大学松尾・岩澤研究室 is licensed under CC BY-NC-ND \n4.0\nFlashAttention ：メモリアクセスを考慮し高速化を実現\n29\nAttention の計算は、計算ではなくメモリのI/O にボトルネックがあることを指摘\n入力行列をうまく分割して計算することで、 系列長× 系列長のAttention 行列\n全体のメモリの読み書きを回避。GPU SRAM で処理をなるべく完結させる\n（低速なGPU HBM メモリへのアクセス回数を削減）ようにし、大幅な高速化(e.g.GPT-2 におい\nて最大7.6 倍) に成功\n実装の最適化\n（fused \nkernel ）によっ\nて大幅な速度の向\n上\n[21] Dao+. FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness. 2022 より引\n用\n",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "6002cc3109039bc7815f66076e107e4e3c8c2ca98869d45c7100b458f7ee7fbc",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__ja__jp_llm2.pdf",
+          "text_locator_pdf_sha256": "6002cc3109039bc7815f66076e107e4e3c8c2ca98869d45c7100b458f7ee7fbc"
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions-ja.json",
+        "index": 3,
+        "sha256": "1ef3f8aec8d14c86a047d1d9b188d08f0842c6951750a071092b5c35ca5b614f",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-021",
+      "split": "heldout",
+      "family": "hallucination-argument",
+      "language": "ja",
+      "question": "ハルシネーションはなぜ不可避なのか",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__ja__jp_llm"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "ordinary",
+        "qualification"
+      ],
+      "required_claims": [
+        "The paper treats the model as a context-conditioned token predictor, not guaranteed storage of world facts.",
+        "Grammar and knowledge are inseparable in pretraining; plausible generation need not reproduce facts correctly.",
+        "The paper additionally argues that exact data reproduction and strict privacy requirements can conflict."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__ja__jp_llm",
+          "pdf_page": 10,
+          "literal_source_text": " 2017）による強化学習でも部分的には可能である。そ\nういった意味でも，LLM の学習においては構造的に文法習得が知識獲得に先行する。\n　まとめると，LLM の言語獲得の過程において，文法獲得と知識獲得は不可分である。“知識”は\n学習過程の副産物として不可避的に取得される上に，そこで得られる“知識”とは，その実特定の\n文脈で共起する確率的傾向に過ぎず，パリがフランスに内包される概念であるという本質的な知識\nそのものを獲得しているわけではない可能性がある。\n3.3　人間の言語獲得との比較\n　ここまでにLLM の言語獲得における文法と知識の不可分性について議論してきた。本節では，\n認知心理学における人間の言語獲得プロセスに関する指摘の整理を通じて，人間とLLM の特性を\n対比的に議論する。本研究では2 つの立場を取り上げるが，議論に先立って一つの問題を導入して\nおく。現代言語学で著名な研究業績を有するChomsky はプラトンの問題（Plato’s problem）とし\nて，人間，特に子どもの限られた言語入力環境下での言語獲得の迅速さについて提起している\n（Chomsky, 1986）。これは機械学習の文脈における，少数の学習サンプルに対する汎化性能の高さ\nと捉えられる。つまり，人間は現代の最新のLLM と比較してすら，言語獲得における汎化性能が\n顕著に高いことを意味している。\n3.3.1　生成文法の立場から\n　まず認知心理学における生成文法（generative grammar; Chomsky, 1975）の理論体系の議論を\n導入する。人間は生来的にどのような言語にでも対応できる普遍的な言語獲得能力としての普遍文\n法（universal grammar）を有しているとともに，初期の原理とパラメーターのアプローチ\n（principles and parameters approach）では，原理（全言語に共通する普遍的制約）とパラメーター\n（普遍的制約から個別文法への接続）の組み合わせにより，任意の言語体系を習得可能という枠組\nみが提示されてきた。\n　もし普遍文法が生来的に与えられた特性であるならば，学習によ",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "28fbf744d91750133f60ebb1ad4bf50854d234441ceaae692400a874276c2c7b",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__ja__jp_llm.pdf",
+          "text_locator_pdf_sha256": "28fbf744d91750133f60ebb1ad4bf50854d234441ceaae692400a874276c2c7b"
+        },
+        {
+          "source_id": "rag__ja__jp_llm",
+          "pdf_page": 20,
+          "literal_source_text": "能であ\nる可能性が指摘されており，つまるところ文脈を限定していった先に原データの再現が確率的に発\n生しうることの指摘であると解釈できる。\n　重要なのは，厳格なDP を要求されるモデルにおいて，特定の個別的なデータポイントの正確な\n再現はタスクとして許容されないという点である。言い換えれば，LLM の持つ確率的な関係性は\nそもそも出力の時点で希釈される前提とされていることは明白である。しかしながら，本研究で\nhallucination と呼ばれてきたLLM の挙動（i.e., 学習サンプルの正確な再現）は，特定のデータポ\nイントに強く依存した出力を要求する。\n　ここで指摘すべきは，\n「学習データに含まれる氏名等の個人情報を秘匿すること」と，一方で「論\n文の書誌情報では学習データのトークン配列を忠実に再現すること」が同時に求められているとい\nうことである。しかしながら，これらは現在の構造のみでは原理的に両立困難である。いずれも\nLLM にとってはあくまでも同質なトークン配列に過ぎず，特定の情報を選択的に忘却させなが\nら，別の情報は完全に記憶させるという要求は，トークン間の確率的な関係性を元に文法パターン\nを学ぶLLM の構造と構造的に矛盾しうるものである。\n　参考までに，DP を考慮したLLM としては，事前学習の時点からDP を前提に設計された\nVaultGemma（McKenna et al., 2025）等がある。\n7　まとめ\n7.1　本研究の貢献\n　本研究では，LLM を確率的構造から俯瞰し，生成の挙動について検討，その「学習」が実際に\n示すところについて議論した。量的検証においては，条件付き確率に基づくtoken 予測器たる\nLLM が与えられた文脈に適応することにより，本来普遍的に成立すべき計算精度が変化してしま\nうことを示した。質的検証においては，実際に論文の書誌情報を生成させることにより\nhallucination を発生させ，その生成内容からhallucination の要因を知識の有無により識別可能で\nある可能性について提示した。さらに，近年積極的に主張されるデータ保護との兼ね合いとしての\nDP の観点からも，hallucination の発生は構造的に不可避であることを指摘した。\n　これらの結果から得られる示唆として，LLM をその事前学習から蓄積された内部の知識の取り\n出しのために活用することは望ましくないことを改めて強調したい。むしろ，我々の扱う自然言語\nを理解しその目的を汲み取ることに関しては大きな強みを保持していることから，自然言語の生成\nシステムであると同時に，プログラミング言語等との相互翻訳を行うコンパイラーとして活用すべ\n",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "28fbf744d91750133f60ebb1ad4bf50854d234441ceaae692400a874276c2c7b",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__ja__jp_llm.pdf",
+          "text_locator_pdf_sha256": "28fbf744d91750133f60ebb1ad4bf50854d234441ceaae692400a874276c2c7b"
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions-ja.json",
+        "index": 5,
+        "sha256": "1ef3f8aec8d14c86a047d1d9b188d08f0842c6951750a071092b5c35ca5b614f",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": [
+        "Report this as the author’s argument; do not claim a universal mathematical impossibility of grounded answering."
+      ]
+    },
+    {
+      "id": "odl-agentic-022",
+      "split": "development",
+      "family": "moe-routing",
+      "language": "ja",
+      "question": "論文では MoE を Top-k のゲート関数で式として定義している。講義資料によると、同じ計算量という制約の下で MoE を使ったモデルは通常のモデルと比べてどうなり、リーク情報ではどのモデルが MoE だと言われているか？",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__ja__jp_llm",
+        "rag__ja__jp_llm2"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "cross_source_context",
+        "qualification"
+      ],
+      "required_claims": [
+        "At matched training compute, the lecture says MoE models perform better than ordinary models.",
+        "GPT-4 is described as reportedly using MoE according to leaked information, not as a verified architecture disclosure."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__ja__jp_llm",
+          "pdf_page": 5,
+          "literal_source_text": "nal and Auto-Regressive Transformers（BART; Lewis et al., 2019）等\nがある。\n　最後にMoE であるが，そもそもMoE はBERT やGPT のいずれの構造にも適用可能な計算効\n率化のためのアーキテクチャであり，近年では特にDecoder-only モデルにおけるスケーリングの\nために積極的に活用されている。具体的にはモデル内に異なる職能を持つ複数のexperts を設定し，\nそれらを選択的に活性化することにより，モデルの計算効率を向上させる。これはTransformer\nアーキテクチャの拡張，特にFFN 部分をMoE に置換する設計により実現される。E 個のexpert \nfi（·）とゲート関数G（x）を用い，top-k のみを活性化する前向き計算は\n \nMoE（x）＝\n∑\nGˆ\ni（x）fi（x）\ni∈Topk（G（x））\n \n（15）\n \nwhere Gˆ\ni（x）＝\nGi（x）\n.\n∑j∈Topk Gj（x） \n（16）\nとなる。\n　このように一言に大規模言語モデル（LLM）あるいは生成AI といっても，その内実は言語モデ\nルのみに絞っても異なる構造に基づき多様である。ただ，いずれにせよそのほとんどが\nTransformer を基盤としているという意味で，Transformer の貢献が大きいことを改めて強調し\nておきたい。\n2.3　学習済みLLM におけるトークン選択\n　先に述べたようにLLM の基盤モデルはさまざま存在するが，本研究ではその中でもLLM の基\n盤として広く採用されているGPT モデルに着目する。そもそも一般的にLLM は与えられた文章\n（prompt）に続くtoken を予測する構造である。ここでtoken とは，単語をさらに分割したサブワー\nド（e.g., 単語notebook＝note＋book）を意味する。複合的な単語を独立した一単語として扱うの\n",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "28fbf744d91750133f60ebb1ad4bf50854d234441ceaae692400a874276c2c7b",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__ja__jp_llm.pdf",
+          "text_locator_pdf_sha256": "28fbf744d91750133f60ebb1ad4bf50854d234441ceaae692400a874276c2c7b",
+          "evidence_role": "prompt premise, not a required answer claim"
+        },
+        {
+          "source_id": "rag__ja__jp_llm2",
+          "pdf_page": 35,
+          "literal_source_text": "Y-NC-ND \n4.0\n混合エキスパート(MoE)\n35\n■計算量を抑えつつ, パフォーマンスを改善できる事が実験で確認されている. \n→同じ計算量で学習するという制約下で, MoE を使ったモデルのほうが使わなかったモデ\nル\n( 通常のモデル) よりもパフォーマンスが高い.\n■リーク情報によると, GPT-4 はMoE モデル構造を採用しているらしい.\n■最近の多くのオープンモデル（DeepSeek 、Qwen 等）もMoE モデルを採用\nルーターネットワークが\nデータのクラスター中心点を\n基準に各エキスパートに対して\n事例を振り分け、\n各エキスパートはその\nクラスター内での分類に特化する\nような学習が行われた\n複雑な分類問題にMoE を適用した場合の各事例に対するルータネットワークによる\nエキスパートの振り分けの視覚化\n（t-SNE でデータセットの事例を2 次元で視覚化。色はエキスパートの振り分けを示す）\n[23] Chen+. Towards Understanding Mixture of Experts in Deep Learning. 2022 より\n引用\n",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "6002cc3109039bc7815f66076e107e4e3c8c2ca98869d45c7100b458f7ee7fbc",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__ja__jp_llm2.pdf",
+          "text_locator_pdf_sha256": "6002cc3109039bc7815f66076e107e4e3c8c2ca98869d45c7100b458f7ee7fbc"
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions-ja-bridge.json",
+        "index": 0,
+        "sha256": "c70602f002feec7f7dc80508604683a75fe55324ce86b76617a65b4f2ac9e358",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": [
+        "The question itself supplies the article-to-MoE connection. Its requested performance and leaked-architecture claims can be supported by the lecture alone; do not require an unnecessary article citation. The article evidence records the prompt premise."
+      ]
+    },
+    {
+      "id": "odl-agentic-023",
+      "split": "development",
+      "family": "cil-framework",
+      "language": "zh",
+      "question": "CIL-LLM框架如何避免灾难性遗忘",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__zh__zh-CN"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "ordinary"
+      ],
+      "required_claims": [
+        "The framework extracts skills from representative compressed samples, selects relevant skills by keyword matching, and fuses old/new skills via knowledge distillation.",
+        "Preserving and updating the skill library retains old-category properties while learning new ones."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__zh__zh-CN",
+          "pdf_page": 1,
+          "literal_source_text": "类领域，为了提升类别增量学习模型的分类准确率并避免灾难性遗忘问题，提出了一种基于大语\n言模型（LLM）的类别增量学习框架（CIL-LLM）。CIL-LLM框架通过抽样和压缩环节选取具有代表性的样本，利用\n较强语言理解能力的LLM基于上下文学习提炼关键技能，以这些技能作为分类的依据，从而降低了存储成本；采用\n关键词匹配环节选取最优技能，以此构建提示词，引导下游弱LLM进行分类，提高了分类的准确性；根据基于知识\n蒸馏的技能融合环节，不仅实现了技能库的有效拓展和更新，还兼顾了新旧类别特性的学习。对比实验结果表明，\n在THUCNews数据集上的测试中，与现有的L-SCL方法相比，CIL-LLM框架在所有任务上的平均准确率提升了6.3\n个百分点，性能下降率降低了3.1个百分点。此外，在消融实验中，经由CIL-LLM框架增强的SLEICL模型相比于原\n有模型，所有任务的平均准确率提高了10.4个百分点，性能下降率降低了3.3个百分点。消融实验进一步验证了提\n出的样本压缩、关键词匹配和技能融合环节均对模型的准确率和性能下降率产生了优化效果。\n关键词：类别增量学习；大语言模型（LLM）；主题分类；知识蒸馏\n文献标志码：A   中图分类号：TP18\nCIL-LLM: Incremental Learning Framework Based on Large Language Models \nfor Category Classification\nWANG Xiaoyu1, LI Xin1,2+, HU Mianning1, XUE Di1\n1. School of Information and Cyber Security, People􀆳s Public Security University of China, Beijing 100038, China\n2. Key Laboratory of Security Technology and Risk Assessment, Ministry of Public Security, Beijing 100026, China\nAbstract: To enhance classification accuracy in class-incremental learning (CIL) models for text classification and mitiga",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "73e000eadee1d6fcfc374c1b37803b0492b648a3afdda95c1f01cf75cbc0f1dd",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__zh__zh-CN.pdf",
+          "text_locator_pdf_sha256": "73e000eadee1d6fcfc374c1b37803b0492b648a3afdda95c1f01cf75cbc0f1dd"
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions-zh.json",
+        "index": 0,
+        "sha256": "10293b918cc05880ae48a95966102db87701090b7ab3a901e56d373083a68bbb",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-024",
+      "split": "heldout",
+      "family": "thucnews-count",
+      "language": "zh",
+      "question": "THUCNews数据集有多少个类别",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__zh__zh-CN"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "table",
+        "ordinary"
+      ],
+      "required_claims": [
+        "10 categories."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__zh__zh-CN",
+          "pdf_page": 7,
+          "literal_source_text": "的API完成实验。\n3.2  实验设置\n3.2.1  数据集\n本文使用THUCNews[28]中文新闻主题分类数据集\n进行CIL任务的评估。该数据集共有10个类别，每个分类\n有6 500条数据，总共65 000条新闻数据，其中有50 000\n条训练集数据、5 000 条验证集数据以及10 000 条测试\n集数据。本文将THUCNews 数据集划分为4 个不重叠\n的子集，分别表示为THU1、THU2、THU3 和THU4。除\n了最后一个子集，其余每个子集包含3个文本类别。这\n4 个子集进一步被分为训练集、测试集、验证集，表2 显\n示了这4个子集的基本信息，如表2所示。\n图5    技能融合工作流程图\nFig.5    Workflow chart of skills integration\n表2    THUCNews数据子集基本信息\nTable 2    Basic information of THUCNews subset\n数据子集\nTHU1\nTHU2\nTHU3\nTHU4\n所含类别\n体育、财经、房产\n家居、教育、科技\n时尚、时政、游戏\n娱乐\n训练集\n15 000\n15 000\n15 000\n5 000\n测试集\n3 000\n3 000\n3 000\n1 000\n验证集\n1 500\n1 500\n1 500\n500\n380\n",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "73e000eadee1d6fcfc374c1b37803b0492b648a3afdda95c1f01cf75cbc0f1dd",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__zh__zh-CN.pdf",
+          "text_locator_pdf_sha256": "73e000eadee1d6fcfc374c1b37803b0492b648a3afdda95c1f01cf75cbc0f1dd"
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions-zh.json",
+        "index": 3,
+        "sha256": "10293b918cc05880ae48a95966102db87701090b7ab3a901e56d373083a68bbb",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-025",
+      "split": "heldout",
+      "family": "mandarin-targets",
+      "language": "zh",
+      "question": "推普政策的两个时间目标是什么",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__zh__zh_HK"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "ordinary",
+        "dates"
+      ],
+      "required_claims": [
+        "Initial popularization by 2010:70% of school/working-age people able to communicate in Mandarin.",
+        "Comprehensive popularization by 2050:90% able to communicate; dialect barriers move from initially eliminated to eliminated."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__zh__zh_HK",
+          "pdf_page": 5,
+          "literal_source_text": "鋼、⺩王宇紅, 2007；市川斟, ⼩小松嵐, 2008； 陳章太, 2010)。在這個會議上，兩個推普\n⼯工作的⺫⽬目標被提出，⾸首先是“到2010年初步普及普通話”，相關的定義是“全國⼊入學年齡\n及⼯工作年齡階段有70%的⼈人能⽤用普通話交際，⽅方⾔言在交際中造成隔閡初步消除”，其次\n則是“2050年全⾯面普及普通話”，定義是“全國⼊入學年齡段及⼯工作年齡階段的⼈人有90%能\n⽤用普通話交際，⽅方⾔言在交際中造成的隔閡消除”。兩個⺫⽬目標的主要變化在於從普通話使\n⽤用群體的⽐比例從70%上升到90%，⽅方⾔言造成的隔閡從“初步消除”到完全地“消除”(詳⾒見李\n鋼、⺩王宇紅, 2007)。!\n!\n從這些提法中觸及的字眼與⽐比例，可以看到其針對對象。⾸首先，“⽅方⾔言”，推普並不\n    \n是針對全國所有⾮非以使⽤用北京話或北⽅方語系的群體，⽽而僅僅是針對“⽅方⾔言”亦即漢族內部\n使⽤用其它區域語⾔言的族群。其次，“90%”就可以算全覆蓋了。原因是2005及2010年的\n全國⼈人⼝口抽樣調查均顯⽰示漢族⼈人⼝口約佔全國90%，兩者正好相對應，推普政策並不以\n少數⺠民族為⺫⽬目標。這從另⼀一個⾓角度說明，推普的⺫⽬目的，是打造漢族內部的統⼀一⾝身份。\n統⼀一⾝身份的⺫⽬目標，事實上是⽐比簡單的消除不同區域間語⾔言交流上的不便要求得更⾼高。\n儘管與推普⼯工作有著各種聯繫的好些語⾔言學者都在著作中多次表⽰示過，推普只是為了\n⽅方便溝通交流，並不是要“消滅⽅方⾔言”(例如陳章太, 2010；詹伯慧, 2011)，但事實上，\n相關政策在執⾏行過程中的表現並並⾮非如此。例如，從李鋼、⺩王宇紅(2007)便在疏理各\n4\n???? = Thinking Hong Kong, Vol. 6 [2017], Art. 3\nhttps://commons.ln.edu.hk/thinkinghk/vol6/iss1/3\n",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "37ee98f3cc724c6eb69a8fc8120e87ddccdf8c7169a57339402daa12311e9211",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__zh__zh_HK.pdf",
+          "text_locator_pdf_sha256": "37ee98f3cc724c6eb69a8fc8120e87ddccdf8c7169a57339402daa12311e9211"
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions-zh.json",
+        "index": 9,
+        "sha256": "10293b918cc05880ae48a95966102db87701090b7ab3a901e56d373083a68bbb",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-026",
+      "split": "heldout",
+      "family": "review-reflection",
+      "language": "zh",
+      "question": "人机协作的三种反思机制是什么",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__zh__mixed_zh_en"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "cross_language",
+        "list"
+      ],
+      "required_claims": [
+        "Targeted reflection on AI-weakness dimensions.",
+        "Strengths-based reflection on AI-strength dimensions.",
+        "Comprehensive multi-round reflection on all dimensions."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__zh__mixed_zh_en",
+          "pdf_page": 7,
+          "literal_source_text": "rol group (no AI assistance) \nwith three types of AI-assisted models: targeted reflection (reflection only on AI-\nweakness dimensions), strengths-based reflection (reflection only on AI-strength \ndimensions), and comprehensive reflection (multi-round reflection on all \ndimensions). The review process consisted of initial review, AI score prompts, \nreflection, and final review, with comprehensive collection of data on score \nimprovement, review duration, subjective cognitive load, and user satisfaction. The \nresults show that introducing targeted reflection interventions on subjective and \ncomplex dimensions where AI capability is relatively weak (e.g., innovation, \nargument logic) can achieve accuracy improvements close to those of \ncomprehensive reflection, but with significantly lower cognitive and time costs. In \ncontrast, reflection only on AI-strength dimensions does not effectively improve \nreview outcomes and may even cause distraction and unnecessary burden. Further \nstatistical tests and regression analyses confirm that rational task allocation and \n",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "7e55b0ee27cbd801f20e3c9ee9c659b501a809bd373777fc5f9b7f18813f4932",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__zh__mixed_zh_en.pdf",
+          "text_locator_pdf_sha256": "7e55b0ee27cbd801f20e3c9ee9c659b501a809bd373777fc5f9b7f18813f4932"
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions-zh.json",
+        "index": 6,
+        "sha256": "10293b918cc05880ae48a95966102db87701090b7ab3a901e56d373083a68bbb",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-027",
+      "split": "development",
+      "family": "cil-ablation",
+      "language": "en",
+      "question": "How much did each component contribute in the ablation study?",
+      "scope_source_ids": [
+        "rag__zh__zh-CN"
+      ],
+      "source_ids": [
+        "rag__zh__zh-CN"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "cross_language",
+        "table",
+        "reasoning"
+      ],
+      "required_claims": [
+        "Relative to SLEICL, compression alone increases A4 by 5.9 points and lowers d by 0.7.",
+        "Keyword matching alone increases A4 by 8.1 points and lowers d by 0.6.",
+        "Skill fusion alone increases A4 by 5.6 points and lowers d by 2.6.",
+        "All three together increase A4 by 10.4 points and lower d by 3.3."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__zh__zh-CN",
+          "pdf_page": 10,
+          "source_cells_or_image_transcription": {
+            "Table4 columns": [
+              "compression",
+              "keyword matching",
+              "skill fusion",
+              "A4",
+              "d"
+            ],
+            "baseline": [
+              "no",
+              "no",
+              "no",
+              "82.2",
+              "4.5"
+            ],
+            "compression": [
+              "yes",
+              "no",
+              "no",
+              "88.1(+5.9)",
+              "3.8(-0.7)"
+            ],
+            "matching": [
+              "no",
+              "yes",
+              "no",
+              "90.3(+8.1)",
+              "3.9(-0.6)"
+            ],
+            "fusion": [
+              "no",
+              "no",
+              "yes",
+              "87.8(+5.6)",
+              "1.9(-2.6)"
+            ],
+            "all": [
+              "yes",
+              "yes",
+              "yes",
+              "92.6(+10.4)",
+              "1.2(-3.3)"
+            ],
+            "units": "percent; parenthesized changes are percentage points"
+          },
+          "review_method": "original coordinate PDF pixels",
+          "coordinate_pdf_sha256": "73e000eadee1d6fcfc374c1b37803b0492b648a3afdda95c1f01cf75cbc0f1dd",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/rag__zh__zh-CN-p10.png",
+              "sha256": "260f6bd2f1d9083a3537be5f2244cb5bebfbfcd95244ccba3c8635a55e0a87db"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions-zh-asked-en.json",
+        "index": 4,
+        "sha256": "7276900d8d2f1b9574d462cf8db1374dd63d02a6f20cb00df7ec7580ad7a834d",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": [
+        "The original question is ambiguous among multiple ablation papers in the merged corpus. Its explicit file scope preserves its original CIL-LLM context; do not infer the scope from the gold source_ids field."
+      ]
+    },
+    {
+      "id": "odl-agentic-028",
+      "split": "heldout",
+      "family": "hominid-fire",
+      "language": "zh",
+      "question": "哪一种古人类最早开始使用火？",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__en__biology-ib-sample-16-pages"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "cross_language",
+        "table",
+        "figure"
+      ],
+      "required_claims": [
+        "Homo erectus is the first hominid listed as using fire."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__en__biology-ib-sample-16-pages",
+          "pdf_page": 13,
+          "source_cells_or_image_transcription": {
+            "TableD.2 Homo erectus": "H. erectus were the first hominids to use fire",
+            "Lived": "1.8–0.3mya"
+          },
+          "review_method": "original coordinate PDF pixels",
+          "coordinate_pdf_sha256": "3dfd95d688b13d32414f2ad4f46c436a200cc102313f5837247d7c7fbc59daf9",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/rag__en__biology-ib-sample-16-pages-p13.png",
+              "sha256": "d057d406a93d0854c9c6e24ac1620c9dc201384222752af744210977db9bd292"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions-en-asked-zh.json",
+        "index": 14,
+        "sha256": "a5fd27e950c593dbec77643e9edf6e1f05fc18a5eb8874d4dfbcfe71b4133c93",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-029",
+      "split": "development",
+      "family": "attention-mechanism",
+      "language": "en",
+      "question": "In Attention Is All You Need, write the scaled dot-product attention formula and explain why the dot products are scaled.",
+      "scope_source_ids": null,
+      "source_ids": [
+        "attention"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "formula",
+        "reasoning"
+      ],
+      "required_claims": [
+        "Attention(Q,K,V) = softmax(QK^T / sqrt(d_k)) V.",
+        "Large d_k can make dot products large and push softmax into regions with small gradients; division by sqrt(d_k) counteracts this."
+      ],
+      "evidence": [
+        {
+          "source_id": "attention",
+          "pdf_page": 4,
+          "source_cells_or_image_transcription": {
+            "Equation1": "Attention(Q,K,V) = softmax(QK^T / sqrt(d_k)) V",
+            "explanation": "For large values of d_k, the dot products grow large in magnitude, pushing the softmax function into regions where it has extremely small gradients."
+          },
+          "review_method": "original coordinate PDF pixels",
+          "coordinate_pdf_sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/attention-p4.png",
+              "sha256": "177cfd17ba772e7537228bbdd2f865b7e3d4175bec14af12d1233526dd8a0f4a"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-030",
+      "split": "heldout",
+      "family": "attention-results",
+      "language": "en",
+      "question": "According specifically to Table 2 of Attention Is All You Need, what BLEU scores does Transformer (big) obtain on English–German and English–French, and what training cost is listed?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "attention"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "table",
+        "formula"
+      ],
+      "required_claims": [
+        "EN-DE BLEU 28.4; EN-FR BLEU 41.8.",
+        "Training cost 2.3×10^19 FLOPs."
+      ],
+      "evidence": [
+        {
+          "source_id": "attention",
+          "pdf_page": 8,
+          "source_cells_or_image_transcription": {
+            "Table2 Transformer(big)": {
+              "BLEU EN-DE": "28.4",
+              "BLEU EN-FR": "41.8",
+              "Training Cost FLOPs": "2.3×10^19"
+            }
+          },
+          "review_method": "original coordinate PDF pixels",
+          "coordinate_pdf_sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/attention-p8.png",
+              "sha256": "c1ef37b1ba3faf592af292f7a34227299cc61031bbd500d1539d15a0de1d6c3b"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": [
+        "The prose on the same page says 41.0 for English–French while Table 2 prints 41.8. This question explicitly asks Table 2; a supported answer may note the discrepancy."
+      ]
+    },
+    {
+      "id": "odl-agentic-031",
+      "split": "development",
+      "family": "calor-metric-bias",
+      "language": "fr",
+      "question": "Dans l’étude des facteurs de complexité menée sur Calor, pourquoi faut-il interpréter avec prudence les comparaisons ROUGE-L entre modèles extractifs et génératifs ?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "taln-complexity"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "ordinary",
+        "reasoning"
+      ],
+      "required_claims": [
+        "The Calor reference answers are extractive source segments.",
+        "ROUGE favors copying source segments and can penalize generative answers with added wording; it does not alone establish overall model superiority."
+      ],
+      "evidence": [
+        {
+          "source_id": "taln-complexity",
+          "pdf_page": 5,
+          "literal_source_text": "e\nfavorise les modèles extractifs par rapport aux modèles génératifs. Ce biais provient du fait que les\nréférences dans le corpus d’évaluation Calor sont extractives, comprenant des segments du texte\noriginal. Par conséquent, les métriques ROUGE favorisent intrinsèquement les modèles qui ne font\nque reproduire les segments sans introduire de mots supplémentaires.\nIl est donc essentiel d’interpréter avec prudence les comparaisons directes de scores entre modèles\nbasées sur cette métrique. L’intention de cette étude est moins de juger de la supériorité d’un modèle\nsur un autre en termes de performances brutes que d’explorer les facteurs linguistiques qui affectent\nles résultats de chaque modèle, indépendamment de leur efficacité absolue.\nL’étude initiale que nous avons menée visait à examiner la corrélation potentielle entre le type de\nrelation sémantique liant une question et sa réponse, et la performance des modèles. Pour discerner\nces relations sémantiques, nous avons utilisé les cadres sémantiques (Frames) qui ont formé la base\nde l’élaboration des questions, comme détaillé dans le paragraphe 2. En segmentant le corpus Calor\nen 54 sous-corpus correspondant au nombre de cadres présents au total dans notre corpus, nous avons\npu évaluer la performance de chaque modèle en fonction du cadre considéré.\nS’il n’y avait pas de corrélation entre la performance et la relation sémantique, la variance des scores\nentre les sous-corpus devrait être minimale. Cependant, nos résultats indiquent le contraire.\nCeci est illustré dans la figure 2 où la distribution des scores de GPT-3.5 pour chaque sous-corpus\nde Frame est représentée. Comme on peut le voir, ce",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "bf082a428310d35390cc83cb475094f143642dd8cfc1c165a2144cca85215294",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-pass/inputs/taln-complexity.pdf",
+          "text_locator_pdf_sha256": "bf082a428310d35390cc83cb475094f143642dd8cfc1c165a2144cca85215294",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/taln-complexity-p5.png",
+              "sha256": "e2743fbd22715c38064f650ac44ccda4950896112d8909d1a9e7b99a9f949968"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-032",
+      "split": "heldout",
+      "family": "calor-yellow-cells",
+      "language": "fr",
+      "question": "Dans le tableau 2 de l’étude des facteurs de complexité, quelles cases de la ligne GPT-3.5 sont jaunes, quelles sont leurs valeurs, et que signifie ce marquage selon la légende ?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "taln-complexity"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "table",
+        "visual_style"
+      ],
+      "required_claims": [
+        "GPT-3.5 f1 is yellow with value 4 and f6 is yellow with value-3.",
+        "The caption says yellow marks statistically significant differences."
+      ],
+      "evidence": [
+        {
+          "source_id": "taln-complexity",
+          "pdf_page": 8,
+          "source_cells_or_image_transcription": {
+            "Table2 GPT-3.5": {
+              "f0": "0",
+              "f1": {
+                "value": "4",
+                "yellow": true
+              },
+              "f2": "-1",
+              "f3": "0",
+              "f4": "-4",
+              "f5": "-4",
+              "f6": {
+                "value": "-3",
+                "yellow": true
+              }
+            },
+            "caption": "avec des marquages jaunes pour différences significatives."
+          },
+          "review_method": "original coordinate PDF pixels",
+          "prior_source_check": "bench/parsers/fixtures/odl-source-style-checks.json",
+          "coordinate_pdf_sha256": "bf082a428310d35390cc83cb475094f143642dd8cfc1c165a2144cca85215294",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/taln-complexity-p8.png",
+              "sha256": "533c9a30249fad76ff97099917457de7199704c6c80e3571a0f65ec464e2c332"
+            }
+          ],
+          "prior_source_check_sha256": "935eb4625a2a810b1033a9073cda3dbe74811741c365e2a89831c234dc3b8095"
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-033",
+      "split": "development",
+      "family": "feedback-human-table",
+      "language": "zh",
+      "question": "《面向语言学习者的跨语言反馈评语生成方法》表10中，mBart-Large（Edit+EV）和 GPT-4（few-shot）的严格、宽松人工评估分数各是多少？",
+      "scope_source_ids": null,
+      "source_ids": [
+        "ccl-feedback"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "table"
+      ],
+      "required_claims": [
+        "mBart-Large(Edit+EV): strict 62.84, relaxed 79.98.",
+        "GPT-4(few-shot): strict 69.77, relaxed 89.53."
+      ],
+      "evidence": [
+        {
+          "source_id": "ccl-feedback",
+          "pdf_page": 14,
+          "source_cells_or_image_transcription": {
+            "Table10 columns": [
+              "模型/方法",
+              "人工评估（严格）",
+              "人工评估（宽松）"
+            ],
+            "mBart-Large(Edit+EV)": [
+              "62.84",
+              "79.98"
+            ],
+            "GPT-4(few-shot)": [
+              "69.77(7.14↑)",
+              "89.53(9.55↑)"
+            ]
+          },
+          "review_method": "original coordinate PDF pixels",
+          "coordinate_pdf_sha256": "6a67443bc89ae7d493464d1d2610f100b192745b6428909e8fc1fc889504b1a1",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/ccl-feedback-p14.png",
+              "sha256": "b1ecb685ff49f83d2b072639e2a7b5a17319c9da1b12e92d69c32d64b6b95612"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-034",
+      "split": "heldout",
+      "family": "feedback-task",
+      "language": "zh",
+      "question": "跨语言反馈评语论文提出的 CLFCG 任务解决什么理解障碍？它构建的数据集把哪种学习者语句与哪种反馈语言配对？",
+      "scope_source_ids": null,
+      "source_ids": [
+        "ccl-feedback"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "ordinary"
+      ],
+      "required_claims": [
+        "Non-native learners may struggle to understand target-language feedback, especially unfamiliar linguistic knowledge.",
+        "The task generates feedback in the learner’s native language; the dataset pairs English learner sentences with Chinese feedback."
+      ],
+      "evidence": [
+        {
+          "source_id": "ccl-feedback",
+          "pdf_page": 1,
+          "literal_source_text": "yuanan.blcu@gmail.com\n摘要\n反馈评语生成任务旨在为语言学习者的产出提供纠偏及解释性的评价，促进学习者写\n作能力的发展。现有研究主要聚焦于单语的反馈评语生成，如为英语学习者提供英文\n反馈评语，但这忽略了非母语学习者可能面临的理解障碍问题，尤其当评语中存在陌\n生的语言知识时。因此，本文提出跨语言反馈评语生成任务（CLFCG），目的是为语\n言学习者生成母语的反馈评语。本研究构建了首个英-中跨语言反馈评语生成数据集，\n该数据集包含英语学习者产出的语句与相应的中文反馈评语，并探索了基于流水线的\n预训练语言模型引导增强生成方法，将修正编辑、线索词语和语法术语等作为输入的\n附加信息，引导和提示生成模型。实验结果表明，附加引导信息的预训练语言模型流\n水线方法在自动评估（BLEU: 50.32）与人工评估（Precision: 62.84）上表现良好。本\n文对实验结果进行了深入分析，以期为跨语言反馈评语生成任务提供更多见解。\n关键词：智能辅助语言学习；反馈评语生成；跨语言文本生成；预训练语言模型\nCross-Lingual Feedback Comment Generation for Language\nLearners\nJiyuan An1,2, Lin Zhu1,2, Erhong Yang1,2*\n1National Language Resources Monitoring and Research Center for Print Media,\nBeijing Language and Culture University, Beijing\n2School of Information Science, Beijing Language and Culture University, Beijing\njiyuanan.blcu@gmail.com\nAbstract\nThe task of generating feedback comments is designed to furnish corrective and in-\nterpretative evaluations for the outputs of language learners, thereby facilitating the\nenhancement of their writing competencies. Predominantly, existing studies have con-\ncentrated on monolingual feedback generation, such as providing feedback in English\nfor learners of English. However, this approach neglects the comprehension ba",
+          "review_method": "PDF text from font-map repair used only as a locator; gold checked against original source pixels",
+          "coordinate_pdf_sha256": "6a67443bc89ae7d493464d1d2610f100b192745b6428909e8fc1fc889504b1a1",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-native-measured/extended-prefilter-r1/ccl-feedback/repaired.pdf",
+          "text_locator_pdf_sha256": "f0a42131121253c06ffd75b9b638c443c05adb330d25cd422c9d53c942008e0a",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/ccl-feedback-p1-qa.png",
+              "sha256": "37280f2950747a6f65a5ea637f76bd2a3b3eb544a07f1f1f4a303eabf4fb1350"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-035",
+      "split": "development",
+      "family": "spain-cpi",
+      "language": "es",
+      "question": "En España en cifras 2024, ¿qué grupo de bienes y servicios tuvo el mayor aumento medio de precios en 2023 y cuál tuvo la mayor caída? Da las tasas y distingue los grupos principales de los productos individuales.",
+      "scope_source_ids": null,
+      "source_ids": [
+        "spain-figures"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "figure",
+        "table",
+        "hierarchy"
+      ],
+      "required_claims": [
+        "Among the 12 main groups, food and non-alcoholic beverages rise 11.7%.",
+        "Housing, water, electricity, gas and other fuels fall 11.0%.",
+        "These figures refer to the broad CPI groups, distinguished from individual product categories."
+      ],
+      "evidence": [
+        {
+          "source_id": "spain-figures",
+          "pdf_page": 22,
+          "source_cells_or_image_transcription": {
+            "12 main groups": {
+              "Alimentos y bebidas no alcohólicas": "11,7%",
+              "Vivienda, agua, electricidad, gas y otros combustibles": "-11,0%"
+            },
+            "finer categories": {
+              "Aceites y grasas": "29,4%",
+              "Transporte combinado de pasajeros": "-39,0%"
+            }
+          },
+          "review_method": "original coordinate PDF pixels",
+          "coordinate_pdf_sha256": "a27e7a5b5982fd5fbf27dc90044b94aedf7dab257f29788ebe2cd32364185867",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/spain-figures-p22.png",
+              "sha256": "4963065b5da3c82da02d4398d8b6ce398f2d71af205dcb5d5c7d5cd652681e75"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": [
+        "Optional illustration: individual oils/fats rise 29.4% and combined passenger transport falls 39.0%; these finer categories must not replace the requested main groups. The two product values need not be volunteered."
+      ]
+    },
+    {
+      "id": "odl-agentic-036",
+      "split": "heldout",
+      "family": "spain-labour",
+      "language": "es",
+      "question": "Según España en cifras 2024, ¿cuáles fueron las tasas de paro de mujeres y hombres en 2023, y cuántos puntos porcentuales las separan?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "spain-figures"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "table",
+        "calculation"
+      ],
+      "required_claims": [
+        "Women 13.8%, men 10.6%.",
+        "Women’s rate is 3.2 percentage points higher."
+      ],
+      "evidence": [
+        {
+          "source_id": "spain-figures",
+          "pdf_page": 27,
+          "literal_source_text": " sube un 2,1% \ndurante 2023, y se sitúa en 23,9 millones de personas.\nLa tasa de paro es del 12,1% (13,8% entre las mujeres y 10,6% entre los \nhombres). En diez comunidades autónomas el dato es inferior a ese valor. \nVariación interanual (%)\nAmbos sexos\nTotal\n40.521,5\nActivos\n23.899,5\n- Ocupados\n21.005,5\n- Parados\n2.894,0\nInactivos\n16.622,0\nHombres\nTotal\n19.671,5\nActivos\n12.550,6\n- Ocupados\n11.223,3\n- Parados\n1.327,3\nInactivos\n7.121,0\nMujeres\nTotal\n20.850,0\nActivas\n11.349,0\n- Ocupadas\n9.782,3\n- Paradas\n1.566,7\nInactivas\n9.501,1\nUn 6,6% de hogares tienen a todos los miembros \nactivos en paro en el último trimestre de 2023, un \npunto menos que el año anterior.\nHogares con al menos un activo donde todos los activo",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "a27e7a5b5982fd5fbf27dc90044b94aedf7dab257f29788ebe2cd32364185867",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-pass/inputs/spain-figures.pdf",
+          "text_locator_pdf_sha256": "a27e7a5b5982fd5fbf27dc90044b94aedf7dab257f29788ebe2cd32364185867",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/spain-figures-p27.png",
+              "sha256": "05960b56288ad60b47fc8f44d0d13447f23d85bf12f1729e7dbb553fcc773496"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-037",
+      "split": "heldout",
+      "family": "japan-domestic-year",
+      "language": "ja",
+      "question": "2025年の住民基本台帳人口移動報告によると、市区町村間移動者数と都道府県間移動者数はそれぞれ何人で、前年比はどう変化しましたか。",
+      "scope_source_ids": null,
+      "source_ids": [
+        "japan-migration"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "table",
+        "units"
+      ],
+      "required_claims": [
+        "Intermunicipal movers 5,190,548, down 0.3%.",
+        "Interprefectural movers 2,515,731, down 0.3%."
+      ],
+      "evidence": [
+        {
+          "source_id": "japan-migration",
+          "pdf_page": 1,
+          "source_cells_or_image_transcription": {
+            "2025年": {
+              "市区町村間移動者数": "5,190,548人; -0.3%",
+              "都道府県間移動者数": "2,515,731人; -0.3%"
+            }
+          },
+          "review_method": "original coordinate PDF pixels",
+          "coordinate_pdf_sha256": "ff4812aac97b8fdfe1919bd7c04a446aa7326eebc56ca047a777081c64e80f4a",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/japan-migration-p1.png",
+              "sha256": "1c629472865201e362e17df397c558aec5bf4f37fb4719ac949d40f8e5a6abff"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-038",
+      "split": "heldout",
+      "family": "japan-cross-border",
+      "language": "ja",
+      "question": "住民基本台帳人口移動報告2025年結果の図2では、2020～2025年のうち国外への転出者数が国外からの転入者数を上回ったのは何年ですか。その年の両者の人数も答えてください。",
+      "scope_source_ids": null,
+      "source_ids": [
+        "japan-migration"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "figure",
+        "table"
+      ],
+      "required_claims": [
+        "2021 is the only shown year where departures exceed arrivals.",
+        "Arrivals 209,700; departures 224,077."
+      ],
+      "evidence": [
+        {
+          "source_id": "japan-migration",
+          "pdf_page": 1,
+          "source_cells_or_image_transcription": {
+            "Figure2 and Table1,2021": {
+              "国外からの転入者数": "209,700",
+              "国外への転出者数": "224,077"
+            },
+            "other shown years2020,2022–2025": "arrivals exceed departures"
+          },
+          "review_method": "original coordinate PDF pixels",
+          "coordinate_pdf_sha256": "ff4812aac97b8fdfe1919bd7c04a446aa7326eebc56ca047a777081c64e80f4a",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/japan-migration-p1.png",
+              "sha256": "1c629472865201e362e17df397c558aec5bf4f37fb4719ac949d40f8e5a6abff"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-039",
+      "split": "development",
+      "family": "education-report-purpose",
+      "language": "de",
+      "question": "Wie beschreibt Bildung in Deutschland kompakt 2024 seinen Zweck, seine Datengrundlage und seinen Erscheinungsrhythmus?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "german-education"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "ordinary",
+        "reading_order"
+      ],
+      "required_claims": [
+        "A systematic stocktaking of the German education system, covering early education through continuing education.",
+        "Uses official statistics and social-science surveys, analyzed by an independent author group.",
+        "Published every two years."
+      ],
+      "evidence": [
+        {
+          "source_id": "german-education",
+          "pdf_page": 3,
+          "literal_source_text": " | 1 |\nBildung in Deutschland ist ein Bericht, der alle 2  Jahre eine \nsystematische Bestandsaufnahme des deutschen Bildungs­\nsystems auf Basis von Daten der amtlichen Statistik und aus \nsozialwissenschaftlichen Erhebungen bietet. Eine wissen­\nschaftlich unabhängige Autor:innengruppe erstellt den von \nder Ständigen Konferenz der Kultusminister der Länder in \nder Bundesrepublik Deutschland (KMK) und dem Bundes­\nministerium für Bildung und Forschung (BMBF) geförderten \nBericht. Bildung in Deutschland benennt den Stand und die \nEntwicklungsperspektiven in den verschiedenen Bereichen \ndes deutschen Bildungssystems – von der Frühen Bildung \nüber das Schulwesen, die berufliche Ausbildung und Hoch­\nschule bis hin zur Weiterbildung. Die Autor:innen ana­\nlysieren die Bildungsvoraussetzungen, Bildungswege und \nBildungsergebnisse von Kindern, Jugend­lichen und Erwach­\nsenen und verknüpfen sie mit Daten zu Qualitätsmerkmalen \nvon Bildungsinstitutionen sowie weiteren Kontextinforma­\ntionen. Mit dieser Aufbereitung verfügbarer Daten dokumen­\ntiert auch der 10.  Bildungsbericht bereichsübergreifend die \naktuelle Entwicklung des Bildungssystems. Er bietet so eine \nGrundlage für fundierte Diskussionen in Politik, Wissen­schaft \nund Öffentlichkeit.\nDieses umfassende Orientierungswissen beruht zum ei­\nnen auf einer kontinuierlichen Recherche, Systematisierung \nund Zusammenstellung von Informationen zu politischen, \nrechtlichen und fachlichen Entwicklungen im Bildungswe­\nsen. Zum anderen fußen die Bildungsberichte auf Analysen \nrepräsenta­tiver und fortschreibbarer Daten. Diese werden \nunter der Leitidee von Bildung im Lebenslauf strukturiert, mit \nBlick auf übergreifende Fragestellungen erst",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "2608aecd1c675ee8dcd7de740bae4f87b497229f18889ae67454966176691dfd",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-pass/inputs/german-education.pdf",
+          "text_locator_pdf_sha256": "2608aecd1c675ee8dcd7de740bae4f87b497229f18889ae67454966176691dfd"
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-040",
+      "split": "heldout",
+      "family": "education-inequality",
+      "language": "de",
+      "question": "Warum fordert Bildung in Deutschland kompakt 2024 bei sozialen Bildungsungleichheiten eine frühe Diagnose und lebenslaufbezogene Förderung statt erst bei PISA-Ergebnissen anzusetzen?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "german-education"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "ordinary",
+        "reading_order"
+      ],
+      "required_claims": [
+        "Educational attainment and career choice remain strongly linked to family circumstances and learning opportunities.",
+        "Inequalities extend from early childhood through continuing education.",
+        "Low basic competencies and inequalities arise well before their first appearance in PIRLS/IGLU, PISA or education trend assessments, so early diagnosis and indicated support are needed."
+      ],
+      "evidence": [
+        {
+          "source_id": "german-education",
+          "pdf_page": 23,
+          "literal_source_text": "zständen offenbart sich \neine 2. Dimension von Bildungs­ungleichheit: Der Bildungs­\nerwerb ebenso wie die Wahl eines Berufs sind nach wie vor \nstark an die familialen Gegebenheiten einerseits und an die \ndamit zusammenhängenden Bildungs- und Erwerbsbiografien \nandererseits gebunden. Dies bezieht sich nicht nur auf fami­\nliale Lerngelegenheiten wie das Vorlesen. Vielmehr geht es \num die Ermöglichung institutioneller Lern- und Entwicklungs­\nangebote, die sich nicht nur auf den Besuch einer Kita, einer \nadäquaten Schulform oder beruflichen Ausbildung beziehen, \nsondern auch auf frühe Gelegenheitsstrukturen wie die Nut­\nzung musischer, kultureller oder sportlicher Angebote bereits \nin den ersten 6 Lebensjahren. Soziale Bildungsungleichheiten \nziehen sich durch die Biografie bis in die Weiterbildungsbetei­\nligung. Eine der unverändert großen Problemlagen stellen so­\nziale Ungleichheiten beim Zugang zu Bildungsangeboten dar. \nDiese nicht nur in den Blick zu nehmen, sondern wirksam prä­\nventiv und kurativ gegenzusteuern, bedeutet eine erhebliche \nbildungspolitische Herausforderung. Sie erfordert einen sys­\ntemischen Blick auf das Bildungsgeschehen über den primä­\nren Bildungsbereich hinaus wie auch eine lebenslaufbezogene \nPerspektive. Offensichtlich wird, dass soziale Ungleichheiten \nim Bildungserwerb ebenso wie geringe Kompetenzstände in \nden Basiskompetenzen nicht da entstehen, wo sie in Large-\nScale-Assessments wie PIRLS/IGLU und PISA oder den Bil­\ndungstrends erstmals empirisch abgebildet werden, sondern \ndeutlich früher. Vor diesem Hintergrund sind Anstrengungen \neiner frühen Diagnose von Entwicklungsständen und eine obli­\ngatorische Förderung bei angezeigten Förderbedarfen aus­\ndrücklich zu begrüßen und zu intensivieren.\nFortbestehende regionale Disparitäten in Bildungsange­\nboten und -teilnahme: Trotz zunehmender Digitalisierung \nist die lokale Verfügbarkeit von Bildungsangeboten nach wie \nvor von großer Bedeutung für den Bildungserwerb. Die lang­\njährig beobachteten Ungleichheiten beim Bildungsangebot \nund deren Nutzung auf regionaler Ebene setzen sich fort. Die \nAngebotsstrukturen unterscheiden sich sowohl strukturell \nzwischen den Bundesländern (u. a. Organisation des Ganz­\ntags) als auch – noch deutlicher– zwischen kleinräumigen \n| 21 |\nWachsende Heterogenität, die individualisierte und ziel­\norientierte Förderung zur Sicherung des Bildungsstands \nder Bevölkerung erfordert: Die Rahmenbedingungen, unter \ndenen Bildungsprozesse initiiert werden, variieren auf indi­\nvidueller, institutioneller und systemischer Ebene. So unter­\nscheiden sich insbesondere junge Bildungsteilnehmer:innen \ndeutlich hinsichtlich ihrer familialen Förderung und Unter­\nstützungsstrukturen, mit erheblichen Auswirkungen auf die \nindividuelle Sprachentwicklung, etwa den Wortschatz und \nwichtige Vorläuferkompetenzen für die Teilhabe an schu­\nlischen Bildungsprozessen. Auch auf der institutionell",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "2608aecd1c675ee8dcd7de740bae4f87b497229f18889ae67454966176691dfd",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-pass/inputs/german-education.pdf",
+          "text_locator_pdf_sha256": "2608aecd1c675ee8dcd7de740bae4f87b497229f18889ae67454966176691dfd"
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-041",
+      "split": "development",
+      "family": "hongkong-age",
+      "language": "zh",
+      "question": "《香港統計數字一覽2024年版》表3.2中，2023年65歲及以上人口有多少人，佔總人口百分之多少？請把千人單位轉成實際人數。",
+      "scope_source_ids": null,
+      "source_ids": [
+        "hongkong-figures"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "table",
+        "units"
+      ],
+      "required_claims": [
+        "1,641.9 thousand equals 1,641,900 people.",
+        "21.8% of the mid-year population."
+      ],
+      "evidence": [
+        {
+          "source_id": "hongkong-figures",
+          "pdf_page": 11,
+          "source_cells_or_image_transcription": {
+            "Table3.2 year2023 age65and over": {
+              "Number(000)": "1 641.9",
+              "percent": "21.8"
+            }
+          },
+          "review_method": "original coordinate PDF pixels",
+          "coordinate_pdf_sha256": "c3490cc7c1664ce8e75edcce55898be58dc21fceade53b3c1cbfd7f30411f2d9",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/hongkong-figures-p11.png",
+              "sha256": "ae8f5026092666b110c02ee1f61bb7c3cc61f65d9006b16db3c9539aa89eabf3"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-042",
+      "split": "heldout",
+      "family": "hongkong-life",
+      "language": "en",
+      "question": "According to Hong Kong in Figures 2024 Table 15.1, what are male and female life expectancy at birth in 2023, and what caution does the note attach to the 2022 figures?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "hongkong-figures"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "table",
+        "footnote"
+      ],
+      "required_claims": [
+        "Male 82.5 years, female 87.9 years.",
+        "The 2022 values require caution because mortality was exceptionally high during the COVID-19 epidemic."
+      ],
+      "evidence": [
+        {
+          "source_id": "hongkong-figures",
+          "pdf_page": 48,
+          "source_cells_or_image_transcription": {
+            "Table15.1 2023": {
+              "Male": "82.5",
+              "Female": "87.9"
+            },
+            "Note1": "The expectation of life at birth in2022 should be interpreted with care as the figures are affected by exceptionally high mortality rates in2022 during the COVID-19 epidemic."
+          },
+          "review_method": "original coordinate PDF pixels",
+          "coordinate_pdf_sha256": "c3490cc7c1664ce8e75edcce55898be58dc21fceade53b3c1cbfd7f30411f2d9",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/hongkong-figures-p48.png",
+              "sha256": "ae4f0bb714b9350bdd52cd5e546fb1cf4e4715f5e101b4a5390db2adc065991f"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-043",
+      "split": "heldout",
+      "family": "accelerometer-types",
+      "language": "en",
+      "question": "Which three calibrators are described in Calibration of Accelerometers, and what operating ranges or maximum accelerations does the opening summary assign to each?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "nist-accelerometers"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "ordinary",
+        "units"
+      ],
+      "required_claims": [
+        "Shaking table: sinusoidal 20–110 cycles/s and acceleration up to 80g.",
+        "Portable pulse calibrator: peak 1–20g.",
+        "Centrifuge: maximum steady acceleration about 1000g."
+      ],
+      "evidence": [
+        {
+          "source_id": "nist-accelerometers",
+          "pdf_page": 1,
+          "literal_source_text": "l Levy, Albert E. McPherson, and Edward V. Hobbs\nThis paper describes three accelerometer calibrators. \nThese calibrators were developed\nto provide a convenient means for calibrating lightweight accelerometers of the types used\nfor measuring accelerations on airplanes in flight. \nThe first calibrator is a shaking table\nhaving a sinusoidal motion with frequencies of 20 to 110 cycles per second and accelerations\nup to 80 gravity; the second is a portable calibrator producing a known pulse of accelera-\ntion with a peak value between 1 and 20 gravity; and the third is a centrifuge, which de-\nvelops a maximum steady acceleration of about 1,000 gravity.\nI. Introduction\nAccelerometers of the types used to measure\naccelerations on airplanes in flight consist of a\nmass mounted on springs inside a case. Damping\nis frequently used to limit the response of the\naccelerometer at its resonant frequency. \nThe\nmass is usually guided to make the instrument\nsensitive to accelerations along one line only.\nThe output of the accelerometer is recorded\nmechanically for some of ",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "64e632778f0bf38409575a82fb8115f9c4a451c3caa275118cec7a5973a1ae7a",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-pass/inputs/nist-accelerometers.pdf",
+          "text_locator_pdf_sha256": "64e632778f0bf38409575a82fb8115f9c4a451c3caa275118cec7a5973a1ae7a"
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-044",
+      "split": "heldout",
+      "family": "accelerometer-assembly",
+      "language": "en",
+      "question": "In Calibration of Accelerometers, how is distance D set when assembling the portable calibrator, and approximately how large is it?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "nist-accelerometers"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "reading_order",
+        "figure",
+        "units"
+      ],
+      "required_claims": [
+        "Choose D so the base hangs vertically from the support wires when the release pawl engages the lowest ratchet tooth.",
+        "About0.5 inch."
+      ],
+      "evidence": [
+        {
+          "source_id": "nist-accelerometers",
+          "pdf_page": 5,
+          "source_cells_or_image_transcription": {
+            "paragraph": "Distance D, figure7, is chosen so that the base of the calibrator hangs vertically from the support wires when the release pawl engages the lowest tooth of the ratchet. This distance is about0.5in."
+          },
+          "review_method": "original coordinate PDF pixels",
+          "coordinate_pdf_sha256": "64e632778f0bf38409575a82fb8115f9c4a451c3caa275118cec7a5973a1ae7a",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/nist-accelerometers-p5.png",
+              "sha256": "2383c56cc956c6e5b2e0fed6f4c6a48ba1652a6693efc1453d9805d7f96c8f2f"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-045",
+      "split": "development",
+      "family": "cot-task",
+      "language": "zh",
+      "question": "《基于思维链的跨语言多文档摘要生成技术研究》提出了什么任务和方法，采用哪两类评估来验证？",
+      "scope_source_ids": null,
+      "source_ids": [
+        "ccl-cot"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "ordinary"
+      ],
+      "required_claims": [
+        "Cross-lingual multi-document summarization, with a constructed cross-lingual multi-document test set.",
+        "A chain-of-thought based generation method.",
+        "Both human/manual and automatic evaluation."
+      ],
+      "evidence": [
+        {
+          "source_id": "ccl-cot",
+          "pdf_page": 1,
+          "literal_source_text": "统的多文档\n摘要生成技术可以提升信息获取效率，然而往往忽视了跨语言场景下的特殊挑战。为\n了缓解这一问题，本文提出了跨语言多文档摘要生成任务。我们首先构建了一个全面\n的跨语言多文档摘要测试集作为评估基准，其次提出了一种基于思维链技术的跨语言\n多文档摘要生成方法，并对其进行了实验验证。在实验中，我们使用了几种典型的大\n语言模型，并通过人工评估和自动评估来验证我们的方法。结果表明，我们提出的基\n于思维链的方法在跨语言多文档摘要生成任务上取得了显著的性能提升，为解决语言\n障碍下的信息获取问题提供了有效的解决方案。\n关键词：多文档摘要；跨语言摘要；大语言模型；思维链\nCross-lingual Multi-document Summarization Based on\nChain-of-Thought\nTian Qi1, Jianan Yang2, Tiejun Zhao1, Muyun Yang1\n1Faculty of Computing, Harbin Institute of Technology, Harbin 150001,China\n2College of Information Science and Engineering, Northeastern University, Shenyang,110819, China\nqitian@stu.hit.edu.cn, 20206422@stu.neu.edu.cn, {tjzhao,yangmuyun}@hit.edu.cn\nAbstract\nWith the accelerating development of globalization, efficient transmission and under-\nstanding of cross-lingual information have become particularly important. Traditional\nmulti-document summarization techniques can improve information retrieval efficiency\nbut often overlook the challenges posed by cross-lingual scenarios. To address this issue,\nthis paper proposes a task for cross-lingual multi-document summarization generation.\nWe first construct a comprehensive cross-lingual multi-document summarization test\nset as an evaluation benchmark. Secondly, we propose a cross-lingual multi-document\nsummarization generation method based on Chain-of-Thought technology and validate\nit through experiments. In ",
+          "review_method": "PDF text from font-map repair used only as a locator; gold checked against original source pixels",
+          "coordinate_pdf_sha256": "87bb845a8843bde1527827dcfa2e0070a5207087f9f93739497c5997cf270e0b",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-native-measured/transfer-extended/ccl-cot/repaired.pdf",
+          "text_locator_pdf_sha256": "87b1345e3361fc7bf0940d7b52088aae2b8fb4c58b0de2230740a5d35d8b1346",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/ccl-cot-p1-qa.png",
+              "sha256": "f4171d0afb168c7e47e405f65e1a864bdac2ed111f2b2b8564daaa25a5facfe6"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-046",
+      "split": "heldout",
+      "family": "cot-appendix",
+      "language": "zh",
+      "question": "跨语言多文档摘要论文附录A.5的评估提示词使用几分制，最后允许输出什么？它如何要求评估者把握评分尺度？",
+      "scope_source_ids": null,
+      "source_ids": [
+        "ccl-cot"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "list",
+        "section_context"
+      ],
+      "required_claims": [
+        "Scores on a scale from 1 to10.",
+        "Output only one number, with no other content.",
+        "Be strict and demand high standards; do not be too conservative in scoring."
+      ],
+      "evidence": [
+        {
+          "source_id": "ccl-cot",
+          "pdf_page": 14,
+          "literal_source_text": " is that your output must contain only a number and\nno other content)\nA.5\n多文档摘要评估提示词\nScore the following multi-document summary generated by another system given the source\non a scale from 1 to 10 with regards to overall general summary quality. 1-point indicates a low-\nquality multi-document summary, and 10-points indicates a very high-quality multi-document\nsummary. A high-quality multi-document summary is concise in language, grammatical, fluent,\ninformative, relevant, logically coherent and factually consistent with the source, successfully\nintegrates all documents, and contains important content from all documents.\nFurthermore, when you are scoring the summary, be strict and demand high standards,\ndon’t be too conservative with your scoring.\nLet’s think step-by-step and just output one number representing the score.\nSource:\n{source text}\nMulti-Document Summary:\n{summary llm}\nYour score: (What you must observe is that your output must contain only a number and\nno other content)\nA.6\n跨语言多文档摘要评估提示词\nScore the following Chinese multi-document summary generated by another system given\nthe English source on a scale from 1 to 10 with regards to overall general summary quality.\nCCL 2024\n第二十三届中国计算语言学大会论文集，第110页-第133页，太原，中国，2024年7月25日至28日。\n卷1：主会论文\n(c) 2024 中国中文信息学会计算语言学专业委员会\n123\n",
+          "review_method": "PDF text from font-map repair used only as a locator; gold checked against original source pixels",
+          "coordinate_pdf_sha256": "87bb845a8843bde1527827dcfa2e0070a5207087f9f93739497c5997cf270e0b",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-native-measured/transfer-extended/ccl-cot/repaired.pdf",
+          "text_locator_pdf_sha256": "87b1345e3361fc7bf0940d7b52088aae2b8fb4c58b0de2230740a5d35d8b1346",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/ccl-cot-p14-qa.png",
+              "sha256": "984ce544b26a982ac3d88f1465b325f02d4d2f1800e8c856f6947d9987ec596a"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-047",
+      "split": "heldout",
+      "family": "children-tsd",
+      "language": "zh",
+      "question": "儿童新闻篇章结构框架论文的TSD模块从哪四个层级定义文本样式，它对成人新闻转为儿童新闻有什么作用？",
+      "scope_source_ids": null,
+      "source_ids": [
+        "ccl-children"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "list",
+        "reading_order"
+      ],
+      "required_claims": [
+        "Character, word, sentence and paragraph levels.",
+        "Provides style prompts that reduce text difficulty to suit children’s comprehension and can improve layout."
+      ],
+      "evidence": [
+        {
+          "source_id": "ccl-children",
+          "pdf_page": 5,
+          "literal_source_text": "进行对比分析，以验证\n我们方法的有效性。TNC-LLM的整体框架图如图5所示。\n图5. 基于主题的儿童新闻篇章结构框架（TNC-LLM）图\n4.2\n文本样式定义(TSD)模块\n如图6我们设计了一个专为儿童新闻文本定制的文本样式定义（TSD）模块。该模块从字、\n词、句及段落四个级别统计了Di1的文本样式，并给出了具体的样式定义。TSD模块能够为大型\n语言模型提供准确的文本样式提示，有利于在成年人新闻内容转化处理上，降低文本难度从而\n适配儿童的阅读理解能力，还可以优化文章版式布局。\n字在研究汉字结构的复杂性时，笔画数是一个重要的量化指标，通常笔画越多，记忆和认\nCCL 2024\n第二十三届中国计算语言学大会论文集，第150页-第170页，太原，中国，2024年7月25日至28日。\n卷1：主会论文\n(c) 2024 中国中文信息学会计算语言学专业委员会\n154\n",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "e7d6af6e204d97a2ad61730d8fbdd518df227fcd50cc0446e675444d762be80c",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-font-transfer/inputs/ccl-children.pdf",
+          "text_locator_pdf_sha256": "e7d6af6e204d97a2ad61730d8fbdd518df227fcd50cc0446e675444d762be80c",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/ccl-children-p5-qa.png",
+              "sha256": "d902221746074b771408d7fa99d9cd4ea746edbe735bc3431291a50e198da180"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-048",
+      "split": "heldout",
+      "family": "children-models",
+      "language": "zh",
+      "question": "儿童新闻篇章结构框架论文在实验设计中使用了哪四个模型？各模型的温度是多少，并比较了哪两种示例学习场景？",
+      "scope_source_ids": null,
+      "source_ids": [
+        "ccl-children"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "list",
+        "literal_identifiers"
+      ],
+      "required_claims": [
+        "GPT-3.5-turbo-16k, 讯飞星火-v3.5, ERNIE-3.5, Gemini-1.0-pro.",
+        "Temperature 0.5 for all models.",
+        "Zero-Shot and One-Shot scenarios."
+      ],
+      "evidence": [
+        {
+          "source_id": "ccl-children",
+          "pdf_page": 8,
+          "literal_source_text": "计算语言学\n5\n实验与结果\n5.1\n实验设计\n为了评估我们框架的全面性和适用性，我们选取了四种当前领先的大型语言模型（LLM）\n作为实验模型。这些模型包括：GPT-3.5-turbo-16k、讯飞星火-v3.5、ERNIE-3.5、Gemini-1.0-\npro。通过它们，我们可以全面地评估我们的框架在不同场景下的表现和适用性。我们研究了\n在Zero-Shot和One-Shot学习场景下，利用文本样式定义模块和主题类别定义模块的组合提示，\n四个不同的模型生成儿童新闻内容的能力。其中所有模型的温度均为0.5。在Zero-Shot场景中，\n模型没有接受到任何具体的示例或指导，需要直接根据给定的模块和成年人版新闻文本内容\n生成儿童新闻文本。Zero-Shot结合文本样式定义模块s和主题类别定义模块c的提示模版在附\n录A.3。而在One-Shot场景中，模型首先提供一个成年人版新闻文本和对应的儿童新闻文本示\n例，然后基于这个示例结合给定模块组合生成新的儿童新闻内容。通过这种设置，我们可以评\n估模型在不同学习条件下的文本生成性能，以及它们理解和应用给定模块提示的能力。此外，\n我们将采用不提供任何模块提示的情况作为实验的基准线。One-Shot结合文本样式定义模块s和\n主题类别定义模块c的提示模版在附录A.2中。\n5.2\n实验数据与评估指标\n我们使用的数据集包括两个部分：Di1中包含534篇长篇儿童新闻文本，以及Di1中与长篇\n儿童新闻文本主题内容相对应的534篇成年人新闻文本。我们的评估主要分为两个方面，一\n方面是在验证内容和主题的保留，另一方面是评估文本的趣味性、教育性、段落布局、适读\n性、文本生成一致性、上下文连贯性。其中在内容相似性上的评估使用BLEU-n(n=1,2)，在\n趣味性、教育性、段落布局、适读性、文本生成一致性、上下文连贯性方面使用GPT-4来进\n行评估(Chang et al., 2024)。为确保GPT-4评估结果的准确性和可信度，我们从每个评估模型\n中随机抽取了50篇文本，总计200篇，邀请四位语言学硕士来进行背靠背人工评审。这一步骤\n旨在检验GPT-4的评分是否与人工评估人员的专业判断保持一致。通过这种方法，我们能够\n对GPT-4的评估效果进行严格的验证，并据此调整和优化我们的评估流程。完整的GPT-4评估\n提示在附录A.1中，考虑LLM生成文本的随机性，我们将每个类型的文本传输3次，并计算最终\n的平均结果，其中实验结果统计为百分制。\n5.3\n实验结果及分析\n在多个自然语言处理任务中，例如事件抽取、对话生成和文本摘要，大型语言模型在只\n有少量样本（Few-shot）的情况下表现出色。在本研究中，将TNC模块分别与Zero-Shot和One-\nShot学习方法相结合，进行了相关实验。如图表1是在BLEU-n下的评估结果，其中TNC表\n示使用文本样式定义（TSD）模块和主题类别定义（TCD）模块的组合。在Zero-Shot实验\n中，Gemini-1.0-pro模型在BLE",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "e7d6af6e204d97a2ad61730d8fbdd518df227fcd50cc0446e675444d762be80c",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-font-transfer/inputs/ccl-children.pdf",
+          "text_locator_pdf_sha256": "e7d6af6e204d97a2ad61730d8fbdd518df227fcd50cc0446e675444d762be80c",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/ccl-children-p8-qa.png",
+              "sha256": "6ecdc5fe9aa935e3c1cd740a6f99bc8a953f7d6c9bd36e93a23589b0d2ef4323"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": [
+        "Recovering the clearly named model is semantic correctness; a transcription-only hyphen omission may be recorded separately. Do not silently replace model versions."
+      ]
+    },
+    {
+      "id": "odl-agentic-049",
+      "split": "heldout",
+      "family": "bert-squad-table",
+      "language": "en",
+      "question": "In the BERT paper’s SQuAD 2.0 Table 3, what are the test F1 scores for Human and BERT_LARGE (Single), and what is the gap?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "bert"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "table",
+        "calculation"
+      ],
+      "required_claims": [
+        "Human test F1=89.5, BERT_LARGE(Single) test F1=83.1.",
+        "BERT trails by 6.4 F1 points."
+      ],
+      "evidence": [
+        {
+          "source_id": "bert",
+          "pdf_page": 7,
+          "source_cells_or_image_transcription": {
+            "Table3 SQuAD2.0": {
+              "Human TestF1": "89.5",
+              "BERT_LARGE(Single) TestF1": "83.1"
+            }
+          },
+          "review_method": "original coordinate PDF pixels",
+          "prior_source_check": "bench/parsers/fixtures/odl-independent-checks.json",
+          "coordinate_pdf_sha256": "5692a5514787a8c6727b4ff3b726a3385798bc68e12138d1d4af83947e2acf6e",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/bert-p7.png",
+              "sha256": "7b58164a486625c4ead5c3da76031d48a8e9aa5dce9ada5432619e13d0c43e67"
+            }
+          ],
+          "prior_source_check_sha256": "b54930adb3a176e10d561ce93b7bf9cc474307f1a754fe6d1e6564e3dafaeee1"
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-050",
+      "split": "heldout",
+      "family": "bert-null-formula",
+      "language": "en",
+      "question": "How does the BERT paper score a no-answer span for SQuAD 2.0, score the best non-null span, and decide whether to return an answer?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "bert"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "formula",
+        "reading_order"
+      ],
+      "required_claims": [
+        "No-answer score s_null=S·C+E·C, using the [CLS] representation C.",
+        "Best non-null span score is max over j≥i of S·T_i+E·T_j.",
+        "Predict non-null only when the best non-null score exceeds s_null+tau; tau is selected on development data to maximize F1."
+      ],
+      "evidence": [
+        {
+          "source_id": "bert",
+          "pdf_page": 7,
+          "source_cells_or_image_transcription": {
+            "left_column_end": "s_null = S·C + E·C",
+            "right_column_start": "s_hat_i,j = max_(j≥i) S·T_i + E·T_j; predict non-null if s_hat_i,j > s_null + τ",
+            "threshold": "τ selected on dev set to maximize F1"
+          },
+          "review_method": "original coordinate PDF pixels",
+          "prior_source_check": "bench/parsers/fixtures/odl-independent-checks.json",
+          "coordinate_pdf_sha256": "5692a5514787a8c6727b4ff3b726a3385798bc68e12138d1d4af83947e2acf6e",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/bert-p7.png",
+              "sha256": "7b58164a486625c4ead5c3da76031d48a8e9aa5dce9ada5432619e13d0c43e67"
+            }
+          ],
+          "prior_source_check_sha256": "b54930adb3a176e10d561ce93b7bf9cc474307f1a754fe6d1e6564e3dafaeee1"
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-051",
+      "split": "heldout",
+      "family": "resnet-table2",
+      "language": "en",
+      "question": "Using Table 2 in Deep Residual Learning for Image Recognition, compare the 34-layer plain network and 34-layer ResNet. What are their top-1 errors and the improvement in percentage points?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "resnet"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "table",
+        "calculation"
+      ],
+      "required_claims": [
+        "Plain 34:28.54%; ResNet 34:25.03%.",
+        "ResNet reduces error by 3.51 percentage points."
+      ],
+      "evidence": [
+        {
+          "source_id": "resnet",
+          "pdf_page": 5,
+          "source_cells_or_image_transcription": {
+            "Table2 top-1 error%,ImageNet validation,10-crop": {
+              "34layers plain": "28.54",
+              "34layers ResNet": "25.03"
+            }
+          },
+          "review_method": "original coordinate PDF pixels",
+          "prior_source_check": "bench/parsers/fixtures/odl-independent-checks.json",
+          "coordinate_pdf_sha256": "1e0651b6810ecba34a3dbc5b5b0209226f889004607c1f203540a48d64e5a93a",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/resnet-p5.png",
+              "sha256": "eb96acd497beb4b762977d05cfc46a621c70710e4af86eb80bad6191a62406c6"
+            }
+          ],
+          "prior_source_check_sha256": "b54930adb3a176e10d561ce93b7bf9cc474307f1a754fe6d1e6564e3dafaeee1"
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-052",
+      "split": "heldout",
+      "family": "resnet-depth",
+      "language": "en",
+      "question": "The ResNet paper also trains a 1202-layer network. How does its test result compare with the 110-layer network, and why do the authors suspect the result occurs?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "resnet"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "ordinary",
+        "reading_order"
+      ],
+      "required_claims": [
+        "The 1202-layer network tests worse despite similarly low training error.",
+        "The authors suspect overfitting: 1202 layers may be unnecessarily large for this small dataset; they do not attribute the result to inability to optimize training."
+      ],
+      "evidence": [
+        {
+          "source_id": "resnet",
+          "pdf_page": 8,
+          "literal_source_text": "Exploring Over 1000 layers. We explore an aggressively\ndeep model of over 1000 layers.\nWe set n = 200 that\nleads to a 1202-layer network, which is trained as described\nabove. Our method shows no optimization difﬁculty, and\nthis 103-layer network is able to achieve training error\n<0.1% (Fig. 6, right).\nIts test error is still fairly good\n(7.93%, Table 6).\nBut there are still open problems on such aggressively\ndeep models. The testing result of this 1202-layer network\nis worse than that of our 110-layer network, although both\ntraining data\n07+12\n07++12\ntest data\nVOC 07 test\nVOC 12 test\nVGG-16\n73.2\n70.4\nResNet-101\n76.4\n73.8\nTable 7. Object detection mAP (%) on the PASCAL VOC\n2007/2012 test sets using baseline Faster R-CNN. See also Ta-\nble 10 and 11 for better results.\nmetric\nmAP@.5\nmAP@[.5, .95]\nVGG-16\n41.5\n21.2\nResNet-101\n48.4\n27.2\nTable 8. Object detection mAP (%) on the COCO validation set\nusing baseline Faster R-CNN. See also Table 9 for better results.\nhave similar training error. We argue that this is because of\noverﬁtting. The 1202-layer network may be unnecessarily\nlarge (19.4M) for this small dataset. Strong regularization\nsuch as maxout [10] or dropout [14] is applied to obtain the\nbest results ([10, 25, 24, 35]) on this dataset. In this paper,\nwe use no maxout/dropout and just simply impose regular-\nization via deep and thin architectures by design, without\ndistracting from the focus on the difﬁculties of optimiza-\ntion. But combining with stronger regularization may im-\nprove results, which we will study in the future.\n",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "1e0651b6810ecba34a3dbc5b5b0209226f889004607c1f203540a48d64e5a93a",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-independent/inputs/resnet.pdf",
+          "text_locator_pdf_sha256": "1e0651b6810ecba34a3dbc5b5b0209226f889004607c1f203540a48d64e5a93a",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/resnet-p8.png",
+              "sha256": "b12f95826f633d17714d4e9333a94dba68e86c2ea8b9f661022db0d9bca94208"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": [
+        "Use the paper’s cautious interpretation rather than claiming that depth always worsens performance."
+      ]
+    },
+    {
+      "id": "odl-agentic-053",
+      "split": "heldout",
+      "family": "mattson-dimension",
+      "language": "en",
+      "question": "According to Studies of the Mattson Shot Classifier, which dimension of irregular particles does the apparatus tend to measure, and why is this useful with closely sized sieve fractions?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "nist-shot"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "ordinary"
+      ],
+      "required_claims": [
+        "It tends to determine the smallest dimension.",
+        "Combined with closely sized sieve fractions, it helps evaluate particle shape characteristics."
+      ],
+      "evidence": [
+        {
+          "source_id": "nist-shot",
+          "pdf_page": 1,
+          "literal_source_text": "of the\nshot or other particles. This apparatus tends to determine the smallest dimension of\nparticles that are irregular in shape and, when used with closely sized sieve fractions, makes\npossible an evaluation of the shape characteristics of the particles.\nI. Introduction\nIn shot-peening, the energy with which the shot\nstrikes the metal being treated must be carefully\ncontrolled. It is necessary to have the shot of\nuniform size, since differences in size or mass of\nthe individual shot cause difficulties in regulating\nthe intensities with which the shot strikes the\nmetal part and unevenness in the peening operation.\nThe determination of particle size and the size\ndistribution of materials have long been made with\nthe aid of screens or sieves. When the sample\ncontains a fairly wide range of sizes, the use of a\nseries of closely sized sieves makes possible the\n",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "0bdb43c9e1be39acf0dbafe76d1aa3cbd69efd706425bfb27bba979b1fd36763",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-independent/inputs/nist-shot.pdf",
+          "text_locator_pdf_sha256": "0bdb43c9e1be39acf0dbafe76d1aa3cbd69efd706425bfb27bba979b1fd36763"
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-054",
+      "split": "heldout",
+      "family": "mattson-repeats",
+      "language": "en",
+      "question": "In Table 2 of Studies of the Mattson Shot Classifier, what are the average diameter, its standard deviation and coefficient of variation for the repeated 90-shot tests? Keep the units attached.",
+      "scope_source_ids": null,
+      "source_ids": [
+        "nist-shot"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "table",
+        "units"
+      ],
+      "required_claims": [
+        "Average diameter 1.267 mm.",
+        "Standard deviation 0.0033 mm.",
+        "Coefficient of variation 0.3%."
+      ],
+      "evidence": [
+        {
+          "source_id": "nist-shot",
+          "pdf_page": 4,
+          "source_cells_or_image_transcription": {
+            "Table2 average-diameter column": {
+              "Average": "1.267mm",
+              "Standard deviation": "0.0033mm",
+              "Coefficient of variation": "0.3%"
+            }
+          },
+          "review_method": "original coordinate PDF pixels",
+          "coordinate_pdf_sha256": "0bdb43c9e1be39acf0dbafe76d1aa3cbd69efd706425bfb27bba979b1fd36763",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/nist-shot-p4.png",
+              "sha256": "e1b980046abe60f00a6e2d4ed0acffb2d39ada484358aae346952b77395ebebe"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-055",
+      "split": "heldout",
+      "family": "rlhf-human-work",
+      "language": "zh",
+      "question": "在RLHF講義的「RLHF vs Instruction Fine-tuning」圖中，為何右側標示人類比較輕鬆？請說明兩側的人類分別要產生什麼訓練資料。",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__zh__zh_TW_llm"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "figure",
+        "comparison"
+      ],
+      "required_claims": [
+        "Instruction fine-tuning requires humans to write question-and-answer demonstrations.",
+        "RLHF asks humans to compare/rank model-generated responses; in the example answer2 is judged better.",
+        "The diagram labels producing demonstrations as more work and ranking as easier."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__zh__zh_TW_llm",
+          "pdf_page": 6,
+          "source_cells_or_image_transcription": {
+            "left": "Human provides question Taiwan highest mountain and answer玉山; 人類比較辛苦",
+            "right": "Model provides two responses; human says答案2比較好; 人類比較輕鬆"
+          },
+          "review_method": "original coordinate PDF pixels",
+          "coordinate_pdf_sha256": "d55d954482a9a6404b9fe0b120aabf734de1c2045cd1928ba7fa1f544a32c92b",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/rag__zh__zh_TW_llm-p6.png",
+              "sha256": "876534622a064b4040f1c19d27aa56c8626baa9c3529d37852dba69778a66817"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-056",
+      "split": "development",
+      "family": "attention-mechanism",
+      "language": "en",
+      "question": "In the left half of Figure2 of Attention Is All You Need, what operations lie between the first Q–K matrix multiplication and multiplication by V? Which operation is marked optional?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "attention"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "figure",
+        "sequence"
+      ],
+      "required_claims": [
+        "Scale, optional mask, then softmax, followed by matrix multiplication with V.",
+        "Mask is the optional operation."
+      ],
+      "evidence": [
+        {
+          "source_id": "attention",
+          "pdf_page": 4,
+          "source_cells_or_image_transcription": {
+            "Figure2 left bottom-to-top": "Q,K → MatMul → Scale → Mask(opt.) → SoftMax → MatMul withV"
+          },
+          "review_method": "original coordinate PDF pixels",
+          "coordinate_pdf_sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/attention-p4.png",
+              "sha256": "177cfd17ba772e7537228bbdd2f865b7e3d4175bec14af12d1233526dd8a0f4a"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-057",
+      "split": "heldout",
+      "family": "resnet-bottleneck",
+      "language": "en",
+      "question": "In the ResNet paper, list the convolution kernels and channel widths in the bottleneck block shown in Figure 5 (right). Then give the FLOPs for ResNet-50 and ResNet-152 from Table 1.",
+      "scope_source_ids": null,
+      "source_ids": [
+        "resnet"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "figure",
+        "table",
+        "formula"
+      ],
+      "required_claims": [
+        "Bottleneck sequence:1×1 with 64 channels,3×3 with 64 channels,1×1 with 256 channels.",
+        "ResNet-50:3.8×10^9 FLOPs; ResNet-152:11.3×10^9 FLOPs."
+      ],
+      "evidence": [
+        {
+          "source_id": "resnet",
+          "pdf_page": 6,
+          "source_cells_or_image_transcription": {
+            "Figure5 right": "256-d input;1×1,64;3×3,64;1×1,256; residual addition; ReLU"
+          },
+          "review_method": "original coordinate PDF pixels",
+          "coordinate_pdf_sha256": "1e0651b6810ecba34a3dbc5b5b0209226f889004607c1f203540a48d64e5a93a",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/resnet-p6.png",
+              "sha256": "0c98a83f3667dc7306b05058adb7a4a6a653e805d5574ecacacab8377320efe1"
+            }
+          ]
+        },
+        {
+          "source_id": "resnet",
+          "pdf_page": 5,
+          "source_cells_or_image_transcription": {
+            "Table1 FLOPs": {
+              "50-layer": "3.8×10^9",
+              "152-layer": "11.3×10^9"
+            }
+          },
+          "review_method": "original coordinate PDF pixels",
+          "prior_source_check": "bench/parsers/fixtures/odl-independent-checks.json",
+          "coordinate_pdf_sha256": "1e0651b6810ecba34a3dbc5b5b0209226f889004607c1f203540a48d64e5a93a",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/resnet-p5.png",
+              "sha256": "eb96acd497beb4b762977d05cfc46a621c70710e4af86eb80bad6191a62406c6"
+            }
+          ],
+          "prior_source_check_sha256": "b54930adb3a176e10d561ce93b7bf9cc474307f1a754fe6d1e6564e3dafaeee1"
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-058",
+      "split": "heldout",
+      "family": "spain-labour",
+      "language": "en",
+      "question": "Using España en cifras 2024 and Hong Kong in Figures 2024, what 2023 unemployment rate does each report show, and how many percentage points separate the reported rates?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "spain-figures",
+        "hongkong-figures"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "cross_source",
+        "table",
+        "calculation"
+      ],
+      "required_claims": [
+        "Spain 12.1%; Hong Kong 2.9%.",
+        "The reported rates differ by 9.2 percentage points, with Spain higher."
+      ],
+      "evidence": [
+        {
+          "source_id": "spain-figures",
+          "pdf_page": 27,
+          "literal_source_text": " sube un 2,1% \ndurante 2023, y se sitúa en 23,9 millones de personas.\nLa tasa de paro es del 12,1% (13,8% entre las mujeres y 10,6% entre los \nhombres). En diez comunidades autónomas el dato es inferior a ese valor. \nVariación interanual (%)\nAmbos sexos\nTotal\n40.521,5\nActivos\n23.899,5\n- Ocupados\n21.005,5\n- Parados\n2.894,0\nInactivos\n16.622,0\nHombres\nTotal\n19.671,5\nActivos\n12.550,6\n- Ocupados\n11.223,3\n- Parados\n1.327,3\nInactivos\n7.121,0\nMujeres\nTotal\n20.850,0\nActivas\n11.349,0\n- Ocupadas\n9.782,3\n- Paradas\n1.566,7\nInactivas\n9.501,1\nUn 6,6% de hogares tienen a todos lo",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "a27e7a5b5982fd5fbf27dc90044b94aedf7dab257f29788ebe2cd32364185867",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-pass/inputs/spain-figures.pdf",
+          "text_locator_pdf_sha256": "a27e7a5b5982fd5fbf27dc90044b94aedf7dab257f29788ebe2cd32364185867",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/spain-figures-p27.png",
+              "sha256": "05960b56288ad60b47fc8f44d0d13447f23d85bf12f1729e7dbb553fcc773496"
+            }
+          ]
+        },
+        {
+          "source_id": "hongkong-figures",
+          "pdf_page": 8,
+          "literal_source_text": "s\n'000\n勞動人口\n千人\n2023\n3 822.3\n-0.9%\nLabour force\n'000\n失業率\n%\n2023\n 2.9\n—\nUnemployment rate\n實質工資指數（1992 年 9 月 = 100）\n2023\n 126.6\n+0.4%\nReal Wage Index (Sep. 1992 = 100)\n整體出口貨值\n十億港元\n2023\n4,177.4\n+0.1%\nValue of total exports\nHK$ billion\n整體出口貨量指數（2022 年 = 100）\n2023\n 88.4\n-3.2%\nQuantum index of total exports (Year 2022 = 100)\n進口貨值\n十億港元\n2023\n4,645.0\n-0.3%\nValue of imports\nHK$ billion\n進口貨量指數（2022 年 = 100）\n2023\n 90.8\n-3.6%\nQuantum index of imports (Year 2022 = 100)\n按人口平均計算的本地生產總值 — 以當時市價計算@\n港元\n2023\n396,933\n+0.9%\nPer capita GDP at current market prices@\nHK$\n本地生產總值@\n十億港元\n2023\nGDP@\nHK$ billion\n以當時市價計算  At current market prices\n2,991.3\n+1.1%\n以 2021 年環比物量計算  In chained (2021) d",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "c3490cc7c1664ce8e75edcce55898be58dc21fceade53b3c1cbfd7f30411f2d9",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-pass/inputs/hongkong-figures.pdf",
+          "text_locator_pdf_sha256": "c3490cc7c1664ce8e75edcce55898be58dc21fceade53b3c1cbfd7f30411f2d9",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/hongkong-figures-p8.png",
+              "sha256": "b36c674ada1b7a0c287bbafe647fb806af73d606082b94c8aeca21ba81784a78"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": [
+        "This compares the reported figures, not harmonized populations or causal explanations."
+      ]
+    },
+    {
+      "id": "odl-agentic-059",
+      "split": "heldout",
+      "family": "newspaper-harbour",
+      "language": "en",
+      "question": "Using only newspaper_scan.pdf, which city held the harbour-plan vote?",
+      "scope_source_ids": [
+        "rag__en__newspaper_scan"
+      ],
+      "source_ids": [
+        "rag__en__newspaper_scan"
+      ],
+      "answerability": "unanswerable",
+      "tags": [
+        "missing_evidence",
+        "scan"
+      ],
+      "required_claims": [
+        "The supplied scan does not name the city; say that the source does not establish it.",
+        "Do not invent a city or claim that no city held such a vote."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__en__newspaper_scan",
+          "pdf_page": 1,
+          "source_cells_or_image_transcription": {
+            "complete_two_page_review": "Both pages repeat generic harbour-plan text; no city is named.",
+            "visible_phrase": "City council voted last night on the harbour plan."
+          },
+          "review_method": "original coordinate PDF pixels",
+          "coordinate_pdf_sha256": "9a4d01e6b17f17d336eb4c56d8bcdd9be25f63d13c1cfdfab83c7d385d405ef1",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/rag__en__newspaper_scan-p1.png",
+              "sha256": "e5831906530179d1157cf65a3a9a6c2e194fe062d5e780f92c73853bc62de4d5"
+            }
+          ]
+        },
+        {
+          "source_id": "rag__en__newspaper_scan",
+          "pdf_page": 2,
+          "coordinate_pdf_sha256": "9a4d01e6b17f17d336eb4c56d8bcdd9be25f63d13c1cfdfab83c7d385d405ef1",
+          "source_cells_or_image_transcription": {
+            "full_page_review": "Sports-page headline and repeated generic article text; no named harbour city."
+          },
+          "review_method": "original coordinate PDF pixels",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/rag__en__newspaper_scan-p2.png",
+              "sha256": "4108906920921ed7268785baedf1c560242153f091bcbf8e88c965667959fb69"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-060",
+      "split": "heldout",
+      "family": "accelerometer-assembly",
+      "language": "en",
+      "question": "Using only Calibration of Accelerometers, what serial number is printed on the portable calibrator in Figure 6?",
+      "scope_source_ids": [
+        "nist-accelerometers"
+      ],
+      "source_ids": [
+        "nist-accelerometers"
+      ],
+      "answerability": "unanswerable",
+      "tags": [
+        "missing_evidence",
+        "figure"
+      ],
+      "required_claims": [
+        "The requested serial number cannot be established from the supplied figure.",
+        "Do not turn that evidence gap into a claim that the instrument had no serial number."
+      ],
+      "evidence": [
+        {
+          "source_id": "nist-accelerometers",
+          "pdf_page": 5,
+          "source_cells_or_image_transcription": {
+            "Figure 6 review": "The photograph has part labels such as G, F, H and mass labels; no readable serial number is shown."
+          },
+          "review_method": "original coordinate PDF pixels",
+          "coordinate_pdf_sha256": "64e632778f0bf38409575a82fb8115f9c4a451c3caa275118cec7a5973a1ae7a",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/nist-accelerometers-p5.png",
+              "sha256": "2383c56cc956c6e5b2e0fed6f4c6a48ba1652a6693efc1453d9805d7f96c8f2f"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-061",
+      "split": "heldout",
+      "family": "hongkong-future",
+      "language": "zh",
+      "question": "只根據《香港統計數字一覽2024年版》，香港2025年的全年失業率是多少？",
+      "scope_source_ids": [
+        "hongkong-figures"
+      ],
+      "source_ids": [
+        "hongkong-figures"
+      ],
+      "answerability": "unanswerable",
+      "tags": [
+        "missing_evidence",
+        "date"
+      ],
+      "required_claims": [
+        "The 2024 edition does not establish2025 annual unemployment.",
+        "Do not substitute its 2023 rate 2.9% for 2025 or predict a value."
+      ],
+      "evidence": [
+        {
+          "source_id": "hongkong-figures",
+          "pdf_page": 8,
+          "literal_source_text": "s\n'000\n勞動人口\n千人\n2023\n3 822.3\n-0.9%\nLabour force\n'000\n失業率\n%\n2023\n 2.9\n—\nUnemployment rate\n實質工資指數（1992 年 9 月 = 100）\n2023\n 126.6\n+0.4%\nReal Wage Index (Sep. 1992 = 100)\n整體出口貨值\n十億港元\n2023\n4,177.4\n+0.1%\nValue of total exports\nHK$ billion\n整體出口貨量指數（2022 年 = 100）\n2023\n 88.4\n-3.2%\nQuantum index of total exports (Year 2022 = 100)\n進口貨值\n十億港元\n2023\n4,645.0\n-0.3%\nValue of imports\nHK$ billion\n進口貨量指數（2022 年 = 100）\n2023\n 90.8\n-3.6%\nQuantum index of imports (Year 2022 = 100)\n按人口平均計算的本地生產總值 — 以當時市價計算@\n港元\n2023\n396,933\n+0.9%\nPer capita GDP at current market prices@\nHK$\n本地生產總值@\n十億港元\n2023\nGDP@\nHK$ billion\n以當時市價計算  At current market prices\n2,991.3\n+1.1%\n以 2021 年環比物量計算  In chained (2021) dollars\n2,851.2\n-0.6%\n國際收支平衡 — 經常賬戶差額@\n十億港元\n2023\n276.8\n—\nBoP — current account balance@\nHK$ billion\n綜",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "c3490cc7c1664ce8e75edcce55898be58dc21fceade53b3c1cbfd7f30411f2d9",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-pass/inputs/hongkong-figures.pdf",
+          "text_locator_pdf_sha256": "c3490cc7c1664ce8e75edcce55898be58dc21fceade53b3c1cbfd7f30411f2d9",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/hongkong-figures-p8.png",
+              "sha256": "b36c674ada1b7a0c287bbafe647fb806af73d606082b94c8aeca21ba81784a78"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-062",
+      "split": "heldout",
+      "family": "japan-domestic-year",
+      "language": "ja",
+      "question": "住民基本台帳人口移動報告2025年結果だけを根拠に、2026年の市区町村間移動者数を答えてください。",
+      "scope_source_ids": [
+        "japan-migration"
+      ],
+      "source_ids": [
+        "japan-migration"
+      ],
+      "answerability": "unanswerable",
+      "tags": [
+        "missing_evidence",
+        "date"
+      ],
+      "required_claims": [
+        "The report covers 2025 results and does not give the 2026 annual mover count.",
+        "Do not relabel 5,190,548, the 2025 figure, as 2026."
+      ],
+      "evidence": [
+        {
+          "source_id": "japan-migration",
+          "pdf_page": 1,
+          "source_cells_or_image_transcription": {
+            "report_title": "2025年（令和7年）結果",
+            "release_date": "令和8年2月3日",
+            "latest year in Table1": "2025"
+          },
+          "review_method": "original coordinate PDF pixels",
+          "coordinate_pdf_sha256": "ff4812aac97b8fdfe1919bd7c04a446aa7326eebc56ca047a777081c64e80f4a",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/japan-migration-p1.png",
+              "sha256": "1c629472865201e362e17df397c558aec5bf4f37fb4719ac949d40f8e5a6abff"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-063",
+      "split": "heldout",
+      "family": "calor-unlisted-model",
+      "language": "fr",
+      "question": "Uniquement d’après le tableau 1 de l’étude sur les facteurs de complexité et Calor, quel pourcentage de réponses correctes Qwen3.8 Flash obtient-il ?",
+      "scope_source_ids": [
+        "taln-complexity"
+      ],
+      "source_ids": [
+        "taln-complexity"
+      ],
+      "answerability": "unanswerable",
+      "tags": [
+        "missing_evidence",
+        "table"
+      ],
+      "required_claims": [
+        "Table 1 does not evaluate Qwen3.8 Flash, so its score cannot be supplied.",
+        "Do not infer a Qwen score from another model or claim the model cannot exist."
+      ],
+      "evidence": [
+        {
+          "source_id": "taln-complexity",
+          "pdf_page": 5,
+          "literal_source_text": "tion manuelle pour l’ensemble des 1821 questions composant le\ncorpus.\nModel\ntype\nadapt\n#param\nRouge-L\n% réponses correctes\nCamemBERT\nclassif.\nFT\n335M\n0.82\n78\nT5-LARGE\ngene.\nFT\n738M\n0.81\n77\nFLAN-T5-LARGE\ngene.\nFT\n783M\n0.80\n79\nMT5-LARGE\ngene.\nFT\n1.2B\n0.80\n77\nLLAMA-2\ngene.\nLoRA\n7B\n0.69\n72\nMixtral-8x7b\ngene.\nprompt\n47B\n0.80\n82\nGPT 3.5\ngene.\nprompt\n175B\n0.72\n82\nTABLE 1 – Description des 7 modèles de langage utilisés dans nos expériences avec le score ROUGE-\nL moyen et le pourcentage de réponses annotées comme correctes sur le corpus d’évaluation\nDans l’ensemble, les performances des différents modèles sur notre corpus sont considérablement\nplus basses par rapport à celles rapportées dans des tâches analogues telles que SQuAD 4 ou MultiRC\ndans SuperGLUE 5. Cet écart peut être attribué en partie aux caractéristiques du corpus Calor ,\naux différences entre le corpus d’affinage FQuAD et le corpus d’évaluation Calor comme discuté\nprécédemment, et aussi à l’absence d’optimisation du modèle via hyperparamétrage.\nLes scores ROUGE-L des modèles de génération basés sur T5 et du modèle de classification basé\nsur CamemB",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "bf082a428310d35390cc83cb475094f143642dd8cfc1c165a2144cca85215294",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-pass/inputs/taln-complexity.pdf",
+          "text_locator_pdf_sha256": "bf082a428310d35390cc83cb475094f143642dd8cfc1c165a2144cca85215294",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/taln-complexity-p5.png",
+              "sha256": "e2743fbd22715c38064f650ac44ccda4950896112d8909d1a9e7b99a9f949968"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    },
+    {
+      "id": "odl-agentic-064",
+      "split": "heldout",
+      "family": "resnet-table2",
+      "language": "en",
+      "question": "Using only Table 2 of Deep Residual Learning for Image Recognition, what is the standard deviation across runs of the 34-layer ResNet’s top-1 error?",
+      "scope_source_ids": [
+        "resnet"
+      ],
+      "source_ids": [
+        "resnet"
+      ],
+      "answerability": "unanswerable",
+      "tags": [
+        "missing_evidence",
+        "table"
+      ],
+      "required_claims": [
+        "Table 2 reports a top-1 error value but no across-run standard deviation.",
+        "Do not report 25.03% as a standard deviation or assume zero variation."
+      ],
+      "evidence": [
+        {
+          "source_id": "resnet",
+          "pdf_page": 5,
+          "source_cells_or_image_transcription": {
+            "Table2 visible columns": [
+              "plain",
+              "ResNet"
+            ],
+            "rows": [
+              "18layers",
+              "34layers"
+            ],
+            "34layer ResNet value": "25.03 top-1 error%",
+            "not reported": "across-run standard deviation"
+          },
+          "review_method": "original coordinate PDF pixels",
+          "coordinate_pdf_sha256": "1e0651b6810ecba34a3dbc5b5b0209226f889004607c1f203540a48d64e5a93a",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/resnet-p5.png",
+              "sha256": "eb96acd497beb4b762977d05cfc46a621c70710e4af86eb80bad6191a62406c6"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": []
+    }
+  ]
+}
