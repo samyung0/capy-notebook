@@ -17,6 +17,11 @@ on:
         required: false
         default: false
         type: boolean
+      reclaim_pending:
+        description: Finish or roll back a pending release left by a finished run before preparing
+        required: false
+        default: false
+        type: boolean
   workflow_call:
     inputs:
       environment_name:
@@ -37,9 +42,20 @@ on:
         description: Whether the backend deployment step ran
         required: false
         type: string
+      reclaim_pending:
+        description: Finish or roll back a pending release left by a finished run before preparing
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
+
+# Shared with the app deployments: a pending release owner on the host is then
+# always a finished run, which is what makes reclaim safe.
+concurrency:
+  group: uat-promotion-flow
+  cancel-in-progress: false
 
 jobs:
   ingest:
@@ -95,6 +111,7 @@ jobs:
           COOLIFY_RESOURCE_UUID: ${{ vars.COOLIFY_RESOURCE_UUID }}
           DEPLOYMENT_API_URL: ${{ vars.DEPLOYMENT_API_URL }}
           BOOTSTRAP: ${{ inputs.bootstrap }}
+          RECLAIM_PENDING: ${{ inputs.reclaim_pending }}
           CAPY_INGEST_REPOSITORY_URL: https://github.com/${{ github.repository }}.git
           CAPY_RELEASE_OWNER: ${{ github.run_id }}-${{ github.run_attempt }}
           CAPY_CONFIG_DIR: ${{ runner.temp }}/capy-config
@@ -107,6 +124,13 @@ jobs:
             export CAPY_BACKEND_REVISION
             scripts/deploy/ingest-host-release.sh recover
           }
+          # Only the prepare callers set RECLAIM_PENDING. The host decides what
+          # the pending release permits; a bootstrap needs no backend revision.
+          if [[ "$RECLAIM_PENDING" == true ]]; then
+            CAPY_BACKEND_REVISION="$(python3 scripts/deploy/verify-backend.py --print)" || CAPY_BACKEND_REVISION=""
+            export CAPY_BACKEND_REVISION
+            scripts/deploy/ingest-host-release.sh reclaim
+          fi
           if [[ "$RELEASE_PHASE" == recover ]]; then
             if [[ "$COOLIFY_OUTCOME" == skipped ]]; then
               scripts/deploy/ingest-host-release.sh rollback-if-pending

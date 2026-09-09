@@ -16,6 +16,11 @@ on:
         required: false
         default: false
         type: boolean
+      reclaim_pending:
+        description: Finish or roll back a pending ingest release left by a finished run before preparing
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -93,6 +98,7 @@ jobs:
       environment_name: ${{ inputs.environment_name }}
       revision: ${{ inputs.revision }}
       phase: ${{ inputs.bootstrap_ingest && 'bootstrap-prepare' || 'prepare' }}
+      reclaim_pending: ${{ inputs.reclaim_pending }}
     secrets: inherit
 
   deploy:

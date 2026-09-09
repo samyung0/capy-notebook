@@ -9,7 +9,7 @@ trap 'exit 1' HUP TERM PIPE
 
 die() { printf 'ingest-host-release: %s\n' "$1" >&2; exit 1; }
 mode="${1:-}"; revision="${2:-}"; environment="${3:-}"; owner="${4:-}"; staging="${5:-}"; repository_url="${6:-}"; backend_revision="${7:-}"
-[[ "$mode" == bootstrap-prepare || "$mode" == prepare || "$mode" == activate || "$mode" == recover || "$mode" == rollback-if-pending ]] || die 'invalid phase'
+[[ "$mode" == bootstrap-prepare || "$mode" == prepare || "$mode" == activate || "$mode" == recover || "$mode" == reclaim || "$mode" == rollback-if-pending ]] || die 'invalid phase'
 [[ "$revision" =~ ^[0-9a-f]{40}$ ]] || die 'invalid revision'
 [[ "$environment" == uat || "$environment" == production ]] || die 'invalid environment'
 [[ "$owner" =~ ^[A-Za-z0-9_-]+$ ]] || die 'invalid release owner'
@@ -143,13 +143,30 @@ rollback() {
   rm -rf "$pending"
   printf 'Restored %s ingest release %s.\n' "$environment" "$previous"
 }
+if [[ "$mode" == reclaim ]]; then
+  [[ -d "$pending" ]] || { printf 'No pending ingest release.\n'; exit; }
+  # Every workflow that reaches this host shares one concurrency group, so the
+  # pending owner is always a finished run; an operator opted in explicitly.
+  owner="$(cat "$pending/owner")"
+  [[ "$owner" =~ ^[A-Za-z0-9_-]+$ ]] || die 'invalid pending owner'
+  revision="$(read_sha "$pending/candidate")"
+  printf 'Reclaiming pending %s release %s from run %s.\n' "$environment" "$revision" "$owner"
+  mode=recover
+fi
 if [[ "$mode" == recover ]]; then
   [[ -d "$pending" ]] || { printf 'No pending ingest release.\n'; exit; }
   check_owner
-  [[ "$backend_revision" =~ ^[0-9a-f]{40}$ ]] || die 'backend revision could not be verified; pending state retained'
+  pending_previous="$(cat "$pending/previous")"
   if [[ "$backend_revision" == "$revision" ]]; then
     mode=activate
-  elif [[ "$backend_revision" == "$(cat "$pending/previous")" ]]; then
+  elif [[ "$pending_previous" == none ]]; then
+    # A bootstrap has nothing to restore, so stopping the candidate is safe
+    # even when the backend cannot be reached yet.
+    rollback
+    exit
+  elif [[ ! "$backend_revision" =~ ^[0-9a-f]{40}$ ]]; then
+    die 'backend revision could not be verified; pending state retained'
+  elif [[ "$backend_revision" == "$pending_previous" ]]; then
     rollback
     exit
   else

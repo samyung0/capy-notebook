@@ -15,6 +15,11 @@ on:
         required: false
         default: false
         type: boolean
+      reclaim_pending:
+        description: Finish or roll back the pending ingest release left by a cancelled or failed run
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -59,6 +64,7 @@ jobs:
     with:
       environment_name: uat
       bootstrap_ingest: ${{ inputs.bootstrap_ingest || false }}
+      reclaim_pending: ${{ inputs.reclaim_pending || false }}
       revision: ${{ needs.resolve_revision.outputs.revision }}
     secrets: inherit
 

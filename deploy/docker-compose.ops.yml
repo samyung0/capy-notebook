@@ -4,7 +4,7 @@
 services:
   ops:
     build:
-      context: ..
+      context: .
       dockerfile: ops/Dockerfile
       args:
         VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:?set VITE_CLERK_PUBLISHABLE_KEY}

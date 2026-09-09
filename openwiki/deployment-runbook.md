@@ -158,8 +158,11 @@ The prod file runs `/migrate` once per deploy, starts the API with
    exact commit separately.
 2. **Build Pack:** Docker Compose.
 3. **Docker Compose Location:** `deploy/docker-compose.prod.yml`.
-   Leave **Base Directory** empty (repository root). Contexts are relative to
-   the compose file (`../server` is `server/` in the repo).
+   Leave **Base Directory** empty (repository root). Coolify builds with
+   `--project-directory` at the repository root, and Compose resolves relative
+   paths against the project directory, not the compose file, so build contexts
+   are written repo-root relative (`./server` is `server/` in the repo). Any
+   CLI invocation must pass `--project-directory .` to match.
 4. **Environment Variables:** paste `deploy/.env.prod.example`, fill values,
    and mark passwords/keys as secrets. Ops has its own application, described
    below, and needs the §8 roles first. Do **not** set
@@ -197,8 +200,8 @@ CLI equivalent (same file, from the repo root):
 ```bash
 cp deploy/.env.prod.example deploy/.env.prod
 # fill deploy/.env.prod — never commit it
-docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod up -d --build
-docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod logs migrate
+docker compose -f deploy/docker-compose.prod.yml --project-directory . --env-file deploy/.env.prod up -d --build
+docker compose -f deploy/docker-compose.prod.yml --project-directory . --env-file deploy/.env.prod logs migrate
 ```
 
 Ops uses `deploy/docker-compose.ops.yml` with a distinct Compose project name
@@ -208,7 +211,7 @@ database-backed runner; no Coolify task is required. To ensure today's runs are
 queued and drain any pending work from a one-off container, use:
 
 ```bash
-docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod --profile reconcile run --rm reconcile
+docker compose -f deploy/docker-compose.prod.yml --project-directory . --env-file deploy/.env.prod --profile reconcile run --rm reconcile
 ```
 
 The command and gateway share `reconcile_runs`, so concurrent invocations are
@@ -815,8 +818,14 @@ For a failed or canceled deployment, inspect the exact Coolify deployment and
 live backend revision before invoking recovery with the original run owner.
 Cancelling a run does not signal the remote script (no tty), but its next
 parser poll write fails and exits through cleanup, so `operation.lock` is free
-within about 15 seconds; `pending` keeps the original owner. A parser that
-restarts three times fails the wait immediately; read its logs on the host.
+within about 15 seconds. `pending` keeps the original owner, so the next run
+stops at `another release is pending`. Re-dispatch Deploy UAT with
+`reclaim_pending` ticked: every workflow that reaches the host shares one
+concurrency group, so that owner is a finished run, and the host applies the
+usual recovery rules under it before preparing. A backend at the candidate
+activates it; a bootstrap, or a backend at the previous revision, rolls back;
+anything else stops. A parser that restarts three times fails the wait
+immediately; read its logs on the host.
 Do not delete pending state or blindly roll back only ingest. After committed
 activation, promote the previous compatible revision through the whole app
 workflow; this does not reverse database migrations automatically.

@@ -1,7 +1,11 @@
 # Production stack for Coolify (or a VPS). Not for local development.
 #
 # CLI (from the repo root, after copying .env.prod.example → .env.prod):
-#   docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod up -d --build
+#   docker compose -f deploy/docker-compose.prod.yml --project-directory . \
+#     --env-file deploy/.env.prod up -d --build
+#
+# Build contexts are relative to the repository root, matching how Coolify
+# invokes Compose, so every caller must pass --project-directory .
 #
 # Coolify: Git resource, build pack Docker Compose, file
 # deploy/docker-compose.prod.yml — see openwiki/deployment-runbook.md §1.1.
@@ -65,7 +69,7 @@ services:
 
   migrate:
     build:
-      context: ../server
+      context: ./server
     entrypoint: ["/migrate"]
     environment:
       DATABASE_URL: *database-url
@@ -76,7 +80,7 @@ services:
 
   server:
     build:
-      context: ../server
+      context: ./server
     environment:
       <<: [*observability, *b2]
       DATABASE_URL: *database-url
@@ -129,7 +133,7 @@ services:
 
   collaboration:
     build:
-      context: ..
+      context: .
       dockerfile: collaboration/Dockerfile
     environment:
       <<: *observability
@@ -158,7 +162,7 @@ services:
 
   retrieval:
     build:
-      context: ..
+      context: .
       dockerfile: pipeline/Dockerfile
     environment:
       <<: *observability
@@ -196,7 +200,7 @@ services:
     profiles:
       - reconcile
     build:
-      context: ../server
+      context: ./server
     entrypoint: ["/app/reconcile"]
     environment:
       DATABASE_URL: *database-url
