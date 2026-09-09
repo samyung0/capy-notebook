@@ -62,7 +62,7 @@ func (tx *pausingCloneTx) Query(
 }
 
 func TestWorkspaceCloneRejectsAPathReapedAfterItsSnapshot(t *testing.T) {
-	s := openRevisionTestStore(t)
+	s := openMaterialTestStore(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	ownerID := newBlobTestUser(t, s, "u_clone_blob_fence_source")
@@ -120,7 +120,7 @@ func TestWorkspaceCloneRejectsAPathReapedAfterItsSnapshot(t *testing.T) {
 }
 
 func TestMaterialCloneCounterCleanupWaitsForCloneFence(t *testing.T) {
-	s := openRevisionTestStore(t)
+	s := openMaterialTestStore(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	ownerID := newBlobTestUser(t, s, "u_clone_counter_fence")
@@ -224,7 +224,7 @@ func assertAccountRowRemainsUnlocked(
 }
 
 func TestMaterialDeleteTakesCloneFenceBeforeAccountLock(t *testing.T) {
-	s := openRevisionTestStore(t)
+	s := openMaterialTestStore(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	ownerID := newBlobTestUser(t, s, "u_material_delete_lock_order")
@@ -258,7 +258,7 @@ func TestMaterialDeleteTakesCloneFenceBeforeAccountLock(t *testing.T) {
 	deleted := make(chan error, 1)
 	go func() {
 		close(started)
-		deleted <- s.DeleteMaterial(ctx, ownerID, source.ID)
+		deleted <- trashAndPurgeMaterial(ctx, s, ownerID, source.ID)
 	}()
 	<-started
 	time.Sleep(100 * time.Millisecond)
@@ -272,7 +272,7 @@ func TestMaterialDeleteTakesCloneFenceBeforeAccountLock(t *testing.T) {
 }
 
 func TestWorkspaceDeleteTakesCloneFenceBeforeAccountLock(t *testing.T) {
-	s := openRevisionTestStore(t)
+	s := openMaterialTestStore(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	ownerID := newBlobTestUser(t, s, "u_workspace_delete_lock_order")
@@ -363,7 +363,7 @@ func TestUninitializedContentCommandBootstrapsThroughCollaboration(t *testing.T)
 }
 
 func TestConcurrentMaterialClonesBothComplete(t *testing.T) {
-	s := openRevisionTestStore(t)
+	s := openMaterialTestStore(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	ownerID := newBlobTestUser(t, s, "u_clone_lock_source")
@@ -407,7 +407,7 @@ func TestConcurrentMaterialClonesBothComplete(t *testing.T) {
 }
 
 func TestMaterialCloneDoesNotWaitForSourceRow(t *testing.T) {
-	s := openRevisionTestStore(t)
+	s := openMaterialTestStore(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	ownerID := newBlobTestUser(t, s, "u_clone_unlocked_material_source")
@@ -440,7 +440,7 @@ func TestMaterialCloneDoesNotWaitForSourceRow(t *testing.T) {
 }
 
 func TestCloneSourceWaitersDoNotExhaustPool(t *testing.T) {
-	s := openRevisionTestStore(t)
+	s := openMaterialTestStore(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	ownerID := newBlobTestUser(t, s, "u_clone_pool_source")
@@ -509,7 +509,7 @@ func TestCloneSourceWaitersDoNotExhaustPool(t *testing.T) {
 }
 
 func TestConcurrentWorkspaceClonesBothComplete(t *testing.T) {
-	s := openRevisionTestStore(t)
+	s := openMaterialTestStore(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	ownerID := newBlobTestUser(t, s, "u_workspace_clone_lock_source")
@@ -549,7 +549,7 @@ func TestConcurrentWorkspaceClonesBothComplete(t *testing.T) {
 }
 
 func TestWorkspaceCloneDoesNotWaitForSourceRow(t *testing.T) {
-	s := openRevisionTestStore(t)
+	s := openMaterialTestStore(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	ownerID := newBlobTestUser(t, s, "u_clone_unlocked_workspace_source")
@@ -591,108 +591,8 @@ func TestWorkspaceCloneDoesNotWaitForSourceRow(t *testing.T) {
 	}
 }
 
-func TestWorkspaceCloneSerializesHistorySelectionWithTargetDowngrade(t *testing.T) {
-	s := openRevisionTestStore(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	sourceOwnerID := newBlobTestUser(t, s, "u_workspace_history_source")
-	targetID := newBlobTestUser(t, s, "u_workspace_history_target")
-	if _, err := s.pool.Exec(ctx, `UPDATE users SET plan_tier='pro',
-		subscription_status='active' WHERE id=$1`, sourceOwnerID); err != nil {
-		t.Fatal(err)
-	}
-	targetSubscription := proSubscription(targetID, uid("sub"), 1_000)
-	if err := s.UpsertSubscription(ctx, targetSubscription); err != nil {
-		t.Fatal(err)
-	}
-	workspace, err := s.CreateWorkspace(
-		ctx, sourceOwnerID, "History race source", ColorBlue, nil,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='public', share_role='editor' WHERE id=$1`,
-		workspace.ID); err != nil {
-		t.Fatal(err)
-	}
-	content, err := materialdoc.Marshal(materialdoc.Empty())
-	if err != nil {
-		t.Fatal(err)
-	}
-	material, err := s.CreateMaterial(ctx, Material{
-		CreatedBy: sourceOwnerID, WorkspaceID: workspace.ID,
-		WorkspaceName: workspace.Name, Kind: "note", Title: "History",
-		Content: content,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.pool.Exec(ctx, `DELETE FROM material_revisions WHERE material_id=$1`,
-		material.ID); err != nil {
-		t.Fatal(err)
-	}
-	historyTx, err := s.pool.Begin(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	lastDay := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
-	for index := 0; index < 10; index++ {
-		revision := int64(index + 1)
-		if err := s.upsertMaterialRevisionTx(ctx, historyTx, MaterialRevision{
-			MaterialID: material.ID, Revision: revision, EventType: RevisionEdit,
-			Title: material.Title, Content: content, EventMetadata: []byte(`{}`),
-			CreatedBy: &sourceOwnerID, CreatedAt: lastDay.AddDate(0, 0, index-9),
-		}); err != nil {
-			_ = historyTx.Rollback(ctx)
-			t.Fatal(err)
-		}
-	}
-	if err := historyTx.Commit(ctx); err != nil {
-		t.Fatal(err)
-	}
-
-	reached := make(chan struct{})
-	proceed := make(chan struct{})
-	result := make(chan error, 1)
-	go func() {
-		_, cloneErr := s.cloneWorkspaceOnce(ctx, pausingCloneStarter{
-			starter: s.pool, reached: reached, proceed: proceed,
-		}, targetID, workspace.ID)
-		result <- cloneErr
-	}()
-	<-reached
-	targetSubscription.Status = "canceled"
-	targetSubscription.StripeEventCreated = 2_000
-	if err := s.UpsertSubscription(ctx, targetSubscription); err != nil {
-		t.Fatal(err)
-	}
-	close(proceed)
-	if err := <-result; !isRetryableTransactionError(err) {
-		t.Fatalf("raced clone error=%v, want retryable serialization failure", err)
-	}
-
-	cloned, err := s.CloneWorkspace(ctx, targetID, workspace.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var clonedMaterialID string
-	if err := s.pool.QueryRow(ctx, `SELECT id FROM materials WHERE workspace_id=$1`,
-		cloned.ID).Scan(&clonedMaterialID); err != nil {
-		t.Fatal(err)
-	}
-	versions, err := s.ListMaterialRevisions(ctx, clonedMaterialID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	freeLimit := mustPlanLimits(t, s, PlanFree).MaterialRevisions
-	if len(versions) != freeLimit {
-		t.Fatalf("downgraded workspace clone retained %d versions, want %d",
-			len(versions), freeLimit)
-	}
-}
-
 func TestSuspendedSourceOwnerDoesNotHideSharedCloneSources(t *testing.T) {
-	s := openRevisionTestStore(t)
+	s := openMaterialTestStore(t)
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_clone_suspended_source")
 	targetID := newBlobTestUser(t, s, "u_clone_suspended_target")
@@ -777,8 +677,8 @@ func TestRewriteCardIDs(t *testing.T) {
 	}
 }
 
-func TestCloneMaterialUsesTargetTierForDailyVersionRetention(t *testing.T) {
-	s := openRevisionTestStore(t)
+func TestCloneMaterialRewritesFlashcardIDs(t *testing.T) {
+	s := openMaterialTestStore(t)
 	ctx := context.Background()
 	sourceUserID := uid("u_clone_source")
 	targetUserID := uid("u_clone_target")
@@ -791,7 +691,7 @@ func TestCloneMaterialUsesTargetTierForDailyVersionRetention(t *testing.T) {
 	} {
 		if _, err := s.pool.Exec(ctx, `INSERT INTO users
 			(id,name,email,plan_tier,subscription_status)
-			VALUES ($1,'Clone Revision Test',$2,$3,'active')`,
+			VALUES ($1,'Clone Test',$2,$3,'active')`,
 			user.id,
 			fmt.Sprintf("%s@example.test", user.id),
 			user.tier,
@@ -817,50 +717,9 @@ func TestCloneMaterialUsesTargetTierForDailyVersionRetention(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.pool.Exec(ctx, `DELETE FROM material_revisions WHERE material_id=$1`, source.ID); err != nil {
-		t.Fatal(err)
-	}
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer tx.Rollback(ctx)
-	lastDay := time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC)
-	for i := 0; i < 10; i++ {
-		revision := int64(i + 1)
-		var parent *int64
-		if revision > 1 {
-			value := revision - 1
-			parent = &value
-		}
-		if err := s.upsertMaterialRevisionTx(ctx, tx, MaterialRevision{
-			MaterialID: source.ID, Revision: revision, ParentRevision: parent,
-			EventType: RevisionEdit, Title: source.Title, Content: content,
-			EventMetadata: []byte(`{"changedFields":["content"]}`),
-			CreatedBy:     &sourceUserID,
-			CreatedAt:     lastDay.AddDate(0, 0, i-9),
-		}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if _, err := tx.Exec(ctx, `UPDATE materials SET revision=10 WHERE id=$1`, source.ID); err != nil {
-		t.Fatal(err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		t.Fatal(err)
-	}
-
 	cloned, err := s.CloneMaterial(ctx, targetUserID, source.ID)
 	if err != nil {
 		t.Fatal(err)
-	}
-	versions, err := s.ListMaterialRevisions(ctx, cloned.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	freeLimit := mustPlanLimits(t, s, PlanFree).MaterialRevisions
-	if len(versions) != freeLimit {
-		t.Fatalf("free clone retained %d versions, want %d", len(versions), freeLimit)
 	}
 	clonedCards, err := materialdoc.ExtractFlashcards(cloned.Content)
 	if err != nil {
@@ -869,19 +728,10 @@ func TestCloneMaterialUsesTargetTierForDailyVersionRetention(t *testing.T) {
 	if len(clonedCards) != 1 || clonedCards[0].ID == "source-card" {
 		t.Fatalf("clone current content card IDs were not rewritten: %#v", clonedCards)
 	}
-	for _, version := range versions {
-		cards, err := materialdoc.ExtractFlashcards(version.Content)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(cards) != 1 || cards[0].ID != clonedCards[0].ID {
-			t.Fatalf("clone version card IDs diverged from current content: %#v", cards)
-		}
-	}
 }
 
 func TestCloneMaterialUsesProjectionAndRehomesReferencedAssets(t *testing.T) {
-	s := openRevisionTestStore(t)
+	s := openMaterialTestStore(t)
 	ctx := context.Background()
 	sourceUserID := uid("u_clone_media_source")
 	targetUserID := uid("u_clone_media_target")
@@ -966,14 +816,5 @@ func TestCloneMaterialUsesProjectionAndRehomesReferencedAssets(t *testing.T) {
 	}
 	if clonedYjs {
 		t.Fatal("clone eagerly created durable Yjs state")
-	}
-	versions, err := s.ListMaterialRevisions(ctx, cloned.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, version := range versions {
-		if strings.Contains(version.Content, sourceAssetID) || !strings.Contains(version.Content, clonedAssetID) {
-			t.Fatalf("cloned revision retained the wrong asset id: %s", version.Content)
-		}
 	}
 }

@@ -110,6 +110,16 @@ retrieval chunks (`indexed: false`, including ingest failure and
 shows a pinned status banner (`[data-testid="file-not-indexed"]`) under the
 header instead of replacing the body with a full-page error.
 
+## Chat tool results
+
+A tool block ends with an `outcome` (`succeeded`, `refused`, `failed`) and,
+for mutations, `effects` with the touched resource. Failures carry a stable
+error code that `toolErrorMessage` localizes; an unknown code falls back to the
+generic tool failure copy. `invalidateForEffects` refreshes the affected
+queries (files, materials, trash) when a receipt lands. A refused Undo
+(`stale_target`, `unavailable_target`, `undo_unavailable`) shows its localized
+message under the result card without the mutation toast.
+
 ## Development scenario panel
 
 Run the Vite development app with MSW enabled (the default, or

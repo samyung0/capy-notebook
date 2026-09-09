@@ -2,6 +2,12 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { afterAll, expect, test } from 'vitest';
 import {
+  EditError,
+  officeError,
+  officeGuards,
+  verifyOfficeGuards,
+} from './editCommands.js';
+import {
   closeOfficeRuntime,
   type OfficeFormat,
   runOffice,
@@ -47,3 +53,58 @@ test.each([
   },
   60_000
 );
+
+test('DOCX agent edits round-trip through the packaged runtime with Capy guards', async () => {
+  const bytes = await readFile(
+    new URL(
+      '../../vendor/betteroffice/apps/demo/public/betteroffice-demo.docx',
+      import.meta.url
+    )
+  );
+  const initial = await runOffice('seedOffice', 'docx', bytes);
+  const entries = await runOffice('inspectOffice', bytes, initial);
+  const target = entries.find((entry) => entry.value.length > 0);
+  if (!target) throw new Error('fixture has no paragraph text');
+  const edit = await runOffice('applyOfficeCommands', bytes, initial, [
+    {
+      expectedText: target.value,
+      targetId: target.id,
+      text: 'Capy edited this paragraph',
+      type: 'replace_text',
+    },
+  ]);
+  const guards = officeGuards(edit.state, edit.targets);
+  expect(guards).toHaveLength(1);
+  const edited = { ...initial, state: edit.state };
+  const located = await runOffice('locateOfficeTargets', bytes, edited, [
+    target.id,
+  ]);
+  verifyOfficeGuards(edit.state, guards, located);
+  const undone = await runOffice(
+    'applyOfficeCommands',
+    bytes,
+    edited,
+    edit.inverse
+  );
+  const relocated = await runOffice(
+    'locateOfficeTargets',
+    bytes,
+    { ...initial, state: undone.state },
+    [target.id]
+  );
+  expect(() => verifyOfficeGuards(undone.state, guards, relocated)).toThrow(
+    EditError
+  );
+  await expect(
+    runOffice('applyOfficeCommands', bytes, initial, [
+      {
+        expectedText: 'wrong',
+        targetId: target.id,
+        text: 'x',
+        type: 'replace_text',
+      },
+    ]).catch((error: unknown) => {
+      throw officeError(error);
+    })
+  ).rejects.toMatchObject({ code: 'stale_target' });
+}, 60_000);

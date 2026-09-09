@@ -67,6 +67,8 @@ Storage is charged once per logical row owned by a user:
 | Source files  | `files.size_bytes`         | row exists                    |
 | Editor assets | `editor_assets.size_bytes` | `status = 'ready'` only       |
 | Materials     | `materials.size_bytes`     | always; set from content JSON |
+| Trashed rows  | same as above              | until the 30-day purge        |
+| Chat Undo     | `agent_edit_inverses.inverse_bytes` | while Undo is available; released on Undo, trash or invalidation |
 
 Workspace-owned rows resolve the payer from `workspaces.user_id` into
 `files.user_id` / `editor_assets.user_id` / `materials.owner_user_id`. A
@@ -219,10 +221,7 @@ with new logical IDs (rewriting embedded references), and reuse physical blob
 paths under reference counting. Only `ready` source files are copied; pending,
 processing, and failed files are omitted. Material nodes referring to a pending,
 failed, missing, or otherwise uncopied editor asset are removed from the cloned
-document instead of retaining an unrenderable source id. Retained daily
-material history is copied from the same repeatable-read snapshot, capped by
-the cloner's plan, and uses the same fresh editor-asset/card ID map as current
-content. Revision rows are not separately charged by byte; the material's
+document instead of retaining an unrenderable source id. The material's
 current content and cloned logical assets are the storage-accounted payload.
 Before writing cloned rows, the transaction locks every copied source,
 Office-preview, and ready editor-asset blob refcount in stable path order. The
@@ -231,10 +230,9 @@ the clone commits. A path deleted after the repeatable-read snapshot causes a
 transaction retry instead of a clone that points at missing bytes.
 
 A single-material clone is always a new **private standalone** material. It
-copies only ready editor assets referenced by the current SQL projection or the
-revision rows retained for the cloner's plan, gives each asset a fresh logical
-ID owned by the clone, rewrites every retained document, and charges the asset
-bytes to the cloner. Physical object paths remain shared through blob
+copies only ready editor assets referenced by the current SQL projection, gives
+each asset a fresh logical ID owned by the clone, rewrites the document, and
+charges the asset bytes to the cloner. Physical object paths remain shared through blob
 refcounting. Source workspace asset IDs never survive in standalone content.
 Contended clones poll the per-source advisory hierarchy without retaining a
 pool connection while they wait, then take the repeatable-read snapshot once

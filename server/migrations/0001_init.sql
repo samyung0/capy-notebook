@@ -28,23 +28,22 @@ CREATE TABLE IF NOT EXISTS plan_limits (
   storage_limit_bytes       bigint NOT NULL CHECK (storage_limit_bytes > 0),
   credit_limit_micros       bigint NOT NULL CHECK (credit_limit_micros > 0),
   source_file_max_bytes     bigint NOT NULL CHECK (source_file_max_bytes > 0),
-  material_revision_limit   int NOT NULL CHECK (material_revision_limit > 0),
   owned_workspace_limit     int CHECK (owned_workspace_limit > 0),
   files_per_workspace       int NOT NULL CHECK (files_per_workspace > 0),
   files_per_upload          int NOT NULL CHECK (files_per_upload > 0)
 );
 INSERT INTO plan_limits (
   plan_tier, storage_limit_bytes, credit_limit_micros,
-  source_file_max_bytes, material_revision_limit, owned_workspace_limit,
+  source_file_max_bytes, owned_workspace_limit,
   files_per_workspace, files_per_upload
 ) VALUES
-  ('free', 100000000, 1000000000, 10485760, 3, NULL, 100, 20),
-  ('pro', 1000000000, 20000000000, 31457280, 30, NULL, 100, 20)
+  ('free', 100000000, 1000000000, 10485760, NULL, 100, 20),
+  ('pro', 1000000000, 20000000000, 31457280, NULL, 100, 20)
 ON CONFLICT (plan_tier) DO NOTHING;
 
 -- The user row is a durable tombstone: application logic never deletes it.
 -- Deletion soft-flags the row and scrubs its PII, which keeps preserved
--- authorship (comments, revisions, materials authored inside other people's
+-- authorship (comments, materials authored inside other people's
 -- workspaces) pointing at a real referent, retains the Stripe customer mapping
 -- for invoice history, and prevents free-tier re-registration churn.
 --
@@ -292,6 +291,19 @@ CREATE TABLE IF NOT EXISTS files (
   -- replacement through the same pipeline without asking the user again.
   parse_mode            text NOT NULL DEFAULT 'none',
   caption_images        boolean NOT NULL DEFAULT false,
+  -- Trash stage. A trashed row keeps its bytes, blobs, index and charges for
+  -- 30 days (purge_after is set once per episode from database time) and is
+  -- invisible to every active-resource query. trash_episode_id makes a replayed
+  -- trash or a stale purge distinguishable from a later re-trash; trashed_by is
+  -- attribution only (the workspace owner controls the bin, whoever trashed).
+  trashed_at            timestamptz,
+  trashed_by            text REFERENCES users(id) ON DELETE SET NULL,
+  trash_episode_id      text,
+  purge_after           timestamptz,
+  CONSTRAINT files_trash_state_check CHECK (
+    (trashed_at IS NULL AND trash_episode_id IS NULL AND purge_after IS NULL)
+    OR (trashed_at IS NOT NULL AND trash_episode_id IS NOT NULL AND purge_after IS NOT NULL)
+  ),
   UNIQUE (id, workspace_id),
   -- The column list on SET NULL is what makes this work: the default form would
   -- try to null workspace_id too, which is NOT NULL. Requires Postgres 15+.
@@ -305,6 +317,8 @@ CREATE INDEX IF NOT EXISTS files_chapter_position_idx
 CREATE INDEX IF NOT EXISTS files_user_idx ON files(user_id);
 CREATE INDEX IF NOT EXISTS files_content_hash_idx ON files(workspace_id, content_hash);
 CREATE INDEX IF NOT EXISTS files_source_sha256_idx ON files(source_sha256);
+CREATE INDEX IF NOT EXISTS files_trash_due_idx ON files(purge_after) WHERE trashed_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS files_trash_owner_idx ON files(user_id, trashed_at DESC) WHERE trashed_at IS NOT NULL;
 
 -- ============================================================================
 -- Materials — the universal Plate-document envelope for study artifacts
@@ -347,6 +361,18 @@ CREATE TABLE IF NOT EXISTS materials (
   created_at     timestamptz NOT NULL DEFAULT now(),
   updated_at     timestamptz NOT NULL DEFAULT now(),
   updated_by     text REFERENCES users(id) ON DELETE SET NULL,
+  -- Trash stage; same contract as files. trash_restores feeds the room name of
+  -- a never-bootstrapped material (see MaterialRoom) so a token minted before
+  -- trash cannot reconnect after restore through the implicit schema-1 room.
+  trashed_at       timestamptz,
+  trashed_by       text REFERENCES users(id) ON DELETE SET NULL,
+  trash_episode_id text,
+  purge_after      timestamptz,
+  trash_restores   int NOT NULL DEFAULT 0 CHECK (trash_restores >= 0),
+  CONSTRAINT materials_trash_state_check CHECK (
+    (trashed_at IS NULL AND trash_episode_id IS NULL AND purge_after IS NULL)
+    OR (trashed_at IS NOT NULL AND trash_episode_id IS NOT NULL AND purge_after IS NOT NULL)
+  ),
   CONSTRAINT materials_kind_check
     CHECK (kind IN ('mindmap','diagram','quiz','flashcards','note')),
   CONSTRAINT materials_content_envelope_check CHECK (
@@ -375,6 +401,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS materials_workspace_title_uidx
 CREATE INDEX IF NOT EXISTS materials_privacy_idx ON materials(privacy, kind) WHERE privacy = 'public';
 CREATE INDEX IF NOT EXISTS materials_creator_idx ON materials(created_by, kind, created_at DESC);
 CREATE INDEX IF NOT EXISTS materials_owner_idx ON materials(owner_user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS materials_trash_due_idx ON materials(purge_after) WHERE trashed_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS materials_trash_owner_idx ON materials(owner_user_id, trashed_at DESC) WHERE trashed_at IS NOT NULL;
 
 -- Popularity counters live off the source rows so a clone never takes a write
 -- lock that can delay collaboration persistence or projection. Source deletion
@@ -387,26 +415,6 @@ CREATE TABLE IF NOT EXISTS workspace_clone_counts (
 CREATE TABLE IF NOT EXISTS material_clone_counts (
   material_id text PRIMARY KEY,
   clone_count int NOT NULL DEFAULT 0 CHECK (clone_count >= 0)
-);
-
-CREATE TABLE IF NOT EXISTS material_revisions (
-  material_id            text NOT NULL REFERENCES materials(id) ON DELETE CASCADE,
-  -- One mutable snapshot per UTC day. Saves during the same day replace this
-  -- row; materials.revision remains the per-mutation concurrency counter.
-  version_date           date NOT NULL,
-  revision               bigint NOT NULL,
-  parent_revision        bigint,
-  event_type             text NOT NULL DEFAULT 'create'
-                           CHECK (event_type IN ('create','edit')),
-  title                  text NOT NULL CHECK (char_length(title) <= 120),
-  content                jsonb NOT NULL,
-  event_metadata         jsonb NOT NULL DEFAULT '{}'::jsonb
-                           CHECK (jsonb_typeof(event_metadata) = 'object'),
-  created_by             text REFERENCES users(id) ON DELETE SET NULL,
-  created_at             timestamptz NOT NULL DEFAULT now(),
-  CHECK (parent_revision IS NULL OR parent_revision < revision),
-  PRIMARY KEY (material_id, version_date),
-  UNIQUE (material_id, revision)
 );
 
 -- The encoded Y.Doc is the authoritative material-content state after lazy
@@ -812,6 +820,102 @@ CREATE TABLE IF NOT EXISTS conversation_compactions (
   created_at          timestamptz NOT NULL DEFAULT now(),
   updated_at          timestamptz NOT NULL DEFAULT now()
 );
+
+-- Durable receipts for agent-tool and browser mutations (create / edit / undo /
+-- trash / restore). This is an idempotency and result record, not a job queue:
+-- the same id with the same request_hash returns the recorded effect; a
+-- different request under the same id conflicts. Lifetime follows the
+-- originating chat (conversation cascade) or workspace; there is deliberately
+-- no FK onto files/materials so an old create can still report "done" after
+-- the resource was purged without resurrecting it. `effect` is the display
+-- receipt only (agenttools.ResourceEffect); edit inverse payloads live in
+-- agent_edit_inverses.
+CREATE TABLE IF NOT EXISTS agent_operations (
+  id              text PRIMARY KEY,
+  kind            text NOT NULL CHECK (kind IN ('create_material','edit_document','undo_edit','trash','restore','purge')),
+  tool_version    int  NOT NULL DEFAULT 1,
+  request_hash    text NOT NULL,
+  actor_user_id   text REFERENCES users(id) ON DELETE SET NULL,
+  workspace_id    text REFERENCES workspaces(id) ON DELETE CASCADE,
+  conversation_id text REFERENCES conversations(id) ON DELETE CASCADE,
+  message_id      text,
+  call_id         text,
+  outcome         text NOT NULL CHECK (outcome IN ('succeeded','refused','failed','cancelled','outcome_unknown')),
+  effect          jsonb,
+  error           jsonb,
+  created_at      timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS agent_operations_message_idx ON agent_operations(message_id) WHERE message_id IS NOT NULL;
+
+-- Undo data for one committed direct AI edit: the native inverse commands, the
+-- post-edit target guards (Yjs item-run signatures, never value equality) and
+-- the resource incarnation they belong to. Kept separate from the display
+-- receipt so inverse content never reaches list responses, logs or the model.
+-- Released after a successful Undo, an invalidating rebase/compaction, chat
+-- deletion (cascade through agent_operations) or purge of the resource.
+CREATE TABLE IF NOT EXISTS agent_edit_inverses (
+  operation_id   text PRIMARY KEY REFERENCES agent_operations(id) ON DELETE CASCADE,
+  resource_kind  text NOT NULL CHECK (resource_kind IN ('source_file','material')),
+  resource_id    text NOT NULL,
+  actor_user_id  text NOT NULL,
+  -- Storage owner of the resource; retained inverse bytes are charged here
+  -- through the delta ledger and move with a workspace transfer.
+  owner_user_id  text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  workspace_id   text,
+  -- Incarnation the edit committed into: material room_schema or source epoch.
+  incarnation    bigint NOT NULL,
+  -- Authoritative version after the edit (Yjs stored_version / source checkpoint).
+  revision       bigint NOT NULL,
+  inverse        jsonb NOT NULL,
+  guards         jsonb NOT NULL,
+  inverse_bytes  bigint NOT NULL DEFAULT 0 CHECK (inverse_bytes >= 0),
+  undo_status    text NOT NULL DEFAULT 'available' CHECK (undo_status IN ('available','undone','unavailable')),
+  undo_reason    text,
+  undone_by      text,
+  created_at     timestamptz NOT NULL DEFAULT now(),
+  updated_at     timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS agent_edit_inverses_resource_idx ON agent_edit_inverses(resource_kind, resource_id) WHERE undo_status='available';
+CREATE INDEX IF NOT EXISTS agent_edit_inverses_owner_idx ON agent_edit_inverses(owner_user_id);
+
+-- Inverse payloads are content the owner keeps until Undo is released.
+CREATE OR REPLACE FUNCTION account_edit_inverse_storage()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    PERFORM append_user_storage_delta(NEW.owner_user_id, NEW.inverse_bytes);
+  ELSIF TG_OP = 'DELETE' THEN
+    PERFORM append_user_storage_delta(OLD.owner_user_id, -OLD.inverse_bytes);
+  ELSIF OLD.owner_user_id <> NEW.owner_user_id OR OLD.inverse_bytes <> NEW.inverse_bytes THEN
+    PERFORM append_user_storage_delta(OLD.owner_user_id, -OLD.inverse_bytes);
+    PERFORM append_user_storage_delta(NEW.owner_user_id, NEW.inverse_bytes);
+  END IF;
+  RETURN NULL;
+END;
+$$;
+DROP TRIGGER IF EXISTS agent_edit_inverses_storage_after ON agent_edit_inverses;
+CREATE TRIGGER agent_edit_inverses_storage_after
+AFTER INSERT OR UPDATE OF owner_user_id, inverse_bytes OR DELETE ON agent_edit_inverses
+FOR EACH ROW EXECUTE FUNCTION account_edit_inverse_storage();
+
+-- Flashcard study rows a supported removal deleted through projection, held so
+-- Undo can restore exactly the known/SRS state even when the projection of the
+-- removal runs late, is skipped, or repeats. Applied by ProjectMaterialContent
+-- once the projected version reaches restore_at_version.
+CREATE TABLE IF NOT EXISTS agent_card_state_restores (
+  operation_id       text NOT NULL REFERENCES agent_operations(id) ON DELETE CASCADE,
+  material_id        text NOT NULL REFERENCES materials(id) ON DELETE CASCADE,
+  card_id            text NOT NULL,
+  srs                jsonb NOT NULL,
+  known              boolean NOT NULL,
+  restore_at_version bigint NOT NULL,
+  applied_at         timestamptz,
+  PRIMARY KEY (operation_id, card_id)
+);
+CREATE INDEX IF NOT EXISTS agent_card_state_restores_pending_idx
+  ON agent_card_state_restores(material_id, restore_at_version) WHERE applied_at IS NULL;
 
 -- ============================================================================
 -- Auth/billing plumbing and the async job queue
@@ -3128,8 +3232,8 @@ $$;
 -- Deleting a file is also cancellation of every parse/ingest lease that still
 -- names it. This is a database trigger because workspace/account deletion
 -- reaches files through FK cascades and never calls a Go handler.
-CREATE OR REPLACE FUNCTION cancel_file_pipeline_jobs()
-RETURNS trigger
+CREATE OR REPLACE FUNCTION cancel_file_pipeline_jobs_for(target_file_id text)
+RETURNS void
 LANGUAGE plpgsql
 AS $$
 DECLARE
@@ -3140,14 +3244,37 @@ BEGIN
   FROM (
     SELECT id FROM jobs
     WHERE type IN ('parse','ingest','source_refresh')
-      AND payload->>'fileId'=OLD.id
+      AND payload->>'fileId'=target_file_id
       AND status IN ('pending','running')
     FOR UPDATE SKIP LOCKED
   ) locked;
   PERFORM cancel_pipeline_jobs(
     target_job_ids, 'failed', 'lifecycle', 'source_deleted', 'source deleted'
   );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION cancel_file_pipeline_jobs()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  PERFORM cancel_file_pipeline_jobs_for(OLD.id);
   RETURN OLD;
+END;
+$$;
+
+-- Entering the trash fences the file like a delete would: pending and running
+-- parse/ingest/refresh work is cancelled and the live source room is
+-- discard-evicted. Blob references and storage charges stay (the row lives on).
+CREATE OR REPLACE FUNCTION file_trash_transition_trigger()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  PERFORM cancel_file_pipeline_jobs_for(NEW.id);
+  PERFORM enqueue_source_collaboration_eviction(NEW.id, 'discard');
+  RETURN NULL;
 END;
 $$;
 
@@ -3378,6 +3505,12 @@ DROP TRIGGER IF EXISTS files_cancel_pipeline_jobs_before ON files;
 CREATE TRIGGER files_cancel_pipeline_jobs_before
 BEFORE DELETE ON files
 FOR EACH ROW EXECUTE FUNCTION cancel_file_pipeline_jobs();
+DROP TRIGGER IF EXISTS files_trash_transition_after ON files;
+CREATE TRIGGER files_trash_transition_after
+AFTER UPDATE OF trashed_at ON files
+FOR EACH ROW
+WHEN (OLD.trashed_at IS NULL AND NEW.trashed_at IS NOT NULL)
+EXECUTE FUNCTION file_trash_transition_trigger();
 DROP TRIGGER IF EXISTS files_storage_after ON files;
 CREATE TRIGGER files_storage_after
 AFTER INSERT OR UPDATE OR DELETE ON files
@@ -3467,9 +3600,12 @@ BEGIN
   IF eviction_mode NOT IN ('discard', 'drain') THEN
     RAISE EXCEPTION 'invalid collaboration eviction mode %', eviction_mode;
   END IF;
-  SELECT d.room_schema INTO room_schema
-  FROM material_yjs_documents d
-  WHERE d.material_id=target_material_id;
+  -- A never-bootstrapped material lives at schema 1 + its restore count, so
+  -- the room name here matches store.MaterialRoom after a trash/restore cycle.
+  SELECT COALESCE(d.room_schema, 1 + m.trash_restores) INTO room_schema
+  FROM materials m
+  LEFT JOIN material_yjs_documents d ON d.material_id=m.id
+  WHERE m.id=target_material_id;
   room_name := 'material:' || target_material_id || ':schema:' || COALESCE(room_schema, 1)::text;
   INSERT INTO collaboration_eviction_outbox (id, channel, payload)
   VALUES (
@@ -3683,11 +3819,12 @@ $$;
 
 DROP TRIGGER IF EXISTS materials_acl_eviction_update ON materials;
 CREATE TRIGGER materials_acl_eviction_update
-AFTER UPDATE OF privacy, workspace_id, owner_user_id ON materials
+AFTER UPDATE OF privacy, workspace_id, owner_user_id, trashed_at ON materials
 FOR EACH ROW
 WHEN (OLD.privacy IS DISTINCT FROM NEW.privacy
   OR OLD.workspace_id IS DISTINCT FROM NEW.workspace_id
-  OR OLD.owner_user_id IS DISTINCT FROM NEW.owner_user_id)
+  OR OLD.owner_user_id IS DISTINCT FROM NEW.owner_user_id
+  OR (OLD.trashed_at IS NULL AND NEW.trashed_at IS NOT NULL))
 EXECUTE FUNCTION material_acl_eviction_trigger();
 DROP TRIGGER IF EXISTS materials_acl_eviction_delete ON materials;
 CREATE TRIGGER materials_acl_eviction_delete

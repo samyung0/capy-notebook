@@ -46,12 +46,12 @@ func (s *Store) PublicWorkspaceSummary(ctx context.Context, id string) (Workspac
      FROM entity_tags et JOIN tags t ON t.id=et.tag_id WHERE et.workspace_id=w.id), '[]'::jsonb),
    'chapters', COALESCE((SELECT jsonb_agg(jsonb_build_object('name', c.name,
      'files', COALESCE((SELECT jsonb_agg(jsonb_build_object('name', f.name, 'sizeBytes', f.size_bytes, 'addedAt', f.added_at) ORDER BY f.position, f.id)
-       FROM files f WHERE f.workspace_id=w.id AND f.chapter_id=c.id), '[]'::jsonb))
+       FROM files f WHERE f.workspace_id=w.id AND f.chapter_id=c.id AND f.trashed_at IS NULL), '[]'::jsonb))
      ORDER BY c.position, c.id)
      FROM (SELECT id, name, position FROM chapters WHERE workspace_id=w.id
        ORDER BY position, id LIMIT 1001) c), '[]'::jsonb),
    'files', COALESCE((SELECT jsonb_agg(jsonb_build_object('name', f.name, 'sizeBytes', f.size_bytes, 'addedAt', f.added_at) ORDER BY f.position, f.id)
-     FROM files f WHERE f.workspace_id=w.id AND f.chapter_id IS NULL), '[]'::jsonb)
+     FROM files f WHERE f.workspace_id=w.id AND f.chapter_id IS NULL AND f.trashed_at IS NULL), '[]'::jsonb)
  )
  FROM workspaces w JOIN users owner ON owner.id=w.user_id
  WHERE w.id=$1 AND w.privacy IN ('link','public')

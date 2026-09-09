@@ -187,7 +187,7 @@ async def _lock_source_candidate(conn, refresh: dict[str, Any]) -> None:
         JOIN jobs j ON j.id=c.job_id
         WHERE c.file_id=%s AND c.job_id=%s AND c.epoch=%s AND c.checkpoint=%s AND c.lease_token=%s
           AND d.epoch=c.epoch AND d.running_job_id=c.job_id AND d.base_revision=f.revision AND f.revision=%s
-          AND f.workspace_id=%s AND f.user_id=%s AND j.payload->>'sourceETag'=%s
+          AND f.workspace_id=%s AND f.user_id=%s AND f.trashed_at IS NULL AND j.payload->>'sourceETag'=%s
           AND (d.format='text' OR d.checkpoint=c.checkpoint)
           AND j.status='running' AND j.attempts=%s AND j.lease_expires_at>now()
         FOR UPDATE OF f,c,d,j""",
@@ -235,7 +235,7 @@ async def attach_file_content(
             current = await conn.execute(
                 """
                 SELECT revision, COALESCE(source_etag, '') AS source_etag
-                FROM files WHERE id = %s FOR UPDATE
+                FROM files WHERE id = %s AND trashed_at IS NULL FOR UPDATE
                 """,
                 (file_id,),
             )
@@ -393,7 +393,7 @@ async def find_ready_donor(
                   JOIN files f ON f.id = holder.file_id
                   JOIN workspaces w ON w.id = f.workspace_id
                   JOIN users owner ON owner.id = w.user_id
-                  WHERE holder.content_id = rc.id
+                  WHERE holder.content_id = rc.id AND f.trashed_at IS NULL
                     AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
                     AND (w.id = %s OR w.privacy IN ('link','public'))
               )
@@ -489,7 +489,7 @@ async def _attach_donor_captions(
         JOIN rag_file_contents holder ON holder.file_id=c.file_id
         JOIN files f ON f.id=c.file_id JOIN workspaces w ON w.id=f.workspace_id
         JOIN users owner ON owner.id=w.user_id
-        WHERE c.published AND holder.content_id=%s
+        WHERE c.published AND holder.content_id=%s AND f.trashed_at IS NULL
           AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
           AND (w.id=%s OR w.privacy IN ('link','public'))
         ON CONFLICT DO NOTHING
@@ -503,7 +503,7 @@ async def _attach_donor_captions(
             JOIN rag_file_contents holder ON holder.file_id=c.file_id
             JOIN files f ON f.id=c.file_id JOIN workspaces w ON w.id=f.workspace_id
             JOIN users owner ON owner.id=w.user_id
-            WHERE c.published AND holder.content_id=%s
+            WHERE c.published AND holder.content_id=%s AND f.trashed_at IS NULL
               AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
               AND (w.id=%s OR w.privacy IN ('link','public')))
             WHERE candidate.file_id=%s AND candidate.job_id=%s AND candidate.lease_token=%s""",
@@ -531,7 +531,8 @@ async def attach_donor_captions(
             AND EXISTS(SELECT 1 FROM rag_file_contents holder JOIN files f ON f.id=holder.file_id
             JOIN workspaces w ON w.id=f.workspace_id
             JOIN users owner ON owner.id=w.user_id
-            WHERE holder.content_id=rc.id AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
+            WHERE holder.content_id=rc.id AND f.trashed_at IS NULL
+              AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
               AND (w.id=%s OR w.privacy IN ('link','public'))) FOR SHARE""",
             (donor_id, dest_workspace_id),
         )
@@ -576,7 +577,8 @@ async def copy_content_from_donor(
                 SELECT 1 FROM rag_file_contents holder JOIN files f ON f.id=holder.file_id
                 JOIN workspaces w ON w.id=f.workspace_id
                 JOIN users owner ON owner.id=w.user_id
-                WHERE holder.content_id=rc.id AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
+                WHERE holder.content_id=rc.id AND f.trashed_at IS NULL
+                  AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
                   AND (w.id=%s OR w.privacy IN ('link','public'))
               )
             FOR SHARE
@@ -881,7 +883,7 @@ WITH scoped_files AS (
         FROM rag_file_contents fc
         JOIN rag_contents rc ON rc.id = fc.content_id AND rc.status = 'ready'
         JOIN files f ON f.id = fc.file_id
-        WHERE fc.workspace_id = %(ws)s
+        WHERE fc.workspace_id = %(ws)s AND f.trashed_at IS NULL
             AND (%(no_filter)s OR f.id = ANY(%(file_ids)s))
         ORDER BY fc.content_id, f.added_at, f.id
 ),
@@ -1088,7 +1090,7 @@ async def workspace_outline(workspace_id: str) -> dict[str, Any]:
             FROM files f
                  LEFT JOIN rag_file_contents fc ON fc.file_id = f.id
                  LEFT JOIN rag_content_summaries cs ON cs.content_id = fc.content_id
-            WHERE f.workspace_id = %s
+            WHERE f.workspace_id = %s AND f.trashed_at IS NULL
             ORDER BY f.position, f.added_at
             """,
             (workspace_id,),
@@ -1112,7 +1114,7 @@ async def file_summaries(
             FROM files f
             LEFT JOIN rag_file_contents fc ON fc.file_id = f.id
             LEFT JOIN rag_content_summaries cs ON cs.content_id = fc.content_id
-            WHERE f.workspace_id = %s AND f.id = ANY(%s)
+            WHERE f.workspace_id = %s AND f.id = ANY(%s) AND f.trashed_at IS NULL
             """,
             (workspace_id, file_ids),
         )
@@ -1127,7 +1129,7 @@ async def file_ids_for_names(workspace_id: str, names: list[str]) -> list[str]:
     db = await pool()
     async with db.connection() as conn:
         cur = await conn.execute(
-            "SELECT id FROM files WHERE workspace_id = %s AND name = ANY(%s)",
+            "SELECT id FROM files WHERE workspace_id = %s AND name = ANY(%s) AND trashed_at IS NULL",
             (workspace_id, names),
         )
         return [row["id"] for row in await cur.fetchall()]
@@ -1145,7 +1147,7 @@ async def read_file_range(
             FROM rag_file_contents fc
             JOIN files f ON f.id = fc.file_id
             JOIN rag_chunks c ON c.content_id = fc.content_id
-            WHERE f.workspace_id = %s AND fc.file_id = %s AND c.chunk_idx >= %s
+            WHERE f.workspace_id = %s AND fc.file_id = %s AND f.trashed_at IS NULL AND c.chunk_idx >= %s
             ORDER BY c.chunk_idx
             LIMIT %s
             """,

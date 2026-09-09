@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 )
 
@@ -159,7 +160,7 @@ func (s *Store) FinalizeSourceRefresh(ctx context.Context, fileID string, in Sou
 	var format, mode, name, kind string
 	var caption bool
 	var oldSize int64
-	err = tx.QueryRow(ctx, `SELECT d.format,f.parse_mode,f.name,f.kind,f.caption_images,c.size_bytes FROM source_refresh_candidates c JOIN source_documents d ON d.file_id=c.file_id JOIN files f ON f.id=d.file_id JOIN jobs j ON j.id=c.job_id WHERE c.file_id=$1 AND c.job_id=$2 AND c.epoch=$3 AND c.checkpoint=$4 AND c.lease_token=$5 AND d.epoch=c.epoch AND d.running_job_id=j.id AND f.revision=d.base_revision AND j.status='running' AND j.type='source_refresh' AND j.lease_expires_at>now() FOR UPDATE OF c,d,f,j`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken).Scan(&format, &mode, &name, &kind, &caption, &oldSize)
+	err = tx.QueryRow(ctx, `SELECT d.format,f.parse_mode,f.name,f.kind,f.caption_images,c.size_bytes FROM source_refresh_candidates c JOIN source_documents d ON d.file_id=c.file_id JOIN files f ON f.id=d.file_id JOIN jobs j ON j.id=c.job_id WHERE c.file_id=$1 AND c.job_id=$2 AND c.epoch=$3 AND c.checkpoint=$4 AND c.lease_token=$5 AND d.epoch=c.epoch AND d.running_job_id=j.id AND f.revision=d.base_revision AND f.trashed_at IS NULL AND j.status='running' AND j.type='source_refresh' AND j.lease_expires_at>now() FOR UPDATE OF c,d,f,j`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken).Scan(&format, &mode, &name, &kind, &caption, &oldSize)
 	if err != nil {
 		if isNoRows(err) {
 			err = ErrConflict
@@ -222,7 +223,7 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	}
 	if published {
 		var ws string
-		if err = tx.QueryRow(ctx, `SELECT workspace_id FROM files WHERE id=$1`, fileID).Scan(&ws); err != nil {
+		if err = tx.QueryRow(ctx, `SELECT workspace_id FROM files WHERE id=$1 AND trashed_at IS NULL`, fileID).Scan(&ws); err != nil {
 			return SourceSession{}, err
 		}
 		doc, err := readSourceSession(ctx, tx, fileID, ws)
@@ -247,7 +248,7 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	var parseKey, parseFingerprint, parseVersion *string
 	var size int64
 	var candidateState, seed []byte
-	err = tx.QueryRow(ctx, `SELECT c.source_blob_path,c.source_sha256,c.size_bytes,c.state,c.seed,c.parse_artifact_key,c.parse_artifact_fingerprint,c.parse_artifact_version FROM source_refresh_candidates c JOIN jobs j ON j.id=c.job_id JOIN files f ON f.id=c.file_id WHERE c.file_id=$1 AND c.job_id=$2 AND c.epoch=$3 AND c.checkpoint=$4 AND c.lease_token=$5 AND f.revision=$6 AND j.status='running' AND j.lease_expires_at>now() AND j.payload->>'sourceETag'=$7 AND c.content_id=$9 AND c.content_hash=$10 AND COALESCE(c.preview_blob_path,'')=$11 AND EXISTS(SELECT 1 FROM ingest_job_attempts a WHERE a.id=$8 AND a.job_id=j.id AND a.status='running' AND a.attempt=j.attempts AND a.id=(SELECT max(latest.id) FROM ingest_job_attempts latest WHERE latest.job_id=j.id)) FOR UPDATE OF c,j,f`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken, doc.BaseRevision, in.SourceETag, in.AttemptID, in.ContentID, in.ContentHash, in.PreviewBlobPath).Scan(&source, &sha, &size, &candidateState, &seed, &parseKey, &parseFingerprint, &parseVersion)
+	err = tx.QueryRow(ctx, `SELECT c.source_blob_path,c.source_sha256,c.size_bytes,c.state,c.seed,c.parse_artifact_key,c.parse_artifact_fingerprint,c.parse_artifact_version FROM source_refresh_candidates c JOIN jobs j ON j.id=c.job_id JOIN files f ON f.id=c.file_id WHERE c.file_id=$1 AND c.job_id=$2 AND c.epoch=$3 AND c.checkpoint=$4 AND c.lease_token=$5 AND f.revision=$6 AND f.trashed_at IS NULL AND j.status='running' AND j.lease_expires_at>now() AND j.payload->>'sourceETag'=$7 AND c.content_id=$9 AND c.content_hash=$10 AND COALESCE(c.preview_blob_path,'')=$11 AND EXISTS(SELECT 1 FROM ingest_job_attempts a WHERE a.id=$8 AND a.job_id=j.id AND a.status='running' AND a.attempt=j.attempts AND a.id=(SELECT max(latest.id) FROM ingest_job_attempts latest WHERE latest.job_id=j.id)) FOR UPDATE OF c,j,f`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken, doc.BaseRevision, in.SourceETag, in.AttemptID, in.ContentID, in.ContentHash, in.PreviewBlobPath).Scan(&source, &sha, &size, &candidateState, &seed, &parseKey, &parseFingerprint, &parseVersion)
 	if err != nil {
 		if isNoRows(err) {
 			err = ErrConflict
@@ -297,9 +298,14 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	if _, err = tx.Exec(ctx, `INSERT INTO rag_file_contents(file_id,workspace_id,content_id) VALUES($1,$2,$3) ON CONFLICT(file_id) DO UPDATE SET content_id=EXCLUDED.content_id`, fileID, ws, in.ContentID); err != nil {
 		return doc, err
 	}
-	_, err = tx.Exec(ctx, `UPDATE files SET blob_path=$2,source_sha256=$3,size_bytes=$4,source_etag=$5,preview_blob_path=NULLIF($6,''),content_hash=$7,indexed=true,status='ready',revision=revision+1,ever_parsed_successfully=ever_parsed_successfully OR $8,parsed_blob_path=$9,parsed_fingerprint=$10,parsed_parser_version=$11,caption_blob_path=NULL WHERE id=$1`, fileID, source, sha, size, in.SourceETag, in.PreviewBlobPath, in.ContentHash, doc.Format != "text", parseKey, parseFingerprint, parseVersion)
+	publishedRow, err := tx.Exec(ctx, `UPDATE files SET blob_path=$2,source_sha256=$3,size_bytes=$4,source_etag=$5,preview_blob_path=NULLIF($6,''),content_hash=$7,indexed=true,status='ready',revision=revision+1,ever_parsed_successfully=ever_parsed_successfully OR $8,parsed_blob_path=$9,parsed_fingerprint=$10,parsed_parser_version=$11,caption_blob_path=NULL WHERE id=$1 AND trashed_at IS NULL`, fileID, source, sha, size, in.SourceETag, in.PreviewBlobPath, in.ContentHash, doc.Format != "text", parseKey, parseFingerprint, parseVersion)
 	if err != nil {
 		return doc, err
+	}
+	if publishedRow.RowsAffected() == 0 {
+		// The file was trashed after the candidate was admitted: never report
+		// a publication that changed nothing.
+		return doc, ErrConflict
 	}
 	if doc.Format != "text" {
 		if _, err = tx.Exec(ctx, `UPDATE image_caption_associations a SET published=(a.image_sha256=ANY(c.image_sha256s)) FROM source_refresh_candidates c WHERE c.file_id=$1 AND a.file_id=c.file_id`, fileID); err != nil {
@@ -313,6 +319,11 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 		_, err = tx.Exec(ctx, `UPDATE source_documents SET indexed_checkpoint=$2,indexed_state=$3,base_revision=base_revision+1,base_blob_path=$4,base_source_sha256=$5,pending_effects=$6,net_tokens=$7,desired_manual=desired_manual AND $6::jsonb<>'[]'::jsonb,desired_checkpoint=CASE WHEN $6::jsonb='[]'::jsonb THEN NULL ELSE desired_checkpoint END,running_job_id=NULL,refresh_error=NULL,updated_at=now() WHERE file_id=$1`, fileID, in.Checkpoint, candidateState, source, sha, effects, netTokens)
 	} else {
 		_, err = tx.Exec(ctx, `UPDATE source_documents SET epoch=epoch+1,indexed_checkpoint=$2,checkpoint=$2,indexed_state=$3,state=$3,base_revision=base_revision+1,base_blob_path=$4,base_source_sha256=$5,pending_effects='[]',net_tokens=0,running_job_id=NULL,desired_checkpoint=NULL,desired_manual=false,refresh_error=NULL,updated_at=now() WHERE file_id=$1`, fileID, in.Checkpoint, seed, source, sha)
+		if err == nil {
+			// The fresh seed has new native identities: AI edit guards cannot be
+			// validated against it, so their Undo is released with the old base.
+			err = invalidateEditInversesTx(ctx, tx, agenttools.KindSourceFile, fileID, "source_rebased")
+		}
 	}
 	if err != nil {
 		return doc, err
@@ -352,7 +363,7 @@ func (s *Store) FailSourceRefresh(ctx context.Context, fileID, jobID, lease, det
 		return err
 	}
 	var workspaceID string
-	if err = tx.QueryRow(ctx, `SELECT workspace_id FROM files WHERE id=$1`, fileID).Scan(&workspaceID); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT workspace_id FROM files WHERE id=$1 AND trashed_at IS NULL`, fileID).Scan(&workspaceID); err != nil {
 		if isNoRows(err) {
 			return ErrConflict
 		}
@@ -390,7 +401,7 @@ func (s *Store) FailSourceRefresh(ctx context.Context, fileID, jobID, lease, det
 // WorkspaceIndexCounts partitions logical files by their current searchable
 // alias and the canonical upload route, independent of a transient job status.
 func (s *Store) workspaceIndexCounts(ctx context.Context, ws string, stats *WorkspaceStats) error {
-	rows, err := s.pool.Query(ctx, `SELECT f.name,f.kind,EXISTS(SELECT 1 FROM rag_file_contents a JOIN rag_contents c ON c.id=a.content_id WHERE a.file_id=f.id AND c.status='ready'),COALESCE(d.net_tokens>0 OR d.pending_effects<>'[]'::jsonb,false),COALESCE(d.format,'') FROM files f LEFT JOIN source_documents d ON d.file_id=f.id WHERE f.workspace_id=$1`, ws)
+	rows, err := s.pool.Query(ctx, `SELECT f.name,f.kind,EXISTS(SELECT 1 FROM rag_file_contents a JOIN rag_contents c ON c.id=a.content_id WHERE a.file_id=f.id AND c.status='ready'),COALESCE(d.net_tokens>0 OR d.pending_effects<>'[]'::jsonb,false),COALESCE(d.format,'') FROM files f LEFT JOIN source_documents d ON d.file_id=f.id WHERE f.workspace_id=$1 AND f.trashed_at IS NULL`, ws)
 	if err != nil {
 		return err
 	}

@@ -83,13 +83,29 @@ components:
           type: string
         detail:
           type: string
+        effects:
+          items:
+            $ref: "#/components/schemas/ResourceEffect"
+          nullable: true
+          type: array
+        error:
+          $ref: "#/components/schemas/ToolError"
         id:
           type: string
         kind:
+          enum:
+            - narration
+            - tool
           type: string
         name:
           type: string
-        status:
+        outcome:
+          enum:
+            - succeeded
+            - refused
+            - failed
+            - cancelled
+            - outcome_unknown
           type: string
         text:
           type: string
@@ -113,6 +129,38 @@ components:
           type: string
       required:
         - name
+      type: object
+    AgentOperation:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/AgentOperation.json
+          format: uri
+          readOnly: true
+          type: string
+        callId:
+          type: string
+        effect:
+          $ref: "#/components/schemas/ResourceEffect"
+        error:
+          $ref: "#/components/schemas/ToolError"
+        kind:
+          type: string
+        operationId:
+          type: string
+        outcome:
+          type: string
+        toolVersion:
+          format: int64
+          type: integer
+        workspaceId:
+          type: string
+      required:
+        - operationId
+        - kind
+        - toolVersion
+        - outcome
       type: object
     AssignableRole:
       enum:
@@ -1745,45 +1793,6 @@ components:
         - flashcards
         - note
       type: string
-    MaterialRevision:
-      additionalProperties: false
-      properties:
-        content:
-          $ref: "#/components/schemas/Envelope"
-        createdAt:
-          format: date-time
-          type: string
-        createdBy:
-          type: string
-        eventMetadata:
-          additionalProperties: {}
-          type: object
-        eventType:
-          $ref: "#/components/schemas/MaterialRevisionEvent"
-        materialId:
-          type: string
-        parentRevision:
-          format: int64
-          type: integer
-        revision:
-          format: int64
-          type: integer
-        title:
-          type: string
-      required:
-        - materialId
-        - revision
-        - eventType
-        - title
-        - content
-        - eventMetadata
-        - createdAt
-      type: object
-    MaterialRevisionEvent:
-      enum:
-        - create
-        - edit
-      type: string
     MaterialUpdateResult:
       additionalProperties: false
       properties:
@@ -2560,6 +2569,54 @@ components:
         - confirmEmail
         - lifecycleGeneration
       type: object
+    ResourceEffect:
+      additionalProperties: false
+      properties:
+        operation:
+          enum:
+            - created
+            - edited
+            - edit_undone
+            - trashed
+            - restored
+          type: string
+        operationId:
+          type: string
+        projectionPending:
+          type: boolean
+        purgeAfter:
+          format: date-time
+          type: string
+        resource:
+          $ref: "#/components/schemas/ResourceRef"
+        trashEpisodeId:
+          type: string
+        undo:
+          $ref: "#/components/schemas/UndoRef"
+      required:
+        - operation
+        - resource
+      type: object
+    ResourceRef:
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        kind:
+          enum:
+            - source_file
+            - material
+          type: string
+        materialKind:
+          type: string
+        title:
+          type: string
+        workspaceId:
+          type: string
+      required:
+        - kind
+        - id
+      type: object
     SaveCanvasReq:
       additionalProperties: false
       properties:
@@ -2728,6 +2785,8 @@ components:
           format: int64
           minimum: 0
           type: integer
+        operation:
+          $ref: "#/components/schemas/SourceCheckpointOperation"
         pendingEffects: {}
         state:
           format: base64
@@ -2741,6 +2800,42 @@ components:
         - netTokens
         - baseSourceSHA256
         - initialize
+      type: object
+    SourceCheckpointOperation:
+      additionalProperties: false
+      properties:
+        guards: {}
+        inverse: {}
+        receipt:
+          $ref: "#/components/schemas/SourceCheckpointReceipt"
+        undoOf:
+          type: string
+      required:
+        - receipt
+      type: object
+    SourceCheckpointReceipt:
+      additionalProperties: false
+      properties:
+        actorUserId:
+          type: string
+        callId:
+          type: string
+        conversationId:
+          type: string
+        id:
+          type: string
+        messageId:
+          type: string
+        requestHash:
+          type: string
+        toolVersion:
+          format: int64
+          type: integer
+      required:
+        - id
+        - toolVersion
+        - requestHash
+        - actorUserId
       type: object
     SourceCollaborationToken:
       additionalProperties: false
@@ -3033,6 +3128,8 @@ components:
         netTokens:
           format: int64
           type: integer
+        operation:
+          $ref: "#/components/schemas/AgentOperation"
         pendingEffects: {}
         room:
           type: string
@@ -3294,6 +3391,17 @@ components:
         - done
         - dueDate
       type: object
+    ToolError:
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+      required:
+        - code
+        - message
+      type: object
     TransferWorkspaceReq:
       additionalProperties: false
       properties:
@@ -3309,6 +3417,86 @@ components:
       required:
         - recipientId
       type: object
+    TrashActionReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/TrashActionReq.json
+          format: uri
+          readOnly: true
+          type: string
+        episodeId:
+          description: Trash episode returned by the trash listing
+          minLength: 1
+          type: string
+        requestId:
+          description: Client-generated idempotency key for this action
+          maxLength: 64
+          minLength: 1
+          type: string
+      required:
+        - episodeId
+        - requestId
+      type: object
+    TrashItem:
+      additionalProperties: false
+      properties:
+        episodeId:
+          type: string
+        fileKind:
+          type: string
+        id:
+          type: string
+        kind:
+          enum:
+            - source_file
+            - material
+          type: string
+        materialKind:
+          type: string
+        purgeAfter:
+          format: date-time
+          type: string
+        sizeBytes:
+          format: int64
+          type: integer
+        title:
+          type: string
+        trashedAt:
+          format: date-time
+          type: string
+        workspaceId:
+          type: string
+        workspaceName:
+          type: string
+      required:
+        - kind
+        - id
+        - title
+        - sizeBytes
+        - trashedAt
+        - purgeAfter
+        - episodeId
+      type: object
+    TrashPage:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/TrashPage.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/TrashItem"
+          type: array
+        nextCursor:
+          type: string
+      required:
+        - items
+      type: object
     URLResp:
       additionalProperties: false
       properties:
@@ -3322,6 +3510,41 @@ components:
           type: string
       required:
         - url
+      type: object
+    UndoEditReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/UndoEditReq.json
+          format: uri
+          readOnly: true
+          type: string
+        requestId:
+          description: Client-generated idempotency key for this action
+          maxLength: 64
+          minLength: 1
+          type: string
+      required:
+        - requestId
+      type: object
+    UndoRef:
+      additionalProperties: false
+      properties:
+        operationId:
+          type: string
+        reason:
+          type: string
+        status:
+          enum:
+            - available
+            - undone
+            - unavailable
+            - pending
+          type: string
+      required:
+        - operationId
+        - status
       type: object
     UpdateCardReq:
       additionalProperties: false
@@ -4281,6 +4504,37 @@ paths:
       summary: Update a chapter
       tags:
         - Content
+  /api/chat/edit-operations/{operationId}/undo:
+    post:
+      operationId: undoEditOperation
+      parameters:
+        - in: path
+          name: operationId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UndoEditReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentOperation"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Reverse one direct AI edit
+      tags:
+        - Chat
   /api/comments/{id}:
     delete:
       operationId: deleteMaterialComment
@@ -4651,6 +4905,14 @@ paths:
           required: true
           schema:
             type: string
+        - description: Optional idempotency key for this trash action
+          explode: false
+          in: query
+          name: requestId
+          schema:
+            description: Optional idempotency key for this trash action
+            maxLength: 64
+            type: string
       responses:
         "204":
           description: No Content
@@ -4660,7 +4922,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Delete a file
+      summary: Move a file to the trash
       tags:
         - Content
     get:
@@ -5427,6 +5689,14 @@ paths:
           required: true
           schema:
             type: string
+        - description: Optional idempotency key for this trash action
+          explode: false
+          in: query
+          name: requestId
+          schema:
+            description: Optional idempotency key for this trash action
+            maxLength: 64
+            type: string
       responses:
         "204":
           description: No Content
@@ -5436,7 +5706,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Delete a material
+      summary: Move a material to the trash
       tags:
         - Materials
     get:
@@ -5601,33 +5871,6 @@ paths:
       summary: Update material metadata
       tags:
         - Materials
-  /api/materials/{id}/revisions:
-    get:
-      operationId: listMaterialRevisions
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                items:
-                  $ref: "#/components/schemas/MaterialRevision"
-                type: array
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: List material revisions
-      tags:
-        - Material collaboration
   /api/materials/{id}/sharing:
     patch:
       operationId: updateMaterialSharing
@@ -6126,6 +6369,14 @@ paths:
           required: true
           schema:
             type: string
+        - description: Optional idempotency key for this trash action
+          explode: false
+          in: query
+          name: requestId
+          schema:
+            description: Optional idempotency key for this trash action
+            maxLength: 64
+            type: string
       responses:
         "204":
           description: No Content
@@ -6564,6 +6815,134 @@ paths:
       summary: Save a canvas
       tags:
         - Thinking
+  /api/trash:
+    get:
+      operationId: listTrash
+      parameters:
+        - description: Limit to one owned workspace; empty spans every owned workspace and standalone materials
+          explode: false
+          in: query
+          name: workspaceId
+          schema:
+            description: Limit to one owned workspace; empty spans every owned workspace and standalone materials
+            type: string
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
+        - description: Opaque cursor from the previous page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrashPage"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List trashed files and materials the caller owns
+      tags:
+        - Trash
+  /api/trash/{kind}/{id}:
+    delete:
+      operationId: purgeTrashed
+      parameters:
+        - in: path
+          name: kind
+          required: true
+          schema:
+            enum:
+              - source_file
+              - material
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: episodeId
+          schema:
+            minLength: 1
+            type: string
+        - explode: false
+          in: query
+          name: requestId
+          schema:
+            maxLength: 64
+            minLength: 1
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentOperation"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Permanently delete a trashed file or material
+      tags:
+        - Trash
+  /api/trash/{kind}/{id}/restore:
+    post:
+      operationId: restoreTrashed
+      parameters:
+        - in: path
+          name: kind
+          required: true
+          schema:
+            enum:
+              - source_file
+              - material
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TrashActionReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentOperation"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Restore a trashed file or material
+      tags:
+        - Trash
   /api/usage:
     get:
       operationId: getUsage

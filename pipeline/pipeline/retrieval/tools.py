@@ -1,5 +1,8 @@
 """Tools the chat agent may call, and their execution.
 
+Tool definitions (name, description, argument schema, required resource
+operations) come from the shared contract Go generates
+(``retrieval/contract.py``); this module binds a local handler to each name.
 Read tools go straight to Postgres. Anything with a side effect goes back
 through the Go gateway so that authorization, storage quota and the materials
 model stay in one place.
@@ -22,7 +25,7 @@ import requests
 
 from ..config import cfg
 from ..generated import MATERIAL_TITLE_MAX
-from . import pending, store
+from . import contract, pending, store
 from .chunking import clip_to_tokens, estimate_tokens
 from .limits import TurnBudget
 from .search import Passage, SearchStats, search
@@ -38,10 +41,26 @@ class TurnFailed(RuntimeError):
 class ToolResult:
     text_parts: list[str] = field(default_factory=list)
     passages: list[Passage] = field(default_factory=list)
-    created_material: dict[str, Any] | None = None
+    # Durable resource effects (shared contract ResourceEffect shape).
+    effects: list[dict[str, Any]] = field(default_factory=list)
     error: str | None = None
+    error_code: str | None = None
     refused: bool = False
+    failed: bool = False
     paged: bool = False
+
+    @property
+    def outcome(self) -> str:
+        if self.failed:
+            return "failed"
+        if self.refused:
+            return "refused"
+        return "succeeded"
+
+    def error_payload(self) -> dict[str, str] | None:
+        if not self.error:
+            return None
+        return {"code": self.error_code or "invalid_input", "message": self.error}
 
     def text(self) -> str:
         if self.error:
@@ -53,9 +72,14 @@ class ToolResult:
 class ToolContext:
     workspace_id: str
     user_id: str = ""
-    # Set by the gateway: the actor is the workspace owner or a member editor.
-    can_generate: bool = False
-    file_ids: list[str] = field(default_factory=list)
+    # Resource operations the gateway granted this actor for the turn
+    # (contract.OPERATIONS names). Tools whose required operations are not all
+    # present are neither offered nor dispatched.
+    operations: frozenset[str] = frozenset()
+    # None is the unrestricted workspace scope. A list is a restricted scope,
+    # and an empty list stays empty: trashing the last selected file must not
+    # widen the scope to every file.
+    file_ids: list[str] | None = None
     citations: list[Passage] = field(default_factory=list)
     assistant_message_id: str = ""
     budget: TurnBudget | None = None
@@ -74,11 +98,15 @@ Handler = Callable[[dict[str, Any], ToolContext], Awaitable[ToolResult]]
 @dataclass(frozen=True)
 class ToolSpec:
     name: str
-    schema: dict[str, Any]
     handler: Handler
-    mutates: bool
-    uses_embedding: bool
-    concurrency_class: str
+
+    @property
+    def definition(self) -> dict[str, Any]:
+        return contract.DEFINITIONS[self.name]
+
+    @property
+    def mutates(self) -> bool:
+        return bool(self.definition["mutates"])
 
 
 @dataclass(frozen=True)
@@ -136,9 +164,11 @@ async def _resolve_scope(
     chapters = list(outline.get("chapters") or [])
     file_by_id = {str(file["id"]): file for file in files}
     chapter_by_id = {str(chapter["id"]): chapter for chapter in chapters}
-    if ctx.file_ids and any(file_id not in file_by_id for file_id in ctx.file_ids):
-        return _refused(_INVALID_SCOPE)
-    allowed = set(ctx.file_ids) if ctx.file_ids else set(file_by_id)
+    if ctx.file_ids is not None and any(
+        file_id not in file_by_id for file_id in ctx.file_ids
+    ):
+        return _refused(_INVALID_SCOPE, code="unavailable_target")
+    allowed = set(ctx.file_ids) if ctx.file_ids is not None else set(file_by_id)
     if any(file_id not in file_by_id or file_id not in allowed for file_id in file_ids):
         return _refused(_INVALID_SCOPE)
     if any(chapter_id not in chapter_by_id for chapter_id in chapter_ids):
@@ -180,30 +210,29 @@ async def resolve_current_scope(ctx: ToolContext) -> ResolvedScope | ToolResult:
     return await _resolve_scope(ctx, _MISSING)
 
 
-def _schema(name: str, description: str, parameters: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "type": "function",
-        "function": {
-            "name": name,
-            "description": description,
-            "parameters": parameters,
-        },
-    }
+def operation_id(assistant_message_id: str, tool_call_id: str) -> str:
+    """The durable identity of one chat tool call.
 
-
-def material_id(assistant_message_id: str, tool_call_id: str) -> str:
+    Go derives the same value (store.ChatOperationID) so a lost response can be
+    reconciled through the receipt read; both sides are pinned by a fixture
+    test against the same literal.
+    """
     digest = hashlib.sha256(
         f"{assistant_message_id}\n{tool_call_id}".encode()
     ).hexdigest()
-    return "mat_" + digest[:16]
+    return "op_" + digest[:24]
 
 
 def _result(text: str, *, passages: list[Passage] | None = None) -> ToolResult:
     return ToolResult(text_parts=[text], passages=list(passages or []))
 
 
-def _refused(text: str) -> ToolResult:
-    return ToolResult(text_parts=[text], error=text, refused=True)
+def _refused(text: str, *, code: str = "invalid_input") -> ToolResult:
+    return ToolResult(text_parts=[text], error=text, error_code=code, refused=True)
+
+
+def _failed(text: str, *, code: str = "unavailable_target") -> ToolResult:
+    return ToolResult(text_parts=[text], error=text, error_code=code, failed=True)
 
 
 async def _search_workspace(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
@@ -298,11 +327,11 @@ def _overlap_footer(overlap: int, hits: int) -> str:
 
 async def _list_sources(_args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     outline = await store.workspace_outline(ctx.workspace_id)
-    allowed = set(ctx.file_ids or [])
+    allowed = None if ctx.file_ids is None else set(ctx.file_ids)
     lines: list[str] = []
     by_chapter: dict[str | None, list[dict[str, Any]]] = {}
     for file in outline["files"]:
-        if allowed and file["id"] not in allowed:
+        if allowed is not None and file["id"] not in allowed:
             continue
         by_chapter.setdefault(file["chapter_id"], []).append(file)
     for chapter in outline["chapters"]:
@@ -405,34 +434,68 @@ def _is_transient(exc: BaseException | None, status: int) -> bool:
     return status in (429, 500, 502, 503, 504) or status >= 500
 
 
-async def _generate_material(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    if not _gateway_ready() or not ctx.user_id or not ctx.can_generate:
-        return _refused("Material creation is unavailable for this user.")
+def _receipt_result(body: dict[str, Any]) -> ToolResult:
+    """Turn a recorded agent operation (Go receipt) into the tool result."""
+    effect = body.get("effect")
+    if not isinstance(effect, dict) or body.get("outcome") != "succeeded":
+        error = body.get("error") if isinstance(body.get("error"), dict) else {}
+        return _failed(
+            str(error.get("message") or "The recorded operation did not succeed."),
+            code=str(error.get("code") or "outcome_unknown"),
+        )
+    resource = effect.get("resource") or {}
+    title, rid = resource.get("title"), resource.get("id")
+    operation = effect.get("operation")
+    if operation == "trashed":
+        text = (
+            f"Moved '{title}' (id {rid}) to the trash. Passages retrieved from it "
+            "earlier in this turn are no longer current evidence; do not cite them. "
+            "The workspace owner can restore it from Files › Trash within 30 days."
+        )
+    elif operation == "restored":
+        text = f"Restored '{title}' (id {rid}). It is active in the workspace again."
+    elif operation == "edited":
+        pending_note = (
+            " Indexing of the change is pending."
+            if effect.get("projectionPending")
+            else ""
+        )
+        text = f"Edited '{title}' (id {rid}).{pending_note} The user can undo this edit from the chat result."
+    elif operation == "edit_undone":
+        text = f"Reversed the earlier edit of '{title}' (id {rid})."
+    else:
+        text = (
+            f"Created {resource.get('materialKind')} '{title}' (id {rid}). "
+            "It is now in the workspace."
+        )
+    return ToolResult(text_parts=[text], effects=[effect])
+
+
+async def _create_material(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    if not _gateway_ready() or not ctx.user_id:
+        return _refused(
+            "Material creation is unavailable for this user.",
+            code="lifecycle_rejected",
+        )
     if not ctx.assistant_message_id:
         return _refused("Material creation needs the assistant message id.")
-    kind_value = args.get("kind")
-    if not isinstance(kind_value, str) or kind_value not in {
-        "quiz",
-        "flashcards",
-        "mindmap",
-        "diagram",
-        "note",
-    }:
-        return _refused("generate_material needs a supported material kind.")
-    kind = kind_value
+    kind = str(args["kind"])
     call_id = str(args.get("_tool_call_id") or "")
     if not call_id:
-        return _refused("generate_material is missing its tool-call id.")
+        return _refused("create_material is missing its tool-call id.")
     resolved = await _resolve_scope(ctx, args.get("scope", _MISSING))
     if isinstance(resolved, ToolResult):
         return resolved
     if not resolved.indexed:
-        return _refused("The requested scope has no indexed content.")
-    mid = material_id(ctx.assistant_message_id, call_id)
+        return _refused(
+            "The requested scope has no indexed content.", code="unavailable_target"
+        )
+    op_id = operation_id(ctx.assistant_message_id, call_id)
     payload = {
-        "id": mid,
         "workspaceId": ctx.workspace_id,
         "userId": ctx.user_id,
+        "assistantMessageId": ctx.assistant_message_id,
+        "toolCallId": call_id,
         "kind": kind,
         # Model output must fit the materials.title column; the API disambiguates
         # duplicates and only reserves room for its own suffix.
@@ -442,19 +505,36 @@ async def _generate_material(args: dict[str, Any], ctx: ToolContext) -> ToolResu
         "content": args.get("content") or "",
         "fileIds": resolved.file_ids,
         "chapterIds": resolved.chapter_ids,
-        "fileNames": resolved.file_names,
-        "chapters": resolved.chapter_names,
     }
 
-    last_exc: BaseException | None = None
     await ctx.pending_sources.validate()
+    return await _post_operation(
+        "/api/internal/materials", payload, op_id, ctx, failure=f"create the {kind}"
+    )
+
+
+async def _post_operation(
+    path: str,
+    payload: dict[str, Any],
+    op_id: str,
+    ctx: ToolContext,
+    *,
+    failure: str,
+) -> ToolResult:
+    """POST a receipt-backed mutation to the gateway.
+
+    Transient failures retry the same operation id (Go makes it idempotent);
+    a lost response is reconciled through the durable receipt read. A confirmed
+    absence is a normal tool failure; an unknown outcome fails the turn.
+    """
+    last_exc: BaseException | None = None
     last_status = 0
     for attempt in range(4):
         try:
 
             def _post() -> requests.Response:
                 return requests.post(
-                    _material_url("/api/internal/materials"),
+                    _material_url(path),
                     headers=_material_headers(),
                     data=json.dumps(payload),
                     timeout=10,
@@ -463,62 +543,45 @@ async def _generate_material(args: dict[str, Any], ctx: ToolContext) -> ToolResu
             resp = await asyncio.to_thread(_post)
             last_status = resp.status_code
             if resp.status_code < 300:
-                body = resp.json()
-                return ToolResult(
-                    text_parts=[
-                        (
-                            f"Created {body.get('kind')} '{body.get('title')}' "
-                            f"(id {body.get('materialId')}). It is now in the workspace."
-                        )
-                    ],
-                    created_material=body,
-                )
-            if resp.status_code in (400, 401, 403, 409, 422):
+                return _receipt_result(resp.json())
+            if resp.status_code in (400, 401, 403, 404, 409, 422) or not _is_transient(
+                None, resp.status_code
+            ):
                 detail = _response_detail(resp)
                 return _refused(
-                    f"Could not create the {kind}: {detail or resp.status_code}"
-                )
-            if not _is_transient(None, resp.status_code):
-                detail = _response_detail(resp)
-                return _refused(
-                    f"Could not create the {kind}: {detail or resp.status_code}"
+                    f"Could not {failure}: {detail or resp.status_code}",
+                    code=_gateway_error_code(resp),
                 )
         except (requests.Timeout, requests.ConnectionError) as exc:
             last_exc = exc
-            log.warning("material POST attempt failed: %s", exc)
+            log.warning("operation POST attempt failed: %s", exc)
         except requests.RequestException as exc:
             last_exc = exc
-            log.warning("material POST attempt failed: %s", exc)
+            log.warning("operation POST attempt failed: %s", exc)
         if attempt < 3:
             await asyncio.sleep(0.25 * (2**attempt))
     if last_exc is not None:
         log.warning(
-            "material POST exhausted retries: %s status=%s", last_exc, last_status
+            "operation POST exhausted retries: %s status=%s", last_exc, last_status
         )
 
-    recovered = await _recover_material(mid, ctx)
+    recovered = await _recover_operation(op_id, ctx)
     if recovered is True:
-        raise TurnFailed("material create outcome is unknown")
+        raise TurnFailed("mutation outcome is unknown")
     if recovered is None:
-        return _refused(f"Could not create the {kind}: not found after retries.")
-    return ToolResult(
-        text_parts=[
-            (
-                f"Created {recovered.get('kind')} '{recovered.get('title')}' "
-                f"(id {recovered.get('materialId')}). It is now in the workspace."
-            )
-        ],
-        created_material=recovered,
-    )
+        return _failed(f"Could not {failure}: not found after retries.")
+    return _receipt_result(recovered)
 
 
-async def _recover_material(mid: str, ctx: ToolContext) -> dict[str, Any] | None | bool:
-    """GET the material id. True means the outcome is unknown."""
+async def _recover_operation(
+    op_id: str, ctx: ToolContext
+) -> dict[str, Any] | None | bool:
+    """Read the durable receipt for a lost response. True means still unknown."""
     try:
 
         def _get() -> requests.Response:
             return requests.get(
-                _material_url(f"/api/internal/materials/{mid}"),
+                _material_url(f"/api/internal/agent-operations/{op_id}"),
                 headers=_material_headers(),
                 params={"workspaceId": ctx.workspace_id, "userId": ctx.user_id},
                 timeout=15,
@@ -542,6 +605,28 @@ def _response_detail(resp: requests.Response) -> str:
         return str(resp.json().get("message") or "")
     except ValueError:
         return resp.text[:200]
+
+
+_GATEWAY_CODES = {
+    "storage_quota_exceeded": "quota_rejected",
+    "account_over_quota": "lifecycle_rejected",
+    "invalid_scope": "unavailable_target",
+    "scope_has_no_indexed_content": "unavailable_target",
+}
+
+
+def _gateway_error_code(resp: requests.Response) -> str:
+    try:
+        code = str(resp.json().get("code") or "")
+    except ValueError:
+        code = ""
+    if code in contract.ERROR_CODES:
+        return code
+    if code in _GATEWAY_CODES:
+        return _GATEWAY_CODES[code]
+    if resp.status_code in (401, 403, 404):
+        return "unavailable_target"
+    return "invalid_input"
 
 
 async def _resolve_source_change(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
@@ -569,232 +654,357 @@ async def _resolve_source_change(args: dict[str, Any], ctx: ToolContext) -> Tool
     )
 
 
+def _target(args: dict[str, Any]) -> tuple[str, str]:
+    target = args["target"]
+    return str(target["kind"]), str(target["id"])
+
+
+async def _after_lifecycle_change(
+    ctx: ToolContext, kind: str, rid: str, trashed: bool
+) -> None:
+    """Refresh this turn's own view of the workspace after a trash/restore.
+
+    Cached outlines are dropped, a restricted scope loses the trashed file (an
+    empty list stays a restricted empty scope) and the pending-source baseline
+    is re-read so the acknowledged change does not read as `source_changed`.
+    Unrelated publications were already validated before the mutation.
+    """
+    ctx._scope_outline = None
+    if trashed and kind == "source_file" and ctx.file_ids is not None:
+        ctx.file_ids = [fid for fid in ctx.file_ids if fid != rid]
+    ctx.pending_sources = await pending.load(ctx.workspace_id, ctx.file_ids)
+
+
+def _chat_context(ctx: ToolContext, call_id: str) -> dict[str, Any]:
+    return {
+        "workspaceId": ctx.workspace_id,
+        "userId": ctx.user_id,
+        "assistantMessageId": ctx.assistant_message_id,
+        "toolCallId": call_id,
+    }
+
+
+async def _trash_file(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    if not _gateway_ready() or not ctx.user_id or not ctx.assistant_message_id:
+        return _refused(
+            "Trash is unavailable for this user.", code="lifecycle_rejected"
+        )
+    call_id = str(args.get("_tool_call_id") or "")
+    kind, rid = _target(args)
+    if kind == "source_file":
+        resolved = await _resolve_scope(ctx, {"file_ids": [rid]})
+        if isinstance(resolved, ToolResult):
+            return resolved
+    # Detect unrelated publications first; the acknowledged change re-baselines after.
+    await ctx.pending_sources.validate()
+    result = await _post_operation(
+        "/api/internal/trash",
+        {**_chat_context(ctx, call_id), "target": {"kind": kind, "id": rid}},
+        operation_id(ctx.assistant_message_id, call_id),
+        ctx,
+        failure=f"trash the {kind.replace('_', ' ')}",
+    )
+    if result.effects:
+        await _after_lifecycle_change(ctx, kind, rid, trashed=True)
+    return result
+
+
+async def _list_trashed_files(_args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    if not _gateway_ready() or not ctx.user_id:
+        return _refused(
+            "Trash is unavailable for this user.", code="lifecycle_rejected"
+        )
+
+    def _get() -> requests.Response:
+        return requests.get(
+            _material_url("/api/internal/trash"),
+            headers=_material_headers(),
+            params={"workspaceId": ctx.workspace_id, "userId": ctx.user_id},
+            timeout=10,
+        )
+
+    try:
+        resp = await asyncio.to_thread(_get)
+    except requests.RequestException as exc:
+        return _failed(f"Could not list the trash: {exc}")
+    if resp.status_code != 200:
+        return _refused(
+            f"Could not list the trash: {_response_detail(resp) or resp.status_code}",
+            code=_gateway_error_code(resp),
+        )
+    items = list((resp.json() or {}).get("items") or [])
+    if not items:
+        return _result("The trash of this workspace is empty.")
+    lines = [
+        (
+            f"- {item.get('title')} (kind={item.get('kind')}, id={item.get('id')}, "
+            f"{item.get('materialKind') or item.get('fileKind') or ''}, "
+            f"trashed {item.get('trashedAt')}, expires {item.get('purgeAfter')})"
+        )
+        for item in items
+    ]
+    return _result(
+        "Trashed items (use restore_file with kind and id):\n" + "\n".join(lines)
+    )
+
+
+async def _restore_file(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    if not _gateway_ready() or not ctx.user_id or not ctx.assistant_message_id:
+        return _refused(
+            "Restore is unavailable for this user.", code="lifecycle_rejected"
+        )
+    call_id = str(args.get("_tool_call_id") or "")
+    kind, rid = _target(args)
+    await ctx.pending_sources.validate()
+    result = await _post_operation(
+        "/api/internal/trash/restore",
+        {**_chat_context(ctx, call_id), "target": {"kind": kind, "id": rid}},
+        operation_id(ctx.assistant_message_id, call_id),
+        ctx,
+        failure=f"restore the {kind.replace('_', ' ')}",
+    )
+    if result.effects:
+        await _after_lifecycle_change(ctx, kind, rid, trashed=False)
+    return result
+
+
+def _post_json(path: str, payload: dict[str, Any]) -> requests.Response:
+    return requests.post(
+        _material_url(path),
+        headers=_material_headers(),
+        data=json.dumps(payload),
+        timeout=15,
+    )
+
+
+async def _gateway_read(
+    path: str, payload: dict[str, Any], failure: str
+) -> dict[str, Any] | ToolResult:
+    """One gateway read for a tool; refusals map to typed tool errors."""
+    try:
+        resp = await asyncio.to_thread(_post_json, path, payload)
+    except requests.RequestException as exc:
+        return _failed(f"Could not {failure}: {exc}")
+    if resp.status_code != 200:
+        return _refused(
+            f"Could not {failure}: {_response_detail(resp) or resp.status_code}",
+            code=_gateway_error_code(resp),
+        )
+    body = resp.json()
+    return body if isinstance(body, dict) else {}
+
+
+async def _list_documents(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    if not _gateway_ready() or not ctx.user_id:
+        return _refused(
+            "Document tools are unavailable for this user.", code="lifecycle_rejected"
+        )
+    body = await _gateway_read(
+        "/api/internal/documents/list",
+        {
+            "workspaceId": ctx.workspace_id,
+            "userId": ctx.user_id,
+            "kind": args.get("kind") or "",
+            "query": args.get("query") or "",
+        },
+        "list the documents",
+    )
+    if isinstance(body, ToolResult):
+        return body
+    allowed = None if ctx.file_ids is None else set(ctx.file_ids)
+    lines = []
+    for item in body.get("items") or []:
+        if (
+            item.get("kind") == "source_file"
+            and allowed is not None
+            and item.get("id") not in allowed
+        ):
+            continue
+        state = (
+            "editable"
+            if item.get("editable")
+            else f"read-only: {item.get('reason') or ''}".rstrip(": ")
+        )
+        extra = f", {item.get('materialKind')}" if item.get("materialKind") else ""
+        lines.append(
+            f"- {item.get('title')} (kind={item.get('kind')}, id={item.get('id')}, "
+            f"format={item.get('format')}{extra}, {state})"
+        )
+    if not lines:
+        return _result("This workspace has no documents in scope.")
+    return _result(
+        "Documents (inspect_document takes kind and id):\n" + "\n".join(lines)
+    )
+
+
+def _render_inspection(body: dict[str, Any]) -> str:
+    head = [
+        f"{body.get('title') or ''} format={body.get('format')}",
+        "supported: " + ", ".join(body.get("supportedOperations") or []),
+    ]
+    lines: list[str] = []
+    for block in body.get("blocks") or []:
+        props = block.get("properties") or {}
+        flags = " [media]" if props.get("media") else ""
+        lines.append(
+            f"[{block.get('id')}] ({block.get('type')}){flags} {block.get('text') or ''}"
+        )
+        for child in block.get("children") or []:
+            lines.append(
+                f"    [{child.get('id')}] ({child.get('type')}) {child.get('text') or ''}"
+            )
+        if props.get("source") is not None:
+            lines.append(f"    source: {props['source']}")
+    for line in body.get("lines") or []:
+        lines.append(f"{line.get('start')}: {line.get('text')}")
+    for entry in body.get("entries") or []:
+        lines.append(f"[{entry.get('id')}] {entry.get('label')}: {entry.get('value')}")
+    if body.get("nextStart") is not None:
+        lines.append(f"(next start = {body['nextStart']} of {body.get('total')})")
+    return "\n".join(head + lines)
+
+
+async def _inspect_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    if not _gateway_ready() or not ctx.user_id:
+        return _refused(
+            "Document tools are unavailable for this user.", code="lifecycle_rejected"
+        )
+    kind, rid = _target(args)
+    if kind == "source_file":
+        resolved = await _resolve_scope(ctx, {"file_ids": [rid]})
+        if isinstance(resolved, ToolResult):
+            return resolved
+    body = await _gateway_read(
+        "/api/internal/documents/inspect",
+        {
+            "workspaceId": ctx.workspace_id,
+            "userId": ctx.user_id,
+            "target": {"kind": kind, "id": rid},
+            "start": int(args.get("start") or 0),
+            "count": int(args.get("count") or 60),
+        },
+        "inspect the document",
+    )
+    if isinstance(body, ToolResult):
+        return body
+    return _result(_render_inspection(body))
+
+
+async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    if not _gateway_ready() or not ctx.user_id or not ctx.assistant_message_id:
+        return _refused(
+            "Document editing is unavailable for this user.", code="lifecycle_rejected"
+        )
+    call_id = str(args.get("_tool_call_id") or "")
+    kind, rid = _target(args)
+    if kind == "source_file":
+        resolved = await _resolve_scope(ctx, {"file_ids": [rid]})
+        if isinstance(resolved, ToolResult):
+            return resolved
+        # Detect unrelated publications first; the acknowledged edit re-baselines after.
+        await ctx.pending_sources.validate()
+    result = await _post_operation(
+        "/api/internal/documents/edit",
+        {
+            **_chat_context(ctx, call_id),
+            "target": {"kind": kind, "id": rid},
+            "commands": list(args.get("commands") or []),
+        },
+        operation_id(ctx.assistant_message_id, call_id),
+        ctx,
+        failure="edit the document",
+    )
+    if result.effects:
+        # This turn's own view: drop cached outlines and re-read the exact
+        # pending evidence so the next source-dependent call sees the edit.
+        ctx._scope_outline = None
+        if kind == "source_file":
+            ctx.pending_sources = await pending.load(ctx.workspace_id, ctx.file_ids)
+    return result
+
+
 REGISTRY: dict[str, ToolSpec] = {}
 
 
-def _register(spec: ToolSpec) -> None:
-    REGISTRY[spec.name] = spec
+def _register(name: str, handler: Handler) -> None:
+    """Bind a local handler to a contract definition. Unknown names fail at import."""
+    if name not in contract.DEFINITIONS:
+        raise RuntimeError(f"tool {name} has no definition in the agent-tool contract")
+    REGISTRY[name] = ToolSpec(name=name, handler=handler)
 
 
-_register(
-    ToolSpec(
-        name="search_workspace",
-        schema=_schema(
-            "search_workspace",
-            "Search the user's sources for passages relevant to a query. One "
-            "call per assistant message, with one focused query. Search again "
-            "in a later step rather than concatenating several questions.",
-            {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string"},
-                    "file_ids": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Restrict to these files. Omit to search the current scope.",
-                    },
-                },
-                "required": ["query"],
-            },
-        ),
-        handler=_search_workspace,
-        mutates=False,
-        uses_embedding=True,
-        concurrency_class="search",
-    )
-)
-_register(
-    ToolSpec(
-        name="list_sources",
-        schema=_schema(
-            "list_sources",
-            "List the chapters and documents in this workspace with a short "
-            "descriptor of each file. Use this first when the question is "
-            "about what the workspace contains, or to decide which documents "
-            "to search or describe.",
-            {"type": "object", "properties": {}},
-        ),
-        handler=_list_sources,
-        mutates=False,
-        uses_embedding=False,
-        concurrency_class="read",
-    )
-)
-_register(
-    ToolSpec(
-        name="describe_documents",
-        schema=_schema(
-            "describe_documents",
-            "Return the detailed summaries of up to eight documents. Call "
-            "after list_sources when the short descriptors are not enough "
-            "to decide, or when the question is about what a document covers "
-            "as a whole.",
-            {
-                "type": "object",
-                "properties": {
-                    "file_ids": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "minItems": 1,
-                        "maxItems": 8,
-                        "description": "One to eight documents to describe.",
-                    },
-                },
-                "required": ["file_ids"],
-            },
-        ),
-        handler=_describe_documents,
-        mutates=False,
-        uses_embedding=False,
-        concurrency_class="read",
-    )
-)
-_register(
-    ToolSpec(
-        name="read_document",
-        schema=_schema(
-            "read_document",
-            "Read a document in order from a given chunk index. Use after "
-            "search when a passage needs its surrounding argument, or to walk "
-            "a short document end to end.",
-            {
-                "type": "object",
-                "properties": {
-                    "file_id": {"type": "string"},
-                    "start": {"type": "integer", "default": 0},
-                    "count": {"type": "integer", "default": 4},
-                },
-                "required": ["file_id"],
-            },
-        ),
-        handler=_read_document,
-        mutates=False,
-        uses_embedding=False,
-        concurrency_class="read",
-    )
-)
-_register(
-    ToolSpec(
-        name="generate_material",
-        schema=_schema(
-            "generate_material",
-            "Create a study material in this workspace: a quiz, flashcard "
-            "deck, mindmap or diagram. Only call this when the user asked for "
-            "one. Ground the content in passages you already retrieved. Do "
-            "not mix this call with retrieval tools in the same response.",
-            {
-                "type": "object",
-                "properties": {
-                    "kind": {
-                        "type": "string",
-                        "enum": ["quiz", "flashcards", "mindmap", "diagram", "note"],
-                    },
-                    "title": {"type": "string", "maxLength": MATERIAL_TITLE_MAX},
-                    "cards": {
-                        "type": "array",
-                        "description": "flashcards only",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "front": {"type": "string"},
-                                "back": {"type": "string"},
-                            },
-                            "required": ["front", "back"],
-                        },
-                    },
-                    "questions": {
-                        "type": "array",
-                        "description": "quiz only; same shape as the quiz generator",
-                        "items": {"type": "object"},
-                    },
-                    "content": {
-                        "type": "string",
-                        "description": "mindmap/diagram/note only; markdown with a mermaid block",
-                    },
-                    "scope": {
-                        "type": "object",
-                        "description": "Source scope for the material. Omit or leave empty to use the current chat scope.",
-                        "properties": {
-                            "file_ids": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                            },
-                            "chapter_ids": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                            },
-                        },
-                        "additionalProperties": False,
-                    },
-                },
-                "required": ["kind"],
-            },
-        ),
-        handler=_generate_material,
-        mutates=True,
-        uses_embedding=False,
-        concurrency_class="mutate",
-    )
-)
+_register("search_workspace", _search_workspace)
+_register("list_sources", _list_sources)
+_register("describe_documents", _describe_documents)
+_register("read_document", _read_document)
+_register("create_material", _create_material)
+_register("resolve_source_change", _resolve_source_change)
+_register("list_documents", _list_documents)
+_register("inspect_document", _inspect_document)
+_register("edit_document", _edit_document)
+_register("trash_file", _trash_file)
+_register("list_trashed_files", _list_trashed_files)
+_register("restore_file", _restore_file)
 
 
-_register(
-    ToolSpec(
-        name="resolve_source_change",
-        schema=_schema(
-            "resolve_source_change",
-            "Describe an added or changed source image from an exact pending-change placeholder. Only use identifiers supplied in the pending-source evidence.",
-            {
-                "type": "object",
-                "properties": {
-                    "file_id": {"type": "string"},
-                    "change_id": {"type": "string"},
-                    "checkpoint": {"type": "integer"},
-                },
-                "required": ["file_id", "change_id", "checkpoint"],
-                "additionalProperties": False,
-            },
-        ),
-        handler=_resolve_source_change,
-        mutates=False,
-        uses_embedding=False,
-        concurrency_class="read",
-    )
-)
-
-
-def schemas_for(ctx: ToolContext) -> list[dict[str, Any]]:
-    specs = list(REGISTRY.values())
-    if (
-        not ctx.user_id
-        or not _gateway_ready()
-        or not any(
+def _offered(spec: ToolSpec, ctx: ToolContext) -> bool:
+    definition = spec.definition
+    if not set(definition["requiredOperations"]) <= ctx.operations:
+        return False
+    if definition["mutates"] and not (_gateway_ready() and ctx.user_id):
+        return False
+    if spec.name != "resolve_source_change":
+        return True
+    return bool(
+        ctx.user_id
+        and _gateway_ready()
+        and any(
             change.get("assetRef")
             for file in ctx.pending_sources.files
             for change in file["changes"]
         )
-    ):
-        specs = [s for s in specs if s.name != "resolve_source_change"]
-    if not (_gateway_ready() and ctx.user_id and ctx.can_generate):
-        specs = [s for s in specs if s.name != "generate_material"]
-    return [s.schema for s in specs]
+    )
+
+
+def schemas_for(ctx: ToolContext) -> list[dict[str, Any]]:
+    return [
+        contract.model_schema(spec.name)
+        for spec in REGISTRY.values()
+        if _offered(spec, ctx)
+    ]
 
 
 def spec_for(name: str) -> ToolSpec | None:
     return REGISTRY.get(name)
 
 
+def mutates(name: str) -> bool:
+    spec = REGISTRY.get(name)
+    return bool(spec and spec.mutates)
+
+
 async def run(name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     spec = REGISTRY.get(name)
     if spec is None:
-        return _refused(f"No tool named {name}.")
+        return _refused(f"No tool named {name}.", code="unsupported_operation")
+    # Dispatch rechecks what admission offered: a tool the model names without
+    # holding its operations is refused, whatever the prompt said.
+    if not _offered(spec, ctx):
+        return _refused(
+            f"{name} is unavailable for this user.", code="lifecycle_rejected"
+        )
+    problem = contract.validate_args(
+        name, {k: v for k, v in args.items() if not k.startswith("_")}
+    )
+    if problem:
+        return _refused(problem)
     try:
         return await spec.handler(args, ctx)
     except (TurnFailed, pending.SourceChanged):
         raise
     except Exception as exc:
         log.exception("tool %s failed", name)
-        return _refused(f"The {name} tool failed: {exc}")
+        return _failed(f"The {name} tool failed: {exc}")
 
 
 def assign_citations(
@@ -847,7 +1057,3 @@ def limit_tool_result(text: str) -> str:
     marker = "\n\n[Tool output truncated. Narrow the request or continue reading.]"
     room = max(0, TOOL_RESULT_MAX_TOKENS - estimate_tokens(marker))
     return clip_to_tokens(text, room) + marker
-
-
-# keep the old name for tests that still import it during the rewrite
-remember = assign_citations

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 )
 
@@ -30,6 +31,8 @@ type SourceSession struct {
 	NetTokens         int64           `json:"netTokens"`
 	BaseBlobPath      string          `json:"-"`
 	Access            string          `json:"access" enum:"write,read"`
+	// Operation is the committed (or replayed) receipt of an edit checkpoint.
+	Operation *AgentOperation `json:"operation,omitempty"`
 }
 
 type SourceCheckpoint struct {
@@ -42,7 +45,42 @@ type SourceCheckpoint struct {
 	// Only a trusted initial seed may bind the SHA computed from source bytes.
 	BaseSourceSHA256 string `json:"baseSourceSHA256"`
 	Initialize       bool   `json:"initialize"`
+	// A direct AI edit or its Undo commits its receipt (and inverse) with the
+	// checkpoint so the saved state and the durable effect cannot diverge.
+	Operation *SourceCheckpointOperation `json:"operation,omitempty"`
 }
+
+// SourceCheckpointOperation is the receipt side of a source edit checkpoint.
+// Inverse and Guards are present for an edit; UndoOf for an Undo.
+type SourceCheckpointOperation struct {
+	Receipt SourceCheckpointReceipt `json:"receipt"`
+	Inverse json.RawMessage         `json:"inverse,omitempty"`
+	Guards  json.RawMessage         `json:"guards,omitempty"`
+	UndoOf  string                  `json:"undoOf,omitempty"`
+}
+
+// SourceCheckpointReceipt is the trusted operation identity the collaboration
+// service forwards from the gateway; it becomes the agent_operations row.
+type SourceCheckpointReceipt struct {
+	ID             string `json:"id"`
+	ToolVersion    int    `json:"toolVersion"`
+	RequestHash    string `json:"requestHash"`
+	ActorUserID    string `json:"actorUserId"`
+	ConversationID string `json:"conversationId,omitempty"`
+	MessageID      string `json:"messageId,omitempty"`
+	CallID         string `json:"callId,omitempty"`
+}
+
+func (r SourceCheckpointReceipt) operation() AgentOperation {
+	return AgentOperation{
+		ID: r.ID, ToolVersion: r.ToolVersion, RequestHash: r.RequestHash, ActorUserID: r.ActorUserID,
+		ConversationID: r.ConversationID, MessageID: r.MessageID, CallID: r.CallID,
+	}
+}
+
+// SourceEditFormat reports the direct-edit format of a source ("docx", "xlsx",
+// "pptx", "text") or "" when the file is view-only (PDF, media, store-only).
+func SourceEditFormat(name, kind string) string { return editableSourceFormat(name, kind) }
 
 func editableSourceFormat(name, kind string) string {
 	switch strings.ToLower(filepath.Ext(name)) {
@@ -66,7 +104,7 @@ func (s *Store) sourceLockTx(ctx context.Context, tx pgx.Tx, fileID string, acto
 		return "", "", err
 	}
 	var ws string
-	if err := tx.QueryRow(ctx, `SELECT workspace_id FROM files WHERE id=$1`, fileID).Scan(&ws); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT workspace_id FROM files WHERE id=$1 AND trashed_at IS NULL`, fileID).Scan(&ws); err != nil {
 		if isNoRows(err) {
 			err = ErrNotFound
 		}
@@ -119,7 +157,7 @@ func (s *Store) SourceSession(ctx context.Context, actor, fileID string) (Source
 	}
 	var name, kind, path, sha string
 	var revision int64
-	err = tx.QueryRow(ctx, `SELECT name,kind,COALESCE(blob_path,''),COALESCE(source_sha256,''),revision FROM files WHERE id=$1 FOR UPDATE`, fileID).Scan(&name, &kind, &path, &sha, &revision)
+	err = tx.QueryRow(ctx, `SELECT name,kind,COALESCE(blob_path,''),COALESCE(source_sha256,''),revision FROM files WHERE id=$1 AND trashed_at IS NULL FOR UPDATE`, fileID).Scan(&name, &kind, &path, &sha, &revision)
 	if err != nil {
 		return SourceSession{}, err
 	}
@@ -162,7 +200,7 @@ func (s *Store) CheckSourceAccess(ctx context.Context, actor, fileID string, epo
 		return err
 	}
 	var current bool
-	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1 AND d.epoch=$2 AND d.base_revision=f.revision)`, fileID, epoch).Scan(&current); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1 AND d.epoch=$2 AND d.base_revision=f.revision AND f.trashed_at IS NULL)`, fileID, epoch).Scan(&current); err != nil {
 		return err
 	}
 	if !current {
@@ -197,11 +235,23 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 	if err != nil {
 		return old, err
 	}
+	if in.Operation != nil {
+		existing, err := lockAgentOperationTx(ctx, tx, in.Operation.Receipt.ID, in.Operation.Receipt.RequestHash)
+		if err != nil {
+			return old, err
+		}
+		if existing != nil {
+			// Same edit already committed (a retried request): answer with the
+			// recorded receipt and the current state, without saving again.
+			old.Operation = existing
+			return old, tx.Commit(ctx)
+		}
+	}
 	if old.Epoch != in.Epoch || old.Checkpoint != in.ExpectedCheckpoint {
 		return old, ErrConflict
 	}
 	var revision int64
-	if err = tx.QueryRow(ctx, `SELECT revision FROM files WHERE id=$1 FOR UPDATE`, fileID).Scan(&revision); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT revision FROM files WHERE id=$1 AND trashed_at IS NULL FOR UPDATE`, fileID).Scan(&revision); err != nil {
 		return old, err
 	}
 	if revision != old.BaseRevision {
@@ -215,6 +265,11 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 		return old, err
 	}
 	growth := int64(len(in.State)-len(old.State)-len(old.PendingEffects)) + effectsBytes
+	if in.Operation != nil {
+		// The retained inverse is owner storage too: admit state and inverse
+		// growth together.
+		growth += int64(len(in.Operation.Inverse) + len(in.Operation.Guards))
+	}
 	if in.Initialize {
 		growth += int64(len(in.State))
 	}
@@ -238,7 +293,56 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 	if err != nil {
 		return out, err
 	}
+	if in.Operation != nil {
+		receipt, err := s.commitSourceOperationTx(ctx, tx, fileID, ws, owner, out, *in.Operation)
+		if err != nil {
+			return out, err
+		}
+		out.Operation = &receipt
+	}
 	return out, tx.Commit(ctx)
+}
+
+// commitSourceOperationTx records the edit (receipt + inverse) or the Undo
+// (receipt + consumed eligibility) in the checkpoint's transaction.
+func (s *Store) commitSourceOperationTx(ctx context.Context, tx pgx.Tx, fileID, ws, owner string, saved SourceSession, op SourceCheckpointOperation) (AgentOperation, error) {
+	receipt := op.Receipt.operation()
+	receipt.WorkspaceID = ws
+	receipt.Outcome = agenttools.OutcomeSucceeded
+	var name string
+	if err := tx.QueryRow(ctx, `SELECT name FROM files WHERE id=$1`, fileID).Scan(&name); err != nil {
+		return AgentOperation{}, err
+	}
+	effect := agenttools.ResourceEffect{
+		Resource:    agenttools.ResourceRef{Kind: agenttools.KindSourceFile, ID: fileID, Title: name, WorkspaceID: ws},
+		OperationID: receipt.ID,
+	}
+	if op.UndoOf != "" {
+		receipt.Kind = "undo_edit"
+		effect.Operation = agenttools.EffectEditUndone
+		if err := markEditInverseUndoneTx(ctx, tx, op.UndoOf, receipt.ID); err != nil {
+			return AgentOperation{}, err
+		}
+	} else {
+		receipt.Kind = "edit_document"
+		effect.Operation = agenttools.EffectEdited
+		effect.Undo = &agenttools.UndoRef{OperationID: receipt.ID, Status: agenttools.UndoAvailable}
+	}
+	receipt.Effect = &effect
+	if err := insertAgentOperationTx(ctx, tx, receipt); err != nil {
+		return AgentOperation{}, err
+	}
+	if op.UndoOf == "" {
+		if err := insertEditInverseTx(ctx, tx, EditInverse{
+			OperationID: receipt.ID, ResourceKind: agenttools.KindSourceFile, ResourceID: fileID,
+			ActorUserID: receipt.ActorUserID, OwnerUserID: owner, WorkspaceID: ws,
+			Incarnation: saved.Epoch, Revision: saved.Checkpoint, Inverse: op.Inverse, Guards: op.Guards,
+			InverseBytes: int64(len(op.Inverse) + len(op.Guards)),
+		}); err != nil {
+			return AgentOperation{}, err
+		}
+	}
+	return receipt, nil
 }
 
 type SourceProcessResult struct {
@@ -268,7 +372,7 @@ func (s *Store) RequestSourceRefresh(ctx context.Context, actor, fileID string, 
 	var captions, ever, autoParse, autoIndex, manual bool
 	var edited, lastRequested time.Time
 	var running, refreshError *string
-	err = tx.QueryRow(ctx, `SELECT f.name,f.kind,f.parse_mode,f.caption_images,f.ever_parsed_successfully,w.auto_reparse,w.auto_reindex,d.last_edited_at,d.last_refresh_requested_at,d.running_job_id,d.desired_manual,d.refresh_error FROM files f JOIN workspaces w ON w.id=f.workspace_id JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1 FOR UPDATE OF f,d`, fileID).Scan(&name, &kind, &mode, &captions, &ever, &autoParse, &autoIndex, &edited, &lastRequested, &running, &manual, &refreshError)
+	err = tx.QueryRow(ctx, `SELECT f.name,f.kind,f.parse_mode,f.caption_images,f.ever_parsed_successfully,w.auto_reparse,w.auto_reindex,d.last_edited_at,d.last_refresh_requested_at,d.running_job_id,d.desired_manual,d.refresh_error FROM files f JOIN workspaces w ON w.id=f.workspace_id JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1 AND f.trashed_at IS NULL FOR UPDATE OF f,d`, fileID).Scan(&name, &kind, &mode, &captions, &ever, &autoParse, &autoIndex, &edited, &lastRequested, &running, &manual, &refreshError)
 	if err != nil {
 		return SourceProcessResult{}, err
 	}

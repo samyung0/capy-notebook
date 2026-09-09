@@ -8,6 +8,15 @@ import {
   removeDocumentContributors,
 } from './contributors.js';
 import {
+  applyMaterialCommands,
+  type DocumentCommand,
+  EditError,
+  type GuardTarget,
+  type InspectedBlock,
+  inspectMaterial,
+  verifyMaterialGuards,
+} from './editCommands.js';
+import {
   MATERIAL_DOCUMENT_LIMITS,
   MaterialDocumentLimitError,
   type MaterialDocumentMetrics,
@@ -28,6 +37,99 @@ const ROOM_PATTERN = /^material:([A-Za-z0-9_-]+):schema:(\d+)$/;
 const VALIDATION_BUDGET_BYTES = 32 * 1024;
 const VALIDATION_HEADROOM = 0.9;
 const DEPTH_HEADROOM = 4;
+
+/** Trusted operation identity forwarded by the gateway for one edit or Undo. */
+/**
+ * The two encodings of a committed edit: the delta the live room still lacks,
+ * computed while the room's contributor markers are intact so the room keeps
+ * them (its own store asserts each contributor's access), and the durable
+ * state with those server-owned markers stripped, as the ordinary store does.
+ */
+export function durableCommit(merged: Y.Doc, liveState?: Uint8Array) {
+  const update = liveState
+    ? Y.encodeStateAsUpdate(merged, Y.encodeStateVectorFromUpdate(liveState))
+    : null;
+  if (liveState)
+    removeDocumentContributors(merged, documentContributors(merged));
+  const state = Y.encodeStateAsUpdate(merged);
+  return { state, update: update ?? state };
+}
+
+/** Owner-charged inverse plus guards of one material edit; larger edits are not undoable and are refused. */
+export const MAX_EDIT_INVERSE_BYTES = 256 * 1024;
+
+export interface EditOperation {
+  callId?: string;
+  conversationId?: string;
+  id: string;
+  messageId?: string;
+  requestHash: string;
+  toolVersion?: number;
+}
+
+export interface CardStudyState {
+  cardId: string;
+  known: boolean;
+  srs: unknown;
+}
+
+export interface MaterialEditInput {
+  actorUserId: string;
+  commands: DocumentCommand[];
+  /** State vector of the live room document, to return only the missing delta. */
+  /** Full state of the open live room, merged into the pre-state first. */
+  liveState?: Uint8Array;
+  operation: EditOperation;
+  room: string;
+  undo?: {
+    guards: GuardTarget[];
+    inverse: DocumentCommand[];
+    studyState?: CardStudyState[];
+    undoOf: string;
+  };
+}
+
+/** Wire shape of store.AgentOperation as the gateway decodes it. */
+export interface Receipt {
+  callId?: string;
+  effect?: Record<string, unknown>;
+  kind: string;
+  operationId: string;
+  outcome: string;
+  toolVersion: number;
+  workspaceId?: string;
+}
+
+export interface MaterialEditResult {
+  content?: { schemaVersion: 1; value: unknown[] };
+  receipt: Receipt;
+  /** Delta to apply to the live room, or null when the call was a replay. */
+  update: Uint8Array | null;
+  version?: number;
+}
+
+type ReceiptRow = {
+  call_id: string | null;
+  effect: Record<string, unknown> | null;
+  id: string;
+  kind: string;
+  outcome: string;
+  request_hash: string;
+  tool_version: number;
+  workspace_id: string | null;
+};
+
+function receiptFromRow(row: ReceiptRow): Receipt {
+  return {
+    callId: row.call_id ?? undefined,
+    effect: row.effect ?? undefined,
+    kind: row.kind,
+    operationId: row.id,
+    outcome: row.outcome,
+    toolVersion: Number(row.tool_version),
+    workspaceId: row.workspace_id ?? undefined,
+  };
+}
 
 export interface StoredDocument {
   content: { schemaVersion: 1; value: unknown[] };
@@ -168,7 +270,7 @@ async function liveCollaborationAccess(
      LEFT JOIN workspace_members wm
        ON wm.workspace_id=w.id AND wm.user_id=$2
      LEFT JOIN user_storage storage ON storage.user_id=owner.id
-     WHERE m.id=$1`,
+     WHERE m.id=$1 AND m.trashed_at IS NULL`,
     [materialId, actorUserId]
   );
   if (result.rowCount === 0) denyCollaboration('material not found');
@@ -259,9 +361,10 @@ async function lockCollaborationBoundary(
     kind: string;
     owner_user_id: string;
     workspace_id: string | null;
-  }>('SELECT owner_user_id, workspace_id, kind FROM materials WHERE id=$1', [
-    materialId,
-  ]);
+  }>(
+    'SELECT owner_user_id, workspace_id, kind FROM materials WHERE id=$1 AND trashed_at IS NULL',
+    [materialId]
+  );
   if (placement.rowCount === 0) denyCollaboration('material not found');
   const expected = placement.rows[0];
   const workspaceId = expected.workspace_id;
@@ -296,7 +399,7 @@ async function lockCollaborationBoundary(
     workspace_id: string | null;
   }>(
     `SELECT owner_user_id, workspace_id, kind
-     FROM materials WHERE id=$1 FOR SHARE`,
+     FROM materials WHERE id=$1 AND trashed_at IS NULL FOR SHARE`,
     [materialId]
   );
   if (material.rowCount === 0) denyCollaboration('material not found');
@@ -484,8 +587,10 @@ export class YjsDocumentStore {
         [materialId]
       );
       if (result.rowCount === 0) {
+        // Bootstrapping a room for a trashed material must fail: its content is
+        // retained, but nothing may open or edit it until it is restored.
         const material = await client.query<{ content: unknown }>(
-          'SELECT content FROM materials WHERE id=$1 FOR UPDATE',
+          'SELECT content FROM materials WHERE id=$1 AND trashed_at IS NULL FOR UPDATE',
           [materialId]
         );
         if (material.rowCount === 0) throw new Error('material not found');
@@ -636,6 +741,374 @@ export class YjsDocumentStore {
     }
   }
 
+  /**
+   * Apply a direct AI edit (or its Undo) to the durable Y.Doc under the
+   * material lock and commit state, receipt and inverse in one transaction.
+   *
+   * Targets are validated against the durable pre-state merged with this
+   * replica's live room, so both a change another replica committed and a
+   * user's unsaved typing on the target refuse the whole call with
+   * `stale_target`. The caller fans the committed delta out to the live
+   * document.
+   */
+  async applyMaterialEdit(
+    input: MaterialEditInput
+  ): Promise<MaterialEditResult> {
+    const materialId = materialIdFromRoom(input.room);
+    const roomSchema = roomSchemaFromRoom(input.room);
+    const client = await this.pool.connect();
+    const merged = new Y.Doc({ gc: true });
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+        [`agent-operation:${input.operation.id}`]
+      );
+      const replay = await client.query<ReceiptRow>(
+        `SELECT id, kind, tool_version, request_hash, workspace_id, call_id, outcome, effect
+         FROM agent_operations WHERE id=$1`,
+        [input.operation.id]
+      );
+      if (replay.rowCount) {
+        if (replay.rows[0].request_hash !== input.operation.requestHash) {
+          throw new EditError(
+            'invalid_input',
+            'operation id already used with a different request'
+          );
+        }
+        await client.query('COMMIT');
+        return { receipt: receiptFromRow(replay.rows[0]), update: null };
+      }
+      await lockMaterial(client, materialId);
+      const boundary = await lockCollaborationBoundary(client, materialId, [
+        input.actorUserId,
+      ]);
+      await assertLiveCollaborationAccess(
+        client,
+        materialId,
+        input.actorUserId,
+        'write'
+      );
+      const lifecycle = boundary.accounts.get(boundary.ownerUserId);
+      if (
+        !lifecycle ||
+        lifecycle.deleted_at ||
+        lifecycle.deletion_requested_at ||
+        lifecycle.suspended_at
+      ) {
+        denyCollaboration('material owner account is locked');
+      }
+      let existing = await client.query<{
+        state: Buffer;
+        room_schema: number;
+        stored_version: string;
+      }>(
+        `SELECT state, room_schema, stored_version
+         FROM material_yjs_documents WHERE material_id=$1 FOR UPDATE`,
+        [materialId]
+      );
+      if (existing.rowCount === 0) {
+        await this.bootstrapDurableState(client, materialId, roomSchema);
+        existing = await client.query(
+          `SELECT state, room_schema, stored_version
+           FROM material_yjs_documents WHERE material_id=$1 FOR UPDATE`,
+          [materialId]
+        );
+      }
+      if (Number(existing.rows[0].room_schema) !== roomSchema) {
+        throw new EditError(
+          'stale_target',
+          'the material was rebuilt since it was inspected'
+        );
+      }
+      applyStoredState(merged, existing.rows[0].state);
+      if (input.liveState) Y.applyUpdate(merged, input.liveState);
+      const previous = measureMaterialValue(plateValue(merged));
+
+      let commands = input.commands;
+      let studyState: CardStudyState[] = [];
+      if (input.undo) {
+        verifyMaterialGuards(merged, input.undo.guards);
+        commands = input.undo.inverse;
+        studyState = input.undo.studyState ?? [];
+      }
+      const outcome = applyMaterialCommands(merged, commands);
+      if (input.undo && outcome.removedCardIds.length) {
+        // Undoing an insertion must not discard study progress the user has
+        // since recorded on the inserted card.
+        const progressed = await client.query<{ card_id: string }>(
+          `SELECT card_id FROM card_stats WHERE material_id=$1 AND card_id=ANY($2)
+             AND (known OR COALESCE((srs->>'reps')::int, 0) > 0)`,
+          [materialId, outcome.removedCardIds]
+        );
+        if (progressed.rowCount) {
+          throw new EditError(
+            'stale_target',
+            'a card gained study progress after this edit'
+          );
+        }
+      }
+      const value = plateValue(merged);
+      assertCanonicalMaterialValue(value, boundary.materialKind);
+      const metrics = measureMaterialValue(value);
+      const limitCode = materialLimitCode(metrics);
+      if (limitCode && !recoversMaterialLimits(metrics, previous)) {
+        throw new MaterialDocumentLimitError(limitCode, metrics);
+      }
+      if (lifecycle.over_quota && !recoversMaterialLimits(metrics, previous)) {
+        throw new MaterialDocumentLimitError('document_size_exceeded', metrics);
+      }
+      const { state, update } = durableCommit(merged, input.liveState);
+      const version = Number(existing.rows[0].stored_version) + 1;
+      await client.query(
+        `UPDATE material_yjs_documents
+         SET state=$2, stored_version=$3, projection_error=NULL, updated_at=now()
+         WHERE material_id=$1`,
+        [materialId, Buffer.from(state), version]
+      );
+      const material = await client.query<{
+        title: string;
+        kind: string;
+        workspace_id: string | null;
+      }>('SELECT title, kind, workspace_id FROM materials WHERE id=$1', [
+        materialId,
+      ]);
+      const effect: Record<string, unknown> = {
+        operation: input.undo ? 'edit_undone' : 'edited',
+        operationId: input.operation.id,
+        projectionPending: true,
+        resource: {
+          id: materialId,
+          kind: 'material',
+          materialKind: material.rows[0]?.kind ?? boundary.materialKind,
+          title: material.rows[0]?.title ?? '',
+          workspaceId: material.rows[0]?.workspace_id ?? '',
+        },
+        ...(input.undo
+          ? {}
+          : { undo: { operationId: input.operation.id, status: 'available' } }),
+      };
+      const kind = input.undo ? 'undo_edit' : 'edit_document';
+      await client.query(
+        `INSERT INTO agent_operations
+         (id, kind, tool_version, request_hash, actor_user_id, workspace_id, conversation_id,
+          message_id, call_id, outcome, effect)
+         VALUES ($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),NULLIF($9,''),'succeeded',$10)`,
+        [
+          input.operation.id,
+          kind,
+          input.operation.toolVersion ?? 1,
+          input.operation.requestHash,
+          input.actorUserId,
+          material.rows[0]?.workspace_id ?? '',
+          input.operation.conversationId ?? '',
+          input.operation.messageId ?? '',
+          input.operation.callId ?? '',
+          JSON.stringify(effect),
+        ]
+      );
+      if (input.undo) {
+        const consumed = await client.query(
+          `UPDATE agent_edit_inverses
+           SET undo_status='undone', undone_by=$2, inverse='[]'::jsonb, guards='[]'::jsonb,
+               inverse_bytes=0, updated_at=now()
+           WHERE operation_id=$1 AND undo_status='available'`,
+          [input.undo.undoOf, input.operation.id]
+        );
+        if (consumed.rowCount === 0) {
+          throw new EditError(
+            'unavailable_target',
+            'undo is no longer available for this edit'
+          );
+        }
+        // Retained study rows of re-inserted cards are restored by the Go
+        // projection once it reaches this version.
+        const reinserted = new Set(outcome.insertedCardIds);
+        for (const row of studyState) {
+          if (!reinserted.has(row.cardId)) continue;
+          await client.query(
+            `INSERT INTO agent_card_state_restores
+             (operation_id, material_id, card_id, srs, known, restore_at_version)
+             VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (operation_id, card_id) DO NOTHING`,
+            [
+              input.operation.id,
+              materialId,
+              row.cardId,
+              JSON.stringify(row.srs),
+              row.known,
+              version,
+            ]
+          );
+        }
+      } else {
+        let retained: CardStudyState[] = [];
+        if (outcome.removedCardIds.length) {
+          const rows = await client.query<{
+            card_id: string;
+            srs: unknown;
+            known: boolean;
+          }>(
+            'SELECT card_id, srs, known FROM card_stats WHERE material_id=$1 AND card_id=ANY($2)',
+            [materialId, outcome.removedCardIds]
+          );
+          retained = rows.rows.map((row) => ({
+            cardId: row.card_id,
+            known: row.known,
+            srs: row.srs,
+          }));
+        }
+        const inverse = JSON.stringify({
+          commands: outcome.inverse,
+          studyState: retained,
+        });
+        const guards = JSON.stringify(outcome.guards);
+        const inverseBytes =
+          Buffer.byteLength(inverse) + Buffer.byteLength(guards);
+        if (inverseBytes > MAX_EDIT_INVERSE_BYTES)
+          throw new MaterialDocumentLimitError(
+            'undo_payload_exceeded',
+            metrics
+          );
+        await client.query(
+          `INSERT INTO agent_edit_inverses
+           (operation_id, resource_kind, resource_id, actor_user_id, owner_user_id, workspace_id,
+            incarnation, revision, inverse, guards, inverse_bytes)
+           VALUES ($1,'material',$2,$3,$4,NULLIF($5,''),$6,$7,$8,$9,$10)`,
+          [
+            input.operation.id,
+            materialId,
+            input.actorUserId,
+            boundary.ownerUserId,
+            material.rows[0]?.workspace_id ?? '',
+            roomSchema,
+            version,
+            inverse,
+            guards,
+            inverseBytes,
+          ]
+        );
+      }
+      await client.query('COMMIT');
+      this.validators.get(input.room)?.accept(metrics);
+      const receipt: Receipt = {
+        callId: input.operation.callId,
+        effect,
+        kind,
+        operationId: input.operation.id,
+        outcome: 'succeeded',
+        toolVersion: input.operation.toolVersion ?? 1,
+        workspaceId: material.rows[0]?.workspace_id ?? undefined,
+      };
+      return {
+        content: { schemaVersion: 1, value },
+        receipt,
+        update,
+        version,
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      merged.destroy();
+      client.release();
+    }
+  }
+
+  /** The receipt's effect stops reporting a pending projection. */
+  async markOperationProjected(operationId: string) {
+    await this.pool.query(
+      `UPDATE agent_operations SET effect = effect || '{"projectionPending": false}'::jsonb
+       WHERE id=$1 AND effect IS NOT NULL`,
+      [operationId]
+    );
+  }
+
+  /** Editable view of the durable material state (no room, no bootstrap write). */
+  async inspectMaterialDocument(room: string): Promise<{
+    blocks: InspectedBlock[];
+    roomSchema: number;
+  }> {
+    const materialId = materialIdFromRoom(room);
+    const roomSchema = roomSchemaFromRoom(room);
+    const document = new Y.Doc({ gc: true });
+    try {
+      const row = await this.pool.query<{
+        state: Buffer;
+        room_schema: number;
+        stored_version: string;
+      }>(
+        'SELECT state, room_schema, stored_version FROM material_yjs_documents WHERE material_id=$1',
+        [materialId]
+      );
+      if (row.rowCount) {
+        if (Number(row.rows[0].room_schema) !== roomSchema) {
+          throw new EditError(
+            'stale_target',
+            'the material was rebuilt since it was opened'
+          );
+        }
+        applyStoredState(document, row.rows[0].state);
+        return {
+          blocks: inspectMaterial(document),
+          roomSchema,
+        };
+      }
+      const material = await this.pool.query<{ content: unknown }>(
+        'SELECT content FROM materials WHERE id=$1 AND trashed_at IS NULL',
+        [materialId]
+      );
+      if (material.rowCount === 0)
+        throw new EditError('unavailable_target', 'material not found');
+      const envelope = material.rows[0].content as { value?: unknown };
+      if (!Array.isArray(envelope?.value)) {
+        throw new EditError(
+          'unavailable_target',
+          'material content is not a valid Plate envelope'
+        );
+      }
+      document
+        .get(CONTENT_ROOT, Y.XmlText)
+        .applyDelta(slateNodesToInsertDelta(envelope.value as never));
+      return { blocks: inspectMaterial(document), roomSchema };
+    } finally {
+      document.destroy();
+    }
+  }
+
+  /** The first-open bootstrap, shared with load(): seed the Y.Doc from the
+   * projection under the material lock the caller already holds. */
+  private async bootstrapDurableState(
+    client: PoolClient,
+    materialId: string,
+    roomSchema: number
+  ) {
+    const material = await client.query<{ content: unknown }>(
+      'SELECT content FROM materials WHERE id=$1 AND trashed_at IS NULL FOR UPDATE',
+      [materialId]
+    );
+    if (material.rowCount === 0) throw new Error('material not found');
+    const envelope = material.rows[0].content as {
+      schemaVersion?: unknown;
+      value?: unknown;
+    };
+    if (envelope?.schemaVersion !== 1 || !Array.isArray(envelope.value)) {
+      throw new Error('material content is not a valid Plate envelope');
+    }
+    const bootstrap = new Y.Doc({ gc: true });
+    bootstrap
+      .get(CONTENT_ROOT, Y.XmlText)
+      .applyDelta(slateNodesToInsertDelta(envelope.value as never));
+    const state = Buffer.from(Y.encodeStateAsUpdate(bootstrap));
+    bootstrap.destroy();
+    await client.query(
+      `INSERT INTO material_yjs_documents
+       (material_id, room_schema, state, stored_version, projected_version, projected_at)
+       VALUES ($1,$2,$3,1,1,now())
+       ON CONFLICT (material_id) DO NOTHING`,
+      [materialId, roomSchema, state]
+    );
+  }
+
   async compactionCandidates(
     idleBefore: Date,
     floorBytes: number,
@@ -716,6 +1189,15 @@ export class YjsDocumentStore {
              projection_error=NULL, updated_at=now(), projected_at=now()
          WHERE material_id=$1`,
         [materialId, nextSchema, Buffer.from(state), nextVersion]
+      );
+      // The rebuilt document has fresh item identities: guards of earlier AI
+      // edits can no longer be checked, so their Undo is released.
+      await client.query(
+        `UPDATE agent_edit_inverses
+         SET undo_status='unavailable', undo_reason='compacted', inverse='[]'::jsonb,
+             guards='[]'::jsonb, inverse_bytes=0, updated_at=now()
+         WHERE resource_kind='material' AND resource_id=$1 AND undo_status='available'`,
+        [materialId]
       );
       await client.query('COMMIT');
       return {

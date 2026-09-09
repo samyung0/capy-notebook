@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 
@@ -222,8 +223,43 @@ func (s *Store) ApplyDevSeed(ctx context.Context) error {
 // AbortOrphanedStreams marks assistant rows left 'streaming' after a crash.
 // This is boot cleanup, not a migration: it must run on every API start.
 func (s *Store) AbortOrphanedStreams(ctx context.Context) error {
-	if _, err := s.pool.Exec(ctx, `UPDATE messages SET status='aborted' WHERE status='streaming'`); err != nil {
+	rows, err := s.pool.Query(ctx, `SELECT id, metadata FROM messages WHERE status='streaming' AND role='assistant'`)
+	if err != nil {
 		return fmt.Errorf("abort orphaned streams: %w", err)
+	}
+	type orphan struct {
+		id   string
+		meta []byte
+	}
+	var orphans []orphan
+	for rows.Next() {
+		var o orphan
+		if err := rows.Scan(&o.id, &o.meta); err != nil {
+			rows.Close()
+			return fmt.Errorf("abort orphaned streams: %w", err)
+		}
+		orphans = append(orphans, o)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("abort orphaned streams: %w", err)
+	}
+	// A crashed stream never saved its activity, but any mutation it committed
+	// left a receipt. Rebuild the tool blocks from those receipts so history
+	// shows the created material and its actions instead of a blank turn.
+	for _, o := range orphans {
+		var meta msgMetadata
+		_ = json.Unmarshal(o.meta, &meta)
+		ops, err := messageOperationsTx(ctx, s.pool, o.id)
+		if err != nil {
+			return fmt.Errorf("abort orphaned streams: %w", err)
+		}
+		patch, _ := json.Marshal(msgMetadata{Activity: mergeOperationEffects(meta.Activity, ops)})
+		if _, err := s.pool.Exec(ctx, `UPDATE messages SET status='aborted',
+			metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb WHERE id=$1 AND status='streaming'`,
+			o.id, patch); err != nil {
+			return fmt.Errorf("abort orphaned streams: %w", err)
+		}
 	}
 	return nil
 }

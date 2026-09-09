@@ -10,7 +10,7 @@ import (
 )
 
 func TestACLChangeQueuesRetryableStableEviction(t *testing.T) {
-	s := openRevisionTestStore(t)
+	s := openMaterialTestStore(t)
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_collaboration_eviction_owner")
 	content, err := materialdoc.Marshal(materialdoc.Empty())
@@ -86,7 +86,7 @@ func TestACLChangeQueuesRetryableStableEviction(t *testing.T) {
 }
 
 func TestWorkspaceMembershipAndLifecycleChangesQueueEvictions(t *testing.T) {
-	s := openRevisionTestStore(t)
+	s := openMaterialTestStore(t)
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_eviction_scope_owner")
 	memberID := newBlobTestUser(t, s, "u_eviction_scope_member")

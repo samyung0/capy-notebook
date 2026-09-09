@@ -17,7 +17,8 @@ export interface MaterialDocumentMetrics {
 export type MaterialLimitCode =
   | 'document_depth_exceeded'
   | 'document_nodes_exceeded'
-  | 'document_size_exceeded';
+  | 'document_size_exceeded'
+  | 'undo_payload_exceeded';
 
 export class MaterialDocumentLimitError extends Error {
   readonly code: MaterialLimitCode;

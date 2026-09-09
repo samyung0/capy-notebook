@@ -81,7 +81,7 @@ async def _lock_source_change(conn, file_id: str, digest: str, source: SourceCha
     row = await (
         await conn.execute(
             """SELECT d.pending_effects FROM source_documents d JOIN files f ON f.id=d.file_id
-        WHERE f.id=%s AND f.workspace_id=%s AND f.user_id=%s
+        WHERE f.id=%s AND f.workspace_id=%s AND f.user_id=%s AND f.trashed_at IS NULL
           AND d.epoch=%s AND d.checkpoint=%s AND d.base_revision=f.revision
         FOR SHARE OF f,d""",
             (file_id, source.workspace_id, owner, source.epoch, source.checkpoint),
@@ -109,11 +109,12 @@ WITH resources AS (
     FROM files f JOIN workspaces w ON w.id = f.workspace_id
     JOIN users owner ON owner.id = w.user_id
     WHERE owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
+      AND f.trashed_at IS NULL
     UNION ALL
     SELECT NULL, a.id, w.id, COALESCE(w.user_id, m.owner_user_id),
            COALESCE(w.privacy, m.privacy)
     FROM editor_assets a
-    LEFT JOIN materials m ON m.id = a.material_id
+    LEFT JOIN materials m ON m.id = a.material_id AND m.trashed_at IS NULL
     LEFT JOIN workspaces w ON w.id = COALESCE(a.workspace_id, m.workspace_id)
     JOIN users owner ON owner.id = COALESCE(w.user_id, m.owner_user_id)
     WHERE a.status = 'ready'

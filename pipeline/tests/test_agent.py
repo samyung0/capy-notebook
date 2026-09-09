@@ -10,7 +10,7 @@ import pytest
 
 from pipeline import obs
 from pipeline.registry import ModelConfig
-from pipeline.retrieval import accounting, agent, pending, tools
+from pipeline.retrieval import accounting, agent, contract, pending, tools
 from pipeline.retrieval.search import Passage
 from pipeline.retrieval.stream import AssembledResponse, StreamEvent, ToolCall
 from pipeline.retrieval.tools import ToolContext, ToolResult, TurnFailed
@@ -302,9 +302,12 @@ async def test_describe_requires_ids_and_read_rejects_foreign_file(monkeypatch):
     assert read.text() == tools._INVALID_SCOPE
 
 
-async def test_generate_material_persists_resolved_scope(monkeypatch):
+async def test_create_material_persists_resolved_scope(monkeypatch):
     ctx = ToolContext(
-        workspace_id="ws_1", user_id="u1", can_generate=True, assistant_message_id="m_1"
+        workspace_id="ws_1",
+        user_id="u1",
+        operations=frozenset(contract.OPERATIONS),
+        assistant_message_id="m_1",
     )
     ctx._scope_outline = {
         "chapters": [{"id": "ch_1", "name": "Chapter one"}],
@@ -318,14 +321,27 @@ async def test_generate_material_persists_resolved_scope(monkeypatch):
         status_code = 200
 
         def json(self):
-            return {"kind": "note", "title": "Note", "materialId": "mat_abc"}
+            return {
+                "operationId": "op_x",
+                "outcome": "succeeded",
+                "effect": {
+                    "operation": "created",
+                    "operationId": "op_x",
+                    "resource": {
+                        "kind": "material",
+                        "id": "mat_abc",
+                        "title": "Note",
+                        "materialKind": "note",
+                    },
+                },
+            }
 
     def _post(*_args, **kwargs):
         seen.update(json.loads(kwargs["data"]))
         return _Resp()
 
     monkeypatch.setattr(tools.requests, "post", _post)
-    result = await tools._generate_material(
+    result = await tools._create_material(
         {
             "kind": "note",
             "content": "body",
@@ -338,13 +354,16 @@ async def test_generate_material_persists_resolved_scope(monkeypatch):
     assert not result.refused
     assert seen["fileIds"] == ["f_1"]
     assert seen["chapterIds"] == ["ch_1"]
-    assert seen["fileNames"] == ["one.pdf"]
-    assert seen["chapters"] == ["Chapter one"]
+    assert seen["assistantMessageId"] == "m_1"
+    assert seen["toolCallId"] == "call_1"
 
 
-async def test_generate_material_clamps_model_title(monkeypatch):
+async def test_create_material_clamps_model_title(monkeypatch):
     ctx = ToolContext(
-        workspace_id="ws_1", user_id="u1", can_generate=True, assistant_message_id="m_1"
+        workspace_id="ws_1",
+        user_id="u1",
+        operations=frozenset(contract.OPERATIONS),
+        assistant_message_id="m_1",
     )
     ctx._scope_outline = {
         "chapters": [],
@@ -358,14 +377,27 @@ async def test_generate_material_clamps_model_title(monkeypatch):
         status_code = 200
 
         def json(self):
-            return {"kind": "note", "title": "Note", "materialId": "mat_abc"}
+            return {
+                "operationId": "op_x",
+                "outcome": "succeeded",
+                "effect": {
+                    "operation": "created",
+                    "operationId": "op_x",
+                    "resource": {
+                        "kind": "material",
+                        "id": "mat_abc",
+                        "title": "Note",
+                        "materialKind": "note",
+                    },
+                },
+            }
 
     def _post(*_args, **kwargs):
         seen.update(json.loads(kwargs["data"]))
         return _Resp()
 
     monkeypatch.setattr(tools.requests, "post", _post)
-    await tools._generate_material(
+    await tools._create_material(
         {
             "kind": "note",
             "content": "body",
@@ -378,9 +410,12 @@ async def test_generate_material_clamps_model_title(monkeypatch):
     assert len(seen["title"]) == tools.MATERIAL_TITLE_MAX
 
 
-async def test_generate_material_rejects_scope_without_indexed_content(monkeypatch):
+async def test_create_material_rejects_scope_without_indexed_content(monkeypatch):
     ctx = ToolContext(
-        workspace_id="ws_1", user_id="u1", can_generate=True, assistant_message_id="m_1"
+        workspace_id="ws_1",
+        user_id="u1",
+        operations=frozenset(contract.OPERATIONS),
+        assistant_message_id="m_1",
     )
     ctx._scope_outline = {
         "chapters": [],
@@ -389,7 +424,7 @@ async def test_generate_material_rejects_scope_without_indexed_content(monkeypat
     monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
     monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
 
-    result = await tools._generate_material(
+    result = await tools._create_material(
         {"kind": "note", "_tool_call_id": "call_1"}, ctx
     )
 
@@ -446,7 +481,7 @@ async def test_run_agent_answers_without_a_prime_search(monkeypatch):
     assert events[-1]["type"] == "done"
     assert events[-1]["answer"] == "Chlorophyll absorbs red [1]."
     assert seen[0]["tools"] is not None
-    assert "generate_material" not in [s["function"]["name"] for s in seen[0]["tools"]]
+    assert "create_material" not in [s["function"]["name"] for s in seen[0]["tools"]]
 
 
 async def test_second_search_in_the_same_response_is_refused(monkeypatch):
@@ -474,8 +509,8 @@ async def test_second_search_in_the_same_response_is_refused(monkeypatch):
 
     events = await _collect("q", ToolContext(workspace_id="ws_1"))
     assert ran == ["search_workspace"]
-    ends = {e["callId"]: e["status"] for e in events if e["type"] == "tool_end"}
-    assert ends["s1"] == "success"
+    ends = {e["callId"]: e["outcome"] for e in events if e["type"] == "tool_end"}
+    assert ends["s1"] == "succeeded"
     assert ends["s2"] == "refused"
 
 
@@ -583,8 +618,12 @@ async def test_read_batch_runs_concurrently_in_call_order(monkeypatch):
 
     events = await _collect("q", ToolContext(workspace_id="ws_1"))
     assert overlap["peak"] == 2
+    # Each read reports its own completion as it finishes; only the tool
+    # results handed to the model keep call order.
     ends = [e["callId"] for e in events if e["type"] == "tool_end"]
-    assert ends == ["c1", "c2"]
+    assert sorted(ends) == ["c1", "c2"]
+    tool_msgs = [m for m in _seen[1]["messages"] if m.get("role") == "tool"]
+    assert [m["tool_call_id"] for m in tool_msgs] == ["c1", "c2"]
 
 
 async def test_mixed_mutation_stays_serial(monkeypatch):
@@ -596,7 +635,7 @@ async def test_mixed_mutation_stays_serial(monkeypatch):
                 "",
                 [
                     _call("list_sources", "{}", "c1"),
-                    _call("generate_material", '{"kind":"note"}', "c2"),
+                    _call("create_material", '{"kind":"note"}', "c2"),
                 ],
             ),
             _assembled("made it"),
@@ -923,19 +962,18 @@ async def test_checkpoint_folds_trailing_user_message_from_failed_turn(monkeypat
     ]
 
 
-def test_material_id_is_deterministic_and_wide():
-    first = tools.material_id("m_1", "call_9")
-    second = tools.material_id("m_1", "call_9")
-    other = tools.material_id("m_1", "call_8")
-    assert first == second
-    assert first != other
-    assert first.startswith("mat_")
-    assert len(first) >= len("mat_") + 16
+def test_operation_id_matches_the_go_fixture():
+    # server/internal/store/agent_operations_test.go pins the same literal.
+    assert tools.operation_id("m_1", "call_1") == "op_4bf000a1f98d2dcd046acbf1"
+    assert tools.operation_id("m_1", "call_1") != tools.operation_id("m_1", "call_2")
 
 
 async def test_material_confirmed_404_is_a_tool_failure(monkeypatch):
     ctx = ToolContext(
-        workspace_id="ws_1", user_id="u1", can_generate=True, assistant_message_id="m_1"
+        workspace_id="ws_1",
+        user_id="u1",
+        operations=frozenset(contract.OPERATIONS),
+        assistant_message_id="m_1",
     )
     ctx._scope_outline = {
         "chapters": [],
@@ -960,8 +998,9 @@ async def test_material_confirmed_404_is_a_tool_failure(monkeypatch):
 
     got = {}
 
-    def _get(*_a, **kwargs):
+    def _get(url, **kwargs):
         got["params"] = kwargs.get("params")
+        got["url"] = url
         return _Resp(404)
 
     async def _nosleep(*_a, **_k):
@@ -971,17 +1010,23 @@ async def test_material_confirmed_404_is_a_tool_failure(monkeypatch):
     monkeypatch.setattr(tools.requests, "get", _get)
     monkeypatch.setattr(tools.asyncio, "sleep", _nosleep)
 
-    result = await tools._generate_material(
+    result = await tools._create_material(
         {"kind": "note", "_tool_call_id": "call_1"}, ctx
     )
-    assert result.refused
+    assert result.failed and result.outcome == "failed"
     assert posts["n"] == 4
     assert got["params"] == {"workspaceId": "ws_1", "userId": "u1"}
+    assert got["url"].endswith(
+        "/api/internal/agent-operations/" + tools.operation_id("m_1", "call_1")
+    )
 
 
 async def test_material_uncertain_get_fails_the_turn(monkeypatch):
     ctx = ToolContext(
-        workspace_id="ws_1", user_id="u1", can_generate=True, assistant_message_id="m_1"
+        workspace_id="ws_1",
+        user_id="u1",
+        operations=frozenset(contract.OPERATIONS),
+        assistant_message_id="m_1",
     )
     ctx._scope_outline = {
         "chapters": [],
@@ -1004,12 +1049,15 @@ async def test_material_uncertain_get_fails_the_turn(monkeypatch):
     monkeypatch.setattr(tools.asyncio, "sleep", _nosleep)
 
     with pytest.raises(TurnFailed):
-        await tools._generate_material({"kind": "note", "_tool_call_id": "call_1"}, ctx)
+        await tools._create_material({"kind": "note", "_tool_call_id": "call_1"}, ctx)
 
 
 async def test_repeated_material_post_returns_original(monkeypatch):
     ctx = ToolContext(
-        workspace_id="ws_1", user_id="u1", can_generate=True, assistant_message_id="m_1"
+        workspace_id="ws_1",
+        user_id="u1",
+        operations=frozenset(contract.OPERATIONS),
+        assistant_message_id="m_1",
     )
     ctx._scope_outline = {
         "chapters": [],
@@ -1022,16 +1070,30 @@ async def test_repeated_material_post_returns_original(monkeypatch):
         status_code = 200
 
         def json(self):
-            return {"kind": "note", "title": "Note", "materialId": "mat_abc"}
+            return {
+                "operationId": "op_x",
+                "outcome": "succeeded",
+                "effect": {
+                    "operation": "created",
+                    "operationId": "op_x",
+                    "resource": {
+                        "kind": "material",
+                        "id": "mat_abc",
+                        "title": "Note",
+                        "materialKind": "note",
+                    },
+                },
+            }
 
     monkeypatch.setattr(tools.requests, "post", lambda *_a, **_k: _Resp())
-    first = await tools._generate_material(
+    first = await tools._create_material(
         {"kind": "note", "_tool_call_id": "call_1"}, ctx
     )
-    second = await tools._generate_material(
+    second = await tools._create_material(
         {"kind": "note", "_tool_call_id": "call_1"}, ctx
     )
-    assert first.created_material == second.created_material
+    assert first.effects == second.effects
+    assert first.effects[0]["resource"]["id"] == "mat_abc"
 
 
 async def test_client_drop_after_stream_skips_tools_and_next_call(monkeypatch):
@@ -1178,3 +1240,439 @@ async def test_relay_stops_sse_and_waits_for_agent():
     assert finished["n"] == 1
     assert any("planning" in c for c in chunks)
     assert not any("done" in c for c in chunks)
+
+
+# ------------------------------------------------------------- trash tools
+
+
+def _owner_ctx() -> ToolContext:
+    ctx = ToolContext(
+        workspace_id="ws_1",
+        user_id="u1",
+        operations=frozenset(contract.OPERATIONS),
+        assistant_message_id="m_1",
+    )
+    ctx._scope_outline = {
+        "chapters": [],
+        "files": [
+            {"id": "f_1", "name": "one.pdf", "chapter_id": None, "chunks": 1},
+            {"id": "f_2", "name": "two.pdf", "chapter_id": None, "chunks": 1},
+        ],
+    }
+    return ctx
+
+
+def _receipt(operation: str, kind: str, rid: str) -> dict:
+    return {
+        "operationId": "op_x",
+        "outcome": "succeeded",
+        "effect": {
+            "operation": operation,
+            "operationId": "op_x",
+            "resource": {"kind": kind, "id": rid, "title": "one.pdf"},
+            "trashEpisodeId": "trash_1",
+        },
+    }
+
+
+def test_trash_tools_follow_the_operations_table(monkeypatch):
+    monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
+    monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
+    editor = ToolContext(
+        workspace_id="ws",
+        user_id="u",
+        operations=frozenset(
+            {
+                "source.read",
+                "material.read",
+                "material.create",
+                "document.edit",
+                "resource.trash",
+            }
+        ),
+    )
+    names = {s["function"]["name"] for s in tools.schemas_for(editor)}
+    assert "trash_file" in names
+    assert "list_trashed_files" not in names and "restore_file" not in names
+    owner = ToolContext(
+        workspace_id="ws", user_id="u", operations=frozenset(contract.OPERATIONS)
+    )
+    names = {s["function"]["name"] for s in tools.schemas_for(owner)}
+    assert {"trash_file", "list_trashed_files", "restore_file"} <= names
+
+
+async def test_trash_file_posts_the_target_and_narrows_a_restricted_scope(monkeypatch):
+    ctx = _owner_ctx()
+    ctx.file_ids = ["f_1", "f_2"]
+    monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
+    monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
+    seen: dict = {}
+
+    class _Resp:
+        status_code = 200
+
+        def json(self):
+            return _receipt("trashed", "source_file", "f_1")
+
+    def _post(url, **kwargs):
+        seen["url"] = url
+        seen.update(json.loads(kwargs["data"]))
+        return _Resp()
+
+    reloaded = {"n": 0}
+
+    async def _load(workspace_id, file_ids=None):
+        reloaded["n"] += 1
+        reloaded["file_ids"] = file_ids
+        return pending.PendingSources()
+
+    monkeypatch.setattr(tools.requests, "post", _post)
+    monkeypatch.setattr(tools.pending, "load", _load)
+    result = await tools.run(
+        "trash_file",
+        {"target": {"kind": "source_file", "id": "f_1"}, "_tool_call_id": "c1"},
+        ctx,
+    )
+
+    assert result.outcome == "succeeded"
+    assert result.effects[0]["operation"] == "trashed"
+    assert seen["url"].endswith("/api/internal/trash")
+    assert seen["target"] == {"kind": "source_file", "id": "f_1"}
+    assert seen["assistantMessageId"] == "m_1" and seen["toolCallId"] == "c1"
+    # The turn's own view is refreshed: outline dropped, scope narrowed, baseline re-read.
+    assert ctx._scope_outline is None
+    assert ctx.file_ids == ["f_2"]
+    assert reloaded == {"n": 1, "file_ids": ["f_2"]}
+    assert "no longer current evidence" in result.text()
+
+
+async def test_trash_file_refuses_a_file_outside_the_scope(monkeypatch):
+    ctx = _owner_ctx()
+    ctx.file_ids = ["f_1"]
+    monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
+    monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
+    posted = {"n": 0}
+
+    def _post(*_a, **_k):
+        posted["n"] += 1
+        raise AssertionError("must not reach the gateway")
+
+    monkeypatch.setattr(tools.requests, "post", _post)
+    result = await tools.run(
+        "trash_file",
+        {"target": {"kind": "source_file", "id": "f_2"}, "_tool_call_id": "c1"},
+        ctx,
+    )
+    assert result.refused and posted["n"] == 0
+    invalid = await tools.run(
+        "trash_file",
+        {"target": {"kind": "folder", "id": "x"}, "_tool_call_id": "c1"},
+        ctx,
+    )
+    assert invalid.refused and invalid.error_code == "invalid_input"
+
+
+async def test_restricted_scope_emptied_by_trash_stays_empty(monkeypatch):
+    ctx = _owner_ctx()
+    ctx.file_ids = ["f_1"]
+    monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
+    monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
+
+    class _Resp:
+        status_code = 200
+
+        def json(self):
+            return _receipt("trashed", "source_file", "f_1")
+
+    async def _load(workspace_id, file_ids=None):
+        return pending.PendingSources()
+
+    monkeypatch.setattr(tools.requests, "post", lambda *_a, **_k: _Resp())
+    monkeypatch.setattr(tools.pending, "load", _load)
+    await tools.run(
+        "trash_file",
+        {"target": {"kind": "source_file", "id": "f_1"}, "_tool_call_id": "c1"},
+        ctx,
+    )
+    assert ctx.file_ids == []
+
+    async def _outline(_workspace_id):
+        return {
+            "chapters": [],
+            "files": [
+                {"id": "f_2", "name": "two.pdf", "chapter_id": None, "chunks": 1}
+            ],
+        }
+
+    monkeypatch.setattr(tools.store, "workspace_outline", _outline)
+    listed = await tools._list_sources({}, ctx)
+    assert "two.pdf" not in listed.text()
+    resolved = await tools._resolve_scope(ctx, tools._MISSING)
+    assert isinstance(resolved, tools.ResolvedScope) and resolved.file_ids == []
+
+
+async def test_list_trashed_files_renders_ids_for_restore(monkeypatch):
+    ctx = _owner_ctx()
+    monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
+    monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
+
+    class _Resp:
+        status_code = 200
+
+        def json(self):
+            return {
+                "items": [
+                    {
+                        "kind": "material",
+                        "id": "mat_9",
+                        "title": "Old quiz",
+                        "materialKind": "quiz",
+                        "trashedAt": "2026-09-09T00:00:00Z",
+                        "purgeAfter": "2026-10-09T00:00:00Z",
+                        "episodeId": "trash_1",
+                    }
+                ]
+            }
+
+    monkeypatch.setattr(tools.requests, "get", lambda *_a, **_k: _Resp())
+    result = await tools.run("list_trashed_files", {"_tool_call_id": "c1"}, ctx)
+    assert "mat_9" in result.text() and "kind=material" in result.text()
+
+
+async def test_restore_file_posts_to_the_restore_route(monkeypatch):
+    ctx = _owner_ctx()
+    monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
+    monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
+    seen: dict = {}
+
+    class _Resp:
+        status_code = 200
+
+        def json(self):
+            return _receipt("restored", "material", "mat_9")
+
+    def _post(url, **kwargs):
+        seen["url"] = url
+        return _Resp()
+
+    async def _load(workspace_id, file_ids=None):
+        return pending.PendingSources()
+
+    monkeypatch.setattr(tools.requests, "post", _post)
+    monkeypatch.setattr(tools.pending, "load", _load)
+    result = await tools.run(
+        "restore_file",
+        {"target": {"kind": "material", "id": "mat_9"}, "_tool_call_id": "c1"},
+        ctx,
+    )
+    assert result.outcome == "succeeded"
+    assert seen["url"].endswith("/api/internal/trash/restore")
+    assert result.effects[0]["operation"] == "restored"
+
+
+def _gateway(monkeypatch, *, get=None, post=None):
+    monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
+    monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
+    if get is not None:
+        monkeypatch.setattr(tools.requests, "get", get)
+    if post is not None:
+        monkeypatch.setattr(tools.requests, "post", post)
+
+
+class _JsonResp:
+    def __init__(self, body, status=200):
+        self._body = body
+        self.status_code = status
+
+    def json(self):
+        return self._body
+
+
+async def test_list_documents_hides_files_outside_a_restricted_scope(monkeypatch):
+    ctx = _owner_ctx()
+    ctx.file_ids = ["f_2"]
+    seen: dict = {}
+
+    def _post(url, **kwargs):
+        seen["url"] = url
+        seen.update(json.loads(kwargs["data"]))
+        return _JsonResp(
+            {
+                "items": [
+                    {
+                        "kind": "source_file",
+                        "id": "f_1",
+                        "title": "one.pdf",
+                        "format": "pdf",
+                        "editable": False,
+                        "reason": "pdf",
+                    },
+                    {
+                        "kind": "source_file",
+                        "id": "f_2",
+                        "title": "two.txt",
+                        "format": "text",
+                        "editable": True,
+                    },
+                    {
+                        "kind": "material",
+                        "id": "mat_1",
+                        "title": "Notes",
+                        "format": "plate",
+                        "materialKind": "note",
+                        "editable": True,
+                    },
+                ]
+            }
+        )
+
+    _gateway(monkeypatch, post=_post)
+    result = await tools.run("list_documents", {"_tool_call_id": "c1"}, ctx)
+    text = result.text()
+    assert seen["url"].endswith("/api/internal/documents/list")
+    assert seen["userId"] == "u1" and seen["workspaceId"] == "ws_1"
+    assert "f_1" not in text and "one.pdf" not in text
+    assert "id=f_2" in text and "editable" in text
+    assert "id=mat_1" in text and "note" in text
+
+
+async def test_inspect_document_renders_blocks_lines_and_office_entries(monkeypatch):
+    ctx = _owner_ctx()
+    bodies = iter(
+        [
+            {
+                "format": "plate",
+                "title": "Notes",
+                "revision": 3,
+                "supportedOperations": ["replace_text"],
+                "blocks": [
+                    {"id": "b1", "type": "p", "text": "hello", "properties": {}},
+                    {
+                        "id": "q1",
+                        "type": "quiz",
+                        "text": "",
+                        "children": [
+                            {"id": "qq1", "type": "quiz_question", "text": "Why?"}
+                        ],
+                    },
+                    {
+                        "id": "m1",
+                        "type": "mermaid",
+                        "text": "",
+                        "properties": {"source": "graph TD"},
+                    },
+                ],
+            },
+            {
+                "format": "xlsx",
+                "title": "book.xlsx",
+                "revision": 1,
+                "supportedOperations": ["set_cell"],
+                "entries": [{"id": "s1:[1,1]", "label": "Sheet1!A1", "value": "42"}],
+                "total": 80,
+                "nextStart": 60,
+            },
+        ]
+    )
+
+    def _post(url, **kwargs):
+        return _JsonResp(next(bodies))
+
+    _gateway(monkeypatch, post=_post)
+    material = await tools.run(
+        "inspect_document",
+        {"target": {"kind": "material", "id": "mat_1"}, "_tool_call_id": "c1"},
+        ctx,
+    )
+    text = material.text()
+    assert "[b1] (p) hello" in text
+    assert "    [qq1] (quiz_question) Why?" in text
+    assert "source: graph TD" in text
+    office = await tools.run(
+        "inspect_document",
+        {"target": {"kind": "source_file", "id": "f_1"}, "_tool_call_id": "c2"},
+        ctx,
+    )
+    text = office.text()
+    assert "supported: set_cell" in text
+    assert "[s1:[1,1]] Sheet1!A1: 42" in text
+    assert "(next start = 60 of 80)" in text
+
+
+async def test_edit_document_posts_commands_and_refreshes_the_turn_view(monkeypatch):
+    ctx = _owner_ctx()
+    ctx.file_ids = ["f_1", "f_2"]
+    seen: dict = {}
+
+    def _post(url, **kwargs):
+        seen["url"] = url
+        seen.update(json.loads(kwargs["data"]))
+        body = _receipt("edited", "source_file", "f_1")
+        body["effect"]["undo"] = {"operationId": "op_x", "status": "available"}
+        return _JsonResp(body)
+
+    reloaded = {"n": 0}
+
+    async def _load(workspace_id, file_ids=None):
+        reloaded["n"] += 1
+        return pending.PendingSources()
+
+    _gateway(monkeypatch, post=_post)
+    monkeypatch.setattr(tools.pending, "load", _load)
+    commands = [
+        {
+            "type": "replace_text",
+            "target_id": "body:paragraph:p1",
+            "expected_text": "old",
+            "text": "new",
+        }
+    ]
+    result = await tools.run(
+        "edit_document",
+        {
+            "target": {"kind": "source_file", "id": "f_1"},
+            "commands": commands,
+            "_tool_call_id": "c1",
+        },
+        ctx,
+    )
+    assert result.outcome == "succeeded"
+    assert seen["url"].endswith("/api/internal/documents/edit")
+    assert seen["commands"] == commands and "expectedRevision" not in seen
+    assert seen["assistantMessageId"] == "m_1" and seen["toolCallId"] == "c1"
+    assert result.effects[0]["operation"] == "edited"
+    assert ctx._scope_outline is None and reloaded["n"] == 1
+
+
+async def test_edit_document_refuses_a_file_outside_the_scope_and_invalid_commands(
+    monkeypatch,
+):
+    ctx = _owner_ctx()
+    ctx.file_ids = ["f_2"]
+    calls = {"n": 0}
+
+    def _post(url, **kwargs):
+        calls["n"] += 1
+        return _JsonResp({})
+
+    _gateway(monkeypatch, post=_post)
+    result = await tools.run(
+        "edit_document",
+        {
+            "target": {"kind": "source_file", "id": "f_1"},
+            "commands": [{"type": "replace_text", "expected_text": "a", "text": "b"}],
+            "_tool_call_id": "c1",
+        },
+        ctx,
+    )
+    assert result.refused and calls["n"] == 0
+    invalid = await tools.run(
+        "edit_document",
+        {
+            "target": {"kind": "material", "id": "mat_1"},
+            "commands": [{"type": "explode"}],
+            "_tool_call_id": "c2",
+        },
+        ctx,
+    )
+    assert invalid.error_code == "invalid_input" and calls["n"] == 0

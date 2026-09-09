@@ -225,7 +225,6 @@ def main():
             "SELECT id, email, deleted_at FROM users LIMIT 0;\n"
             "SELECT id, description FROM workspaces LIMIT 0;\n"
             "SELECT owner_user_id, node_count, revision FROM materials LIMIT 0;\n"
-            "SELECT version_date FROM material_revisions LIMIT 0;\n"
             "SELECT role FROM workspace_members LIMIT 0;\nCOMMIT;\n",
         )
     clerk = Clerk(values["CLERK_SECRET_KEY"])

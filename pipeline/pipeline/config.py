@@ -94,7 +94,7 @@ class Config:
     b2_app_key: str = _env("B2_APP_KEY", "")
 
     # ---- gateway callback -------------------------------------------------
-    # Tools with side effects (generate_material) POST to the Go gateway rather
+    # Tools with side effects (create_material) POST to the Go gateway rather
     # than writing materials here, so authorization and storage quota stay in
     # one place. Unset disables those tools instead of bypassing the checks.
     gateway_url: str = _env("GATEWAY_URL", "")

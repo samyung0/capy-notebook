@@ -1,0 +1,811 @@
+{
+  "version": 1,
+  "operations": [
+    "source.read",
+    "material.read",
+    "material.create",
+    "document.edit",
+    "resource.trash",
+    "trash.read",
+    "trash.restore"
+  ],
+  "outcomes": [
+    "succeeded",
+    "refused",
+    "failed",
+    "cancelled",
+    "outcome_unknown"
+  ],
+  "errorCodes": [
+    "unsupported_format",
+    "unsupported_operation",
+    "invalid_input",
+    "unavailable_target",
+    "stale_target",
+    "quota_rejected",
+    "lifecycle_rejected",
+    "outcome_unknown",
+    "limit_reached"
+  ],
+  "effectOperations": [
+    "created",
+    "edited",
+    "edit_undone",
+    "trashed",
+    "restored"
+  ],
+  "tools": [
+    {
+      "name": "search_workspace",
+      "version": 1,
+      "description": "Search the user's sources for passages relevant to a query. One call per assistant message, with one focused query. Search again in a later step rather than concatenating several questions.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "file_ids": {
+            "description": "Restrict to these files. Omit to search the current scope.",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "query": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "mutates": false,
+      "usesEmbedding": true,
+      "concurrency": "search",
+      "allowedSlots": [
+        "chat"
+      ],
+      "requiredOperations": [
+        "source.read"
+      ]
+    },
+    {
+      "name": "list_sources",
+      "version": 1,
+      "description": "List the chapters and documents in this workspace with a short descriptor of each file. Use this first when the question is about what the workspace contains, or to decide which documents to search or describe.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutates": false,
+      "usesEmbedding": false,
+      "concurrency": "read",
+      "allowedSlots": [
+        "chat"
+      ],
+      "requiredOperations": [
+        "source.read"
+      ]
+    },
+    {
+      "name": "describe_documents",
+      "version": 1,
+      "description": "Return the detailed summaries of up to eight documents. Call after list_sources when the short descriptors are not enough to decide, or when the question is about what a document covers as a whole.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "file_ids": {
+            "description": "One to eight documents to describe.",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "file_ids"
+        ],
+        "type": "object"
+      },
+      "mutates": false,
+      "usesEmbedding": false,
+      "concurrency": "read",
+      "allowedSlots": [
+        "chat"
+      ],
+      "requiredOperations": [
+        "source.read"
+      ]
+    },
+    {
+      "name": "read_document",
+      "version": 1,
+      "description": "Read a document in order from a given chunk index. Use after search when a passage needs its surrounding argument, or to walk a short document end to end.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "default": 4,
+            "maximum": 12,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "file_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "start": {
+            "default": 0,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "file_id"
+        ],
+        "type": "object"
+      },
+      "mutates": false,
+      "usesEmbedding": false,
+      "concurrency": "read",
+      "allowedSlots": [
+        "chat"
+      ],
+      "requiredOperations": [
+        "source.read"
+      ]
+    },
+    {
+      "name": "create_material",
+      "version": 1,
+      "description": "Create a study material in this workspace from content you already authored: a quiz, flashcard deck, mindmap, diagram or note. Only call this when the user asked for one. Ground the content in passages you already retrieved. Do not mix this call with retrieval tools in the same response.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "cards": {
+            "description": "flashcards only",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "back": {
+                  "type": "string"
+                },
+                "front": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "front",
+                "back"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "content": {
+            "description": "mindmap/diagram/note only; markdown with a mermaid block",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "quiz",
+              "flashcards",
+              "mindmap",
+              "diagram",
+              "note"
+            ],
+            "type": "string"
+          },
+          "questions": {
+            "description": "quiz only; same shape as the quiz generator",
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "scope": {
+            "additionalProperties": false,
+            "description": "Source scope for the material. Omit or leave empty to use the current chat scope.",
+            "properties": {
+              "chapter_ids": {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "file_ids": {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "type": "object"
+          },
+          "title": {
+            "maxLength": 120,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "mutates": true,
+      "usesEmbedding": false,
+      "concurrency": "mutate",
+      "allowedSlots": [
+        "chat"
+      ],
+      "requiredOperations": [
+        "material.create"
+      ]
+    },
+    {
+      "name": "resolve_source_change",
+      "version": 1,
+      "description": "Describe an added or changed source image from an exact pending-change placeholder. Only use identifiers supplied in the pending-source evidence.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "change_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "checkpoint": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "file_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_id",
+          "change_id",
+          "checkpoint"
+        ],
+        "type": "object"
+      },
+      "mutates": false,
+      "usesEmbedding": false,
+      "concurrency": "read",
+      "allowedSlots": [
+        "chat"
+      ],
+      "requiredOperations": [
+        "source.read"
+      ]
+    },
+    {
+      "name": "list_documents",
+      "version": 1,
+      "description": "List the editable documents of this workspace: source files (text, Markdown, CSV, DOCX, XLSX, PPTX; PDFs are read-only) and study materials, with ids, kinds and whether each can be edited. Use it to find a document to inspect or edit; use list_sources for retrieval.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "description": "Limit to one resource kind.",
+            "enum": [
+              "source_file",
+              "material"
+            ],
+            "type": "string"
+          },
+          "query": {
+            "description": "Case-insensitive name filter.",
+            "maxLength": 200,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "mutates": false,
+      "usesEmbedding": false,
+      "concurrency": "read",
+      "allowedSlots": [
+        "chat"
+      ],
+      "requiredOperations": [
+        "source.read",
+        "material.read"
+      ]
+    },
+    {
+      "name": "inspect_document",
+      "version": 1,
+      "description": "Read the current authoritative content of one document as editable targets: Plate blocks with stable block ids, text lines with offsets, DOCX/PPTX paragraphs or XLSX cells with stable ids. Always inspect before editing; never derive edit positions from search results.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "default": 60,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "start": {
+            "default": 0,
+            "description": "First target index to return.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "target": {
+            "additionalProperties": false,
+            "description": "The document to inspect.",
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "source_file",
+                  "material"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "type": "object"
+      },
+      "mutates": false,
+      "usesEmbedding": false,
+      "concurrency": "read",
+      "allowedSlots": [
+        "chat"
+      ],
+      "requiredOperations": [
+        "source.read",
+        "material.read"
+      ]
+    },
+    {
+      "name": "edit_document",
+      "version": 1,
+      "description": "Apply content edits to one inspected document. Each command names a stable target from inspect_document and the exact text or value it expects to find; the whole call is refused if any expectation is stale. Edits save directly and each result has an Undo the user can trigger. Formatting, images, media, layout and PDF edits are not supported.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "commands": {
+            "items": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "expected_text": {
+                      "description": "Exact text to replace; must occur once in the target.",
+                      "maxLength": 200000,
+                      "type": "string"
+                    },
+                    "target_id": {
+                      "description": "Block, paragraph or shape target id; omit for a plain text source.",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "Replacement text; empty deletes the expected text.",
+                      "maxLength": 200000,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "replace_text"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "expected_text",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "after_block_id": {
+                      "description": "Insert after this block; null inserts at the start.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "text": {
+                      "description": "Plain text; each line becomes a paragraph.",
+                      "maxLength": 200000,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "insert_block"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "after_block_id",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "block_id": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "expected_text": {
+                      "description": "The block's current text.",
+                      "maxLength": 200000,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "remove_block"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "block_id",
+                    "expected_text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "cell": {
+                      "description": "A1-style address.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "expected_value": {
+                      "description": "Current value or =formula; empty for an empty cell.",
+                      "type": "string"
+                    },
+                    "sheet": {
+                      "description": "Sheet id or name from inspect_document.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "set_cell"
+                    },
+                    "value": {
+                      "description": "New value; prefix with = for a formula; empty clears.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "sheet",
+                    "cell",
+                    "expected_value",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "back": {
+                      "type": "string"
+                    },
+                    "card_id": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "front": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "replace_card"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "card_id"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "after_card_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "back": {
+                      "type": "string"
+                    },
+                    "front": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "add_card"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "front",
+                    "back"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "card_id": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "remove_card"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "card_id"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "question": {
+                      "additionalProperties": true,
+                      "description": "Same shape as the quiz generator.",
+                      "type": "object"
+                    },
+                    "question_id": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "replace_question"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "question_id",
+                    "question"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "after_question_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "question": {
+                      "additionalProperties": true,
+                      "type": "object"
+                    },
+                    "type": {
+                      "const": "add_question"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "question"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "question_id": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "remove_question"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "question_id"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "expected_source": {
+                      "description": "Current mermaid source.",
+                      "maxLength": 200000,
+                      "type": "string"
+                    },
+                    "source": {
+                      "description": "New mermaid source.",
+                      "maxLength": 200000,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "set_mermaid"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "expected_source",
+                    "source"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "type": "array"
+          },
+          "target": {
+            "additionalProperties": false,
+            "description": "The document to edit.",
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "source_file",
+                  "material"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "target",
+          "commands"
+        ],
+        "type": "object"
+      },
+      "mutates": true,
+      "usesEmbedding": false,
+      "concurrency": "mutate",
+      "allowedSlots": [
+        "chat"
+      ],
+      "requiredOperations": [
+        "document.edit"
+      ]
+    },
+    {
+      "name": "trash_file",
+      "version": 1,
+      "description": "Move a source file or study material in this workspace to the trash. Only call this when the user asked to delete or remove it. The owner can restore it from Files › Trash within 30 days.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "target": {
+            "additionalProperties": false,
+            "description": "The file or material to trash.",
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "source_file",
+                  "material"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "type": "object"
+      },
+      "mutates": true,
+      "usesEmbedding": false,
+      "concurrency": "mutate",
+      "allowedSlots": [
+        "chat"
+      ],
+      "requiredOperations": [
+        "resource.trash"
+      ]
+    },
+    {
+      "name": "list_trashed_files",
+      "version": 1,
+      "description": "List the trashed source files and study materials of this workspace with their ids, names and expiry. Use it before restore_file so you never guess an id.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "mutates": false,
+      "usesEmbedding": false,
+      "concurrency": "read",
+      "allowedSlots": [
+        "chat"
+      ],
+      "requiredOperations": [
+        "trash.read"
+      ]
+    },
+    {
+      "name": "restore_file",
+      "version": 1,
+      "description": "Restore a trashed source file or study material of this workspace. Only call this when the user asked for it; use list_trashed_files to find the id.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "target": {
+            "additionalProperties": false,
+            "description": "The trashed file or material to restore.",
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "source_file",
+                  "material"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "type": "object"
+      },
+      "mutates": true,
+      "usesEmbedding": false,
+      "concurrency": "mutate",
+      "allowedSlots": [
+        "chat"
+      ],
+      "requiredOperations": [
+        "trash.restore"
+      ]
+    }
+  ]
+}

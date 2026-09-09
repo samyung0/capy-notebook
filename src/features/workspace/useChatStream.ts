@@ -1,3 +1,4 @@
+import type { QueryClient } from '@tanstack/react-query';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useRef, useState } from 'react';
 import { streamChat } from '@/api/chatStream';
@@ -7,6 +8,7 @@ import type {
   ChatMessage,
   ChatRole,
   ChatStatus,
+  ResourceEffect,
   WireMessage,
 } from '@/api/types';
 import { m } from '@/i18n';
@@ -28,6 +30,38 @@ export function toChatMessage(row: WireMessage): ChatMessage {
     role: row.role as ChatRole,
     status: row.status as ChatStatus,
   };
+}
+
+/** Refresh only the caches a committed effect touched. Runs for live tool
+ * results, never for hydrated history, so reopening a conversation does not
+ * refetch or replace a mounted editor. */
+export function invalidateForEffects(
+  qc: QueryClient,
+  workspaceId: string,
+  effects: ResourceEffect[] | undefined
+) {
+  for (const effect of effects ?? []) {
+    if (effect.resource.kind === 'material') {
+      void qc.invalidateQueries({ queryKey: qk.materials(workspaceId) });
+      void qc.invalidateQueries({ queryKey: qk.quizzes });
+      void qc.invalidateQueries({ queryKey: qk.flashcardSets });
+      if (effect.operation !== 'created') {
+        void qc.invalidateQueries({
+          queryKey: qk.material(effect.resource.id),
+        });
+      }
+    } else {
+      void qc.invalidateQueries({ queryKey: qk.files(workspaceId) });
+      void qc.invalidateQueries({ queryKey: qk.allFiles });
+      if (effect.operation !== 'created') {
+        void qc.invalidateQueries({ queryKey: qk.file(effect.resource.id) });
+      }
+    }
+    if (effect.operation === 'trashed' || effect.operation === 'restored') {
+      void qc.invalidateQueries({ queryKey: qk.chapters(workspaceId) });
+      void qc.invalidateQueries({ queryKey: qk.workspaceStats(workspaceId) });
+    }
+  }
 }
 
 const tempId = () =>
@@ -80,6 +114,34 @@ export function useChatStream(workspaceId: string) {
   }, []);
 
   const stop = useCallback(() => abortRef.current?.abort(), []);
+
+  /** Reflect a server-confirmed Undo on the card that offered it. */
+  const markUndone = useCallback(
+    (operationId: string, effects: ResourceEffect[] | undefined) => {
+      invalidateForEffects(qc, workspaceId, effects);
+      setMessages((prev) =>
+        prev.map((msg) => ({
+          ...msg,
+          activity: msg.activity?.map((block) =>
+            block.kind === 'tool'
+              ? {
+                  ...block,
+                  effects: block.effects?.map((effect) =>
+                    effect.undo?.operationId === operationId
+                      ? {
+                          ...effect,
+                          undo: { ...effect.undo, status: 'undone' as const },
+                        }
+                      : effect
+                  ),
+                }
+              : block
+          ),
+        }))
+      );
+    },
+    [qc, workspaceId]
+  );
 
   const send = useCallback(
     async (text: string) => {
@@ -231,7 +293,8 @@ export function useChatStream(workspaceId: string) {
                 )
               );
             },
-            onToolEnd: (callId, status) =>
+            onToolEnd: (callId, result) => {
+              invalidateForEffects(qc, workspaceId, result.effects);
               setMessages((prev) =>
                 prev.map((msg) => {
                   if (msg.id !== currentId) return msg;
@@ -239,12 +302,18 @@ export function useChatStream(workspaceId: string) {
                     ...msg,
                     activity: (msg.activity ?? []).map((block) =>
                       block.kind === 'tool' && block.callId === callId
-                        ? { ...block, status }
+                        ? {
+                            ...block,
+                            effects: result.effects,
+                            error: result.error,
+                            outcome: result.outcome,
+                          }
                         : block
                     ),
                   };
                 })
-              ),
+              );
+            },
             onToolStart: (callId, name, detail) =>
               setMessages((prev) =>
                 prev.map((msg) => {
@@ -262,7 +331,6 @@ export function useChatStream(workspaceId: string) {
                       id: callId,
                       kind: 'tool',
                       name,
-                      status: 'running',
                     });
                   }
                   return { ...msg, activity };
@@ -292,6 +360,7 @@ export function useChatStream(workspaceId: string) {
   return {
     conversationId,
     hydrate,
+    markUndone,
     messages,
     pendingSources,
     send,

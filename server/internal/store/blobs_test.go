@@ -98,7 +98,7 @@ func TestBlobRefcountQueuesOnlyUnreferencedObjects(t *testing.T) {
 		t.Error("shared path was queued while another file still references it")
 	}
 
-	if err := s.DeleteFile(ctx, ownerID, first.ID); err != nil {
+	if err := trashAndPurgeFile(ctx, s, ownerID, first.ID); err != nil {
 		t.Fatal(err)
 	}
 	if got := blobRefCount(t, s, sharedPath); got != 0 {
@@ -156,7 +156,7 @@ func TestArtifactCacheRefsSurviveFileDelete(t *testing.T) {
 	if got := blobRefCount(t, s, parseBundlePath); got != 1 {
 		t.Fatalf("parse bundle refs = %d, want 1", got)
 	}
-	if err := s.DeleteFile(ctx, ownerID, file.ID); err != nil {
+	if err := trashAndPurgeFile(ctx, s, ownerID, file.ID); err != nil {
 		t.Fatal(err)
 	}
 	if got := blobRefCount(t, s, captionPath); got != 1 {
@@ -212,7 +212,7 @@ func TestBlobReferenceCancelsQueuedDeletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.DeleteFile(ctx, ownerID, file.ID); err != nil {
+	if err := trashAndPurgeFile(ctx, s, ownerID, file.ID); err != nil {
 		t.Fatal(err)
 	}
 	if !blobQueued(t, s, path) {
@@ -448,15 +448,10 @@ func TestCloneThenDeleteKeepsTheSurvivingCopy(t *testing.T) {
 	}
 	material, err := s.CreateMaterial(ctx, Material{
 		CreatedBy: ownerID, WorkspaceID: source.ID, WorkspaceName: source.Name,
-		Kind: "note", Title: "Clone history boundary",
+		Kind: "note", Title: "Clone asset boundary",
 		Content: materialContent,
 	})
 	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.pool.Exec(ctx, `UPDATE material_revisions
-		SET version_date=current_date-1, created_at=now()-interval '1 day'
-		WHERE material_id=$1`, material.ID); err != nil {
 		t.Fatal(err)
 	}
 	updatedDocument, err := materialdoc.Parse(materialContent)
@@ -505,18 +500,12 @@ func TestCloneThenDeleteKeepsTheSurvivingCopy(t *testing.T) {
 	var clonedMaterialID string
 	var clonedRevision int64
 	if err := s.pool.QueryRow(ctx, `SELECT id, revision FROM materials
-		WHERE workspace_id=$1 AND title='Clone history boundary'`, clone.ID).
+		WHERE workspace_id=$1 AND title='Clone asset boundary'`, clone.ID).
 		Scan(&clonedMaterialID, &clonedRevision); err != nil {
 		t.Fatal(err)
 	}
-	var clonedHistory int
-	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM material_revisions
-		WHERE material_id=$1`, clonedMaterialID).Scan(&clonedHistory); err != nil {
-		t.Fatal(err)
-	}
-	if clonedRevision != 2 || clonedHistory != 2 {
-		t.Fatalf("cloned material revision=%d history=%d, want retained source history",
-			clonedRevision, clonedHistory)
+	if clonedRevision != 2 {
+		t.Fatalf("cloned material revision=%d, want the source revision counter", clonedRevision)
 	}
 	var clonedAssetID string
 	if err := s.pool.QueryRow(ctx, `SELECT id FROM editor_assets WHERE workspace_id=$1`,
@@ -535,27 +524,6 @@ func TestCloneThenDeleteKeepsTheSurvivingCopy(t *testing.T) {
 	if strings.Contains(clonedContent, pendingAssetID) || strings.Contains(clonedContent, "pending-media") {
 		t.Fatalf("pending editor asset reference survived clone: %s", clonedContent)
 	}
-	rows, err := s.pool.Query(ctx, `SELECT content::text FROM material_revisions
-		WHERE material_id=$1 ORDER BY version_date`, clonedMaterialID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var historyContent string
-		if err := rows.Scan(&historyContent); err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(historyContent, clonedAssetID) ||
-			strings.Contains(historyContent, readyAssetID) ||
-			strings.Contains(historyContent, pendingAssetID) {
-			t.Fatalf("cloned history asset rewrite failed: %s", historyContent)
-		}
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-
 	if err := s.DeleteWorkspace(ctx, ownerID, source.ID); err != nil {
 		t.Fatal(err)
 	}

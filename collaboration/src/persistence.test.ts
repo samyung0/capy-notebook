@@ -260,7 +260,11 @@ describe('live collaboration authorization', () => {
             ],
           };
         }
-        if (sql.includes('FROM materials WHERE id=$1 FOR SHARE')) {
+        if (
+          sql.includes(
+            'FROM materials WHERE id=$1 AND trashed_at IS NULL FOR SHARE'
+          )
+        ) {
           return {
             rowCount: 1,
             rows: [
@@ -360,7 +364,11 @@ describe('live collaboration authorization', () => {
             ],
           };
         }
-        if (sql.includes('FROM materials WHERE id=$1 FOR SHARE')) {
+        if (
+          sql.includes(
+            'FROM materials WHERE id=$1 AND trashed_at IS NULL FOR SHARE'
+          )
+        ) {
           return {
             rowCount: 1,
             rows: [
@@ -398,7 +406,9 @@ describe('live collaboration authorization', () => {
       (sql) => sql.includes('FROM users u') && sql.includes('FOR SHARE OF u')
     );
     const material = statements.findIndex((sql) =>
-      sql.includes('FROM materials WHERE id=$1 FOR SHARE')
+      sql.includes(
+        'FROM materials WHERE id=$1 AND trashed_at IS NULL FOR SHARE'
+      )
     );
     expect(accounts).toBeGreaterThan(-1);
     expect(material).toBeGreaterThan(accounts);
@@ -435,7 +445,11 @@ describe('live collaboration authorization', () => {
             ],
           };
         }
-        if (sql.includes('FROM materials WHERE id=$1 FOR SHARE')) {
+        if (
+          sql.includes(
+            'FROM materials WHERE id=$1 AND trashed_at IS NULL FOR SHARE'
+          )
+        ) {
           return {
             rowCount: 1,
             rows: [
@@ -510,7 +524,11 @@ describe('live collaboration authorization', () => {
             })),
           };
         }
-        if (sql.includes('FROM materials WHERE id=$1 FOR SHARE')) {
+        if (
+          sql.includes(
+            'FROM materials WHERE id=$1 AND trashed_at IS NULL FOR SHARE'
+          )
+        ) {
           return {
             rowCount: 1,
             rows: [

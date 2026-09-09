@@ -71,7 +71,10 @@ func TestFileAndAccountDeletionDoNotWaitForWorkerHeldJobRows(t *testing.T) {
 			t.Fatal(err)
 		}
 		done := make(chan error, 1)
-		go func() { done <- s.DeleteFile(ctx, ownerID, file.ID) }()
+		go func() {
+			_, err := s.TrashFile(ctx, ownerID, file.ID, AgentOperation{})
+			done <- err
+		}()
 		select {
 		case err := <-done:
 			if err != nil {

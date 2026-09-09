@@ -260,7 +260,7 @@ func (s *Store) lockMaterialEditorTx(
 	var materialOwner string
 	var workspaceID *string
 	if err := tx.QueryRow(ctx, `SELECT owner_user_id, workspace_id
-		FROM materials WHERE id=$1`, materialID).Scan(&materialOwner, &workspaceID); err != nil {
+		FROM materials WHERE id=$1 AND trashed_at IS NULL`, materialID).Scan(&materialOwner, &workspaceID); err != nil {
 		if isNoRows(err) {
 			return "", ErrNotFound
 		}
@@ -281,7 +281,7 @@ func (s *Store) lockMaterialEditorTx(
 		}
 		var exists bool
 		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM materials
-			WHERE id=$1 AND workspace_id=$2)`, materialID, *workspaceID).Scan(&exists); err != nil {
+			WHERE id=$1 AND workspace_id=$2 AND trashed_at IS NULL)`, materialID, *workspaceID).Scan(&exists); err != nil {
 			return "", err
 		}
 		if !exists {
@@ -294,7 +294,7 @@ func (s *Store) lockMaterialEditorTx(
 	if workspaceID == nil {
 		var currentOwner string
 		if err := tx.QueryRow(ctx, `SELECT owner_user_id FROM materials
-			WHERE id=$1 FOR UPDATE`, materialID).Scan(&currentOwner); err != nil {
+			WHERE id=$1 AND trashed_at IS NULL FOR UPDATE`, materialID).Scan(&currentOwner); err != nil {
 			if isNoRows(err) {
 				return "", ErrNotFound
 			}

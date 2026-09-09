@@ -8,7 +8,7 @@ like a quality problem rather than a bug.
 from __future__ import annotations
 
 from pipeline.registry import ModelConfig
-from pipeline.retrieval import models, tools, workflows
+from pipeline.retrieval import contract, models, tools, workflows
 from pipeline.retrieval.search import Passage, _cap_per_file, _mark_tier_only, search
 from pipeline.retrieval.tools import ToolContext
 
@@ -78,33 +78,72 @@ async def test_fully_out_of_scope_request_is_rejected_not_widened():
     assert resolved.refused
 
 
+_READ = frozenset({"source.read", "material.read"})
+_EDITOR = _READ | {"material.create", "document.edit", "resource.trash"}
+
+
 def test_material_tool_is_hidden_without_a_gateway(monkeypatch):
     monkeypatch.setattr(tools.cfg, "gateway_url", "")
     monkeypatch.setattr(tools.cfg, "pipeline_secret", "")
     names = [
-        s["function"]["name"] for s in tools.schemas_for(ToolContext(workspace_id="ws"))
+        s["function"]["name"]
+        for s in tools.schemas_for(ToolContext(workspace_id="ws", operations=_EDITOR))
     ]
 
-    assert "generate_material" not in names
+    assert "create_material" not in names
     assert "search_workspace" in names
 
 
-def test_material_tool_needs_a_user_who_can_generate(monkeypatch):
+def test_material_tool_needs_the_create_operation(monkeypatch):
     monkeypatch.setattr(tools.cfg, "gateway_url", "http://gateway")
     monkeypatch.setattr(tools.cfg, "pipeline_secret", "secret")
-    ctx = ToolContext(workspace_id="ws")
+    ctx = ToolContext(workspace_id="ws", user_id="u_1", operations=_READ)
 
-    assert "generate_material" not in [
+    assert "create_material" not in [
         s["function"]["name"] for s in tools.schemas_for(ctx)
     ]
-    ctx.user_id = "u_1"
-    assert "generate_material" not in [
+    ctx.operations = _EDITOR
+    assert "create_material" in [s["function"]["name"] for s in tools.schemas_for(ctx)]
+    ctx.user_id = ""
+    assert "create_material" not in [
         s["function"]["name"] for s in tools.schemas_for(ctx)
     ]
-    ctx.can_generate = True
-    assert "generate_material" in [
-        s["function"]["name"] for s in tools.schemas_for(ctx)
-    ]
+
+
+def test_read_tools_need_the_read_operation():
+    assert tools.schemas_for(ToolContext(workspace_id="ws")) == []
+
+
+async def test_dispatch_rechecks_operations_and_validates_arguments(monkeypatch):
+    monkeypatch.setattr(tools.cfg, "gateway_url", "http://gateway")
+    monkeypatch.setattr(tools.cfg, "pipeline_secret", "secret")
+    viewer = ToolContext(workspace_id="ws", user_id="u_1", operations=_READ)
+
+    refused = await tools.run("create_material", {"kind": "note"}, viewer)
+    assert refused.refused and refused.error_code == "lifecycle_rejected"
+
+    editor = ToolContext(workspace_id="ws", user_id="u_1", operations=_EDITOR)
+    invalid = await tools.run("create_material", {"kind": "poem"}, editor)
+    assert invalid.refused and invalid.error_code == "invalid_input"
+    extra = await tools.run("search_workspace", {"query": "x", "bogus": 1}, editor)
+    assert extra.refused and "bogus" in extra.text()
+    unknown = await tools.run("teleport", {}, editor)
+    assert unknown.refused and unknown.error_code == "unsupported_operation"
+
+
+def test_restricted_empty_scope_stays_empty():
+    ctx = ToolContext(workspace_id="ws_1", file_ids=[])
+    ctx._scope_outline = {
+        "chapters": [],
+        "files": [{"id": "f_1", "name": "one", "chapter_id": None, "chunks": 1}],
+    }
+    import asyncio
+
+    resolved = asyncio.get_event_loop().run_until_complete(
+        tools._resolve_scope(ctx, tools._MISSING)
+    )
+    assert isinstance(resolved, tools.ResolvedScope)
+    assert resolved.file_ids == []
 
 
 # --------------------------------------------------------------- citations
@@ -112,9 +151,9 @@ def test_material_tool_needs_a_user_who_can_generate(monkeypatch):
 
 def test_citation_numbers_are_stable_across_tool_calls():
     ctx = ToolContext(workspace_id="ws_1")
-    first = tools.remember(ctx, [_passage("c1"), _passage("c2")])
+    first = tools.assign_citations(ctx, [_passage("c1"), _passage("c2")])
     # A later tool re-retrieves c2 and finds something new.
-    second = tools.remember(ctx, [_passage("c2"), _passage("c3")])
+    second = tools.assign_citations(ctx, [_passage("c2"), _passage("c3")])
 
     assert [n for n, _ in first] == [1, 2]
     assert [n for n, _ in second] == [2, 3]
@@ -369,7 +408,8 @@ async def test_pipeline_chat_defense_rejects_query_token_overflow():
         thinking="instant",
         query="光" * (service.QUERY_MAX_ESTIMATED_TOKENS + 1),
         workspaceId="ws_1",
-        canGenerate=False,
+        contractVersion=contract.VERSION,
+        operations=[],
         spendSessionId="cr_1",
     )
 

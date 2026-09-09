@@ -24,7 +24,7 @@ from .. import elitellm, obs, registry, use_compatible_event_loop
 from ..config import cfg, require_model_concurrency_in_production
 from ..prompts import generate as generate_prompts
 from ..prompts import quiz as quiz_prompts
-from ..retrieval import accounting, compact, models, pending, store, workflows
+from ..retrieval import accounting, compact, contract, models, pending, store, workflows
 from ..retrieval.agent import CLIENT_ERROR, CLIENT_ERROR_CODE, ClientDrop, run_agent
 from ..retrieval.chunking import clip_to_tokens, estimate_tokens
 from ..retrieval.events import error as client_error
@@ -186,9 +186,13 @@ def _bind_llm(req: LLMPin) -> None:
 class ChatStreamReq(LLMPin):
     query: str = Field(min_length=1, max_length=65_536)
     workspaceId: str
-    # Gateway-resolved: the actor is the workspace owner or a member editor, so
-    # the generate_material tool may be offered. Required so an older gateway fails loudly.
-    canGenerate: bool
+    # Trusted context from the gateway, never from model arguments: the shared
+    # agent-tool contract version it speaks and the resource operations the
+    # actor's effective role grants for this turn. Both are required so an
+    # older gateway fails loudly instead of running with guessed permissions.
+    contractVersion: int
+    operations: list[str]
+    # None is the whole workspace; a list (even empty) is a restricted scope.
     fileIds: list[str] | None = None
     model: str | None = None  # ignored; the provider/model/version pin is authoritative
     # Prior turns as OpenAI-style role/content pairs, sent to the LLM only.
@@ -327,14 +331,31 @@ async def _chat_events(req: ChatStreamReq, request: Request):
             )
         )
         return
+    if req.contractVersion != contract.VERSION:
+        yield _sse(
+            client_error(
+                "The chat service and gateway disagree on the tool contract.",
+                "contract_mismatch",
+            )
+        )
+        return
+    unknown = sorted(set(req.operations) - contract.OPERATIONS)
+    if unknown:
+        yield _sse(
+            client_error(
+                f"Unknown resource operations: {', '.join(unknown)}.",
+                "contract_mismatch",
+            )
+        )
+        return
     _bind_llm(req)
     accounting_token = None
     client = ClientDrop()
     ctx = ToolContext(
         workspace_id=req.workspaceId,
         user_id=req.userId or "",
-        can_generate=req.canGenerate,
-        file_ids=list(req.fileIds or []),
+        operations=frozenset(req.operations),
+        file_ids=None if req.fileIds is None else list(req.fileIds),
         assistant_message_id=req.assistantMessageId or "",
     )
     try:

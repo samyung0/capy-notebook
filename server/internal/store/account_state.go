@@ -162,7 +162,7 @@ func (s *Store) MaterialOwnerAccess(
 ) (AccountStatus, error) {
 	var ownerID string
 	err := s.pool.QueryRow(ctx,
-		`SELECT owner_user_id FROM materials WHERE id=$1`, materialID).Scan(&ownerID)
+		`SELECT owner_user_id FROM materials WHERE id=$1 AND trashed_at IS NULL`, materialID).Scan(&ownerID)
 	if isNoRows(err) {
 		return AccountStatus{}, ErrNotFound
 	}

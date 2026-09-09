@@ -4,13 +4,20 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { ActivityBlockKind } from './activityBlockKind.ts';
+import type { ActivityBlockOutcome } from './activityBlockOutcome.ts';
+import type { ResourceEffect } from './resourceEffect.ts';
+import type { ToolError } from './toolError.ts';
 
 export interface ActivityBlock {
   callId?: string;
   detail?: string;
+  /** @nullable */
+  effects?: ResourceEffect[] | null;
+  error?: ToolError;
   id: string;
-  kind: string;
+  kind: ActivityBlockKind;
   name?: string;
-  status?: string;
+  outcome?: ActivityBlockOutcome;
   text?: string;
 }

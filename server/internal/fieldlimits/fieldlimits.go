@@ -39,7 +39,6 @@ var Columns = map[string]int{
 	"files.name":                       FileName,
 	"materials.workspace_name":         WorkspaceName,
 	"materials.title":                  MaterialTitle,
-	"material_revisions.title":         MaterialTitle,
 	"attempts.quiz_name":               MaterialTitle,
 	"attempts.workspace_name":          WorkspaceName,
 	"tags.name":                        TagValue,

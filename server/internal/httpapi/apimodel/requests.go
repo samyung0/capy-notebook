@@ -64,6 +64,19 @@ type UpdateFileReq struct {
 	ChapterID *string   `json:"chapterId,omitempty"`
 }
 
+// TrashActionReq identifies one restore of one trash episode. The request id
+// is the browser's idempotency key for this click; a repeat returns the same
+// receipt instead of acting twice.
+type TrashActionReq struct {
+	EpisodeID string `json:"episodeId" minLength:"1" doc:"Trash episode returned by the trash listing"`
+	RequestID string `json:"requestId" minLength:"1" maxLength:"64" doc:"Client-generated idempotency key for this action"`
+}
+
+// UndoEditReq carries the browser's idempotency key for one Undo click.
+type UndoEditReq struct {
+	RequestID string `json:"requestId" minLength:"1" maxLength:"64" doc:"Client-generated idempotency key for this action"`
+}
+
 // CreateMaterialReq is the body for POST /api/workspaces/{id}/materials.
 type CreateMaterialReq struct {
 	Kind           store.MaterialKind    `json:"kind" doc:"Material kind"`

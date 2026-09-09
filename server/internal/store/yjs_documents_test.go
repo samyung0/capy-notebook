@@ -6,8 +6,8 @@ import (
 )
 
 func TestProjectMaterialContentRejectsLockedOwner(t *testing.T) {
-	s := openRevisionTestStore(t)
-	ctx, ownerID, material := createRevisionTestMaterial(t, s, PlanFree)
+	s := openMaterialTestStore(t)
+	ctx, ownerID, material := createTestMaterial(t, s, PlanFree)
 	if _, err := s.pool.Exec(ctx, `INSERT INTO material_yjs_documents
 		(material_id, state, stored_version) VALUES ($1, '\x00'::bytea, 1)`,
 		material.ID); err != nil {
@@ -21,7 +21,7 @@ func TestProjectMaterialContentRejectsLockedOwner(t *testing.T) {
 	_, err := s.ProjectMaterialContent(
 		ctx,
 		material.ID,
-		revisionTestContent(t, "must not project"),
+		materialTestContent(t, "must not project"),
 		1,
 	)
 	var locked *AccountLockedError

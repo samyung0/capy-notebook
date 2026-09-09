@@ -41,14 +41,13 @@ func rolePool(
 
 func TestReadRoleRequiresEveryPlanLimitsStartupColumn(t *testing.T) {
 	want := map[string]bool{
-		"plan_tier":               true,
-		"storage_limit_bytes":     true,
-		"credit_limit_micros":     true,
-		"source_file_max_bytes":   true,
-		"material_revision_limit": true,
-		"owned_workspace_limit":   true,
-		"files_per_workspace":     true,
-		"files_per_upload":        true,
+		"plan_tier":             true,
+		"storage_limit_bytes":   true,
+		"credit_limit_micros":   true,
+		"source_file_max_bytes": true,
+		"owned_workspace_limit": true,
+		"files_per_workspace":   true,
+		"files_per_upload":      true,
 	}
 	got := map[string]bool{}
 	for _, privilege := range readRequiredPrivileges {
@@ -215,7 +214,7 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 			reservation_id, provider_call_id, created_at
 		) ON usage_events TO %s;
 		GRANT SELECT ON ops_assistant_turns TO %s;
-		GRANT SELECT (id, workspace_id) ON files TO %s;
+		GRANT SELECT (id, workspace_id, trashed_at) ON files TO %s;
 		GRANT SELECT (status, locked_at, lease_expires_at, updated_at)
 			ON jobs TO %s;
 		GRANT SELECT (status, updated_at) ON email_outbox TO %s;
@@ -303,7 +302,7 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 	if _, err := owner.Exec(ctx, fmt.Sprintf(`
 		GRANT SELECT (
 			plan_tier, storage_limit_bytes, credit_limit_micros,
-			source_file_max_bytes, material_revision_limit,
+			source_file_max_bytes,
 			owned_workspace_limit, files_per_workspace, files_per_upload
 		) ON plan_limits TO %s;
 		GRANT SELECT (

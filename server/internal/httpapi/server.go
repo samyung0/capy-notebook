@@ -199,7 +199,13 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		r.Post("/api/internal/source-changes/resolve", a.internalSourceAuthority)
 		r.Post("/api/internal/source-changes/caption", a.internalSourceCaption)
 		r.Post("/api/internal/source-refresh/publish", a.internalSourceAuthority)
-		r.Get("/api/internal/materials/{materialId}", a.internalGetMaterial)
+		r.Get("/api/internal/agent-operations/{operationId}", a.internalGetAgentOperation)
+		r.Post("/api/internal/trash", a.internalTrash)
+		r.Post("/api/internal/trash/restore", a.internalRestore)
+		r.Get("/api/internal/trash", a.internalListTrash)
+		r.Post("/api/internal/documents/list", a.internalListDocuments)
+		r.Post("/api/internal/documents/inspect", a.internalInspectDocument)
+		r.Post("/api/internal/documents/edit", a.internalEditDocument)
 		r.Post("/api/internal/provider-calls", a.internalSettleProviderCall)
 		r.Post("/api/internal/import/acquire", a.internalAcquireSourceImport)
 		r.Post("/api/internal/import/complete", a.internalCompleteSourceImport)
@@ -270,10 +276,11 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 		})
 		return
 	}
-	if errors.Is(err, store.ErrMaterialConflict) || errors.Is(err, store.ErrMaterialIDTaken) {
+	if errors.Is(err, store.ErrMaterialConflict) || errors.Is(err, store.ErrMaterialIDTaken) ||
+		errors.Is(err, store.ErrOperationConflict) {
 		writeJSON(w, http.StatusConflict, map[string]string{
-			"code":    "material_conflict",
-			"message": "a material with this id already exists with a different payload",
+			"code":    "operation_conflict",
+			"message": "this operation id was already used with a different request",
 		})
 		return
 	}
@@ -474,9 +481,10 @@ func (a *api) assertWS(w http.ResponseWriter, r *http.Request, wsID string) bool
 // chatAccess is what the chat stream needs to know about the actor.
 type chatAccess struct {
 	// canEdit follows the effective role (owner, member editor, or share-role
-	// editor): it unlocks the generate_material tool and the pending-sources
-	// notice, matching CreateMaterial.
+	// editor): it unlocks the pending-sources notice. role is what the
+	// agent-tool operations table is evaluated from.
 	canEdit bool
+	role    store.WorkspaceRole
 }
 
 // assertWSChat admits any effective role (owner, member, or link/public
@@ -487,7 +495,7 @@ func (a *api) assertWSChat(w http.ResponseWriter, r *http.Request, wsID string) 
 		a.fail(w, err)
 		return chatAccess{}, false
 	}
-	return chatAccess{canEdit: store.RoleCanEdit(effective)}, true
+	return chatAccess{canEdit: store.RoleCanEdit(effective), role: effective}, true
 }
 
 func (a *api) assertWSRead(w http.ResponseWriter, r *http.Request, wsID string) bool {

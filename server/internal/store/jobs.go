@@ -142,7 +142,7 @@ func (s *Store) CreateSourceReady(ctx context.Context, wsID, createdBy, name, ki
 // FileBlob returns the B2 object key and kind for a raw file.
 func (s *Store) FileBlob(ctx context.Context, id string) (blobPath string, kind string, content *string, url *string, err error) {
 	var bp *string
-	err = s.pool.QueryRow(ctx, `SELECT blob_path, kind, content, url FROM files WHERE id=$1`, id).Scan(&bp, &kind, &content, &url)
+	err = s.pool.QueryRow(ctx, `SELECT blob_path, kind, content, url FROM files WHERE id=$1 AND trashed_at IS NULL`, id).Scan(&bp, &kind, &content, &url)
 	if isNoRows(err) {
 		return "", "", nil, nil, ErrNotFound
 	}
@@ -160,7 +160,7 @@ func (s *Store) FilePreviewBlob(ctx context.Context, id string) (string, error) 
 	err := s.pool.QueryRow(ctx, `SELECT CASE
 		WHEN kind='pdf' THEN blob_path
 		ELSE preview_blob_path
-	END FROM files WHERE id=$1 AND status='ready'`, id).Scan(&path)
+	END FROM files WHERE id=$1 AND status='ready' AND trashed_at IS NULL`, id).Scan(&path)
 	if isNoRows(err) {
 		return "", ErrNotFound
 	}

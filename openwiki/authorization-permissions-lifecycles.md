@@ -197,8 +197,10 @@ Sources: [membership handlers](../server/internal/httpapi/huma_membership.go#L39
 
 - Owner and effective editors (member or share role) can create, rename,
   reorder, move, and delete chapters.
-- Owner and effective editors can add/upload, rename, move, and delete source
-  files and editor assets.
+- Owner and effective editors can add/upload, rename, move, and trash source
+  files and editor assets. Deleting a file moves it to the workspace trash for
+  30 days; only the current workspace owner lists, restores or permanently
+  deletes trash, whoever trashed it.
 - Viewers can read files when workspace visibility permits, but cannot mutate
   workspace structure or files.
 - Upload reservations and finalized bytes are charged to the workspace owner,
@@ -218,13 +220,14 @@ Sources: [chapter and file handlers](../server/internal/httpapi/huma_content.go#
 - Owner and effective editors can edit the live document body and change
   material metadata through `PATCH /api/materials/{id}/metadata`. Publishing a
   material additionally requires a fully writable actor account.
-- Owner and effective editors can delete a workspace material. For a
-  standalone material, only its owner can edit or delete it.
-- Material revisions are readable to users who can read the material.
-- Revision history keeps one latest snapshot per UTC day, up to 30 daily
-  snapshots for Pro and three for Free. A downgrade immediately and permanently
-  prunes everything beyond the newest three snapshots. Resubscribing does not
-  recover the discarded 27 Pro snapshots.
+- Owner and effective editors can trash a workspace material (30-day trash,
+  owner-only restore and purge). For a standalone material, only its owner can
+  edit, trash, restore or purge it.
+- The chat agent edits materials and sources with the actor's own edit access;
+  Undo of such an edit belongs to that actor alone and requires current edit
+  access at Undo time.
+- Materials keep no snapshot history. `materials.revision` is only the
+  title-rename concurrency counter.
 
 Sources: [material handlers](../server/internal/httpapi/huma_materials.go#L41)
 and [material editor checks](../server/internal/store/share.go#L209).
@@ -596,6 +599,23 @@ Sources: [deletion outbox and reference re-check](../server/internal/store/blobs
 [reference-count lifecycle test](../server/internal/store/blobs_test.go#L51), and
 [bucket version requirement](../server/README.md#L30).
 
+### Trash
+
+`files` and `materials` carry `trashed_at`, `trashed_by`, `trash_episode_id` and
+`purge_after` (30 days). Every active-resource query filters
+`trashed_at IS NULL` explicitly; maintenance, quota, refcount and trash paths
+read trashed rows on purpose. Trashing cancels the file's pipeline jobs, evicts
+its collaboration rooms and releases outstanding chat Undo entries; the row
+keeps its bytes and stays charged to the owner until purge. Restore bumps the
+source epoch or the material `room_schema` so stale clients cannot resume.
+`GET /api/trash`, `POST /api/trash/{kind}/{id}/restore` and
+`DELETE /api/trash/{kind}/{id}` are owner-only; a background sweep purges rows
+past `purge_after`, which then reaches the blob outbox like any deletion.
+
+Sources: [trash lifecycle](../server/internal/store/trash.go#L1),
+[trash routes](../server/internal/httpapi/huma_trash.go#L1),
+[trash sweep](../server/cmd/api/trash_worker.go#L1).
+
 ### Unrecorded stable objects
 
 The scheduled job for unrecorded files is `runBlobSweep`. It covers the failure
@@ -756,8 +776,7 @@ Subscription webhooks and reconciliation re-read lifecycle state under the
 user-row lock. For a closed lifecycle they preserve Stripe's live subscription
 rows as provider truth, force the denormalized user projection to Free/canceled
 when provider rows exist, and queue compensation. With no provider rows, the
-stored tier remains canonical for revision retention while the lifecycle gate
-still denies access. Failed-invoice updates follow the same closed-lifecycle
+stored tier remains canonical while the lifecycle gate still denies access. Failed-invoice updates follow the same closed-lifecycle
 rule and never move a terminal subscription back to `past_due`, even if the
 invoice event has a newer timestamp. Because Stripe does not order
 invoice and subscription webhooks, Checkout writes the user id on both the
@@ -790,10 +809,7 @@ same transaction that completes the compensation job. If its creation webhook
 has not arrived yet, completion inserts a minimal canceled ordering row so a
 delayed pre-cancellation event cannot grant entitlement after restoration; a
 genuinely newer live provider event can still reopen the idempotent cancellation
-job. Reversible lifecycle projection does not prune paid material revision
-history while the effective tier is Pro, whether that comes from preserved
-provider rows or from the stored tier when no subscription row exists. Once no
-started cancellation is unresolved, cancelling deletion re-derives the
+job. Once no started cancellation is unresolved, cancelling deletion re-derives the
 projection in the restoration transaction, so it immediately adopts whichever
 provider transition actually completed: a still-live subscription restores
 entitlement, while an already-canceled one remains Free. A concurrent closure

@@ -270,14 +270,20 @@ func (a *api) generateViaPipe(
 		if qs == "" || qs == "[]" || qs == "null" {
 			return nil, usage, errGenerateEmpty
 		}
-		quiz, err := a.s.CreateQuiz(ctx, store.Quiz{
-			UserID: userID, Name: name, WorkspaceID: wsID, WorkspaceName: wsName,
-			Chapters: chapterNames, ScopeFileNames: fileNames,
-			Questions: qp.Questions, Privacy: "private", TimeLimitMin: qp.TimeLimitMin,
+		mt, err := a.s.CreateMaterialDraft(ctx, store.MaterialDraft{
+			ActorUserID: userID, WorkspaceID: wsID, WorkspaceName: wsName, Kind: "quiz", Title: name,
+			Questions: qp.Questions, TimeLimitMin: qp.TimeLimitMin,
+			ScopeChapters: chapterNames, ScopeFileNames: fileNames,
 		})
 		if err != nil {
 			return nil, usage, err
 		}
+		quiz, err := a.s.GetQuiz(ctx, mt.ID)
+		if err != nil {
+			return nil, usage, err
+		}
+		quiz.IsOwner = mt.OwnerUserID == userID
+		quiz.CanEdit = true
 		return map[string]any{"kind": "quiz", "quiz": quiz}, usage, nil
 	case "flashcards":
 		var fp struct {
@@ -291,7 +297,7 @@ func (a *api) generateViaPipe(
 		for _, c := range fp.Cards {
 			fronts = append(fronts, [2]string{c.Front, c.Back})
 		}
-		res, err := a.persistFlashcardSet(ctx, userID, wsID, opts.Title, fronts, chapterNames, fileNames)
+		res, err := a.persistFlashcardSet(ctx, userID, wsID, wsName, opts.Title, fronts, chapterNames, fileNames)
 		if err != nil {
 			return nil, usage, err
 		}
@@ -317,24 +323,30 @@ func (a *api) generateViaPipe(
 
 func (a *api) persistFlashcardSet(
 	ctx context.Context,
-	userID, wsID, title string,
+	userID, wsID, wsName, title string,
 	cards [][2]string,
 	chapterNames, fileNames []string,
 ) (any, error) {
 	if len(cards) == 0 {
 		return nil, errGenerateEmpty
 	}
-	flashcardSet, err := a.s.CreateFlashcardSetWithCards(
-		ctx, userID, title, "green", wsID, cards, "", chapterNames, fileNames,
-	)
+	mt, err := a.s.CreateMaterialDraft(ctx, store.MaterialDraft{
+		ActorUserID: userID, WorkspaceID: wsID, WorkspaceName: wsName, Kind: "flashcards", Title: title,
+		Cards: cards, ScopeChapters: chapterNames, ScopeFileNames: fileNames, Color: "green",
+	})
 	if err != nil {
 		return nil, err
 	}
-	out, err := a.s.ListCards(ctx, flashcardSet.ID)
+	out, err := a.s.ListCards(ctx, mt.ID)
 	if err != nil {
 		return nil, err
 	}
-	flashcardSet, _ = a.s.GetFlashcardSet(ctx, flashcardSet.ID)
+	flashcardSet, err := a.s.GetFlashcardSet(ctx, mt.ID)
+	if err != nil {
+		return nil, err
+	}
+	flashcardSet.IsOwner = mt.OwnerUserID == userID
+	flashcardSet.CanEdit = true
 	return map[string]any{"kind": "flashcards", "material": flashcardSet, "cards": out}, nil
 }
 
@@ -342,9 +354,9 @@ func (a *api) persistMaterial(ctx context.Context, userID, wsID, wsName string, 
 	if strings.TrimSpace(content) == "" {
 		return nil, errGenerateEmpty
 	}
-	mt, err := a.s.CreateMaterial(ctx, store.Material{
-		CreatedBy: userID, WorkspaceID: wsID, WorkspaceName: wsName, Kind: kind, Title: title,
-		Content: content, ScopeChapters: chapterNames, ScopeFileNames: fileNames, Privacy: "private",
+	mt, err := a.s.CreateMaterialDraft(ctx, store.MaterialDraft{
+		ActorUserID: userID, WorkspaceID: wsID, WorkspaceName: wsName, Kind: kind, Title: title,
+		Content: content, ScopeChapters: chapterNames, ScopeFileNames: fileNames,
 	})
 	if err != nil {
 		return nil, err

@@ -21,7 +21,6 @@ type Limits struct {
 	StorageBytes      int64
 	CreditMicros      int64
 	SourceFileBytes   int64
-	MaterialRevisions int
 	OwnedWorkspaces   int
 	FilesPerWorkspace int
 	FilesPerUpload    int
@@ -35,7 +34,7 @@ type Catalog struct {
 
 func Load(ctx context.Context, pool *pgxpool.Pool) (Catalog, error) {
 	rows, err := pool.Query(ctx, `SELECT plan_tier, storage_limit_bytes,
-		credit_limit_micros, source_file_max_bytes, material_revision_limit,
+		credit_limit_micros, source_file_max_bytes,
 		owned_workspace_limit, files_per_workspace, files_per_upload
 		FROM plan_limits ORDER BY plan_tier`)
 	if err != nil {
@@ -55,7 +54,6 @@ func Load(ctx context.Context, pool *pgxpool.Pool) (Catalog, error) {
 			&limits.StorageBytes,
 			&limits.CreditMicros,
 			&limits.SourceFileBytes,
-			&limits.MaterialRevisions,
 			&ownedWorkspaces,
 			&limits.FilesPerWorkspace,
 			&limits.FilesPerUpload,
@@ -92,7 +90,7 @@ func Load(ctx context.Context, pool *pgxpool.Pool) (Catalog, error) {
 
 func validate(tier string, limits Limits) error {
 	if limits.StorageBytes <= 0 || limits.CreditMicros <= 0 ||
-		limits.SourceFileBytes <= 0 || limits.MaterialRevisions <= 0 ||
+		limits.SourceFileBytes <= 0 ||
 		limits.OwnedWorkspaces < 0 || limits.FilesPerWorkspace <= 0 ||
 		limits.FilesPerUpload <= 0 {
 		return fmt.Errorf("plan %q contains a non-positive limit", tier)
@@ -107,7 +105,6 @@ func validateUpgrade(free, pro Limits) error {
 	if pro.StorageBytes < free.StorageBytes ||
 		pro.CreditMicros < free.CreditMicros ||
 		pro.SourceFileBytes < free.SourceFileBytes ||
-		pro.MaterialRevisions < free.MaterialRevisions ||
 		pro.FilesPerWorkspace < free.FilesPerWorkspace ||
 		pro.FilesPerUpload < free.FilesPerUpload {
 		return errors.New("pro plan limits cannot be lower than free plan limits")

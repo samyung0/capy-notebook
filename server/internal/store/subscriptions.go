@@ -272,7 +272,7 @@ func reconcileSubscriptionTx(
 // is the one failure mode worth ruling out. With no subscription rows, the
 // stored tier/status remain canonical for fixtures and manual provisioning.
 func (s *Store) deriveUserPlanTx(ctx context.Context, tx pgx.Tx, userID string) error {
-	_, err := tx.Exec(ctx, `WITH live AS (
+	tag, err := tx.Exec(ctx, `WITH live AS (
 			SELECT plan_tier, status
 			FROM user_subscriptions
 			WHERE user_id = $1 AND status IN `+entitlingStatuses+`
@@ -296,17 +296,10 @@ func (s *Store) deriveUserPlanTx(ctx context.Context, tx pgx.Tx, userID string) 
 	if err != nil {
 		return err
 	}
-	var tier PlanTier
-	if err := tx.QueryRow(ctx, `SELECT plan_tier FROM users WHERE id=$1`, userID).Scan(&tier); err != nil {
-		if isNoRows(err) {
-			return ErrNotFound
-		}
-		return err
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
 	}
-	if tier != PlanFree {
-		return nil
-	}
-	return s.pruneUserMaterialRevisionsTx(ctx, tx, userID)
+	return nil
 }
 
 // projectEmptyProviderSnapshotTx is used only after Stripe authoritatively
@@ -332,7 +325,7 @@ func (s *Store) projectEmptyProviderSnapshotTx(
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-	return s.pruneUserMaterialRevisionsTx(ctx, tx, userID)
+	return nil
 }
 
 // projectClosedUserPlanTx keeps Stripe's provider truth in
@@ -341,10 +334,6 @@ func (s *Store) projectEmptyProviderSnapshotTx(
 // remains canonical for retention. A later support restore can immediately
 // derive the live plan from preserved provider rows.
 func (s *Store) projectClosedUserPlanTx(ctx context.Context, tx pgx.Tx, userID string) error {
-	effectiveTier, err := s.effectivePlanTierForUser(ctx, tx, userID)
-	if err != nil {
-		return err
-	}
 	tag, err := tx.Exec(ctx, `UPDATE users SET
 		plan_tier=CASE
 			WHEN EXISTS(SELECT 1 FROM user_subscriptions WHERE user_id=$1)
@@ -364,10 +353,7 @@ func (s *Store) projectClosedUserPlanTx(ctx context.Context, tx pgx.Tx, userID s
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-	if effectiveTier == PlanPro {
-		return nil
-	}
-	return s.pruneUserMaterialRevisionsTx(ctx, tx, userID)
+	return nil
 }
 
 // MarkSubscriptionPastDue records a failed invoice. Stripe sends

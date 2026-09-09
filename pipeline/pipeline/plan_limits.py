@@ -12,7 +12,6 @@ class Limits:
     storage_bytes: int
     credit_micros: int
     source_file_bytes: int
-    material_revisions: int
     owned_workspaces: int | None
     files_per_workspace: int
     files_per_upload: int
@@ -40,7 +39,6 @@ def _validate(tier: str, limits: Limits) -> None:
         limits.storage_bytes,
         limits.credit_micros,
         limits.source_file_bytes,
-        limits.material_revisions,
         limits.files_per_workspace,
         limits.files_per_upload,
     )
@@ -64,10 +62,9 @@ def _catalog_from_rows(rows: Iterable[tuple]) -> Catalog:
             storage_bytes=int(row[1]),
             credit_micros=int(row[2]),
             source_file_bytes=int(row[3]),
-            material_revisions=int(row[4]),
-            owned_workspaces=None if row[5] is None else int(row[5]),
-            files_per_workspace=int(row[6]),
-            files_per_upload=int(row[7]),
+            owned_workspaces=None if row[4] is None else int(row[4]),
+            files_per_workspace=int(row[5]),
+            files_per_upload=int(row[6]),
         )
         _validate(tier, limits)
         plans[tier] = limits
@@ -79,7 +76,6 @@ def _catalog_from_rows(rows: Iterable[tuple]) -> Catalog:
         pro.storage_bytes < free.storage_bytes
         or pro.credit_micros < free.credit_micros
         or pro.source_file_bytes < free.source_file_bytes
-        or pro.material_revisions < free.material_revisions
         or pro.files_per_workspace < free.files_per_workspace
         or pro.files_per_upload < free.files_per_upload
     ):
@@ -111,8 +107,8 @@ def load_once() -> Catalog:
             cur.execute(
                 """
                 SELECT plan_tier, storage_limit_bytes, credit_limit_micros,
-                       source_file_max_bytes, material_revision_limit,
-                       owned_workspace_limit, files_per_workspace,
+                       source_file_max_bytes, owned_workspace_limit,
+                       files_per_workspace,
                        files_per_upload
                   FROM plan_limits
                  ORDER BY plan_tier

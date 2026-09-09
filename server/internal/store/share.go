@@ -202,7 +202,7 @@ func materialEffectiveAccess(
 		LEFT JOIN workspaces w ON w.id=m.workspace_id
 		LEFT JOIN workspace_members wm
 			ON wm.workspace_id=w.id AND wm.user_id=$2
-		WHERE m.id=$1 AND material_owner.deleted_at IS NULL
+		WHERE m.id=$1 AND m.trashed_at IS NULL AND material_owner.deleted_at IS NULL
 			AND material_owner.deletion_requested_at IS NULL`, matID, userID).Scan(
 		&materialOwner,
 		&materialPrivacy,
@@ -292,7 +292,7 @@ func (s *Store) AssertMaterialEditor(ctx context.Context, userID, matID string) 
 // FileWorkspaceID resolves the owning workspace of a file (for access checks).
 func (s *Store) FileWorkspaceID(ctx context.Context, fileID string) (string, error) {
 	var wsID string
-	err := s.pool.QueryRow(ctx, `SELECT workspace_id FROM files WHERE id=$1`, fileID).Scan(&wsID)
+	err := s.pool.QueryRow(ctx, `SELECT workspace_id FROM files WHERE id=$1 AND trashed_at IS NULL`, fileID).Scan(&wsID)
 	if isNoRows(err) {
 		return "", ErrNotFound
 	}
@@ -372,7 +372,7 @@ func (s *Store) ListPublicQuizzes(ctx context.Context) ([]PublicQuiz, error) {
 			COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0)
 		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=m.owner_user_id
 		LEFT JOIN material_clone_counts cc ON cc.material_id=m.id
-		WHERE m.kind='quiz'
+		WHERE m.kind='quiz' AND m.trashed_at IS NULL
 		  AND ((m.workspace_id IS NULL AND m.privacy='public') OR w.privacy='public')
 		  AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL
 		ORDER BY COALESCE(cc.clone_count,0) DESC, m.created_at DESC`)
@@ -402,7 +402,7 @@ func (s *Store) ListPublicFlashcardSets(ctx context.Context) ([]PublicFlashcardS
 			COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0)
 		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=m.owner_user_id
 		LEFT JOIN material_clone_counts cc ON cc.material_id=m.id
-		WHERE m.kind='flashcards'
+		WHERE m.kind='flashcards' AND m.trashed_at IS NULL
 		  AND ((m.workspace_id IS NULL AND m.privacy='public') OR w.privacy='public')
 		  AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL
 		ORDER BY COALESCE(cc.clone_count,0) DESC, m.created_at DESC`)
@@ -432,76 +432,6 @@ func rewriteCardIDs(_ string, content string) (newContent string, newIDs []strin
 
 func rewriteCardIDsWithMap(content string, idMap map[string]string) (newContent string, newIDs []string, err error) {
 	return materialdoc.RewriteFlashcardIDs(content, idMap, func() string { return uid("c") })
-}
-
-func (s *Store) materialCloneHistory(
-	ctx context.Context,
-	tx pgx.Tx,
-	sourceID, targetUserID string,
-) ([]MaterialRevision, error) {
-	tier, err := s.effectivePlanTierForUser(ctx, tx, targetUserID)
-	if err != nil {
-		return nil, err
-	}
-	limits, err := s.PlanLimits(tier)
-	if err != nil {
-		return nil, err
-	}
-	revisions, err := tx.Query(ctx, `SELECT revision, parent_revision, event_type, title, content,
-		event_metadata, created_by, created_at
-		FROM (
-			SELECT * FROM material_revisions WHERE material_id=$1
-			ORDER BY version_date DESC LIMIT $2
-		) retained ORDER BY version_date`, sourceID, limits.MaterialRevisions)
-	if err != nil {
-		return nil, err
-	}
-	var history []MaterialRevision
-	for revisions.Next() {
-		var row MaterialRevision
-		if err := revisions.Scan(
-			&row.Revision,
-			&row.ParentRevision,
-			&row.EventType,
-			&row.Title,
-			&row.Content,
-			&row.EventMetadata,
-			&row.CreatedBy,
-			&row.CreatedAt,
-		); err != nil {
-			revisions.Close()
-			return nil, err
-		}
-		history = append(history, row)
-	}
-	revisions.Close()
-	if err := revisions.Err(); err != nil {
-		return nil, err
-	}
-	return history, nil
-}
-
-func (s *Store) cloneMaterialRelations(
-	ctx context.Context,
-	tx pgx.Tx,
-	targetID string,
-	history []MaterialRevision,
-	rewriteContent func(string) (string, error),
-) error {
-	for _, row := range history {
-		content, err := rewriteContent(row.Content)
-		if err != nil {
-			return err
-		}
-		row.MaterialID = targetID
-		row.Content = content
-		if err := s.upsertMaterialRevisionTx(ctx, tx, row); err != nil {
-			return err
-		}
-	}
-	// Comment threads are intentionally not copied. A clone receives only the
-	// retained daily material history.
-	return nil
 }
 
 func snapshotStandaloneCloneAssets(
@@ -594,7 +524,6 @@ type workspaceCloneAsset struct {
 type workspaceCloneMaterial struct {
 	material  Material
 	content   string
-	history   []MaterialRevision
 	metrics   materialdoc.DocumentMetrics
 	sizeBytes int64
 	cardIDs   []string
@@ -666,7 +595,7 @@ func workspaceCloneBlobPaths(snapshot workspaceCloneSnapshot) []string {
 func (s *Store) snapshotWorkspaceForClone(
 	ctx context.Context,
 	tx pgx.Tx,
-	workspaceID, targetUserID string,
+	workspaceID string,
 ) (workspaceCloneSnapshot, error) {
 	var snapshot workspaceCloneSnapshot
 	rows, err := tx.Query(ctx,
@@ -740,7 +669,7 @@ func (s *Store) snapshotWorkspaceForClone(
 			parsed_fingerprint, parsed_parser_version, source_etag,
 			content_hash, source_sha256, parse_mode, caption_images, ever_parsed_successfully
 		 FROM files
-		 WHERE workspace_id=$1 AND status='ready'
+		 WHERE workspace_id=$1 AND status='ready' AND trashed_at IS NULL
 		 ORDER BY added_at`,
 		workspaceID,
 	)
@@ -791,7 +720,7 @@ func (s *Store) snapshotWorkspaceForClone(
 	}
 	rows, err = tx.Query(ctx,
 		`SELECT `+materialCols+`
-		 FROM materials WHERE workspace_id=$1 ORDER BY created_at`,
+		 FROM materials WHERE workspace_id=$1 AND trashed_at IS NULL ORDER BY created_at`,
 		workspaceID,
 	)
 	if err != nil {
@@ -816,12 +745,6 @@ func (s *Store) snapshotWorkspaceForClone(
 
 	for i := range snapshot.materials {
 		materialSnapshot := &snapshot.materials[i]
-		history, err := s.materialCloneHistory(
-			ctx, tx, materialSnapshot.material.ID, targetUserID,
-		)
-		if err != nil {
-			return workspaceCloneSnapshot{}, err
-		}
 		cardIDMap := map[string]string{}
 		if materialSnapshot.material.Kind == "flashcards" {
 			materialSnapshot.content, materialSnapshot.cardIDs, err = rewriteCardIDsWithMap(
@@ -837,21 +760,6 @@ func (s *Store) snapshotWorkspaceForClone(
 		if err != nil {
 			return workspaceCloneSnapshot{}, err
 		}
-		for j := range history {
-			if materialSnapshot.material.Kind == "flashcards" {
-				history[j].Content, _, err = rewriteCardIDsWithMap(history[j].Content, cardIDMap)
-				if err != nil {
-					return workspaceCloneSnapshot{}, err
-				}
-			}
-			history[j].Content, err = materialdoc.RewriteClonedEditorAssetIDs(
-				history[j].Content, assetIDs,
-			)
-			if err != nil {
-				return workspaceCloneSnapshot{}, err
-			}
-		}
-		materialSnapshot.history = history
 		materialSnapshot.metrics, err = materialdoc.Metrics(materialSnapshot.content)
 		if err != nil {
 			return workspaceCloneSnapshot{}, err
@@ -970,7 +878,7 @@ func (s *Store) cloneWorkspaceOnce(
 	// history-retention limit before we select any source revisions. Otherwise a
 	// concurrent downgrade could prune old history and the clone could restore
 	// the larger pre-downgrade snapshot afterward.
-	snapshot, err := s.snapshotWorkspaceForClone(ctx, tx, srcID, userID)
+	snapshot, err := s.snapshotWorkspaceForClone(ctx, tx, srcID)
 	if err != nil {
 		return Workspace{}, err
 	}
@@ -1127,12 +1035,6 @@ func (s *Store) cloneWorkspaceOnce(
 				metrics.MaxDepth, createdAt, mt.Revision); err != nil {
 				return Workspace{}, err
 			}
-			if err := s.cloneMaterialRelations(
-				ctx, tx, nid, materialSnapshot.history,
-				func(value string) (string, error) { return value, nil },
-			); err != nil {
-				return Workspace{}, err
-			}
 			for _, cid := range materialSnapshot.cardIDs {
 				if _, err := tx.Exec(ctx, `INSERT INTO card_stats (card_id, material_id, srs, known) VALUES ($1,$2,$3,false)`,
 					cid, nid, newSrsBytes()); err != nil {
@@ -1273,6 +1175,7 @@ func unzipIDs(m map[string]string) (old, fresh []string) {
 
 // CloneMaterial copies one shared material into the user's standalone library.
 // Flashcards get fresh card ids + reset SRS stats. The clone lands private.
+// Comment threads are intentionally not copied.
 func (s *Store) CloneMaterial(ctx context.Context, userID, matID string) (Material, error) {
 	return s.CloneMaterialKind(ctx, userID, matID, "")
 }
@@ -1314,7 +1217,7 @@ func (s *Store) cloneMaterialKindOnce(
 	var sourceWorkspaceID *string
 	var sourceOwnerID string
 	if err := tx.QueryRow(ctx, `SELECT workspace_id, owner_user_id
-		FROM materials WHERE id=$1`, matID).
+		FROM materials WHERE id=$1 AND trashed_at IS NULL`, matID).
 		Scan(&sourceWorkspaceID, &sourceOwnerID); isNoRows(err) {
 		return Material{}, ErrNotFound
 	} else if err != nil {
@@ -1330,7 +1233,7 @@ func (s *Store) cloneMaterialKindOnce(
 		return Material{}, err
 	}
 	src, err := scanMaterial(tx.QueryRow(ctx, `SELECT `+materialCols+`
-		FROM materials WHERE id=$1`, matID))
+		FROM materials WHERE id=$1 AND trashed_at IS NULL`, matID))
 	if err != nil {
 		return Material{}, err
 	}
@@ -1346,17 +1249,8 @@ func (s *Store) cloneMaterialKindOnce(
 		return Material{}, ErrNotFound
 	}
 
-	history, err := s.materialCloneHistory(ctx, tx, src.ID, userID)
-	if err != nil {
-		return Material{}, err
-	}
-	assetContents := make([]string, 0, len(history)+1)
-	assetContents = append(assetContents, src.Content)
-	for _, revision := range history {
-		assetContents = append(assetContents, revision.Content)
-	}
 	assets, assetIDMap, assetBytes, err := snapshotStandaloneCloneAssets(
-		ctx, tx, src, assetContents,
+		ctx, tx, src, []string{src.Content},
 	)
 	if err != nil {
 		return Material{}, err
@@ -1419,19 +1313,6 @@ func (s *Store) cloneMaterialKindOnce(
 		if err := cloneImageCaptionAssociations(ctx, tx, asset.oldID, asset.newID, true); err != nil {
 			return Material{}, err
 		}
-	}
-	rewrite := func(value string) (string, error) {
-		if src.Kind == "flashcards" {
-			var rewriteErr error
-			value, _, rewriteErr = rewriteCardIDsWithMap(value, cardIDMap)
-			if rewriteErr != nil {
-				return "", rewriteErr
-			}
-		}
-		return materialdoc.RewriteClonedEditorAssetIDs(value, assetIDMap)
-	}
-	if err := s.cloneMaterialRelations(ctx, tx, nid, history, rewrite); err != nil {
-		return Material{}, err
 	}
 	for _, cid := range cardIDs {
 		if _, err := tx.Exec(ctx, `INSERT INTO card_stats (card_id, material_id, srs, known) VALUES ($1,$2,$3,false)`,

@@ -345,7 +345,7 @@ func TestSourceCloneCopiesPublishedSnapshotAndCaptionReferences(t *testing.T) {
 	if docs != 0 || captions != 1 || refs != 2 {
 		t.Fatalf("clone copied live history or lost captions: docs=%d captions=%d refs=%d", docs, captions, refs)
 	}
-	if err = s.DeleteFile(ctx, owner, file.ID); err != nil {
+	if err = trashAndPurgeFile(ctx, s, owner, file.ID); err != nil {
 		t.Fatal(err)
 	}
 	if err = s.pool.QueryRow(ctx, `SELECT ref_count FROM blobs WHERE object_path='captions/shared-caption'`).Scan(&refs); err != nil || refs != 1 {

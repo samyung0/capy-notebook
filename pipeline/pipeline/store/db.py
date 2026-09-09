@@ -726,7 +726,7 @@ def _pipeline_source_cancellation(
     cur.execute(
         f"""
         SELECT workspace_id, user_id, revision, COALESCE(source_etag, '')
-        FROM files WHERE id=%s
+        FROM files WHERE id=%s AND trashed_at IS NULL
         FOR {file_lock}
         """,
         (file_id,),
@@ -816,7 +816,7 @@ def fail_pipeline_file_if_current(cur, payload: dict[str, Any]) -> bool:
         UPDATE files
         SET status='failed', indexed=false, preview_blob_path=NULL
         WHERE id=%s AND revision=%s AND COALESCE(source_etag, '')=%s
-          AND status IN ('pending','processing')
+          AND status IN ('pending','processing') AND trashed_at IS NULL
         """,
         (file_id, source_revision, source_etag),
     )
@@ -1266,20 +1266,29 @@ def reclaim_expired_leases(
 def set_file_status(cur, file_id: str, status: str) -> None:
     if source_refresh_for(file_id) is not None:
         return
-    cur.execute("UPDATE files SET status=%s WHERE id=%s", (status, file_id))
+    cur.execute(
+        "UPDATE files SET status=%s WHERE id=%s AND trashed_at IS NULL",
+        (status, file_id),
+    )
 
 
 def set_file_indexed(cur, file_id: str, indexed: bool) -> None:
     if source_refresh_for(file_id) is not None:
         return
-    cur.execute("UPDATE files SET indexed=%s WHERE id=%s", (indexed, file_id))
+    cur.execute(
+        "UPDATE files SET indexed=%s WHERE id=%s AND trashed_at IS NULL",
+        (indexed, file_id),
+    )
 
 
 def set_file_content_hash(cur, file_id: str, content_hash: str) -> None:
     """Record the hash of the parsed text, used to skip duplicate indexing."""
     if stage_source_candidate(cur, file_id, {"content_hash": content_hash}):
         return
-    cur.execute("UPDATE files SET content_hash=%s WHERE id=%s", (content_hash, file_id))
+    cur.execute(
+        "UPDATE files SET content_hash=%s WHERE id=%s AND trashed_at IS NULL",
+        (content_hash, file_id),
+    )
 
 
 def set_file_parse_artifact(
@@ -1302,7 +1311,7 @@ def set_file_parse_artifact(
     cur.execute(
         """UPDATE files
         SET parsed_blob_path=%s, parsed_fingerprint=%s, parsed_parser_version=%s
-        WHERE id=%s""",
+        WHERE id=%s AND trashed_at IS NULL""",
         (blob_path, fingerprint, parser_version, file_id),
     )
 
@@ -1321,7 +1330,7 @@ def clear_file_parse_artifact(cur, file_id: str) -> None:
     cur.execute(
         """UPDATE files
         SET parsed_blob_path=NULL, parsed_fingerprint=NULL, parsed_parser_version=NULL
-        WHERE id=%s""",
+        WHERE id=%s AND trashed_at IS NULL""",
         (file_id,),
     )
 
@@ -1330,7 +1339,7 @@ def set_file_caption_blob(cur, file_id: str, blob_path: str) -> None:
     if source_refresh_for(file_id) is not None:
         return
     cur.execute(
-        "UPDATE files SET caption_blob_path=%s WHERE id=%s",
+        "UPDATE files SET caption_blob_path=%s WHERE id=%s AND trashed_at IS NULL",
         (blob_path, file_id),
     )
 
@@ -1339,7 +1348,7 @@ def set_file_preview_blob(cur, file_id: str, blob_path: str | None) -> None:
     if stage_source_candidate(cur, file_id, {"preview_blob_path": blob_path}):
         return
     cur.execute(
-        "UPDATE files SET preview_blob_path=%s WHERE id=%s",
+        "UPDATE files SET preview_blob_path=%s WHERE id=%s AND trashed_at IS NULL",
         (blob_path, file_id),
     )
 
@@ -1370,7 +1379,7 @@ def require_current_file_source(
             raise SourceSupersededError("source candidate lost its attempt lease")
         return
     cur.execute(
-        "SELECT revision, COALESCE(source_etag, '') FROM files WHERE id=%s FOR UPDATE",
+        "SELECT revision, COALESCE(source_etag, '') FROM files WHERE id=%s AND trashed_at IS NULL FOR UPDATE",
         (file_id,),
     )
     row = cur.fetchone()
@@ -1387,7 +1396,10 @@ def add_notification(
     kind: str,
     data: dict[str, Any],
 ) -> dict[str, Any] | None:
-    cur.execute("SELECT user_id, workspace_id FROM files WHERE id=%s", (file_id,))
+    cur.execute(
+        "SELECT user_id, workspace_id FROM files WHERE id=%s AND trashed_at IS NULL",
+        (file_id,),
+    )
     owner = cur.fetchone()
     if not owner:
         return None
@@ -1536,7 +1548,7 @@ def file_name(cur, file_id: str) -> str:
 
 
 def file_exists(cur, file_id: str) -> bool:
-    cur.execute("SELECT 1 FROM files WHERE id=%s", (file_id,))
+    cur.execute("SELECT 1 FROM files WHERE id=%s AND trashed_at IS NULL", (file_id,))
     return cur.fetchone() is not None
 
 
@@ -1544,7 +1556,8 @@ def set_file_source_sha256(cur, file_id: str, source_sha256: str) -> None:
     if stage_source_candidate(cur, file_id, {"source_sha256": source_sha256}):
         return
     cur.execute(
-        "UPDATE files SET source_sha256=%s WHERE id=%s", (source_sha256, file_id)
+        "UPDATE files SET source_sha256=%s WHERE id=%s AND trashed_at IS NULL",
+        (source_sha256, file_id),
     )
 
 
@@ -2399,7 +2412,7 @@ def ingest_accounts_active(cur, file_id: str, actor_user_id: str) -> bool:
         """
         SELECT workspace_id, revision, COALESCE(source_etag, ''),
                COALESCE(created_by, user_id)
-        FROM files WHERE id = %s
+        FROM files WHERE id = %s AND trashed_at IS NULL
         """,
         (file_id,),
     )

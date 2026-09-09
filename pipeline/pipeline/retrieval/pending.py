@@ -103,7 +103,7 @@ async def _snapshot(
             + """
             FROM files f LEFT JOIN source_documents d ON d.file_id=f.id
             LEFT JOIN rag_file_contents fc ON fc.file_id=f.id
-            WHERE f.workspace_id = %s
+            WHERE f.workspace_id = %s AND f.trashed_at IS NULL
               AND (%s::text[] IS NULL OR f.id = ANY(%s::text[]))
             ORDER BY f.id
             """,

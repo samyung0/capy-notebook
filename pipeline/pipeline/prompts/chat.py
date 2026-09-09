@@ -31,7 +31,7 @@ SYSTEM_PROMPT = (
     "read_document when a hit is a fragment.\n"
     "- Emit independent reads in one assistant message when you already have "
     "the ids. Do not batch a call that needs another call's result. Do not "
-    "mix generate_material with retrieval calls."
+    "mix create_material with retrieval calls."
 )
 
 

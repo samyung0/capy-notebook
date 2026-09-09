@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/models"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 )
@@ -56,14 +57,45 @@ type Citation struct {
 
 // ActivityBlock is one completed narration or tool-display item persisted on
 // the assistant row. It is shown in the UI and never sent back as LLM history.
+// Tool blocks carry the shared agent-tool result contract: a terminal outcome,
+// a safe typed error and the durable resource effects the call committed.
 type ActivityBlock struct {
-	ID     string `json:"id"`
-	Kind   string `json:"kind"`
-	Text   string `json:"text,omitempty"`
-	CallID string `json:"callId,omitempty"`
-	Name   string `json:"name,omitempty"`
-	Detail string `json:"detail,omitempty"`
-	Status string `json:"status,omitempty"`
+	ID      string                      `json:"id"`
+	Kind    string                      `json:"kind" enum:"narration,tool"`
+	Text    string                      `json:"text,omitempty"`
+	CallID  string                      `json:"callId,omitempty"`
+	Name    string                      `json:"name,omitempty"`
+	Detail  string                      `json:"detail,omitempty"`
+	Outcome agenttools.Outcome          `json:"outcome,omitempty" enum:"succeeded,refused,failed,cancelled,outcome_unknown"`
+	Error   *agenttools.ToolError       `json:"error,omitempty"`
+	Effects []agenttools.ResourceEffect `json:"effects,omitempty"`
+}
+
+// UnmarshalJSON maps the pre-contract `status` of a persisted tool block onto
+// an outcome, so hydrated history never shows a tool as still running.
+func (b *ActivityBlock) UnmarshalJSON(data []byte) error {
+	type plain ActivityBlock
+	var decoded struct {
+		plain
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*b = ActivityBlock(decoded.plain)
+	if b.Kind == "tool" && b.Outcome == "" {
+		switch decoded.Status {
+		case "success":
+			b.Outcome = agenttools.OutcomeSucceeded
+		case "refused":
+			b.Outcome = agenttools.OutcomeRefused
+		case "error", "failed":
+			b.Outcome = agenttools.OutcomeFailed
+		default:
+			b.Outcome = agenttools.OutcomeUnknown
+		}
+	}
+	return nil
 }
 
 // ConversationCheckpoint is the rolling summary pin for one conversation.
@@ -306,7 +338,49 @@ func (s *Store) ListMessages(ctx context.Context, userID, convID string) ([]Mess
 		m.ModelDisplayName = meta.ModelDisplayName
 		out = append(out, m)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, s.refreshUndoStatuses(ctx, out)
+}
+
+// refreshUndoStatuses overlays the current Undo availability of edit effects
+// so a hydrated card reflects an Undo, rebase or compaction that happened
+// after the message was finalized.
+func (s *Store) refreshUndoStatuses(ctx context.Context, messages []Message) error {
+	var ids []string
+	for _, m := range messages {
+		for _, block := range m.Activity {
+			for _, effect := range block.Effects {
+				if effect.Undo != nil && effect.Undo.OperationID != "" {
+					ids = append(ids, effect.Undo.OperationID)
+				}
+			}
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	statuses, err := s.UndoStatuses(ctx, ids)
+	if err != nil {
+		return err
+	}
+	for mi := range messages {
+		for bi := range messages[mi].Activity {
+			for ei := range messages[mi].Activity[bi].Effects {
+				effect := &messages[mi].Activity[bi].Effects[ei]
+				if effect.Undo == nil {
+					continue
+				}
+				if current, ok := statuses[effect.Undo.OperationID]; ok {
+					effect.Undo = &current
+				} else {
+					effect.Undo = &agenttools.UndoRef{OperationID: effect.Undo.OperationID, Status: agenttools.UndoUnavailable, Reason: "released"}
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // AddUserMessage persists an incoming user message and bumps the conversation's
@@ -403,12 +477,19 @@ func (s *Store) StartAssistantMessage(ctx context.Context, userID, convID string
 // Uses a fresh context so persistence still succeeds when the request context
 // was cancelled by a client disconnect.
 func (s *Store) FinalizeAssistantMessage(ctx context.Context, msgID, content, status string, tokenCount int, citations []Citation, generationID string, activity []ActivityBlock) error {
+	// Committed mutation receipts are the authority for effects: a lost SSE
+	// frame or an early disconnect must not erase a material the turn created.
+	ops, err := messageOperationsTx(ctx, s.pool, msgID)
+	if err != nil {
+		return err
+	}
+	activity = mergeOperationEffects(activity, ops)
 	meta, _ := json.Marshal(msgMetadata{Citations: citations, GenerationID: generationID, Activity: activity})
 	var tc *int
 	if tokenCount > 0 {
 		tc = &tokenCount
 	}
-	_, err := s.pool.Exec(ctx,
+	_, err = s.pool.Exec(ctx,
 		`UPDATE messages SET content=$2, status=$3, token_count=$4,
 		        metadata = COALESCE(metadata, '{}'::jsonb) || $5::jsonb
 		  WHERE id=$1`,

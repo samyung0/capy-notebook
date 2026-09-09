@@ -15,9 +15,6 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
-type materialRevisionsOutput struct {
-	Body []apimodel.MaterialRevision `nullable:"false"`
-}
 type discussionsOutput struct {
 	Body []apimodel.Discussion `nullable:"false"`
 }
@@ -84,7 +81,6 @@ type projectMaterialOutput struct {
 func (a *api) registerCollaboration(api huma.API) {
 	a.registerSourceDocuments(api)
 	const tag = "Material collaboration"
-	reg(api, http.MethodGet, "/api/materials/{id}/revisions", "listMaterialRevisions", tag, "List material revisions", http.StatusOK, a.listMaterialRevisions)
 	reg(api, http.MethodGet, "/api/materials/{id}/discussions", "listMaterialDiscussions", tag, "List nested material comment discussions", http.StatusOK, a.listMaterialDiscussions)
 	reg(api, http.MethodPost, "/api/materials/{id}/discussions", "createMaterialDiscussion", tag, "Create a comment discussion", http.StatusCreated, a.createMaterialDiscussion)
 	reg(api, http.MethodPatch, "/api/discussions/{id}", "updateMaterialDiscussion", tag, "Resolve or reopen a comment discussion", http.StatusNoContent, a.updateMaterialDiscussion)
@@ -94,24 +90,6 @@ func (a *api) registerCollaboration(api huma.API) {
 	reg(api, http.MethodDelete, "/api/comments/{id}", "deleteMaterialComment", tag, "Soft-delete a comment", http.StatusNoContent, a.deleteMaterialComment)
 	reg(api, http.MethodPost, "/api/materials/{id}/collaboration-token", "createMaterialCollaborationToken", tag, "Create a short-lived material room token", http.StatusCreated, a.createMaterialCollaborationToken)
 	regWithMaxBody(api, http.MethodPost, "/internal/collaboration/materials/{id}/projection", "projectMaterialYjsDocument", tag, "Project a durably stored Yjs document", http.StatusOK, materialRequestMaxBytes, a.projectMaterialYjsDocument)
-}
-
-func (a *api) listMaterialRevisions(ctx context.Context, in *materialIDInput) (*materialRevisionsOutput, error) {
-	if _, err := a.s.MaterialAccess(ctx, userID(ctx), in.ID); err != nil {
-		return nil, collaborationError(err)
-	}
-	rows, err := a.s.ListMaterialRevisions(ctx, in.ID)
-	if err != nil {
-		return nil, collaborationError(err)
-	}
-	out := make([]apimodel.MaterialRevision, len(rows))
-	for i, revision := range rows {
-		out[i], err = apimodel.FromMaterialRevision(revision)
-		if err != nil {
-			return nil, materialContentError(err)
-		}
-	}
-	return &materialRevisionsOutput{Body: out}, nil
 }
 
 func (a *api) createMaterialCollaborationToken(

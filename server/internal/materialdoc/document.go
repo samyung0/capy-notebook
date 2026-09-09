@@ -1512,3 +1512,28 @@ func set(values ...string) map[string]bool {
 	}
 	return result
 }
+
+// ParagraphNode builds one plain paragraph block with a fresh stable id, for
+// direct edits that insert text blocks.
+func ParagraphNode(text string) map[string]any {
+	node := textElement("p", text)
+	node["id"] = newID("p")
+	return node
+}
+
+// CardNode builds the Plate node of one flashcard; an empty id mints one.
+func CardNode(card Card) map[string]any {
+	if strings.TrimSpace(card.ID) == "" {
+		card.ID = newID("c")
+	}
+	return cardNode(card)
+}
+
+// QuizQuestionNode converts one API-shaped question into its Plate node; a
+// missing id is minted so a direct edit can add questions.
+func QuizQuestionNode(question map[string]any) (map[string]any, error) {
+	if id, _ := question["id"].(string); strings.TrimSpace(id) == "" {
+		question["id"] = newID("q")
+	}
+	return quizQuestionNode(question)
+}

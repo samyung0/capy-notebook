@@ -997,12 +997,77 @@ a valid scope with no indexed content.
 | `list_sources` | none | Chapters, file names, passage counts, and the short descriptor |
 | `describe_documents` | none | Detailed summaries for one to eight required file ids; atomic scope validation |
 | `read_document` | none | Sequential chunks by required file id; workspace and chat scope checked before reading |
-| `generate_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic id |
+| `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, quizzes and flashcard sets |
+| `list_documents` | none | Editable materials and source files in the workspace with an editability reason (`/api/internal/documents/list`) |
+| `inspect_document` | none | Plate blocks with stable ids, text-source lines, or Office paragraphs/cells with target ids, paged by `start`/`count` |
+| `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt with an Undo ref |
+| `trash_file` | yes | Moves one source file or material into the 30-day trash (`/api/internal/trash`) |
+| `list_trashed_files` | none | Trash of the workspace, owner only |
+| `restore_file` | yes | Restores one trashed resource, owner only |
 
-Read tools hit Postgres directly. Anything that creates a material goes through
-the gateway with `X-Pipeline-Secret`, so authz, quota, and the materials model
-stay in one place. The tool is omitted from the schema when the gateway URL or
-user is unset, or when `userId` is missing.
+Read tools hit Postgres directly. Every mutation goes through the gateway with
+`X-Pipeline-Secret`, so authz, quota, and the materials model stay in one place.
+
+**One contract.** `server/internal/agenttools` owns tool names, argument
+schemas, the operations table and the error codes. `cmd/openapi -agent-tools`
+exports it to `pipeline/pipeline/generated/agent_tools.json`; Python validates
+every call against that JSON (`retrieval/contract.py`) and refuses unknown
+tools, while the same Go types reach TypeScript through the OpenAPI schema. Go
+computes the caller's operations from the effective role
+(`source.read, material.read, material.create, document.edit, resource.trash,
+trash.read, trash.restore`) and sends them with the chat request; Python offers
+only the tools those operations allow and rechecks on dispatch. A
+`contractVersion` mismatch fails the turn with `contract_mismatch`.
+
+**Receipts.** Every mutation is an `agent_operations` row keyed by
+`op_ + sha256(assistantMessageId + "\n" + toolCallId)[:24]`, holding the
+request hash, outcome, effect and error. A retry with the same identity replays
+the receipt; a different payload under the same id is a 409. Materials created
+by chat use `mat_ + sha256(...)[:16]` so a duplicate call cannot create twice.
+Finalizing the assistant message merges receipts into the persisted activity
+blocks (`outcome`, `effects`, `error`), and `AbortOrphanedStreams` rebuilds the
+activity of an interrupted turn from its receipts. Tool blocks persisted
+before this contract map their legacy `status` onto an outcome on hydration,
+anything unrecognised becoming `outcome_unknown`. Tool errors carry a stable
+code (`unsupported_format`, `unsupported_operation`, `invalid_input`,
+`unavailable_target`, `stale_target`, `quota_rejected`, `lifecycle_rejected`,
+`outcome_unknown`, `limit_reached`) that the frontend localizes.
+
+**Direct edits.** `edit_document` commands are normalized by Go
+(`replace_text`, `insert_block`, `remove_block`, `replace_card`, `add_card`,
+`remove_card`, `replace_question`, `add_question`, `remove_question`,
+`set_mermaid` for Plate materials; `replace_text` for text, DOCX and PPTX
+sources; `set_cell` for XLSX) and applied by the collaboration service on an
+isolated Y.Doc loaded from durable state under the material or source lock,
+merged with this replica's open live room so unsaved typing on a target also
+counts as drift; the durable copy drops the room's server-owned contributor
+markers while the delta sent back to the room keeps them, so the room's own
+store still asserts each contributor's access. A source edit reads state and
+checkpoint from one session and commits with that checkpoint's CAS, so a
+commit landing in between conflicts and the edit retries from fresh state. There is no revision precondition: expected content compared under
+the lock catches target drift, the lock and the source checkpoint CAS serialize
+concurrent commits, and the server-resolved room incarnation fences trash,
+restore and rebase. Each edit stores an inverse command list and target guards
+in `agent_edit_inverses`; guards are the Yjs item-run signatures of the edited
+target only (`collaboration/src/guards.ts`): a block, a card or question node,
+a gap with its two neighbours by identity only, a text span re-found by its
+text when earlier edits moved it, or an Office paragraph or cell re-located by
+its stable id at Undo time. A gap whose anchor the same call also removed is
+guarded after the nearest surviving block, a node the same call inserted and
+removed needs no guard of its own, and no guard reaches past its neighbours,
+so a deletion two blocks away or a keystroke beside a span keeps the Undo. Undo refuses with `stale_target`
+when its target changed, and stays valid when nearby content changed. A material
+inverse plus guards above 256 KB refuses the edit as `quota_rejected`. Office
+edits run in the BetterOffice headless runtime (`inspectOffice`,
+`applyOfficeCommands`, `locateOfficeTargets` in
+`vendor/betteroffice/shared/office-checkpoint.ts`), which returns the new
+checkpoint state, the inverse and Yrs locators of the targets; Capy derives the
+guards from those locators. PDFs and store-only files refuse with
+`unsupported_format`. Undo is `POST /api/chat/edit-operations/{id}/undo`, only
+for the original chat actor with current edit access; a trash, source rebase or
+material compaction invalidates outstanding Undo entries. Browser idempotency
+keys for trash, restore, purge and Undo are scoped to the acting user
+(`req_<user>:<key>`, at most 64 characters).
 
 Citation numbers belong to the current answer. Structured citations still map
 the answer to file, page, region, and chunk data for the UI. Checkpoints do not
@@ -1077,12 +1142,7 @@ That transaction uses one repeatable-read source snapshot. Only ready source
 files are copied; pending, processing, and failed rows are omitted. Ready editor
 assets are copied with new logical ids, and material nodes that reference any
 uncopied editor asset are removed rather than becoming dangling references.
-Retained daily material revisions are copied from that same snapshot, capped by
-the cloner's plan and rewritten with the same fresh editor-asset/card IDs as the
-current material. The clone locks the target account and freezes its effective
-plan before selecting those revisions; a concurrent downgrade therefore
-serializes or causes the repeatable-read clone attempt to retry, rather than
-restoring history beyond the committed plan. Relational comment threads are
+Materials have no snapshot history to copy. Relational comment threads are
 not copied.
 
 The clone inherits the source's embedding pin rather than taking the current

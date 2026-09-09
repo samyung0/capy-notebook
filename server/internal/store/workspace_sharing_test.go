@@ -186,7 +186,7 @@ func TestEffectiveMaterialAccessUnionsMembershipAndShareRole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = s.DeleteMaterial(ctx, "u_owner", standalone.ID) })
+	t.Cleanup(func() { _ = trashAndPurgeMaterial(ctx, s, "u_owner", standalone.ID) })
 	role, err = s.MaterialEffectiveRole(ctx, "u_other", standalone.ID)
 	if err != nil || role != RoleViewer {
 		t.Fatalf("standalone sharing must remain view-only: %q, %v", role, err)

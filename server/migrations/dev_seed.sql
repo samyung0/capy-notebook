@@ -109,17 +109,6 @@ INSERT INTO materials (id, created_by, workspace_id, workspace_name, kind, title
    '{}', '{}', 'private', 'amber', now())
 ON CONFLICT (id) DO NOTHING;
 
--- Every seeded material starts with one daily version snapshot.
-INSERT INTO material_revisions (
-  material_id, version_date, revision, parent_revision, event_type, title, content,
-  event_metadata, created_by, created_at
-)
-SELECT id, (created_at AT TIME ZONE 'UTC')::date, revision, NULL, 'create', title, content,
-       '{}'::jsonb, created_by, created_at
-FROM materials
-WHERE id IN ('qz_1','qz_2','qz_3','dk_1','dk_2','dk_3')
-ON CONFLICT (material_id, version_date) DO NOTHING;
-
 -- FSRS state per seeded card: already-known cards get a plausible "review"
 -- state that isn't due yet (so knownPct / dueCount look realistic); the rest
 -- start fresh. ON CONFLICT keeps real review progress across restarts.

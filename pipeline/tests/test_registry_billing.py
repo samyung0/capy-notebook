@@ -226,12 +226,11 @@ def test_superseded_worker_closes_exact_attempt_after_job_is_terminal(monkeypatc
 def test_plan_limit_catalog_uses_seeded_product_values():
     catalog = plan_limits._catalog_from_rows(
         [
-            ("free", 100_000_000, 1_000_000_000, 10 << 20, 3, None, 100, 20),
-            ("pro", 1_000_000_000, 20_000_000_000, 30 << 20, 30, None, 100, 20),
+            ("free", 100_000_000, 1_000_000_000, 10 << 20, None, 100, 20),
+            ("pro", 1_000_000_000, 20_000_000_000, 30 << 20, None, 100, 20),
         ]
     )
     assert catalog.free.storage_bytes == 100_000_000
-    assert catalog.free.material_revisions == 3
     assert catalog.pro.storage_bytes == 1_000_000_000
     assert catalog.free.owned_workspaces is None
 
