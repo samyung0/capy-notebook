@@ -162,9 +162,21 @@ jobs:
         with:
           name: capy-site-${{ inputs.environment_name }}-${{ inputs.revision }}
           path: dist/
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with:
+          cache: pnpm
           node-version: 22
+      - run: pnpm install --frozen-lockfile
+      # wrangler bundles workers/site from source, so this job needs the Worker's
+      # own dependencies and the gitignored Paraglide output that otherwise only
+      # the SPA build generates. Keep the options in step with vite.config.ts.
+      - name: Compile the Paraglide messages the Worker imports
+        run: >-
+          pnpm exec paraglide-js compile
+          --project ./project.inlang
+          --outdir ./src/i18n/paraglide
+          --strategy localStorage preferredLanguage baseLocale
       - name: Stage the isolated Office runtime
         run: node workers/office/stage.mjs dist "$RUNNER_TEMP/capy-office-assets"
       - name: Deploy the matching Office Worker

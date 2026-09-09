@@ -11,12 +11,12 @@ on:
         required: false
         type: string
       bootstrap_ingest:
-        description: Initialize an empty UAT ingest stack
+        description: Init ingest stack (once only)
         required: false
         default: false
         type: boolean
       reclaim_pending:
-        description: Finish or roll back the pending ingest release left by a cancelled or failed run
+        description: Cleanup previous pending release
         required: false
         default: false
         type: boolean

@@ -13,12 +13,12 @@ on:
         required: true
         type: string
       bootstrap:
-        description: Initialize an empty ingest stack with GitHub configuration
+        description: Init ingest stack (once only)
         required: false
         default: false
         type: boolean
       reclaim_pending:
-        description: Finish or roll back a pending release left by a finished run before preparing
+        description: Cleanup previous pending release
         required: false
         default: false
         type: boolean
@@ -43,7 +43,7 @@ on:
         required: false
         type: string
       reclaim_pending:
-        description: Finish or roll back a pending release left by a finished run before preparing
+        description: Cleanup previous pending release
         required: false
         default: false
         type: boolean
