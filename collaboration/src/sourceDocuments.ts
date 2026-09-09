@@ -7,11 +7,27 @@ import {
   removeDocumentContributors,
 } from './contributors.js';
 import {
+  applyTextCommands,
+  type DocumentCommand,
+  EditError,
+  type GuardTarget,
+  officeError,
+  officeGuards,
+  verifyOfficeGuards,
+  verifyTextGuards,
+} from './editCommands.js';
+import {
   type NetEffect,
   type OfficeCheckpoint,
+  type OfficeEntry,
   runOffice,
   type SourceFormat,
 } from './officeRuntime.js';
+import {
+  durableCommit,
+  type EditOperation,
+  type Receipt,
+} from './persistence.js';
 
 export const MAX_SOURCE_STATE_BYTES = 100 * 1024 * 1024;
 const LOW_SURROGATE = /[\uDC00-\uDFFF]/u;
@@ -247,8 +263,19 @@ export class SourceDocumentStore {
     return session;
   }
 
-  async load(room: string, document: Y.Doc, actorId: string) {
-    let session = await this.sessionForRoom(room, actorId, 'comment');
+  /**
+   * Applies the durable state of `room` to `document` and returns the session
+   * it came from, seeding a never-opened source first. A caller that already
+   * fetched the session passes it in so state and checkpoint agree.
+   */
+  async load(
+    room: string,
+    document: Y.Doc,
+    actorId: string,
+    fetched?: SourceSession
+  ): Promise<SourceSession> {
+    let session =
+      fetched ?? (await this.sessionForRoom(room, actorId, 'comment'));
     if (!session.state) {
       const bytes = await this.base(
         session.sourceURL,
@@ -274,7 +301,8 @@ export class SourceDocumentStore {
         state = (await runOffice('seedOffice', session.format, bytes)).state;
       }
       try {
-        session = await this.request<SourceSession>(
+        // The checkpoint receipt carries no actor access; keep the bootstrap's.
+        const seeded = await this.request<SourceSession>(
           session.fileId,
           'checkpoint',
           {
@@ -288,6 +316,7 @@ export class SourceDocumentStore {
             state: Buffer.from(state).toString('base64'),
           }
         );
+        session = { ...seeded, access: session.access };
       } catch (error) {
         if (!(error instanceof SourceRequestError) || error.status !== 409)
           throw error;
@@ -296,6 +325,7 @@ export class SourceDocumentStore {
       }
     }
     Y.applyUpdate(document, Buffer.from(session.state, 'base64'));
+    return session;
   }
 
   async effects(
@@ -342,7 +372,7 @@ export class SourceDocumentStore {
     // A receipt for an unchanged document is still a durability receipt.
     if (!contributors.length) {
       const result = await this.pool.query<{ checkpoint: string }>(
-        'SELECT checkpoint FROM source_documents WHERE file_id=$1 AND epoch=$2',
+        'SELECT d.checkpoint FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1 AND d.epoch=$2 AND f.trashed_at IS NULL',
         [fileId, epoch]
       );
       if (!result.rowCount)
@@ -390,6 +420,175 @@ export class SourceDocumentStore {
       }
     }
     throw new Error('Source checkpoint could not be committed');
+  }
+
+  /**
+   * Editable view of the current durable source: the text with its checkpoint
+   * and epoch, or the Office entries (paragraphs, cells, shapes) with their
+   * stable ids. Reads only; a never-opened source is seeded in memory.
+   */
+  async inspect(fileId: string, actorId: string): Promise<SourceInspection> {
+    const session = await this.session(fileId, actorId);
+    const room = `source:${fileId}:epoch:${session.epoch}`;
+    const document = new Y.Doc();
+    try {
+      const current = await this.load(room, document, actorId, session);
+      if (session.format === 'text') {
+        return {
+          access: current.access,
+          checkpoint: current.checkpoint,
+          epoch: current.epoch,
+          format: 'text',
+          text: document.getText('source').toString(),
+        };
+      }
+      if (current.format === 'text')
+        throw new Error('unreachable: text handled above');
+      const bytes = await this.base(
+        current.sourceURL,
+        current.baseSourceSHA256
+      );
+      const entries = await runOffice('inspectOffice', bytes, {
+        baseSha256: current.baseSourceSHA256,
+        format: current.format,
+        schemaVersion: 1,
+        state: Y.encodeStateAsUpdate(document),
+      });
+      return {
+        access: current.access,
+        checkpoint: current.checkpoint,
+        entries,
+        epoch: current.epoch,
+        format: current.format,
+      };
+    } finally {
+      document.destroy();
+    }
+  }
+
+  /**
+   * Apply a direct AI edit (or its Undo) against the durable source state and
+   * commit it through the checkpoint CAS with its receipt and inverse. Every
+   * CAS retry starts again from the freshly loaded state, so target validation,
+   * guards and inverse capture are recomputed rather than remerged.
+   */
+  async applyEdit(input: SourceEditInput): Promise<SourceEditResult> {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const session = await this.session(input.fileId, input.actorUserId);
+      if (session.access !== 'write') {
+        throw new SourceRequestError(
+          403,
+          'Source is not editable by this actor'
+        );
+      }
+      const room = `source:${input.fileId}:epoch:${session.epoch}`;
+      if (input.epoch !== undefined && input.epoch !== session.epoch) {
+        throw new EditError(
+          'stale_target',
+          'the source was rebased since this edit'
+        );
+      }
+      const document = new Y.Doc();
+      try {
+        // The checkpoint CAS below compares against this same session, so a
+        // commit landing after it conflicts instead of being overwritten.
+        const current = await this.load(
+          room,
+          document,
+          input.actorUserId,
+          session
+        );
+        const live = input.liveState?.(room);
+        if (live) Y.applyUpdate(document, live);
+        let inverse: DocumentCommand[];
+        let guards: GuardTarget[] = [];
+        if (current.format === 'text') {
+          if (input.undo) {
+            verifyTextGuards(document, input.undo.guards);
+            ({ inverse } = applyTextCommands(document, input.undo.inverse));
+          } else {
+            ({ inverse, guards } = applyTextCommands(document, input.commands));
+          }
+        } else {
+          const bytes = await this.base(
+            current.sourceURL,
+            current.baseSourceSHA256
+          );
+          const checkpoint: OfficeCheckpoint = {
+            baseSha256: current.baseSourceSHA256,
+            format: current.format,
+            schemaVersion: 1,
+            state: Y.encodeStateAsUpdate(document),
+          };
+          if (input.undo) {
+            const located = await runOffice(
+              'locateOfficeTargets',
+              bytes,
+              checkpoint,
+              input.undo.guards.map((guard) =>
+                guard.kind === 'office' ? guard.id : ''
+              )
+            ).catch((error: unknown) => {
+              throw officeError(error);
+            });
+            verifyOfficeGuards(checkpoint.state, input.undo.guards, located);
+          }
+          const applied = await runOffice(
+            'applyOfficeCommands',
+            bytes,
+            checkpoint,
+            input.undo ? input.undo.inverse : input.commands
+          ).catch((error: unknown) => {
+            throw officeError(error);
+          });
+          inverse = applied.inverse as DocumentCommand[];
+          // The engine state is the checkpoint plus its edits; merging it in
+          // makes the document the post-edit state the guards describe.
+          Y.applyUpdate(document, applied.state);
+          if (!input.undo)
+            guards = officeGuards(
+              Y.encodeStateAsUpdate(document),
+              applied.targets
+            );
+        }
+        const { state, update } = durableCommit(document, live);
+        if (state.byteLength > MAX_SOURCE_STATE_BYTES)
+          throw new Error('Source checkpoint exceeds byte limit');
+        const effects = await this.effects(current, state);
+        try {
+          const saved = await this.request<
+            SourceSession & { operation?: Receipt }
+          >(input.fileId, 'checkpoint', {
+            actorIds: [input.actorUserId],
+            epoch: current.epoch,
+            expectedCheckpoint: current.checkpoint,
+            netTokens: effectTokens(effects),
+            operation: input.undo
+              ? { receipt: receiptWire(input), undoOf: input.undo.undoOf }
+              : {
+                  guards,
+                  inverse: { commands: inverse },
+                  receipt: receiptWire(input),
+                },
+            pendingEffects: effects,
+            state: Buffer.from(state).toString('base64'),
+          });
+          if (!saved.operation)
+            throw new Error('checkpoint did not return a receipt');
+          return { receipt: saved.operation, room, state: update };
+        } catch (error) {
+          if (
+            !(error instanceof SourceRequestError) ||
+            error.status !== 409 ||
+            attempt === 3
+          )
+            throw error;
+        }
+      } finally {
+        document.destroy();
+      }
+    }
+    throw new Error('Source edit could not be committed');
   }
 
   async resolve(input: {
@@ -498,6 +697,7 @@ export class SourceDocumentStore {
       SELECT d.file_id,w.user_id,d.checkpoint FROM source_documents d
       JOIN files f ON f.id=d.file_id JOIN workspaces w ON w.id=f.workspace_id
       WHERE d.checkpoint>d.indexed_checkpoint AND d.running_job_id IS NULL
+        AND f.trashed_at IS NULL
         AND d.refresh_error IS NULL AND jsonb_array_length(d.pending_effects)>0
         AND ((d.format='text' AND (w.auto_reindex OR d.desired_manual) AND d.last_refresh_requested_at < now()-interval '15 seconds')
           OR(d.format<>'text' AND (d.desired_manual OR (w.auto_reparse AND f.ever_parsed_successfully AND d.net_tokens>=5000)) AND d.last_edited_at < now()-interval '60 seconds'))
@@ -533,4 +733,44 @@ export class SourceDocumentStore {
       }
     }
   }
+}
+
+export interface SourceInspection {
+  access: 'read' | 'write';
+  checkpoint: number;
+  entries?: OfficeEntry[];
+  epoch: number;
+  format: SourceFormat;
+  text?: string;
+}
+
+export interface SourceEditInput {
+  actorUserId: string;
+  commands: DocumentCommand[];
+  /** Epoch the caller inspected; a rebase in between is a stale target. */
+  epoch?: number;
+  fileId: string;
+  /** Full state of the open live room for `room`, merged into the pre-state. */
+  liveState?: (room: string) => Uint8Array | undefined;
+  operation: EditOperation & { actorUserId: string };
+  undo?: { guards: GuardTarget[]; inverse: DocumentCommand[]; undoOf: string };
+}
+
+export interface SourceEditResult {
+  receipt: Receipt;
+  room: string;
+  /** The committed state for the live room, its contributor markers intact. */
+  state: Uint8Array;
+}
+
+function receiptWire(input: SourceEditInput) {
+  return {
+    actorUserId: input.actorUserId,
+    callId: input.operation.callId,
+    conversationId: input.operation.conversationId,
+    id: input.operation.id,
+    messageId: input.operation.messageId,
+    requestHash: input.operation.requestHash,
+    toolVersion: input.operation.toolVersion ?? 1,
+  };
 }

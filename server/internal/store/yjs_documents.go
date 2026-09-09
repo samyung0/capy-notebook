@@ -11,9 +11,12 @@ import (
 
 func (s *Store) MaterialRoom(ctx context.Context, materialID string) (string, error) {
 	var schema int
+	// A never-bootstrapped material lives at schema 1 + its restore count, so a
+	// token minted before a trash cannot reconnect after the restore through
+	// the implicit schema-1 room. The eviction trigger names rooms the same way.
 	err := s.pool.QueryRow(ctx, `SELECT COALESCE(
-		(SELECT room_schema FROM material_yjs_documents WHERE material_id=$1), 1)
-		FROM materials WHERE id=$1`, materialID).Scan(&schema)
+		(SELECT room_schema FROM material_yjs_documents WHERE material_id=$1), 1 + trash_restores)
+		FROM materials WHERE id=$1 AND trashed_at IS NULL`, materialID).Scan(&schema)
 	if isNoRows(err) {
 		return "", ErrNotFound
 	}
@@ -69,7 +72,7 @@ func (s *Store) ProjectMaterialContent(
 	var workspaceID *string
 	var ownerID string
 	if err := tx.QueryRow(ctx, `SELECT workspace_id, owner_user_id
-		FROM materials WHERE id=$1`, materialID).
+		FROM materials WHERE id=$1 AND trashed_at IS NULL`, materialID).
 		Scan(&workspaceID, &ownerID); err != nil {
 		if isNoRows(err) {
 			return Material{}, ErrNotFound
@@ -114,7 +117,7 @@ func (s *Store) ProjectMaterialContent(
 	var unchanged bool
 	if err := tx.QueryRow(ctx, `SELECT kind, title, revision, content = $2::jsonb,
 		owner_user_id
-		FROM materials WHERE id=$1 FOR UPDATE`, materialID, content).
+		FROM materials WHERE id=$1 AND trashed_at IS NULL FOR UPDATE`, materialID, content).
 		Scan(&kind, &title, &revision, &unchanged, &lockedOwnerID); err != nil {
 		if isNoRows(err) {
 			return Material{}, ErrNotFound
@@ -160,21 +163,8 @@ func (s *Store) ProjectMaterialContent(
 	nextRevision := revision + 1
 	if _, err := tx.Exec(ctx, `UPDATE materials
 		SET content=$2, node_count=$3, max_depth=$4, revision=$5, updated_at=$6
-		WHERE id=$1`, materialID, json.RawMessage(content), metrics.NodeCount,
+		WHERE id=$1 AND trashed_at IS NULL`, materialID, json.RawMessage(content), metrics.NodeCount,
 		metrics.MaxDepth, nextRevision, now); err != nil {
-		return Material{}, err
-	}
-	parentRevision := revision
-	if err := s.upsertMaterialRevisionTx(ctx, tx, MaterialRevision{
-		MaterialID:     materialID,
-		Revision:       nextRevision,
-		ParentRevision: &parentRevision,
-		EventType:      RevisionEdit,
-		Title:          title,
-		Content:        content,
-		EventMetadata:  json.RawMessage(`{"source":"yjs"}`),
-		CreatedAt:      now,
-	}); err != nil {
 		return Material{}, err
 	}
 	if kind == "flashcards" {
@@ -187,6 +177,11 @@ func (s *Store) ProjectMaterialContent(
 			cardIDs[i] = card.ID
 		}
 		if err := syncCardStatsTx(ctx, tx, materialID, cardIDs); err != nil {
+			return Material{}, err
+		}
+		// A chat Undo that re-inserted a removed card retained its study row;
+		// put it back over the fresh default once this version is projected.
+		if err := applyCardStateRestoresTx(ctx, tx, materialID, yjsVersion, cardIDs, now); err != nil {
 			return Material{}, err
 		}
 	}

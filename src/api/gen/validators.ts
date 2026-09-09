@@ -254,6 +254,55 @@ export const UpdateChapterResponse = zod.object({
 
 
 /**
+ * @summary Reverse one direct AI edit
+ */
+export const UndoEditOperationParams = zod.object({
+  "operationId": zod.string()
+})
+
+export const undoEditOperationBodyRequestIdMax = 64;
+
+
+
+export const UndoEditOperationBody = zod.object({
+  "requestId": zod.string().min(1).max(undoEditOperationBodyRequestIdMax).describe('Client-generated idempotency key for this action')
+})
+
+export const UndoEditOperationResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "callId": zod.string().optional(),
+  "effect": zod.object({
+  "operation": zod.enum(['created', 'edited', 'edit_undone', 'trashed', 'restored']),
+  "operationId": zod.string().optional(),
+  "projectionPending": zod.boolean().optional(),
+  "purgeAfter": zod.iso.datetime({"offset":true}).optional(),
+  "resource": zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['source_file', 'material']),
+  "materialKind": zod.string().optional(),
+  "title": zod.string().optional(),
+  "workspaceId": zod.string().optional()
+}),
+  "trashEpisodeId": zod.string().optional(),
+  "undo": zod.object({
+  "operationId": zod.string(),
+  "reason": zod.string().optional(),
+  "status": zod.enum(['available', 'undone', 'unavailable', 'pending'])
+}).optional()
+}).optional(),
+  "error": zod.object({
+  "code": zod.string(),
+  "message": zod.string()
+}).optional(),
+  "kind": zod.string(),
+  "operationId": zod.string(),
+  "outcome": zod.string(),
+  "toolVersion": zod.int(),
+  "workspaceId": zod.string().optional()
+})
+
+
+/**
  * @summary Soft-delete a comment
  */
 export const DeleteMaterialCommentParams = zod.object({
@@ -315,10 +364,33 @@ export const ListMessagesResponseItem = zod.object({
   "activity": zod.array(zod.object({
   "callId": zod.string().optional(),
   "detail": zod.string().optional(),
+  "effects": zod.array(zod.object({
+  "operation": zod.enum(['created', 'edited', 'edit_undone', 'trashed', 'restored']),
+  "operationId": zod.string().optional(),
+  "projectionPending": zod.boolean().optional(),
+  "purgeAfter": zod.iso.datetime({"offset":true}).optional(),
+  "resource": zod.object({
   "id": zod.string(),
-  "kind": zod.string(),
+  "kind": zod.enum(['source_file', 'material']),
+  "materialKind": zod.string().optional(),
+  "title": zod.string().optional(),
+  "workspaceId": zod.string().optional()
+}),
+  "trashEpisodeId": zod.string().optional(),
+  "undo": zod.object({
+  "operationId": zod.string(),
+  "reason": zod.string().optional(),
+  "status": zod.enum(['available', 'undone', 'unavailable', 'pending'])
+}).optional()
+})).nullish(),
+  "error": zod.object({
+  "code": zod.string(),
+  "message": zod.string()
+}).optional(),
+  "id": zod.string(),
+  "kind": zod.enum(['narration', 'tool']),
   "name": zod.string().optional(),
-  "status": zod.string().optional(),
+  "outcome": zod.enum(['succeeded', 'refused', 'failed', 'cancelled', 'outcome_unknown']).optional(),
   "text": zod.string().optional()
 })).nullish(),
   "citations": zod.array(zod.object({
@@ -605,10 +677,18 @@ export const ListAllFilesResponse = zod.array(ListAllFilesResponseItem)
 
 
 /**
- * @summary Delete a file
+ * @summary Move a file to the trash
  */
 export const DeleteFileParams = zod.object({
   "id": zod.string()
+})
+
+export const deleteFileQueryRequestIdMax = 64;
+
+
+
+export const DeleteFileQueryParams = zod.object({
+  "requestId": zod.string().max(deleteFileQueryRequestIdMax).optional().describe('Optional idempotency key for this trash action')
 })
 
 export const DeleteFileResponse = zod.void()
@@ -933,6 +1013,38 @@ export const GetSourceSessionResponse = zod.object({
   "indexedCheckpoint": zod.int(),
   "indexedState": zod.string(),
   "netTokens": zod.int(),
+  "operation": zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "callId": zod.string().optional(),
+  "effect": zod.object({
+  "operation": zod.enum(['created', 'edited', 'edit_undone', 'trashed', 'restored']),
+  "operationId": zod.string().optional(),
+  "projectionPending": zod.boolean().optional(),
+  "purgeAfter": zod.iso.datetime({"offset":true}).optional(),
+  "resource": zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['source_file', 'material']),
+  "materialKind": zod.string().optional(),
+  "title": zod.string().optional(),
+  "workspaceId": zod.string().optional()
+}),
+  "trashEpisodeId": zod.string().optional(),
+  "undo": zod.object({
+  "operationId": zod.string(),
+  "reason": zod.string().optional(),
+  "status": zod.enum(['available', 'undone', 'unavailable', 'pending'])
+}).optional()
+}).optional(),
+  "error": zod.object({
+  "code": zod.string(),
+  "message": zod.string()
+}).optional(),
+  "kind": zod.string(),
+  "operationId": zod.string(),
+  "outcome": zod.string(),
+  "toolVersion": zod.int(),
+  "workspaceId": zod.string().optional()
+}).optional(),
   "pendingEffects": zod.unknown(),
   "room": zod.string(),
   "sourceIdentity": zod.string(),
@@ -1349,10 +1461,18 @@ export const UpdateLabelResponse = zod.object({
 
 
 /**
- * @summary Delete a material
+ * @summary Move a material to the trash
  */
 export const DeleteMaterialParams = zod.object({
   "id": zod.string()
+})
+
+export const deleteMaterialQueryRequestIdMax = 64;
+
+
+
+export const DeleteMaterialQueryParams = zod.object({
+  "requestId": zod.string().max(deleteMaterialQueryRequestIdMax).optional().describe('Optional idempotency key for this trash action')
 })
 
 export const DeleteMaterialResponse = zod.void()
@@ -1586,30 +1706,6 @@ export const UpdateMaterialResponse = zod.object({
   "revision": zod.int(),
   "updatedAt": zod.iso.datetime({"offset":true})
 })
-
-
-/**
- * @summary List material revisions
- */
-export const ListMaterialRevisionsParams = zod.object({
-  "id": zod.string()
-})
-
-export const ListMaterialRevisionsResponseItem = zod.object({
-  "content": zod.object({
-  "schemaVersion": zod.int(),
-  "value": zod.array(zod.record(zod.string(), zod.unknown())).nullable()
-}),
-  "createdAt": zod.iso.datetime({"offset":true}),
-  "createdBy": zod.string().optional(),
-  "eventMetadata": zod.record(zod.string(), zod.unknown()),
-  "eventType": zod.enum(['create', 'edit']),
-  "materialId": zod.string(),
-  "parentRevision": zod.int().optional(),
-  "revision": zod.int(),
-  "title": zod.string()
-})
-export const ListMaterialRevisionsResponse = zod.array(ListMaterialRevisionsResponseItem)
 
 
 /**
@@ -2041,6 +2137,14 @@ export const DeleteQuizParams = zod.object({
   "id": zod.string()
 })
 
+export const deleteQuizQueryRequestIdMax = 64;
+
+
+
+export const DeleteQuizQueryParams = zod.object({
+  "requestId": zod.string().max(deleteQuizQueryRequestIdMax).optional().describe('Optional idempotency key for this trash action')
+})
+
 export const DeleteQuizResponse = zod.void()
 
 
@@ -2406,6 +2510,143 @@ export const SaveCanvasResponse = zod.object({
   "name": zod.string(),
   "scene": zod.unknown().optional(),
   "updatedAt": zod.iso.datetime({"offset":true})
+})
+
+
+/**
+ * @summary List trashed files and materials the caller owns
+ */
+export const listTrashQueryLimitDefault = 50;
+export const listTrashQueryLimitMax = 100;
+
+
+
+export const ListTrashQueryParams = zod.object({
+  "workspaceId": zod.string().optional().describe('Limit to one owned workspace; empty spans every owned workspace and standalone materials'),
+  "limit": zod.int().min(1).max(listTrashQueryLimitMax).default(listTrashQueryLimitDefault),
+  "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
+})
+
+export const ListTrashResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "items": zod.array(zod.object({
+  "episodeId": zod.string(),
+  "fileKind": zod.string().optional(),
+  "id": zod.string(),
+  "kind": zod.enum(['source_file', 'material']),
+  "materialKind": zod.string().optional(),
+  "purgeAfter": zod.iso.datetime({"offset":true}),
+  "sizeBytes": zod.int(),
+  "title": zod.string(),
+  "trashedAt": zod.iso.datetime({"offset":true}),
+  "workspaceId": zod.string().optional(),
+  "workspaceName": zod.string().optional()
+})),
+  "nextCursor": zod.string().optional()
+})
+
+
+/**
+ * @summary Permanently delete a trashed file or material
+ */
+export const PurgeTrashedParams = zod.object({
+  "kind": zod.enum(['source_file', 'material']),
+  "id": zod.string()
+})
+
+
+export const purgeTrashedQueryRequestIdMax = 64;
+
+
+
+export const PurgeTrashedQueryParams = zod.object({
+  "episodeId": zod.string().min(1).optional(),
+  "requestId": zod.string().min(1).max(purgeTrashedQueryRequestIdMax).optional()
+})
+
+export const PurgeTrashedResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "callId": zod.string().optional(),
+  "effect": zod.object({
+  "operation": zod.enum(['created', 'edited', 'edit_undone', 'trashed', 'restored']),
+  "operationId": zod.string().optional(),
+  "projectionPending": zod.boolean().optional(),
+  "purgeAfter": zod.iso.datetime({"offset":true}).optional(),
+  "resource": zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['source_file', 'material']),
+  "materialKind": zod.string().optional(),
+  "title": zod.string().optional(),
+  "workspaceId": zod.string().optional()
+}),
+  "trashEpisodeId": zod.string().optional(),
+  "undo": zod.object({
+  "operationId": zod.string(),
+  "reason": zod.string().optional(),
+  "status": zod.enum(['available', 'undone', 'unavailable', 'pending'])
+}).optional()
+}).optional(),
+  "error": zod.object({
+  "code": zod.string(),
+  "message": zod.string()
+}).optional(),
+  "kind": zod.string(),
+  "operationId": zod.string(),
+  "outcome": zod.string(),
+  "toolVersion": zod.int(),
+  "workspaceId": zod.string().optional()
+})
+
+
+/**
+ * @summary Restore a trashed file or material
+ */
+export const RestoreTrashedParams = zod.object({
+  "kind": zod.enum(['source_file', 'material']),
+  "id": zod.string()
+})
+
+
+export const restoreTrashedBodyRequestIdMax = 64;
+
+
+
+export const RestoreTrashedBody = zod.object({
+  "episodeId": zod.string().min(1).describe('Trash episode returned by the trash listing'),
+  "requestId": zod.string().min(1).max(restoreTrashedBodyRequestIdMax).describe('Client-generated idempotency key for this action')
+})
+
+export const RestoreTrashedResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "callId": zod.string().optional(),
+  "effect": zod.object({
+  "operation": zod.enum(['created', 'edited', 'edit_undone', 'trashed', 'restored']),
+  "operationId": zod.string().optional(),
+  "projectionPending": zod.boolean().optional(),
+  "purgeAfter": zod.iso.datetime({"offset":true}).optional(),
+  "resource": zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['source_file', 'material']),
+  "materialKind": zod.string().optional(),
+  "title": zod.string().optional(),
+  "workspaceId": zod.string().optional()
+}),
+  "trashEpisodeId": zod.string().optional(),
+  "undo": zod.object({
+  "operationId": zod.string(),
+  "reason": zod.string().optional(),
+  "status": zod.enum(['available', 'undone', 'unavailable', 'pending'])
+}).optional()
+}).optional(),
+  "error": zod.object({
+  "code": zod.string(),
+  "message": zod.string()
+}).optional(),
+  "kind": zod.string(),
+  "operationId": zod.string(),
+  "outcome": zod.string(),
+  "toolVersion": zod.int(),
+  "workspaceId": zod.string().optional()
 })
 
 
@@ -3431,6 +3672,38 @@ export const BootstrapSourceDocumentResponse = zod.object({
   "indexedCheckpoint": zod.int(),
   "indexedState": zod.string(),
   "netTokens": zod.int(),
+  "operation": zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "callId": zod.string().optional(),
+  "effect": zod.object({
+  "operation": zod.enum(['created', 'edited', 'edit_undone', 'trashed', 'restored']),
+  "operationId": zod.string().optional(),
+  "projectionPending": zod.boolean().optional(),
+  "purgeAfter": zod.iso.datetime({"offset":true}).optional(),
+  "resource": zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['source_file', 'material']),
+  "materialKind": zod.string().optional(),
+  "title": zod.string().optional(),
+  "workspaceId": zod.string().optional()
+}),
+  "trashEpisodeId": zod.string().optional(),
+  "undo": zod.object({
+  "operationId": zod.string(),
+  "reason": zod.string().optional(),
+  "status": zod.enum(['available', 'undone', 'unavailable', 'pending'])
+}).optional()
+}).optional(),
+  "error": zod.object({
+  "code": zod.string(),
+  "message": zod.string()
+}).optional(),
+  "kind": zod.string(),
+  "operationId": zod.string(),
+  "outcome": zod.string(),
+  "toolVersion": zod.int(),
+  "workspaceId": zod.string().optional()
+}).optional(),
   "pendingEffects": zod.unknown(),
   "room": zod.string(),
   "sourceIdentity": zod.string(),
@@ -3466,6 +3739,20 @@ export const CheckpointSourceDocumentBody = zod.object({
   "expectedCheckpoint": zod.int().min(checkpointSourceDocumentBodyExpectedCheckpointMin),
   "initialize": zod.boolean(),
   "netTokens": zod.int().min(checkpointSourceDocumentBodyNetTokensMin),
+  "operation": zod.object({
+  "guards": zod.unknown().optional(),
+  "inverse": zod.unknown().optional(),
+  "receipt": zod.object({
+  "actorUserId": zod.string(),
+  "callId": zod.string().optional(),
+  "conversationId": zod.string().optional(),
+  "id": zod.string(),
+  "messageId": zod.string().optional(),
+  "requestHash": zod.string(),
+  "toolVersion": zod.int()
+}),
+  "undoOf": zod.string().optional()
+}).optional(),
   "pendingEffects": zod.unknown(),
   "state": zod.string()
 })
@@ -3482,6 +3769,38 @@ export const CheckpointSourceDocumentResponse = zod.object({
   "indexedCheckpoint": zod.int(),
   "indexedState": zod.string(),
   "netTokens": zod.int(),
+  "operation": zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "callId": zod.string().optional(),
+  "effect": zod.object({
+  "operation": zod.enum(['created', 'edited', 'edit_undone', 'trashed', 'restored']),
+  "operationId": zod.string().optional(),
+  "projectionPending": zod.boolean().optional(),
+  "purgeAfter": zod.iso.datetime({"offset":true}).optional(),
+  "resource": zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['source_file', 'material']),
+  "materialKind": zod.string().optional(),
+  "title": zod.string().optional(),
+  "workspaceId": zod.string().optional()
+}),
+  "trashEpisodeId": zod.string().optional(),
+  "undo": zod.object({
+  "operationId": zod.string(),
+  "reason": zod.string().optional(),
+  "status": zod.enum(['available', 'undone', 'unavailable', 'pending'])
+}).optional()
+}).optional(),
+  "error": zod.object({
+  "code": zod.string(),
+  "message": zod.string()
+}).optional(),
+  "kind": zod.string(),
+  "operationId": zod.string(),
+  "outcome": zod.string(),
+  "toolVersion": zod.int(),
+  "workspaceId": zod.string().optional()
+}).optional(),
   "pendingEffects": zod.unknown(),
   "room": zod.string(),
   "sourceIdentity": zod.string(),
@@ -3533,6 +3852,38 @@ export const PublishSourceRefreshResponse = zod.object({
   "indexedCheckpoint": zod.int(),
   "indexedState": zod.string(),
   "netTokens": zod.int(),
+  "operation": zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "callId": zod.string().optional(),
+  "effect": zod.object({
+  "operation": zod.enum(['created', 'edited', 'edit_undone', 'trashed', 'restored']),
+  "operationId": zod.string().optional(),
+  "projectionPending": zod.boolean().optional(),
+  "purgeAfter": zod.iso.datetime({"offset":true}).optional(),
+  "resource": zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['source_file', 'material']),
+  "materialKind": zod.string().optional(),
+  "title": zod.string().optional(),
+  "workspaceId": zod.string().optional()
+}),
+  "trashEpisodeId": zod.string().optional(),
+  "undo": zod.object({
+  "operationId": zod.string(),
+  "reason": zod.string().optional(),
+  "status": zod.enum(['available', 'undone', 'unavailable', 'pending'])
+}).optional()
+}).optional(),
+  "error": zod.object({
+  "code": zod.string(),
+  "message": zod.string()
+}).optional(),
+  "kind": zod.string(),
+  "operationId": zod.string(),
+  "outcome": zod.string(),
+  "toolVersion": zod.int(),
+  "workspaceId": zod.string().optional()
+}).optional(),
   "pendingEffects": zod.unknown(),
   "room": zod.string(),
   "sourceIdentity": zod.string(),

@@ -18,26 +18,14 @@ low priority:
 
 high PRIORITIES:
 workspace ownership transfer
-enrich agentic loop tools. Add edit files (both uploaded/imported files -> need a list of editable files (ppt, office, text, json, md), and materials)
-, then make categories like: list, read, create, edit (for how we display them in the UI). I dont think we need to set tool permissions yet or set available services for the tools (only chat right now).
-and make sure the context reporting (before + after)/ tool runtime, mostly i need in telementry and not something that needs to be reported to user.
-remove agentic review required to promote to prod
+add read material file tool, add take snapshot tool (how expensive?) -> need a signal to tell llm that the chunk is extracted with low confidence,
+give better exit signals and search directions (check other libraries) -- low prio, build UI first, I want UAT to be functional first
 1. diagrams.net (generate have a 1 turn generate->QA->fix loop on server)
-   we need to orchestrate the behavior for material generation for different surfaces (for anything that includes non-text):
-    -> determine the slot needing this (chat or editor (plate))
-    -> start flow in go server
-    -> QA loop necessary: run the job on the ingest host (because it might involve spawning different processes and I dont want to have the load on the main server)
-        not necessary (like generating images -> one shot, cant really tune after pixel is generated): run in main server is fine
-    -> upload artifacts/files onto blackblaze if necessary (decide on policies for combinations of surfaces + material)
-    -> render in appropriate surfaces (if chat surface sucks because vercel ai sdk we are using sucks at embed/custom plugins, then find another solution)
-
 2. allow llm to embed interactive html files (deterministic santizing after generate (no jailbreak) and rendered in sandbox iframe), no editing allowed
 3. check equations, formulas and math graphs, both plate editors, and chat
 4. confirm db pool mechanism
-2. llm provider calls have rate limits, make a queue for incoming calls? on http request connection lost, remove from queue. if llm call picked up from queue but response never reached client or client disconnected/http request died at that moment -> handle it the same way we handle disconnection: proceed at server and bill accordingly but client sees nothing
-3. import thingy? (userimport/updalod
 4. llm chat compaction
-5. ops usage dashboard, wtf is going on (cloudflare zero trust, audit logs)
+5. cloudflare zero trust,on uat ops dashboard
 6. feature flags should allow for A/B testing, current way of env variables do not allow that
 check how search files/chunks work
 2. check pg pool connections setup, esp for llm search

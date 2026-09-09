@@ -611,6 +611,8 @@ func (s *Store) reconcileStorageUserTx(
 		+ COALESCE((SELECT sum(size_bytes) FROM editor_assets
 			WHERE user_id=$1 AND status='ready'), 0)
 		+ COALESCE((SELECT sum(size_bytes) FROM materials
+			WHERE owner_user_id=$1), 0)
+		+ COALESCE((SELECT sum(inverse_bytes) FROM agent_edit_inverses
 			WHERE owner_user_id=$1), 0),
 		COALESCE((SELECT sum(COALESCE(reserved_size, declared_size)) FROM upload_sessions
 			WHERE user_id=$1 AND status='pending' AND expires_at > now()), 0)`,

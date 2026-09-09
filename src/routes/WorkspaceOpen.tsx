@@ -827,6 +827,13 @@ export default function WorkspaceOpen() {
                       canReprocess={ws?.isOwner}
                       color={ws?.color}
                       onOpenCitation={openCitation}
+                      onOpenResource={(ref) =>
+                        setOpenItem(
+                          ref.kind === 'material'
+                            ? { id: ref.id, kind: 'material' }
+                            : { id: ref.id, kind: 'file' }
+                        )
+                      }
                       workspaceId={workspaceId}
                     />
                   </AppErrorBoundary>

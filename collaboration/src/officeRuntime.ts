@@ -27,7 +27,35 @@ export interface NetEffect {
   label: string;
   operation: 'add' | 'replace' | 'remove' | 'move';
 }
+/** One editable text entry: a DOCX or PPTX paragraph or an XLSX cell. */
+export interface OfficeEntry {
+  id: string;
+  label: string;
+  position: string;
+  value: string;
+}
+/** Yrs location of an edited target; Capy derives item-run guards from it. */
+export interface OfficeTarget {
+  id: string;
+  path: string[];
+  range?: [number, number];
+}
+export interface OfficeCommandResult {
+  inverse: unknown[];
+  state: Uint8Array;
+  targets: OfficeTarget[];
+}
 interface Runtime {
+  /**
+   * Apply content commands to a checkpoint with the native engine and return
+   * the new state, the inverse commands in undo order and the post-edit target
+   * locations. Engine refusals reject with a `<code>: message` string.
+   */
+  applyOfficeCommands(
+    bytes: Uint8Array,
+    checkpoint: OfficeCheckpoint,
+    commands: unknown[]
+  ): Promise<OfficeCommandResult>;
   compare(
     bytes: Uint8Array,
     from: OfficeCheckpoint,
@@ -38,6 +66,17 @@ interface Runtime {
     checkpoint: OfficeCheckpoint,
     determinism: { seed: string; now: string }
   ): Promise<Uint8Array>;
+  /** Editable entries of a checkpoint (paragraphs, cells, shapes) without assets. */
+  inspectOffice(
+    bytes: Uint8Array,
+    checkpoint: OfficeCheckpoint
+  ): Promise<OfficeEntry[]>;
+  /** Current locations of stable target ids; a missing id rejects. */
+  locateOfficeTargets(
+    bytes: Uint8Array,
+    checkpoint: OfficeCheckpoint,
+    ids: string[]
+  ): Promise<OfficeTarget[]>;
   resolveAsset(
     bytes: Uint8Array,
     checkpoint: OfficeCheckpoint,

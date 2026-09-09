@@ -134,7 +134,7 @@ func (s *Store) CreateReplacementUploadSession(
 	defer tx.Rollback(ctx)
 
 	var workspaceID string
-	if err := tx.QueryRow(ctx, `SELECT workspace_id FROM files WHERE id=$1`, in.FileID).
+	if err := tx.QueryRow(ctx, `SELECT workspace_id FROM files WHERE id=$1 AND trashed_at IS NULL`, in.FileID).
 		Scan(&workspaceID); err != nil {
 		if isNoRows(err) {
 			return UploadSession{}, ErrNotFound
@@ -153,7 +153,7 @@ func (s *Store) CreateReplacementUploadSession(
 	var captionImages bool
 	err = tx.QueryRow(ctx, `SELECT workspace_id, user_id, chapter_id, name, kind,
 		size_bytes, revision, parse_mode, caption_images, status
-		FROM files WHERE id=$1 FOR UPDATE`, in.FileID).Scan(
+		FROM files WHERE id=$1 AND trashed_at IS NULL FOR UPDATE`, in.FileID).Scan(
 		&workspaceID, &storedOwnerID, &chapterID, &name, &kind, &oldSize, &revision,
 		&parseMode, &captionImages, &status,
 	)
@@ -476,7 +476,7 @@ func (s *Store) FinalizeReplacementUploadSession(
 
 	var currentRevision int64
 	var currentStatus string
-	err = tx.QueryRow(ctx, `SELECT revision, status FROM files WHERE id=$1 FOR UPDATE`,
+	err = tx.QueryRow(ctx, `SELECT revision, status FROM files WHERE id=$1 AND trashed_at IS NULL FOR UPDATE`,
 		*u.FileID).Scan(&currentRevision, &currentStatus)
 	if isNoRows(err) {
 		return File{}, ErrNotFound
@@ -509,7 +509,7 @@ func (s *Store) FinalizeReplacementUploadSession(
 		content=NULL, preview_blob_path=NULL, parsed_blob_path=NULL, parsed_fingerprint=NULL,
 		parsed_parser_version=NULL, caption_blob_path=NULL,
 		parse_mode=$9, caption_images=$10, revision=revision+1
-		WHERE id=$1 AND revision=$2 RETURNING `+fileCols,
+		WHERE id=$1 AND revision=$2 AND trashed_at IS NULL RETURNING `+fileCols,
 		*u.FileID, *u.ExpectedRevision, u.DeclaredSize, status, parser, engine,
 		u.FinalPath, sourceETag, u.ParseMode, u.CaptionImages))
 	if err != nil {

@@ -22,6 +22,7 @@ import type {
   Tag,
   TagInput,
   Task,
+  TrashItem,
   UserColor,
   Workspace,
   WorkspaceMember,
@@ -345,6 +346,41 @@ function clampFileName(name: string): string {
       .slice(0, createSourceUploadBodyNameMax - [...ext].length)
       .join('') + ext
   );
+}
+
+const TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
+function trashItem(
+  base: Omit<TrashItem, 'episodeId' | 'trashedAt' | 'purgeAfter'>
+): TrashItem {
+  const now = Date.now();
+  return {
+    ...base,
+    episodeId: uid('trash'),
+    purgeAfter: new Date(now + TRASH_RETENTION_MS).toISOString(),
+    trashedAt: new Date(now).toISOString(),
+  };
+}
+
+function trashMaterial(id: string, kind?: string) {
+  const i = db.materials.findIndex(
+    (x) => x.id === id && (!kind || x.kind === kind)
+  );
+  if (i < 0) return;
+  const [removed] = db.materials.splice(i, 1);
+  const ws = db.workspaces.find((w) => w.id === removed.workspaceId);
+  db.trash.unshift({
+    item: trashItem({
+      id: removed.id,
+      kind: 'material',
+      materialKind: removed.kind,
+      sizeBytes: JSON.stringify(removed.content ?? {}).length,
+      title: removed.title,
+      workspaceId: removed.workspaceId || undefined,
+      workspaceName: ws?.name,
+    }),
+    material: removed,
+  });
 }
 
 export const handlers = [
@@ -1292,8 +1328,76 @@ export const handlers = [
       if (ws) ws.fileCount = Math.max(0, ws.fileCount - 1);
       for (const ch of db.chapters)
         ch.fileIds = ch.fileIds.filter((id) => id !== removed.id);
+      db.trash.unshift({
+        file: removed,
+        item: trashItem({
+          fileKind: removed.kind,
+          id: removed.id,
+          kind: 'source_file',
+          sizeBytes: removed.sizeBytes,
+          title: removed.name,
+          workspaceId: removed.workspaceId,
+          workspaceName: ws?.name,
+        }),
+      });
     }
     return new HttpResponse(null, { status: 204 });
+  }),
+  /* ---------------- trash (owner-only bin) ---------------- */
+  http.get('/api/trash', async ({ request }) => {
+    const url = new URL(request.url);
+    const wsId = url.searchParams.get('workspaceId');
+    const items = db.trash
+      .filter((entry) => !wsId || entry.item.workspaceId === wsId)
+      .map((entry) => entry.item);
+    return HttpResponse.json({ items });
+  }),
+  http.post('/api/trash/:kind/:id/restore', async ({ params, request }) => {
+    const body = (await request.json()) as { episodeId: string };
+    const i = db.trash.findIndex(
+      (entry) =>
+        entry.item.id === params.id && entry.item.episodeId === body.episodeId
+    );
+    if (i < 0) return new HttpResponse(null, { status: 404 });
+    const [entry] = db.trash.splice(i, 1);
+    if (entry.file) {
+      db.files.push(entry.file);
+      const ws = db.workspaces.find((w) => w.id === entry.file?.workspaceId);
+      if (ws) ws.fileCount += 1;
+      const ch = db.chapters.find((c) => c.id === entry.file?.chapterId);
+      if (ch) ch.fileIds.push(entry.file.id);
+    }
+    if (entry.material) db.materials.push(entry.material);
+    return HttpResponse.json({
+      effect: {
+        operation: 'restored',
+        resource: {
+          id: entry.item.id,
+          kind: entry.item.kind,
+          title: entry.item.title,
+          workspaceId: entry.item.workspaceId,
+        },
+      },
+      kind: 'restore',
+      operationId: uid('op'),
+      outcome: 'succeeded',
+      toolVersion: 1,
+    });
+  }),
+  http.delete('/api/trash/:kind/:id', async ({ params, request }) => {
+    const episodeId = new URL(request.url).searchParams.get('episodeId');
+    const i = db.trash.findIndex(
+      (entry) =>
+        entry.item.id === params.id && entry.item.episodeId === episodeId
+    );
+    if (i < 0) return new HttpResponse(null, { status: 404 });
+    db.trash.splice(i, 1);
+    return HttpResponse.json({
+      kind: 'purge',
+      operationId: uid('op'),
+      outcome: 'succeeded',
+      toolVersion: 1,
+    });
   }),
   /* ---------------- study materials ---------------- */
   http.get('/api/workspaces/:id/materials', async ({ params }) => {
@@ -1413,8 +1517,7 @@ export const handlers = [
     return HttpResponse.json(material);
   }),
   http.delete('/api/materials/:id', async ({ params }) => {
-    const i = db.materials.findIndex((x) => x.id === params.id);
-    if (i >= 0) db.materials.splice(i, 1);
+    trashMaterial(String(params.id));
     return new HttpResponse(null, { status: 204 });
   }),
   http.get('/api/materials/:id/discussions', async ({ params }) => {
@@ -1748,7 +1851,21 @@ export const handlers = [
           type: 'start',
         });
         await delay(120);
+        send({ phase: 'running_tools', type: 'phase' });
+        send({
+          callId: 'call_mock_search',
+          detail: body.text.slice(0, 40),
+          name: 'search_workspace',
+          type: 'tool_start',
+        });
+        await delay(160);
+        send({
+          callId: 'call_mock_search',
+          outcome: 'succeeded',
+          type: 'tool_end',
+        });
         send({ citations, type: 'citations' });
+        send({ phase: 'answering', type: 'phase' });
         let acc = '';
         for (const w of words) {
           if (request.signal.aborted) break;
@@ -1758,6 +1875,16 @@ export const handlers = [
         }
         const aborted = request.signal.aborted;
         db.chatMessages.push({
+          activity: [
+            {
+              callId: 'call_mock_search',
+              detail: body.text.slice(0, 40),
+              id: 'call_mock_search',
+              kind: 'tool',
+              name: 'search_workspace',
+              outcome: 'succeeded',
+            },
+          ],
           citations,
           content: acc.trim(),
           conversationId: convId,
@@ -2251,10 +2378,7 @@ export const handlers = [
     return HttpResponse.json(db.quizFromMaterial(material));
   }),
   http.delete('/api/quizzes/:id', async ({ params }) => {
-    const i = db.materials.findIndex(
-      (x) => x.id === params.id && x.kind === 'quiz'
-    );
-    if (i >= 0) db.materials.splice(i, 1);
+    trashMaterial(String(params.id), 'quiz');
     return new HttpResponse(null, { status: 204 });
   }),
   http.post('/api/quizzes/:id/clone', async ({ params }) => {

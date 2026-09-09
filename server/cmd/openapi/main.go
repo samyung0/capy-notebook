@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi"
 	"github.com/samyung0/capy-notebook/server/internal/models"
@@ -26,6 +27,7 @@ func main() {
 	out := flag.String("o", "", "output file path (atomic write); defaults to stdout")
 	pythonSlots := flag.String("python-slots", "", "optional generated Python Slot enum path")
 	pythonLimits := flag.String("python-limits", "", "optional generated Python field limits path")
+	agentTools := flag.String("agent-tools", "", "optional generated agent-tool contract JSON path")
 	flag.Parse()
 
 	spec, err := httpapi.SpecYAML()
@@ -56,6 +58,16 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	if *agentTools != "" {
+		contract, err := agenttools.Marshal()
+		if err == nil {
+			err = writeAtomic(*agentTools, contract)
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "agent tools:", err)
+			os.Exit(1)
+		}
+	}
 }
 
 // renderPythonLimits exports the field limits the pipeline writes through the
@@ -83,7 +95,7 @@ func renderPythonSlots() []byte {
 // it into place, so watchers never observe a truncated / half-written spec.
 func writeAtomic(path string, data []byte) error {
 	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".openapi-*.yaml.tmp")
+	tmp, err := os.CreateTemp(dir, ".openapi-*.tmp")
 	if err != nil {
 		return err
 	}

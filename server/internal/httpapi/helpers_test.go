@@ -159,7 +159,7 @@ func TestRelayChatNilPipeDoesNotInventTokens(t *testing.T) {
 	err := a.relayChat(
 		context.Background(),
 		"",
-		false,
+		nil,
 		store.Conversation{ID: "c", WorkspaceID: "w"},
 		resolvedLLM{},
 		"cr_1",
@@ -186,7 +186,7 @@ func TestRelayChatRejectsEOFBeforeDone(t *testing.T) {
 	err := a.relayChat(
 		context.Background(),
 		"",
-		false,
+		nil,
 		store.Conversation{ID: "c", WorkspaceID: "w"},
 		resolvedLLM{},
 		"cr_1",

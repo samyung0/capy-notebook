@@ -120,7 +120,7 @@ func hErr(err error) error {
 			Errors: []*huma.ErrorDetail{{Message: "ai_unavailable"}},
 		}
 	}
-	if errors.Is(err, errGenerateEmpty) {
+	if errors.Is(err, errGenerateEmpty) || errors.Is(err, store.ErrEmptyMaterial) {
 		return &huma.ErrorModel{
 			Status: http.StatusBadGateway,
 			Title:  http.StatusText(http.StatusBadGateway),

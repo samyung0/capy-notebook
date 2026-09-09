@@ -8,8 +8,8 @@ import (
 )
 
 func TestProjectMaterialContentAllowsValidOverLimitRecovery(t *testing.T) {
-	s := openRevisionTestStore(t)
-	ctx, _, material := createRevisionTestMaterial(t, s, PlanFree)
+	s := openMaterialTestStore(t)
+	ctx, _, material := createTestMaterial(t, s, PlanFree)
 	value := make([]map[string]any, materialdoc.MaxNodes/2+1)
 	for index := range value {
 		value[index] = map[string]any{

@@ -7,6 +7,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/copytext"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
@@ -24,6 +25,10 @@ type materialUpdateOutput struct {
 }
 type materialIDInput struct {
 	ID string `path:"id"`
+}
+type trashMaterialInput struct {
+	ID        string `path:"id"`
+	RequestID string `query:"requestId" maxLength:"64" doc:"Optional idempotency key for this trash action"`
 }
 type createMaterialInput struct {
 	ID   string `path:"id"`
@@ -45,7 +50,9 @@ func (a *api) registerMaterials(api huma.API) {
 	reg(api, http.MethodGet, "/api/materials/{id}", "getMaterial", tag, "Get a material", http.StatusOK, a.getMaterial)
 	regWithMaxBody(api, http.MethodPatch, "/api/materials/{id}/metadata", "updateMaterial", tag, "Update material metadata", http.StatusOK, materialRequestMaxBytes, a.updateMaterial)
 	reg(api, http.MethodPatch, "/api/materials/{id}/sharing", "updateMaterialSharing", tag, "Update standalone material sharing", http.StatusOK, a.updateMaterialSharing)
-	reg(api, http.MethodDelete, "/api/materials/{id}", "deleteMaterial", tag, "Delete a material", http.StatusNoContent, a.deleteMaterial)
+	reg(api, http.MethodDelete, "/api/materials/{id}", "deleteMaterial", tag, "Move a material to the trash", http.StatusNoContent, a.deleteMaterial)
+	a.registerTrash(api)
+	a.registerUndo(api)
 	a.registerMembership(api)
 	a.registerCollaboration(api)
 }
@@ -237,15 +244,20 @@ func (a *api) updateMaterialSharing(
 	return materialResponse(material, store.RoleOwner)
 }
 
-func (a *api) deleteMaterial(ctx context.Context, in *materialIDInput) (*Empty, error) {
+// deleteMaterial moves the material into the trash (see deleteFile).
+func (a *api) deleteMaterial(ctx context.Context, in *trashMaterialInput) (*Empty, error) {
 	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
 	if err := a.assertMaterialOwner(ctx, in.ID); err != nil {
 		return nil, collaborationError(err)
 	}
-	if err := a.s.DeleteMaterial(ctx, userID(ctx), in.ID); err != nil {
+	op, err := trashOperation(ctx, in.RequestID, agenttools.KindMaterial, in.ID)
+	if err != nil {
 		return nil, hErr(err)
+	}
+	if _, err := a.s.TrashMaterial(ctx, userID(ctx), in.ID, "", op); err != nil {
+		return nil, trashError(err)
 	}
 	return &Empty{}, nil
 }

@@ -274,10 +274,11 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 	// mentions keep their stored label; the collaborator directory drops them.
 	for _, statement := range []string{
 		`UPDATE files SET created_by=NULL WHERE created_by=$1`,
+		`UPDATE files SET trashed_by=NULL WHERE trashed_by=$1`,
+		`UPDATE materials SET trashed_by=NULL WHERE trashed_by=$1`,
 		`UPDATE editor_assets SET created_by=NULL WHERE created_by=$1`,
 		`UPDATE materials SET created_by=NULL WHERE created_by=$1`,
 		`UPDATE materials SET updated_by=NULL WHERE updated_by=$1`,
-		`UPDATE material_revisions SET created_by=NULL WHERE created_by=$1`,
 		`UPDATE material_discussions SET created_by=NULL WHERE created_by=$1`,
 		`UPDATE material_discussions SET deleted_by=NULL WHERE deleted_by=$1`,
 		`UPDATE material_comments SET user_id=NULL WHERE user_id=$1`,

@@ -985,8 +985,8 @@ to prevent a repair loop.
    ) ON user_credits TO capy_ops;
    GRANT SELECT (
      plan_tier, storage_limit_bytes, credit_limit_micros,
-     source_file_max_bytes, material_revision_limit,
-     owned_workspace_limit, files_per_workspace, files_per_upload
+     source_file_max_bytes, owned_workspace_limit,
+     files_per_workspace, files_per_upload
    ) ON plan_limits TO capy_ops;
    GRANT SELECT (
      id, actor_user_id, trace_id, surface, paid_by, status,
@@ -1055,7 +1055,7 @@ to prevent a repair loop.
    ) ON resource_credit_rates TO capy_ops;
    GRANT SELECT (id, version, updated_at) ON model_registry_state TO capy_ops;
    GRANT SELECT ON ops_assistant_turns TO capy_ops;
-   GRANT SELECT (id, workspace_id)
+   GRANT SELECT (id, workspace_id, trashed_at)
      ON files TO capy_ops;
    GRANT SELECT (
      type, status, not_before, locked_at, lease_expires_at, queued_at, updated_at

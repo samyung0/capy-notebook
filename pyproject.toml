@@ -24,6 +24,7 @@ dependencies = [
   # Error reporting. Optional at runtime — pipeline/obs.py degrades to logging
   # when SENTRY_DSN is unset, which is the normal state in dev and e2e.
   "sentry-sdk[fastapi]>=2.0",
+  "jsonschema>=4.26.0",
 ]
 
 [project.optional-dependencies]
@@ -52,7 +53,7 @@ where = ["pipeline"]
 include = ["pipeline*"]
 
 [tool.setuptools.package-data]
-pipeline = ["elitellm/providers.json"]
+pipeline = ["elitellm/providers.json", "generated/agent_tools.json"]
 
 [tool.ruff]
 extend-exclude = ["bench"]

@@ -13,6 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/models"
 	"github.com/samyung0/capy-notebook/server/internal/store"
@@ -59,33 +60,35 @@ func chatQueryTooLong(text string) bool {
 // Type is one of: phase | block_start | block_delta | block_end | tool_start |
 // tool_end | citations | checkpoint | pending_sources | done | error.
 type pipeChatEvent struct {
-	Type              string                `json:"type"`
-	FileIDs           []string              `json:"fileIds,omitempty"`
-	Omitted           *bool                 `json:"omitted,omitempty"` // pointer so false survives serialization
-	Phase             string                `json:"phase,omitempty"`
-	BlockID           string                `json:"blockId,omitempty"`
-	Kind              string                `json:"kind,omitempty"`
-	Text              string                `json:"text,omitempty"`
-	CallID            string                `json:"callId,omitempty"`
-	Name              string                `json:"name,omitempty"`
-	Detail            string                `json:"detail,omitempty"`
-	Status            string                `json:"status,omitempty"`
-	Citations         []store.Citation      `json:"citations,omitempty"`
-	Version           int                   `json:"version,omitempty"`
-	TokenCount        int                   `json:"tokenCount,omitempty"`
-	GenerationID      string                `json:"generationId,omitempty"`
-	Message           string                `json:"message,omitempty"`
-	Code              string                `json:"code,omitempty"`
-	RetryAfterSeconds int                   `json:"retryAfterSeconds,omitempty"`
-	Usage             pipeUsage             `json:"usage,omitempty"`
-	Activity          []store.ActivityBlock `json:"activity,omitempty"`
-	Answer            string                `json:"answer,omitempty"`
-	ThroughMessageID  string                `json:"throughMessageId,omitempty"`
-	Summary           string                `json:"summary,omitempty"`
-	ProviderSlug      string                `json:"providerSlug,omitempty"`
-	ModelSlug         string                `json:"modelSlug,omitempty"`
-	ModelVersion      int                   `json:"modelVersion,omitempty"`
-	EstimatedTokens   int                   `json:"estimatedTokens,omitempty"`
+	Type              string                      `json:"type"`
+	FileIDs           []string                    `json:"fileIds,omitempty"`
+	Omitted           *bool                       `json:"omitted,omitempty"` // pointer so false survives serialization
+	Phase             string                      `json:"phase,omitempty"`
+	BlockID           string                      `json:"blockId,omitempty"`
+	Kind              string                      `json:"kind,omitempty"`
+	Text              string                      `json:"text,omitempty"`
+	CallID            string                      `json:"callId,omitempty"`
+	Name              string                      `json:"name,omitempty"`
+	Detail            string                      `json:"detail,omitempty"`
+	Outcome           string                      `json:"outcome,omitempty"`
+	ToolError         *agenttools.ToolError       `json:"error,omitempty"`
+	Effects           []agenttools.ResourceEffect `json:"effects,omitempty"`
+	Citations         []store.Citation            `json:"citations,omitempty"`
+	Version           int                         `json:"version,omitempty"`
+	TokenCount        int                         `json:"tokenCount,omitempty"`
+	GenerationID      string                      `json:"generationId,omitempty"`
+	Message           string                      `json:"message,omitempty"`
+	Code              string                      `json:"code,omitempty"`
+	RetryAfterSeconds int                         `json:"retryAfterSeconds,omitempty"`
+	Usage             pipeUsage                   `json:"usage,omitempty"`
+	Activity          []store.ActivityBlock       `json:"activity,omitempty"`
+	Answer            string                      `json:"answer,omitempty"`
+	ThroughMessageID  string                      `json:"throughMessageId,omitempty"`
+	Summary           string                      `json:"summary,omitempty"`
+	ProviderSlug      string                      `json:"providerSlug,omitempty"`
+	ModelSlug         string                      `json:"modelSlug,omitempty"`
+	ModelVersion      int                         `json:"modelVersion,omitempty"`
+	EstimatedTokens   int                         `json:"estimatedTokens,omitempty"`
 }
 
 // chatStream persists the user turn, reserves an assistant row, relays the
@@ -213,7 +216,7 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		usage       pipeUsage
 	)
 
-	streamErr := a.relayChat(ctx, userID, access.canEdit, conv, llm, charge.id, req.Text, assistant.ID, prompt, func(ev pipeChatEvent) {
+	streamErr := a.relayChat(ctx, userID, agenttools.OperationsForRole(string(access.role)), conv, llm, charge.id, req.Text, assistant.ID, prompt, func(ev pipeChatEvent) {
 		switch ev.Type {
 		case "checkpoint":
 			cpCtx, cpCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -324,10 +327,14 @@ func (a *api) resolveConversation(ctx context.Context, userID, wsID, convID stri
 	return conv, nil
 }
 
+// relayChat forwards one turn to the retrieval service. The trusted context
+// (actor, workspace, assistant message, granted resource operations, contract
+// version) travels outside model arguments; Python filters the offered tools
+// by these operations and every Go mutation rechecks them independently.
 func (a *api) relayChat(
 	ctx context.Context,
 	userID string,
-	canGenerate bool,
+	operations []agenttools.Operation,
 	conv store.Conversation,
 	llm resolvedLLM,
 	spendSessionID string,
@@ -355,7 +362,8 @@ func (a *api) relayChat(
 		"query":              query,
 		"workspaceId":        conv.WorkspaceID,
 		"userId":             userID,
-		"canGenerate":        canGenerate,
+		"contractVersion":    agenttools.ContractVersion,
+		"operations":         operations,
 		"history":            history,
 		"assistantMessageId": assistantID,
 		"spendSessionId":     spendSessionID,

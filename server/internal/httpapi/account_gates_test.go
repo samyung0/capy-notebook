@@ -257,6 +257,12 @@ func TestWorkspaceEditorCanCreateAndRenameFlashcards(t *testing.T) {
 // records the owner as the author.
 func TestGeneratedMaterialsRecordTheActorAsAuthor(t *testing.T) {
 	h := openShareAPI(t, stubRetrieval(t))
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, testdb.URL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
 
 	for _, kind := range []string{"mindmap", "diagram", "flashcards", "quiz"} {
 		t.Run(kind, func(t *testing.T) {
@@ -270,22 +276,10 @@ func TestGeneratedMaterialsRecordTheActorAsAuthor(t *testing.T) {
 				_ = doReq(t, h, http.MethodDelete, "/api/materials/"+id, "u_owner", nil)
 			})
 
-			revs := doReq(t, h, http.MethodGet, "/api/materials/"+id+"/revisions", "u_editor", nil)
-			if revs.Code != http.StatusOK {
-				t.Fatalf("revisions = %d body=%s", revs.Code, revs.Body.String())
-			}
-			var revisions []struct {
-				CreatedBy *string `json:"createdBy"`
-			}
-			if err := json.Unmarshal(revs.Body.Bytes(), &revisions); err != nil {
+			var author string
+			if err := pool.QueryRow(ctx, `SELECT COALESCE(created_by,'<null>')
+				FROM materials WHERE id=$1`, id).Scan(&author); err != nil {
 				t.Fatal(err)
-			}
-			if len(revisions) == 0 {
-				t.Fatal("creating a material must record its first revision")
-			}
-			author := "<null>"
-			if recorded := revisions[len(revisions)-1].CreatedBy; recorded != nil {
-				author = *recorded
 			}
 			if author != "u_editor" {
 				t.Errorf("generated %s author = %s, want u_editor", kind, author)

@@ -256,18 +256,6 @@ func (Material) TransformSchema(r huma.Registry, schema *huma.Schema) *huma.Sche
 	return schema
 }
 
-type MaterialRevision struct {
-	MaterialID     string                `json:"materialId"`
-	Revision       int64                 `json:"revision"`
-	ParentRevision *int64                `json:"parentRevision,omitempty"`
-	EventType      MaterialRevisionEvent `json:"eventType"`
-	Title          string                `json:"title"`
-	Content        string                `json:"-"`
-	EventMetadata  json.RawMessage       `json:"-"`
-	CreatedBy      *string               `json:"createdBy,omitempty"`
-	CreatedAt      time.Time             `json:"createdAt"`
-}
-
 type WorkspaceMember struct {
 	WorkspaceID string        `json:"workspaceId"`
 	UserID      string        `json:"userId"`

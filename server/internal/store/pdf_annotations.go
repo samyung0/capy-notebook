@@ -64,7 +64,7 @@ func (s *Store) annotationLock(ctx context.Context, tx pgx.Tx, actor, file strin
 	}
 	var kind string
 	var revision int64
-	if err = tx.QueryRow(ctx, `SELECT kind,revision FROM files WHERE id=$1 FOR UPDATE`, file).Scan(&kind, &revision); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT kind,revision FROM files WHERE id=$1 AND trashed_at IS NULL FOR UPDATE`, file).Scan(&kind, &revision); err != nil {
 		return "", err
 	}
 	if kind != "pdf" {

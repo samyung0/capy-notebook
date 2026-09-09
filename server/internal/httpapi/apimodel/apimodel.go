@@ -9,7 +9,6 @@
 package apimodel
 
 import (
-	"encoding/json"
 	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
@@ -63,6 +62,9 @@ type (
 	User               = store.User
 	Chapter            = store.Chapter
 	File               = store.File
+	TrashItem          = store.TrashItem
+	TrashPage          = store.TrashPage
+	OperationReceipt   = store.AgentOperation
 	Attempt            = store.Attempt
 	FlashcardSet       = store.FlashcardSet
 	Flashcard          = store.Flashcard
@@ -246,33 +248,6 @@ func FromMaterial(m store.Material) (Material, error) {
 		Revision: m.Revision,
 		IsOwner:  m.IsOwner, Role: m.Role, Capabilities: m.Capabilities,
 	}, nil
-}
-
-type MaterialRevision struct {
-	MaterialID     string                      `json:"materialId"`
-	Revision       int64                       `json:"revision"`
-	ParentRevision *int64                      `json:"parentRevision,omitempty"`
-	EventType      store.MaterialRevisionEvent `json:"eventType"`
-	Title          string                      `json:"title"`
-	Content        materialdoc.Envelope        `json:"content"`
-	EventMetadata  map[string]any              `json:"eventMetadata"`
-	CreatedBy      *string                     `json:"createdBy,omitempty"`
-	CreatedAt      time.Time                   `json:"createdAt"`
-}
-
-func FromMaterialRevision(r store.MaterialRevision) (MaterialRevision, error) {
-	content, err := materialdoc.Parse(r.Content)
-	if err != nil {
-		return MaterialRevision{}, err
-	}
-	out := MaterialRevision{
-		MaterialID: r.MaterialID, Revision: r.Revision, Title: r.Title,
-		ParentRevision: r.ParentRevision, EventType: r.EventType, Content: content,
-		EventMetadata: map[string]any{},
-		CreatedBy:     r.CreatedBy, CreatedAt: r.CreatedAt,
-	}
-	_ = json.Unmarshal(r.EventMetadata, &out.EventMetadata)
-	return out, nil
 }
 
 type (

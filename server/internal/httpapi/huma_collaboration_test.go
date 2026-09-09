@@ -20,7 +20,6 @@ func TestCollaborationContractsAreRegistered(t *testing.T) {
 		"/api/workspaces/{id}/members:",
 		"/api/workspaces/{id}/invites:",
 		"/api/workspace-invites/{token}/accept:",
-		"/api/materials/{id}/revisions:",
 		"/api/materials/{id}/discussions:",
 		"/api/materials/{id}/collaboration-token:",
 		"/api/discussions/{id}/comments:",
@@ -30,8 +29,6 @@ func TestCollaborationContractsAreRegistered(t *testing.T) {
 		"parentCommentId:",
 		"anchorStart:",
 		"anchorEnd:",
-		"eventType:",
-		"eventMetadata:",
 		"shareRole:",
 		"identifier:",
 		"schemaVersion:",
@@ -54,7 +51,8 @@ func TestCollaborationContractsAreRegistered(t *testing.T) {
 		"proposedFragment:",
 		"finalizedContent:",
 		"expectedBaseRevision:",
-		"operation:",
+		// "operation:" is no longer forbidden: ResourceEffect.operation is the
+		// agent-tool result contract, unrelated to the removed suggestion flow.
 		"previewBefore:",
 		"previewAfter:",
 		"suggestionIds:",

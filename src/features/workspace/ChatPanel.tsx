@@ -2,12 +2,16 @@ import { useMutation } from '@tanstack/react-query';
 import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { Streamdown } from 'streamdown';
-import { api } from '@/api/client';
-import { useConversations, useMessages } from '@/api/hooks';
+import { api, isApiError } from '@/api/client';
+import { useConversations, useMessages, useUndoEdit } from '@/api/hooks';
 import type {
   ActivityBlock,
   ChatMessage,
   Citation,
+  ResourceEffect,
+  ResourceRef,
+  ToolError,
+  UndoStatus,
   UserColor,
 } from '@/api/types';
 import { Button } from '@/components/ui/Button';
@@ -83,7 +87,157 @@ function PlanningHint({ visible }: { visible: boolean }) {
   );
 }
 
-function ActivityList({ blocks }: { blocks: ActivityBlock[] }) {
+/** Localized copy for a stable tool error code; the code itself never changes. */
+export function toolErrorMessage(error: ToolError | undefined): string {
+  switch (error?.code) {
+    case 'unsupported_format':
+      return m.chat_tool_error_unsupported_format();
+    case 'unsupported_operation':
+      return m.chat_tool_error_unsupported_operation();
+    case 'invalid_input':
+      return m.chat_tool_error_invalid_input();
+    case 'unavailable_target':
+      return m.chat_tool_error_unavailable_target();
+    case 'stale_target':
+      return m.chat_tool_error_stale_target();
+    case 'quota_rejected':
+      return m.chat_tool_error_quota_rejected();
+    case 'lifecycle_rejected':
+      return m.chat_tool_error_lifecycle_rejected();
+    case 'outcome_unknown':
+      return m.chat_tool_error_outcome_unknown();
+    case 'limit_reached':
+      return m.chat_tool_error_limit_reached();
+    default:
+      return m.chat_tool_failed();
+  }
+}
+
+function effectLabel(operation: ResourceEffect['operation']): string {
+  switch (operation) {
+    case 'created':
+      return m.chat_effect_created();
+    case 'edited':
+      return m.chat_effect_edited();
+    case 'edit_undone':
+      return m.chat_effect_edit_undone();
+    case 'trashed':
+      return m.chat_effect_trashed();
+    case 'restored':
+      return m.chat_effect_restored();
+    default:
+      return operation;
+  }
+}
+
+/** One durable mutation receipt. Presentation is decided here from the
+ * trusted resource type; the model never picks a component or a URL. Opening
+ * is separate from the commit: nothing steals focus when a result lands. */
+function undoLabel(status: UndoStatus): string {
+  switch (status) {
+    case 'available':
+      return m.chat_undo_edit();
+    case 'undone':
+      return m.chat_undo_done();
+    case 'pending':
+      return m.chat_undo_pending();
+    default:
+      return m.chat_undo_unavailable();
+  }
+}
+
+function EffectCard({
+  effect,
+  onOpen,
+  onUndone,
+}: {
+  effect: ResourceEffect;
+  onOpen?: (ref: ResourceRef) => void;
+  onUndone?: (
+    operationId: string,
+    effects: ResourceEffect[] | undefined
+  ) => void;
+}) {
+  const { resource } = effect;
+  const active = effect.operation !== 'trashed';
+  const undoRef = effect.undo;
+  const { mutate: undo, isPending: undoing, error: undoError } = useUndoEdit();
+  const undoStatus: UndoStatus = undoing
+    ? 'pending'
+    : (undoRef?.status ?? 'unavailable');
+  const undoRefusal = undoError
+    ? isApiError(undoError) && undoError.code === 'undo_unavailable'
+      ? m.chat_undo_unavailable()
+      : toolErrorMessage({
+          code: isApiError(undoError) ? (undoError.code ?? '') : '',
+          message: '',
+        })
+    : null;
+  return (
+    <div className="flex items-center gap-2 rounded-card border border-line bg-surface px-2.5 py-1.5 text-sm">
+      <Icon
+        name={resource.kind === 'material' ? 'message' : 'files'}
+        size={14}
+      />
+      <div className="min-w-0 flex-1">
+        <p className="truncate">{resource.title || resource.id}</p>
+        <p className="t-meta text-fg-muted">
+          {effectLabel(effect.operation)}
+          {resource.materialKind ? ` · ${resource.materialKind}` : ''}
+        </p>
+        {undoRefusal ? (
+          <p className="t-meta text-tint-error-fg">{undoRefusal}</p>
+        ) : null}
+      </div>
+      {undoRef ? (
+        <Button
+          disabled={undoStatus !== 'available'}
+          onClick={() =>
+            undo(undoRef.operationId, {
+              onSuccess: (receipt) =>
+                onUndone?.(
+                  undoRef.operationId,
+                  receipt.effect ? [receipt.effect] : undefined
+                ),
+            })
+          }
+          size="sm"
+          variant="ghost-hover"
+        >
+          {undoLabel(undoStatus)}
+        </Button>
+      ) : null}
+      {active && onOpen ? (
+        <Button
+          onClick={() =>
+            onOpen({
+              id: resource.id,
+              kind: resource.kind,
+              title: resource.title,
+            })
+          }
+          size="sm"
+          variant="ghost-hover"
+        >
+          {m.chat_open_resource()}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function ActivityList({
+  blocks,
+  onOpenResource,
+  onUndone,
+}: {
+  blocks: ActivityBlock[];
+  onOpenResource?: (ref: ResourceRef) => void;
+  onUndone?: (
+    operationId: string,
+    effects: ResourceEffect[] | undefined
+  ) => void;
+}) {
   if (!blocks.length) return null;
   return (
     <div className="mb-2 flex flex-col gap-2">
@@ -98,24 +252,43 @@ function ActivityList({ blocks }: { blocks: ActivityBlock[] }) {
             </Streamdown>
           </div>
         ) : (
-          <div
-            className={cn(
-              'inline-flex w-fit items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px]',
-              block.status === 'refused'
-                ? 'bg-tint-error text-solid-error'
-                : 'bg-page text-fg-muted'
-            )}
-            key={block.id}
-          >
-            {block.status === 'running' ? (
-              <Spinner />
-            ) : (
-              <Icon name="search" size={12} />
-            )}
-            <span>{block.name}</span>
-            {block.detail ? (
-              <span className="opacity-70">{block.detail}</span>
+          <div className="flex flex-col gap-1.5" key={block.id}>
+            <div
+              className={cn(
+                'inline-flex w-fit items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px]',
+                block.outcome && block.outcome !== 'succeeded'
+                  ? 'bg-tint-error text-solid-error'
+                  : 'bg-page text-fg-muted'
+              )}
+            >
+              {block.outcome ? <Icon name="search" size={12} /> : <Spinner />}
+              <span>{block.name}</span>
+              {block.detail ? (
+                <span className="opacity-70">{block.detail}</span>
+              ) : null}
+            </div>
+            {block.outcome && block.outcome !== 'succeeded' ? (
+              <p
+                className={cn(
+                  'text-xs',
+                  block.outcome === 'outcome_unknown' && !block.error
+                    ? 'text-fg-muted'
+                    : 'text-solid-error'
+                )}
+              >
+                {block.outcome === 'outcome_unknown' && !block.error
+                  ? m.chat_tool_error_outcome_unknown()
+                  : toolErrorMessage(block.error)}
+              </p>
             ) : null}
+            {block.effects?.map((effect) => (
+              <EffectCard
+                effect={effect}
+                key={`${block.id}:${effect.operationId ?? effect.resource.id}`}
+                onOpen={onOpenResource}
+                onUndone={onUndone}
+              />
+            ))}
           </div>
         )
       )}
@@ -127,13 +300,20 @@ function AssistantBubble({
   msg,
   streaming,
   onOpenCitation,
+  onOpenResource,
+  onUndone,
 }: {
   msg: ChatMessage;
   streaming: boolean;
   onOpenCitation?: (citation: Citation) => void;
+  onOpenResource?: (ref: ResourceRef) => void;
+  onUndone?: (
+    operationId: string,
+    effects: ResourceEffect[] | undefined
+  ) => void;
 }) {
   const runningTool = msg.activity?.some(
-    (block) => block.kind === 'tool' && block.status === 'running'
+    (block) => block.kind === 'tool' && !block.outcome
   );
   const waiting =
     streaming &&
@@ -150,7 +330,11 @@ function AssistantBubble({
   const empty = !answer && !msg.activity?.length && !waiting;
   return (
     <div className="mr-auto max-w-[92%] px-3.5 py-2.5">
-      <ActivityList blocks={msg.activity ?? []} />
+      <ActivityList
+        blocks={msg.activity ?? []}
+        onOpenResource={onOpenResource}
+        onUndone={onUndone}
+      />
       {msg.currentBlockText && msg.phase !== 'answering' && !msg.content ? (
         <div className="streamdown-body mb-2 text-fg-muted text-sm [&_p]:my-1">
           <Streamdown className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
@@ -209,6 +393,7 @@ export function ChatPanel({
   color,
   canReprocess,
   onOpenCitation,
+  onOpenResource,
 }: {
   workspaceId: string;
   color?: UserColor;
@@ -216,6 +401,8 @@ export function ChatPanel({
   canReprocess?: boolean;
   /** Opens and highlights a cited source in the center pane. */
   onOpenCitation?: (citation: Citation) => void;
+  /** Opens a resource a tool created, edited or restored, in the center pane. */
+  onOpenResource?: (ref: ResourceRef) => void;
 }) {
   const {
     pendingSources,
@@ -226,6 +413,7 @@ export function ChatPanel({
     stop,
     startNew,
     hydrate,
+    markUndone,
   } = useChatStream(workspaceId);
   const { mutate: processChanges, isPending: processingChanges } = useMutation({
     mutationFn: async (fileIds: string[]) => {
@@ -374,6 +562,8 @@ export function ChatPanel({
               key={msg.id}
               msg={msg}
               onOpenCitation={onOpenCitation}
+              onOpenResource={onOpenResource}
+              onUndone={markUndone}
               streaming={streaming}
             />
           )

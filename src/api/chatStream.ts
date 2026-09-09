@@ -10,7 +10,14 @@ import { m } from '@/i18n';
 import { authHeaders } from './auth';
 import { API_BASE } from './client';
 import { consumeSSE } from './sse';
-import type { ChatPhase, ChatStatus, Citation } from './types';
+import type {
+  ChatPhase,
+  ChatStatus,
+  Citation,
+  ResourceEffect,
+  ToolError,
+  ToolOutcome,
+} from './types';
 
 export interface StreamStart {
   conversationId: string;
@@ -35,9 +42,24 @@ export interface ChatStreamHandlers {
   onPendingSources?: (event: { fileIds: string[]; omitted: boolean }) => void;
   onPhase?: (phase: ChatPhase) => void;
   onStart?: (e: StreamStart) => void;
-  onToolEnd?: (callId: string, status: 'success' | 'refused') => void;
+  onToolEnd?: (callId: string, result: ToolEndEvent) => void;
   onToolStart?: (callId: string, name: string, detail: string) => void;
 }
+
+/** Terminal result of one tool call, in the shared agent-tool contract shape. */
+export interface ToolEndEvent {
+  effects?: ResourceEffect[];
+  error?: ToolError;
+  outcome: ToolOutcome;
+}
+
+const TOOL_OUTCOMES: readonly ToolOutcome[] = [
+  'succeeded',
+  'refused',
+  'failed',
+  'cancelled',
+  'outcome_unknown',
+];
 
 export interface ChatStreamBody {
   conversationId?: string;
@@ -126,6 +148,8 @@ export async function streamChat(
       code?: string;
       conversationId?: string;
       detail?: string;
+      effects?: ResourceEffect[];
+      error?: ToolError;
       generationId?: string;
       kind?: string;
       message?: string;
@@ -135,8 +159,9 @@ export async function streamChat(
       modelSlug?: string;
       modelVersion?: number;
       name?: string;
+      outcome?: string;
       phase?: ChatPhase;
-      status?: ChatStatus | 'success' | 'refused';
+      status?: ChatStatus;
       text?: string;
       tokenCount?: number;
       type: string;
@@ -189,8 +214,12 @@ export async function streamChat(
         }
         break;
       case 'tool_end':
-        if (ev.callId && (ev.status === 'success' || ev.status === 'refused')) {
-          handlers.onToolEnd?.(ev.callId, ev.status);
+        if (ev.callId && TOOL_OUTCOMES.includes(ev.outcome as ToolOutcome)) {
+          handlers.onToolEnd?.(ev.callId, {
+            effects: Array.isArray(ev.effects) ? ev.effects : undefined,
+            error: ev.error,
+            outcome: ev.outcome as ToolOutcome,
+          });
         }
         break;
       case 'citations':

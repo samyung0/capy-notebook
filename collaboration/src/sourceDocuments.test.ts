@@ -6,6 +6,7 @@ import { signCollaborationToken, verifyCollaborationToken } from './auth.js';
 import * as officeRuntime from './officeRuntime.js';
 import {
   SourceDocumentStore,
+  SourceRequestError,
   type SourceSession,
   textEffects,
   textState,
@@ -211,4 +212,87 @@ test('an image replacement keeps a caption only for the same actual bytes', asyn
   expect(
     (await store.effects(session, new Uint8Array([2])))[0].caption
   ).toBeUndefined();
+});
+
+test('a source edit retries from freshly loaded state after a checkpoint CAS conflict', async () => {
+  const store = new SourceDocumentStore({} as Pool, 'http://gateway', 'secret');
+  const stateOf = (text: string) => {
+    const document = new Y.Doc();
+    document.getText('source').insert(0, text);
+    return Buffer.from(Y.encodeStateAsUpdate(document)).toString('base64');
+  };
+  const base = { access: 'write', epoch: 1, format: 'text' } as SourceSession;
+  // The second bootstrap sees what another replica committed meanwhile.
+  vi.spyOn(store, 'session')
+    .mockResolvedValueOnce({
+      ...base,
+      checkpoint: 3,
+      state: stateOf('old text'),
+    })
+    .mockResolvedValueOnce({
+      ...base,
+      checkpoint: 4,
+      state: stateOf('older text here'),
+    });
+  vi.spyOn(store, 'effects').mockResolvedValue([]);
+  const bodies: Array<{
+    expectedCheckpoint: number;
+    operation: { inverse: { commands: Array<{ offset: number }> } };
+  }> = [];
+  vi.spyOn(store, 'request').mockImplementation((async (
+    _file: string,
+    _action: string,
+    body: (typeof bodies)[number]
+  ) => {
+    bodies.push(body);
+    if (bodies.length === 1) throw new SourceRequestError(409, 'stale');
+    return { ...base, checkpoint: 5, operation: { operationId: 'op_1' } };
+  }) as never);
+  const result = await store.applyEdit({
+    actorUserId: 'u1',
+    commands: [{ expectedText: 'text', text: 'TEXT', type: 'replace_text' }],
+    fileId: 'f_1',
+    operation: {
+      actorUserId: 'u1',
+      id: 'op_1',
+      requestHash: 'h',
+      toolVersion: 1,
+    },
+  });
+  expect(bodies.map((body) => body.expectedCheckpoint)).toEqual([3, 4]);
+  // The span was re-resolved on the fresh state, not re-merged from attempt one.
+  expect(bodies[0].operation.inverse.commands[0].offset).toBe(4);
+  expect(bodies[1].operation.inverse.commands[0].offset).toBe(6);
+  expect(result.receipt.operationId).toBe('op_1');
+});
+
+test('inspecting a never-opened source keeps the bootstrap access after seeding', async () => {
+  const store = new SourceDocumentStore({} as Pool, 'http://gateway', 'secret');
+  const seeded = new Y.Doc();
+  seeded.getText('source').insert(0, 'seed');
+  const state = Buffer.from(Y.encodeStateAsUpdate(seeded)).toString('base64');
+  vi.spyOn(store, 'session').mockResolvedValue({
+    access: 'write',
+    baseSourceSHA256: '',
+    checkpoint: 0,
+    epoch: 1,
+    fileId: 'f_1',
+    format: 'text',
+    sourceURL: 'http://base',
+  } as unknown as SourceSession);
+  vi.spyOn(
+    store as unknown as { base: () => Promise<Buffer> },
+    'base'
+  ).mockResolvedValue(Buffer.from('seed'));
+  vi.spyOn(store, 'request').mockResolvedValue({
+    access: 'read',
+    checkpoint: 0,
+    epoch: 1,
+    fileId: 'f_1',
+    format: 'text',
+    state,
+  } as unknown as SourceSession);
+  const inspection = await store.inspect('f_1', 'u1');
+  expect(inspection.access).toBe('write');
+  expect(inspection.text).toBe('seed');
 });

@@ -25,7 +25,6 @@ describe('billing formatters', () => {
   it('keeps both plans unlimited for owned workspaces', () => {
     expect(PLAN_LIMITS.free.ownedWorkspaceLimit).toBeNull();
     expect(PLAN_LIMITS.pro.ownedWorkspaceLimit).toBeNull();
-    expect(PLAN_LIMITS.free.materialRevisionLimit).toBe(3);
   });
 
   it('formats micro-credits as whole credits once the number is large', () => {

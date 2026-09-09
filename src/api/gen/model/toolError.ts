@@ -5,4 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type MaterialRevisionEventMetadata = {[key: string]: unknown};
+export interface ToolError {
+  code: string;
+  message: string;
+}

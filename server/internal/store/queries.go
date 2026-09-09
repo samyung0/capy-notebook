@@ -1,8 +1,10 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -10,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/copytext"
 	"github.com/samyung0/capy-notebook/server/internal/embeddingpins"
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
@@ -99,7 +102,7 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 	rows.Close()
 
 	rows, err = s.pool.Query(ctx, `SELECT f.id, f.name, f.workspace_id, w.name FROM files f
-		JOIN workspaces w ON w.id=f.workspace_id WHERE w.user_id=$2 AND lower(f.name) LIKE $1`, like, userID)
+		JOIN workspaces w ON w.id=f.workspace_id WHERE w.user_id=$2 AND f.trashed_at IS NULL AND lower(f.name) LIKE $1`, like, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +131,7 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 	rows, err = s.pool.Query(ctx, `SELECT m.id, m.title, m.workspace_name
 		FROM materials m
 		JOIN users owner ON owner.id=m.owner_user_id
-		WHERE (m.owner_user_id=$2 OR EXISTS (
+		WHERE m.trashed_at IS NULL AND (m.owner_user_id=$2 OR EXISTS (
 			SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=m.workspace_id AND wm.user_id=$2
 		)) AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
 			AND m.kind='flashcards' AND lower(m.title) LIKE $1`, like, userID)
@@ -183,7 +186,7 @@ const wsCols = `w.id, w.name, w.description, w.color, w.privacy, w.share_role,
 				  live.current_period_end DESC NULLS FIRST LIMIT 1), 'free') END
 		 FROM users u WHERE u.id=w.user_id),
 	(SELECT count(*) FROM chapters c WHERE c.workspace_id=w.id),
-	(SELECT count(*) FROM files f WHERE f.workspace_id=w.id),
+	(SELECT count(*) FROM files f WHERE f.workspace_id=w.id AND f.trashed_at IS NULL),
 	w.created_at, w.last_accessed_at, w.auto_reparse, w.auto_reindex`
 
 // memberRoleCol resolves the requester's ($1) persisted role next to wsCols;
@@ -252,7 +255,7 @@ func (s *Store) ListWorkspaces(ctx context.Context, userID, q, sortKey, color, t
 	case "chapters":
 		sb += " ORDER BY (SELECT count(*) FROM chapters c WHERE c.workspace_id=w.id) DESC"
 	case "files":
-		sb += " ORDER BY (SELECT count(*) FROM files f WHERE f.workspace_id=w.id) DESC"
+		sb += " ORDER BY (SELECT count(*) FROM files f WHERE f.workspace_id=w.id AND f.trashed_at IS NULL) DESC"
 	default:
 		sb += " ORDER BY w.last_accessed_at DESC"
 	}
@@ -297,10 +300,10 @@ func (s *Store) WorkspaceStats(ctx context.Context, userID, id string) (Workspac
 	// Quizzes live in `materials` since 0010 (the legacy quizzes table is gone).
 	err := s.pool.QueryRow(ctx, `SELECT
 		(SELECT count(*) FROM chapters WHERE workspace_id=$1),
-		(SELECT count(*) FROM files WHERE workspace_id=$1),
-		(SELECT count(*) FROM materials WHERE workspace_id=$1 AND kind='quiz'),
-		(SELECT count(*) FROM attempts a JOIN materials m ON m.id=a.material_id WHERE m.workspace_id=$1),
-		COALESCE((SELECT round(avg(a.pct))::int FROM attempts a JOIN materials m ON m.id=a.material_id WHERE m.workspace_id=$1),0)`,
+		(SELECT count(*) FROM files WHERE workspace_id=$1 AND trashed_at IS NULL),
+		(SELECT count(*) FROM materials WHERE workspace_id=$1 AND kind='quiz' AND trashed_at IS NULL),
+		(SELECT count(*) FROM attempts a JOIN materials m ON m.id=a.material_id WHERE m.workspace_id=$1 AND m.trashed_at IS NULL),
+		COALESCE((SELECT round(avg(a.pct))::int FROM attempts a JOIN materials m ON m.id=a.material_id WHERE m.workspace_id=$1 AND m.trashed_at IS NULL),0)`,
 		id).Scan(&st.Chapters, &st.Files, &st.Quizzes, &st.Attempts, &st.AvgScore)
 	if err == nil {
 		err = s.workspaceIndexCounts(ctx, id, &st)
@@ -736,7 +739,7 @@ func (s *Store) deleteWorkspaceWithResultTx(
 
 /* ----------------------------------------------------------- chapters/files */
 
-const chFiles = `COALESCE((SELECT array_agg(f.id ORDER BY f.position, f.added_at DESC) FROM files f WHERE f.chapter_id=c.id), '{}')`
+const chFiles = `COALESCE((SELECT array_agg(f.id ORDER BY f.position, f.added_at DESC) FROM files f WHERE f.chapter_id=c.id AND f.trashed_at IS NULL), '{}')`
 
 func (s *Store) ListChapters(ctx context.Context, wsID string) ([]Chapter, error) {
 	rows, err := s.pool.Query(ctx, `SELECT c.id, c.workspace_id, c.name, c.position, `+chFiles+`
@@ -882,7 +885,7 @@ func (s *Store) ReorderContent(ctx context.Context, wsID, actorID string, chapte
 		}
 		ct, err := tx.Exec(ctx, `UPDATE `+table+`
 			SET chapter_id=$1, position=$2
-			WHERE id=$3 AND workspace_id=$4`, chapterID, position, item.ID, wsID)
+			WHERE id=$3 AND workspace_id=$4 AND trashed_at IS NULL`, chapterID, position, item.ID, wsID)
 		if err != nil {
 			return err
 		}
@@ -938,13 +941,13 @@ func (s *Store) ListFiles(ctx context.Context, userID, wsID string) ([]File, err
 		CASE WHEN f.status='ready' AND ((f.kind='pdf' AND f.blob_path IS NOT NULL) OR f.preview_blob_path IS NOT NULL)
 			THEN '/api/files/' || f.id || '/preview' END,
 		f.content, f.revision`
-	q := `SELECT ` + fileCols + ` FROM files`
+	q := `SELECT ` + fileCols + ` FROM files WHERE trashed_at IS NULL`
 	args := []any{}
 	if wsID != "" {
-		q += ` WHERE workspace_id=$1`
+		q += ` AND workspace_id=$1`
 		args = append(args, wsID)
 	} else if userID != "" {
-		q = `SELECT ` + fCols + ` FROM files f JOIN workspaces w ON w.id=f.workspace_id WHERE w.user_id=$1`
+		q = `SELECT ` + fCols + ` FROM files f JOIN workspaces w ON w.id=f.workspace_id WHERE w.user_id=$1 AND f.trashed_at IS NULL`
 		args = append(args, userID)
 	}
 	q += ` ORDER BY position, added_at DESC`
@@ -965,7 +968,7 @@ func (s *Store) ListFiles(ctx context.Context, userID, wsID string) ([]File, err
 }
 
 func (s *Store) GetFile(ctx context.Context, id string) (File, error) {
-	f, err := scanFile(s.pool.QueryRow(ctx, `SELECT `+fileCols+` FROM files WHERE id=$1`, id))
+	f, err := scanFile(s.pool.QueryRow(ctx, `SELECT `+fileCols+` FROM files WHERE id=$1 AND trashed_at IS NULL`, id))
 	if isNoRows(err) {
 		return f, ErrNotFound
 	}
@@ -997,7 +1000,7 @@ func (s *Store) UpdateFile(ctx context.Context, actorID, id string, p FilePatch)
 	}
 	defer tx.Rollback(ctx)
 	var wsID string
-	if err := tx.QueryRow(ctx, `SELECT workspace_id FROM files WHERE id=$1`, id).
+	if err := tx.QueryRow(ctx, `SELECT workspace_id FROM files WHERE id=$1 AND trashed_at IS NULL`, id).
 		Scan(&wsID); err != nil {
 		if isNoRows(err) {
 			return File{}, ErrNotFound
@@ -1009,7 +1012,7 @@ func (s *Store) UpdateFile(ctx context.Context, actorID, id string, p FilePatch)
 	}
 	if p.Name != nil {
 		if _, err := tx.Exec(ctx, `UPDATE files SET name=$2
-			WHERE id=$1 AND workspace_id=$3`, id, *p.Name, wsID); err != nil {
+			WHERE id=$1 AND workspace_id=$3 AND trashed_at IS NULL`, id, *p.Name, wsID); err != nil {
 			return File{}, err
 		}
 	}
@@ -1030,12 +1033,12 @@ func (s *Store) UpdateFile(ctx context.Context, actorID, id string, p FilePatch)
 			return File{}, err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE files SET chapter_id=$2, position=$3
-			WHERE id=$1 AND workspace_id=$4`, id, *p.ChapterID, position, wsID); err != nil {
+			WHERE id=$1 AND workspace_id=$4 AND trashed_at IS NULL`, id, *p.ChapterID, position, wsID); err != nil {
 			return File{}, err
 		}
 	}
 	f, err := scanFile(tx.QueryRow(ctx, `SELECT `+fileCols+`
-		FROM files WHERE id=$1 AND workspace_id=$2`, id, wsID))
+		FROM files WHERE id=$1 AND workspace_id=$2 AND trashed_at IS NULL`, id, wsID))
 	if err != nil {
 		if isNoRows(err) {
 			return File{}, ErrNotFound
@@ -1046,39 +1049,6 @@ func (s *Store) UpdateFile(ctx context.Context, actorID, id string, p FilePatch)
 		return File{}, err
 	}
 	return f, nil
-}
-
-// DeleteFile removes the file row. Its blob objects are dereferenced by trigger,
-// which queues for the reaper whichever ones no other row still points at — a
-// workspace clone deliberately shares source blobs, so the refcount decides.
-func (s *Store) DeleteFile(ctx context.Context, actorID, id string) error {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-	var wsID string
-	if err := tx.QueryRow(ctx, `SELECT workspace_id FROM files WHERE id=$1`, id).Scan(&wsID); err != nil {
-		if isNoRows(err) {
-			return ErrNotFound
-		}
-		return err
-	}
-	ownerID, err := s.lockWorkspaceEditorMutationTx(ctx, tx, wsID, actorID)
-	if err != nil {
-		return err
-	}
-	if err := s.lockStorageRowTx(ctx, tx, ownerID); err != nil {
-		return err
-	}
-	ct, err := tx.Exec(ctx, `DELETE FROM files WHERE id=$1 AND workspace_id=$2`, id, wsID)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return tx.Commit(ctx)
 }
 
 /* ------------------------------------------------------------- materials */
@@ -1099,6 +1069,24 @@ func scanMaterial(row pgx.Row) (Material, error) {
 }
 
 func (s *Store) CreateMaterial(ctx context.Context, mt Material) (Material, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Material{}, err
+	}
+	defer tx.Rollback(ctx)
+	id, err := s.createMaterialTx(ctx, tx, mt)
+	if err != nil {
+		return Material{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Material{}, err
+	}
+	return s.GetMaterial(ctx, id)
+}
+
+// createMaterialTx validates, gates and inserts one material inside the
+// caller's transaction so a receipt or sibling row can commit with it.
+func (s *Store) createMaterialTx(ctx context.Context, tx pgx.Tx, mt Material) (string, error) {
 	if mt.ID == "" {
 		mt.ID = uid("mat")
 	}
@@ -1119,41 +1107,36 @@ func (s *Store) CreateMaterial(ctx context.Context, mt Material) (Material, erro
 	}
 	content, err := materialdoc.FromLegacyMarkdown(string(mt.Kind), mt.Content)
 	if err != nil {
-		return Material{}, err
+		return "", err
 	}
 	if err := materialdoc.ValidateKind(content, string(mt.Kind)); err != nil {
-		return Material{}, err
+		return "", err
 	}
 	mt.Content = content
 	metrics, err := materialdoc.Metrics(content)
 	if err != nil {
-		return Material{}, err
+		return "", err
 	}
 	if err := metrics.LimitError(); err != nil {
-		return Material{}, err
+		return "", err
 	}
 	var cardIDs []string
 	if mt.Kind == "flashcards" {
 		cards, err := materialdoc.ExtractFlashcards(content)
 		if err != nil {
-			return Material{}, err
+			return "", err
 		}
 		cardIDs = make([]string, len(cards))
 		for i, card := range cards {
 			cardIDs[i] = card.ID
 		}
 	}
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return Material{}, err
-	}
-	defer tx.Rollback(ctx)
 	creatorID := mt.CreatedBy
 	var ownerID string
 	if mt.WorkspaceID != "" {
 		ownerID, err = s.storageOwnerTx(ctx, tx, mt.WorkspaceID)
 		if err != nil {
-			return Material{}, err
+			return "", err
 		}
 		if creatorID == "" {
 			creatorID = ownerID
@@ -1162,25 +1145,25 @@ func (s *Store) CreateMaterial(ctx context.Context, mt Material) (Material, erro
 			ctx, tx, mt.WorkspaceID, creatorID,
 		)
 		if err != nil {
-			return Material{}, err
+			return "", err
 		}
 	} else {
 		ownerID = creatorID
 	}
 	if creatorID == "" || ownerID == "" {
-		return Material{}, ErrNotFound
+		return "", ErrNotFound
 	}
 	if mt.WorkspaceID == "" {
 		if err := s.lockAccountSessionsTx(ctx, tx, creatorID, ownerID); err != nil {
-			return Material{}, err
+			return "", err
 		}
 	}
 	storedSize, err := storageJSONSizeTx(ctx, tx, mt.Content)
 	if err != nil {
-		return Material{}, err
+		return "", err
 	}
 	if err := s.gateStorageTx(ctx, tx, ownerID, storedSize); err != nil {
-		return Material{}, err
+		return "", err
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO materials
 		(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
@@ -1191,33 +1174,190 @@ func (s *Store) CreateMaterial(ctx context.Context, mt Material) (Material, erro
 		mt.ScopeFileNames, mt.Privacy, mt.Color, metrics.NodeCount, metrics.MaxDepth, creatorID)
 	if err != nil {
 		if uniqueConstraintName(err) == "materials_pkey" {
-			return Material{}, ErrMaterialIDTaken
+			return "", ErrMaterialIDTaken
 		}
 		if isUniqueViolation(err) {
-			return Material{}, ErrTitleTaken
+			return "", ErrTitleTaken
 		}
-		return Material{}, err
-	}
-	if err := s.upsertMaterialRevisionTx(ctx, tx, MaterialRevision{
-		MaterialID:    mt.ID,
-		Revision:      1,
-		EventType:     RevisionCreate,
-		Title:         mt.Title,
-		Content:       mt.Content,
-		EventMetadata: json.RawMessage(`{}`),
-		CreatedBy:     &creatorID,
-	}); err != nil {
-		return Material{}, err
+		return "", err
 	}
 	if mt.Kind == "flashcards" {
 		if err := syncCardStatsTx(ctx, tx, mt.ID, cardIDs); err != nil {
-			return Material{}, err
+			return "", err
 		}
 	}
-	if err := tx.Commit(ctx); err != nil {
+	return mt.ID, nil
+}
+
+// ErrEmptyMaterial means a draft carried no questions, cards, diagram or text.
+var ErrEmptyMaterial = errors.New("material content is empty")
+
+// MaterialDraft is the kind-discriminated input the fixed Generate workflow
+// and the chat create_material tool both persist through. The two entry
+// points keep their own orchestration, model accounting and response shapes;
+// only validation and persistence are shared.
+type MaterialDraft struct {
+	ID            string
+	ActorUserID   string
+	WorkspaceID   string
+	WorkspaceName string
+	Kind          MaterialKind
+	Title         string
+	// Quiz.
+	Questions    json.RawMessage
+	TimeLimitMin *int
+	// Flashcards, as front/back pairs; ids are minted here.
+	Cards [][2]string
+	// Mindmap, diagram and note markdown (a mermaid block for the first two).
+	Content        string
+	ScopeChapters  []string
+	ScopeFileNames []string
+	Color          UserColor
+}
+
+// material builds the validated Plate document for the draft's kind. Empty
+// generated output is refused here for every kind, so neither entry path can
+// persist a blank artifact.
+func (d MaterialDraft) material() (Material, error) {
+	mt := Material{
+		ID: d.ID, CreatedBy: d.ActorUserID, WorkspaceID: d.WorkspaceID, WorkspaceName: d.WorkspaceName,
+		Kind: d.Kind, Title: d.Title, ScopeChapters: d.ScopeChapters, ScopeFileNames: d.ScopeFileNames,
+		Privacy: "private", Color: d.Color,
+	}
+	switch d.Kind {
+	case "quiz":
+		questions, err := decodeQuestions(d.Questions)
+		if err != nil {
+			return Material{}, err
+		}
+		if len(questions) == 0 {
+			return Material{}, ErrEmptyMaterial
+		}
+		content, err := materialdoc.QuizDocument(d.Questions, d.TimeLimitMin)
+		if err != nil {
+			return Material{}, err
+		}
+		mt.Content = content
+	case "flashcards":
+		if len(d.Cards) == 0 {
+			return Material{}, ErrEmptyMaterial
+		}
+		cards := make([]materialdoc.Card, len(d.Cards))
+		for i, card := range d.Cards {
+			cards[i] = materialdoc.Card{ID: uid("c"), Front: card[0], Back: card[1]}
+		}
+		content, err := materialdoc.FlashcardsDocument(cards)
+		if err != nil {
+			return Material{}, err
+		}
+		mt.Content = content
+	case "mindmap", "diagram":
+		if strings.TrimSpace(materialdoc.IncomingMermaidSource(d.Content)) == "" {
+			return Material{}, ErrEmptyMaterial
+		}
+		mt.Content = d.Content
+	case "note":
+		if strings.TrimSpace(materialdoc.IncomingNoteText(d.Content)) == "" {
+			return Material{}, ErrEmptyMaterial
+		}
+		mt.Content = d.Content
+	default:
+		return Material{}, fmt.Errorf("%w: unsupported material kind %q", materialdoc.ErrInvalid, d.Kind)
+	}
+	return mt, nil
+}
+
+func decodeQuestions(raw json.RawMessage) ([]json.RawMessage, error) {
+	if len(bytes.TrimSpace(raw)) == 0 || string(bytes.TrimSpace(raw)) == "null" {
+		return nil, nil
+	}
+	var questions []json.RawMessage
+	if err := json.Unmarshal(raw, &questions); err != nil {
+		return nil, fmt.Errorf("%w: questions must be an array", materialdoc.ErrInvalid)
+	}
+	return questions, nil
+}
+
+// CreateMaterialDraft persists a draft without a receipt (the Generate path).
+func (s *Store) CreateMaterialDraft(ctx context.Context, draft MaterialDraft) (Material, error) {
+	mt, err := draft.material()
+	if err != nil {
 		return Material{}, err
 	}
-	return s.GetMaterial(ctx, mt.ID)
+	return s.CreateMaterial(ctx, mt)
+}
+
+// CreateMaterialOperation persists a draft together with its durable receipt
+// in one transaction (the chat create_material path). Admission of the same
+// operation id is serialized across replicas: a committed receipt with the
+// same request hash is returned as-is, a different request conflicts, and an
+// in-flight duplicate waits on the advisory lock instead of inserting twice.
+func (s *Store) CreateMaterialOperation(ctx context.Context, draft MaterialDraft, op AgentOperation) (AgentOperation, error) {
+	mt, err := draft.material()
+	if err != nil {
+		return AgentOperation{}, err
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return AgentOperation{}, err
+	}
+	defer tx.Rollback(ctx)
+	existing, err := lockAgentOperationTx(ctx, tx, op.ID, op.RequestHash)
+	if err != nil {
+		return AgentOperation{}, err
+	}
+	if existing != nil {
+		return *existing, nil
+	}
+	id, err := s.createMaterialTx(ctx, tx, mt)
+	if err != nil {
+		return AgentOperation{}, err
+	}
+	op.Kind = "create_material"
+	op.Outcome = agenttools.OutcomeSucceeded
+	op.Error = nil
+	op.Effect = &agenttools.ResourceEffect{
+		Operation:   agenttools.EffectCreated,
+		OperationID: op.ID,
+		Resource: agenttools.ResourceRef{
+			Kind: agenttools.KindMaterial, ID: id, Title: mt.Title,
+			MaterialKind: string(mt.Kind), WorkspaceID: mt.WorkspaceID,
+		},
+	}
+	if err := insertAgentOperationTx(ctx, tx, op); err != nil {
+		return AgentOperation{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return AgentOperation{}, err
+	}
+	return op, nil
+}
+
+// ReplayAgentOperation returns the committed receipt for an operation id when
+// the same request was already applied, ErrNotFound when nothing was recorded
+// yet, and ErrOperationConflict for a different request under that id.
+func (s *Store) ReplayAgentOperation(ctx context.Context, id, requestHash string) (*AgentOperation, error) {
+	op, err := getAgentOperation(ctx, s.pool, id)
+	if err != nil {
+		return nil, err
+	}
+	if op.RequestHash != requestHash {
+		return nil, ErrOperationConflict
+	}
+	return op, nil
+}
+
+// AssistantMessageContext resolves the trusted identity behind a chat tool
+// callback: who owns the conversation and which workspace it belongs to. A
+// missing message (deleted turn or conversation) is ErrNotFound.
+func (s *Store) AssistantMessageContext(ctx context.Context, messageID string) (userID, workspaceID, conversationID string, err error) {
+	err = s.pool.QueryRow(ctx, `SELECT c.user_id, c.workspace_id, c.id
+		FROM messages m JOIN conversations c ON c.id=m.conversation_id
+		WHERE m.id=$1 AND m.role='assistant'`, messageID).Scan(&userID, &workspaceID, &conversationID)
+	if isNoRows(err) {
+		err = ErrNotFound
+	}
+	return
 }
 
 // MaterialTitleTaken reports whether another material in the workspace already
@@ -1265,70 +1405,11 @@ func (s *Store) DisambiguateMaterialTitle(ctx context.Context, workspaceID, desi
 }
 
 func (s *Store) GetMaterial(ctx context.Context, id string) (Material, error) {
-	mt, err := scanMaterial(s.pool.QueryRow(ctx, `SELECT `+materialCols+` FROM materials WHERE id=$1`, id))
+	mt, err := scanMaterial(s.pool.QueryRow(ctx, `SELECT `+materialCols+` FROM materials WHERE id=$1 AND trashed_at IS NULL`, id))
 	if isNoRows(err) {
 		return mt, ErrNotFound
 	}
 	return mt, err
-}
-
-func (s *Store) DeleteMaterial(ctx context.Context, actorID, id string) error {
-	return s.deleteMaterialKind(ctx, actorID, id, "")
-}
-
-func (s *Store) deleteMaterialKind(ctx context.Context, actorID, id, expectedKind string) error {
-	conn, unlock, err := s.lockMaterialCloneSource(ctx, id, false)
-	if err != nil {
-		return err
-	}
-	defer unlock()
-	tx, err := conn.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-	var ownerID, kind string
-	var workspaceID *string
-	if err := tx.QueryRow(ctx, `SELECT owner_user_id, workspace_id, kind
-		FROM materials WHERE id=$1`, id).Scan(&ownerID, &workspaceID, &kind); err != nil {
-		if isNoRows(err) {
-			return ErrNotFound
-		}
-		return err
-	}
-	if expectedKind != "" && kind != expectedKind {
-		return ErrNotFound
-	}
-	if workspaceID != nil {
-		ownerID, err = s.lockWorkspaceEditorMutationTx(ctx, tx, *workspaceID, actorID)
-		if err != nil {
-			return err
-		}
-	} else if err := s.lockAccountSessionsTx(ctx, tx, ownerID, actorID); err != nil {
-		return err
-	}
-	if err := s.lockStorageRowTx(ctx, tx, ownerID); err != nil {
-		return err
-	}
-	var lockedOwner, lockedKind string
-	if err := tx.QueryRow(ctx, `SELECT owner_user_id, kind FROM materials
-		WHERE id=$1 FOR UPDATE`, id).Scan(&lockedOwner, &lockedKind); err != nil {
-		if isNoRows(err) {
-			return ErrNotFound
-		}
-		return err
-	}
-	if lockedOwner != ownerID || (expectedKind != "" && lockedKind != expectedKind) {
-		return ErrNotFound
-	}
-	ct, err := tx.Exec(ctx, `DELETE FROM materials WHERE id=$1`, id)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return tx.Commit(ctx)
 }
 
 // MaterialPatch is a partial update for a material. Only non-nil fields are
@@ -1368,7 +1449,7 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 	}
 	if p.Content != nil {
 		if err := s.pool.QueryRow(ctx, `SELECT kind, revision, content
-			FROM materials WHERE id=$1`, id).
+			FROM materials WHERE id=$1 AND trashed_at IS NULL`, id).
 			Scan(&contentKind, &contentBaseRevision, &currentContent); err != nil {
 			if isNoRows(err) {
 				return Material{}, ErrNotFound
@@ -1414,7 +1495,7 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 	if p.ChapterID != nil {
 		add("chapter_id", *p.ChapterID)
 		var wsID string
-		if err := s.pool.QueryRow(ctx, `SELECT COALESCE(workspace_id, '') FROM materials WHERE id=$1`, id).Scan(&wsID); err != nil {
+		if err := s.pool.QueryRow(ctx, `SELECT COALESCE(workspace_id, '') FROM materials WHERE id=$1 AND trashed_at IS NULL`, id).Scan(&wsID); err != nil {
 			if isNoRows(err) {
 				return Material{}, ErrNotFound
 			}
@@ -1454,7 +1535,7 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 	if p.Privacy != nil {
 		var workspaceID string
 		if err := s.pool.QueryRow(ctx, `SELECT COALESCE(workspace_id,'')
-			FROM materials WHERE id=$1`, id).Scan(&workspaceID); err != nil {
+			FROM materials WHERE id=$1 AND trashed_at IS NULL`, id).Scan(&workspaceID); err != nil {
 			if isNoRows(err) {
 				return Material{}, ErrNotFound
 			}
@@ -1468,17 +1549,7 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 	if len(sets) == 0 {
 		return s.GetMaterial(ctx, id)
 	}
-	documentChanged := p.Content != nil || p.Title != nil
-	var eventMetadata json.RawMessage
-	if documentChanged {
-		changedFields := make([]string, 0, 2)
-		if p.Title != nil {
-			changedFields = append(changedFields, "title")
-		}
-		if p.Content != nil {
-			changedFields = append(changedFields, "content")
-		}
-		eventMetadata, _ = json.Marshal(map[string]any{"changedFields": changedFields})
+	if p.Content != nil || p.Title != nil {
 		sets = append(sets, "revision=revision+1")
 		add("updated_at", time.Now().UTC())
 		if p.UpdatedBy != "" {
@@ -1486,7 +1557,7 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 		}
 	}
 	args = append(args, id)
-	where := fmt.Sprintf(" WHERE id=$%d", i)
+	where := fmt.Sprintf(" WHERE id=$%d AND trashed_at IS NULL", i)
 	effectiveExpectedRevision := p.ExpectedRevision
 	if effectiveExpectedRevision == nil && p.Content != nil {
 		effectiveExpectedRevision = &contentBaseRevision
@@ -1503,7 +1574,7 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 	var ownerID string
 	var workspaceID *string
 	if err := tx.QueryRow(ctx, `SELECT owner_user_id, workspace_id
-		FROM materials WHERE id=$1`, id).Scan(&ownerID, &workspaceID); err != nil {
+		FROM materials WHERE id=$1 AND trashed_at IS NULL`, id).Scan(&ownerID, &workspaceID); err != nil {
 		if isNoRows(err) {
 			return Material{}, ErrNotFound
 		}
@@ -1523,7 +1594,7 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 	var lockedOwnerID string
 	var oldSize int64
 	if err := tx.QueryRow(ctx, `SELECT owner_user_id, size_bytes
-		FROM materials WHERE id=$1 FOR UPDATE`, id).Scan(&lockedOwnerID, &oldSize); err != nil {
+		FROM materials WHERE id=$1 AND trashed_at IS NULL FOR UPDATE`, id).Scan(&lockedOwnerID, &oldSize); err != nil {
 		if isNoRows(err) {
 			return Material{}, ErrNotFound
 		}
@@ -1565,36 +1636,11 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 	}
 	if ct.RowsAffected() == 0 {
 		var exists bool
-		_ = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM materials WHERE id=$1)`, id).Scan(&exists)
+		_ = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM materials WHERE id=$1 AND trashed_at IS NULL)`, id).Scan(&exists)
 		if exists && effectiveExpectedRevision != nil {
 			return Material{}, ErrConflict
 		}
 		return Material{}, ErrNotFound
-	}
-	if documentChanged {
-		var snapshot MaterialRevision
-		var parentRevision int64
-		if err := tx.QueryRow(ctx, `SELECT id, revision, revision-1, title, content,
-			updated_at
-			FROM materials WHERE id=$1`, id).Scan(
-			&snapshot.MaterialID,
-			&snapshot.Revision,
-			&parentRevision,
-			&snapshot.Title,
-			&snapshot.Content,
-			&snapshot.CreatedAt,
-		); err != nil {
-			return Material{}, err
-		}
-		snapshot.ParentRevision = &parentRevision
-		snapshot.EventType = RevisionEdit
-		snapshot.EventMetadata = eventMetadata
-		if p.UpdatedBy != "" {
-			snapshot.CreatedBy = &p.UpdatedBy
-		}
-		if err := s.upsertMaterialRevisionTx(ctx, tx, snapshot); err != nil {
-			return Material{}, err
-		}
 	}
 	if p.Content != nil && contentKind == "flashcards" {
 		if err := syncCardStatsTx(ctx, tx, id, contentCardIDs); err != nil {
@@ -1611,7 +1657,7 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 // ownership checks on get/update/delete).
 func (s *Store) MaterialWorkspaceID(ctx context.Context, id string) (string, error) {
 	var wsID string
-	err := s.pool.QueryRow(ctx, `SELECT COALESCE(workspace_id,'') FROM materials WHERE id=$1`, id).Scan(&wsID)
+	err := s.pool.QueryRow(ctx, `SELECT COALESCE(workspace_id,'') FROM materials WHERE id=$1 AND trashed_at IS NULL`, id).Scan(&wsID)
 	if isNoRows(err) {
 		return "", ErrNotFound
 	}
@@ -1642,7 +1688,7 @@ func (s *Store) MaterialIDsOwnedByUser(ctx context.Context, userID string) ([]st
 func (s *Store) ListMaterialRefs(ctx context.Context, wsID string) ([]MaterialRef, error) {
 	out := []MaterialRef{}
 	rows, err := s.pool.Query(ctx, `SELECT id, kind, title, chapter_id, position, created_at, revision, size_bytes, node_count, max_depth
-		FROM materials WHERE workspace_id=$1 ORDER BY position, created_at DESC`, wsID)
+		FROM materials WHERE workspace_id=$1 AND trashed_at IS NULL ORDER BY position, created_at DESC`, wsID)
 	if err != nil {
 		return nil, err
 	}
@@ -1723,7 +1769,7 @@ func (s *Store) ListQuizzes(ctx context.Context, userID string) ([]Quiz, error) 
 	rows, err := s.pool.Query(ctx, `SELECT `+materialColsM+`
 		FROM materials m
 		JOIN users owner ON owner.id=m.owner_user_id
-		WHERE (m.owner_user_id=$1 OR EXISTS (
+		WHERE m.trashed_at IS NULL AND (m.owner_user_id=$1 OR EXISTS (
 			SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=m.workspace_id AND wm.user_id=$1
 		)) AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
 			AND m.kind='quiz' ORDER BY m.created_at DESC`, userID)
@@ -1834,10 +1880,6 @@ func (s *Store) UpdateQuizMetadata(ctx context.Context, id string, p QuizMetadat
 		return Quiz{}, err
 	}
 	return s.GetQuiz(ctx, id)
-}
-
-func (s *Store) DeleteQuiz(ctx context.Context, actorID, id string) error {
-	return s.deleteMaterialKind(ctx, actorID, id, "quiz")
 }
 
 // ReviewMistakesQuizID is the virtual quiz assembled from the user's mistakes
@@ -1958,7 +2000,7 @@ func (s *Store) ListFlashcardSets(ctx context.Context, userID string) ([]Flashca
 		))
 		FROM materials m
 		JOIN users owner ON owner.id=m.owner_user_id
-		WHERE (m.owner_user_id=$1 OR EXISTS (
+		WHERE m.trashed_at IS NULL AND (m.owner_user_id=$1 OR EXISTS (
 			SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=m.workspace_id AND wm.user_id=$1
 		)) AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
 			AND m.kind='flashcards' ORDER BY m.title`, userID)
@@ -1980,7 +2022,7 @@ func (s *Store) ListFlashcardSets(ctx context.Context, userID string) ([]Flashca
 
 func (s *Store) GetFlashcardSet(ctx context.Context, id string) (FlashcardSet, error) {
 	d, err := scanFlashcardSet(s.pool.QueryRow(ctx, `SELECT m.id, m.title, COALESCE(m.workspace_id,''), m.workspace_name, m.color, m.privacy,`+flashcardSetStatsExpr+`
-		FROM materials m WHERE m.id=$1 AND m.kind='flashcards'`, id))
+		FROM materials m WHERE m.id=$1 AND m.kind='flashcards' AND m.trashed_at IS NULL`, id))
 	if isNoRows(err) {
 		return d, ErrNotFound
 	}
@@ -2214,7 +2256,7 @@ func (s *Store) UpdateCardStudyState(ctx context.Context, id string, p CardStudy
 		var ownerID string
 		var workspaceID *string
 		if err := tx.QueryRow(ctx, `SELECT owner_user_id, workspace_id
-			FROM materials WHERE id=$1`, materialID).Scan(&ownerID, &workspaceID); err != nil {
+			FROM materials WHERE id=$1 AND trashed_at IS NULL`, materialID).Scan(&ownerID, &workspaceID); err != nil {
 			return Flashcard{}, err
 		}
 		if workspaceID != nil {

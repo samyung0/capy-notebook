@@ -1058,7 +1058,7 @@ func (s *ReadStore) User(ctx context.Context, userID string) (UserDetail, error)
 	rows.Close()
 	rows, err = s.db.Query(ctx, `
 		SELECT w.id, w.name, count(f.id), w.last_accessed_at
-		FROM workspaces w LEFT JOIN files f ON f.workspace_id = w.id
+		FROM workspaces w LEFT JOIN files f ON f.workspace_id = w.id AND f.trashed_at IS NULL
 		WHERE w.user_id = $1
 		GROUP BY w.id ORDER BY w.last_accessed_at DESC
 		LIMIT $2`, userID, userWorkspaceLimit)

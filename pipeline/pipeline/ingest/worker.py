@@ -472,7 +472,7 @@ def _finish_ok(
                 if content_hash is not None:
                     db.set_file_content_hash(cur, file_id, content_hash)
                 cur.execute(
-                    r"UPDATE files SET ever_parsed_successfully=true WHERE id=%s AND (kind='pdf' OR lower(name) ~ '\.(docx|xlsx|pptx)$') AND parse_mode='fast'",
+                    r"UPDATE files SET ever_parsed_successfully=true WHERE id=%s AND trashed_at IS NULL AND (kind='pdf' OR lower(name) ~ '\.(docx|xlsx|pptx)$') AND parse_mode='fast'",
                     (file_id,),
                 )
                 if artifact_key:
@@ -1436,7 +1436,8 @@ def _handoff_parsed_artifact(
             db.enqueue_job(cur, continuation_id, "ingest", continuation_payload)
             db.transfer_source_candidate(cur, payload, job["id"], continuation_id)
             cur.execute(
-                "UPDATE files SET ever_parsed_successfully=true WHERE id=%s", (file_id,)
+                "UPDATE files SET ever_parsed_successfully=true WHERE id=%s AND trashed_at IS NULL",
+                (file_id,),
             )
             db.set_job(cur, job["id"], "done")
             db.finish_job_attempt(

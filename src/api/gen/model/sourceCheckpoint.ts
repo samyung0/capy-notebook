@@ -4,6 +4,7 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { SourceCheckpointOperation } from './sourceCheckpointOperation.ts';
 
 export interface SourceCheckpoint {
   /** A URL to the JSON Schema for this object. */
@@ -21,6 +22,7 @@ export interface SourceCheckpoint {
   initialize: boolean;
   /** @minimum 0 */
   netTokens: number;
+  operation?: SourceCheckpointOperation;
   pendingEffects: unknown;
   state: string;
 }

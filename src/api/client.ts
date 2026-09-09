@@ -108,6 +108,9 @@ const CODED_ERROR_MESSAGES = new Set([
   'invalid_llm_key',
   'llm_key_failed',
   'material_content_unreadable',
+  'stale_target',
+  'unavailable_target',
+  'undo_unavailable',
   ...ACCOUNT_FORBIDDEN_CODES,
 ]);
 
@@ -377,7 +380,6 @@ export const qk = {
   llmCredentials: ['llm-credentials'] as const,
   material: (id: string) => ['material', id] as const,
   materialDiscussions: (id: string) => ['material', id, 'discussions'] as const,
-  materialRevisions: (id: string) => ['material', id, 'revisions'] as const,
   materials: (wsId: string) => ['workspace', wsId, 'materials'] as const,
   me: ['me'] as const,
   messages: (convId: string) => ['conversation', convId, 'messages'] as const,
@@ -395,6 +397,7 @@ export const qk = {
   tags: (kind: string) => ['tags', kind] as const,
   tasks: ['tasks'] as const,
   thinking: ['thinking'] as const,
+  trash: (wsId?: string) => ['trash', wsId ?? 'all'] as const,
   usage: ['usage'] as const,
   workspace: (id: string) => ['workspace', id] as const,
   workspaceCollaborators: (id: string) =>

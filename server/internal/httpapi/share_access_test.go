@@ -9,9 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/samyung0/capy-notebook/server/internal/auth"
 	"github.com/samyung0/capy-notebook/server/internal/blob"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi"
@@ -98,25 +96,6 @@ func doReq(t *testing.T, h http.Handler, method, path, userID string, body any) 
 		req.Header.Set(auth.HeaderE2EUserID, userID)
 		req.Header.Set(auth.HeaderE2ESecret, "e2e-test-secret")
 	}
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	return rec
-}
-
-func doCollaborationReq(
-	t *testing.T,
-	h http.Handler,
-	path, secret string,
-	body any,
-) *httptest.ResponseRecorder {
-	t.Helper()
-	payload, err := json.Marshal(body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(payload))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Collaboration-Secret", secret)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	return rec
@@ -526,145 +505,5 @@ func TestStudyToolMutationPathsSeparateContentMetadataSharingAndStudyState(t *te
 	})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("card study-state update = %d body=%s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestMaterialRevisionHTTPCapsFreeOwnerAtThreeDailyVersions(t *testing.T) {
-	dsn := testdb.URL(t)
-	ctx := context.Background()
-	st, err := store.New(ctx, dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(st.Close)
-	if err := st.Migrate(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.LoadPlanLimits(ctx); err != nil {
-		t.Fatal(err)
-	}
-	pool, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
-
-	userID := fmt.Sprintf("u_revision_http_%d", time.Now().UnixNano())
-	if _, err := pool.Exec(ctx, `INSERT INTO users (id,name,email,plan_tier)
-		VALUES ($1,'Revision HTTP Test',$2,'free')`,
-		userID,
-		fmt.Sprintf("%s@example.test", userID),
-	); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID)
-	})
-	handler := httpapi.New(
-		st,
-		blob.NewMemory(),
-		nil,
-		nil,
-		"docling",
-		"capy",
-		httpapi.Config{
-			AuthDisabled:        true,
-			DevUserID:           userID,
-			CollaborationSecret: "revision-test-secret",
-		},
-	)
-
-	rec := doReq(t, handler, http.MethodPost, "/api/workspaces", "", map[string]any{
-		"name": "Revision HTTP Workspace",
-	})
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("create workspace = %d %s", rec.Code, rec.Body.String())
-	}
-	var workspace map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &workspace); err != nil {
-		t.Fatal(err)
-	}
-	workspaceID := workspace["id"].(string)
-	content := func(text string) map[string]any {
-		return map[string]any{
-			"schemaVersion": 1,
-			"value": []any{map[string]any{
-				"type": "p", "id": "revision-http-block",
-				"children": []any{map[string]any{"text": text}},
-			}},
-		}
-	}
-	rec = doReq(
-		t,
-		handler,
-		http.MethodPost,
-		"/api/workspaces/"+workspaceID+"/materials",
-		"",
-		map[string]any{"kind": "note", "title": "Revision cap", "content": content("revision-1")},
-	)
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("create material = %d %s", rec.Code, rec.Body.String())
-	}
-	var material map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &material); err != nil {
-		t.Fatal(err)
-	}
-	materialID := material["id"].(string)
-	if _, err := pool.Exec(ctx, `INSERT INTO material_yjs_documents
-		(material_id, state, stored_version)
-		VALUES ($1, '\x00'::bytea, 10)`, materialID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := pool.Exec(ctx, `UPDATE material_revisions
-		SET version_date=CURRENT_DATE-9
-		WHERE material_id=$1 AND version_date=CURRENT_DATE`, materialID); err != nil {
-		t.Fatal(err)
-	}
-
-	for revision := 2; revision <= 10; revision++ {
-		rec = doCollaborationReq(
-			t,
-			handler,
-			"/internal/collaboration/materials/"+materialID+"/projection",
-			"revision-test-secret",
-			map[string]any{
-				"content":    content(fmt.Sprintf("revision-%d", revision)),
-				"yjsVersion": revision - 1,
-			},
-		)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("save revision %d = %d %s", revision, rec.Code, rec.Body.String())
-		}
-		if revision < 10 {
-			if _, err := pool.Exec(ctx, `UPDATE material_revisions
-				SET version_date=CURRENT_DATE-$2::integer
-				WHERE material_id=$1 AND version_date=CURRENT_DATE`,
-				materialID,
-				10-revision,
-			); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
-
-	rec = doReq(
-		t,
-		handler,
-		http.MethodGet,
-		"/api/materials/"+materialID+"/revisions",
-		"",
-		nil,
-	)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("list revisions = %d %s", rec.Code, rec.Body.String())
-	}
-	var revisions []map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &revisions); err != nil {
-		t.Fatal(err)
-	}
-	if len(revisions) != 3 ||
-		revisions[0]["revision"] != float64(10) ||
-		revisions[2]["revision"] != float64(8) {
-		t.Fatalf("free revision response = %#v", revisions)
 	}
 }

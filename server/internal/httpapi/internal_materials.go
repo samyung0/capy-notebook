@@ -1,8 +1,6 @@
 package httpapi
 
 import (
-	"bytes"
-	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -25,18 +23,22 @@ import (
 // Authentication is a shared secret rather than a user session. The retrieval
 // service is trusted infrastructure — it already holds the same Postgres
 // credentials as this process — so the secret only keeps the route off the
-// public internet. The workspace-editor check below is what actually constrains
-// what may be written and on whose behalf.
+// public internet. The trusted context (actor, workspace, assistant message,
+// tool call) is verified against the conversation the message belongs to, and
+// the workspace-editor check constrains what may be written on whose behalf.
+//
+// Every committed creation leaves an agent_operations receipt in the same
+// transaction. The same call replayed returns that receipt; a lost response is
+// reconciled through GET /api/internal/agent-operations/{id}.
 type internalMaterialReq struct {
-	ID          string   `json:"id"`
-	WorkspaceID string   `json:"workspaceId"`
-	UserID      string   `json:"userId"`
-	Kind        string   `json:"kind"`
-	Title       string   `json:"title"`
-	Chapters    []string `json:"chapters"`
-	FileNames   []string `json:"fileNames"`
-	ChapterIDs  []string `json:"chapterIds"`
-	FileIDs     []string `json:"fileIds"`
+	WorkspaceID        string   `json:"workspaceId"`
+	UserID             string   `json:"userId"`
+	AssistantMessageID string   `json:"assistantMessageId"`
+	ToolCallID         string   `json:"toolCallId"`
+	Kind               string   `json:"kind"`
+	Title              string   `json:"title"`
+	ChapterIDs         []string `json:"chapterIds"`
+	FileIDs            []string `json:"fileIds"`
 
 	Questions json.RawMessage `json:"questions"`
 	Cards     []struct {
@@ -45,6 +47,15 @@ type internalMaterialReq struct {
 	} `json:"cards"`
 	Content      string `json:"content"`
 	TimeLimitMin *int   `json:"timeLimitMin"`
+}
+
+// hashPayload is the normalized request identity: everything the model chose.
+func (r internalMaterialReq) hashPayload() map[string]any {
+	return map[string]any{
+		"kind": r.Kind, "title": strings.TrimSpace(r.Title), "questions": r.Questions,
+		"cards": r.Cards, "content": r.Content, "timeLimitMin": r.TimeLimitMin,
+		"fileIds": r.FileIDs, "chapterIds": r.ChapterIDs,
+	}
 }
 
 func (a *api) internalCreateMaterial(w http.ResponseWriter, r *http.Request) {
@@ -58,14 +69,16 @@ func (a *api) internalCreateMaterial(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	if req.WorkspaceID == "" || req.UserID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "workspaceId and userId are required"})
+	if req.WorkspaceID == "" || req.UserID == "" || req.AssistantMessageID == "" || req.ToolCallID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"code": "invalid_input", "message": "workspaceId, userId, assistantMessageId and toolCallId are required",
+		})
 		return
 	}
 	switch req.Kind {
 	case "quiz", "flashcards", "mindmap", "diagram", "note":
 	default:
-		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "unsupported material kind " + req.Kind})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": "unsupported material kind " + req.Kind})
 		return
 	}
 	ctx := r.Context()
@@ -78,26 +91,37 @@ func (a *api) internalCreateMaterial(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, actorStatus.Err())
 		return
 	}
+	// Bind the callback to the real conversation: the actor and workspace it
+	// claims must be the ones this assistant message belongs to. A deleted turn
+	// is not valid authorization for a late callback.
+	convUser, convWS, convID, err := a.s.AssistantMessageContext(ctx, req.AssistantMessageID)
+	if err != nil || convUser != req.UserID || convWS != req.WorkspaceID {
+		a.fail(w, store.ErrNotFound)
+		return
+	}
 	if err := a.s.AssertWorkspaceEditor(ctx, req.UserID, req.WorkspaceID); err != nil {
 		a.fail(w, err)
 		return
 	}
-	if req.ID != "" {
-		existing, err := a.s.GetMaterial(ctx, req.ID)
-		if err == nil {
-			if materialReplayMatches(existing, req) {
-				writeMaterialOK(w, existing)
-				return
-			}
-			a.fail(w, store.ErrMaterialConflict)
-			return
-		}
-		if !errors.Is(err, store.ErrNotFound) {
-			a.fail(w, err)
-			return
-		}
+
+	opID := store.ChatOperationID(req.AssistantMessageID, req.ToolCallID)
+	hash, err := store.RequestHash(req.hashPayload())
+	if err != nil {
+		a.fail(w, err)
+		return
 	}
-	if err := a.resolveInternalMaterialScope(ctx, &req); err != nil {
+	// A committed receipt answers a replay without rerunning mutable admission
+	// (scope, quota); a different payload under the same id is a conflict.
+	if existing, err := a.s.ReplayAgentOperation(ctx, opID, hash); err == nil {
+		writeJSON(w, http.StatusOK, existing)
+		return
+	} else if !errors.Is(err, store.ErrNotFound) {
+		a.fail(w, err)
+		return
+	}
+
+	_, fileNames, chapterNames, err := a.resolveScope(ctx, req.WorkspaceID, &generateOpts{FileIds: req.FileIDs, Chapters: req.ChapterIDs})
+	if err != nil {
 		if errors.Is(err, errScopeNoIndexedContent) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{
 				"code": "scope_has_no_indexed_content", "message": errScopeNoIndexedContent.Error(),
@@ -109,7 +133,6 @@ func (a *api) internalCreateMaterial(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-
 	// Do not recheck inference credits here. The provider call that emitted this
 	// accepted tool may have exhausted them, and the turn contract requires its
 	// already-paid tools to finish. The pipeline secret plus the editor check
@@ -120,117 +143,58 @@ func (a *api) internalCreateMaterial(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	wsName := ws.Name
 	title := strings.TrimSpace(req.Title)
 	if title == "" {
-		title = wsName + " " + req.Kind
+		title = ws.Name + " " + req.Kind
 	}
-	disambiguated, err := a.s.DisambiguateMaterialTitle(ctx, req.WorkspaceID, title)
+	title, err = a.s.DisambiguateMaterialTitle(ctx, req.WorkspaceID, title)
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
-	title = disambiguated
-
-	created, err := a.insertInternalMaterial(ctx, req, title, wsName)
-	if errors.Is(err, store.ErrMaterialIDTaken) && req.ID != "" {
-		existing, getErr := a.s.GetMaterial(ctx, req.ID)
-		if getErr == nil {
-			if materialReplayMatches(existing, req) {
-				writeMaterialOK(w, existing)
-				return
-			}
-			a.fail(w, store.ErrMaterialConflict)
+	cards := make([][2]string, 0, len(req.Cards))
+	for _, c := range req.Cards {
+		cards = append(cards, [2]string{c.Front, c.Back})
+	}
+	op, err := a.s.CreateMaterialOperation(ctx, store.MaterialDraft{
+		ID: store.ChatMaterialID(req.AssistantMessageID, req.ToolCallID), ActorUserID: req.UserID,
+		WorkspaceID: req.WorkspaceID, WorkspaceName: ws.Name, Kind: store.MaterialKind(req.Kind), Title: title,
+		Questions: req.Questions, TimeLimitMin: req.TimeLimitMin, Cards: cards, Content: req.Content,
+		ScopeChapters: chapterNames, ScopeFileNames: fileNames,
+	}, store.AgentOperation{
+		ID: opID, ToolVersion: 1, RequestHash: hash, ActorUserID: req.UserID,
+		WorkspaceID: req.WorkspaceID, ConversationID: convID,
+		MessageID: req.AssistantMessageID, CallID: req.ToolCallID,
+	})
+	if err != nil {
+		if errors.Is(err, store.ErrEmptyMaterial) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"code": "invalid_input", "message": "The material has no content.",
+			})
 			return
 		}
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
-			"code":    "material_lookup_failed",
-			"message": "material create outcome is unknown",
-		})
-		return
-	}
-	if err != nil {
+		if errors.Is(err, materialdoc.ErrInvalid) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": err.Error()})
+			return
+		}
 		a.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, created)
+	writeJSON(w, http.StatusOK, op)
 }
 
-func (a *api) resolveInternalMaterialScope(ctx context.Context, req *internalMaterialReq) error {
-	opts := generateOpts{FileIds: req.FileIDs, Chapters: req.ChapterIDs}
-	fileIDs, fileNames, chapterNames, err := a.resolveScope(ctx, req.WorkspaceID, &opts)
-	if err != nil {
-		return err
-	}
-	req.FileIDs = fileIDs
-	req.FileNames = fileNames
-	req.Chapters = chapterNames
-	return nil
-}
-
-func (a *api) insertInternalMaterial(ctx context.Context, req internalMaterialReq, title, wsName string) (map[string]any, error) {
-	switch req.Kind {
-	case "quiz":
-		quiz, err := a.s.CreateQuiz(ctx, store.Quiz{
-			ID: req.ID, UserID: req.UserID, Name: title, WorkspaceID: req.WorkspaceID, WorkspaceName: wsName,
-			Chapters: req.Chapters, ScopeFileNames: req.FileNames, Questions: req.Questions, Privacy: "private",
-			TimeLimitMin: req.TimeLimitMin,
-		})
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{"kind": "quiz", "materialId": quiz.ID, "title": quiz.Name}, nil
-	case "flashcards":
-		cards := make([][2]string, 0, len(req.Cards))
-		for _, c := range req.Cards {
-			cards = append(cards, [2]string{c.Front, c.Back})
-		}
-		flashcardSet, err := a.s.CreateFlashcardSetWithCards(
-			ctx, req.UserID, title, "green", req.WorkspaceID, cards, req.ID, req.Chapters, req.FileNames,
-		)
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{"kind": "flashcards", "materialId": flashcardSet.ID, "title": title, "count": len(cards)}, nil
-	case "mindmap", "diagram", "note":
-		mt, err := a.s.CreateMaterial(ctx, store.Material{
-			ID: req.ID, CreatedBy: req.UserID, WorkspaceID: req.WorkspaceID, WorkspaceName: wsName,
-			Kind: store.MaterialKind(req.Kind), Title: title, Content: req.Content,
-			ScopeChapters: req.Chapters, ScopeFileNames: req.FileNames, Privacy: "private",
-		})
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{"kind": req.Kind, "materialId": mt.ID, "title": mt.Title}, nil
-	default:
-		return nil, errUnsupportedMaterialKind(req.Kind)
-	}
-}
-
-type unsupportedMaterialKindError string
-
-func (e unsupportedMaterialKindError) Error() string {
-	return "unsupported material kind " + string(e)
-}
-
-func errUnsupportedMaterialKind(kind string) error {
-	return unsupportedMaterialKindError(kind)
-}
-
-func (a *api) internalGetMaterial(w http.ResponseWriter, r *http.Request) {
+// internalGetAgentOperation is the reconciliation read for a lost response:
+// the recorded receipt, only to the actor and workspace it belongs to.
+func (a *api) internalGetAgentOperation(w http.ResponseWriter, r *http.Request) {
 	if !a.pipelineSecretOK(r) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"message": "unauthorized"})
 		return
 	}
-	materialID := chi.URLParam(r, "materialId")
-	if materialID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "materialId is required"})
-		return
-	}
+	operationID := chi.URLParam(r, "operationId")
 	workspaceID := strings.TrimSpace(r.URL.Query().Get("workspaceId"))
 	userID := strings.TrimSpace(r.URL.Query().Get("userId"))
-	if workspaceID == "" || userID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "workspaceId and userId are required"})
+	if operationID == "" || workspaceID == "" || userID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": "operationId, workspaceId and userId are required"})
 		return
 	}
 	actorStatus, err := a.s.AccountAccess(r.Context(), userID)
@@ -242,84 +206,20 @@ func (a *api) internalGetMaterial(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, actorStatus.Err())
 		return
 	}
-	if err := a.s.AssertWorkspaceEditor(r.Context(), userID, workspaceID); err != nil {
-		a.fail(w, err)
-		return
-	}
-	mt, err := a.s.GetMaterial(r.Context(), materialID)
-	if errors.Is(err, store.ErrNotFound) {
-		writeJSON(w, http.StatusNotFound, map[string]string{"message": "not found"})
-		return
-	}
+	op, err := a.s.GetAgentOperation(r.Context(), operationID)
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
-	if mt.WorkspaceID != workspaceID {
-		writeJSON(w, http.StatusNotFound, map[string]string{"message": "not found"})
+	if op.ActorUserID != userID || op.WorkspaceID != workspaceID {
+		a.fail(w, store.ErrNotFound)
 		return
 	}
-	writeMaterialOK(w, mt)
+	writeJSON(w, http.StatusOK, op)
 }
 
 func (a *api) pipelineSecretOK(r *http.Request) bool {
 	secret := a.cfg.PipelineSecret
 	return secret != "" &&
 		subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Pipeline-Secret")), []byte(secret)) == 1
-}
-
-func writeMaterialOK(w http.ResponseWriter, mt store.Material) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"kind": mt.Kind, "materialId": mt.ID, "title": mt.Title,
-	})
-}
-
-func materialReplayMatches(mt store.Material, req internalMaterialReq) bool {
-	if mt.WorkspaceID != req.WorkspaceID || mt.CreatedBy != req.UserID || string(mt.Kind) != req.Kind {
-		return false
-	}
-	switch req.Kind {
-	case "quiz":
-		questions, _, err := materialdoc.ExtractQuiz(mt.Content)
-		if err != nil {
-			return false
-		}
-		return jsonBytesEqual(questions, req.Questions)
-	case "flashcards":
-		cards, err := materialdoc.ExtractFlashcards(mt.Content)
-		if err != nil || len(cards) != len(req.Cards) {
-			return false
-		}
-		for i, card := range cards {
-			if card.Front != req.Cards[i].Front || card.Back != req.Cards[i].Back {
-				return false
-			}
-		}
-		return true
-	case "mindmap", "diagram":
-		got, err := materialdoc.ExtractMermaidSource(mt.Content)
-		if err != nil {
-			return false
-		}
-		return got == materialdoc.IncomingMermaidSource(req.Content)
-	default:
-		got, err := materialdoc.ExtractNoteText(mt.Content)
-		if err != nil {
-			return false
-		}
-		return got == materialdoc.IncomingNoteText(req.Content)
-	}
-}
-
-func jsonBytesEqual(a, b []byte) bool {
-	if len(bytes.TrimSpace(a)) == 0 && len(bytes.TrimSpace(b)) == 0 {
-		return true
-	}
-	var x, y any
-	if json.Unmarshal(a, &x) != nil || json.Unmarshal(b, &y) != nil {
-		return bytes.Equal(bytes.TrimSpace(a), bytes.TrimSpace(b))
-	}
-	ax, _ := json.Marshal(x)
-	ay, _ := json.Marshal(y)
-	return bytes.Equal(ax, ay)
 }

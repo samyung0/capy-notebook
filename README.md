@@ -65,17 +65,6 @@ Study workspace: notes, sources, quizzes, flashcards, schedule, and AI retrieval
    pnpm run office:prepare
    ```
 
-  These files should be created:
-
-   ```text
-   packages/docx/src/wasm/generated/edit/docx_edit.js
-   packages/docx/src/wasm/generated/viewer/docx_view_wasm.js
-   packages/xlsx/src/wasm/generated/xlsx_wasm.js
-   packages/xlsx/src/wasm/generated/viewer/xlsx_view_wasm.js
-   packages/pptx/src/wasm/generated/pptx_wasm.js
-   packages/pptx/src/wasm/generated/viewer/pptx_view_wasm.js
-   ```
-
 See [`openwiki/frontend/office-files.md`](openwiki/frontend/office-files.md) for more.
 
 ### UI/Frontend Only:
@@ -152,6 +141,11 @@ pnpm email:build
 
 The Go binary and the Python worker do not auto-load `deploy/.env`. Export it
 first: `set -a; . deploy/.env; set +a`.
+
+## Developing betteroffice
+
+- Branch off from `capy-ci` and pin the betteroffice using commits from `capi-ci`
+- If you dont know git submodules like me, you can change the "pin" (which is just which commit capy uses) by cd into `vendor/betteroffice`, check out any commit from `capi-ci` branch, at capy-notebook root do `git add vendor/betteroffice`, then commit and push.
 
 ## Deployment configuration
 

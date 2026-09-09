@@ -20,6 +20,7 @@
    ============================================================ */
 
 import type {
+  ActivityBlockOutcome,
   AttemptDetail as GenAttemptDetail,
   Citation as GenCitation,
   Comment as GenComment,
@@ -34,15 +35,18 @@ import type {
   UserModelSlot as GeneratedModelSlot,
   File as GenFile,
   Material as GenMaterial,
-  MaterialRevision as GenMaterialRevision,
   Message as GenMessage,
   PublicQuiz as GenPublicQuiz,
   Quiz as GenQuiz,
+  ResourceEffectOperation as GenResourceEffectOperation,
   SearchResult as GenSearchResult,
   UpdateCommentReq as GenUpdateCommentReq,
   UpdateQuizContentReq as GenUpdateQuizContentReq,
   UpdateWorkspaceMemberReq as GenUpdateWorkspaceMemberReq,
   MaterialKind,
+  ResourceEffect,
+  ToolError,
+  UndoRefStatus,
   UserColor,
   WorkspaceRole,
 } from './gen/model';
@@ -148,7 +152,6 @@ export {
   FileStatus,
   MaterialKind,
   MaterialRefType,
-  MaterialRevisionEvent,
   NotificationKind,
   PlanTier,
   Privacy,
@@ -257,15 +260,36 @@ export type { Conversation } from './gen/model';
 
 export type Citation = GenCitation & { chunkId?: string };
 
+/* Shared agent-tool result contract (server/internal/agenttools). A tool block
+   without an outcome is still running in the browser; the outcome, safe error
+   and durable resource effects arrive on tool_end and are what history stores. */
+/* Trash: owner-only bin for source files and materials. */
+export type {
+  AgentOperation as OperationReceipt,
+  ResourceEffect,
+  ResourceRef,
+  ToolError,
+  TrashActionReq,
+  TrashItem,
+  TrashPage,
+  UndoEditReq,
+  UndoRef,
+} from './gen/model';
+export type ToolOutcome = ActivityBlockOutcome;
+export type ResourceEffectOperation = GenResourceEffectOperation;
+export type UndoStatus = UndoRefStatus;
+
 export type ActivityBlock =
   | { id: string; kind: 'narration'; text: string }
   | {
       callId: string;
       detail?: string;
+      effects?: ResourceEffect[];
+      error?: ToolError;
       id: string;
       kind: 'tool';
       name: string;
-      status: 'running' | 'success' | 'refused';
+      outcome?: ToolOutcome;
     };
 
 export type WireMessage = Omit<GenMessage, 'citations'> & {
@@ -432,10 +456,6 @@ export type MaterialComment = Omit<GenComment, 'contentRich' | 'replies'> & {
 
 export type MaterialDiscussion = Omit<GenDiscussion, 'comments'> & {
   comments: MaterialComment[];
-};
-
-export type MaterialRevision = Omit<GenMaterialRevision, 'content'> & {
-  content: import('@/features/materials/document').MaterialDocument;
 };
 
 export type {

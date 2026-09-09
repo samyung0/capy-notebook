@@ -4,7 +4,6 @@ export interface PlanLimits {
   creditLimitMicros: number;
   filesPerUpload: number;
   filesPerWorkspace: number;
-  materialRevisionLimit: number;
   ownedWorkspaceLimit: number | null;
   sourceFileMaxBytes: number;
   storageLimitBytes: number;
@@ -21,7 +20,6 @@ export const PLAN_LIMITS = {
     creditLimitMicros: 1_000_000_000,
     filesPerUpload: 20,
     filesPerWorkspace: 100,
-    materialRevisionLimit: 3,
     ownedWorkspaceLimit: null,
     sourceFileMaxBytes: 10_485_760,
     storageLimitBytes: 100_000_000,
@@ -30,7 +28,6 @@ export const PLAN_LIMITS = {
     creditLimitMicros: 20_000_000_000,
     filesPerUpload: 20,
     filesPerWorkspace: 100,
-    materialRevisionLimit: 30,
     ownedWorkspaceLimit: null,
     sourceFileMaxBytes: 31_457_280,
     storageLimitBytes: 1_000_000_000,

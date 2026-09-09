@@ -343,32 +343,6 @@ func main() {
 		}
 	}()
 
-	go func() {
-		prune := func() {
-			count, err := st.PruneMaterialRevisions(ctx)
-			if err != nil {
-				if ctx.Err() == nil {
-					log.Printf("prune material revisions: %v", err)
-				}
-				return
-			}
-			if count > 0 {
-				log.Printf("pruned %d material revision(s)", count)
-			}
-		}
-		prune()
-		ticker := time.NewTicker(24 * time.Hour)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				prune()
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-
 	// Upload sweep. Both upload flows share one table, so this is one call; it
 	// only writes off reservations and queues object paths. The bucket is never
 	// touched here — the reaper below owns that, which is what lets objects
@@ -395,6 +369,7 @@ func main() {
 		}
 	}()
 
+	go runTrashSweep(ctx, st)
 	go runBlobReaper(ctx, st, blobStore, artifactTTL{
 		CaptionDays: envInt("CAPY_CAPTION_CACHE_TTL_DAYS", 90),
 	})

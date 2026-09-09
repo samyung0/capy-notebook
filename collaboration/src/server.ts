@@ -19,6 +19,7 @@ import {
   attachDocumentContributorTracker,
   clearDocumentContributors,
 } from './contributors.js';
+import { EditError } from './editCommands.js';
 import {
   drainIsDurable,
   evictMaterialRoomEpoch,
@@ -40,7 +41,11 @@ import {
 } from './limits.js';
 import { captureError, initErrorReporting, log } from './observability.js';
 import { closeOfficeRuntime } from './officeRuntime.js';
-import { materialIdFromRoom, YjsDocumentStore } from './persistence.js';
+import {
+  CollaborationAuthorizationError,
+  materialIdFromRoom,
+  YjsDocumentStore,
+} from './persistence.js';
 import { ProjectionService } from './projection.js';
 import {
   executeServiceCommand,
@@ -927,6 +932,15 @@ async function handleHttpRequest(
     }
     return;
   }
+  if (
+    request.method === 'POST' &&
+    (request.url === '/internal/documents/inspect' ||
+      request.url === '/internal/documents/edit' ||
+      request.url === '/internal/documents/undo')
+  ) {
+    await handleDocumentRequest(request, response);
+    return;
+  }
   if (request.url === '/internal/commands' && request.method === 'POST') {
     await handleServiceCommandRequest(
       request,
@@ -989,6 +1003,188 @@ server.httpServer.on('request', (request, response) => {
     }
   });
 });
+
+/**
+ * Direct AI document edits from the gateway. Materials commit through the
+ * durable material path (isolated candidate, guards validated against the
+ * durable pre-state); sources commit through the checkpoint CAS. Only the
+ * committed delta is then fanned into the live room, so an uncommitted command
+ * never reaches peers or a store snapshot.
+ */
+async function handleDocumentRequest(
+  request: IncomingMessage,
+  response: ServerResponse
+) {
+  const header = request.headers['x-collaboration-secret'];
+  const provided = Array.isArray(header) ? header[0] : header;
+  if (
+    !provided ||
+    Buffer.byteLength(provided) !== Buffer.byteLength(config.secret) ||
+    !timingSafeEqual(Buffer.from(provided), Buffer.from(config.secret))
+  ) {
+    jsonResponse(response, 401, { message: 'invalid service secret' });
+    return;
+  }
+  try {
+    const body = (await readInternalCommandJson(request)) as DocumentRequest;
+    if (
+      !body ||
+      typeof body.actorUserId !== 'string' ||
+      !body.target ||
+      (body.target.kind !== 'material' && body.target.kind !== 'source_file') ||
+      typeof body.target.id !== 'string'
+    ) {
+      jsonResponse(response, 400, {
+        code: 'invalid_input',
+        message: 'invalid document request',
+      });
+      return;
+    }
+    if (request.url === '/internal/documents/inspect') {
+      if (body.target.kind === 'material') {
+        if (typeof body.room !== 'string')
+          throw new EditError('invalid_input', 'room is required');
+        jsonResponse(
+          response,
+          200,
+          await store.inspectMaterialDocument(body.room)
+        );
+      } else {
+        jsonResponse(
+          response,
+          200,
+          await sources.inspect(body.target.id, body.actorUserId)
+        );
+      }
+      return;
+    }
+    if (!body.operation || typeof body.operation.id !== 'string') {
+      throw new EditError('invalid_input', 'operation identity is required');
+    }
+    const undo =
+      request.url === '/internal/documents/undo'
+        ? {
+            guards: (body.guards ?? []) as never,
+            inverse: (body.inverse ?? []) as never,
+            studyState: body.studyState,
+            undoOf: String(body.undoOf ?? ''),
+          }
+        : undefined;
+    if (undo && !undo.undoOf)
+      throw new EditError('invalid_input', 'undoOf is required');
+    if (body.target.kind === 'material') {
+      if (typeof body.room !== 'string')
+        throw new EditError('invalid_input', 'room is required');
+      assertRoomAvailable(body.room);
+      if (await isRoomEvicting(body.room)) {
+        throw new Error('collaboration room is being compacted');
+      }
+      const live = server.hocuspocus.documents.get(body.room);
+      const result = await store.applyMaterialEdit({
+        actorUserId: body.actorUserId,
+        commands: (body.commands ?? []) as never,
+        liveState: live ? Y.encodeStateAsUpdate(live) : undefined,
+        operation: body.operation,
+        room: body.room,
+        undo,
+      });
+      if (result.update && live) {
+        Y.applyUpdate(live, result.update, 'service-edit');
+      }
+      if (result.version && result.content) {
+        try {
+          await projections.projectAndRecord(
+            materialIdFromRoom(body.room),
+            result.version,
+            result.content,
+            'service_edit_projection'
+          );
+          await store.markOperationProjected(result.receipt.operationId);
+          if (result.receipt.effect)
+            result.receipt.effect.projectionPending = false;
+          live?.broadcastStateless(
+            JSON.stringify({
+              materialId: materialIdFromRoom(body.room),
+              type: 'projection-updated',
+              yjsVersion: result.version,
+            })
+          );
+        } catch {
+          // The Yjs change is durable; the lag scanner catches the projection up
+          // and the receipt keeps reporting projectionPending until then.
+        }
+      }
+      jsonResponse(response, 200, result.receipt);
+      return;
+    }
+    const result = await sources.applyEdit({
+      actorUserId: body.actorUserId,
+      commands: (body.commands ?? []) as never,
+      epoch: typeof body.epoch === 'number' ? body.epoch : undefined,
+      fileId: body.target.id,
+      liveState: (room) => {
+        const open = server.hocuspocus.documents.get(room);
+        return open ? Y.encodeStateAsUpdate(open) : undefined;
+      },
+      operation: { ...body.operation, actorUserId: body.actorUserId },
+      undo,
+    });
+    const live = server.hocuspocus.documents.get(result.room);
+    if (live) Y.applyUpdate(live, result.state, 'service-edit');
+    jsonResponse(response, 200, result.receipt);
+  } catch (error) {
+    if (error instanceof EditError) {
+      jsonResponse(response, 409, { code: error.code, message: error.message });
+      return;
+    }
+    if (error instanceof CollaborationAuthorizationError) {
+      jsonResponse(response, 403, {
+        code: 'lifecycle_rejected',
+        message: error.message,
+      });
+      return;
+    }
+    if (error instanceof MaterialDocumentLimitError) {
+      jsonResponse(response, 422, {
+        code: 'quota_rejected',
+        message: error.message,
+      });
+      return;
+    }
+    if (error instanceof SourceRequestError) {
+      jsonResponse(response, error.status, {
+        code: error.status === 409 ? 'stale_target' : 'unavailable_target',
+        message: error.message,
+      });
+      return;
+    }
+    console.error('document request failed', error);
+    jsonResponse(response, 503, {
+      code: 'outcome_unknown',
+      message: 'document edit failed',
+    });
+  }
+}
+
+interface DocumentRequest {
+  actorUserId: string;
+  commands?: unknown[];
+  epoch?: number;
+  guards?: unknown[];
+  inverse?: unknown[];
+  operation?: {
+    callId?: string;
+    conversationId?: string;
+    id: string;
+    messageId?: string;
+    requestHash: string;
+    toolVersion?: number;
+  };
+  room?: string;
+  studyState?: Array<{ cardId: string; known: boolean; srs: unknown }>;
+  target: { id: string; kind: 'material' | 'source_file' };
+  undoOf?: string;
+}
 
 const failedStoreRetries = new FailedStoreRetryRunner(
   failedStores,

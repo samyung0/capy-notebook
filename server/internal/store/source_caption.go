@@ -77,7 +77,7 @@ func (s *Store) SaveSourceCaption(ctx context.Context, in SourceCaption) error {
 		return ErrNotFound
 	}
 	var raw json.RawMessage
-	err = tx.QueryRow(ctx, `SELECT d.pending_effects FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1 AND d.epoch=$2 AND d.checkpoint=$3 AND d.base_revision=f.revision FOR UPDATE OF d,f`, in.FileID, in.Epoch, in.Checkpoint).Scan(&raw)
+	err = tx.QueryRow(ctx, `SELECT d.pending_effects FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1 AND d.epoch=$2 AND d.checkpoint=$3 AND d.base_revision=f.revision AND f.trashed_at IS NULL FOR UPDATE OF d,f`, in.FileID, in.Epoch, in.Checkpoint).Scan(&raw)
 	if isNoRows(err) {
 		return ErrConflict
 	}

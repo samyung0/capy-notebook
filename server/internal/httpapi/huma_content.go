@@ -7,6 +7,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
@@ -45,6 +46,10 @@ type fileOutput struct {
 type fileIDInput struct {
 	ID string `path:"id"`
 }
+type trashFileInput struct {
+	ID        string `path:"id"`
+	RequestID string `query:"requestId" maxLength:"64" doc:"Optional idempotency key for this trash action"`
+}
 type updateFileInput struct {
 	ID   string `path:"id"`
 	Body apimodel.UpdateFileReq
@@ -63,7 +68,7 @@ func (a *api) registerContent(api huma.API) {
 	reg(api, http.MethodGet, "/api/workspaces/{id}/files", "listWorkspaceFiles", tag, "List workspace files", http.StatusOK, a.listWorkspaceFiles)
 	reg(api, http.MethodGet, "/api/files/{id}", "getFile", tag, "Get a file", http.StatusOK, a.getFile)
 	reg(api, http.MethodPatch, "/api/files/{id}", "updateFile", tag, "Update a file", http.StatusOK, a.updateFile)
-	reg(api, http.MethodDelete, "/api/files/{id}", "deleteFile", tag, "Delete a file", http.StatusNoContent, a.deleteFile)
+	reg(api, http.MethodDelete, "/api/files/{id}", "deleteFile", tag, "Move a file to the trash", http.StatusNoContent, a.deleteFile)
 }
 
 func (a *api) assertWorkspaceEditor(ctx context.Context, wsID string) error {
@@ -194,14 +199,19 @@ func (a *api) updateFile(ctx context.Context, in *updateFileInput) (*fileOutput,
 	return &fileOutput{Body: res}, nil
 }
 
-func (a *api) deleteFile(ctx context.Context, in *fileIDInput) (*Empty, error) {
+// deleteFile moves the file into the trash. Blobs, index and charges stay
+// until the owner purges it or the 30-day sweep does; the trash transition
+// trigger cancels pipeline work and evicts the source room.
+func (a *api) deleteFile(ctx context.Context, in *trashFileInput) (*Empty, error) {
 	if err := a.assertFileEditor(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	// The blob objects are queued for the reaper by trigger, so there is nothing
-	// to clean up here and no chance of leaking them if this request dies.
-	if err := a.s.DeleteFile(ctx, userID(ctx), in.ID); err != nil {
+	op, err := trashOperation(ctx, in.RequestID, agenttools.KindSourceFile, in.ID)
+	if err != nil {
 		return nil, hErr(err)
+	}
+	if _, err := a.s.TrashFile(ctx, userID(ctx), in.ID, op); err != nil {
+		return nil, trashError(err)
 	}
 	return &Empty{}, nil
 }

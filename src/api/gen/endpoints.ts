@@ -8,6 +8,7 @@ import type {
   AccessTokenResp,
   AccountStatus,
   AddChapterReq,
+  AgentOperation,
   Attempt,
   AttemptDetail,
   BillingCheckoutReq,
@@ -35,6 +36,9 @@ import type {
   CreateSourceUploadReq,
   CreateWorkspaceInviteReq,
   CreateWorkspaceReq,
+  DeleteFileParams,
+  DeleteMaterialParams,
+  DeleteQuizParams,
   DeletionPreflight,
   Discussion,
   ErrorModel,
@@ -56,11 +60,11 @@ import type {
   ListModelsParams,
   ListNotificationsParams,
   ListTagsParams,
+  ListTrashParams,
   ListWorkspacesParams,
   LocaleInputBody,
   Material,
   MaterialRef,
-  MaterialRevision,
   MaterialUpdateResult,
   Message,
   MicrosoftDriveHost,
@@ -75,6 +79,7 @@ import type {
   PublicFlashcardSet,
   PublicQuiz,
   PublicWorkspace,
+  PurgeTrashedParams,
   Quiz,
   QuizGradeReq,
   QuizGradeResp,
@@ -100,7 +105,10 @@ import type {
   Tag,
   Task,
   TransferWorkspaceReq,
+  TrashActionReq,
+  TrashPage,
   URLResp,
+  UndoEditReq,
   UpdateCardReq,
   UpdateCardStudyStateReq,
   UpdateChapterReq,
@@ -660,6 +668,57 @@ export const updateChapter = async (id: string,
 
   const data: updateChapterResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as updateChapterResponse
+}
+
+
+
+export type undoEditOperationResponse200 = {
+  data: AgentOperation
+  status: 200
+}
+
+export type undoEditOperationResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type undoEditOperationResponseSuccess = (undoEditOperationResponse200) & {
+  headers: Headers;
+};
+export type undoEditOperationResponseError = (undoEditOperationResponseDefault) & {
+  headers: Headers;
+};
+
+export type undoEditOperationResponse = (undoEditOperationResponseSuccess | undoEditOperationResponseError)
+
+export const getUndoEditOperationUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/chat/edit-operations/${operationId}/undo`
+}
+
+/**
+ * @summary Reverse one direct AI edit
+ */
+export const undoEditOperation = async (operationId: string,
+    undoEditReq: NonReadonly<UndoEditReq>, options?: RequestInit): Promise<undoEditOperationResponse> => {
+
+  const res = await fetch(getUndoEditOperationUrl(operationId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(undoEditReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: undoEditOperationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as undoEditOperationResponse
 }
 
 
@@ -1437,20 +1496,29 @@ export type deleteFileResponseError = (deleteFileResponseDefault) & {
 
 export type deleteFileResponse = (deleteFileResponseSuccess | deleteFileResponseError)
 
-export const getDeleteFileUrl = (id: string,) => {
+export const getDeleteFileUrl = (id: string,
+    params?: DeleteFileParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/files/${id}`
+  return stringifiedParams.length > 0 ? `/api/files/${id}?${stringifiedParams}` : `/api/files/${id}`
 }
 
 /**
- * @summary Delete a file
+ * @summary Move a file to the trash
  */
-export const deleteFile = async (id: string, options?: RequestInit): Promise<deleteFileResponse> => {
+export const deleteFile = async (id: string,
+    params?: DeleteFileParams, options?: RequestInit): Promise<deleteFileResponse> => {
 
-  const res = await fetch(getDeleteFileUrl(id),
+  const res = await fetch(getDeleteFileUrl(id,params),
   {
     ...options,
     method: 'DELETE'
@@ -2953,20 +3021,29 @@ export type deleteMaterialResponseError = (deleteMaterialResponseDefault) & {
 
 export type deleteMaterialResponse = (deleteMaterialResponseSuccess | deleteMaterialResponseError)
 
-export const getDeleteMaterialUrl = (id: string,) => {
+export const getDeleteMaterialUrl = (id: string,
+    params?: DeleteMaterialParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/materials/${id}`
+  return stringifiedParams.length > 0 ? `/api/materials/${id}?${stringifiedParams}` : `/api/materials/${id}`
 }
 
 /**
- * @summary Delete a material
+ * @summary Move a material to the trash
  */
-export const deleteMaterial = async (id: string, options?: RequestInit): Promise<deleteMaterialResponse> => {
+export const deleteMaterial = async (id: string,
+    params?: DeleteMaterialParams, options?: RequestInit): Promise<deleteMaterialResponse> => {
 
-  const res = await fetch(getDeleteMaterialUrl(id),
+  const res = await fetch(getDeleteMaterialUrl(id,params),
   {
     ...options,
     method: 'DELETE'
@@ -3282,56 +3359,6 @@ export const updateMaterial = async (id: string,
 
   const data: updateMaterialResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as updateMaterialResponse
-}
-
-
-
-export type listMaterialRevisionsResponse200 = {
-  data: MaterialRevision[]
-  status: 200
-}
-
-export type listMaterialRevisionsResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type listMaterialRevisionsResponseSuccess = (listMaterialRevisionsResponse200) & {
-  headers: Headers;
-};
-export type listMaterialRevisionsResponseError = (listMaterialRevisionsResponseDefault) & {
-  headers: Headers;
-};
-
-export type listMaterialRevisionsResponse = (listMaterialRevisionsResponseSuccess | listMaterialRevisionsResponseError)
-
-export const getListMaterialRevisionsUrl = (id: string,) => {
-
-
-
-
-  return `/api/materials/${id}/revisions`
-}
-
-/**
- * @summary List material revisions
- */
-export const listMaterialRevisions = async (id: string, options?: RequestInit): Promise<listMaterialRevisionsResponse> => {
-
-  const res = await fetch(getListMaterialRevisionsUrl(id),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: listMaterialRevisionsResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listMaterialRevisionsResponse
 }
 
 
@@ -4470,20 +4497,29 @@ export type deleteQuizResponseError = (deleteQuizResponseDefault) & {
 
 export type deleteQuizResponse = (deleteQuizResponseSuccess | deleteQuizResponseError)
 
-export const getDeleteQuizUrl = (id: string,) => {
+export const getDeleteQuizUrl = (id: string,
+    params?: DeleteQuizParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/quizzes/${id}`
+  return stringifiedParams.length > 0 ? `/api/quizzes/${id}?${stringifiedParams}` : `/api/quizzes/${id}`
 }
 
 /**
  * @summary Delete a quiz
  */
-export const deleteQuiz = async (id: string, options?: RequestInit): Promise<deleteQuizResponse> => {
+export const deleteQuiz = async (id: string,
+    params?: DeleteQuizParams, options?: RequestInit): Promise<deleteQuizResponse> => {
 
-  const res = await fetch(getDeleteQuizUrl(id),
+  const res = await fetch(getDeleteQuizUrl(id,params),
   {
     ...options,
     method: 'DELETE'
@@ -5324,6 +5360,177 @@ export const saveCanvas = async (id: string,
 
   const data: saveCanvasResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as saveCanvasResponse
+}
+
+
+
+export type listTrashResponse200 = {
+  data: TrashPage
+  status: 200
+}
+
+export type listTrashResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listTrashResponseSuccess = (listTrashResponse200) & {
+  headers: Headers;
+};
+export type listTrashResponseError = (listTrashResponseDefault) & {
+  headers: Headers;
+};
+
+export type listTrashResponse = (listTrashResponseSuccess | listTrashResponseError)
+
+export const getListTrashUrl = (params?: ListTrashParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/trash?${stringifiedParams}` : `/api/trash`
+}
+
+/**
+ * @summary List trashed files and materials the caller owns
+ */
+export const listTrash = async (params?: ListTrashParams, options?: RequestInit): Promise<listTrashResponse> => {
+
+  const res = await fetch(getListTrashUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listTrashResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listTrashResponse
+}
+
+
+
+export type purgeTrashedResponse200 = {
+  data: AgentOperation
+  status: 200
+}
+
+export type purgeTrashedResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type purgeTrashedResponseSuccess = (purgeTrashedResponse200) & {
+  headers: Headers;
+};
+export type purgeTrashedResponseError = (purgeTrashedResponseDefault) & {
+  headers: Headers;
+};
+
+export type purgeTrashedResponse = (purgeTrashedResponseSuccess | purgeTrashedResponseError)
+
+export const getPurgeTrashedUrl = (kind: 'source_file' | 'material',
+    id: string,
+    params?: PurgeTrashedParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/trash/${kind}/${id}?${stringifiedParams}` : `/api/trash/${kind}/${id}`
+}
+
+/**
+ * @summary Permanently delete a trashed file or material
+ */
+export const purgeTrashed = async (kind: 'source_file' | 'material',
+    id: string,
+    params?: PurgeTrashedParams, options?: RequestInit): Promise<purgeTrashedResponse> => {
+
+  const res = await fetch(getPurgeTrashedUrl(kind,id,params),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: purgeTrashedResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as purgeTrashedResponse
+}
+
+
+
+export type restoreTrashedResponse200 = {
+  data: AgentOperation
+  status: 200
+}
+
+export type restoreTrashedResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type restoreTrashedResponseSuccess = (restoreTrashedResponse200) & {
+  headers: Headers;
+};
+export type restoreTrashedResponseError = (restoreTrashedResponseDefault) & {
+  headers: Headers;
+};
+
+export type restoreTrashedResponse = (restoreTrashedResponseSuccess | restoreTrashedResponseError)
+
+export const getRestoreTrashedUrl = (kind: 'source_file' | 'material',
+    id: string,) => {
+
+
+
+
+  return `/api/trash/${kind}/${id}/restore`
+}
+
+/**
+ * @summary Restore a trashed file or material
+ */
+export const restoreTrashed = async (kind: 'source_file' | 'material',
+    id: string,
+    trashActionReq: NonReadonly<TrashActionReq>, options?: RequestInit): Promise<restoreTrashedResponse> => {
+
+  const res = await fetch(getRestoreTrashedUrl(kind,id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(trashActionReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: restoreTrashedResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as restoreTrashedResponse
 }
 
 

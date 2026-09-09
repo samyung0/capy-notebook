@@ -221,18 +221,6 @@ func (k MaterialKind) RefType() MaterialRefType {
 	return MaterialRefType(k)
 }
 
-// MaterialRevisionEvent records why a complete material snapshot was written.
-type MaterialRevisionEvent string
-
-const (
-	RevisionCreate MaterialRevisionEvent = "create"
-	RevisionEdit   MaterialRevisionEvent = "edit"
-)
-
-func (MaterialRevisionEvent) Schema(r huma.Registry) *huma.Schema {
-	return enumRef(r, "MaterialRevisionEvent", "create", "edit")
-}
-
 // PlanTier is the account subscription tier.
 type PlanTier string
 

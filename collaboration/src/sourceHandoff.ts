@@ -224,7 +224,7 @@ export class SourceHandoff {
 
   private async current(fileId: string): Promise<SourceSession> {
     const result = await this.pool.query<{ user_id: string }>(
-      'SELECT w.user_id FROM files f JOIN workspaces w ON w.id=f.workspace_id WHERE f.id=$1',
+      'SELECT w.user_id FROM files f JOIN workspaces w ON w.id=f.workspace_id WHERE f.id=$1 AND f.trashed_at IS NULL',
       [fileId]
     );
     if (!result.rows[0])

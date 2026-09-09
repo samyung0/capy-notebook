@@ -11,7 +11,7 @@ Capy Notebook uses Plate/Slate for editing and rendering, but Yjs is the live an
 durable authority for material content after a room is initialized.
 
 - Yjs owns live material content.
-- Go/PostgreSQL own metadata, permissions, comments, and revision projections.
+- Go/PostgreSQL own metadata, permissions, comments, and content projections.
 - `materials.content` is an eventually consistent Plate JSON read projection.
 - Viewers and study routes render that projection without joining Yjs.
 - Editors join with write access; their comment mode is read-only live content.
@@ -159,7 +159,7 @@ material metadata. Their stored Plate documents contain the custom block but no
 generated title heading. `MaterialRenderProvider` gives the custom block
 renderer the material kind and title. The renderer adds a non-editable DOM `h1`
 only when the material has no workspace. That heading is not a Slate node, Yjs
-update, checkpoint, or revision. A workspace-contained custom material already
+update or checkpoint. A workspace-contained custom material already
 shows its relational title in the workspace chrome, and an embedded quiz or
 flashcard block inside a note does not render the note title.
 
@@ -274,8 +274,8 @@ stored `content` root to a Plate envelope and calls the internal Go projection
 endpoint.
 
 Go validates the complete envelope, locks the material, ignores stale versions,
-updates `materials.content`, increments the material revision, upserts the UTC
-daily revision, reconciles flashcard stats, and advances `projected_version`.
+updates `materials.content`, increments the material revision, reconciles
+flashcard stats, and advances `projected_version`.
 Rows where `projected_version < stored_version` are retried by the sidecar.
 Binary persistence and projection have separate failure boundaries. Once a Yjs
 version commits, a projection outage does not enqueue that snapshot as a failed
@@ -377,6 +377,19 @@ palette exposes only Comment. Typed slash commands and all document mutations
 remain editor-only.
 
 `mod+shift+m` opens the comment workflow for an active selection.
+
+## Direct AI edits
+
+Chat `edit_document` never touches the browser editor. The collaboration
+service loads the durable material state into an isolated Y.Doc, merges the
+open live room's state so in-flight typing counts, applies the normalized
+commands through a headless Slate editor (`editCommands.ts`), stores the
+inverse and item-run guards of the edited nodes, then fans the committed delta
+into the live room as a `service-edit` update; the projection runs on the same
+commit.
+Flashcard removals keep their study rows in `agent_card_state_restores` so an
+Undo restores progress. The chat result card shows the effect with an Undo
+button (`available`, `undone`, `unavailable`) fed by the receipt's `undo` ref.
 
 ## AI previews
 

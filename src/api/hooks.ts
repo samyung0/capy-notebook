@@ -61,13 +61,13 @@ import type {
   MaterialComment,
   MaterialDiscussion,
   MaterialRef,
-  MaterialRevision,
   MaterialUpdateResult,
   ModelSlot,
   ModelsResponse,
   NotificationCount,
   NotificationPage,
   NotificationPrefs,
+  OperationReceipt,
   PublicFlashcardSet,
   PublicQuiz,
   PublicWorkspace,
@@ -81,6 +81,10 @@ import type {
   Tag,
   Task,
   ThinkingCanvas,
+  TrashActionReq,
+  TrashItem,
+  TrashPage,
+  UndoEditReq,
   UpdateCardReq,
   UpdateCardStudyStateReq,
   UpdateChapterReq,
@@ -813,15 +817,99 @@ export function useMoveFile(wsId: string) {
     },
   });
 }
+/** Deleting a file moves it to the trash; the owner can restore it from
+ * Files › Trash for 30 days. Its bytes stay charged until purged. */
 export function useDeleteFile(wsId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.del<void>(`/files/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.files(wsId) });
+      qc.invalidateQueries({ queryKey: qk.allFiles });
       qc.invalidateQueries({ queryKey: qk.chapters(wsId) });
       qc.invalidateQueries({ queryKey: qk.workspaceStats(wsId) });
+      qc.invalidateQueries({ queryKey: qk.trash() });
     },
+  });
+}
+
+/** Reverse one direct AI edit shown in chat. Each click is its own request
+ * (the key is not reused across retries, so it never replays); the server
+ * validates the edit's guards and refuses when the targets changed since. */
+export function useUndoEdit() {
+  return useMutation({
+    meta: { errorToast: false },
+    mutationFn: (operationId: string) =>
+      api.post<OperationReceipt>(`/chat/edit-operations/${operationId}/undo`, {
+        requestId: crypto.randomUUID(),
+      } satisfies UndoEditReq),
+  });
+}
+
+/* ---------------- trash ---------------- */
+
+export const trashQuery = (wsId?: string) => ({
+  getNextPageParam: (last: TrashPage) => last.nextCursor || undefined,
+  initialPageParam: '',
+  queryFn: ({ pageParam }: { pageParam: string }) => {
+    const params = new URLSearchParams();
+    if (wsId) params.set('workspaceId', wsId);
+    if (pageParam) params.set('cursor', pageParam);
+    const query = params.toString();
+    return api.get<TrashPage>(`/trash${query ? `?${query}` : ''}`);
+  },
+  queryKey: qk.trash(wsId),
+});
+/** Owner-scoped trash listing. Lazy: the Files page only loads it when the
+ * Trash tab is open. Secondary query, so it renders its own error state. */
+export const useTrash = (wsId: string | undefined, enabled: boolean) =>
+  useInfiniteQuery({
+    ...trashQuery(wsId),
+    enabled,
+    meta: { errorBoundary: false },
+  });
+
+function invalidateAfterTrashChange(qc: QueryClient, item: TrashItem) {
+  qc.invalidateQueries({ queryKey: qk.trash() });
+  qc.invalidateQueries({ queryKey: qk.allFiles });
+  qc.invalidateQueries({ queryKey: qk.quizzes });
+  qc.invalidateQueries({ queryKey: qk.flashcardSets });
+  qc.invalidateQueries({ queryKey: qk.usage });
+  if (item.workspaceId) {
+    qc.invalidateQueries({ queryKey: qk.files(item.workspaceId) });
+    qc.invalidateQueries({ queryKey: qk.materials(item.workspaceId) });
+    qc.invalidateQueries({ queryKey: qk.chapters(item.workspaceId) });
+    qc.invalidateQueries({ queryKey: qk.workspaceStats(item.workspaceId) });
+    qc.invalidateQueries({ queryKey: qk.workspace(item.workspaceId) });
+  }
+}
+
+/** Restore one trash episode. Each click is its own request; a second click
+ * on the same episode is refused by the server's episode check, not replayed. */
+export function useRestoreTrashed() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (item: TrashItem) =>
+      api.post<OperationReceipt>(`/trash/${item.kind}/${item.id}/restore`, {
+        episodeId: item.episodeId,
+        requestId: crypto.randomUUID(),
+      } satisfies TrashActionReq),
+    onSuccess: (_receipt, item) => invalidateAfterTrashChange(qc, item),
+  });
+}
+
+/** Permanently delete one trash episode. Irreversible. */
+export function usePurgeTrashed() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (item: TrashItem) =>
+      api.del<OperationReceipt>(
+        `/trash/${item.kind}/${item.id}?${new URLSearchParams({
+          episodeId: item.episodeId,
+          requestId: crypto.randomUUID(),
+        })}`
+      ),
+    onSuccess: (_receipt, item) => invalidateAfterTrashChange(qc, item),
   });
 }
 
@@ -1339,6 +1427,7 @@ export const materialQuery = (id: string | null) =>
 export const useMaterial = (id: string | null, options?: QueryUiOptions) =>
   useQuery({ ...materialQuery(id), meta: queryMeta(options) });
 
+/** Deleting a material moves it to the trash (see useDeleteFile). */
 export function useDeleteMaterial(wsId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -1347,6 +1436,7 @@ export function useDeleteMaterial(wsId: string) {
       qc.invalidateQueries({ queryKey: qk.materials(wsId) });
       qc.invalidateQueries({ queryKey: qk.quizzes });
       qc.invalidateQueries({ queryKey: qk.flashcardSets });
+      qc.invalidateQueries({ queryKey: qk.trash() });
     },
   });
 }
@@ -1586,17 +1676,6 @@ export function useDeleteMaterialComment(materialId: string) {
   });
 }
 
-export const materialRevisionsQuery = (materialId: string) =>
-  queryOptions({
-    enabled: !!materialId,
-    queryFn: () =>
-      api.get<MaterialRevision[]>(`/materials/${materialId}/revisions`),
-    queryKey: qk.materialRevisions(materialId),
-  });
-
-export const useMaterialRevisions = (materialId: string) =>
-  useQuery(materialRevisionsQuery(materialId));
-
 export function useDeleteMaterialDiscussion(materialId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -1771,6 +1850,7 @@ export function useDeleteQuiz() {
     mutationFn: (id: string) => api.del<void>(`/quizzes/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.quizzes });
+      qc.invalidateQueries({ queryKey: qk.trash() });
       invalidateAllMaterials(qc);
     },
   });

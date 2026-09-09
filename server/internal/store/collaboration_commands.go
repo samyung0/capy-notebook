@@ -100,7 +100,7 @@ func (s *Store) applyAuthoritativeContentCommand(
 		return true, nil
 	}
 	if actorUserID == "" {
-		if err := s.pool.QueryRow(ctx, `SELECT owner_user_id FROM materials WHERE id=$1`,
+		if err := s.pool.QueryRow(ctx, `SELECT owner_user_id FROM materials WHERE id=$1 AND trashed_at IS NULL`,
 			materialID).Scan(&actorUserID); err != nil {
 			if isNoRows(err) {
 				return true, ErrNotFound

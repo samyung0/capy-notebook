@@ -33,6 +33,7 @@ var ownerColumns = []struct{ table, column string }{
 	{"materials", "owner_user_id"},
 	{"upload_sessions", "user_id"},
 	{"editor_assets", "user_id"},
+	{"agent_edit_inverses", "owner_user_id"},
 }
 
 // TransferWorkspace moves a workspace and everything charged for it to another
@@ -188,7 +189,8 @@ func (s *Store) workspaceChargedBytesTx(
 				WHERE workspace_id=$1 AND status='ready'), 0)
 			+ COALESCE((SELECT sum(size_bytes) FROM materials WHERE workspace_id=$1), 0)
 			+ COALESCE((SELECT sum(d.storage_bytes) FROM source_documents d JOIN files f ON f.id=d.file_id WHERE f.workspace_id=$1),0)
-			+ COALESCE((SELECT sum(c.storage_bytes) FROM source_refresh_candidates c JOIN files f ON f.id=c.file_id WHERE f.workspace_id=$1),0),
+			+ COALESCE((SELECT sum(c.storage_bytes) FROM source_refresh_candidates c JOIN files f ON f.id=c.file_id WHERE f.workspace_id=$1),0)
+			+ COALESCE((SELECT sum(inverse_bytes) FROM agent_edit_inverses WHERE workspace_id=$1),0),
 			COALESCE((SELECT sum(COALESCE(reserved_size, declared_size)) FROM upload_sessions
 				WHERE workspace_id=$1 AND status='pending' AND expires_at > now()), 0)`,
 		workspaceID).Scan(&out.used, &out.reserved)

@@ -1,7 +1,9 @@
 """Typed SSE events for one chat turn.
 
 The browser and the Go relay share this shape. Activity blocks are persisted
-in message metadata. They are not sent back as LLM history.
+in message metadata. They are not sent back as LLM history. Tool results use
+the shared agent-tool contract: ``outcome`` is terminal, ``error`` is the safe
+typed error, ``effects`` are the durable resource effects the call committed.
 """
 
 from __future__ import annotations
@@ -34,8 +36,19 @@ def tool_start(call_id: str, name: str, detail: str) -> dict[str, Any]:
     }
 
 
-def tool_end(call_id: str, status: str) -> dict[str, Any]:
-    return {"type": "tool_end", "callId": call_id, "status": status}
+def tool_end(
+    call_id: str,
+    outcome: str,
+    *,
+    error: dict[str, str] | None = None,
+    effects: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    event: dict[str, Any] = {"type": "tool_end", "callId": call_id, "outcome": outcome}
+    if error:
+        event["error"] = error
+    if effects:
+        event["effects"] = effects
+    return event
 
 
 def citations(items: list[dict[str, Any]], version: int) -> dict[str, Any]:

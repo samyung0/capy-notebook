@@ -140,7 +140,7 @@ func TestMaterialInheritsParentWorkspaceShare(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = s.DeleteMaterial(ctx, "u_owner", mt.ID) })
+	t.Cleanup(func() { _ = trashAndPurgeMaterial(ctx, s, "u_owner", mt.ID) })
 
 	if _, err := s.MaterialAccess(ctx, "u_other", mt.ID); err != nil {
 		t.Fatalf("expected parent workspace share to grant read: %v", err)
@@ -163,7 +163,7 @@ func TestWorkspaceMaterialCannotOverrideWorkspaceVisibility(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = s.DeleteMaterial(ctx, "u_owner", mt.ID) })
+	t.Cleanup(func() { _ = trashAndPurgeMaterial(ctx, s, "u_owner", mt.ID) })
 
 	if mt.Privacy != PrivacyPrivate {
 		t.Fatalf("workspace material privacy = %q, want private", mt.Privacy)

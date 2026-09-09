@@ -7,6 +7,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/copytext"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/store"
@@ -20,6 +21,10 @@ type quizOutput struct {
 }
 type quizIDInput struct {
 	ID string `path:"id"`
+}
+type quizDeleteInput struct {
+	ID        string `path:"id"`
+	RequestID string `query:"requestId" maxLength:"64" doc:"Optional idempotency key for this trash action"`
 }
 type createQuizInput struct {
 	Body apimodel.CreateQuizReq
@@ -200,15 +205,20 @@ func (a *api) quizOutputWithAccess(ctx context.Context, id string, res store.Qui
 	return &quizOutput{Body: apimodel.FromQuiz(res)}, nil
 }
 
-func (a *api) deleteQuiz(ctx context.Context, in *quizIDInput) (*Empty, error) {
+// deleteQuiz moves the quiz material into the trash.
+func (a *api) deleteQuiz(ctx context.Context, in *quizDeleteInput) (*Empty, error) {
 	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
 	if err := a.assertMaterialOwner(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	if err := a.s.DeleteQuiz(ctx, userID(ctx), in.ID); err != nil {
+	op, err := trashOperation(ctx, in.RequestID, agenttools.KindMaterial, in.ID)
+	if err != nil {
 		return nil, hErr(err)
+	}
+	if _, err := a.s.TrashMaterial(ctx, userID(ctx), in.ID, "quiz", op); err != nil {
+		return nil, trashError(err)
 	}
 	return &Empty{}, nil
 }

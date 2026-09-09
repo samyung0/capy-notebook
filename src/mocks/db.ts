@@ -24,6 +24,7 @@ import type {
   SrsState,
   Task,
   ThinkingCanvas,
+  TrashItem,
   User,
   WireMessage,
   Workspace,
@@ -1242,6 +1243,14 @@ export const conversations: Conversation[] = [
     workspaceId: workspaces[0].id,
   },
 ];
+
+/** Owner-only trash bin: metadata rows plus the original record so restore can
+ * put it back exactly where it was. */
+export const trash: Array<{
+  file?: SourceFile;
+  item: TrashItem;
+  material?: Material;
+}> = [];
 
 export const chatMessages: WireMessage[] = [
   {

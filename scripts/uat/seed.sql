@@ -16,7 +16,6 @@ DECLARE
   initial_content constant jsonb := '{"schemaVersion":1,"value":[{"id":"uat-paragraph-v1","type":"p","children":[{"text":"Capy Notebook UAT authorization fixture."}]}]}';
   ws workspaces%ROWTYPE;
   note materials%ROWTYPE;
-  created_note boolean := false;
 BEGIN
   IF (SELECT count(*) FROM uat_seed_actors) <> 4
     OR (SELECT count(DISTINCT id) FROM uat_seed_actors) <> 4
@@ -81,20 +80,11 @@ BEGIN
       content, privacy, node_count, max_depth, updated_by)
       VALUES (fixture_note, owner_id, fixture_ws, ws.name, 'note', 'UAT authorization note',
         initial_content, 'private', 2, 1, owner_id);
-    created_note := true;
   END IF;
   SELECT * INTO STRICT note FROM materials WHERE id = fixture_note FOR UPDATE;
   IF note.workspace_id IS DISTINCT FROM fixture_ws OR note.created_by IS DISTINCT FROM owner_id
     OR note.owner_user_id <> owner_id OR note.kind <> 'note' OR note.privacy <> 'private' THEN
     RAISE EXCEPTION 'UAT material ID collision or ownership/type drift; content was preserved';
-  END IF;
-  IF created_note THEN
-    INSERT INTO material_revisions (material_id, version_date, revision, parent_revision,
-      event_type, title, content, event_metadata, created_by, created_at)
-      VALUES (note.id, (note.created_at AT TIME ZONE 'UTC')::date, note.revision, NULL,
-        'create', note.title, note.content, '{}'::jsonb, note.created_by, note.created_at);
-  ELSIF NOT EXISTS (SELECT 1 FROM material_revisions WHERE material_id = fixture_note) THEN
-    RAISE EXCEPTION 'Existing UAT material has no revision history; refusing to invent a snapshot';
   END IF;
 END
 $seed$;

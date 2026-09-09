@@ -58,8 +58,13 @@ def _describe(name: str, args: dict[str, Any]) -> str:
         return ", ".join(str(i) for i in ids[:8])
     if name == "read_document":
         return str(args.get("file_id") or "")
-    if name == "generate_material":
+    if name == "create_material":
         return str(args.get("kind") or "")
+    if name in ("trash_file", "restore_file", "inspect_document", "edit_document"):
+        target = args.get("target") or {}
+        return str(target.get("id") or "") if isinstance(target, dict) else ""
+    if name == "list_documents":
+        return "listing documents"
     return ""
 
 
@@ -175,13 +180,13 @@ async def run_agent(
     answer = ""
     block_n = 0
 
-    if ctx.file_ids:
+    if ctx.file_ids is not None:
         active_scope = await tools.resolve_current_scope(ctx)
         if isinstance(active_scope, ToolResult):
             yield _with_usage(events.error(active_scope.text(), "invalid_scope"))
             return
 
-    ctx.pending_sources = await pending.load(ctx.workspace_id, ctx.file_ids or None)
+    ctx.pending_sources = await pending.load(ctx.workspace_id, ctx.file_ids)
     prior = _history_turns(history)
     messages = chat_prompts.chat_messages(
         locale=locale, checkpoint=checkpoint, history=prior, query=query
@@ -530,6 +535,34 @@ async def _record_searches(ctx: ToolContext, answer: str) -> None:
         log.warning("search telemetry write failed", exc_info=True)
 
 
+def _activity(
+    call: ToolCall, name: str, args: dict[str, Any], result: ToolResult
+) -> dict[str, Any]:
+    block: dict[str, Any] = {
+        "id": call.id,
+        "kind": "tool",
+        "callId": call.id,
+        "name": name,
+        "detail": _describe(name, args),
+        "outcome": result.outcome,
+    }
+    error = result.error_payload()
+    if error:
+        block["error"] = error
+    if result.effects:
+        block["effects"] = list(result.effects)
+    return block
+
+
+def _tool_end(call: ToolCall, result: ToolResult) -> dict[str, Any]:
+    return events.tool_end(
+        call.id,
+        result.outcome,
+        error=result.error_payload(),
+        effects=result.effects or None,
+    )
+
+
 async def _run_tools(
     calls: list[ToolCall],
     ctx: ToolContext,
@@ -548,20 +581,13 @@ async def _run_tools(
             search_used=any(name == "search_workspace" for _, _, name in accepted),
         )
         if limit_text:
-            result = tools._refused(limit_text)
+            result = tools._refused(limit_text, code="limit_reached")
             results.append((call, result))
             yield events.tool_start(call.id, call.name, _describe(call.name, args))
-            yield events.tool_end(call.id, "refused")
+            yield _tool_end(call, result)
             yield {
                 "type": "activity",
-                "block": {
-                    "id": call.id,
-                    "kind": "tool",
-                    "callId": call.id,
-                    "name": call.name,
-                    "detail": _describe(call.name, args),
-                    "status": "refused",
-                },
+                "block": _activity(call, call.name, args, result),
             }
             continue
         accepted.append((call, args, call.name))
@@ -569,17 +595,27 @@ async def _run_tools(
 
     work = [(call, args, name) for call, args, name in accepted]
     executed: dict[str, ToolResult] = {}
+    by_call = {call.id: (call, args, name) for call, args, name in work}
+
+    def _finish(call_id: str, result: ToolResult) -> list[dict[str, Any]]:
+        call, args, name = by_call[call_id]
+        executed[call_id] = result
+        results.append((call, result))
+        return [
+            _tool_end(call, result),
+            {"type": "activity", "block": _activity(call, name, args, result)},
+        ]
+
     if work:
-        mutating = any(
-            (tools.spec_for(name) and tools.spec_for(name).mutates)
-            for _, _, name in work
-        )
+        mutating = any(tools.mutates(name) for _, _, name in work)
         if mutating:
-            peak = 1
+            # A mutation keeps the whole response serial, so a create/edit/trash
+            # never races a read of the same resource inside one response.
             for call, args, name in work:
                 yield events.tool_start(call.id, name, _describe(name, args))
-                executed[call.id] = await tools.run(name, args, ctx)
-            budget.peak_parallel_tools = max(budget.peak_parallel_tools, peak)
+                for event in _finish(call.id, await tools.run(name, args, ctx)):
+                    yield event
+            budget.peak_parallel_tools = max(budget.peak_parallel_tools, 1)
         else:
             peak = min(len(work), MAX_CONCURRENT)
             budget.peak_parallel_tools = max(budget.peak_parallel_tools, peak)
@@ -593,28 +629,14 @@ async def _run_tools(
 
             for call, args, name in work:
                 yield events.tool_start(call.id, name, _describe(name, args))
-            gathered = await asyncio.gather(
-                *[_one(call, args, name) for call, args, name in work]
-            )
-            for call_id, result in gathered:
-                executed[call_id] = result
-
-    for call, args, name in work:
-        result = executed[call.id]
-        results.append((call, result))
-        status = "refused" if result.refused else "success"
-        yield events.tool_end(call.id, status)
-        yield {
-            "type": "activity",
-            "block": {
-                "id": call.id,
-                "kind": "tool",
-                "callId": call.id,
-                "name": name,
-                "detail": _describe(name, args),
-                "status": status,
-            },
-        }
+            # Each read reports completion as it finishes rather than waiting for
+            # the slowest sibling; the model still sees results in call order.
+            for finished in asyncio.as_completed(
+                [_one(call, args, name) for call, args, name in work]
+            ):
+                call_id, result = await finished
+                for event in _finish(call_id, result):
+                    yield event
 
     # Original call order: accepted refusals already in results in encounter order.
     # Rebuild in original `calls` order.
