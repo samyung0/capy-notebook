@@ -67,9 +67,20 @@ started_at="$SECONDS"
 last_status=""
 
 while (( SECONDS - started_at < timeout )); do
-  deployment="$(curl --silent --show-error --fail --retry 3 --retry-all-errors \
+  # A large build starves the Coolify control plane, which answers 5xx while its
+  # own deployment keeps running. Abandoning the poll there would leave the
+  # workflow and the host disagreeing about a release that is still in flight,
+  # so an unreachable API is just an unknown status: keep waiting out the timeout.
+  if ! deployment="$(curl --silent --fail --retry 3 --retry-all-errors \
     "$api_url/deployments/$deployment_uuid" \
-    --header "$auth_header")"
+    --header "$auth_header" 2>/dev/null)"; then
+    if [[ "$last_status" != "unreachable" ]]; then
+      printf 'Coolify API is unreachable; deployment %s is still running.\n' "$deployment_uuid"
+      last_status="unreachable"
+    fi
+    sleep "$poll_interval"
+    continue
+  fi
   status="$(jq -r '.status // empty' <<< "$deployment")"
   deployed_revision="$(jq -r '.commit // empty' <<< "$deployment")"
 
