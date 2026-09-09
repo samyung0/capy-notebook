@@ -69,7 +69,26 @@ def classify(values):
     return {key: MANIFEST[key]["kind"] for key in values}
 
 
+def read_file(path):
+    if not path:
+        fail("--file is required")
+    path = Path(path)
+    if not path.is_file():
+        fail(f"{path}: no such file")
+    return path.read_text()
+
+
 def github_values():
+    missing = [
+        name
+        for name in ("CAPY_GITHUB_VARS", "CAPY_GITHUB_SECRETS")
+        if name not in os.environ
+    ]
+    if missing:
+        fail(
+            ", ".join(missing)
+            + " unset; outside the deploy workflows pass --file with a local env file"
+        )
     variables = json.loads(os.environ["CAPY_GITHUB_VARS"])
     secrets = json.loads(os.environ["CAPY_GITHUB_SECRETS"])
     # Actions injects its automatic token into toJSON(secrets), spelled lowercase.
@@ -406,7 +425,7 @@ def main():
         verify_coolify_terminal(args.deployment_uuid)
         return
     if args.command in ("apply-coolify", "build"):
-        values = json.loads(Path(args.file).read_text())
+        values = json.loads(read_file(args.file))
         if args.command == "apply-coolify":
             apply_coolify(values)
         else:
@@ -415,7 +434,7 @@ def main():
             )
             sys.exit(result.returncode)
         return
-    values = parse_dotenv(Path(args.file).read_text()) if args.file else github_values()
+    values = parse_dotenv(read_file(args.file)) if args.file else github_values()
     classify(values)
     if args.command == "check":
         print(f"{len(values)} known keys validated; values redacted")
