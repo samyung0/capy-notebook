@@ -35,5 +35,12 @@ if [[ "$mode" == prepare || "$mode" == bootstrap-prepare ]]; then
   tar -C "$CAPY_CONFIG_DIR" -cf - "$shared" "$environment.queue.env" | \
     ssh "${ssh_args[@]}" "$user@$host" "tar -xf - -C '$staging'"
 fi
-ssh "${ssh_args[@]}" "$user@$host" bash -s -- "$mode" "$revision" "$environment" "$owner" "$staging" "${CAPY_INGEST_REPOSITORY_URL:-}" "${CAPY_BACKEND_REVISION:-}" \
+# ssh joins its command words into one string that the remote shell re-splits,
+# which silently drops empty arguments and shifts every later one into the wrong
+# position. Quote each argument so the remote sees the positions we sent.
+quote() { printf "'%s'" "${1//\'/\'\\\'\'}"; }
+remote_args="$(quote "$mode") $(quote "$revision") $(quote "$environment")"
+remote_args="$remote_args $(quote "$owner") $(quote "$staging")"
+remote_args="$remote_args $(quote "${CAPY_INGEST_REPOSITORY_URL:-}") $(quote "${CAPY_BACKEND_REVISION:-}")"
+ssh "${ssh_args[@]}" "$user@$host" "bash -s -- $remote_args" \
   <"$script_dir/ingest-host-remote-release.sh"

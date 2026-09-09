@@ -3,6 +3,7 @@
 
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -323,6 +324,49 @@ class ReleaseTest(unittest.TestCase):
         self.assertIn("stop local-profile consumers", result.stderr)
         self.assertEqual(self.state_data()["running"], data["running"])
         self.assertFalse((self.state / "pending").exists())
+
+
+class WrapperTest(unittest.TestCase):
+    """The wrapper hands the phase arguments to ssh, which sends them as one
+    string for the remote shell to re-split. Empty values must keep their slot."""
+
+    def test_empty_arguments_keep_the_later_positions(self):
+        wrapper = SCRIPT.with_name("ingest-host-release.sh")
+        with tempfile.TemporaryDirectory(prefix="capy-wrapper-test-") as temp:
+            root = Path(temp)
+            binaries = root / "bin"
+            binaries.mkdir()
+            record = root / "command"
+            # Record the command string instead of contacting a host; the last
+            # argument is what sshd would hand to the login shell.
+            ssh = binaries / "ssh"
+            ssh.write_text(
+                "#!/usr/bin/env bash\nprintf '%s' \"${!#}\" > " + str(record) + "\n"
+            )
+            ssh.chmod(0o700)
+            subprocess.run(
+                [str(wrapper), "recover"],
+                env={
+                    **os.environ,
+                    "PATH": str(binaries) + ":" + os.environ["PATH"],
+                    "DEPLOY_REVISION": CANDIDATE,
+                    "TARGET_ENVIRONMENT": "uat",
+                    "CAPY_RELEASE_OWNER": "run-1",
+                    "INGEST_HOST": "ingest.example.com",
+                    "INGEST_HOST_USER": "capy-ingest",
+                    "CAPY_INGEST_REPOSITORY_URL": "",
+                    "CAPY_BACKEND_REVISION": PREVIOUS,
+                },
+                check=True,
+                capture_output=True,
+            )
+            # shlex splits the way the remote shell does.
+            argv = shlex.split(record.read_text())
+            self.assertEqual(argv[:3], ["bash", "-s", "--"])
+            phase = argv[3:]
+            self.assertEqual(phase[0], "recover")
+            self.assertEqual(phase[4], "", "staging must stay empty in slot 5")
+            self.assertEqual(phase[6], PREVIOUS, "backend revision must stay in slot 7")
 
 
 if __name__ == "__main__":
