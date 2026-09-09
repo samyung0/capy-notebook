@@ -93,6 +93,7 @@ jobs:
       environment_name: ${{ inputs.environment_name }}
       revision: ${{ inputs.revision }}
       phase: ${{ inputs.bootstrap_ingest && 'bootstrap-prepare' || 'prepare' }}
+    secrets: inherit
 
   deploy:
     outputs:
@@ -138,6 +139,7 @@ jobs:
       environment_name: ${{ inputs.environment_name }}
       revision: ${{ inputs.revision }}
       phase: activate
+    secrets: inherit
 
   site:
     needs: [deploy, ingest_activate]
@@ -201,3 +203,4 @@ jobs:
       phase: ${{ needs.deploy.result == 'skipped' && 'rollback-if-pending' || 'recover' }}
       coolify_deployment_uuid: ${{ needs.deploy.outputs.coolify_deployment_uuid }}
       coolify_outcome: ${{ needs.deploy.outputs.coolify_outcome }}
+    secrets: inherit

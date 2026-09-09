@@ -60,6 +60,7 @@ jobs:
       environment_name: uat
       bootstrap_ingest: ${{ inputs.bootstrap_ingest || false }}
       revision: ${{ needs.resolve_revision.outputs.revision }}
+    secrets: inherit
 
   quality_gate:
     needs:
@@ -68,3 +69,4 @@ jobs:
     uses: ./.github/workflows/uat-quality.yml
     with:
       revision: ${{ needs.resolve_revision.outputs.revision }}
+    secrets: inherit

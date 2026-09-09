@@ -64,6 +64,7 @@ jobs:
     with:
       environment_name: uat
       revision: ${{ needs.validate_candidate.outputs.revision }}
+    secrets: inherit
 
   uat_quality_gate:
     needs:
@@ -72,6 +73,7 @@ jobs:
     uses: ./.github/workflows/uat-quality.yml
     with:
       revision: ${{ needs.validate_candidate.outputs.revision }}
+    secrets: inherit
 
   editor_perf:
     needs: validate_candidate
@@ -93,3 +95,4 @@ jobs:
       environment_name: production
       bootstrap_ingest: ${{ inputs.bootstrap_ingest }}
       revision: ${{ needs.validate_candidate.outputs.revision }}
+    secrets: inherit
