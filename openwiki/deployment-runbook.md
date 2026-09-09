@@ -187,6 +187,13 @@ The prod file runs `/migrate` once per deploy, starts the API with
 
    Redeploy or wait for the proxy to pick up the domains.
 
+   Expect a full rebuild of every image on each new commit. Coolify injects the
+   build arguments as `ARG` lines near the top of each Dockerfile, and their
+   values change per deployment, so nothing after them hits the layer cache.
+   On the 2 vCPU UAT host the four concurrent builds also starve Coolify's own
+   API into `502`s; `coolify-deploy.sh` treats that as an unknown status and
+   keeps polling rather than abandoning a deployment that is still running.
+
 7. Disable Coolify **Auto Deploy**. The GitHub deployment workflow updates
    `git_commit_sha`, starts the deployment through the Coolify API, polls its
    result, and verifies the reported commit. A native Coolify webhook would
@@ -969,8 +976,9 @@ to prevent a repair loop.
    `schema_migrations`. Do not `psql -f` a migration against a kept database —
    that skips the ledger.
 2. **Grant operator access by hand.** Have the operator sign in to the product
-   once so `users.id` exists. Copy their Clerk user id, then use a database
-   owner session:
+   once so `users.id` exists. Copy their Clerk user id, then either run
+   `pnpm uat:grant-operator user_2abc... admin`, which refuses when that sign-in
+   has not happened, or use a database owner session directly:
 
    ```sql
    INSERT INTO operators (user_id, role, note)
