@@ -61,12 +61,16 @@ export async function signIn(page: Page, actor: Actor) {
     await clerk.setActive({ session: attempt.createdSessionId });
   }, signInToken.token);
   await page.goto('/');
-  // Clerk bootstraps again after this navigation. Wait for the session it
-  // restores, so signing in guarantees what api() below requires.
+  // Clerk bootstraps again after this navigation, and the app bounces through
+  // the sign-in route until the session is restored. Wait for that to settle:
+  // page.evaluate cannot survive a navigation, so callers would otherwise race
+  // it and see "Execution context was destroyed".
   await page.waitForFunction(() => {
     const clerk = (window as unknown as { Clerk?: ClerkBrowser }).Clerk;
     return clerk?.loaded === true && Boolean(clerk.session);
   });
+  await page.waitForURL((url) => !/\/sign-in(?:[/?]|$)/.test(url.pathname));
+  await page.locator('main').waitFor({ state: 'visible' });
 }
 
 export async function signOut(page: Page) {
