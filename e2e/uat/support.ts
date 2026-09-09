@@ -115,7 +115,8 @@ export async function signIn(page: Page, actor: Actor) {
       await clerk.setActive({ session: attempt.createdSessionId });
     }, ticket.token);
   });
-  await page.goto('/');
+  // Signing in redirects, which can abort this navigation the same way.
+  await retryAcrossNavigation(page, () => page.goto('/'));
   // Clerk bootstraps again after this navigation, and the app bounces through
   // the sign-in route until the session is restored. Wait for that to settle:
   // page.evaluate cannot survive a navigation, so callers would otherwise race
