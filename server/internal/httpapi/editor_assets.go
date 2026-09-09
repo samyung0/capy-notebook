@@ -291,7 +291,7 @@ func (a *api) resolveEditorAsset(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else if asset.MaterialID != "" {
-		if _, err := a.s.MaterialEffectiveAccess(r.Context(), uid(r), asset.MaterialID); err != nil {
+		if _, err := a.s.MaterialEffectiveRole(r.Context(), uid(r), asset.MaterialID); err != nil {
 			a.fail(w, err)
 			return
 		}

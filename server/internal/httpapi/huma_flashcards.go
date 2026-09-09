@@ -91,7 +91,7 @@ func (a *api) getFlashcardSet(ctx context.Context, in *flashcardSetIDInput) (*fl
 	if _, err := a.materialRead(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	access, err := a.s.MaterialEffectiveAccess(ctx, userID(ctx), in.ID)
+	role, err := a.s.MaterialEffectiveRole(ctx, userID(ctx), in.ID)
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -99,8 +99,8 @@ func (a *api) getFlashcardSet(ctx context.Context, in *flashcardSetIDInput) (*fl
 	if err != nil {
 		return nil, hErr(err)
 	}
-	res.IsOwner = access.Role == store.RoleOwner
-	res.CanEdit = store.RoleCanEdit(access.MemberRole)
+	res.IsOwner = role == store.RoleOwner
+	res.CanEdit = store.RoleCanEdit(role)
 	return &flashcardSetOutput{Body: res}, nil
 }
 
@@ -135,12 +135,12 @@ func (a *api) updateFlashcardSetSharing(ctx context.Context, in *updateFlashcard
 }
 
 func (a *api) flashcardSetOutputWithAccess(ctx context.Context, id string, set store.FlashcardSet) (*flashcardSetOutput, error) {
-	access, err := a.s.MaterialEffectiveAccess(ctx, userID(ctx), id)
+	role, err := a.s.MaterialEffectiveRole(ctx, userID(ctx), id)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	set.IsOwner = access.Role == store.RoleOwner
-	set.CanEdit = store.RoleCanEdit(access.MemberRole)
+	set.IsOwner = role == store.RoleOwner
+	set.CanEdit = store.RoleCanEdit(role)
 	return &flashcardSetOutput{Body: set}, nil
 }
 

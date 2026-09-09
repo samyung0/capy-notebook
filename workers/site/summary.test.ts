@@ -6,12 +6,17 @@ const template = readFileSync(
   new URL('../../summary.html', import.meta.url),
   'utf8'
 );
+const file = (name: string) => ({
+  addedAt: '2026-09-01T10:00:00Z',
+  name,
+  sizeBytes: 2048,
+});
 const summary = {
   author: 'Mia',
-  chapters: [{ files: ['Cells.pdf'], name: 'Cells' }],
+  chapters: [{ files: [file('Cells.pdf')], name: 'Cells' }],
   color: 'purple',
   description: 'Lecture files',
-  files: ['Reading.pdf'],
+  files: [file('Reading.pdf')],
   name: 'Biology',
   privacy: 'public',
   tags: ['Term 1'],
@@ -61,7 +66,7 @@ describe('public workspace SSR', () => {
         ...summary,
         author: attack,
         description: attack,
-        files: [attack],
+        files: [file(attack)],
         name: attack + '$&',
         tags: [attack],
       })
@@ -74,9 +79,8 @@ describe('public workspace SSR', () => {
   });
   it('accepts Unicode rune lengths and file counts valid under the Go contract', async () => {
     const description = '🦫'.repeat(1000);
-    const files = Array.from(
-      { length: 150 },
-      (_, index) => `Lecture ${index}.pdf`
+    const files = Array.from({ length: 150 }, (_, index) =>
+      file(`Lecture ${index}.pdf`)
     );
     const response = await handleSiteRequest(
       request(),

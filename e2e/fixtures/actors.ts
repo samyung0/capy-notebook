@@ -24,13 +24,11 @@ type WorkspaceFactory = {
 type ActorFixtures = {
   ownerPage: Page;
   editorPage: Page;
-  commenterPage: Page;
   viewerPage: Page;
   otherPage: Page;
   anonymousPage: Page;
   ownerApi: APIRequestContext;
   editorApi: APIRequestContext;
-  commenterApi: APIRequestContext;
   viewerApi: APIRequestContext;
   otherApi: APIRequestContext;
   anonymousApi: APIRequestContext;
@@ -73,21 +71,6 @@ export const test = base.extend<ActorFixtures>({
   anonymousPage: async ({ browser }, use) => {
     const context = await browser.newContext();
     await use(await context.newPage());
-    await context.close();
-  },
-
-  commenterApi: async ({ playwright }, use) => {
-    const api = await playwright.request.newContext({
-      baseURL: process.env.E2E_API_URL!,
-      extraHTTPHeaders: e2eHeaders(users.commenter),
-    });
-    await use(api);
-    await api.dispose();
-  },
-
-  commenterPage: async ({ browser }, use) => {
-    const { context, page } = await pageAs(browser, users.commenter);
-    await use(page);
     await context.close();
   },
 
@@ -141,7 +124,8 @@ export const test = base.extend<ActorFixtures>({
     });
     for (const materialId of materialIds.reverse()) {
       const response = await ownerApi.delete(`/api/materials/${materialId}`);
-      if (response.status() !== 204) {
+      // A test may delete its own fixture to prove the permission.
+      if (response.status() !== 204 && response.status() !== 404) {
         throw new Error(
           `Failed to clean up E2E material ${materialId}: ${response.status()}`
         );

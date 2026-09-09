@@ -123,36 +123,31 @@ func (a *api) createMaterialCollaborationToken(
 	if err != nil {
 		return nil, collaborationError(err)
 	}
-	access := ""
-	switch {
-	case store.RoleCanEdit(role):
-		access = "write"
-	case store.RoleCanComment(role):
-		access = "comment"
-	default:
+	if !store.RoleCanEdit(role) {
+		// Viewers render statically and never join the room.
 		return nil, collaborationError(store.ErrForbidden)
 	}
+	access := "write"
 	// The room token is the collaboration server's only source of truth for what
 	// a connection may do, so lifecycle restrictions have to be resolved here.
 	// Tokens are short-lived, which bounds how long a stale grant survives.
 	//
-	// The role above decided whether this user may write at all; the material's
-	// storage owner decides which direction the document may move, because the
-	// bytes are charged to the owner and never to the actor. The actor's own
-	// lifecycle does not enter into it: suspended, deletion-pending and deleted
-	// users are refused a session by the auth middleware, and their storage
-	// state is irrelevant inside a workspace they do not pay for.
-	if access == "write" {
-		owner, err := a.s.MaterialOwnerAccess(ctx, in.ID)
-		if err != nil {
-			return nil, collaborationError(err)
-		}
-		switch {
-		case owner.ShrinkOnly():
-			access = "shrink"
-		case !owner.CanEdit():
-			access = "comment"
-		}
+	// The role above decided that this user may write; the material's storage
+	// owner decides which direction the document may move, because the bytes
+	// are charged to the owner and never to the actor. A locked owner leaves
+	// editors with comment-only rooms. The actor's own lifecycle does not enter
+	// into it: suspended, deletion-pending and deleted users are refused a
+	// session by the auth middleware, and their storage state is irrelevant
+	// inside a workspace they do not pay for.
+	owner, err := a.s.MaterialOwnerAccess(ctx, in.ID)
+	if err != nil {
+		return nil, collaborationError(err)
+	}
+	switch {
+	case owner.ShrinkOnly():
+		access = "shrink"
+	case !owner.CanEdit():
+		access = "comment"
 	}
 	me, _ := a.s.Me(ctx, uid)
 	room, err := a.s.MaterialRoom(ctx, in.ID)
@@ -200,7 +195,7 @@ func (a *api) projectMaterialYjsDocument(
 }
 
 func (a *api) listMaterialDiscussions(ctx context.Context, in *materialIDInput) (*discussionsOutput, error) {
-	if err := a.s.AssertMaterialCommenter(ctx, userID(ctx), in.ID); err != nil {
+	if err := a.s.AssertMaterialEditor(ctx, userID(ctx), in.ID); err != nil {
 		return nil, collaborationError(err)
 	}
 	rows, err := a.s.ListCollaborationDiscussions(ctx, in.ID)
@@ -211,7 +206,7 @@ func (a *api) listMaterialDiscussions(ctx context.Context, in *materialIDInput) 
 }
 
 func (a *api) createMaterialDiscussion(ctx context.Context, in *createDiscussionInput) (*discussionOutput, error) {
-	if err := a.s.AssertMaterialCommenter(ctx, userID(ctx), in.ID); err != nil {
+	if err := a.s.AssertMaterialEditor(ctx, userID(ctx), in.ID); err != nil {
 		return nil, collaborationError(err)
 	}
 	discussion, err := a.s.CreateCommentDiscussion(
@@ -237,7 +232,7 @@ func (a *api) updateMaterialDiscussion(ctx context.Context, in *updateDiscussion
 	if err != nil {
 		return nil, collaborationError(err)
 	}
-	if err := a.s.AssertMaterialCommenter(ctx, userID(ctx), resource.MaterialID); err != nil {
+	if err := a.s.AssertMaterialEditor(ctx, userID(ctx), resource.MaterialID); err != nil {
 		return nil, collaborationError(err)
 	}
 	if err := a.s.SetCollaborationDiscussionResolved(
@@ -258,7 +253,7 @@ func (a *api) deleteMaterialDiscussion(ctx context.Context, in *discussionIDInpu
 	if err != nil {
 		return nil, collaborationError(err)
 	}
-	if resource.UserID != userID(ctx) && !store.RoleCanEdit(role) {
+	if resource.UserID != userID(ctx) && role != store.RoleOwner {
 		return nil, collaborationError(store.ErrForbidden)
 	}
 	if err := a.s.SoftDeleteDiscussion(ctx, in.ID, userID(ctx)); err != nil {
@@ -273,7 +268,7 @@ func (a *api) createMaterialComment(ctx context.Context, in *createCommentInput)
 	if err != nil {
 		return nil, collaborationError(err)
 	}
-	if err := a.s.AssertMaterialCommenter(ctx, userID(ctx), resource.MaterialID); err != nil {
+	if err := a.s.AssertMaterialEditor(ctx, userID(ctx), resource.MaterialID); err != nil {
 		return nil, collaborationError(err)
 	}
 	comment, err := a.s.AddNestedComment(
@@ -295,7 +290,7 @@ func (a *api) updateMaterialComment(ctx context.Context, in *updateCommentBodyIn
 	if resource.UserID != userID(ctx) {
 		return nil, collaborationError(store.ErrForbidden)
 	}
-	if err := a.s.AssertMaterialCommenter(ctx, userID(ctx), resource.MaterialID); err != nil {
+	if err := a.s.AssertMaterialEditor(ctx, userID(ctx), resource.MaterialID); err != nil {
 		return nil, collaborationError(err)
 	}
 	comment, err := a.s.EditOwnComment(
@@ -317,7 +312,7 @@ func (a *api) deleteMaterialComment(ctx context.Context, in *discussionIDInput) 
 	if err != nil {
 		return nil, collaborationError(err)
 	}
-	if resource.UserID != userID(ctx) && !store.RoleCanEdit(role) {
+	if resource.UserID != userID(ctx) && role != store.RoleOwner {
 		return nil, collaborationError(store.ErrForbidden)
 	}
 	if err := a.s.SoftDeleteComment(ctx, in.ID, userID(ctx)); err != nil {

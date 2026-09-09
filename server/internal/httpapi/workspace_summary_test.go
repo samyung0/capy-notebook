@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -49,7 +48,7 @@ func TestPublicWorkspaceSummary(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &summary); err != nil {
 		t.Fatal(err)
 	}
-	if summary.Name != "<script>title</script>" || summary.Description != "Only metadata" || summary.Author != "Summary author" || summary.Privacy != store.PrivacyPublic || len(summary.Chapters) != 1 || !reflect.DeepEqual(summary.Chapters[0].Files, []string{"Source.pdf"}) || summary.Files == nil || summary.Tags == nil {
+	if summary.Name != "<script>title</script>" || summary.Description != "Only metadata" || summary.Author != "Summary author" || summary.Privacy != store.PrivacyPublic || len(summary.Chapters) != 1 || len(summary.Chapters[0].Files) != 1 || summary.Chapters[0].Files[0].Name != "Source.pdf" || summary.Chapters[0].Files[0].AddedAt.IsZero() || summary.Files == nil || summary.Tags == nil {
 		t.Fatalf("summary = %#v", summary)
 	}
 	var keys map[string]json.RawMessage

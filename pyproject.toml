@@ -55,7 +55,7 @@ include = ["pipeline*"]
 pipeline = ["elitellm/providers.json"]
 
 [tool.ruff]
-extend-exclude = ["bench/grading"]
+extend-exclude = ["bench"]
 force-exclude = true
 
 [tool.ruff.lint.isort]

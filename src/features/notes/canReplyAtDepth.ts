@@ -1,3 +1,3 @@
-export function canReplyAtDepth(depth: 0 | 1, canComment: boolean) {
-  return depth === 0 && canComment;
+export function canReplyAtDepth(depth: 0 | 1, canEdit: boolean) {
+  return depth === 0 && canEdit;
 }

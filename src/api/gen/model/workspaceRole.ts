@@ -11,6 +11,5 @@ export type WorkspaceRole = typeof WorkspaceRole[keyof typeof WorkspaceRole];
 export const WorkspaceRole = {
   owner: 'owner',
   editor: 'editor',
-  commenter: 'commenter',
   viewer: 'viewer',
 } as const;

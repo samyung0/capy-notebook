@@ -1,0 +1,75 @@
+{
+  "description": "Source-grounded probes, not a general parser accuracy benchmark. Pages are zero-based in the named original input. Text probes ignore punctuation/case/spacing; row probes require values together and in order in a structured table row. Repeated screen/raster variants share probes and are not independent examples. Biology, French table, Japanese result/table and Hong Kong passages were checked against rendered pages. Office and scan canaries use the frozen VM source values, which differ from today's fixture generator.",
+  "page_mappings": [
+    {
+      "source": "Biology_for_the_IB_Diploma",
+      "checks_from": "biology-accuracy-sample",
+      "pages": [4, 5, 10, 16, 340, 348, 355, 363, 364, 365, 387, 401, 402, 566, 578, 603],
+      "provenance": "Frozen inputs/biology-accuracy-sample.json sample_to_source_page, converted from one-based to zero-based page numbers."
+    },
+    {
+      "source": "capacity__digital",
+      "checks_from": "biology-accuracy-sample",
+      "pages": [4, 5, 10, 16, 340, 348, 355, 363, 364, 365, 387, 401, 402, 566, 578, 603],
+      "provenance": "All 26 native page texts match the first 26 pages of the frozen textbook. Only mapped probes within those pages apply. Capacity results are reported separately."
+    },
+    {
+      "source": "capacity__ocr",
+      "checks_from": "rag__en__newspaper_scan",
+      "pages": [0, 1],
+      "provenance": "The retained capacity scan repeats the same two newspaper pages. Rendered pixel hashes match the frozen RAG newspaper."
+    },
+    {
+      "source": "capacity__ocr",
+      "checks_from": "rag__en__newspaper_scan",
+      "pages": [24, 25],
+      "provenance": "Check the last repeated newspaper pair as well as the first. These are repeated integrity checks, not independent quality examples."
+    }
+  ],
+  "checks": [
+    {"id":"docx-canary","source":"office-canary__docx","page":0,"anchors":["EVO-DOCX-CANARY-4821"]},
+    {"id":"docx-biology-row","source":"office-canary__docx","page":0,"row":["Biology","92"]},
+    {"id":"docx-history-row","source":"office-canary__docx","page":0,"row":["History","88"]},
+    {"id":"pptx-canary","source":"office-canary__pptx","page":0,"anchors":["EVO-PPTX-CANARY-5932"]},
+    {"id":"pptx-table-row","source":"office-canary__pptx","page":1,"row":["EVO-PPTX-TABLE-6043","present"]},
+    {"id":"xlsx-canary","source":"office-canary__xlsx","page":0,"anchors":["EVO-XLSX-CANARY-7154"]},
+    {"id":"xlsx-north-row","source":"office-canary__xlsx","page":0,"row":["North","Q1","12500"]},
+    {"id":"xlsx-south-row","source":"office-canary__xlsx","page":0,"row":["South","Q1","9800"]},
+    {"id":"xlsx-total-row","source":"office-canary__xlsx","page":0,"row":["Total","22300"]},
+    {"id":"mixed-digital-canary","source":"lecture_plus_scan","page":0,"anchors":["CAPY-DECK-CANARY-GLYCOLYSIS"]},
+    {"id":"mixed-scan-front","source":"lecture_plus_scan","page":40,"anchors":["CAPY-SCAN-FRONT-PAGE","Harbour vote shocks city"]},
+    {"id":"mixed-scan-sports","source":"lecture_plus_scan","page":41,"anchors":["CAPY-SCAN-SPORTS-PAGE","Rovers win in extra time"]},
+    {"id":"newspaper-scan-title","source":"rag__en__newspaper_scan","page":0,"anchors":["EVO-SCAN-FRONT-PAGE","Harbour vote shocks city"]},
+    {"id":"newspaper-scan-body","source":"rag__en__newspaper_scan","page":0,"anchors":["City council voted last night on the harbour plan","Markets opened higher"]},
+    {"id":"biology-west-east-row","source":"biology-accuracy-sample","page":2,"row":["Measurements","16","18"]},
+    {"id":"biology-total-row","source":"biology-accuracy-sample","page":2,"row":["Total","120","120"]},
+    {"id":"biology-mean-row","source":"biology-accuracy-sample","page":2,"row":["Mean","15","15"]},
+    {"id":"biology-standard-deviations","source":"biology-accuracy-sample","page":2,"anchors":["west-facing trees is 1.9 m","east-facing trees is 5.0 m"]},
+    {"id":"biology-secondary-structure","source":"biology-accuracy-sample","page":4,"anchors":["secondary structure","hydrogen bonds"]},
+    {"id":"biology-photosynthesis-limiting-factor","source":"biology-accuracy-sample","page":7,"anchors":["experiment 2","carbon dioxide","limiting factor"]},
+    {"id":"biology-enzyme-reaction-text","source":"biology-accuracy-sample","page":8,"anchors":["Alcohol dehydrogenase","ethanol and ethanal"]},
+    {"id":"biology-hominid-habilis-row","source":"biology-accuracy-sample","page":10,"row":["Homo habilis","2.5","1.9","500","800"]},
+    {"id":"biology-hominid-sapiens-row","source":"biology-accuracy-sample","page":10,"row":["Homo sapiens","130 000","1200","1500"]},
+    {"id":"biology-hardy-weinberg-question","source":"biology-accuracy-sample","page":12,"anchors":["Californian dune mouse","640","360","White is dominant to black"]},
+    {"id":"biology-index-reading-order","source":"biology-accuracy-sample","page":15,"ordered":["cerebellum","convergent evolution","DNA polymerase","essential amino acids"]},
+    {"id":"biology-cytochrome-rabbit-row","source":"rag__en__biology-ib-convergent-targets","page":1,"row":["rabbit","9"]},
+    {"id":"biology-cytochrome-rhesus-row","source":"rag__en__biology-ib-convergent-targets","page":1,"row":["rhesus monkey","1"]},
+    {"id":"de-benchmarks","source":"rag__de__grosse-sprachmodelle","page":17,"anchors":["Benchmarks für die Evaluation von Sprachmodellen","BIG-bench"]},
+    {"id":"de-reichenbach","source":"rag__de__putnam-einleitung","page":1,"anchors":["Hans Reichenbach","1938","University of California"]},
+    {"id":"es-language-models","source":"rag__es__sesgo-linguistico-digital","page":12,"anchors":["RigoBERTa","ALBETO","DistilBETO"]},
+    {"id":"es-maria-source","source":"rag__es__variedades-espanol","page":1,"anchors":["Biblioteca Nacional Española","50%"]},
+    {"id":"fr-large-model-row","source":"rag__fr__camembert-taln","page":6,"row":["CCNet","whole word","LARGE","335M","100k","97.74","89.82","92.47","85.73"]},
+    {"id":"fr-oscar-row","source":"rag__fr__camembert-taln","page":6,"row":["OSCAR","whole word","BASE","110M","100K","97.79","89.88","91.44","81.55"]},
+    {"id":"fr-masking-result","source":"rag__fr__camembert-taln","page":6,"anchors":["whole word masking","0,5 point"]},
+    {"id":"fr-wikiner-example","source":"rag__fr__wikiner-fr-gold","page":3,"anchors":["Le Havre","Louis XIV"]},
+    {"id":"ja-role-result","source":"rag__ja__jp_llm","page":13,"anchors":["an expert university professor","4.04","0.0116"]},
+    {"id":"ja-role-japanese","source":"rag__ja__jp_llm","page":13,"anchors":["ロールの指定により正答率が","ポイント有意に向上する"]},
+    {"id":"ja-embedded-table-qwen-row","source":"rag__ja__jp_llm","page":13,"row":["Qwen3","0.6B","0.255","0.293","0.311"]},
+    {"id":"ja-slides-topic","source":"rag__ja__jp_llm2","page":42,"anchors":["並列計算","量子化"]},
+    {"id":"zh-cil-motivation","source":"rag__zh__zh-CN","page":1,"anchors":["灾难性遗忘","类别增量学习"]},
+    {"id":"zh-prompt-length","source":"rag__zh__zh-CN","page":5,"anchors":["提示词最终还限制了输出的长度","上下文容量"]},
+    {"id":"hk-language-identity","source":"rag__zh__zh_HK","page":7,"anchors":["Tong","1999","159位同學","social identity"]},
+    {"id":"hk-visible-clean-phrase","source":"rag__zh__zh_HK","page":7,"anchors":["普通話獲得更高的社會地位"]},
+    {"id":"tw-feedback-limit","source":"rag__zh__zh_TW_llm","page":16,"anchors":["需要人類提供回饋","時間","精力是有限的"]}
+  ]
+}

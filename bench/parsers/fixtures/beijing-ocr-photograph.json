@@ -1,0 +1,42 @@
+{
+  "frozen_unix": 1788915615.054574,
+  "method": "Supplementary photograph control, source viewed before any model output. Separates real-object captioning from diagram/plot captioning. Same three arms and bytes; optional nine-page replication by merging with the existing eight, or separate run.",
+  "pages": [
+    {
+      "id": "photo-nist-calibrator",
+      "kind": "page",
+      "case": "screen__nist-accelerometers",
+      "page": 3,
+      "source_page": 4,
+      "lang": "en",
+      "image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-09-java-new-documents/source-pages/context-screen__nist-accelerometers-p4.png",
+      "image_sha256": "e7a429a237dd47eb9afb6e464029c97d15e89d6b179c8a05d4027afd5d31276f",
+      "pdf_sha256": "474257fbbad8bcead3a356b8dec7a7dbff6473352b94e293f3fc3a17f159b665",
+      "bbox": [
+        0,
+        0,
+        1000,
+        1000
+      ],
+      "role": "validation",
+      "checks": [
+        {
+          "id": "photo",
+          "expected": "Figure6 portable pulse calibrator photograph: hanging mechanical frame suspended by two thin F wires from horizontal upper support; masses M1,M2,M3; long vertical plates marked A,B; top mechanism C,D and release wire G; bottom cable support E. Visible additional labels H,J can be transcribed but functions must not be invented. Distinguish physical photograph from schematic."
+        },
+        {
+          "id": "relationships",
+          "expected": "Light M2 flexibly supported by heavy M1; M3 flexibly supported from M2. Pickups attach M2. Releasing deflected M3 creates acceleration pulse rising from zero. Double plates A/B prevent M2 rotation; C pawl plus seven-position D ratchet sets initial M3-relative-M1 position. F suspension gives shock mount negligible damping; G draws C to release M3; E secures all but last few cable inches to heavy M1."
+        },
+        {
+          "id": "geometry-values",
+          "expected": "All prose after photo in left column continues at top right. Figure7 assembly dimensions A~3.0in,B~3.3in,C offset~.1in,D~.5in; C concerns No.6-32 fillister-head screw,part15triggerlock/part13uppertriggerblock; part14flexure springs; part25mountingtable. Do not confuse these Figure7 distances with similarly lettered photo parts."
+        },
+        {
+          "id": "complete-prose",
+          "expected": "Full caption and two-column prose on clamps/vacuum-tube pickups, tightened bolts reducing damping/nonlinear behavior, rubber cushion avoiding highfrequency vibrations, lowest/highest ratchet tooth. Preserve source distinction distance names vs component labels."
+        }
+      ]
+    }
+  ]
+}

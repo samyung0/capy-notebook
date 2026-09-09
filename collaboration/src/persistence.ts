@@ -107,9 +107,8 @@ type LiveAccessRow = {
 type Queryable = Pick<Pool, 'query'>;
 
 const roleRank: Record<string, number> = {
-  commenter: 2,
-  editor: 3,
-  owner: 4,
+  editor: 2,
+  owner: 3,
   viewer: 1,
 };
 
@@ -209,17 +208,16 @@ async function liveCollaborationAccess(
         ? row.member_role
         : sharedRole;
   }
-  if ((roleRank[effectiveRole] ?? 0) < roleRank.commenter) {
+  // Viewers never hold a room; editors are narrowed only by the storage
+  // owner's lifecycle.
+  if ((roleRank[effectiveRole] ?? 0) < roleRank.editor) {
     denyCollaboration('material access was revoked');
   }
-  let liveAccess: CollaborationAccess = 'comment';
-  if ((roleRank[effectiveRole] ?? 0) >= roleRank.editor) {
-    liveAccess = row.owner_suspended_at
-      ? 'comment'
-      : row.owner_over_quota
-        ? 'shrink'
-        : 'write';
-  }
+  const liveAccess: CollaborationAccess = row.owner_suspended_at
+    ? 'comment'
+    : row.owner_over_quota
+      ? 'shrink'
+      : 'write';
   return liveAccess;
 }
 

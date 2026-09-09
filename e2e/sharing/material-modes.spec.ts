@@ -48,7 +48,27 @@ test.describe('shared material modes', () => {
     }
   });
 
-  test('commenters get live read-only Plate and can add comments', async ({
+  test('viewers render statically and cannot comment', async ({
+    otherPage,
+    seed,
+  }) => {
+    await openWorkspaceMaterial(
+      otherPage,
+      seed.publicWorkspace.id,
+      seed.publicNote.id,
+      true
+    );
+    await expect(otherPage.getByText(seed.publicNote.body)).toBeVisible();
+    await expect(
+      otherPage.getByRole('combobox', { name: 'Material mode' })
+    ).toHaveCount(0);
+    await expect(
+      otherPage.getByRole('toolbar', { name: 'Comment tools' })
+    ).toHaveCount(0);
+    await expect(otherPage.locator('[contenteditable="true"]')).toHaveCount(0);
+  });
+
+  test('share editors get live read-only Plate in comment mode and can add comments', async ({
     materialFactory,
     otherPage,
     seed,
@@ -58,17 +78,18 @@ test.describe('shared material modes', () => {
       blockId: 'comment-highlight-body',
       body,
       title: 'E2E Comment Highlight',
-      workspaceId: seed.publicWorkspace.id,
+      workspaceId: seed.editableWorkspace.id,
     });
     await openWorkspaceMaterial(
       otherPage,
-      seed.publicWorkspace.id,
+      seed.editableWorkspace.id,
       material.id,
       true
     );
-    await expect(
-      otherPage.getByRole('combobox', { name: 'Material mode' })
-    ).toContainText('Comment');
+    const modes = otherPage.getByRole('combobox', { name: 'Material mode' });
+    await modes.click();
+    await otherPage.getByRole('option', { name: 'Comment' }).click();
+    await expect(modes).toContainText('Comment');
     await expectEditorLive(otherPage);
     await expect(
       otherPage.getByRole('toolbar', { name: 'Document formatting' })
@@ -164,7 +185,6 @@ test.describe('shared material modes', () => {
   });
 
   test('room tokens and comment APIs follow the role matrix', async ({
-    commenterApi,
     editorApi,
     materialFactory,
     ownerApi,
@@ -178,10 +198,9 @@ test.describe('shared material modes', () => {
       workspaceId: seed.privateWorkspace.id,
     });
     const actors = [
-      { access: null, api: viewerApi, canComment: false },
-      { access: 'comment', api: commenterApi, canComment: true },
-      { access: 'write', api: editorApi, canComment: true },
-      { access: 'write', api: ownerApi, canComment: true },
+      { access: null, api: viewerApi, expectsComment: false },
+      { access: 'write', api: editorApi, expectsComment: true },
+      { access: 'write', api: ownerApi, expectsComment: true },
     ] as const;
 
     for (const actor of actors) {
@@ -206,7 +225,7 @@ test.describe('shared material modes', () => {
           },
         }
       );
-      expect(comment.status()).toBe(actor.canComment ? 201 : 403);
+      expect(comment.status()).toBe(actor.expectsComment ? 201 : 403);
     }
   });
 });

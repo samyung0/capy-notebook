@@ -1,0 +1,6 @@
+# Use a retained, recorded parser image; runtime models stay on read-only mounts.
+ARG BASE_IMAGE=capy-parser-stress:current
+FROM ${BASE_IMAGE}
+USER root
+RUN pip install --no-cache-dir 'pymupdf==1.28.2'
+USER parser

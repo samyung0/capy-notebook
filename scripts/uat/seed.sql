@@ -18,14 +18,14 @@ DECLARE
   note materials%ROWTYPE;
   created_note boolean := false;
 BEGIN
-  IF (SELECT count(*) FROM uat_seed_actors) <> 5
-    OR (SELECT count(DISTINCT id) FROM uat_seed_actors) <> 5
+  IF (SELECT count(*) FROM uat_seed_actors) <> 4
+    OR (SELECT count(DISTINCT id) FROM uat_seed_actors) <> 4
     OR (SELECT array_agg(role ORDER BY role) FROM uat_seed_actors)
-      IS DISTINCT FROM ARRAY['commenter','editor','other','owner','viewer']::text[]
+      IS DISTINCT FROM ARRAY['editor','other','owner','viewer']::text[]
     OR EXISTS (SELECT 1 FROM uat_seed_actors WHERE id IS NULL OR id !~ '^user_[A-Za-z0-9]+$'
       OR name IS NULL OR btrim(name) = ''
       OR email IS DISTINCT FROM 'capy-uat-' || role || '+clerk_test@stablestudio.org') THEN
-    RAISE EXCEPTION 'UAT seed requires the five approved roles, distinct Clerk IDs and exact approved emails';
+    RAISE EXCEPTION 'UAT seed requires the four approved roles, distinct Clerk IDs and exact approved emails';
   END IF;
   SELECT id INTO STRICT owner_id FROM uat_seed_actors WHERE role = 'owner';
   IF EXISTS (SELECT 1 FROM users u JOIN uat_seed_actors a ON lower(u.email) = a.email WHERE u.id <> a.id) THEN

@@ -1,0 +1,407 @@
+{
+  "frozen_unix": 1788915369.917345,
+  "method": "Review rubric frozen from source-only page inventory before native or model outputs were inspected. Exact answers require visual source review; this is not certified ground truth. Review raw recovery, composed output and actual chunks separately; contradictory content counts as wrong.",
+  "checks": [
+    {
+      "id": "context-screen__attention-p1",
+      "case": "screen__attention",
+      "page": 0,
+      "source_page": 1,
+      "role": "validation",
+      "pdf_sha256": "edd5c9831e2f3a5f2d2b60cdb9978278b06c24199843e059ee6c33e80fd72946",
+      "image_sha256": "7688f7e29fcc9f791f03a33da16da048a94510a48bbbd47ba7368aa15b10373a",
+      "question": "Preserve the introduction paragraphs and their reading order without introducing headings or merging unrelated paragraphs."
+    },
+    {
+      "id": "context-screen__attention-p2",
+      "case": "screen__attention",
+      "page": 1,
+      "source_page": 2,
+      "role": "validation",
+      "pdf_sha256": "edd5c9831e2f3a5f2d2b60cdb9978278b06c24199843e059ee6c33e80fd72946",
+      "image_sha256": "2fb409d2b68b30e8fba9419500298de537081b4a2f28c707a1c7381730026ba0",
+      "question": "Trace every encoder/decoder arrow and residual path in Figure 1, preserving the shifted output input, masked attention, cross-attention source and Nx repetitions."
+    },
+    {
+      "id": "context-screen__attention-p3",
+      "case": "screen__attention",
+      "page": 2,
+      "source_page": 3,
+      "role": "validation",
+      "pdf_sha256": "edd5c9831e2f3a5f2d2b60cdb9978278b06c24199843e059ee6c33e80fd72946",
+      "image_sha256": "e67aa5832dc387a8f37a95e7afde99aa5f95d6474d08d6e9490e23d198d0a176",
+      "question": "Preserve the exact scaled dot-product attention formula, Q/K/V roles, softmax/masking order and both diagrams without reversing arrows."
+    },
+    {
+      "id": "context-screen__attention-p4",
+      "case": "screen__attention",
+      "page": 3,
+      "source_page": 5,
+      "role": "validation",
+      "pdf_sha256": "edd5c9831e2f3a5f2d2b60cdb9978278b06c24199843e059ee6c33e80fd72946",
+      "image_sha256": "600d1c81d90dfac4dd968bef59e2f0bb88fa59e5824b16928940584659b9634e",
+      "question": "Preserve every Table 1 row with the complexity, sequential operations and maximum path-length column associations, including all exponents and variables."
+    },
+    {
+      "id": "context-screen__attention-p5",
+      "case": "screen__attention",
+      "page": 4,
+      "source_page": 7,
+      "role": "validation",
+      "pdf_sha256": "edd5c9831e2f3a5f2d2b60cdb9978278b06c24199843e059ee6c33e80fd72946",
+      "image_sha256": "9f5a9e59c5ae45c834a74109ba34b8f0fc3513fcc16b9a7bbfd86610b1973708",
+      "question": "Preserve every Table 2 model row, EN-DE/EN-FR scores, separate EN-DE/EN-FR training costs, blank cells and the Transformer base/big associations."
+    },
+    {
+      "id": "context-screen__taln-complexity-p1",
+      "case": "screen__taln-complexity",
+      "page": 0,
+      "source_page": 1,
+      "role": "development",
+      "pdf_sha256": "76b57bda3bdd241d2c92e3b449084e92d2c38dd5aa5863e316f2bc2bc6a1dcb6",
+      "image_sha256": "4ac2f48563bbc3a0059f45205e5d41d110d8368c8bab4a7732d2df57716e2754",
+      "question": "Preserve complete ordinary introductory French paragraphs, accents, citations and reading order."
+    },
+    {
+      "id": "context-screen__taln-complexity-p2",
+      "case": "screen__taln-complexity",
+      "page": 1,
+      "source_page": 4,
+      "role": "development",
+      "pdf_sha256": "76b57bda3bdd241d2c92e3b449084e92d2c38dd5aa5863e316f2bc2bc6a1dcb6",
+      "image_sha256": "9115425fe2cc9be7a9c0e9851dc8ae608a8468ba6f8bd2ad37ed646ec45b292b",
+      "question": "Preserve all rows and grouped headers in Table 1, adaptation type, parameter count, ROUGE-L and human accuracy values with exact decimal values."
+    },
+    {
+      "id": "context-screen__taln-complexity-p3",
+      "case": "screen__taln-complexity",
+      "page": 2,
+      "source_page": 5,
+      "role": "development",
+      "pdf_sha256": "76b57bda3bdd241d2c92e3b449084e92d2c38dd5aa5863e316f2bc2bc6a1dcb6",
+      "image_sha256": "b9196d5dcfb9232eb5ffdb21ecedddcbecafdf5089aeb128f6b499fed01eacab",
+      "question": "Preserve the entire Figure 1 bar chart: event labels, axis meaning/scale, ordering of bars and observed values or clearly marked approximations; retain accompanying text."
+    },
+    {
+      "id": "context-screen__taln-complexity-p4",
+      "case": "screen__taln-complexity",
+      "page": 3,
+      "source_page": 7,
+      "role": "development",
+      "pdf_sha256": "76b57bda3bdd241d2c92e3b449084e92d2c38dd5aa5863e316f2bc2bc6a1dcb6",
+      "image_sha256": "abc4216be4cd33d610873ca5928b340be53c3f426085cf16d7f92fdb91fcc1f2",
+      "question": "Preserve every factor f0-f6 header, proportion, signed cell value and footnote in the model/factor table, including shaded/bold annotations when meaningful."
+    },
+    {
+      "id": "context-screen__taln-complexity-p5",
+      "case": "screen__taln-complexity",
+      "page": 4,
+      "source_page": 8,
+      "role": "development",
+      "pdf_sha256": "76b57bda3bdd241d2c92e3b449084e92d2c38dd5aa5863e316f2bc2bc6a1dcb6",
+      "image_sha256": "d5ba81901b52c2fc13b7af21a99a1195e18eabe5711ab1596afb013a2dc352e4",
+      "question": "Preserve the page conclusions and all table/figure relationships, especially which complexity factors affect which model families; do not substitute general explanations."
+    },
+    {
+      "id": "context-screen__ccl-feedback-p1",
+      "case": "screen__ccl-feedback",
+      "page": 0,
+      "source_page": 1,
+      "role": "development",
+      "pdf_sha256": "c054be45d8d0d219f20128f306ff8eda8acab3c78afdd1298cbf43b82c6eb7fb",
+      "image_sha256": "1a5ff17288af2ed29f8449b4158c74b34f9070d0e35debb2ee1d638051141864",
+      "question": "Read the actual English abstract and Chinese prose from the rendered source despite broken embedded font mappings; preserve words, references and numbers."
+    },
+    {
+      "id": "context-screen__ccl-feedback-p2",
+      "case": "screen__ccl-feedback",
+      "page": 1,
+      "source_page": 2,
+      "role": "development",
+      "pdf_sha256": "c054be45d8d0d219f20128f306ff8eda8acab3c78afdd1298cbf43b82c6eb7fb",
+      "image_sha256": "d36fa56802e611625d7971f26dfd146fd6b335d24e0500bae789a102f2cd6a52",
+      "question": "Preserve the three grammar-correction/feedback tasks and both examples in the diagram, including reach/to deletion versus explanation, and preserve prose."
+    },
+    {
+      "id": "context-screen__ccl-feedback-p3",
+      "case": "screen__ccl-feedback",
+      "page": 2,
+      "source_page": 4,
+      "role": "development",
+      "pdf_sha256": "c054be45d8d0d219f20128f306ff8eda8acab3c78afdd1298cbf43b82c6eb7fb",
+      "image_sha256": "58be3d998e6349ffc4595571f2d1b44327408f241745c33d0c4eccc1ff246ff6",
+      "question": "Preserve all terminology/data counts and every table row with source-language labels, model/prompt text and column associations despite broken font mappings."
+    },
+    {
+      "id": "context-screen__ccl-feedback-p4",
+      "case": "screen__ccl-feedback",
+      "page": 3,
+      "source_page": 7,
+      "role": "development",
+      "pdf_sha256": "c054be45d8d0d219f20128f306ff8eda8acab3c78afdd1298cbf43b82c6eb7fb",
+      "image_sha256": "99c5b8b2c4878b3caaafb2c636fd556c48f70c8bb01ac4d47d786cc2848e2187",
+      "question": "Preserve the complete page tables and formulas, exact models/conditions/metrics, row associations and footnotes, plus source prose."
+    },
+    {
+      "id": "context-screen__ccl-feedback-p5",
+      "case": "screen__ccl-feedback",
+      "page": 4,
+      "source_page": 9,
+      "role": "development",
+      "pdf_sha256": "c054be45d8d0d219f20128f306ff8eda8acab3c78afdd1298cbf43b82c6eb7fb",
+      "image_sha256": "48ca49b92e076cf330aa1d0b867eee1287eb36ff41d77e1e5a06b716c9da42aa",
+      "question": "Preserve all evaluation values, human-rating conditions and cross-language feedback examples with exact labels, numbers, punctuation and reading order."
+    },
+    {
+      "id": "context-screen__spain-figures-p1",
+      "case": "screen__spain-figures",
+      "page": 0,
+      "source_page": 2,
+      "role": "validation",
+      "pdf_sha256": "b2d7c1f83373fb857ab2c77737df6a8e024af054e2fd44e0503aa43440e4f28d",
+      "image_sha256": "af33187135b2de0902f90d1842e229eab26bc1452eb48f443283e814f138cbb4",
+      "question": "Preserve the ordinary presentation text and table of contents without treating decorative page graphics as substantive claims."
+    },
+    {
+      "id": "context-screen__spain-figures-p2",
+      "case": "screen__spain-figures",
+      "page": 1,
+      "source_page": 6,
+      "role": "validation",
+      "pdf_sha256": "b2d7c1f83373fb857ab2c77737df6a8e024af054e2fd44e0503aa43440e4f28d",
+      "image_sha256": "5dbb8596cbdcea3dd221545da53e6933516ef9fd526ebb3700bffff434ba9173",
+      "question": "Preserve country-to-emissions values, CO2-equivalent units, years and the entire emissions graph with series/legend associations and stated trend."
+    },
+    {
+      "id": "context-screen__spain-figures-p3",
+      "case": "screen__spain-figures",
+      "page": 2,
+      "source_page": 7,
+      "role": "validation",
+      "pdf_sha256": "b2d7c1f83373fb857ab2c77737df6a8e024af054e2fd44e0503aa43440e4f28d",
+      "image_sha256": "eeacccf495ab75bf3ca34df9b297770432e0180bf553bdf210b51f7c27a4ffed",
+      "question": "Preserve the water indicators table, absolute values versus biennial percentage changes, all units, and the map legend and national consumption value."
+    },
+    {
+      "id": "context-screen__spain-figures-p4",
+      "case": "screen__spain-figures",
+      "page": 3,
+      "source_page": 14,
+      "role": "validation",
+      "pdf_sha256": "b2d7c1f83373fb857ab2c77737df6a8e024af054e2fd44e0503aa43440e4f28d",
+      "image_sha256": "a54af54eace612395ac1bdb72ad0bd7b6b7879beb2951f69ef2639cf17ec56fa",
+      "question": "Preserve the non-university education enrolment table, totals, annual changes, country early-leaving rates and the 18-24 age/qualification definition in the footnote."
+    },
+    {
+      "id": "context-screen__spain-figures-p5",
+      "case": "screen__spain-figures",
+      "page": 4,
+      "source_page": 25,
+      "role": "validation",
+      "pdf_sha256": "b2d7c1f83373fb857ab2c77737df6a8e024af054e2fd44e0503aa43440e4f28d",
+      "image_sha256": "6d36caee080c6fffe3e8074fbbf8ffc54c4372ac6fe42cac964539359502a93a",
+      "question": "Preserve the digital-skills country table, age 16-74 denominator, household technology indicators with changes, and the online-purchasing time series and reported percentages."
+    },
+    {
+      "id": "context-screen__japan-migration-p1",
+      "case": "screen__japan-migration",
+      "page": 0,
+      "source_page": 5,
+      "role": "validation",
+      "pdf_sha256": "65ea6718c1c0e31bbf885963282a38b015a22e364f36f6307434b6284737a84b",
+      "image_sha256": "641a75b0d4f8907ff7c4df44651f082a5a57ddcd93e285704444fe3a882dd4c5",
+      "question": "Preserve methodological notes and definitions, separating contact/QR graphics from substantive statistical content."
+    },
+    {
+      "id": "context-screen__japan-migration-p2",
+      "case": "screen__japan-migration",
+      "page": 1,
+      "source_page": 8,
+      "role": "validation",
+      "pdf_sha256": "65ea6718c1c0e31bbf885963282a38b015a22e364f36f6307434b6284737a84b",
+      "image_sha256": "64d5a75ba88ec16ed47041ae8313c12e89dd74e1da14288e344288dcf5af6448",
+      "question": "Preserve all Table 1 multi-level headings, years, counts and signed percentage changes; preserve graph series and the distinction between domestic and overseas movement."
+    },
+    {
+      "id": "context-screen__japan-migration-p3",
+      "case": "screen__japan-migration",
+      "page": 2,
+      "source_page": 10,
+      "role": "validation",
+      "pdf_sha256": "65ea6718c1c0e31bbf885963282a38b015a22e364f36f6307434b6284737a84b",
+      "image_sha256": "5fdea1ed9b68e80f9a674d6b2368573d0e3729089bd7155dd526ce1343c92b19",
+      "question": "Preserve every prefecture row and grouped heading in Table 2, overseas/domestic components, signs, population units and both year comparisons."
+    },
+    {
+      "id": "context-screen__japan-migration-p4",
+      "case": "screen__japan-migration",
+      "page": 3,
+      "source_page": 15,
+      "role": "validation",
+      "pdf_sha256": "65ea6718c1c0e31bbf885963282a38b015a22e364f36f6307434b6284737a84b",
+      "image_sha256": "2f3975d42371531eb0348fa8f307226b45a85321ef4d18decf6e65dc964596e8",
+      "question": "Preserve every prefecture row and all 2024/2025 counts and net movement columns in Table 7, with signed changes and percentage qualifiers."
+    },
+    {
+      "id": "context-screen__japan-migration-p5",
+      "case": "screen__japan-migration",
+      "page": 4,
+      "source_page": 16,
+      "role": "validation",
+      "pdf_sha256": "65ea6718c1c0e31bbf885963282a38b015a22e364f36f6307434b6284737a84b",
+      "image_sha256": "8c61f584f09db8f4d850e13e62febfce835ac01839a389053d42aa0bd4140506",
+      "question": "Preserve the three metropolitan-area net-migration series, signs, years, exact reported totals, and diagram explanations without confusing net inflow with total arrivals."
+    },
+    {
+      "id": "context-screen__german-education-p1",
+      "case": "screen__german-education",
+      "page": 0,
+      "source_page": 2,
+      "role": "development",
+      "pdf_sha256": "77197be583bb5fbc11debe2a3a46b85b81a0e2881780a762d6ead5ed337985ae",
+      "image_sha256": "762778d51b2ba6be4bcccf275497aca034245965bed319f16ea49d27cd7e6a45",
+      "question": "Preserve all introductory multi-column prose, correct order, umlauts and paragraph boundaries without dropping repeated substantive text."
+    },
+    {
+      "id": "context-screen__german-education-p2",
+      "case": "screen__german-education",
+      "page": 1,
+      "source_page": 4,
+      "role": "development",
+      "pdf_sha256": "77197be583bb5fbc11debe2a3a46b85b81a0e2881780a762d6ead5ed337985ae",
+      "image_sha256": "a1b2fa7563b9423ca14d37eb1851ba2849c817ea50c24e9f58ca303905546266",
+      "question": "Preserve every infographic relationship, category and number, including demographic context, labour-market measures and explanatory qualifiers."
+    },
+    {
+      "id": "context-screen__german-education-p3",
+      "case": "screen__german-education",
+      "page": 2,
+      "source_page": 8,
+      "role": "development",
+      "pdf_sha256": "77197be583bb5fbc11debe2a3a46b85b81a0e2881780a762d6ead5ed337985ae",
+      "image_sha256": "d71cb8d9b4b48bdbf424d78c58d46ae5d7fea65620f708d290d48cb8897f9e9e",
+      "question": "Preserve the early-childhood infographic: age/region/category denominators, percentages, time comparisons, chart labels and arrows."
+    },
+    {
+      "id": "context-screen__german-education-p4",
+      "case": "screen__german-education",
+      "page": 3,
+      "source_page": 14,
+      "role": "development",
+      "pdf_sha256": "77197be583bb5fbc11debe2a3a46b85b81a0e2881780a762d6ead5ed337985ae",
+      "image_sha256": "3549bed3fb13bad02dcd687db84fd7af4abef50ad63cdd17d1047a4b4e5b3337",
+      "question": "Preserve the higher-education diagram, all pathways between institution types, counts/percentages and their exact category/period associations."
+    },
+    {
+      "id": "context-screen__german-education-p5",
+      "case": "screen__german-education",
+      "page": 4,
+      "source_page": 22,
+      "role": "development",
+      "pdf_sha256": "77197be583bb5fbc11debe2a3a46b85b81a0e2881780a762d6ead5ed337985ae",
+      "image_sha256": "39b44b9385ebf948a592964f5be40c747126084f15865cbd882c24aa575d3f5e",
+      "question": "Preserve the dense multi-column prose and all qualifications/negations without interleaving columns or splitting sentences at column boundaries."
+    },
+    {
+      "id": "context-screen__hongkong-figures-p1",
+      "case": "screen__hongkong-figures",
+      "page": 0,
+      "source_page": 7,
+      "role": "validation",
+      "pdf_sha256": "145275cc800db96375cfee23d2f00cd03298285d37062262328ad1408a0bb90f",
+      "image_sha256": "426b38617c29c68cd39261d4d6132106f9ce8467cc4b82d3236b9d6310d0f762",
+      "question": "Preserve all bilingual population table labels, years, units, footnotes and values, including estimates/provisional markers and geographic definitions."
+    },
+    {
+      "id": "context-screen__hongkong-figures-p2",
+      "case": "screen__hongkong-figures",
+      "page": 1,
+      "source_page": 9,
+      "role": "validation",
+      "pdf_sha256": "145275cc800db96375cfee23d2f00cd03298285d37062262328ad1408a0bb90f",
+      "image_sha256": "5c67e815445cf678a72630221e27bb2be0ae9829ee6c5ffdc267f793808072f3",
+      "question": "Preserve the population pyramid: male/female sides, age bands, years, axis units, legend and actual distribution shape; do not invent printed numeric values."
+    },
+    {
+      "id": "context-screen__hongkong-figures-p3",
+      "case": "screen__hongkong-figures",
+      "page": 2,
+      "source_page": 12,
+      "role": "validation",
+      "pdf_sha256": "145275cc800db96375cfee23d2f00cd03298285d37062262328ad1408a0bb90f",
+      "image_sha256": "47fa43deafe4e2a501cdaf90773da2235d8ca57a693027db24291eeeac0e23c3",
+      "question": "Preserve all four bilingual labour tables, grouped years 2018/2022/2023, counts versus percentages, age and sex categories, revisions, total changes and labour-force footnote exclusions."
+    },
+    {
+      "id": "context-screen__hongkong-figures-p4",
+      "case": "screen__hongkong-figures",
+      "page": 3,
+      "source_page": 16,
+      "role": "validation",
+      "pdf_sha256": "145275cc800db96375cfee23d2f00cd03298285d37062262328ad1408a0bb90f",
+      "image_sha256": "c43ad4d8474abaf339a583823968a48245754f9617a1d1dda5d1d349e633b6a0",
+      "question": "Preserve the bilingual merchandise-trade table, imports/domestic exports/re-exports and country groupings, all HK$ billion values and regional-bloc membership notes."
+    },
+    {
+      "id": "context-screen__hongkong-figures-p5",
+      "case": "screen__hongkong-figures",
+      "page": 4,
+      "source_page": 50,
+      "role": "validation",
+      "pdf_sha256": "145275cc800db96375cfee23d2f00cd03298285d37062262328ad1408a0bb90f",
+      "image_sha256": "cf2d908366965cd2e4b0f57253f8192f8882e1e6f30ef50b0f3cad89fe0cb9f8",
+      "question": "Preserve both reported-crimes and arrested-persons tables, exact year/category values, totals and the different population denominators in rate footnotes."
+    },
+    {
+      "id": "context-screen__nist-accelerometers-p1",
+      "case": "screen__nist-accelerometers",
+      "page": 0,
+      "source_page": 0,
+      "role": "validation",
+      "pdf_sha256": "474257fbbad8bcead3a356b8dec7a7dbff6473352b94e293f3fc3a17f159b665",
+      "image_sha256": "a8f503f65d0de14d775c36d2ee3068b271634b5c540e4e0fb2676b80038b1e10",
+      "question": "Preserve the scan abstract, the three calibrator types and all ranges/units; retain two-column reading order and the Figure 1 label associations."
+    },
+    {
+      "id": "context-screen__nist-accelerometers-p2",
+      "case": "screen__nist-accelerometers",
+      "page": 1,
+      "source_page": 2,
+      "role": "validation",
+      "pdf_sha256": "474257fbbad8bcead3a356b8dec7a7dbff6473352b94e293f3fc3a17f159b665",
+      "image_sha256": "ea01a0ee0864cac625cfc3f685c93c323f5af5f67644af1058efb70f4df6bdbe",
+      "question": "Preserve all three formulas exactly, including fractions, squares, subscripts and cosine argument, definitions and units; retain the reported extrema."
+    },
+    {
+      "id": "context-screen__nist-accelerometers-p3",
+      "case": "screen__nist-accelerometers",
+      "page": 2,
+      "source_page": 3,
+      "role": "validation",
+      "pdf_sha256": "474257fbbad8bcead3a356b8dec7a7dbff6473352b94e293f3fc3a17f159b665",
+      "image_sha256": "af66d0979aa92f252538b49b3b6eac239c696ca4a7a05ebe0dd2bc3a5c5d1abb",
+      "question": "Preserve all subplots of Figures 3/4/5, legend markers, flexure thicknesses, axes/units and waveform annotations without inventing curve values."
+    },
+    {
+      "id": "context-screen__nist-accelerometers-p4",
+      "case": "screen__nist-accelerometers",
+      "page": 3,
+      "source_page": 4,
+      "role": "validation",
+      "pdf_sha256": "474257fbbad8bcead3a356b8dec7a7dbff6473352b94e293f3fc3a17f159b665",
+      "image_sha256": "e7a429a237dd47eb9afb6e464029c97d15e89d6b179c8a05d4027afd5d31276f",
+      "question": "Preserve the portable pulse calibrator Figure 6 and its three-mass relationships, mass M2 as accelerometer attachment, release sequence and mechanical dimensions in the two-column text."
+    },
+    {
+      "id": "context-screen__nist-accelerometers-p5",
+      "case": "screen__nist-accelerometers",
+      "page": 4,
+      "source_page": 8,
+      "role": "validation",
+      "pdf_sha256": "474257fbbad8bcead3a356b8dec7a7dbff6473352b94e293f3fc3a17f159b665",
+      "image_sha256": "af6f6f9a5fb949b135359e55cb84a91d4308271ed8b3281b6c886efdbb62c077",
+      "question": "Preserve the centrifuge/acceleration apparatus diagram and all visible labels, equations and quantitative prose, with reading order and figure references."
+    }
+  ],
+  "source_refinement_note": "Corrected source-topic labels after reading source pages, before inspecting any candidate outputs; initial source draft retained."
+}

@@ -303,6 +303,9 @@ type Workspace struct {
 	IsOwner        bool                     `json:"isOwner"`
 	Role           *store.WorkspaceRole     `json:"role,omitempty"`
 	Capabilities   store.AccessCapabilities `json:"capabilities"`
+	// CanClone: members of any role and effective editors may copy the
+	// workspace; a link/public viewer may not.
+	CanClone bool `json:"canClone"`
 	// StorageOwnerState is the lifecycle state of the account charged for this
 	// workspace's bytes, which is the owner and not necessarily the requester.
 	// A member with a healthy account still cannot add content to an
@@ -330,7 +333,7 @@ func FromWorkspace(w store.Workspace, ownerState store.AccountState) Workspace {
 		Tags: WrapTags(w.Tags), ChapterCount: w.ChapterCount, FileCount: w.FileCount,
 		FilesLimit: w.FilesLimit,
 		CreatedAt:  w.CreatedAt, LastAccessedAt: w.LastAccessedAt, IsOwner: true,
-		Role: &role, Capabilities: store.CapabilitiesForRole(role, true),
+		Role: &role, Capabilities: store.CapabilitiesForRole(role, true), CanClone: true,
 		StorageOwnerName: w.OwnerName,
 	}
 	if ownerState != "" {
@@ -339,18 +342,23 @@ func FromWorkspace(w store.Workspace, ownerState store.AccountState) Workspace {
 	return out
 }
 
+// FromWorkspaceAccess renders a workspace for a requester. Role is their
+// persisted membership (nil for a link/public visitor) and Capabilities follow
+// their effective role, so a share-role editor sees content controls while
+// settings stay keyed on Role.
 func FromWorkspaceAccess(
 	w store.Workspace,
-	role store.WorkspaceRole,
+	member, effective store.WorkspaceRole,
 	ownerState store.AccountState,
 ) Workspace {
 	out := FromWorkspace(w, ownerState)
-	out.IsOwner = role == store.RoleOwner
-	out.Capabilities = store.CapabilitiesForRole(role, true)
-	if role == "" {
+	out.IsOwner = member == store.RoleOwner
+	out.Capabilities = store.CapabilitiesForRole(effective, true)
+	out.CanClone = member != "" || store.RoleCanEdit(effective)
+	if member == "" {
 		out.Role = nil
 	} else {
-		out.Role = &role
+		out.Role = &member
 	}
 	return out
 }
@@ -377,11 +385,13 @@ type PublicWorkspace struct {
 
 // FromPublicWorkspaces leaves StorageOwnerState unreported: an Explore visitor
 // can only clone, which is charged to them, so the author's billing state is
-// both irrelevant here and none of the visitor's business.
+// both irrelevant here and none of the visitor's business. Capabilities and
+// canClone follow the caller's real grant, membership or share role.
 func FromPublicWorkspaces(ws []store.PublicWorkspace) []PublicWorkspace {
 	out := make([]PublicWorkspace, len(ws))
 	for i, w := range ws {
-		workspace := FromWorkspaceAccess(w.Workspace, "", "")
+		effective := store.EffectiveRole(w.MemberRole, w.Privacy, w.ShareRole)
+		workspace := FromWorkspaceAccess(w.Workspace, w.MemberRole, effective, "")
 		out[i] = PublicWorkspace{Workspace: workspace, Author: w.Author, Clones: w.Clones}
 	}
 	return out

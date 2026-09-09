@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -127,16 +128,23 @@ func TestEffectiveMaterialAccessUnionsMembershipAndShareRole(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	access, err := s.MaterialEffectiveAccess(ctx, "u_other", material.ID)
-	if err != nil || access.Role != RoleEditor || access.MemberRole != "" {
-		t.Fatalf("signed-in nonmember access = %#v, %v", access, err)
+	role, err := s.MaterialEffectiveRole(ctx, "u_other", material.ID)
+	if err != nil || role != RoleEditor {
+		t.Fatalf("signed-in nonmember role = %q, %v", role, err)
 	}
-	anonymous, err := s.MaterialEffectiveAccess(ctx, "", material.ID)
-	if !errors.Is(err, ErrNotFound) || anonymous.Role != "" || anonymous.MemberRole != "" {
-		t.Fatalf("anonymous access = %#v, %v", anonymous, err)
+	if member, err := s.WorkspaceRole(ctx, "u_other", ws.ID); err != nil || member != "" {
+		t.Fatalf("nonmember persisted role = %q, %v", member, err)
 	}
-	if err := s.AssertWorkspaceEditor(ctx, "u_other", ws.ID); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("share editor gained structural workspace access: %v", err)
+	anonymous, err := s.MaterialEffectiveRole(ctx, "", material.ID)
+	if !errors.Is(err, ErrNotFound) || anonymous != "" {
+		t.Fatalf("anonymous role = %q, %v", anonymous, err)
+	}
+	// A share editor holds content authority but not workspace settings.
+	if err := s.AssertWorkspaceEditor(ctx, "u_other", ws.ID); err != nil {
+		t.Fatalf("share editor lacks workspace content access: %v", err)
+	}
+	if err := s.AssertWorkspaceMemberEditor(ctx, "u_other", ws.ID); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("share editor gained workspace settings access: %v", err)
 	}
 
 	// A viewer membership must not leave the invited collaborator with less
@@ -145,14 +153,14 @@ func TestEffectiveMaterialAccessUnionsMembershipAndShareRole(t *testing.T) {
 		VALUES ($1,$2,'viewer')`, ws.ID, "u_other"); err != nil {
 		t.Fatal(err)
 	}
-	access, err = s.MaterialEffectiveAccess(ctx, "u_other", material.ID)
-	if err != nil || access.Role != RoleEditor || access.MemberRole != RoleViewer {
-		t.Fatalf("viewer member was not raised by the share editor role: %#v, %v", access, err)
+	role, err = s.MaterialEffectiveRole(ctx, "u_other", material.ID)
+	if err != nil || role != RoleEditor {
+		t.Fatalf("viewer member was not raised by the share editor role: %q, %v", role, err)
 	}
-	if err := s.AssertWorkspaceEditor(ctx, "u_other", ws.ID); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("raised member gained structural workspace access: %v", err)
+	if err := s.AssertWorkspaceMemberEditor(ctx, "u_other", ws.ID); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("raised viewer member gained workspace settings access: %v", err)
 	}
-	role, err := s.WorkspaceEffectiveRole(ctx, "u_other", ws.ID)
+	role, err = s.WorkspaceEffectiveRole(ctx, "u_other", ws.ID)
 	if err != nil || role != RoleEditor {
 		t.Fatalf("workspace effective role = %q, %v; want editor", role, err)
 	}
@@ -166,9 +174,9 @@ func TestEffectiveMaterialAccessUnionsMembershipAndShareRole(t *testing.T) {
 		WHERE workspace_id=$1 AND user_id=$2`, ws.ID, "u_other"); err != nil {
 		t.Fatal(err)
 	}
-	access, err = s.MaterialEffectiveAccess(ctx, "u_other", material.ID)
-	if err != nil || access.Role != RoleEditor || access.MemberRole != RoleEditor {
-		t.Fatalf("editor member was lowered by the viewer share role: %#v, %v", access, err)
+	role, err = s.MaterialEffectiveRole(ctx, "u_other", material.ID)
+	if err != nil || role != RoleEditor {
+		t.Fatalf("editor member was lowered by the viewer share role: %q, %v", role, err)
 	}
 
 	standalone, err := s.CreateMaterial(ctx, Material{
@@ -179,9 +187,9 @@ func TestEffectiveMaterialAccessUnionsMembershipAndShareRole(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = s.DeleteMaterial(ctx, "u_owner", standalone.ID) })
-	access, err = s.MaterialEffectiveAccess(ctx, "u_other", standalone.ID)
-	if err != nil || access.Role != RoleViewer || access.MemberRole != "" {
-		t.Fatalf("standalone sharing must remain view-only: %#v, %v", access, err)
+	role, err = s.MaterialEffectiveRole(ctx, "u_other", standalone.ID)
+	if err != nil || role != RoleViewer {
+		t.Fatalf("standalone sharing must remain view-only: %q, %v", role, err)
 	}
 }
 
@@ -220,14 +228,12 @@ func workspaceInviteToken(t *testing.T, s *Store, ctx context.Context, wsID, ide
 func TestWorkspaceInviteAcceptanceGrantsRoleCapabilities(t *testing.T) {
 	s := openAccessTestStore(t)
 	cases := []struct {
-		name       string
-		userID     string
-		role       WorkspaceRole
-		canEdit    bool
-		canComment bool
+		name    string
+		userID  string
+		role    WorkspaceRole
+		canEdit bool
 	}{
-		{name: "editor", userID: "u_editor", role: RoleEditor, canEdit: true, canComment: true},
-		{name: "commenter", userID: "u_commenter", role: RoleCommenter, canComment: true},
+		{name: "editor", userID: "u_editor", role: RoleEditor, canEdit: true},
 		{name: "viewer", userID: "u_viewer", role: RoleViewer},
 	}
 
@@ -259,10 +265,16 @@ func TestWorkspaceInviteAcceptanceGrantsRoleCapabilities(t *testing.T) {
 			if err := s.AssertWorkspaceEditor(ctx, tc.userID, ws.ID); (err == nil) != tc.canEdit {
 				t.Fatalf("edit access error = %v, want canEdit=%v", err, tc.canEdit)
 			}
-			if err := s.AssertWorkspaceCommenter(ctx, tc.userID, ws.ID); (err == nil) != tc.canComment {
-				t.Fatalf("comment access error = %v, want canComment=%v", err, tc.canComment)
-			}
 
+			listed, err := s.ListWorkspaces(ctx, tc.userID, "", "", "", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.ContainsFunc(listed, func(item Workspace) bool {
+				return item.ID == ws.ID && item.MemberRole == tc.role
+			}) {
+				t.Fatalf("listing does not carry the %s membership: %#v", tc.role, listed)
+			}
 			members, err := s.ListWorkspaceMembers(ctx, ws.ID)
 			if err != nil {
 				t.Fatal(err)
@@ -702,7 +714,7 @@ func TestOverQuotaOwnerCannotInviteOrPromoteButCanDemote(t *testing.T) {
 			t.Fatalf("invite error=%v, want over-quota account error", err)
 		}
 	}
-	if err := s.SetWorkspaceMemberRole(ctx, ownerID, ws.ID, viewerID, RoleCommenter); err == nil {
+	if err := s.SetWorkspaceMemberRole(ctx, ownerID, ws.ID, viewerID, RoleEditor); err == nil {
 		t.Fatal("over-quota owner promoted a viewer")
 	} else {
 		var locked *AccountLockedError
@@ -768,7 +780,7 @@ func TestCommentsAllowExactlyOneReplyLevel(t *testing.T) {
 	ctx, ws := createSharingTestWorkspace(t, s, ShareViewer)
 	if _, err := s.pool.Exec(ctx, `INSERT INTO workspace_members
 		(workspace_id, user_id, role) VALUES
-		($1,'u_commenter','commenter'),($1,'u_editor','editor')`, ws.ID); err != nil {
+		($1,'u_editor','editor')`, ws.ID); err != nil {
 		t.Fatal(err)
 	}
 	content, _ := materialdoc.Marshal(materialdoc.Empty())
@@ -781,7 +793,7 @@ func TestCommentsAllowExactlyOneReplyLevel(t *testing.T) {
 	}
 	rich := json.RawMessage(`[{"type":"p","children":[{"text":"root"}]}]`)
 	discussion, err := s.CreateCommentDiscussion(
-		ctx, material.ID, "u_commenter", nil, nil, nil, 1, "", rich,
+		ctx, material.ID, "u_editor", nil, nil, nil, 1, "", rich,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -815,13 +827,13 @@ func TestCommentMutationsRecheckLifecycleAndCurrentRole(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_comment_owner")
-	commenterID := newBlobTestUser(t, s, "u_comment_actor")
+	editorID := newBlobTestUser(t, s, "u_comment_actor")
 	ws, err := s.CreateWorkspace(ctx, ownerID, "Comment lifecycle", ColorGreen, []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.pool.Exec(ctx, `INSERT INTO workspace_members
-		(workspace_id, user_id, role) VALUES ($1,$2,'commenter')`, ws.ID, commenterID); err != nil {
+		(workspace_id, user_id, role) VALUES ($1,$2,'editor')`, ws.ID, editorID); err != nil {
 		t.Fatal(err)
 	}
 	content, err := materialdoc.Marshal(materialdoc.Empty())
@@ -837,40 +849,40 @@ func TestCommentMutationsRecheckLifecycleAndCurrentRole(t *testing.T) {
 	}
 	rich := json.RawMessage(`[{"type":"p","children":[{"text":"root"}]}]`)
 	discussion, err := s.CreateCommentDiscussion(
-		ctx, material.ID, commenterID, nil, nil, nil, 1, "", rich,
+		ctx, material.ID, editorID, nil, nil, nil, 1, "", rich,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.pool.Exec(ctx, `UPDATE users SET suspended_at=now(),
 		suspended_reason='test suspension'
-		WHERE id=$1`, commenterID); err != nil {
+		WHERE id=$1`, editorID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.AddNestedComment(ctx, discussion.ID, commenterID, nil, rich); err == nil {
-		t.Fatal("suspended commenter added a comment")
+	if _, err := s.AddNestedComment(ctx, discussion.ID, editorID, nil, rich); err == nil {
+		t.Fatal("suspended editor added a comment")
 	} else {
 		var locked *AccountLockedError
 		if !errors.As(err, &locked) || locked.State != AccountSuspended {
-			t.Fatalf("suspended commenter error = %v", err)
+			t.Fatalf("suspended editor error = %v", err)
 		}
 	}
 	if _, err := s.pool.Exec(ctx, `UPDATE users SET suspended_at=NULL,
 		suspended_reason=NULL WHERE id=$1`,
-		commenterID); err != nil {
+		editorID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.pool.Exec(ctx, `UPDATE workspace_members SET role='viewer'
-		WHERE workspace_id=$1 AND user_id=$2`, ws.ID, commenterID); err != nil {
+		WHERE workspace_id=$1 AND user_id=$2`, ws.ID, editorID); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SetCollaborationDiscussionResolved(
-		ctx, discussion.ID, commenterID, true,
+		ctx, discussion.ID, editorID, true,
 	); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("viewer resolve error = %v, want forbidden", err)
 	}
-	if _, err := s.pool.Exec(ctx, `UPDATE workspace_members SET role='commenter'
-		WHERE workspace_id=$1 AND user_id=$2`, ws.ID, commenterID); err != nil {
+	if _, err := s.pool.Exec(ctx, `UPDATE workspace_members SET role='editor'
+		WHERE workspace_id=$1 AND user_id=$2`, ws.ID, editorID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.pool.Exec(ctx, `UPDATE users
@@ -878,7 +890,51 @@ func TestCommentMutationsRecheckLifecycleAndCurrentRole(t *testing.T) {
 		WHERE id=$1`, ownerID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.AddNestedComment(ctx, discussion.ID, commenterID, nil, rich); !errors.Is(err, ErrNotFound) {
+	if _, err := s.AddNestedComment(ctx, discussion.ID, editorID, nil, rich); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("deleting-owner comment error = %v, want not found", err)
+	}
+}
+
+func TestOverQuotaOwnerMayNarrowButNotWidenSharing(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	ownerID := newBlobTestUser(t, s, "u_share_gate_owner")
+	ws, err := s.CreateWorkspace(ctx, ownerID, "Sharing gate", ColorGreen, []TagRef{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	public := PrivacyPublic
+	if _, err := s.UpdateWorkspaceSharing(ctx, ownerID, ws.ID, &public, nil); err != nil {
+		t.Fatal(err)
+	}
+	pushOverQuota(t, s, ownerID, ws.ID)
+
+	editor := ShareEditor
+	var locked *AccountLockedError
+	if _, err := s.UpdateWorkspaceSharing(ctx, ownerID, ws.ID, nil, &editor); !errors.As(err, &locked) {
+		t.Fatalf("widening share role while over quota = %v, want account lock", err)
+	}
+	private := PrivacyPrivate
+	if _, err := s.UpdateWorkspaceSharing(ctx, ownerID, ws.ID, &private, nil); err != nil {
+		t.Fatalf("narrowing to private while over quota failed: %v", err)
+	}
+	// A private workspace grants nothing, so its dormant share role may change.
+	if _, err := s.UpdateWorkspaceSharing(ctx, ownerID, ws.ID, nil, &editor); err != nil {
+		t.Fatalf("changing a dormant share role while over quota failed: %v", err)
+	}
+	if _, err := s.UpdateWorkspaceSharing(ctx, ownerID, ws.ID, &public, nil); !errors.As(err, &locked) {
+		t.Fatalf("republishing while over quota = %v, want account lock", err)
+	}
+	// Link to public widens the audience (Explore) even with the same grant.
+	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='link', share_role='viewer'
+		WHERE id=$1`, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpdateWorkspaceSharing(ctx, ownerID, ws.ID, &public, nil); !errors.As(err, &locked) {
+		t.Fatalf("link to public while over quota = %v, want account lock", err)
+	}
+	link := PrivacyLink
+	if _, err := s.UpdateWorkspaceSharing(ctx, ownerID, ws.ID, &link, nil); err != nil {
+		t.Fatalf("link to link while over quota failed: %v", err)
 	}
 }

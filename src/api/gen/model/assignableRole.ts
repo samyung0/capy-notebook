@@ -10,6 +10,5 @@ export type AssignableRole = typeof AssignableRole[keyof typeof AssignableRole];
 
 export const AssignableRole = {
   editor: 'editor',
-  commenter: 'commenter',
   viewer: 'viewer',
 } as const;

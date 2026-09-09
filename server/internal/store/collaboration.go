@@ -13,10 +13,10 @@ import (
 )
 
 func (s *Store) ListWorkspaceMembers(ctx context.Context, wsID string) ([]WorkspaceMember, error) {
-	rows, err := s.pool.Query(ctx, `SELECT wm.workspace_id, wm.user_id, u.name, COALESCE(u.email,''),
+	rows, err := s.pool.Query(ctx, `SELECT wm.workspace_id, wm.user_id, COALESCE(NULLIF(u.name,''), u.id),
 		COALESCE(u.avatar_url,''), wm.role, wm.created_at
 		FROM workspace_members wm JOIN users u ON u.id=wm.user_id
-		WHERE wm.workspace_id=$1 ORDER BY CASE wm.role WHEN 'owner' THEN 0 ELSE 1 END, u.name`, wsID)
+		WHERE wm.workspace_id=$1 ORDER BY CASE wm.role WHEN 'owner' THEN 0 ELSE 1 END, COALESCE(NULLIF(u.name,''), u.id)`, wsID)
 	if err != nil {
 		return nil, err
 	}
@@ -24,7 +24,7 @@ func (s *Store) ListWorkspaceMembers(ctx context.Context, wsID string) ([]Worksp
 	out := []WorkspaceMember{}
 	for rows.Next() {
 		var member WorkspaceMember
-		if err := rows.Scan(&member.WorkspaceID, &member.UserID, &member.Name, &member.Email,
+		if err := rows.Scan(&member.WorkspaceID, &member.UserID, &member.Name,
 			&member.AvatarURL, &member.Role, &member.CreatedAt); err != nil {
 			return nil, err
 		}
@@ -38,9 +38,9 @@ func (s *Store) ListWorkspaceMembers(ctx context.Context, wsID string) ([]Worksp
 // leaving a row to enumerate, and someone reachable solely through a link is
 // not a dependable mention target anyway.
 func (s *Store) ListWorkspaceCollaborators(ctx context.Context, wsID string) ([]WorkspaceCollaborator, error) {
-	rows, err := s.pool.Query(ctx, `SELECT wm.user_id, u.name, COALESCE(u.avatar_url,'')
+	rows, err := s.pool.Query(ctx, `SELECT wm.user_id, COALESCE(NULLIF(u.name,''), u.id), COALESCE(u.avatar_url,'')
 		FROM workspace_members wm JOIN users u ON u.id=wm.user_id
-		WHERE wm.workspace_id=$1 ORDER BY u.name`, wsID)
+		WHERE wm.workspace_id=$1 ORDER BY COALESCE(NULLIF(u.name,''), u.id)`, wsID)
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +62,7 @@ func (s *Store) SetWorkspaceMemberRole(ctx context.Context, actorID, wsID, membe
 }
 
 func (s *Store) SetWorkspaceMemberRoleWithResult(ctx context.Context, actorID, wsID, memberID string, role WorkspaceRole) (*Notification, bool, error) {
-	if role != RoleEditor && role != RoleCommenter && role != RoleViewer {
+	if role != RoleEditor && role != RoleViewer {
 		return nil, false, ErrForbidden
 	}
 
@@ -260,7 +260,7 @@ func (s *Store) CreateWorkspaceInvite(ctx context.Context, wsID, identifier stri
 
 func (s *Store) CreateWorkspaceInviteWithResult(ctx context.Context, wsID, identifier string, role WorkspaceRole, invitedBy string) (*Notification, bool, error) {
 	identifier = strings.TrimSpace(identifier)
-	if identifier == "" || (role != RoleEditor && role != RoleCommenter && role != RoleViewer) {
+	if identifier == "" || (role != RoleEditor && role != RoleViewer) {
 		return nil, false, ErrForbidden
 	}
 	token, err := inviteToken()

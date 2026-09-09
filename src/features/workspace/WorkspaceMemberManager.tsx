@@ -35,7 +35,6 @@ import { track } from '@/lib/observability';
 function roleOptions(): Array<{ value: AssignableRole; label: string }> {
   return [
     { label: m.members_role_view(), value: 'viewer' },
-    { label: m.members_role_comment(), value: 'commenter' },
     { label: m.members_role_edit(), value: 'editor' },
   ];
 }
@@ -166,7 +165,6 @@ export function WorkspaceMemberManager({
               <p className="truncate font-medium text-fg text-sm">
                 {member.name}
               </p>
-              <p className="truncate text-fg-muted text-xs">{member.email}</p>
             </div>
             {member.role === 'owner' ? (
               <span className="px-2 font-medium text-fg-muted text-xs">

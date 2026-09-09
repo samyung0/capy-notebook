@@ -180,10 +180,10 @@ func (s *Store) lockWorkspaceMutationTx(
 	return ownerID, nil
 }
 
-// lockWorkspaceEditorMutationTx adds the structural permission check required
-// by workspace content mutations. The workspace row is already locked before
-// the membership read, so a concurrent demotion/removal either happens before
-// this check and is observed, or waits until this transaction commits.
+// lockWorkspaceEditorMutationTx adds the content permission check required by
+// workspace mutations. The workspace row is already locked before the role
+// read, so a concurrent demotion, removal or sharing change either happens
+// before this check and is observed, or waits until this transaction commits.
 func (s *Store) lockWorkspaceEditorMutationTx(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -196,18 +196,39 @@ func (s *Store) lockWorkspaceEditorMutationTx(
 	if err != nil {
 		return "", err
 	}
-	if actorID == ownerID {
-		return ownerID, nil
-	}
-	var role WorkspaceRole
-	if err := tx.QueryRow(ctx, `SELECT role FROM workspace_members
-		WHERE workspace_id=$1 AND user_id=$2`, workspaceID, actorID).Scan(&role); err != nil {
-		if isNoRows(err) {
-			return "", ErrNotFound
-		}
+	_, role, err := workspaceRoles(ctx, tx, actorID, workspaceID)
+	if err != nil {
 		return "", err
 	}
+	if role == "" {
+		return "", ErrNotFound
+	}
 	if !RoleCanEdit(role) {
+		return "", ErrForbidden
+	}
+	return ownerID, nil
+}
+
+// lockWorkspaceMemberEditorTx is the settings counterpart: the same locks,
+// but the check reads persisted membership so a share-role editor cannot
+// rename, retag or reshare the workspace.
+func (s *Store) lockWorkspaceMemberEditorTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	workspaceID, actorID string,
+) (string, error) {
+	if actorID == "" {
+		return "", ErrNotFound
+	}
+	ownerID, err := s.lockWorkspaceMutationTx(ctx, tx, workspaceID, actorID)
+	if err != nil {
+		return "", err
+	}
+	member, _, err := workspaceRoles(ctx, tx, actorID, workspaceID)
+	if err != nil {
+		return "", err
+	}
+	if !RoleCanEdit(member) {
 		return "", ErrForbidden
 	}
 	return ownerID, nil

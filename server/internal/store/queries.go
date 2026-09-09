@@ -186,11 +186,17 @@ const wsCols = `w.id, w.name, w.description, w.color, w.privacy, w.share_role,
 	(SELECT count(*) FROM files f WHERE f.workspace_id=w.id),
 	w.created_at, w.last_accessed_at, w.auto_reparse, w.auto_reindex`
 
-func (s *Store) scanWorkspace(row pgx.Row) (Workspace, error) {
+// memberRoleCol resolves the requester's ($1) persisted role next to wsCols;
+// the query must LEFT JOIN workspace_members AS me on that user.
+const memberRoleCol = `CASE WHEN w.user_id=$1 THEN 'owner' ELSE COALESCE(me.role,'') END`
+
+// scanWorkspace reads wsCols; extra receives any columns appended after them.
+func (s *Store) scanWorkspace(row pgx.Row, extra ...any) (Workspace, error) {
 	var w Workspace
-	err := row.Scan(&w.ID, &w.Name, &w.Description, &w.Color, &w.Privacy, &w.ShareRole, &w.Tags,
+	dest := append([]any{&w.ID, &w.Name, &w.Description, &w.Color, &w.Privacy, &w.ShareRole, &w.Tags,
 		&w.OwnerUserID, &w.OwnerName, &w.OwnerPlanTier, &w.ChapterCount,
-		&w.FileCount, &w.CreatedAt, &w.LastAccessedAt, &w.AutoReparse, &w.AutoReindex)
+		&w.FileCount, &w.CreatedAt, &w.LastAccessedAt, &w.AutoReparse, &w.AutoReindex}, extra...)
+	err := row.Scan(dest...)
 	if err != nil {
 		return w, err
 	}
@@ -219,7 +225,7 @@ func splitCSVQuery(s string) []string {
 }
 
 func (s *Store) ListWorkspaces(ctx context.Context, userID, q, sortKey, color, tag string) ([]Workspace, error) {
-	sb := "SELECT " + wsCols + " FROM workspaces w JOIN users owner ON owner.id=w.user_id WHERE owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND (w.user_id=$1 OR EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=w.id AND wm.user_id=$1))"
+	sb := "SELECT " + wsCols + ", " + memberRoleCol + " FROM workspaces w JOIN users owner ON owner.id=w.user_id LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1 WHERE owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND (w.user_id=$1 OR me.user_id IS NOT NULL)"
 	args := []any{userID}
 	if q != "" {
 		args = append(args, "%"+strings.ToLower(q)+"%")
@@ -257,17 +263,20 @@ func (s *Store) ListWorkspaces(ctx context.Context, userID, q, sortKey, color, t
 	defer rows.Close()
 	out := []Workspace{}
 	for rows.Next() {
-		w, err := s.scanWorkspace(rows)
+		var member WorkspaceRole
+		w, err := s.scanWorkspace(rows, &member)
 		if err != nil {
 			return nil, err
 		}
+		w.MemberRole = member
 		out = append(out, w)
 	}
 	return out, rows.Err()
 }
 
+// GetWorkspace is the settings-level read: owner and editor members.
 func (s *Store) GetWorkspace(ctx context.Context, userID, id string, touch bool) (Workspace, error) {
-	if err := s.AssertWorkspaceOwner(ctx, userID, id); err != nil {
+	if err := s.AssertWorkspaceMemberEditor(ctx, userID, id); err != nil {
 		return Workspace{}, err
 	}
 	if touch {
@@ -281,7 +290,7 @@ func (s *Store) GetWorkspace(ctx context.Context, userID, id string, touch bool)
 }
 
 func (s *Store) WorkspaceStats(ctx context.Context, userID, id string) (WorkspaceStats, error) {
-	if err := s.AssertWorkspaceOwner(ctx, userID, id); err != nil {
+	if err := s.AssertWorkspaceMemberEditor(ctx, userID, id); err != nil {
 		return WorkspaceStats{}, err
 	}
 	var st WorkspaceStats
@@ -511,20 +520,14 @@ func (s *Store) ListTags(ctx context.Context, userID, kind string) ([]Tag, error
 }
 
 func (s *Store) UpdateWorkspace(ctx context.Context, userID, id string, p WorkspacePatch) (Workspace, error) {
-	if err := s.AssertWorkspaceOwner(ctx, userID, id); err != nil {
-		return Workspace{}, err
-	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Workspace{}, err
 	}
 	defer tx.Rollback(ctx)
-	ownerID, err := s.lockWorkspaceMutationTx(ctx, tx, id, userID)
+	ownerID, err := s.lockWorkspaceMemberEditorTx(ctx, tx, id, userID)
 	if err != nil {
 		return Workspace{}, err
-	}
-	if ownerID != userID {
-		return Workspace{}, ErrForbidden
 	}
 
 	ct, err := tx.Exec(ctx, `UPDATE workspaces SET
@@ -538,7 +541,8 @@ func (s *Store) UpdateWorkspace(ctx context.Context, userID, id string, p Worksp
 		return Workspace{}, ErrNotFound
 	}
 	if p.Tags != nil {
-		if err := syncEntityTags(ctx, tx, userID, "workspace", id, *p.Tags); err != nil {
+		// Workspace tags live in the owner's tag namespace whoever edits them.
+		if err := syncEntityTags(ctx, tx, ownerID, "workspace", id, *p.Tags); err != nil {
 			return Workspace{}, err
 		}
 	}
@@ -554,20 +558,46 @@ func (s *Store) UpdateWorkspaceSharing(
 	privacy *Privacy,
 	shareRole *ShareRole,
 ) (Workspace, error) {
-	if err := s.AssertWorkspaceOwner(ctx, userID, id); err != nil {
-		return Workspace{}, err
-	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Workspace{}, err
 	}
 	defer tx.Rollback(ctx)
-	ownerID, err := s.lockWorkspaceMutationTx(ctx, tx, id, userID)
+	ownerID, err := s.lockWorkspaceMemberEditorTx(ctx, tx, id, userID)
 	if err != nil {
 		return Workspace{}, err
 	}
-	if ownerID != userID {
-		return Workspace{}, ErrForbidden
+	// Widening exposure of the owner's bytes is gated on the owner's lifecycle
+	// whoever clicks; narrowing is a recovery action and always allowed.
+	var current Privacy
+	var currentShare ShareRole
+	if err := tx.QueryRow(ctx, `SELECT privacy, share_role FROM workspaces WHERE id=$1`, id).
+		Scan(&current, &currentShare); err != nil {
+		if isNoRows(err) {
+			return Workspace{}, ErrNotFound
+		}
+		return Workspace{}, err
+	}
+	// Widening is a more permissive nonmember grant (a private workspace grants
+	// nothing whatever its dormant share role) or a broader audience: link to
+	// public puts the workspace on Explore.
+	next, nextShare := current, currentShare
+	if privacy != nil {
+		next = *privacy
+	}
+	if shareRole != nil {
+		nextShare = *shareRole
+	}
+	widens := roleRank(nonmemberGrant(next, nextShare)) > roleRank(nonmemberGrant(current, currentShare)) ||
+		(next == PrivacyPublic && current != PrivacyPublic)
+	if widens {
+		owner, err := s.accountAccess(ctx, tx, ownerID)
+		if err != nil {
+			return Workspace{}, err
+		}
+		if err := owner.Err(); err != nil {
+			return Workspace{}, err
+		}
 	}
 	ct, err := tx.Exec(ctx, `UPDATE workspaces SET
 		privacy=COALESCE($2,privacy), share_role=COALESCE($3,share_role) WHERE id=$1`,
@@ -1665,8 +1695,13 @@ func quizFromMaterial(mt Material) (Quiz, error) {
 }
 
 func (s *Store) ListQuizzes(ctx context.Context, userID string) ([]Quiz, error) {
+	// Effective role per membership, so list and detail agree for a member
+	// raised by an editor share role.
 	roles := map[string]WorkspaceRole{}
-	roleRows, err := s.pool.Query(ctx, `SELECT workspace_id, role FROM workspace_members WHERE user_id=$1`, userID)
+	roleRows, err := s.pool.Query(ctx, `SELECT wm.workspace_id,
+		CASE WHEN wm.role='owner' THEN 'owner'
+			WHEN w.privacy IN ('link','public') AND w.share_role='editor' THEN 'editor' ELSE wm.role END
+		FROM workspace_members wm JOIN workspaces w ON w.id=wm.workspace_id WHERE wm.user_id=$1`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -1917,6 +1952,9 @@ func (s *Store) ListFlashcardSets(ctx context.Context, userID string) ([]Flashca
 			SELECT 1 FROM workspace_members editor
 			WHERE editor.workspace_id=m.workspace_id AND editor.user_id=$1
 				AND editor.role IN ('owner','editor')
+		) OR EXISTS (
+			SELECT 1 FROM workspaces w WHERE w.id=m.workspace_id
+				AND w.privacy IN ('link','public') AND w.share_role='editor'
 		))
 		FROM materials m
 		JOIN users owner ON owner.id=m.owner_user_id

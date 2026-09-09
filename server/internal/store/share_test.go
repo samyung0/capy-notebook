@@ -71,7 +71,7 @@ func TestWorkspaceCloneRejectsAPathReapedAfterItsSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='public' WHERE id=$1`, source.ID); err != nil {
+	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='public', share_role='editor' WHERE id=$1`, source.ID); err != nil {
 		t.Fatal(err)
 	}
 	path := "sources/" + uid("clone-fence")
@@ -523,7 +523,7 @@ func TestConcurrentWorkspaceClonesBothComplete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='public' WHERE id=$1`, source.ID); err != nil {
+	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='public', share_role='editor' WHERE id=$1`, source.ID); err != nil {
 		t.Fatal(err)
 	}
 	errs := make(chan error, len(targets))
@@ -558,7 +558,7 @@ func TestWorkspaceCloneDoesNotWaitForSourceRow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='public' WHERE id=$1`, source.ID); err != nil {
+	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='public', share_role='editor' WHERE id=$1`, source.ID); err != nil {
 		t.Fatal(err)
 	}
 	content, err := materialdoc.Marshal(materialdoc.Empty())
@@ -611,7 +611,7 @@ func TestWorkspaceCloneSerializesHistorySelectionWithTargetDowngrade(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='public' WHERE id=$1`,
+	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='public', share_role='editor' WHERE id=$1`,
 		workspace.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -701,7 +701,7 @@ func TestSuspendedSourceOwnerDoesNotHideSharedCloneSources(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := s.pool.Exec(ctx,
-		`UPDATE workspaces SET privacy='public' WHERE id=$1`, workspace.ID); err != nil {
+		`UPDATE workspaces SET privacy='public', share_role='editor' WHERE id=$1`, workspace.ID); err != nil {
 		t.Fatal(err)
 	}
 	content, err := materialdoc.Marshal(materialdoc.Empty())
@@ -900,7 +900,7 @@ func TestCloneMaterialUsesProjectionAndRehomesReferencedAssets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='public' WHERE id=$1`, workspace.ID); err != nil {
+	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='public', share_role='editor' WHERE id=$1`, workspace.ID); err != nil {
 		t.Fatal(err)
 	}
 	sourceAssetID := uid("asset")

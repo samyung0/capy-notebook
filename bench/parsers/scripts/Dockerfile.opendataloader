@@ -1,0 +1,17 @@
+# CPU-only OpenDataLoader candidate, separate from the unchanged MinerU image.
+ARG BASE_IMAGE=capy-parser-stress:current
+FROM ${BASE_IMAGE}
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      openjdk-17-jre-headless poppler-utils time \
+    && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir \
+      'opendataloader-pdf[hybrid]==2.5.7' 'docling==2.126.0' \
+      'rapidocr==3.9.2' 'pypdf[crypto]==6.18.0'
+ENV HF_HOME=/eval/models/huggingface \
+    HF_HUB_CACHE=/eval/models/huggingface/hub \
+    DOCLING_ARTIFACTS_PATH=/eval/models/docling \
+    OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2
+WORKDIR /eval
+ENTRYPOINT []
+CMD ["sleep", "infinity"]

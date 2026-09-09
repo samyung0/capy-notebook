@@ -3,16 +3,15 @@
 
 BEGIN;
 
-DELETE FROM attempts WHERE user_id IN ('u_owner', 'u_editor', 'u_commenter', 'u_viewer', 'u_other');
-DELETE FROM mistakes WHERE user_id IN ('u_owner', 'u_editor', 'u_commenter', 'u_viewer', 'u_other');
-DELETE FROM materials WHERE created_by IN ('u_owner', 'u_editor', 'u_commenter', 'u_viewer', 'u_other');
-DELETE FROM workspace_members WHERE user_id IN ('u_owner', 'u_editor', 'u_commenter', 'u_viewer', 'u_other');
-DELETE FROM workspaces WHERE user_id IN ('u_owner', 'u_editor', 'u_commenter', 'u_viewer', 'u_other');
+DELETE FROM attempts WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
+DELETE FROM mistakes WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
+DELETE FROM materials WHERE created_by IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
+DELETE FROM workspace_members WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
+DELETE FROM workspaces WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
 
 INSERT INTO users (id, name, email, class_label, streak) VALUES
   ('u_owner',  'E2E Owner',  'owner@capynotebook.test',  'E2E', 0),
   ('u_editor', 'E2E Editor', 'editor@capynotebook.test', 'E2E', 0),
-  ('u_commenter', 'E2E Commenter', 'commenter@capynotebook.test', 'E2E', 0),
   ('u_viewer', 'E2E Viewer', 'viewer@capynotebook.test', 'E2E', 0),
   ('u_other',  'E2E Other',  'other@capynotebook.test',  'E2E', 0)
 ON CONFLICT (id) DO UPDATE SET
@@ -22,7 +21,7 @@ ON CONFLICT (id) DO UPDATE SET
 INSERT INTO workspaces (id, user_id, name, color, privacy, share_role, created_at, last_accessed_at) VALUES
   ('ws_e2e_private', 'u_owner', 'E2E Private Workspace', 'green',  'private', 'viewer', now(), now()),
   ('ws_e2e_link',    'u_owner', 'E2E Link Workspace',    'purple', 'link',    'viewer', now(), now()),
-  ('ws_e2e_public',  'u_owner', 'E2E Public Workspace',  'blue',   'public',  'commenter', now(), now()),
+  ('ws_e2e_public',  'u_owner', 'E2E Public Workspace',  'blue',   'public',  'viewer', now(), now()),
   ('ws_e2e_edit',    'u_owner', 'E2E Editable Link Workspace', 'coral', 'link', 'editor', now(), now()),
   ('ws_e2e_invite',  'u_owner', 'E2E Invite Only Workspace', 'graphite', 'private', 'viewer', now(), now()),
   ('ws_e2e_mutate',  'u_owner', 'E2E Mutate Workspace',  'amber',  'private', 'viewer', now(), now())
@@ -40,7 +39,6 @@ INSERT INTO workspace_members (workspace_id, user_id, role) VALUES
   ('ws_e2e_invite',  'u_owner',  'owner'),
   ('ws_e2e_mutate',  'u_owner',  'owner'),
   ('ws_e2e_private', 'u_editor', 'editor'),
-  ('ws_e2e_private', 'u_commenter', 'commenter'),
   ('ws_e2e_private', 'u_viewer', 'viewer'),
   -- Invited as a viewer on a workspace whose link already grants editing, so
   -- the effective role has to resolve to the more permissive of the two.
@@ -134,8 +132,8 @@ INSERT INTO materials (
   ),
   (
     'note_e2e_public', 'u_owner', 'ws_e2e_public', 'E2E Public Workspace', 'note',
-    'E2E Commenter Note',
-    '{"schemaVersion":1,"value":[{"type":"h1","id":"note_e2e_public:title","children":[{"text":"E2E Commenter Note"}]},{"type":"p","id":"note_e2e_public:body","children":[{"text":"Suggest a clearer sentence"}]}]}'::jsonb,
+    'E2E Public Note',
+    '{"schemaVersion":1,"value":[{"type":"h1","id":"note_e2e_public:title","children":[{"text":"E2E Public Note"}]},{"type":"p","id":"note_e2e_public:body","children":[{"text":"Suggest a clearer sentence"}]}]}'::jsonb,
     'ch_e2e_public', '{}', '{}', 'private', 'blue', now(), now(), 1, 'u_owner'
   ),
   (

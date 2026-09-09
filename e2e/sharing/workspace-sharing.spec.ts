@@ -32,7 +32,7 @@ test.describe('workspace sharing', () => {
     ).toHaveCount(0);
   });
 
-  test('editor can edit but cannot share workspace privacy', async ({
+  test('editor member can edit and open workspace settings', async ({
     editorPage,
     seed,
   }) => {
@@ -50,9 +50,15 @@ test.describe('workspace sharing', () => {
     await expect(
       editorPage.getByRole('button', { name: /Add file/i })
     ).toBeVisible();
+    await openWorkspaceSharing(editorPage);
     await expect(
-      editorPage.getByRole('button', { name: 'Workspace settings' })
+      editorPage.getByRole('combobox', { name: 'Visibility' })
+    ).toBeVisible();
+    // Membership management stays with the owner.
+    await expect(
+      editorPage.getByRole('button', { exact: true, name: 'Invite' })
     ).toHaveCount(0);
+    await editorPage.keyboard.press('Escape');
     await expect(
       editorPage.getByRole('button', { name: 'Clone workspace' })
     ).toHaveCount(0);
@@ -171,18 +177,32 @@ test.describe('workspace sharing', () => {
     );
   });
 
-  test('signed-in viewer can clone a shared workspace; anonymous gets 401', async ({
+  test('viewer members clone a workspace; link viewers and anonymous cannot', async ({
     anonymousApi,
     otherApi,
     otherPage,
+    viewerApi,
+    viewerPage,
     seed,
   }) => {
-    const clonePromise = waitForApi(
-      otherPage,
-      apiEndsWith(`/api/workspaces/${seed.linkWorkspace.id}/clone`, 'POST')
-    );
     await otherPage.goto(`/workspaces/${seed.linkWorkspace.id}`);
-    await otherPage.getByRole('button', { name: 'Clone workspace' }).click();
+    await expect(
+      otherPage.getByRole('heading', { name: seed.linkWorkspace.name })
+    ).toBeVisible();
+    await expect(
+      otherPage.getByRole('button', { name: 'Clone workspace' })
+    ).toHaveCount(0);
+    const linkClone = await otherApi.post(
+      `/api/workspaces/${seed.linkWorkspace.id}/clone`
+    );
+    expect(linkClone.status()).toBe(404);
+
+    const clonePromise = waitForApi(
+      viewerPage,
+      apiEndsWith(`/api/workspaces/${seed.privateWorkspace.id}/clone`, 'POST')
+    );
+    await viewerPage.goto(`/workspaces/${seed.privateWorkspace.id}`);
+    await viewerPage.getByRole('button', { name: 'Clone workspace' }).click();
     const cloneRes = await clonePromise;
     expect(cloneRes.status()).toBe(201);
     const cloned = await cloneRes.json();
@@ -195,7 +215,7 @@ test.describe('workspace sharing', () => {
       );
       expect(anonClone.status()).toBe(401);
     } finally {
-      const removedClone = await otherApi.delete(
+      const removedClone = await viewerApi.delete(
         `/api/workspaces/${cloned.workspace.id}`
       );
       expect(removedClone.status()).toBe(204);
@@ -223,39 +243,41 @@ test.describe('workspace sharing', () => {
     expect(chapter.status()).toBe(404);
   });
 
-  test('shared roles grant material-only writes to signed-in users', async ({
+  test('share roles grant content authority but never workspace settings', async ({
     materialFactory,
     otherApi,
     seed,
   }) => {
-    const commenterFixture = await materialFactory.createNote({
-      blockId: 'shared-role-commenter-body',
-      body: 'Shared commenter base text',
-      title: 'E2E Shared Commenter Material',
+    const viewerFixture = await materialFactory.createNote({
+      blockId: 'shared-role-viewer-body',
+      body: 'Shared viewer base text',
+      title: 'E2E Shared Viewer Material',
       workspaceId: seed.publicWorkspace.id,
     });
-    const commenterMaterial = await otherApi.get(
-      `/api/materials/${commenterFixture.id}`
+    const viewerMaterial = await otherApi.get(
+      `/api/materials/${viewerFixture.id}`
     );
-    expect(commenterMaterial.status()).toBe(200);
-    const commenterBody = await commenterMaterial.json();
-    expect(commenterBody.content, JSON.stringify(commenterBody)).toBeDefined();
-    expect(commenterBody.capabilities).toMatchObject({
-      canComment: true,
+    expect(viewerMaterial.status()).toBe(200);
+    const viewerBody = await viewerMaterial.json();
+    expect(viewerBody.content, JSON.stringify(viewerBody)).toBeDefined();
+    expect(viewerBody.capabilities).toMatchObject({
       canEdit: false,
       canView: true,
     });
-
-    const commenterEdit = await otherApi.patch(
-      `/api/materials/${commenterFixture.id}/metadata`,
+    const viewerToken = await otherApi.post(
+      `/api/materials/${viewerFixture.id}/collaboration-token`
+    );
+    expect(viewerToken.status()).toBe(403);
+    const viewerEdit = await otherApi.patch(
+      `/api/materials/${viewerFixture.id}/metadata`,
       {
         data: {
-          expectedRevision: commenterBody.revision,
-          title: 'Commenters cannot rename',
+          expectedRevision: viewerBody.revision,
+          title: 'Viewers cannot rename',
         },
       }
     );
-    expect(commenterEdit.status()).toBe(403);
+    expect(viewerEdit.status()).toBe(403);
 
     const editorFixture = await materialFactory.createNote({
       blockId: 'shared-role-editor-body',
@@ -269,7 +291,6 @@ test.describe('workspace sharing', () => {
     expect(editorMaterial.status()).toBe(200);
     const editorBody = await editorMaterial.json();
     expect(editorBody.capabilities).toMatchObject({
-      canComment: true,
       canEdit: true,
       canView: true,
     });
@@ -280,26 +301,45 @@ test.describe('workspace sharing', () => {
     expect(collaborationToken.status()).toBe(201);
     expect(await collaborationToken.json()).toMatchObject({ access: 'write' });
 
+    // A share editor holds the same content authority as an editor member.
     const metadataEdit = await otherApi.patch(
       `/api/materials/${editorFixture.id}/metadata`,
       {
         data: {
           expectedRevision: editorBody.revision,
-          title: 'Shared editor must not rename',
+          title: 'Shared editor renamed',
         },
       }
     );
-    expect(metadataEdit.status()).toBe(403);
-
-    const remove = await otherApi.delete(`/api/materials/${editorFixture.id}`);
-    expect(remove.status()).toBe(404);
+    expect(metadataEdit.status()).toBe(200);
     const chapter = await otherApi.post(
       `/api/workspaces/${seed.editableWorkspace.id}/chapters`,
-      {
-        data: { name: 'Shared editors cannot add chapters' },
-      }
+      { data: { name: 'Shared editor chapter' } }
     );
-    expect(chapter.status()).toBe(404);
+    expect(chapter.status()).toBe(201);
+    const removedChapter = await otherApi.delete(
+      `/api/chapters/${(await chapter.json()).id}`
+    );
+    expect(removedChapter.status()).toBe(204);
+    const remove = await otherApi.delete(`/api/materials/${editorFixture.id}`);
+    expect(remove.status()).toBe(204);
+
+    // Workspace settings still answer to persisted membership and refuse
+    // non-disclosingly like every other workspace mutation.
+    const rename = await otherApi.patch(
+      `/api/workspaces/${seed.editableWorkspace.id}`,
+      { data: { name: 'Shared editors cannot rename the workspace' } }
+    );
+    expect(rename.status()).toBe(404);
+    const reshare = await otherApi.patch(
+      `/api/workspaces/${seed.editableWorkspace.id}/sharing`,
+      { data: { privacy: 'private' } }
+    );
+    expect(reshare.status()).toBe(404);
+    const stats = await otherApi.get(
+      `/api/workspaces/${seed.editableWorkspace.id}/stats`
+    );
+    expect(stats.status()).toBe(404);
   });
 
   test('a viewer member is raised by a more permissive share role', async ({
@@ -318,7 +358,6 @@ test.describe('workspace sharing', () => {
     expect(material.status()).toBe(200);
     const body = await material.json();
     expect(body.capabilities).toMatchObject({
-      canComment: true,
       canEdit: true,
       canView: true,
     });
@@ -329,34 +368,40 @@ test.describe('workspace sharing', () => {
     expect(collaborationToken.status()).toBe(201);
     expect(await collaborationToken.json()).toMatchObject({ access: 'write' });
 
-    // The raise covers document collaboration only. Metadata and workspace
-    // structure still answer to the persisted viewer membership.
+    // The raise covers content. Workspace settings still answer to the
+    // persisted viewer membership.
     const metadataEdit = await viewerApi.patch(
       `/api/materials/${fixture.id}/metadata`,
       {
         data: {
           expectedRevision: body.revision,
-          title: 'A raised viewer must not rename',
+          title: 'A raised viewer renamed',
         },
       }
     );
-    expect(metadataEdit.status()).toBe(403);
+    expect(metadataEdit.status()).toBe(200);
 
-    const chapter = await viewerApi.post(
-      `/api/workspaces/${seed.editableWorkspace.id}/chapters`,
-      { data: { name: 'A raised viewer cannot add chapters' } }
+    const rename = await viewerApi.patch(
+      `/api/workspaces/${seed.editableWorkspace.id}`,
+      { data: { name: 'A raised viewer cannot rename the workspace' } }
     );
-    expect(chapter.status()).toBe(404);
+    expect(rename.status()).toBe(404);
   });
 
-  test('the mention directory is redacted and gated on commenting', async ({
+  test('the mention directory is redacted and gated on editing', async ({
     anonymousApi,
     otherApi,
     ownerApi,
     seed,
   }) => {
-    const shared = await otherApi.get(
+    // A public viewer cannot comment, so it gets no directory.
+    const viewer = await otherApi.get(
       `/api/workspaces/${seed.publicWorkspace.id}/collaborators`
+    );
+    expect(viewer.status()).toBe(403);
+
+    const shared = await otherApi.get(
+      `/api/workspaces/${seed.editableWorkspace.id}/collaborators`
     );
     expect(shared.status()).toBe(200);
     const directory = await shared.json();
@@ -368,9 +413,9 @@ test.describe('workspace sharing', () => {
     }
 
     // The full roster stays membership-gated, so the same caller cannot reach
-    // the emails and roles through the members endpoint.
+    // the roles through the members endpoint.
     const roster = await otherApi.get(
-      `/api/workspaces/${seed.publicWorkspace.id}/members`
+      `/api/workspaces/${seed.editableWorkspace.id}/members`
     );
     expect(roster.status()).toBe(403);
 
@@ -381,9 +426,12 @@ test.describe('workspace sharing', () => {
     expect(anonymous.status()).toBe(401);
 
     const ownerRoster = await ownerApi.get(
-      `/api/workspaces/${seed.publicWorkspace.id}/members`
+      `/api/workspaces/${seed.editableWorkspace.id}/members`
     );
     expect(ownerRoster.status()).toBe(200);
-    expect((await ownerRoster.json())[0]).toHaveProperty('email');
+    for (const member of await ownerRoster.json()) {
+      expect(member).toHaveProperty('role');
+      expect(member).not.toHaveProperty('email');
+    }
   });
 });

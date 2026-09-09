@@ -179,8 +179,8 @@ export const workspaces: Workspace[] = [
   {
     autoReindex: true,
     autoReparse: true,
+    canClone: true,
     capabilities: {
-      canComment: true,
       canEdit: true,
       canManageMembers: true,
       canView: true,
@@ -204,8 +204,8 @@ export const workspaces: Workspace[] = [
   {
     autoReindex: true,
     autoReparse: true,
+    canClone: true,
     capabilities: {
-      canComment: true,
       canEdit: true,
       canManageMembers: true,
       canView: true,
@@ -229,8 +229,8 @@ export const workspaces: Workspace[] = [
   {
     autoReindex: true,
     autoReparse: true,
+    canClone: true,
     capabilities: {
-      canComment: true,
       canEdit: true,
       canManageMembers: true,
       canView: true,
@@ -254,8 +254,8 @@ export const workspaces: Workspace[] = [
   {
     autoReindex: true,
     autoReparse: true,
+    canClone: true,
     capabilities: {
-      canComment: true,
       canEdit: true,
       canManageMembers: true,
       canView: true,
@@ -279,8 +279,8 @@ export const workspaces: Workspace[] = [
   {
     autoReindex: true,
     autoReparse: true,
+    canClone: true,
     capabilities: {
-      canComment: true,
       canEdit: true,
       canManageMembers: true,
       canView: true,
@@ -297,7 +297,7 @@ export const workspaces: Workspace[] = [
     name: 'English Literature',
     privacy: 'public',
     role: 'owner',
-    shareRole: 'commenter',
+    shareRole: 'viewer',
     storageOwnerName: user.name,
     tags: ct('tag_8', 'tag_9'),
   },
@@ -1120,7 +1120,6 @@ export const canvases: ThinkingCanvas[] = [
 
 /* ---------------- study materials (mindmaps / diagrams) ---------------- */
 const ownerCapabilities = {
-  canComment: true,
   canEdit: true,
   canManageMembers: true,
   canView: true,
@@ -1297,14 +1296,18 @@ export const publicWorkspaces: PublicWorkspace[] = [
     name: 'AP Biology — full course',
     privacy: 'public',
   },
+  // A public viewer share role: readable, not clonable, no membership role.
   {
     ...workspaces[2],
     author: 'historyhub',
+    canClone: false,
+    capabilities: { canEdit: false, canManageMembers: false, canView: true },
     clones: 860,
     id: 'pub_ws_2',
     isOwner: false,
     name: 'Modern World History',
     privacy: 'public',
+    role: undefined,
   },
 ];
 export const publicQuizzes: PublicQuiz[] = [

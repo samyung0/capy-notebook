@@ -1561,12 +1561,11 @@ an applied file changes (`server/internal/store/migrate.go`), so schema work
 needs a database the developer can drop or migrate forward: the gateway,
 Postgres and Redis run locally on the Clerk development instance for that.
 
-Create five synthetic accounts. Dedicated inbox aliases are sufficient if the
+Create four synthetic accounts. Dedicated inbox aliases are sufficient if the
 mail provider routes them separately:
 
 - owner: creates the private fixture;
 - editor: invited with edit access;
-- commenter: invited with comment access;
 - viewer: invited with view access;
 - other: never invited, used to check cross-tenant denial.
 
@@ -1708,7 +1707,7 @@ After Clerk webhooks are healthy and the UAT deployment is stable:
 
 1. Sign in as the synthetic owner and create one private workspace and one
    small, non-sensitive material.
-2. Invite the editor, commenter, and viewer with their matching roles. Sign in
+2. Invite the editor and viewer with their matching roles. Sign in
    as each account and accept every invitation.
 3. Leave the `other` account uninvited. It must receive the same not-found
    response as any unrelated tenant rather than learning that the fixture
@@ -1887,7 +1886,7 @@ creating accounts. The ignored environment file must select the UAT URLs and
 contain the UAT Clerk backend key. The script also verifies the key's primary
 Clerk domain before changing accounts.
 
-The approved emails are `capy-uat-{owner,editor,commenter,viewer,other}+clerk_test@stablestudio.org`.
+The approved emails are `capy-uat-{owner,editor,viewer,other}+clerk_test@stablestudio.org`.
 Missing users are created through Clerk's backend API with verified email
 addresses and no password or invitation. Existing users must remain active with
 the matching verified primary email. UAT browser tests use short-lived sign-in
@@ -1895,7 +1894,7 @@ tickets; the seed stores no reusable login tokens.
 
 The SQL transaction inserts missing application users, private workspace
 `ws_uat_authorization_v1`, and note `note_uat_authorization_v1`, assigning owner,
-editor, commenter and viewer membership. The other account remains uninvited.
+editor and viewer membership. The other account remains uninvited.
 Repeated runs preserve content and revision history. Identity, lifecycle,
 ownership or permission drift stops the transaction; it never resets accounts,
 restores deleted data or overwrites existing note content. Storage is accounted
@@ -1908,7 +1907,7 @@ pnpm uat:seed --file deploy/.env.uat --accounts-only
 ```
 
 GitHub UAT variables `UAT_OWNER_EMAIL`, `UAT_EDITOR_EMAIL`,
-`UAT_COMMENTER_EMAIL`, `UAT_VIEWER_EMAIL`, `UAT_OTHER_EMAIL`,
+`UAT_VIEWER_EMAIL`, `UAT_OTHER_EMAIL`,
 `UAT_FIXTURE_WORKSPACE_ID` and `UAT_FIXTURE_MATERIAL_ID` must match the values
 above. Run `pnpm e2e:uat` after full initialization and a healthy deployment.
 

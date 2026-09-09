@@ -219,6 +219,12 @@
   color: var(--text-secondary);
   overflow-wrap: anywhere;
 }
+.summary-files li small {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--text-muted);
+}
 .summary-files svg {
   flex-shrink: 0;
   width: 17px;

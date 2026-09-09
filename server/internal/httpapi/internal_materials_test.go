@@ -53,7 +53,7 @@ func openInternalHTTPWithBlob(t *testing.T) (http.Handler, *store.Store, *blob.M
 		AuthDisabled:   true,
 		E2EAuth:        true,
 		E2ESecret:      "e2e-test-secret",
-		E2EUserIDs:     []string{"u_owner", "u_editor", "u_commenter", "u_viewer", "u_other"},
+		E2EUserIDs:     []string{"u_owner", "u_editor", "u_viewer", "u_other"},
 		ModelRegistry:  reg,
 		PipelineSecret: pipeSecret,
 	})

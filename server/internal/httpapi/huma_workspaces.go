@@ -51,18 +51,23 @@ func (a *api) registerWorkspaces(api huma.API) {
 	reg(api, http.MethodGet, "/api/workspaces/{id}/stats", "getWorkspaceStats", tag, "Workspace stats", http.StatusOK, a.getWorkspaceStats)
 }
 
-// ownedWorkspaceOutput renders a workspace the caller owns, resolving the
-// owner's storage state so the client can warn before the next write is
-// refused.
-func (a *api) ownedWorkspaceOutput(
+// workspaceOutputFor renders w with the requester's membership and effective
+// role, so an editor member or share-role editor gets the controls they hold,
+// and resolves the owner's storage state so the client can warn before the
+// next write is refused.
+func (a *api) workspaceOutputFor(
 	ctx context.Context,
 	w store.Workspace,
 ) (*workspaceOutput, error) {
+	member, effective, err := a.s.WorkspaceRoles(ctx, userID(ctx), w.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
 	ownerState, err := a.workspaceOwnerState(ctx, w)
 	if err != nil {
 		return nil, err
 	}
-	return &workspaceOutput{Body: apimodel.FromWorkspace(w, ownerState)}, nil
+	return &workspaceOutput{Body: apimodel.FromWorkspaceAccess(w, member, effective, ownerState)}, nil
 }
 
 func (a *api) listWorkspaces(ctx context.Context, in *listWorkspacesInput) (*workspacesOutput, error) {
@@ -76,23 +81,16 @@ func (a *api) listWorkspaces(ctx context.Context, in *listWorkspacesInput) (*wor
 	}
 	out := make([]apimodel.Workspace, len(res))
 	for i, workspace := range res {
-		role, err := a.s.WorkspaceRole(ctx, userID(ctx), workspace.ID)
-		if err != nil {
-			return nil, hErr(err)
-		}
-		out[i] = apimodel.FromWorkspaceAccess(workspace, role, ownerStates[workspace.OwnerUserID])
+		effective := store.EffectiveRole(workspace.MemberRole, workspace.Privacy, workspace.ShareRole)
+		out[i] = apimodel.FromWorkspaceAccess(workspace, workspace.MemberRole, effective, ownerStates[workspace.OwnerUserID])
 	}
 	return &workspacesOutput{Body: out}, nil
 }
 
 func (a *api) getWorkspace(ctx context.Context, in *workspaceIDInput) (*workspaceOutput, error) {
-	// Owners get a normal (touching) read; non-owners may view link/public
-	// workspaces read-only.
+	// Owners get a normal (touching) read; everyone else with access reads the
+	// shared projection.
 	isOwner, err := a.workspaceRead(ctx, in.ID)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	role, err := a.s.WorkspaceRole(ctx, userID(ctx), in.ID)
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -105,11 +103,7 @@ func (a *api) getWorkspace(ctx context.Context, in *workspaceIDInput) (*workspac
 	if err != nil {
 		return nil, hErr(err)
 	}
-	ownerState, err := a.workspaceOwnerState(ctx, res)
-	if err != nil {
-		return nil, err
-	}
-	return &workspaceOutput{Body: apimodel.FromWorkspaceAccess(res, role, ownerState)}, nil
+	return a.workspaceOutputFor(ctx, res)
 }
 
 func (a *api) createWorkspace(ctx context.Context, in *createWorkspaceInput) (*workspaceOutput, error) {
@@ -123,11 +117,11 @@ func (a *api) createWorkspace(ctx context.Context, in *createWorkspaceInput) (*w
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return a.ownedWorkspaceOutput(ctx, res)
+	return a.workspaceOutputFor(ctx, res)
 }
 
 // updateWorkspace changes descriptive metadata, none of which moves stored content bytes, so
-// an over-quota account keeps them.
+// an over-quota account keeps them. Owner and editor members only.
 func (a *api) updateWorkspace(ctx context.Context, in *updateWorkspaceInput) (*workspaceOutput, error) {
 	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
@@ -144,14 +138,13 @@ func (a *api) updateWorkspace(ctx context.Context, in *updateWorkspaceInput) (*w
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return a.ownedWorkspaceOutput(ctx, res)
+	return a.workspaceOutputFor(ctx, res)
 }
 
-// updateWorkspaceSharing stays on the strict gate. Publishing a workspace puts
-// it on Explore where every clone is charged to the cloner, so it is an
-// exposure change rather than a size-neutral edit.
+// updateWorkspaceSharing widens exposure of the owner's bytes, so the store
+// gates it on the owner's lifecycle; the actor only needs a mutating session.
 func (a *api) updateWorkspaceSharing(ctx context.Context, in *updateWorkspaceSharingInput) (*workspaceOutput, error) {
-	if err := a.requireAccountEdit(ctx); err != nil {
+	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
 	res, err := a.s.UpdateWorkspaceSharing(
@@ -164,7 +157,7 @@ func (a *api) updateWorkspaceSharing(ctx context.Context, in *updateWorkspaceSha
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return a.ownedWorkspaceOutput(ctx, res)
+	return a.workspaceOutputFor(ctx, res)
 }
 
 func (a *api) deleteWorkspace(ctx context.Context, in *workspaceIDInput) (*Empty, error) {

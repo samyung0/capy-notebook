@@ -1,6 +1,7 @@
-import { Link } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import {
+  useCloneWorkspace,
   useDeleteWorkspace,
   useUpdateWorkspace,
   useUpdateWorkspaceSharing,
@@ -11,7 +12,9 @@ import { Menu } from '@/components/ui/Menu';
 import { ShareDialog } from '@/features/workspace/ShareDialog';
 import { WorkspaceFormEditDialog } from '@/features/workspace/WorkspaceFormEditDialog';
 import { m } from '@/i18n';
+import { toastCloneError } from '@/lib/authToasts';
 import { cn } from '@/lib/cn';
+import { trackItemCloned } from '@/lib/observability';
 import { userColorPair } from '@/lib/userColor';
 import { Badge } from './Badge';
 import { Card } from './Card';
@@ -27,7 +30,56 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
   const [shareOpen, setShareOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const { isPending: cloneIsPending, mutate: cloneWorkspace } =
+    useCloneWorkspace();
+  const navigate = useNavigate();
   const canManage = workspace.capabilities.canManageMembers;
+  const menuItems = [
+    ...(canManage
+      ? [
+          {
+            icon: 'settings' as const,
+            label: m.action_edit(),
+            onClick: () => setEditOpen(true),
+          },
+          {
+            icon: 'link' as const,
+            label: m.action_share(),
+            onClick: () => setShareOpen(true),
+          },
+        ]
+      : []),
+    ...(workspace.canClone
+      ? [
+          {
+            disabled: cloneIsPending,
+            icon: 'plus' as const,
+            label: m.action_clone_workspace(),
+            onClick: () =>
+              cloneWorkspace(workspace.id, {
+                onError: (err) => toastCloneError(err, 'workspace'),
+                onSuccess: ({ workspace: cloned }) => {
+                  trackItemCloned('workspace');
+                  navigate({
+                    params: { workspaceId: cloned.id },
+                    to: '/workspaces/$workspaceId',
+                  });
+                },
+              }),
+          },
+        ]
+      : []),
+    ...(canManage
+      ? [
+          {
+            danger: true,
+            icon: 'trash' as const,
+            label: m.action_delete(),
+            onClick: () => setConfirmDelete(true),
+          },
+        ]
+      : []),
+  ];
   return (
     <div className="relative">
       <Link
@@ -84,31 +136,15 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
           </div>
         </Card>
       </Link>
+      {menuItems.length > 0 && (
+        <div className="absolute top-3 right-3 z-50">
+          <Menu items={menuItems} />
+        </div>
+      )}
       {canManage && (
         <>
-          <div className="absolute top-3 right-3 z-50">
-            <Menu
-              items={[
-                {
-                  icon: 'settings',
-                  label: m.action_edit(),
-                  onClick: () => setEditOpen(true),
-                },
-                {
-                  icon: 'link',
-                  label: m.action_share(),
-                  onClick: () => setShareOpen(true),
-                },
-                {
-                  danger: true,
-                  icon: 'trash',
-                  label: m.action_delete(),
-                  onClick: () => setConfirmDelete(true),
-                },
-              ]}
-            />
-          </div>
           <ShareDialog
+            canManageMembers
             link={`/w/${workspace.id}`}
             onClose={() => setShareOpen(false)}
             onPrivacyChange={(privacy) =>

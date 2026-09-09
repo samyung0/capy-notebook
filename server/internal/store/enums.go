@@ -62,14 +62,13 @@ func (Privacy) Schema(r huma.Registry) *huma.Schema {
 type WorkspaceRole string
 
 const (
-	RoleOwner     WorkspaceRole = "owner"
-	RoleEditor    WorkspaceRole = "editor"
-	RoleCommenter WorkspaceRole = "commenter"
-	RoleViewer    WorkspaceRole = "viewer"
+	RoleOwner  WorkspaceRole = "owner"
+	RoleEditor WorkspaceRole = "editor"
+	RoleViewer WorkspaceRole = "viewer"
 )
 
 func (WorkspaceRole) Schema(r huma.Registry) *huma.Schema {
-	return enumRef(r, "WorkspaceRole", "owner", "editor", "commenter", "viewer")
+	return enumRef(r, "WorkspaceRole", "owner", "editor", "viewer")
 }
 
 // AssignableRole is a workspace member role that can be granted through invite
@@ -77,43 +76,37 @@ func (WorkspaceRole) Schema(r huma.Registry) *huma.Schema {
 type AssignableRole string
 
 const (
-	AssignableEditor    AssignableRole = "editor"
-	AssignableCommenter AssignableRole = "commenter"
-	AssignableViewer    AssignableRole = "viewer"
+	AssignableEditor AssignableRole = "editor"
+	AssignableViewer AssignableRole = "viewer"
 )
 
 func (AssignableRole) Schema(r huma.Registry) *huma.Schema {
-	return enumRef(r, "AssignableRole", "editor", "commenter", "viewer")
+	return enumRef(r, "AssignableRole", "editor", "viewer")
 }
 
 func (r AssignableRole) WorkspaceRole() WorkspaceRole {
 	return WorkspaceRole(r)
 }
 
-// ShareRole is the effective material role granted to signed-in nonmembers
-// when a workspace is visible by link or publicly. It intentionally excludes
-// owner: workspace structure remains governed by persisted membership.
+// ShareRole is the role granted to every signed-in nonmember when a workspace
+// is visible by link or publicly. It excludes owner: workspace settings and
+// membership stay with persisted membership.
 type ShareRole string
 
 const (
-	ShareEditor    ShareRole = "editor"
-	ShareCommenter ShareRole = "commenter"
-	ShareViewer    ShareRole = "viewer"
+	ShareEditor ShareRole = "editor"
+	ShareViewer ShareRole = "viewer"
 )
 
 func (ShareRole) Schema(r huma.Registry) *huma.Schema {
-	return enumRef(r, "ShareRole", "editor", "commenter", "viewer")
+	return enumRef(r, "ShareRole", "editor", "viewer")
 }
 
 func (r ShareRole) WorkspaceRole() WorkspaceRole {
-	switch r {
-	case ShareEditor:
+	if r == ShareEditor {
 		return RoleEditor
-	case ShareCommenter:
-		return RoleCommenter
-	default:
-		return RoleViewer
 	}
+	return RoleViewer
 }
 
 // MaterialKind is the canonical persisted kind for a study material.

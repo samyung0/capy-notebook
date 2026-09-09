@@ -19,7 +19,7 @@ export function EditorCommandPalette() {
   const dialogs = useOptionalNoteBlockDialogs();
   const collaboration = useCollaborationActions();
   const enabled = useNoteEditorPrefs((state) => state.enabled);
-  const { canComment, mode } = useEditorRuntime();
+  const { canEdit, mode } = useEditorRuntime();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
 
@@ -36,7 +36,7 @@ export function EditorCommandPalette() {
 
   const commands = useMemo(() => {
     const comment: EditorCommand | null =
-      canComment && collaboration
+      canEdit && collaboration
         ? {
             get description() {
               return m.editor_comment_selection();
@@ -60,7 +60,7 @@ export function EditorCommandPalette() {
         (command.id === 'comment' || isEditorCommandAllowed(mode, command)) &&
         commandMatches(command, query)
     );
-  }, [canComment, collaboration, enabled, mode, query]);
+  }, [canEdit, collaboration, enabled, mode, query]);
 
   if (!open) return null;
   return (

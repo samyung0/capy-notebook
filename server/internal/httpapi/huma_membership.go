@@ -64,13 +64,18 @@ func collaborationError(err error) error {
 	return hErr(err)
 }
 
+// listWorkspaceMembers is non-disclosing: no read access at all answers 404,
+// a reader who is not a member answers 403.
 func (a *api) listWorkspaceMembers(ctx context.Context, in *workspaceIDInput) (*workspaceMembersOutput, error) {
-	role, err := a.s.WorkspaceRole(ctx, userID(ctx), in.ID)
-	if err != nil || role == "" {
-		if err == nil {
-			err = store.ErrForbidden
-		}
-		return nil, collaborationError(err)
+	member, effective, err := a.s.WorkspaceRoles(ctx, userID(ctx), in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	if effective == "" {
+		return nil, hErr(store.ErrNotFound)
+	}
+	if member == "" {
+		return nil, collaborationError(store.ErrForbidden)
 	}
 	members, err := a.s.ListWorkspaceMembers(ctx, in.ID)
 	if err != nil {
@@ -80,9 +85,9 @@ func (a *api) listWorkspaceMembers(ctx context.Context, in *workspaceIDInput) (*
 }
 
 // listWorkspaceCollaborators serves the mention menu. It is gated on the
-// effective comment role rather than membership, because a signed-in visitor
-// to a shared workspace can write comments and needs names to mention. The
-// payload is redacted accordingly; the full roster stays owner-facing.
+// effective role rather than membership, because a share-role editor can
+// write comments and needs names to mention. The full roster with roles stays
+// member-facing.
 func (a *api) listWorkspaceCollaborators(
 	ctx context.Context,
 	in *workspaceIDInput,
@@ -91,7 +96,7 @@ func (a *api) listWorkspaceCollaborators(
 	if err != nil {
 		return nil, collaborationError(err)
 	}
-	if !store.RoleCanComment(role) {
+	if !store.RoleCanEdit(role) {
 		return nil, collaborationError(store.ErrForbidden)
 	}
 	collaborators, err := a.s.ListWorkspaceCollaborators(ctx, in.ID)
@@ -172,7 +177,7 @@ func (a *api) transferWorkspace(ctx context.Context, in *transferWorkspaceInput)
 	if err != nil {
 		return nil, collaborationError(err)
 	}
-	return a.ownedWorkspaceOutput(ctx, ws)
+	return a.workspaceOutputFor(ctx, ws)
 }
 
 func (a *api) removeWorkspaceMember(ctx context.Context, in *workspaceMemberInput) (*Empty, error) {

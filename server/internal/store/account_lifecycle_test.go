@@ -508,7 +508,7 @@ func TestCancelDeletionRestoresOwnedWorkspaceAccessAndSharing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='public' WHERE id=$1`,
+	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='public', share_role='editor' WHERE id=$1`,
 		workspace.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -518,7 +518,7 @@ func TestCancelDeletionRestoresOwnedWorkspaceAccessAndSharing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='link' WHERE id=$1`,
+	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='link', share_role='editor' WHERE id=$1`,
 		linkWorkspace.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -563,7 +563,7 @@ func TestCancelDeletionRestoresOwnedWorkspaceAccessAndSharing(t *testing.T) {
 	if !slices.ContainsFunc(listed, func(item Workspace) bool { return item.ID == workspace.ID }) {
 		t.Fatalf("restored workspace missing from member listing: %#v", listed)
 	}
-	public, err := s.ListPublicWorkspaces(ctx)
+	public, err := s.ListPublicWorkspaces(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -871,7 +871,7 @@ func TestDeletionPendingHidesContentAndCancelsAsyncWork(t *testing.T) {
 	if _, err := s.WorkspaceAccess(ctx, viewerID, workspace.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("direct shared access error=%v, want not found", err)
 	}
-	public, err := s.ListPublicWorkspaces(ctx)
+	public, err := s.ListPublicWorkspaces(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}

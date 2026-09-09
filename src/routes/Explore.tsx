@@ -86,26 +86,28 @@ export default function Explore() {
                     <p className="t-meta mt-1 text-fg-muted">
                       by {w.author} · {w.clones.toLocaleString()} clones
                     </p>
-                    <Button
-                      className="mt-3"
-                      disabled={cloneWorkspaceIsPending}
-                      iconLeft="plus"
-                      onClick={() =>
-                        cloneWorkspace(w.id, {
-                          onSuccess: ({ workspace }) => {
-                            trackItemCloned('workspace');
-                            navigate({
-                              params: { workspaceId: workspace.id },
-                              to: '/workspaces/$workspaceId',
-                            });
-                          },
-                        })
-                      }
-                      size="sm"
-                      variant="outline"
-                    >
-                      {m.action_clone_workspace()}
-                    </Button>
+                    {w.canClone && (
+                      <Button
+                        className="mt-3"
+                        disabled={cloneWorkspaceIsPending}
+                        iconLeft="plus"
+                        onClick={() =>
+                          cloneWorkspace(w.id, {
+                            onSuccess: ({ workspace }) => {
+                              trackItemCloned('workspace');
+                              navigate({
+                                params: { workspaceId: workspace.id },
+                                to: '/workspaces/$workspaceId',
+                              });
+                            },
+                          })
+                        }
+                        size="sm"
+                        variant="outline"
+                      >
+                        {m.action_clone_workspace()}
+                      </Button>
+                    )}
                   </Card>
                 );
               })}

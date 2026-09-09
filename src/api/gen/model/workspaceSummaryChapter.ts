@@ -4,8 +4,9 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { WorkspaceSummaryFile } from './workspaceSummaryFile.ts';
 
 export interface WorkspaceSummaryChapter {
-  files: string[];
+  files: WorkspaceSummaryFile[];
   name: string;
 }

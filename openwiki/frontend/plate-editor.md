@@ -14,7 +14,8 @@ durable authority for material content after a room is initialized.
 - Go/PostgreSQL own metadata, permissions, comments, and revision projections.
 - `materials.content` is an eventually consistent Plate JSON read projection.
 - Viewers and study routes render that projection without joining Yjs.
-- Editors join with write access. Commenters join read-only to see live content.
+- Editors join with write access; their comment mode is read-only live content.
+- Viewers never join a room.
 
 ## Package boundary
 
@@ -40,12 +41,11 @@ PostgreSQL advisory/row lock in the sidecar.
 `materialModePolicy` exposes three modes:
 
 - `view`: static `MaterialPreview`; no token, WebSocket, awareness, or editor;
-- `comment`: live Plate in read-only mode with a `comment` room token;
+- `comment`: live Plate in read-only mode, an editor's mode for reviewing;
 - `edit`: live editable Plate with a `write` room token.
 
 Quiz and flashcard materials still default to their study/view surface.
-Commenters default to comment mode for ordinary Plate materials. Editors
-default to edit mode.
+Editors default to edit mode; viewers only get `view`.
 
 The permission boundary is layered:
 
@@ -53,17 +53,18 @@ The permission boundary is layered:
 2. Viewers receive no collaboration token.
 3. Hocuspocus verifies signature, issuer, audience, expiry, exact room, schema,
    access, and browser origin.
-4. Hocuspocus marks comment connections read-only, so a modified browser cannot
-   send Yjs document updates.
+4. Hocuspocus marks `comment` connections (the downgrade an editor receives
+   while the storage owner's account is locked) read-only, so a modified
+   browser cannot send Yjs document updates.
 5. `PlateContent` is read-only before the comment connection starts.
 6. Mutating plugins, slash commands, uploads, AI commands, and document toolbar
    actions are not mounted for comment mode.
-7. Comment REST endpoints independently enforce comment/edit ACLs.
+7. Comment REST endpoints independently enforce the editor ACL.
 
 `MaterialEffectiveRole` is the union of the caller's membership and the
 workspace share role, so a viewer member of a link-shared-for-editing workspace
-mints a `write` token. Structural authorization is unaffected; see
-[authorization](../authorization-permissions-lifecycles.md).
+mints a `write` token. See [authorization](../authorization-permissions-lifecycles.md)
+for the full matrix.
 
 ACL changes, sharing changes, and deletions publish room eviction events through
 Redis. Revocation, deletion, ownership/placement changes, and account locks use

@@ -69,11 +69,7 @@ export function NoteEditor({
     );
   }
 
-  const modeAllowed =
-    (mode === 'edit' && material.capabilities.canEdit) ||
-    (mode === 'comment' &&
-      (material.capabilities.canEdit || material.capabilities.canComment));
-  if (!modeAllowed) {
+  if (!material.capabilities.canEdit) {
     return (
       <FileError
         message={m.editor_mode_unavailable_body()}
@@ -143,7 +139,6 @@ function CollaborativeNoteEditor({
     errorBoundary: false,
   });
   const canEdit = material.capabilities.canEdit;
-  const canComment = material.capabilities.canComment || canEdit;
   // Identity matters more than the allocation: this context is read from inside
   // the document tree, so a fresh object on every render makes React walk every
   // node's fiber looking for consumers instead of bailing out at the top.
@@ -151,7 +146,6 @@ function CollaborativeNoteEditor({
   const runtime = useMemo<EditorRuntimeValue>(
     () => ({
       allowExternalAssets,
-      canComment,
       canEdit,
       currentUserId,
       materialId: material.id,
@@ -161,7 +155,6 @@ function CollaborativeNoteEditor({
     }),
     [
       allowExternalAssets,
-      canComment,
       canEdit,
       currentUserId,
       material.id,

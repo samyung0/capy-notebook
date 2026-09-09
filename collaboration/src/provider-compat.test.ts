@@ -23,7 +23,7 @@ afterEach(async () => {
 });
 
 describe('v3 provider and v4 server compatibility', () => {
-  it('converges writes and rejects commenter document updates', async () => {
+  it('converges writes and rejects comment-access document updates', async () => {
     const server = new Server({
       address: '127.0.0.1',
       async onAuthenticate({ connectionConfig, token }) {
@@ -46,21 +46,21 @@ describe('v3 provider and v4 server compatibility', () => {
     await synced(writer);
     writerDocument.getText('probe').insert(0, 'writer');
 
-    const commenterDocument = new Y.Doc();
-    const commenter = new HocuspocusProvider({
-      document: commenterDocument,
+    const commentDocument = new Y.Doc();
+    const commentOnly = new HocuspocusProvider({
+      document: commentDocument,
       name: 'material:test:schema:1',
       token: 'comment',
       url: server.webSocketURL,
     });
-    await synced(commenter);
-    expect(commenterDocument.getText('probe').toString()).toBe('writer');
+    await synced(commentOnly);
+    expect(commentDocument.getText('probe').toString()).toBe('writer');
 
-    commenterDocument.getText('probe').insert(6, '-commenter');
+    commentDocument.getText('probe').insert(6, '-comment');
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(writerDocument.getText('probe').toString()).toBe('writer');
 
-    commenter.destroy();
+    commentOnly.destroy();
     writer.destroy();
   });
 });

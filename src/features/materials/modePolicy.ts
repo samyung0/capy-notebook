@@ -3,7 +3,6 @@ import type { MaterialKind } from '@/api/types';
 export type MaterialMode = 'view' | 'edit' | 'comment';
 
 export interface MaterialModeCapabilities {
-  canComment: boolean;
   canEdit: boolean;
 }
 
@@ -18,8 +17,8 @@ export function materialModePolicy(
 ): MaterialModePolicy {
   const modes: MaterialMode[] = [];
 
-  if (capabilities.canEdit) modes.push('edit');
-  if (capabilities.canEdit || capabilities.canComment) modes.push('comment');
+  // Editors may edit, comment, or view; everyone else views statically.
+  if (capabilities.canEdit) modes.push('edit', 'comment');
   modes.push('view');
 
   return {
@@ -28,9 +27,7 @@ export function materialModePolicy(
         ? 'view'
         : capabilities.canEdit
           ? 'edit'
-          : capabilities.canComment
-            ? 'comment'
-            : 'view',
+          : 'view',
     modes,
   };
 }

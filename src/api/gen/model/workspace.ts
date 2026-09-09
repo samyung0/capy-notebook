@@ -17,6 +17,7 @@ export interface Workspace {
   readonly $schema?: string;
   autoReindex: boolean;
   autoReparse: boolean;
+  canClone: boolean;
   capabilities: AccessCapabilities;
   chapterCount: number;
   color: UserColor;

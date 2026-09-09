@@ -5,7 +5,7 @@ const workspaceId = process.env.UAT_FIXTURE_WORKSPACE_ID!;
 const materialId = process.env.UAT_FIXTURE_MATERIAL_ID!;
 test.describe.configure({ mode: 'serial' });
 
-for (const actor of ['owner', 'editor', 'commenter', 'viewer'] as const) {
+for (const actor of ['owner', 'editor', 'viewer'] as const) {
   test(`${actor} can read the private fixture workspace and member list`, async ({
     page,
   }) => {
@@ -29,24 +29,28 @@ test('an unrelated account cannot distinguish the private fixture from a missing
   ).toBe(404);
 });
 
-test('workspace statistics remain owner-only', async ({ page }) => {
-  await signIn(page, 'owner');
-  expect((await api(page, `/api/workspaces/${workspaceId}/stats`)).status).toBe(
-    200
-  );
+test('workspace statistics stay with owner and editor members', async ({
+  page,
+}) => {
+  for (const actor of ['owner', 'editor'] as const) {
+    await signOut(page);
+    await signIn(page, actor);
+    expect(
+      (await api(page, `/api/workspaces/${workspaceId}/stats`)).status
+    ).toBe(200);
+  }
 
-  for (const actor of ['editor', 'commenter', 'viewer', 'other'] as const) {
+  for (const actor of ['viewer', 'other'] as const) {
     await signOut(page);
     await signIn(page, actor);
     const response = await api(page, `/api/workspaces/${workspaceId}/stats`);
-    expect([403, 404]).toContain(response.status);
+    expect(response.status).toBe(404);
   }
 });
 
 for (const [actor, access] of [
   ['owner', 'write'],
   ['editor', 'write'],
-  ['commenter', 'comment'],
 ] as const) {
   test(`${actor} receives only ${access} collaboration access`, async ({
     page,
@@ -62,7 +66,12 @@ for (const [actor, access] of [
   });
 }
 
-for (const actor of ['viewer', 'other'] as const) {
+// A viewer can read the material and is refused; a stranger cannot learn it
+// exists.
+for (const [actor, status] of [
+  ['viewer', 403],
+  ['other', 404],
+] as const) {
   test(`${actor} cannot mint a collaboration token`, async ({ page }) => {
     await signIn(page, actor);
     const response = await api(
@@ -70,6 +79,6 @@ for (const actor of ['viewer', 'other'] as const) {
       `/api/materials/${materialId}/collaboration-token`,
       'POST'
     );
-    expect([403, 404]).toContain(response.status);
+    expect(response.status).toBe(status);
   });
 }

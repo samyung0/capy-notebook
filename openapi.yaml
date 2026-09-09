@@ -3,8 +3,6 @@ components:
     AccessCapabilities:
       additionalProperties: false
       properties:
-        canComment:
-          type: boolean
         canEdit:
           type: boolean
         canManageMembers:
@@ -14,7 +12,6 @@ components:
       required:
         - canView
         - canEdit
-        - canComment
         - canManageMembers
       type: object
     AccessTokenResp:
@@ -120,7 +117,6 @@ components:
     AssignableRole:
       enum:
         - editor
-        - commenter
         - viewer
       type: string
     Attempt:
@@ -2302,6 +2298,8 @@ components:
           type: boolean
         autoReparse:
           type: boolean
+        canClone:
+          type: boolean
         capabilities:
           $ref: "#/components/schemas/AccessCapabilities"
         chapterCount:
@@ -2365,6 +2363,7 @@ components:
         - lastAccessedAt
         - isOwner
         - capabilities
+        - canClone
         - storageOwnerName
       type: object
     Quiz:
@@ -2630,7 +2629,6 @@ components:
     ShareRole:
       enum:
         - editor
-        - commenter
         - viewer
       type: string
     Slot:
@@ -3823,6 +3821,8 @@ components:
           type: boolean
         autoReparse:
           type: boolean
+        canClone:
+          type: boolean
         capabilities:
           $ref: "#/components/schemas/AccessCapabilities"
         chapterCount:
@@ -3881,6 +3881,7 @@ components:
         - lastAccessedAt
         - isOwner
         - capabilities
+        - canClone
         - storageOwnerName
       type: object
     WorkspaceCollaborator:
@@ -3910,8 +3911,6 @@ components:
         createdAt:
           format: date-time
           type: string
-        email:
-          type: string
         name:
           type: string
         role:
@@ -3924,7 +3923,6 @@ components:
         - workspaceId
         - userId
         - name
-        - email
         - role
         - createdAt
       type: object
@@ -3932,7 +3930,6 @@ components:
       enum:
         - owner
         - editor
-        - commenter
         - viewer
       type: string
     WorkspaceStats:
@@ -4006,9 +4003,9 @@ components:
         description:
           type: string
         files:
-          description: Unfiled file names
+          description: Unfiled files
           items:
-            type: string
+            $ref: "#/components/schemas/WorkspaceSummaryFile"
           type: array
         name:
           type: string
@@ -4033,13 +4030,29 @@ components:
       properties:
         files:
           items:
-            type: string
+            $ref: "#/components/schemas/WorkspaceSummaryFile"
           type: array
         name:
           type: string
       required:
         - name
         - files
+      type: object
+    WorkspaceSummaryFile:
+      additionalProperties: false
+      properties:
+        addedAt:
+          format: date-time
+          type: string
+        name:
+          type: string
+        sizeBytes:
+          format: int64
+          type: integer
+      required:
+        - name
+        - sizeBytes
+        - addedAt
       type: object
 info:
   title: Capy Notebook API

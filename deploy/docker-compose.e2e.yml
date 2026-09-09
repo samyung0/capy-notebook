@@ -72,7 +72,7 @@ services:
       APP_ENV: e2e
       E2E_AUTH: "true"
       E2E_AUTH_SECRET: ${E2E_AUTH_SECRET:?E2E_AUTH_SECRET is required}
-      E2E_AUTH_USER_IDS: u_owner,u_editor,u_commenter,u_viewer,u_other
+      E2E_AUTH_USER_IDS: u_owner,u_editor,u_viewer,u_other
       APP_URL: ${APP_URL:-http://localhost:5173}
       REDIS_URL: redis://redis:6379/0
       COLLABORATION_SECRET: ${COLLABORATION_SECRET:-e2e-collaboration-secret}

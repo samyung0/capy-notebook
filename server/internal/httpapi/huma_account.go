@@ -216,7 +216,7 @@ func (a *api) setNotificationPrefs(ctx context.Context, in *notificationPrefsInp
 }
 
 func (a *api) exploreWorkspaces(ctx context.Context, _ *struct{}) (*publicWorkspacesOutput, error) {
-	res, err := a.s.ListPublicWorkspaces(ctx)
+	res, err := a.s.ListPublicWorkspaces(ctx, userID(ctx))
 	if err != nil {
 		return nil, hErr(err)
 	}

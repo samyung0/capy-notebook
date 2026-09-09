@@ -108,7 +108,6 @@ function mockCatalogModels() {
 }
 const ownerMaterialAccess = {
   capabilities: {
-    canComment: true,
     canEdit: true,
     canManageMembers: true,
     canView: true,
@@ -149,7 +148,6 @@ const mockWorkspaceInvites: MockWorkspaceInvite[] = [];
 const mockWorkspaceMembers: WorkspaceMember[] = [
   {
     createdAt: new Date().toISOString(),
-    email: 'morgan@example.com',
     name: 'Morgan Lee',
     role: 'editor',
     userId: 'u_mock_collaborator',
@@ -782,8 +780,8 @@ export const handlers = [
     const ws: Workspace = {
       autoReindex: true,
       autoReparse: true,
+      canClone: true,
       capabilities: {
-        canComment: true,
         canEdit: true,
         canManageMembers: true,
         canView: true,
@@ -1021,7 +1019,6 @@ export const handlers = [
     if (!alreadyListed) {
       mockWorkspaceMembers.push({
         createdAt: new Date().toISOString(),
-        email: db.user.email,
         name: db.user.name,
         role: 'editor',
         userId: db.user.id,
@@ -1030,7 +1027,6 @@ export const handlers = [
     }
     ws.role = 'editor';
     ws.capabilities = {
-      canComment: true,
       canEdit: true,
       canManageMembers: false,
       canView: true,
@@ -1056,8 +1052,7 @@ export const handlers = [
     const member: WorkspaceMember = {
       avatarUrl: candidate?.avatarUrl,
       createdAt: invite.acceptedAt,
-      email: invite.email,
-      name: candidate?.name ?? invite.email,
+      name: candidate?.name ?? invite.invitedUserId,
       role: invite.role,
       userId: invite.invitedUserId,
       workspaceId: invite.workspaceId,

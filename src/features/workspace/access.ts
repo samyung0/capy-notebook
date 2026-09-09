@@ -1,15 +1,17 @@
-import type { AccessCapabilities } from '@/api/types';
+import type { AccessCapabilities, Workspace } from '@/api/types';
 
-/** Workspace is editable when the API grants canEdit (owner or editor). */
+/** Workspace content is editable when the API grants canEdit: owner, editor
+ * member, or a link/public share-role editor. */
 export function isWorkspaceReadOnly(
   capabilities: AccessCapabilities | undefined | null
 ): boolean {
   return !capabilities?.canEdit;
 }
 
-/** Workspace Share/privacy is owner-only (canManageMembers). */
-export function canShareWorkspace(
-  capabilities: AccessCapabilities | undefined | null
+/** Settings (name, color, tags, sharing, stats) follow persisted membership:
+ * `role` is null for a share-role visitor, however permissive the link. */
+export function canManageWorkspaceSettings(
+  workspace: Pick<Workspace, 'role'> | undefined | null
 ): boolean {
-  return !!capabilities?.canManageMembers;
+  return workspace?.role === 'owner' || workspace?.role === 'editor';
 }

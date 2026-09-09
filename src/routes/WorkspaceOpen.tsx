@@ -64,7 +64,7 @@ import {
 } from '@/features/materials/openItem';
 import { AddSourceDialog } from '@/features/workspace/AddSourceDialog';
 import {
-  canShareWorkspace,
+  canManageWorkspaceSettings,
   isWorkspaceReadOnly,
 } from '@/features/workspace/access';
 import { ChatPanel } from '@/features/workspace/ChatPanel';
@@ -120,7 +120,8 @@ export default function WorkspaceOpen() {
   const { data: files } = useFiles(workspaceId);
   const { data: materials } = useMaterials(workspaceId);
   const readOnly = isWorkspaceReadOnly(ws?.capabilities);
-  const canShare = canShareWorkspace(ws?.capabilities);
+  const canShare = canManageWorkspaceSettings(ws);
+  const canClone = !!ws?.canClone;
   useIngestProgress(workspaceId, !readOnly);
   const { mutateAsync: addChapter } = useAddChapter(workspaceId);
   const { mutateAsync: updateChapter } = useUpdateChapter(workspaceId);
@@ -501,33 +502,35 @@ export default function WorkspaceOpen() {
               {ws?.name ?? '…'}
             </h1>
             {readOnly ? (
-              <Button
-                className="mt-4 h-fit w-full py-2"
-                disabled={cloneWorkspaceIsPending}
-                iconLeft="plus"
-                onClick={() =>
-                  cloneWorkspace(workspaceId, {
-                    onError: (err) => toastCloneError(err, 'workspace'),
-                    onSuccess: ({ workspace }) => {
-                      trackItemCloned('workspace');
-                      userToast({
-                        title: m.workspace_cloned(),
-                        variant: 'success',
-                      });
-                      navigate({
-                        params: { workspaceId: workspace.id },
-                        to: '/workspaces/$workspaceId',
-                      });
-                    },
-                  })
-                }
-                size="md"
-                variant="surface"
-              >
-                {cloneWorkspaceIsPending
-                  ? m.action_cloning()
-                  : m.action_clone_workspace()}
-              </Button>
+              canClone && (
+                <Button
+                  className="mt-4 h-fit w-full py-2"
+                  disabled={cloneWorkspaceIsPending}
+                  iconLeft="plus"
+                  onClick={() =>
+                    cloneWorkspace(workspaceId, {
+                      onError: (err) => toastCloneError(err, 'workspace'),
+                      onSuccess: ({ workspace }) => {
+                        trackItemCloned('workspace');
+                        userToast({
+                          title: m.workspace_cloned(),
+                          variant: 'success',
+                        });
+                        navigate({
+                          params: { workspaceId: workspace.id },
+                          to: '/workspaces/$workspaceId',
+                        });
+                      },
+                    })
+                  }
+                  size="md"
+                  variant="surface"
+                >
+                  {cloneWorkspaceIsPending
+                    ? m.action_cloning()
+                    : m.action_clone_workspace()}
+                </Button>
+              )
             ) : (
               <div
                 className={cn(

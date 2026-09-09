@@ -65,7 +65,6 @@ jobs:
           UAT_API_URL: ${{ vars.DEPLOYMENT_API_URL || vars.UAT_API_URL }}
           UAT_APP_URL: ${{ vars.DEPLOYMENT_APP_URL || vars.UAT_APP_URL }}
           UAT_COLLAB_URL: ${{ vars.DEPLOYMENT_COLLAB_URL || vars.UAT_COLLAB_URL }}
-          UAT_COMMENTER_EMAIL: ${{ vars.UAT_COMMENTER_EMAIL }}
           UAT_EDITOR_EMAIL: ${{ vars.UAT_EDITOR_EMAIL }}
           UAT_FIXTURE_MATERIAL_ID: ${{ vars.UAT_FIXTURE_MATERIAL_ID }}
           UAT_FIXTURE_WORKSPACE_ID: ${{ vars.UAT_FIXTURE_WORKSPACE_ID }}

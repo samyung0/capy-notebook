@@ -5,7 +5,6 @@ if (!configuredSecret) {
 export const E2E_SECRET = configuredSecret;
 
 export const users = {
-  commenter: 'u_commenter',
   editor: 'u_editor',
   other: 'u_other',
   owner: 'u_owner',
@@ -13,11 +12,6 @@ export const users = {
 } as const;
 
 export const seed = {
-  commenterNote: {
-    body: 'Suggest a clearer sentence',
-    id: 'note_e2e_public',
-    name: 'E2E Commenter Note',
-  },
   commentNote: {
     body: 'Comment on this selected sentence',
     id: 'note_e2e_comment',
@@ -82,6 +76,11 @@ export const seed = {
     front: 'Public front',
     id: 'dk_e2e_public',
     name: 'E2E Public Flashcards',
+  },
+  publicNote: {
+    body: 'Suggest a clearer sentence',
+    id: 'note_e2e_public',
+    name: 'E2E Public Note',
   },
   publicQuiz: {
     id: 'qz_e2e_public',

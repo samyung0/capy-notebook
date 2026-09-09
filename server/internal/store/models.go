@@ -48,12 +48,15 @@ type Workspace struct {
 	OwnerPlanTier PlanTier `json:"-"`
 	// OwnerName is that account's display name, so a member can be told whose
 	// limit is blocking them rather than a nameless "the owner".
-	OwnerName      string    `json:"ownerName"`
-	ChapterCount   int       `json:"chapterCount"`
-	FileCount      int       `json:"fileCount"`
-	FilesLimit     int       `json:"filesLimit"`
-	CreatedAt      time.Time `json:"createdAt"`
-	LastAccessedAt time.Time `json:"lastAccessedAt"`
+	OwnerName string `json:"ownerName"`
+	// MemberRole is the requester's persisted membership ("" for a visitor),
+	// filled by the listing queries so capabilities need no second lookup.
+	MemberRole     WorkspaceRole `json:"-"`
+	ChapterCount   int           `json:"chapterCount"`
+	FileCount      int           `json:"fileCount"`
+	FilesLimit     int           `json:"filesLimit"`
+	CreatedAt      time.Time     `json:"createdAt"`
+	LastAccessedAt time.Time     `json:"lastAccessedAt"`
 }
 
 // AccessCapabilities is request-scoped authorization metadata. It is never
@@ -61,7 +64,6 @@ type Workspace struct {
 type AccessCapabilities struct {
 	CanView          bool `json:"canView"`
 	CanEdit          bool `json:"canEdit"`
-	CanComment       bool `json:"canComment"`
 	CanManageMembers bool `json:"canManageMembers"`
 }
 
@@ -270,7 +272,6 @@ type WorkspaceMember struct {
 	WorkspaceID string        `json:"workspaceId"`
 	UserID      string        `json:"userId"`
 	Name        string        `json:"name"`
-	Email       string        `json:"email"`
 	AvatarURL   string        `json:"avatarUrl,omitempty"`
 	Role        WorkspaceRole `json:"role"`
 	CreatedAt   time.Time     `json:"createdAt"`

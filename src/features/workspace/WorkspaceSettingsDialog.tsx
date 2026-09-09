@@ -1,15 +1,20 @@
+import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import {
+  useCloneWorkspace,
   useUpdateWorkspace,
   useUpdateWorkspaceSharing,
   useWorkspaceStats,
 } from '@/api/hooks';
 import type { Workspace } from '@/api/types';
+import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Switch } from '@/components/ui/Switch';
 import { Tabs } from '@/components/ui/Tabs';
 import { m } from '@/i18n';
+import { toastCloneError } from '@/lib/authToasts';
+import { trackItemCloned } from '@/lib/observability';
 import { ShareDialog } from './ShareDialog';
 import { WorkspaceFormEditDialog } from './WorkspaceFormEditDialog';
 
@@ -40,6 +45,8 @@ export function WorkspaceSettingsDialog({
   const { mutateAsync: update, isPending: saving } = useUpdateWorkspace();
   const { mutateAsync: updateSharing, isPending: sharing } =
     useUpdateWorkspaceSharing();
+  const { isPending: cloning, mutate: cloneWorkspace } = useCloneWorkspace();
+  const navigate = useNavigate();
   const {
     data: stats,
     isPending,
@@ -70,16 +77,43 @@ export function WorkspaceSettingsDialog({
       />
       <div className="min-h-[360px] py-5">
         {tab === 'general' && (
-          <WorkspaceFormEditDialog
-            embedded
-            onSubmit={(values) => update({ ...values, id: workspace.id })}
-            open={open}
-            setOpen={onClose}
-            workspace={workspace}
-          />
+          <>
+            <WorkspaceFormEditDialog
+              embedded
+              onSubmit={(values) => update({ ...values, id: workspace.id })}
+              open={open}
+              setOpen={onClose}
+              workspace={workspace}
+            />
+            {workspace.canClone && (
+              <Button
+                className="mt-4"
+                disabled={cloning}
+                iconLeft="plus"
+                onClick={() =>
+                  cloneWorkspace(workspace.id, {
+                    onError: (err) => toastCloneError(err, 'workspace'),
+                    onSuccess: ({ workspace: cloned }) => {
+                      trackItemCloned('workspace');
+                      onClose();
+                      navigate({
+                        params: { workspaceId: cloned.id },
+                        to: '/workspaces/$workspaceId',
+                      });
+                    },
+                  })
+                }
+                size="sm"
+                variant="outline"
+              >
+                {cloning ? m.action_cloning() : m.action_clone_workspace()}
+              </Button>
+            )}
+          </>
         )}
         {tab === 'sharing' && (
           <ShareDialog
+            canManageMembers={workspace.capabilities.canManageMembers}
             embedded
             link={`/w/${workspace.id}`}
             onClose={onClose}

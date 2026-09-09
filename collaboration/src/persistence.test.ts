@@ -210,9 +210,10 @@ describe('live collaboration authorization', () => {
       ).commandConnectionAccess('material:mat_1:schema:1', 'u_editor')
     ).resolves.toBe('shrink');
     await expect(
-      documentStore(
-        liveRow({ member_role: 'commenter' })
-      ).commandConnectionAccess('material:mat_1:schema:1', 'u_commenter')
+      documentStore(liveRow({ member_role: 'viewer' })).commandConnectionAccess(
+        'material:mat_1:schema:1',
+        'u_viewer'
+      )
     ).rejects.toBeInstanceOf(CollaborationAuthorizationError);
   });
 

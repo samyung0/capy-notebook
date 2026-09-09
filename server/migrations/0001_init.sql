@@ -209,7 +209,7 @@ CREATE TABLE IF NOT EXISTS workspaces (
   created_at       timestamptz NOT NULL DEFAULT now(),
   last_accessed_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT workspaces_share_role_check
-    CHECK (share_role IN ('viewer', 'commenter', 'editor')),
+    CHECK (share_role IN ('viewer', 'editor')),
   CONSTRAINT workspaces_embedding_pin_check
     CHECK (embedding_provider_slug <> '' AND embedding_model_slug <> ''
       AND embedding_model_version > 0),
@@ -607,7 +607,7 @@ CREATE INDEX IF NOT EXISTS canvases_user_idx ON canvases(user_id);
 CREATE TABLE IF NOT EXISTS workspace_members (
   workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   user_id      text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  role         text NOT NULL CHECK (role IN ('owner','editor','commenter','viewer')),
+  role         text NOT NULL CHECK (role IN ('owner','editor','viewer')),
   created_at   timestamptz NOT NULL DEFAULT now(),
   updated_at   timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (workspace_id, user_id)
@@ -622,7 +622,7 @@ CREATE TABLE IF NOT EXISTS workspace_invites (
   workspace_id    text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   email           text NOT NULL CHECK (char_length(email) <= 254),
   invited_user_id text REFERENCES users(id) ON DELETE CASCADE,
-  role            text NOT NULL CHECK (role IN ('editor','commenter','viewer')),
+  role            text NOT NULL CHECK (role IN ('editor','viewer')),
   token_hash      bytea NOT NULL UNIQUE CHECK (octet_length(token_hash) = 32),
   invited_by      text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   accepted_by     text REFERENCES users(id) ON DELETE SET NULL,
@@ -3567,9 +3567,9 @@ BEGIN
           WHEN 'private' THEN 0 WHEN 'link' THEN 1 WHEN 'public' THEN 2
         END)
         AND (CASE OLD.share_role
-          WHEN 'viewer' THEN 0 WHEN 'commenter' THEN 1 WHEN 'editor' THEN 2
+          WHEN 'viewer' THEN 0 WHEN 'editor' THEN 1
         END) <= (CASE NEW.share_role
-          WHEN 'viewer' THEN 0 WHEN 'commenter' THEN 1 WHEN 'editor' THEN 2
+          WHEN 'viewer' THEN 0 WHEN 'editor' THEN 1
         END)
       )
     )
@@ -3591,11 +3591,9 @@ BEGIN
   IF TG_OP='INSERT' OR (
     TG_OP='UPDATE'
     AND (CASE OLD.role
-      WHEN 'viewer' THEN 0 WHEN 'commenter' THEN 1
-      WHEN 'editor' THEN 2 WHEN 'owner' THEN 3
+      WHEN 'viewer' THEN 0 WHEN 'editor' THEN 1 WHEN 'owner' THEN 2
     END) <= (CASE NEW.role
-      WHEN 'viewer' THEN 0 WHEN 'commenter' THEN 1
-      WHEN 'editor' THEN 2 WHEN 'owner' THEN 3
+      WHEN 'viewer' THEN 0 WHEN 'editor' THEN 1 WHEN 'owner' THEN 2
     END)
   )
   THEN

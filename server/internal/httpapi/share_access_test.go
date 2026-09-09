@@ -43,7 +43,7 @@ func openShareAPI(t *testing.T, pipe *pipeline.Client) http.Handler {
 		AuthDisabled:  true,
 		E2EAuth:       true,
 		E2ESecret:     "e2e-test-secret",
-		E2EUserIDs:    []string{"u_owner", "u_editor", "u_commenter", "u_viewer", "u_other"},
+		E2EUserIDs:    []string{"u_owner", "u_editor", "u_viewer", "u_other"},
 		ModelRegistry: reg,
 	})
 }
@@ -208,7 +208,6 @@ func TestCloudImportAuthorization(t *testing.T) {
 	}{
 		{"owner reaches request validation", "u_owner", map[string]any{}, http.StatusUnprocessableEntity},
 		{"editor reaches request validation", "u_editor", map[string]any{}, http.StatusUnprocessableEntity},
-		{"commenter is rejected", "u_commenter", map[string]any{"provider": "google", "fileIds": []string{"drive-file"}}, http.StatusNotFound},
 		{"viewer is rejected", "u_viewer", map[string]any{"provider": "google", "fileIds": []string{"drive-file"}}, http.StatusNotFound},
 	}
 	for _, tc := range cases {
@@ -230,7 +229,7 @@ func TestCloudImportAuthorization(t *testing.T) {
 	for _, endpoint := range []string{
 		"/api/workspaces/ws_e2e_private/sources/import-inspect",
 	} {
-		for _, user := range []string{"u_commenter", "u_viewer"} {
+		for _, user := range []string{"u_viewer"} {
 			rec := doReq(t, h, http.MethodPost, endpoint, user, map[string]any{
 				"provider": "google",
 				"fileIds":  []string{"drive-file"},
@@ -240,7 +239,7 @@ func TestCloudImportAuthorization(t *testing.T) {
 			}
 		}
 	}
-	for _, user := range []string{"u_commenter", "u_viewer"} {
+	for _, user := range []string{"u_viewer"} {
 		rec := doReq(
 			t,
 			h,
@@ -270,7 +269,6 @@ func TestFileReplacementAuthorizationAndRevisionGate(t *testing.T) {
 	}{
 		{name: "owner", user: "u_owner", status: http.StatusCreated},
 		{name: "editor", user: "u_editor", status: http.StatusCreated},
-		{name: "commenter", user: "u_commenter", status: http.StatusNotFound},
 		{name: "viewer", user: "u_viewer", status: http.StatusNotFound},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -372,17 +370,34 @@ func TestShareHTTPExploreAndAttempts(t *testing.T) {
 	}
 	var workspaces []map[string]any
 	_ = json.Unmarshal(rec.Body.Bytes(), &workspaces)
-	names := map[string]bool{}
+	names := map[string]map[string]any{}
 	for _, ws := range workspaces {
 		if n, ok := ws["name"].(string); ok {
-			names[n] = true
+			names[n] = ws
 		}
 	}
-	if !names["E2E Public Workspace"] {
+	public, ok := names["E2E Public Workspace"]
+	if !ok {
 		t.Fatalf("public workspace missing from explore: %#v", names)
 	}
-	if names["E2E Link Workspace"] {
+	if _, ok := names["E2E Link Workspace"]; ok {
 		t.Fatal("link workspace must not appear on explore")
+	}
+	// Explore rows carry the caller's real grant: a public viewer share role
+	// reads but cannot clone, and no membership means no role.
+	if public["canClone"] != false || public["isOwner"] != false || public["role"] != nil {
+		t.Fatalf("visitor explore row = %#v", public)
+	}
+	rec = doReq(t, h, http.MethodGet, "/api/explore/workspaces", "u_owner", nil)
+	if rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	workspaces = nil
+	_ = json.Unmarshal(rec.Body.Bytes(), &workspaces)
+	for _, ws := range workspaces {
+		if ws["name"] == "E2E Public Workspace" && (ws["canClone"] != true || ws["isOwner"] != true || ws["role"] != "owner") {
+			t.Fatalf("owner explore row = %#v", ws)
+		}
 	}
 
 	rec = doReq(t, h, http.MethodPost, "/api/quizzes/qz_e2e_link/attempts", "", map[string]any{
@@ -427,7 +442,7 @@ func TestQuizAndFlashcardCapabilitiesSeparateEditorsFromOwners(t *testing.T) {
 		{path: "/api/quizzes/qz_e2e_private", userID: "u_editor", canEdit: true},
 		{path: "/api/quizzes/qz_e2e_private", userID: "u_viewer"},
 		{path: "/api/flashcards/dk_e2e_private", userID: "u_editor", canEdit: true},
-		{path: "/api/flashcards/dk_e2e_private", userID: "u_commenter"},
+		{path: "/api/flashcards/dk_e2e_private", userID: "u_viewer"},
 		{path: "/api/flashcards/dk_e2e_link", userID: "u_other"},
 	} {
 		rec := doReq(t, h, http.MethodGet, tc.path, tc.userID, nil)

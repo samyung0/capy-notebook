@@ -26,10 +26,8 @@ var subjectTemplates = map[string]string{
 
 // roleLabels holds workspace role names keyed by "<role>.<locale>".
 var roleLabels = map[string]string{
-	"commenter.en": "Commenter",
-	"commenter.zh": "评论者",
-	"editor.en":    "Editor",
-	"editor.zh":    "编辑者",
-	"viewer.en":    "Viewer",
-	"viewer.zh":    "查看者",
+	"editor.en": "Editor",
+	"editor.zh": "编辑者",
+	"viewer.en": "Viewer",
+	"viewer.zh": "查看者",
 }

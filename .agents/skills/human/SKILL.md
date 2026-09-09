@@ -6,13 +6,13 @@ description: >
 
 # Human
 
-We face issues in normal flows: user decisions get lost during complex work because they are pooly tracked, they usually live inside of context only. New work may then override the decisions and cause unexpected behaviors. Therefore we need to store all user decisions in durable files that MUST NOT be changed unless user makes another decision. Coding tasks can be done based on those decisions.
+We face issues in normal flows: user decisions get lost during complex work because they are pooly tracked and they usually live inside of context only. When we start new tasks/spawn new agents, the agents may then override original codes and cause unexpected behaviors. Documentation does not prevent this because docs change with the code, nothing prevents an agent from changing both accidentally. Therefore we need to store all user decisions in durable files that MUST NOT be changed unless user makes another decision. Coding tasks can be done based on those decisions.
 
 ## User Decisions
 
-User decisions covers all of product design choices, system design choices, trade-offs and compromises made to shape the system and products or to address implementation issues, that are intentionally made by users. A decision must be delivered via prompt messages.
+User decisions covers all of product design choices, system design choices, trade-offs and compromises made to shape the system and products or to address implementation issues, that are intentionally made by users. **Only  decisions that brings about a change in current behavior should be recorded.** A decision must be delivered via prompt messages.
 
-User decisions should be stored in a dedicated folder `human` at root, containing only markdown files. The markdown files should be split according to how files in `openwiki` folder are structured, mimic the folder structure. If the decision doesn't fit, put it in a file called `miscellaneous.md`.
+User decisions should be stored in a dedicated folder `human` at root, containing only markdown files. The markdown files should be split according to how files in `openwiki` folder are structured, mimic the folder structure. If the decision doesn't fit, put it in a file called `miscellaneous.md`. 
 
 The Files are written for machines and agents to read, not human. **The goal is to store the most information with the least amount of words**:
 
@@ -21,6 +21,8 @@ The Files are written for machines and agents to read, not human. **The goal is 
 - Look for opportunities to compact the semantics: "fast, deterministic, low-overhead" → tight (a tight loop).
 - Use positive phrase over negation, stating the expected and correct instead of stating what should not happen.
 - Do not record duplicate decisions.
+
+Decisions recorded should be concise about a change's mian delivery rather than a listing out the inventories (that is job for documentation). If the prompt contains many decisions, split the decisions into different bullet points. If a decision needs to be overriden, remove the original decision unless specified otherwise.
 
 ## Coding Tasks
 
@@ -43,10 +45,10 @@ If implementation issues are found:
 
 A separate subagent may be spinned up for review after full implementation in cases of large tasks.
 
-The subagent must read the `human` folder for applicable domains as well. The subagents must not fix the issues on its own as issues require user explicit decisions. The subagents must report the findings to a temporary file where the main agent (orchestrator) can see.
+The subagent must read the `human` folder for applicable domains as well. The subagents must not fix the issues on its own as issues require user explicit decisions. The reviewer writes the review to a temp file under /private/tmp so it survives main's context compaction and later agents can read it.
 
-After reviews from subagent(s), the main orchestrator summarizes the reports and ask user for decisions on how to address the issues and record them. If there are conflicts between decisions, ask for decisions again until no conflicts. Then the main orchestrator writes the fixes directly to the temporary files for the subagents. The subagents implements and records code references to the `human` decisions.
+Main summarizes findings and asks the user for decisions, repeating until decisions do not conflict, then records them. Main applies the fixes decided because it holds the implementation context. Delegate a fix only when it is bounded and fully specified, and then to one executor per disjoint path set, each in its own worktree.
 
-The main orchestrator sees subagents finished the fix, then spawns another subagent to do the same review and loops until no issues are surfaced from the subagents.
+Recheck by resuming the original reviewer with the decided finding list: it verifies only those findings plus regressions the fix introduced, and reports nothing adjacent. Spawn one fresh reviewer for the closing pass only after every decided finding is confirmed fixed. New findings from the closing pass go to the user as a new batch; they do not restart the loop automatically. Never resume a subagent to collect a result it already returned.
 
-Give clear label for spawning subagents so they dont spawn their own subagents.
+Parallel reviewers only for disjoint surfaces with explicit path ownership; otherwise run one.

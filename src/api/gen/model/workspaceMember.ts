@@ -11,7 +11,6 @@ export interface WorkspaceMember {
   readonly $schema?: string;
   avatarUrl?: string;
   createdAt: string;
-  email: string;
   name: string;
   role: WorkspaceRole;
   userId: string;

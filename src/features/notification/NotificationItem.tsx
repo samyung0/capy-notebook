@@ -115,8 +115,6 @@ function roleLabel(role: string) {
   switch (role) {
     case 'editor':
       return m.notification_role_editor();
-    case 'commenter':
-      return m.notification_role_commenter();
     case 'viewer':
       return m.notification_role_viewer();
     default:

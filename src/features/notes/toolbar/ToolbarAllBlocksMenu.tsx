@@ -22,12 +22,12 @@ import { m } from '@/i18n';
 export function ToolbarAllBlocksMenu({
   allBlockCommands,
   collaboration,
-  canComment,
+  canEdit,
   editor,
 }: {
   allBlockCommands: EditorCommand[];
   collaboration: CollaborationActions | null;
-  canComment: boolean;
+  canEdit: boolean;
   editor: AnyEditor;
 }) {
   const dialogs = useNoteBlockDialogs();
@@ -67,8 +67,7 @@ export function ToolbarAllBlocksMenu({
           const commands = allBlockCommands.filter(
             (command) => command.group === group.id
           );
-          const hasComment =
-            group.id === 'general' && canComment && collaboration;
+          const hasComment = group.id === 'general' && canEdit && collaboration;
           if (!commands.length && !hasComment) {
             return null;
           }

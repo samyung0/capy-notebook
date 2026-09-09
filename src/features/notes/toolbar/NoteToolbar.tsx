@@ -125,7 +125,7 @@ function updateResponsiveToolbar(container: HTMLDivElement) {
 export function NoteToolbar({ className }: { className?: string }) {
   const editor = useEditorRef() as AnyEditor;
   const toolbarGroupsRef = useRef<HTMLDivElement>(null);
-  const { mode, allowExternalAssets, canComment } = useEditorRuntime();
+  const { mode, allowExternalAssets, canEdit } = useEditorRuntime();
   const canCreateAssets = canCreateExternalEditorAssets(
     mode,
     allowExternalAssets
@@ -235,7 +235,7 @@ export function NoteToolbar({ className }: { className?: string }) {
         )}
         role="toolbar"
       >
-        {canComment && collaboration && (
+        {canEdit && collaboration && (
           <ToolbarGroup>
             <ToolbarButton
               disabled={collaboration.mutationPending}
@@ -266,7 +266,7 @@ export function NoteToolbar({ className }: { className?: string }) {
          * ahead of that box and takes its width off the top. */}
         {enabled.general && (
           <ToolbarGroup className="gap-1">
-            {canComment && collaboration && (
+            {canEdit && collaboration && (
               <ToolbarButton
                 disabled={collaboration.mutationPending}
                 label={m.editor_comment()}
@@ -277,7 +277,7 @@ export function NoteToolbar({ className }: { className?: string }) {
             )}
             <ToolbarAllBlocksMenu
               allBlockCommands={allBlockCommands}
-              canComment={canComment}
+              canEdit={canEdit}
               collaboration={collaboration}
               editor={editor}
             />

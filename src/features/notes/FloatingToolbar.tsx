@@ -56,7 +56,7 @@ function FloatingToolbarChrome({
   const editor = useEditorRef();
   const editorId = useEditorId();
   const focusedEditorId = useEventEditorValue('focus');
-  const { canComment } = useEditorRuntime();
+  const { canEdit } = useEditorRuntime();
   const collaboration = useCollaborationActions();
   const state = useFloatingToolbarState({
     editorId,
@@ -162,7 +162,7 @@ function FloatingToolbarChrome({
         >
           <Link />
         </FloatingButton>
-        {canComment && collaboration && (
+        {canEdit && collaboration && (
           <>
             <Separator />
             <FloatingButton

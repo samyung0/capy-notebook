@@ -445,6 +445,7 @@ export type {
   SourceSession,
   WorkspaceSummary,
   WorkspaceSummaryChapter,
+  WorkspaceSummaryFile,
 } from './gen/model';
 /* ---------------- Raw generated namespace ----------------
    Reach for `Gen` when you need the exact backend contract (e.g. nullable

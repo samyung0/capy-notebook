@@ -6,9 +6,8 @@ import { openWorkspaceSharing } from '../helpers/workspace';
 test.describe('workspace invitations', () => {
   test('private exact-identifier invite is visible only to its recipient', async ({
     ownerPage,
-    commenterPage,
+    viewerPage,
     ownerApi,
-    commenterApi,
     otherApi,
     viewerApi,
     workspaceFactory,
@@ -24,9 +23,9 @@ test.describe('workspace invitations', () => {
 
     await ownerPage
       .getByPlaceholder('Email or user ID')
-      .fill('commenter@capynotebook.test');
+      .fill('viewer@capynotebook.test');
     await ownerPage.getByRole('combobox', { name: 'Invite role' }).click();
-    await ownerPage.getByRole('option', { name: 'Comment' }).click();
+    await ownerPage.getByRole('option', { name: 'View' }).click();
 
     const createResponse = waitForApi(
       ownerPage,
@@ -40,7 +39,7 @@ test.describe('workspace invitations', () => {
     expect(await created.text()).toBe('');
     await expect(ownerPage.getByText('Invitation submitted')).toBeVisible();
     await expect(
-      ownerPage.getByText('commenter@capynotebook.test')
+      ownerPage.getByText('viewer@capynotebook.test')
     ).not.toBeVisible();
 
     const unknown = await ownerApi.post(
@@ -52,7 +51,7 @@ test.describe('workspace invitations', () => {
     expect(unknown.status()).toBe(202);
     expect(await unknown.text()).toBe('');
 
-    const notificationResponse = await commenterApi.get('/api/notifications');
+    const notificationResponse = await viewerApi.get('/api/notifications');
     expect(notificationResponse.status()).toBe(200);
     const notifications = (
       (await notificationResponse.json()) as {
@@ -71,10 +70,7 @@ test.describe('workspace invitations', () => {
     // The email is the only place the plaintext token exists; the in-app
     // notification links by invite id instead. Accepting with the emailed
     // token is left to the UI flow below so the invite stays consumable once.
-    const email = await waitForEmail(
-      commenterApi,
-      'commenter@capynotebook.test'
-    );
+    const email = await waitForEmail(viewerApi, 'viewer@capynotebook.test');
     const emailedToken = email.text.match(/\/workspace-invites\/([\w-]+)/)?.[1];
     expect(emailedToken).toMatch(/^[\w-]{32}$/);
     expect(emailedToken).not.toBe(reference);
@@ -84,56 +80,57 @@ test.describe('workspace invitations', () => {
     );
     expect(wrongAccount.status()).toBe(403);
 
-    await commenterPage.goto('/workspaces');
-    await commenterPage.getByRole('button', { name: /notifications/i }).click();
-    await commenterPage
+    await viewerPage.goto('/workspaces');
+    await viewerPage.getByRole('button', { name: /notifications/i }).click();
+    await viewerPage
       .getByRole('button', { name: /Workspace invitation/ })
       .click();
-    await expect(commenterPage).toHaveURL(notification!.href!);
+    await expect(viewerPage).toHaveURL(notification!.href!);
 
     const acceptResponse = waitForApi(
-      commenterPage,
+      viewerPage,
       apiEndsWith(`/api/workspace-invites/${reference}/accept`, 'POST')
     );
-    await commenterPage
-      .getByRole('button', { name: 'Accept invitation' })
-      .click();
+    await viewerPage.getByRole('button', { name: 'Accept invitation' }).click();
     expect((await acceptResponse).status()).toBe(200);
-    await commenterPage.getByRole('button', { name: 'Open workspace' }).click();
+    await viewerPage.getByRole('button', { name: 'Open workspace' }).click();
     await expect(
-      commenterPage.getByRole('heading', { name: workspace.name })
+      viewerPage.getByRole('heading', { name: workspace.name })
     ).toBeVisible();
 
-    const acceptedWorkspace = await commenterApi.get(
+    const acceptedWorkspace = await viewerApi.get(
       `/api/workspaces/${workspace.id}`
     );
     expect(acceptedWorkspace.status()).toBe(200);
     const acceptedBody = await acceptedWorkspace.json();
-    expect(acceptedBody.role).toBe('commenter');
+    expect(acceptedBody.role).toBe('viewer');
     expect(acceptedBody.capabilities).toMatchObject({
-      canComment: true,
       canEdit: false,
       canManageMembers: false,
       canView: true,
     });
-    const acceptedMembers = await commenterApi.get(
+    const acceptedMembers = await viewerApi.get(
       `/api/workspaces/${workspace.id}/members`
     );
     expect(acceptedMembers.status()).toBe(200);
     expect(await acceptedMembers.json()).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ role: 'commenter', userId: 'u_commenter' }),
+        expect.objectContaining({ role: 'viewer', userId: 'u_viewer' }),
       ])
     );
+    for (const member of await acceptedMembers.json()) {
+      expect(member).not.toHaveProperty('email');
+    }
 
     await ownerPage.reload();
     await openWorkspaceSharing(ownerPage);
-    await expect(
-      ownerPage.getByText('commenter@capynotebook.test')
-    ).toBeVisible();
+    await expect(ownerPage.getByText('E2E Viewer')).toBeVisible();
+    await expect(ownerPage.getByText('viewer@capynotebook.test')).toHaveCount(
+      0
+    );
 
     const candidates = await ownerApi.get(
-      `/api/workspaces/${workspace.id}/invite-candidates?q=commenter`
+      `/api/workspaces/${workspace.id}/invite-candidates?q=viewer`
     );
     expect(candidates.status()).toBe(404);
     const revoke = await viewerApi.delete(

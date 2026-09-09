@@ -10,6 +10,5 @@ export type ShareRole = typeof ShareRole[keyof typeof ShareRole];
 
 export const ShareRole = {
   editor: 'editor',
-  commenter: 'commenter',
   viewer: 'viewer',
 } as const;

@@ -473,12 +473,10 @@ func (a *api) assertWS(w http.ResponseWriter, r *http.Request, wsID string) bool
 
 // chatAccess is what the chat stream needs to know about the actor.
 type chatAccess struct {
-	// canGenerate is structural: owner or member editor, never a share-role
-	// editor, matching CreateMaterial.
-	canGenerate bool
-	// canSeePending follows the effective role, so link/public share-role
-	// editors get the pending-context label while viewers/commenters do not.
-	canSeePending bool
+	// canEdit follows the effective role (owner, member editor, or share-role
+	// editor): it unlocks the generate_material tool and the pending-sources
+	// notice, matching CreateMaterial.
+	canEdit bool
 }
 
 // assertWSChat admits any effective role (owner, member, or link/public
@@ -489,15 +487,7 @@ func (a *api) assertWSChat(w http.ResponseWriter, r *http.Request, wsID string) 
 		a.fail(w, err)
 		return chatAccess{}, false
 	}
-	member, err := a.s.WorkspaceRole(r.Context(), uid(r), wsID)
-	if err != nil {
-		a.fail(w, err)
-		return chatAccess{}, false
-	}
-	return chatAccess{
-		canGenerate:   store.RoleCanEdit(member),
-		canSeePending: store.RoleCanEdit(effective),
-	}, true
+	return chatAccess{canEdit: store.RoleCanEdit(effective)}, true
 }
 
 func (a *api) assertWSRead(w http.ResponseWriter, r *http.Request, wsID string) bool {

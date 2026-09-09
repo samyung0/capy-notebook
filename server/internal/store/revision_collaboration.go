@@ -248,11 +248,11 @@ func (s *Store) lockCommentAccountsTx(
 	return nil
 }
 
-// lockMaterialCommenterTx serializes role/sharing changes with a comment
-// write, then rechecks both lifecycle and effective commenter permission. This
+// lockMaterialEditorTx serializes role/sharing changes with a comment
+// write, then rechecks both lifecycle and effective editor permission. This
 // closes the gap between the handler's initial access lookup and the INSERT or
 // UPDATE without changing link/public share-role behavior.
-func (s *Store) lockMaterialCommenterTx(
+func (s *Store) lockMaterialEditorTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	materialID, actorID string,
@@ -323,7 +323,7 @@ func (s *Store) lockMaterialCommenterTx(
 	if role == "" {
 		return "", ErrNotFound
 	}
-	if !RoleCanComment(role) {
+	if !RoleCanEdit(role) {
 		return "", ErrForbidden
 	}
 	return role, nil
@@ -350,7 +350,7 @@ func (s *Store) CreateCommentDiscussion(
 		return Discussion{}, err
 	}
 	defer tx.Rollback(ctx)
-	if _, err := s.lockMaterialCommenterTx(ctx, tx, materialID, actorID); err != nil {
+	if _, err := s.lockMaterialEditorTx(ctx, tx, materialID, actorID); err != nil {
 		return Discussion{}, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO material_discussions
@@ -401,7 +401,7 @@ func (s *Store) AddNestedComment(
 		}
 		return Comment{}, err
 	}
-	if _, err := s.lockMaterialCommenterTx(ctx, tx, materialID, actorID); err != nil {
+	if _, err := s.lockMaterialEditorTx(ctx, tx, materialID, actorID); err != nil {
 		return Comment{}, err
 	}
 	if parentCommentID != nil {
@@ -468,7 +468,7 @@ func (s *Store) EditOwnComment(
 		}
 		return Comment{}, err
 	}
-	if _, err := s.lockMaterialCommenterTx(ctx, tx, materialID, actorID); err != nil {
+	if _, err := s.lockMaterialEditorTx(ctx, tx, materialID, actorID); err != nil {
 		return Comment{}, err
 	}
 	comment, err := scanRevisionComment(tx.QueryRow(ctx, `WITH edited AS (
@@ -510,11 +510,12 @@ func (s *Store) SoftDeleteComment(ctx context.Context, id, actorID string) error
 		}
 		return err
 	}
-	role, err := s.lockMaterialCommenterTx(ctx, tx, materialID, actorID)
+	role, err := s.lockMaterialEditorTx(ctx, tx, materialID, actorID)
 	if err != nil {
 		return err
 	}
-	if authorID != actorID && !RoleCanEdit(role) {
+	// Authors delete their own; only the owner deletes another user's.
+	if authorID != actorID && role != RoleOwner {
 		return ErrForbidden
 	}
 	ct, err := tx.Exec(ctx, `UPDATE material_comments
@@ -543,7 +544,7 @@ func (s *Store) SetCollaborationDiscussionResolved(ctx context.Context, id, acto
 		}
 		return err
 	}
-	if _, err := s.lockMaterialCommenterTx(ctx, tx, materialID, actorID); err != nil {
+	if _, err := s.lockMaterialEditorTx(ctx, tx, materialID, actorID); err != nil {
 		return err
 	}
 	ct, err := tx.Exec(ctx, `UPDATE material_discussions
@@ -572,11 +573,12 @@ func (s *Store) SoftDeleteDiscussion(ctx context.Context, id, actorID string) er
 		}
 		return err
 	}
-	role, err := s.lockMaterialCommenterTx(ctx, tx, materialID, actorID)
+	role, err := s.lockMaterialEditorTx(ctx, tx, materialID, actorID)
 	if err != nil {
 		return err
 	}
-	if authorID != actorID && !RoleCanEdit(role) {
+	// Authors delete their own; only the owner deletes another user's.
+	if authorID != actorID && role != RoleOwner {
 		return ErrForbidden
 	}
 	ct, err := tx.Exec(ctx, `UPDATE material_discussions

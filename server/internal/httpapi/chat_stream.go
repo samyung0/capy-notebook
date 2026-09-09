@@ -213,7 +213,7 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		usage       pipeUsage
 	)
 
-	streamErr := a.relayChat(ctx, userID, access.canGenerate, conv, llm, charge.id, req.Text, assistant.ID, prompt, func(ev pipeChatEvent) {
+	streamErr := a.relayChat(ctx, userID, access.canEdit, conv, llm, charge.id, req.Text, assistant.ID, prompt, func(ev pipeChatEvent) {
 		switch ev.Type {
 		case "checkpoint":
 			cpCtx, cpCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -246,8 +246,8 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		case "phase", "tool_start", "tool_end":
 			send(ev)
 		case "pending_sources":
-			// Viewers and commenters never learn that sources have pending edits.
-			if access.canSeePending {
+			// Viewers never learn that sources have pending edits.
+			if access.canEdit {
 				send(ev)
 			}
 		case "done", "error":

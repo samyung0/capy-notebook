@@ -9,24 +9,20 @@ import (
 
 func TestWorkspaceRoleCapabilities(t *testing.T) {
 	cases := []struct {
-		role             WorkspaceRole
-		canEdit, comment bool
+		role    WorkspaceRole
+		canEdit bool
 	}{
-		{RoleOwner, true, true},
-		{RoleEditor, true, true},
-		{RoleCommenter, false, true},
-		{RoleViewer, false, false},
-		{"", false, false},
+		{RoleOwner, true},
+		{RoleEditor, true},
+		{RoleViewer, false},
+		{"", false},
 	}
 	for _, tc := range cases {
 		if got := RoleCanEdit(tc.role); got != tc.canEdit {
 			t.Errorf("RoleCanEdit(%q) = %v", tc.role, got)
 		}
-		if got := RoleCanComment(tc.role); got != tc.comment {
-			t.Errorf("RoleCanComment(%q) = %v", tc.role, got)
-		}
 		capabilities := CapabilitiesForRole(tc.role, true)
-		if !capabilities.CanView || capabilities.CanEdit != tc.canEdit || capabilities.CanComment != tc.comment {
+		if !capabilities.CanView || capabilities.CanEdit != tc.canEdit {
 			t.Errorf("CapabilitiesForRole(%q) = %#v", tc.role, capabilities)
 		}
 		if capabilities.CanManageMembers != (tc.role == RoleOwner) {
@@ -37,9 +33,8 @@ func TestWorkspaceRoleCapabilities(t *testing.T) {
 
 func TestShareRoleIsSafeWorkspaceRoleSubset(t *testing.T) {
 	cases := map[ShareRole]WorkspaceRole{
-		ShareViewer:    RoleViewer,
-		ShareCommenter: RoleCommenter,
-		ShareEditor:    RoleEditor,
+		ShareViewer: RoleViewer,
+		ShareEditor: RoleEditor,
 	}
 	for shareRole, expected := range cases {
 		if got := shareRole.WorkspaceRole(); got != expected {

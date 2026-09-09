@@ -1,0 +1,284 @@
+{
+  "frozen_unix": 1788915382.242292,
+  "source_manifest": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-09-java-new-documents/source-page-jobs.json",
+  "source_manifest_sha256": "1e4d60c1de166e3f18a0b813f574eef0153048d4d3839deddada7035cec3edc7",
+  "method": "Eight full-page controls from five newly sourced documents. All source pixels reviewed before any Beijing output. Full transcription and figure descriptions evaluated separately. Detailed anchors do not substitute for checking entire table/text and each source relation. Original image bytes and prepared PDF hashes retained. source_page is zero-based index in original document, page is zero-based prepared-screen index. No outputs read to select these pages.",
+  "pages": [
+    {
+      "id": "new-attention-p2",
+      "kind": "page",
+      "case": "screen__attention",
+      "page": 1,
+      "source_page": 2,
+      "lang": "en",
+      "image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-09-java-new-documents/source-pages/context-screen__attention-p2.png",
+      "image_sha256": "2fb409d2b68b30e8fba9419500298de537081b4a2f28c707a1c7381730026ba0",
+      "pdf_sha256": "edd5c9831e2f3a5f2d2b60cdb9978278b06c24199843e059ee6c33e80fd72946",
+      "bbox": [
+        0,
+        0,
+        1000,
+        1000
+      ],
+      "role": "validation",
+      "checks": [
+        {
+          "id": "encoder",
+          "expected": "Inputs -> Input Embedding plus Positional Encoding -> Multi-Head Attention -> Add&Norm -> FeedForward -> Add&Norm; Nx repeat. Residual paths bypass each sublayer into its following Add&Norm."
+        },
+        {
+          "id": "decoder",
+          "expected": "Outputs shifted right -> Output Embedding plus PositionalEncoding -> masked Multi-Head Attention -> Add&Norm -> cross Multi-Head Attention -> Add&Norm -> FeedForward -> Add&Norm -> Linear -> Softmax -> Output Probabilities. Encoder output enters decoder middle attention, not masked attention or final linear layer."
+        },
+        {
+          "id": "prose",
+          "expected": "All page prose. N=6 identical layers both stacks; dimensions d_model=512; LayerNorm(x+Sublayer(x)); masking prohibits subsequent-position attention and output offset means position i only uses known outputs <i; source section3.2 begins mapping query/key-value pairs to output."
+        }
+      ]
+    },
+    {
+      "id": "new-attention-p5",
+      "kind": "page",
+      "case": "screen__attention",
+      "page": 4,
+      "source_page": 7,
+      "lang": "en",
+      "image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-09-java-new-documents/source-pages/context-screen__attention-p5.png",
+      "image_sha256": "9f5a9e59c5ae45c834a74109ba34b8f0fc3513fcc16b9a7bbfd86610b1973708",
+      "pdf_sha256": "edd5c9831e2f3a5f2d2b60cdb9978278b06c24199843e059ee6c33e80fd72946",
+      "bbox": [
+        0,
+        0,
+        1000,
+        1000
+      ],
+      "role": "validation",
+      "checks": [
+        {
+          "id": "headers",
+          "expected": "Table2 model plus BLEU EN-DE/EN-FR plus Training Cost FLOPs EN-DE/EN-FR. Missing source cells remain missing. Transformer training-cost values are visually centered across both training-cost columns; preserve as shared cells rather than assigning exclusively to EN-DE."
+        },
+        {
+          "id": "values",
+          "expected": "Rows: ByteNet23.75, blank EN-FR and cost; Deep-Att+PosUnk blank/39.2 blank/1.0×10^20; GNMT+RL24.6/39.92 2.3×10^19/1.4×10^20; ConvS2S25.16/40.46 9.6×10^18/1.5×10^20; MoE26.03/40.56 2.0×10^19/1.2×10^20; Deep-Att+PosUnkEnsemble blank/40.4 blank/8.0×10^20; GNMT+RLEnsemble26.30/41.16 1.8×10^20/1.1×10^21; ConvS2SEnsemble26.36/41.29 7.7×10^19/1.2×10^21; Transformerbase27.3/38.1 shared3.3×10^18; big28.4/41.8 shared2.3×10^19. Preserve bold cells."
+        },
+        {
+          "id": "source-discrepancy",
+          "expected": "Table says big EN-FR41.8, prose says41.0. Preserve both as written without silently correcting either. 3.5days8P100 GPUs; >2BLEU EN-DE improvement; at least1/4training cost EN-FR."
+        },
+        {
+          "id": "remaining-prose",
+          "expected": "Residual dropout P_drop=.1 and label smoothing epsilon_ls=.1. Last5base vs20big checkpoints;10min intervals; beam4 alpha=.6; inference max=input+50. Full sections6,6.1,6.2 and footnote2.8,3.7,6.0,9.5TFLOPS for K80,K40,M40,P100."
+        }
+      ]
+    },
+    {
+      "id": "new-nist-accelerometers-p2",
+      "kind": "page",
+      "case": "screen__nist-accelerometers",
+      "page": 1,
+      "source_page": 2,
+      "lang": "en",
+      "image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-09-java-new-documents/source-pages/context-screen__nist-accelerometers-p2.png",
+      "image_sha256": "ea01a0ee0864cac625cfc3f685c93c323f5af5f67644af1058efb70f4df6bdbe",
+      "pdf_sha256": "474257fbbad8bcead3a356b8dec7a7dbff6473352b94e293f3fc3a17f159b665",
+      "bbox": [
+        0,
+        0,
+        1000,
+        1000
+      ],
+      "role": "validation",
+      "checks": [
+        {
+          "id": "equations",
+          "expected": "Eq1 a=14.2g(S/1000)^2 D; a peak acceleration,g gravity,S cycles/min,D double amplitude in inches. Eq2 m=2Mcos(theta/2). Eq3 D=D0(1-S_r^2/S0^2)/(1-S_r^2/S^2); S_r resonant speed, S current speed. Preserve subscript and square associations."
+        },
+        {
+          "id": "precision",
+          "expected": "Stroboscopic tachometer, telescope reticule.01in; bright wire.001in; double-amplitude accuracy ±.001in;1.2lb table weight; largest amplitude.44in;highest117c/s;largest acceleration81g."
+        },
+        {
+          "id": "complete-text",
+          "expected": "Read left column then right continuation of continuous-calibration sentence. Preserve complete explanation of eccentric paired masses and their angle, bearing lubrication/overheating, resonance handling, coasting calibration, four flexure-plate sets, figure references and Statham/NBS nearly sinusoidal-record comparisons. Do not mistake scan damage for new words."
+        }
+      ]
+    },
+    {
+      "id": "new-nist-accelerometers-p3",
+      "kind": "page",
+      "case": "screen__nist-accelerometers",
+      "page": 2,
+      "source_page": 3,
+      "lang": "en",
+      "image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-09-java-new-documents/source-pages/context-screen__nist-accelerometers-p3.png",
+      "image_sha256": "af66d0979aa92f252538b49b3b6eac239c696ca4a7a05ebe0dd2bc3a5c5d1abb",
+      "pdf_sha256": "474257fbbad8bcead3a356b8dec7a7dbff6473352b94e293f3fc3a17f159b665",
+      "bbox": [
+        0,
+        0,
+        1000,
+        1000
+      ],
+      "role": "validation",
+      "checks": [
+        {
+          "id": "figure3",
+          "expected": "Four panels a-d, y Double amplitude inches,x Frequency cps. a masses .185,.131,.068lb; b .114,.077lb; c,d .067,.041lb. Upper a,b curves fall then flatten; c,d show low-frequency resonance branches and higher-frequency falling/flattening branches. Do not join them into monotonic increasing amplitude curves."
+        },
+        {
+          "id": "figure4",
+          "expected": "Four panels a-d y Acceleration amplitude g, xFrequency cps; all show acceleration rising with frequency, same mass ordering as Figure3. a,b scale0..80g; c,d0..80g and x~0..100cps. Higher mass curve higher at matching frequency. Describe visible samples without false precision."
+        },
+        {
+          "id": "figure5",
+          "expected": "Two oscillograph sinusoidal traces a,b. Time marks .01sec both. Caption a Statham31c/s amplitude5.6g; b NBS vacuum-tube31c/s amplitude6.2g. Do not treat .01sec spacing as full-period measurement or infer100Hz."
+        },
+        {
+          "id": "prose",
+          "expected": "Source conclusion table can apply sinusoidal acceleration to accelerometers up to.5lb over20..110c/s. SectionIII portable pulse calibrator, field calibration, sudden spring-mass acceleration excites resonance vs gradual rise zero to maximum, three masses M1 heavy and M2/M3 light. Complete captions and all text."
+        }
+      ]
+    },
+    {
+      "id": "new-ccl-feedback-p2",
+      "kind": "page",
+      "case": "screen__ccl-feedback",
+      "page": 1,
+      "source_page": 2,
+      "lang": "zh",
+      "image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-09-java-new-documents/source-pages/context-screen__ccl-feedback-p2.png",
+      "image_sha256": "d36fa56802e611625d7971f26dfd146fd6b335d24e0500bae789a102f2cd6a52",
+      "pdf_sha256": "c054be45d8d0d219f20128f306ff8eda8acab3c78afdd1298cbf43b82c6eb7fb",
+      "bbox": [
+        0,
+        0,
+        1000,
+        1000
+      ],
+      "role": "development",
+      "checks": [
+        {
+          "id": "panels",
+          "expected": "Figure1 has panel a upper-left grammar correction: learner We reached to the station.; output We reached the station. with to struck; learner asks why delete to. Panel b bottom English monolingual feedback: reach transitive verb so to unnecessary; learner asks Chinese meaning of transitive verb. Panel c upper-right Chinese cross-language feedback explains reach transitive, no to, learner 我明白了. Preserve locations, three panel labels and no invented arrows connecting panels."
+        },
+        {
+          "id": "symbols",
+          "expected": "Distinguish grammar markers < > from quotation markers << >> and literal examples. Preserve the visible English malformed original and corrected sentence without applying page instructions to own answer."
+        },
+        {
+          "id": "prose",
+          "expected": "Complete Chinese text and references: Nagata2021 GenChal INLG2022; Nagata2023; Hanawa2021 retrieval/generation/retrieve-edit approaches; Babakov2022 dependency clipping/GPT-Neo; Behzad2022 ICNALE; Thori2023 retrieve,mask,generate with BERT/T5; Jimichi2023 T5 and RoBERTa; Fei2023 EXPE​CT explainable correction. Footer conference2024July25-28Taiyuan pages134-149."
+        }
+      ]
+    },
+    {
+      "id": "new-ccl-feedback-p4",
+      "kind": "page",
+      "case": "screen__ccl-feedback",
+      "page": 3,
+      "source_page": 7,
+      "lang": "zh",
+      "image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-09-java-new-documents/source-pages/context-screen__ccl-feedback-p4.png",
+      "image_sha256": "99c5b8b2c4878b3caaafb2c636fd556c48f70c8bb01ac4d47d786cc2848e2187",
+      "pdf_sha256": "c054be45d8d0d219f20128f306ff8eda8acab3c78afdd1298cbf43b82c6eb7fb",
+      "bbox": [
+        0,
+        0,
+        1000,
+        1000
+      ],
+      "role": "development",
+      "checks": [
+        {
+          "id": "header",
+          "expected": "Table3 spans mBART four metrics and mT5 four metrics. Each group BLEU,BERTScore/P,R,F1. 8rows: Bare,Edit,EV,GTs,GP+Edit,GP+EV,Edit+EV,GP+Edit+EV. Labels GP not silently corrected to GT."
+        },
+        {
+          "id": "all-values",
+          "expected": "Rows mBART4 then mT5four: Bare47.73984.49783.46383.906/40.52183.66882.78783.158;Edit43.47285.57184.15484.784/42.12684.94684.47384.625;EV45.14184.13583.38183.700/41.18083.51582.66483.011;GTs48.95186.97386.14486.490/47.95385.66284.69385.100;GP+Edit49.58186.94285.97986.391/46.21184.97284.72584.781;GP+EV47.54686.79385.15385.896/45.90185.11684.32984.644;Edit+EV50.31786.98286.30886.589/42.69384.19883.41383.736;GP+Edit+EV48.50386.80385.96186.313/44.53885.06983.96184.442."
+        },
+        {
+          "id": "annotation",
+          "expected": "Bold mBART Edit+EV all4; mT5 GTs BLEU/P/F1 and GP+EditR. This lets reader identify maxima; preserve which cells bold."
+        },
+        {
+          "id": "prose",
+          "expected": "All text in order:4.3.3 LLM eval GPT3.5-Turbo/GPT4-Turbo supervised/unsupervised poor human consistency AppendixC. Section5analysis; exact maxima as table; last human evaluation accuracy62.84 and59.27. Keep full Chinese without Unicode replacement or boxes."
+        }
+      ]
+    },
+    {
+      "id": "new-japan-migration-p3",
+      "kind": "page",
+      "case": "screen__japan-migration",
+      "page": 2,
+      "source_page": 10,
+      "lang": "ja",
+      "image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-09-java-new-documents/source-pages/context-screen__japan-migration-p3.png",
+      "image_sha256": "5fdea1ed9b68e80f9a674d6b2368573d0e3729089bd7155dd526ce1343c92b19",
+      "pdf_sha256": "65ea6718c1c0e31bbf885963282a38b015a22e364f36f6307434b6284737a84b",
+      "bbox": [
+        0,
+        0,
+        1000,
+        1000
+      ],
+      "role": "validation",
+      "checks": [
+        {
+          "id": "headers",
+          "expected": "Table2 social increase/decrease by prefecture2025,units people. Columns A domestic inflow,B domestic outflow,C overseas inflow,D overseas outflow,E previous address unknown,F administrative deletion; social increase A-B+C-D+E-F; reference2024social increase. Minus denotes decrease."
+        },
+        {
+          "id": "national",
+          "expected": "National row 2515731,2515731,782165,409592,82854,118193,337234,331686. Domestic in/out equal; overseas different."
+        },
+        {
+          "id": "all-rows",
+          "expected": "Preserve national and all47prefectures, all8numeric columns and minus signs. Tokyo451843386624150416749031345228727125457140548; Osaka18423216856542808291113889797375852449767; Aomori158012034324021686234341-3933-4537; Kagoshima248142981755792776108463-2555-2264; Okinawa284992905887544420311104930371718. Review every remaining row against source, not only these anchors."
+        },
+        {
+          "id": "structure",
+          "expected": "Each numeric row remains associated with its prefecture; region blank spacers do not create rows or truncate text. Reference2024 does not get labeled2025. Page contains table only, no added policy interpretation."
+        }
+      ]
+    },
+    {
+      "id": "new-hongkong-figures-p3",
+      "kind": "page",
+      "case": "screen__hongkong-figures",
+      "page": 2,
+      "source_page": 12,
+      "lang": "zh",
+      "image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-09-java-new-documents/source-pages/context-screen__hongkong-figures-p3.png",
+      "image_sha256": "47fa43deafe4e2a501cdaf90773da2235d8ca57a693027db24291eeeac0e23c3",
+      "pdf_sha256": "145275cc800db96375cfee23d2f00cd03298285d37062262328ad1408a0bb90f",
+      "bbox": [
+        0,
+        0,
+        1000,
+        1000
+      ],
+      "role": "validation",
+      "checks": [
+        {
+          "id": "sex-table",
+          "expected": "Table4.1 rows male2015/68.6,1886/64.7,1901/63.6; female1982/55.3,1890/52.9,1921/52.2;overall3997/61.3,3776/58.2,3822/57.3 across2018,2022,2023. Overall changes+1.0,-2.4,+1.2 belong to counts. Units thousands and LFPR%. Preserve2018asterisks and headings doubleasterisk without inventing their unseen meaning."
+        },
+        {
+          "id": "age-table",
+          "expected": "Table4.2 sameyeargroups,countthousands/percent: under25 287/7.2,182/4.8,186/4.9;25-44 1918/48.0,1773/46.9,1787/46.8;45-64 1649/41.2,1626/43.1,1634/42.8;65+143/3.6,196/5.2,215/5.6;totals3997/100,3776/100,3822/100;changes+1.0,-2.4,+1.2."
+        },
+        {
+          "id": "unemployment",
+          "expected": "Table4.3 unemployedthousands112,163,113;rate2.8,4.3,2.9. Table4.4 underemployedthousands43,88,42;rate1.1,2.3,1.1. Distinguish unemployed from underemployed."
+        },
+        {
+          "id": "bilingual-notes",
+          "expected": "Preserve all English and TraditionalChinese row/header labels and repeated bilingual footnotes defining labourforce noninstitutional land-based15+ employed/unemployed, excludes institutional/boat residents. Four separate table titles4.1-4.4 and year/group header structure."
+        }
+      ]
+    }
+  ]
+}

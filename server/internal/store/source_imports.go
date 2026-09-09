@@ -801,13 +801,11 @@ func assertSourceImportActorTx(
 	if ownerID == *job.ActorUserID {
 		return nil
 	}
-	var role WorkspaceRole
-	if err := tx.QueryRow(ctx, `SELECT role FROM workspace_members
-		WHERE workspace_id=$1 AND user_id=$2 FOR SHARE`,
-		job.WorkspaceID, *job.ActorUserID).Scan(&role); err != nil {
-		if isNoRows(err) {
-			return ErrForbidden
-		}
+	_, role, err := workspaceRoles(ctx, tx, *job.ActorUserID, job.WorkspaceID)
+	if errors.Is(err, ErrNotFound) {
+		return ErrForbidden
+	}
+	if err != nil {
 		return err
 	}
 	if !RoleCanEdit(role) {

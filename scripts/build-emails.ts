@@ -67,7 +67,6 @@ async function renderSource(
 }
 
 const roleLabels: Record<string, (locale: EmailLocale) => string> = {
-  commenter: (locale) => m.notification_role_commenter({}, { locale }),
   editor: (locale) => m.notification_role_editor({}, { locale }),
   viewer: (locale) => m.notification_role_viewer({}, { locale }),
 };

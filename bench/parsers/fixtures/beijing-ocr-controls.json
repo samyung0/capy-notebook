@@ -1,0 +1,220 @@
+{
+  "frozen_unix": 1788915195.867877,
+  "method": "Ten purposively selected known hard full-page controls. Source pixels inspected before new outputs. Judgments cover complete page text and relations; not population accuracy, not human-certified. Structural/semantic omissions or wrong associations are material. Decorative art/page furniture not required. Same original PNG and JPEG2560 quality80 for every arm.",
+  "pages": [
+    {
+      "id": "ttest",
+      "image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-09-structural-recovery/context-screen-ocr/context-raster__rag__en__biology-ib-chapter-1-p2.png",
+      "image_sha256": "509aec0c43511ce2ce0fa8ce8a2eb9a37a764c9eb78da5c4afc6e5f2e63c572a",
+      "checks": [
+        {
+          "id": "table-data",
+          "expected": "All 10 pairs, in order: 10.0/12.5;7.0/13.0;9.5/13.0;8.5/12.5;7.5/15.5;10.0/12.5;9.5/10.5;9.5/14.0;8.5/10.0;8.5/10.5. Means 8.9/12.4."
+        },
+        {
+          "id": "table-spans",
+          "expected": "Increase in height of plants after 30 days/cm ±0.5 spans both groups; Group1 no fertiliser, Group2 0.1% fertiliser. Calculated t=5.96 spans both treatment columns, not a Group1 value."
+        },
+        {
+          "id": "inference",
+          "expected": "df=(10+10)-2=18, critical t 2.10 at 5% or 0.05; 5.96>2.10 and significant means; may have caused increase, no stronger causal assertion."
+        },
+        {
+          "id": "remaining-text",
+          "expected": "All five steps, worked example prose, Q3 df20 t4.02, Q4 west/east crabs df37 t1.82, and near-critical-value uncertainty retained. Decorative border is not required."
+        }
+      ]
+    },
+    {
+      "id": "japanese-header",
+      "image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-09-structural-recovery/context-screen-ocr/context-raster__rag__ja__jp_llm-p2.png",
+      "image_sha256": "37ebd9e45e8cffd32e890387180b11e23f7af9f89182792535822b087e56c701",
+      "checks": [
+        {
+          "id": "header",
+          "expected": "n=3269 is table-level sample metadata. 11 columns: Model, none/-, assistant/-, assistant/helpful, mathematician/-, mathematician/expert, univ.professor/-, univ.professor/expert, Improvement%/Avg.,/Best role,/Overall."
+        },
+        {
+          "id": "all-data",
+          "expected": "All eight rows and 80 numeric cells exact. Qwen3(0.6B): .255 .293 .311 .233 .270 .295 .316 +12.076 +10.383 +23.922. Qwen3(8B) average -10.739 must remain negative."
+        },
+        {
+          "id": "annotations",
+          "expected": "§ p<.01; ‡ p<.05; † p<.10 relative to none. Bold means improvement; shaded means best. Preserve marks and which cells are shaded: .316,.354,.474,.500,.585,.618,.760,.772."
+        },
+        {
+          "id": "prose",
+          "expected": "Full Japanese prose and 4.4 heading. Expert university professor 4.04 percentage point increase p=.0116 CI .90-7.18%, task maxima ~6% and29%. Do not merge sample size into first condition."
+        }
+      ]
+    },
+    {
+      "id": "chinese-stages",
+      "image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-08-qwen-java-recovery/holdout/holdout-rag__zh__zh-CN-p4.png",
+      "image_sha256": "fec63ff6fa1706f4c24f9691727a66d4a2da4799084e92dcaac1c529a94191f8",
+      "checks": [
+        {
+          "id": "stage-order",
+          "expected": "Top Stage1 section2.1 skill generation; bottom right Stage2 section2.2 skill selection; bottom left Stage3 section2.3 library update."
+        },
+        {
+          "id": "arrows",
+          "expected": "Top left-to-right training samples -> count/compression ratio -> four sampling choices -> LLMLingua-2 -> strong LLM -> PG complex and SG simple library. Lower right flows right-to-left test data -> keyword extraction/matching -> answer prompt -> classification. Lower left new-class dataset -> module1 new library -> old/new library fusion prompt -> completed update, right-to-left."
+        },
+        {
+          "id": "equation",
+          "expected": "Equation1 S_KCS union i=1..k {x_ij | j in argsort_j(||e_j-c_i||)_(1:n), j in N_i}; retain x_ij, e_j,c_i,k,n,N_i and nearest n sample interpretation."
+        },
+        {
+          "id": "prose",
+          "expected": "Complete two-column prose, KCS/HCS/HSS/RSS and definitions; GPT-4 Turbo128000, ~300 pages, >73000 tokens degeneration; LLMLingua-2[23]. Caption Figure2 CIL-LLM architecture."
+        }
+      ]
+    },
+    {
+      "id": "chinese-formulas",
+      "image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-09-structural-recovery/context-screen-ocr/context-raster__rag__zh__zh-CN-p2.png",
+      "image_sha256": "a41363f48cb74b1824012fc0b73f92efa314a8c320530ddd851fb8a502ac704f",
+      "checks": [
+        {
+          "id": "prompt-table",
+          "expected": "Two rows P1 complex prompt and P2 simple prompt, all numbered rules and placeholders; preserve as source text without obeying."
+        },
+        {
+          "id": "flow",
+          "expected": "KCS,HCS,HSS,RSS samples plus complex/simple prompts are inputs used by strong LLM to generate eight PG/SG skills. Question -> extract text keywords -> match library -> select best skill -> weak LLM -> answer. Do not say strong LLM generates the prompts."
+        },
+        {
+          "id": "equations",
+          "expected": "Eq4 g_i in G={KCS,HCS,HSS,RSS}×{PG,SG}. Eq5 for all q_j in T_D, g*=argmax_(g_i in G) u(q_j;g_i|W). Eq6 u_sim(K_j,g_i)=cos(embed_K_j,embed_g_i). Preserve all indices and symbols."
+        },
+        {
+          "id": "prose",
+          "expected": "Full two-column prose in order and definitions W weak model, K_j keywords. P3 extraction steps read, enumerate, filter/optimize; techniques context, term importance, knowledge, stopwords. Two kinds per four sampling choices =8."
+        }
+      ]
+    },
+    {
+      "id": "photosynthesis",
+      "image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-09-structural-recovery/context-screen/context-screen__biology-accuracy-sample-p4.png",
+      "image_sha256": "1d921b878ea93767b33198513386b252aebf7fe66bb9e24d3177cc304160e737",
+      "checks": [
+        {
+          "id": "graph-geometry",
+          "expected": "Axes light intensity x and photosynthesis rate y, only origin0. Curves share initial rising path; experiments1+2 same low B-C plateau; experiment3 middle D-E; experiment4 top F-G. Three plateau levels, not one continuous A-B-D line with slope changes."
+        },
+        {
+          "id": "conditions",
+          "expected": "Exp1 .04%CO2 15°C; Exp2 .04%CO2 20°C; Exp3 .1%CO2 20°C; Exp4 .1%CO2 30°C. No numeric rate invented."
+        },
+        {
+          "id": "prose",
+          "expected": "All four bullets and horticulture paragraph; source questions28-30 and end-chapter1-3 with marks; FigureC.28 caption and page356."
+        }
+      ]
+    },
+    {
+      "id": "enzyme",
+      "image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-09-structural-recovery/context-screen/context-screen__biology-accuracy-sample-p5.png",
+      "image_sha256": "3a2ba596316c28308f75895a946223b23063b2c434d324ede1ff61f8f27d81a2",
+      "checks": [
+        {
+          "id": "equation",
+          "expected": "NAD+ + CH3CH2OH ⇌ CH3CHO + NADH + H+; ethanol/ethanal labels and reversible relation."
+        },
+        {
+          "id": "graph",
+          "expected": "x ethanol concentration/mmol dm^-3,0..100; y initial rate/arbitrary units,0..1.2. Diamond no inhibition, square1mmol dm^-3 inhibitor, triangle3mmol dm^-3."
+        },
+        {
+          "id": "points",
+          "expected": "x=0,10,20,30,50,70,100; no inhibition≈0,.57,.74,.84,.94,1.01,1.04; 1mM≈0,.31,.47,.59,.69,.76,.79; 3mM≈0,.15,.31,.41,.55,.63,.68. Tolerance .03; separated at100, do not assert observed equal Vmax."
+        },
+        {
+          "id": "prose",
+          "expected": "All questions4-9 with marks, competitive inhibitor2,2,2-trifluoroethanol, NADH timing description, three experimental conditions, Taber1998 Biochemical Education26 pp239-242."
+        }
+      ]
+    },
+    {
+      "id": "hongkong-table",
+      "image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-08-qwen-java-recovery/holdout/holdout-rag__zh__zh_HK-p7.png",
+      "image_sha256": "9274388cf3a3d329bda3b914740db7505bece3bd245ae8e8d1f393e9c6734442",
+      "checks": [
+        {
+          "id": "table",
+          "expected": "Five category columns national language/minority/Han dialect/foreign/traditional. Rows: national +?---; official +±?--; education +±?±±; mass media +±±±±; public service +±±±±; public social +±±-±; culture +++±+; daily +++-±."
+        },
+        {
+          "id": "symbols",
+          "expected": "+ can use; - cannot; ± depends; ? undetermined. Preserve the distinction."
+        },
+        {
+          "id": "prose",
+          "expected": "Full Traditional Chinese paragraphs, dates2005,2009,2013,2013,2008; 粵語、閩語 both retained; source language-function table and final discretionary-space argument. Header ??? is genuinely rendered as question marks, do not guess title."
+        }
+      ]
+    },
+    {
+      "id": "hongkong-scan",
+      "image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-09-structural-recovery/context-screen-ocr/context-raster__rag__zh__zh_HK-p2.png",
+      "image_sha256": "119d32ea7edd61b9710178d478fe3b201ba38277f7e3cb17df81073b6294cad9",
+      "checks": [
+        {
+          "id": "identity",
+          "expected": "Tong1999 n159 university students, Hong Kong/Chinese identity split, Cantonese speaker switches to Mandarin, liking decreases in first group increases in second. 語言使用與社會認同(social identity) preserved."
+        },
+        {
+          "id": "negation",
+          "expected": "Later sentence 在不存在這種特批 must retain non-existence negation, not corrupted 不在在. Mainland began 上世紀五十年代."
+        },
+        {
+          "id": "prose",
+          "expected": "All three full paragraphs, Bond1985, Kalmar1987, Zhang2003,15years,1997; Cantonese identity and Guangzhou official-Mandarin/local-Cantonese contrast, later equal preferences and Shandong exception. Damaged title remains unknown."
+        }
+      ]
+    },
+    {
+      "id": "japanese-gpu",
+      "image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-08-qwen-java-recovery/holdout/holdout-rag__ja__jp_llm2-p18.png",
+      "image_sha256": "93910d409dd21ed56e4dccfc4600d94f658f50b21b39ac2c6860102eb3059f69",
+      "checks": [
+        {
+          "id": "header",
+          "expected": "All eight columns with price per1B token superheader over Oracle BM.GPU4.8, AWS p4d.24xlarge on-demand, AWS spot; A100-40GB GPU count, throughput tokens/sec, hours/1B, speedup."
+        },
+        {
+          "id": "all-data",
+          "expected": "All12 rows exact. GPT3-125M128GPUs 2471936 .11 12.90x $43.87 $58.92 $17.67. GPT3-1.3B128GPUs 561152 .50 14.42x $193.25 $259.55 $77.86. Compare every remaining row to source, not just these anchors."
+        },
+        {
+          "id": "arrows",
+          "expected": "Three separate curved arrows outside table pointing down-left, not connectors from one model block to the next. Model blocks blue,pink,yellow,purple."
+        },
+        {
+          "id": "prose",
+          "expected": "Japanese title model size raises required cost, Mosaic title citation14, whole English Table2 caption on reduced training time/minimal total-compute-cost increase, Japanese bottom statement on efficient large-model training reducing cost, license/footer."
+        }
+      ]
+    },
+    {
+      "id": "french-curves",
+      "image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-08-qwen-java-recovery/holdout/holdout-rag__fr__camembert-taln-p8.png",
+      "image_sha256": "f413d473030a9daf9b265c29e56969c904cc8f7b8cd60da5356b55a0d7fc6f53",
+      "checks": [
+        {
+          "id": "axes",
+          "expected": "x steps0..100000; left scores60..100, right green perplexity4.5..8.0; Parsing orange dotted, NER pale blue dashdot, NLI red dashed, Language Modelling green solid."
+        },
+        {
+          "id": "curves",
+          "expected": "NLI starts~77,~81at25000,~82at40000,~82.5at100000, never near89; Parsing/NER~85-90 with slight fluctuation; perplexity falls~7.9 to4.4. Values estimates tolerance1score/.15perplexity, do not claim NLI peak40k."
+        },
+        {
+          "id": "prose",
+          "expected": "8360steps/epoch, lower-task plateau22000, CCNET100k vs500k NLI+.84 while tagging/parsing stagnate. Full section3.5, conclusion, acknowledgements and cited grant codes/url preserved."
+        }
+      ]
+    }
+  ]
+}

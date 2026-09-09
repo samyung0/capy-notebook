@@ -5,7 +5,6 @@ import type { NoteEditorMode } from './editorMode';
 export interface EditorRuntimeValue {
   /** Structural workspace permission used to gate uploads and other side effects. */
   allowExternalAssets: boolean;
-  canComment: boolean;
   canEdit: boolean;
   currentUserId: string | null;
   materialId: string;

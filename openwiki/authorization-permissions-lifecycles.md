@@ -7,9 +7,7 @@ tags: [backend, authorization, permissions, lifecycle, storage, quota, files]
 
 # Authorization, permissions, and lifecycles
 
-This page documents the authorization behavior implemented as of 2026-09-05.
-It uses **commenter**, the role name used by the API and database; "commentor"
-refers to the same role when it appears in product discussions.
+This page documents the authorization behavior implemented as of 2026-09-08.
 
 Authorization is the intersection of four independent questions:
 
@@ -24,30 +22,36 @@ Passing one layer does not bypass another. For example, an editor has permission
 to upload, but the upload is still refused when the workspace owner's quota
 cannot accept it.
 
-## Role summary
+## Permission matrix
 
-| Capability                                     | Owner | Editor member | Commenter member | Viewer member |
-| ---------------------------------------------- | ----- | ------------- | ---------------- | ------------- |
-| View a private workspace and its contents      | Yes   | Yes           | Yes              | Yes           |
-| Edit material document content                 | Yes   | Yes           | No               | No            |
-| Read and create comments                       | Yes   | Yes           | Yes              | No            |
-| Create/reorder chapters and materials          | Yes   | Yes           | No               | No            |
-| Upload, rename, move, and delete files         | Yes   | Yes           | No               | No            |
-| Use workspace chat                             | Yes   | Yes           | Yes              | Yes           |
-| Generate materials                             | Yes   | Yes           | No               | No            |
-| See the workspace member list                  | Yes   | Yes           | Yes              | Yes           |
-| Invite/remove members or change their roles    | Yes   | No            | No               | No            |
-| Change workspace name, color, tags, or sharing | Yes   | No            | No               | No            |
-| View workspace statistics                      | Yes   | No            | No               | No            |
-| Delete or transfer the workspace               | Yes   | No            | No               | No            |
+Membership roles are `owner`, `editor`, `viewer`. A link/public workspace also
+carries a `shareRole` of `editor` or `viewer` that applies to every signed-in
+nonmember. A caller's **effective role** is the more permissive of their
+membership and the share role. Content authority follows the effective role;
+workspace settings and membership follow persisted membership only.
 
-The core role hierarchy is `owner > editor > commenter > viewer`. Owner and
-editor satisfy `canEdit`; owner, editor, and commenter satisfy `canComment`;
-only owner satisfies `canManageMembers`. The API returns these request-scoped
-capabilities on workspace and material responses.
+| Capability                                                                                  | Owner | Editor member | Link/public editor | Viewer member | Link/public viewer | Anonymous    |
+| ------------------------------------------------------------------------------------------- | ----- | ------------- | ------------------ | ------------- | ------------------ | ------------ |
+| Read materials and files, download sources, use workspace chat                              | Yes   | Yes           | Yes                | Yes           | Yes                | Summary only |
+| Edit material document content (collaboration `write`)                                      | Yes   | Yes           | Yes                | No            | No                 | No           |
+| Create, resolve, and edit comments; delete **own** comments                                 | Yes   | Yes           | Yes                | No            | No                 | No           |
+| Delete **another user's** comment or discussion                                             | Yes   | No            | No                 | No            | No                 | No           |
+| Chapters, upload/rename/move/delete files, material metadata and delete, generate materials | Yes   | Yes           | Yes                | No            | No                 | No           |
+| Workspace name, color, description, tags, privacy, `shareRole`, statistics                  | Yes   | Yes           | No                 | No            | No                 | No           |
+| Invite/remove members, change roles, delete or transfer the workspace                       | Yes   | No            | No                 | No            | No                 | No           |
+| Member roster (`userId`, `name`, `avatarUrl`, `role`; never email)                          | Yes   | Yes           | No                 | Yes           | No                 | No           |
+| Mention directory (`userId`, `name`, `avatarUrl`)                                           | Yes   | Yes           | Yes                | No            | No                 | No           |
+| Clone the workspace                                                                         | Yes   | Yes           | Yes                | Yes           | No                 | No           |
+| Clone a standalone link/public quiz, flashcards, or material                                | Yes   | —             | —                  | —             | Yes                | No           |
+
+Owner and editor satisfy `canEdit`; only owner satisfies `canManageMembers`.
+The API returns these request-scoped capabilities on workspace and material
+responses. On a workspace response `role` is the persisted membership (absent
+for a share-role visitor) while `capabilities` follow the effective role, so a
+client keys settings on `role` and content controls on `capabilities`.
 
 Sources: [role definitions](../server/internal/store/enums.go#L62),
-[capability calculation](../server/internal/store/share.go#L88), and
+[role resolution](../server/internal/store/share.go#L27), and
 [capability contract test](../server/internal/store/contracts_test.go#L9).
 
 ## Visibility and shared access
@@ -57,10 +61,10 @@ Sources: [role definitions](../server/internal/store/enums.go#L62),
 `GET /api/public/workspaces/{id}/summary` reads live metadata for link/public
 workspaces. `HEAD` checks the same visibility without returning a body. Existing
 `ws_` identifiers remain the link identity. The response contains the workspace
-name, description, color, tags, privacy, owner display name, chapter names and
-file names, including unfiled files. It contains no material content, extracted
-text, internal content IDs, blob keys, download URLs, member details or account
-email. This is a metadata projection, not an AI-generated content summary.
+name, description, color, tags, privacy, owner display name, chapter names and,
+for every file including unfiled ones, its name, `sizeBytes` and `addedAt`. It
+contains no material content, extracted text, internal content IDs, blob keys,
+download URLs, member details or account email. This is a metadata projection, not an AI-generated content summary.
 
 The query reads visibility, owner lifecycle and metadata in one SQL snapshot.
 Private, missing or malformed IDs and suspended, deletion-pending or deleted
@@ -92,67 +96,73 @@ workspaces are listed in Explore, which also requires authentication. Files and
 materials inherit their workspace visibility, but reading their content requires
 a session. Anonymous visitors receive only the minimal workspace summary below.
 
-The workspace's `shareRole` grants an effective role for material
-collaboration to every **signed-in** caller:
-
-| Shared visitor                        | Read workspace/materials/files | Edit material document | Comment | Change workspace structure/files |
-| ------------------------------------- | ------------------------------ | ---------------------- | ------- | -------------------------------- |
-| Signed-in `editor` share role         | Yes                            | Yes                    | Yes     | No                               |
-| Signed-in `commenter` share role      | Yes                            | No                     | Yes     | No                               |
-| Signed-in `viewer` share role         | Yes                            | No                     | No      | No                               |
-| Anonymous visitor, for any share role | No; summary only               | No                     | No      | No                               |
+The workspace's `shareRole` grants an effective role to every **signed-in**
+nonmember; see the permission matrix above for what each column may do.
 
 Important boundaries:
 
-- A share role applies to **material collaboration**, not structural workspace
-  authorization. Shared editors cannot add chapters, upload files, generate
-  materials, manage members, or change sharing. Chat follows the effective
-  role instead (see the workspace chat section below).
+- A share-role editor holds the same content authority as an editor member:
+  document body, comments, chapters, files, material metadata and deletion,
+  generation and clone. Bytes are charged to the workspace owner, inference
+  credits to the actor. This is deliberate so users can predict what an edit
+  link grants.
+- A share role never reaches workspace settings or membership. Renaming,
+  recoloring, tagging, changing privacy or `shareRole`, reading statistics,
+  inviting, and deleting or transferring read persisted membership only.
 - Anonymous visitors cannot read workspace contents, standalone materials,
-  files, previews, editor assets, quizzes, flashcards, or Explore. They cannot
-  obtain material collaboration access. The public summary is their only
-  workspace read endpoint; write routes still require authentication.
+  files, previews, editor assets, quizzes, flashcards, or Explore. The public
+  summary is their only workspace read endpoint; write routes still require
+  authentication.
 - Roles are grants rather than caps, so a member's effective role is the **more
   permissive** of their membership and the share role. A viewer invited to a
-  workspace shared for editing may edit documents. Capping them would not
-  restrain anyone, since the same link already hands editing to every other
-  signed-in account, and it would leave the one invited collaborator with less
-  access than a stranger.
-- The raise never reaches structure. A raised viewer still cannot rename a
-  material, add a chapter, or upload, because those checks read the persisted
-  membership rather than the effective role.
+  workspace shared for editing edits like any other editor. Capping them would
+  not restrain anyone, since the same link already hands editing to every other
+  signed-in account.
 - A share role never lowers a membership. An editor member keeps editing on a
   view-only link.
+- A link/public viewer reads and chats but cannot clone the workspace; members
+  of any role and share-role editors can. Workspaces are large and cloning is
+  kept rare; sources remain downloadable one file at a time. Workspace
+  responses, Explore rows included, carry `canClone` computed server-side
+  from the caller's effective grant; the client offers the action in the
+  workspace card menu, the settings General tab, and Explore only when it is
+  true.
+- The share URL is the permanent `ws_` identifier so bookmarks and search
+  listings keep working. Revoking access means setting privacy to `private`;
+  re-enabling link sharing re-arms the same URL.
 - A workspace material has no independent visibility policy. Its stored privacy
   is forced to `private`, and read access always follows the workspace. Only a
   standalone material may be private, link-shared, or public on its own.
-- Shared material editors may change document content through collaboration,
-  but REST metadata changes such as title, filing, scope, or privacy require an
-  explicit owner/editor membership.
 - Changing visibility or `shareRole` moves everyone's effective role, so it
   evicts live collaboration connections the same way a membership change does.
-- Structural workspace writes lock the workspace and re-read the actor's
-  current membership in the same transaction as the mutation. A request that
-  began while someone was an editor cannot commit after the owner removes or
-  demotes them. Upload and editor-asset finalization apply the same final check
-  to the actor who created the reservation.
+- Content writes lock the workspace and re-read the actor's current effective
+  role in the same transaction as the mutation; settings writes re-read the
+  persisted membership. A request that began while someone was an editor
+  cannot commit after the owner removes or demotes them or narrows the share
+  role. Upload and editor-asset finalization apply the same final check to the
+  actor who created the reservation.
 
-Sources: [workspace versus material access rules](../server/internal/store/share.go#L13),
-[effective material role calculation](../server/internal/store/share.go#L107),
-[workspace structural guard](../server/internal/store/share.go#L43), and
+Sources: [role resolution and access rules](../server/internal/store/share.go#L13),
+[transactional editor checks](../server/internal/store/storage.go#L183), and
 [sharing end-to-end coverage](../e2e/sharing/workspace-sharing.spec.ts#L34).
 
 ## Feature permissions
 
 ### Workspace settings and membership
 
-- **Any explicit member** can list the workspace members, which includes each
-  member's email and role. Anyone who may comment, shared-link visitors
-  included, can instead read the redacted collaborator directory behind mention
-  autocomplete, which carries only user id, display name, and avatar.
+- **Any explicit member** can list the workspace members: user id, display
+  name, avatar, and role. A reader who is not a member gets `403`; a caller
+  with no read access gets the non-disclosing `404`. No API response carries
+  member emails. Anyone who
+  may edit, share-role editors included, can read the collaborator directory
+  behind mention autocomplete, which carries only user id, display name, and
+  avatar. A user whose display name is empty is shown by user id.
+- **Owner and editor members** can rename/recolor/describe/tag the workspace,
+  change private/link/public visibility or `shareRole`, and view workspace
+  statistics. Tags land in the owner's tag namespace whoever edits them.
+  Sharing changes are gated on the **owner's** lifecycle, not the actor's.
 - **Owner only** can invite a member, change a member's role, remove a member,
-  rename/recolor/tag the workspace, change private/link/public visibility or
-  `shareRole`, view workspace statistics, and delete the workspace.
+  and delete the workspace.
 - Over-quota owners cannot create invitations or promote an existing member,
   because either action widens exposure. They may demote or remove members as
   recovery-safe mutations.
@@ -180,17 +190,17 @@ Sources: [workspace versus material access rules](../server/internal/store/share
   the same two account rows in opposite order.
 
 Sources: [membership handlers](../server/internal/httpapi/huma_membership.go#L39),
-[owner-only workspace mutations](../server/internal/store/queries.go#L401), and
+[settings mutations](../server/internal/store/queries.go#L505), and
 [transfer transaction](../server/internal/store/workspace_transfer.go#L36).
 
 ### Chapters, files, and uploads
 
-- Owner and explicit editor members can create, rename, reorder, move, and
-  delete chapters.
-- Owner and explicit editor members can add/upload, rename, move, and delete
-  source files and editor assets.
-- Commenters, viewers, and shared nonmembers can read files when workspace
-  visibility permits, but cannot mutate workspace structure or files.
+- Owner and effective editors (member or share role) can create, rename,
+  reorder, move, and delete chapters.
+- Owner and effective editors can add/upload, rename, move, and delete source
+  files and editor assets.
+- Viewers can read files when workspace visibility permits, but cannot mutate
+  workspace structure or files.
 - Upload reservations and finalized bytes are charged to the workspace owner,
   not the editor who uploaded them.
 - Direct cloud-source inspection treats DNS and connection failures as
@@ -203,14 +213,12 @@ Sources: [chapter and file handlers](../server/internal/httpapi/huma_content.go#
 
 ### Notes and other material documents
 
-- Owner and explicit editor members can create materials in a workspace. Their
+- Owner and effective editors can create materials in a workspace. Their
   visibility is inherited from the workspace and cannot be changed separately.
-- Owner, explicit editors, and signed-in shared editors can edit the live
-  document body.
-- Only explicit owner/editor access can change material metadata through
-  `PATCH /api/materials/{id}/metadata`. Publishing a material additionally
-  requires a fully writable actor account.
-- Owner and explicit editor members can delete a workspace material. For a
+- Owner and effective editors can edit the live document body and change
+  material metadata through `PATCH /api/materials/{id}/metadata`. Publishing a
+  material additionally requires a fully writable actor account.
+- Owner and effective editors can delete a workspace material. For a
   standalone material, only its owner can edit or delete it.
 - Material revisions are readable to users who can read the material.
 - Revision history keeps one latest snapshot per UTC day, up to 30 daily
@@ -218,26 +226,26 @@ Sources: [chapter and file handlers](../server/internal/httpapi/huma_content.go#
   prunes everything beyond the newest three snapshots. Resubscribing does not
   recover the discarded 27 Pro snapshots.
 
-Sources: [material handlers](../server/internal/httpapi/huma_materials.go#L41),
-[explicit metadata restriction](../server/internal/httpapi/huma_materials.go#L184),
+Sources: [material handlers](../server/internal/httpapi/huma_materials.go#L41)
 and [material editor checks](../server/internal/store/share.go#L209).
 
 ### Comments and live collaboration
 
-- Owner, editor, and commenter roles can list discussions, create a discussion,
-  reply, and resolve or reopen a discussion. This includes effective
-  link/public share roles for signed-in users.
+- Owner and effective editors can list discussions, create a discussion,
+  reply, and resolve or reopen a discussion. Commenting is an editor mode, not
+  a separate grant.
 - A user can edit only their own comment.
-- A user can delete their own comment or discussion. Owners/editors can also
-  delete another user's comment or discussion; commenters cannot.
-- Signed-in viewers get static read-only material rendering and cannot join
-  the collaboration room. Anonymous visitors must sign in to read materials.
+- A user can delete their own comment or discussion. Only the workspace owner
+  can delete another user's comment or discussion.
+- Viewers get static read-only material rendering and cannot join the
+  collaboration room. Anonymous visitors must sign in to read materials.
 - Discussions and comments carry their author's display name and avatar. The
   client does not resolve authorship against the current member list, so a
   contributor who has since left the workspace stays attributed and a reader
   without a roster still sees who wrote what.
-- Collaboration tokens encode `write`, `comment`, or quota-recovery `shrink`
-  access. A token's document growth rule follows the material's storage owner,
+- Collaboration tokens encode `write` or quota-recovery `shrink` access; a
+  `comment` token exists only as the downgrade an editor receives when the
+  storage owner's account is locked. A token's document growth rule follows the material's storage owner,
   not the connecting editor. The collaboration server rechecks actor lifecycle,
   current membership/share role, owner lifecycle, and current quota state when
   admitting a connection, synchronizing a refreshed token, and persisting each
@@ -276,17 +284,16 @@ and [material editor checks](../server/internal/store/share.go#L209).
 
 Sources: [collaboration token access](../server/internal/httpapi/huma_collaboration.go#L109),
 [discussion/comment authorization](../server/internal/httpapi/huma_collaboration.go#L195),
-and [commenter end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L29).
+and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L29).
 
 ### Quizzes and flashcards
 
 - Readable shared quizzes can be attempted by any signed-in user. Attempts,
   mistakes, and review history belong to the user taking the quiz.
-- Quiz/flashcard responses distinguish `isOwner` from `canEdit`. Explicit
+- Quiz/flashcard responses distinguish `isOwner` from `canEdit`. Effective
   workspace editors receive content controls without receiving owner-only
-  sharing/privacy controls; commenters, viewers, and link/public visitors do
-  not receive mutation controls.
-- Owner and explicit workspace editors can modify workspace quizzes,
+  sharing/privacy controls; viewers do not receive mutation controls.
+- Owner and effective workspace editors can modify workspace quizzes,
   flashcards, and cards. The dedicated quiz and flashcard routes apply the same
   account lifecycle and storage-owner gates as the unified material API.
   Standalone quizzes and flashcards remain owner-controlled.
@@ -298,11 +305,11 @@ and [commenter end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L29).
   standalone sharing uses `/sharing`. Content/metadata paths do not accept
   privacy, and sharing rejects workspace-contained materials before writing
   anything.
-- Signed-in commenters, viewers, and shared visitors can read a shared quiz or
-  flashcards, but cannot change its questions or cards. Anonymous visitors must
-  sign in to read this content.
-- Cloning a readable shared quiz, flashcards, material, or workspace creates a new
-  owner-controlled copy charged to the signed-in cloner.
+- Signed-in viewers can read a shared quiz or flashcards, but cannot change
+  its questions or cards. Anonymous visitors must sign in to read this content.
+- Cloning a readable standalone quiz, flashcards, or material creates a new
+  owner-controlled copy charged to the signed-in cloner. Cloning a workspace
+  additionally requires membership of any role or an effective editor grant.
 - Clone source content is one repeatable-read SQL snapshot. Clones never lock a
   source workspace/material or wait for Yjs persistence/projection; a stale SQL
   projection is an explicitly accepted result. Clone counters live on separate
@@ -325,8 +332,8 @@ Sources: [quiz read/attempt rules](../server/internal/httpapi/huma_quizzes.go#L7
 - Persisted streaming chat and chat history are open to any signed-in actor
   with an effective workspace role (`WorkspaceEffectiveRole`: membership raised
   by link/public privacy and share role), so link-shared and public workspaces
-  let viewers, commenters, and editors chat. Conversations are private to the
-  user who created them, even inside the same workspace, and are never cloned.
+  let viewers and editors chat. Conversations are private to the user who
+  created them, even inside the same workspace, and are never cloned.
   Revoking privacy leaves old threads in place but unreadable. Chat and generate
   model choice is an account preference (**Settings → LLM**), snapshotted onto
   new conversations; the browser cannot pick a model per request. Editor AI
@@ -335,20 +342,19 @@ Sources: [quiz read/attempt rules](../server/internal/httpapi/huma_quizzes.go#L7
   single-key BYOK, and is gated by
   `VITE_FEATURE_EDITOR_AI`.
 - Generation, the chat `generate_material` tool, and the internal material
-  callback stay structural: owner or explicit member editor only, never a
-  share-role editor. The gateway sends `canGenerate` to the pipeline, which
-  omits the tool from the prompt and refuses calls otherwise.
+  callback follow the effective role: owner, member editor, or share-role
+  editor. The gateway sends `canGenerate` to the pipeline, which omits the tool
+  from the prompt and refuses calls otherwise.
 - Pending-source context: the gateway forwards the `pending_sources` chat event
-  only to actors whose effective role can edit (owner, member editor, or
-  link/public share-role editor), so viewers and commenters never see the notice.
-  Manual and automatic reprocessing (`RequestSourceRefresh`) are owner-only;
-  editors see the label without the process-now button.
+  only to actors whose effective role can edit, so viewers never see the
+  notice. Manual and automatic reprocessing (`RequestSourceRefresh`) are
+  owner-only; editors see the label without the process-now button.
 - Generated material storage is charged to the workspace owner. The actor is
   recorded as author but does not become storage owner.
 - Inference credits are billed to the actor (`BeginProviderSession` /
   `llm_credits_exhausted`). Ingest claim-time checks owner lifecycle/storage
   and actor lifecycle/credits separately. Ordinary ingest also requires the
-  actor to remain the workspace owner or an explicit editor at claim,
+  actor to remain the workspace owner or an effective editor at claim,
   heartbeat, provider admission, and every final write. A demotion or removal
   cancels the exact job attempt and reservation. These boundaries use the same
   lock order as workspace mutations: workspace, ordered accounts, membership,

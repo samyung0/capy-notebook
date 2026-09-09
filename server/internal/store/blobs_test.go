@@ -393,7 +393,7 @@ func TestCloneThenDeleteKeepsTheSurvivingCopy(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Cloning requires read access, which for a non-member means public/link.
-	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='public' WHERE id=$1`,
+	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='public', share_role='editor' WHERE id=$1`,
 		source.ID); err != nil {
 		t.Fatal(err)
 	}

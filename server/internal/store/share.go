@@ -18,110 +18,99 @@ import (
 
 Sharing model: workspace privacy is inherited by everything inside it, while
 standalone materials keep their own privacy.
-  - owner / member → read (and write per role capabilities)
-  - link/public    → signed-in callers may read; workspace nonmembers receive
-    share_role for material collaboration
+  - owner / member → read (and write per role)
+  - link/public    → signed-in callers may read; nonmembers receive share_role
   - private        → owner/members only (404 for everyone else)
-A material is readable when its parent workspace is link/public, or when it is
-standalone and its own policy is link/public. */
+A caller's effective role is the more permissive of their membership and the
+share role. Roles are grants rather than caps: capping a member at their
+invited role would not restrain anyone, since the same link hands that access
+to every other signed-in account. Content authority (documents, comments,
+chapters, files, materials, generation, clone) follows the effective role;
+workspace settings follow persisted membership only. */
+
+// workspaceRoles reads the actor's persisted membership and the role the
+// workspace effectively grants them. The owner is owner in both. userID "" is
+// tolerated and yields no role.
+func workspaceRoles(ctx context.Context, q rowQueryer, userID, wsID string) (member, effective WorkspaceRole, err error) {
+	var owner string
+	var privacy Privacy
+	var shareRole ShareRole
+	err = q.QueryRow(ctx, `SELECT w.user_id, w.privacy, w.share_role, COALESCE(wm.role,'')
+		FROM workspaces w
+		JOIN users owner ON owner.id=w.user_id
+		LEFT JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.user_id=$2
+		WHERE w.id=$1 AND owner.deleted_at IS NULL
+			AND owner.deletion_requested_at IS NULL`, wsID, userID).Scan(&owner, &privacy, &shareRole, &member)
+	if isNoRows(err) {
+		return "", "", ErrNotFound
+	}
+	if err != nil {
+		return "", "", err
+	}
+	if userID == "" {
+		return "", "", nil
+	}
+	if owner == userID {
+		member = RoleOwner
+	}
+	return member, EffectiveRole(member, privacy, shareRole), nil
+}
+
+// EffectiveRole is a member's grant raised by what the workspace hands to
+// every signed-in nonmember.
+func EffectiveRole(member WorkspaceRole, privacy Privacy, shareRole ShareRole) WorkspaceRole {
+	return MaxRole(member, nonmemberGrant(privacy, shareRole))
+}
+
+// WorkspaceRoles exposes both grants in one query for callers that need
+// membership and effective role together.
+func (s *Store) WorkspaceRoles(ctx context.Context, userID, wsID string) (member, effective WorkspaceRole, err error) {
+	return workspaceRoles(ctx, s.pool, userID, wsID)
+}
 
 // WorkspaceAccess reports whether userID may read wsID. isOwner is true for
-// the owner; (false, nil) means shared read access (privacy link/public).
+// the owner; (false, nil) means member or shared read access.
 func (s *Store) WorkspaceAccess(ctx context.Context, userID, wsID string) (isOwner bool, err error) {
 	if userID == "" {
 		return false, ErrNotFound
 	}
-	var owner *string
-	var privacy Privacy
-	e := s.pool.QueryRow(ctx, `SELECT w.user_id, w.privacy
-		FROM workspaces w
-		JOIN users owner ON owner.id=w.user_id
-		WHERE w.id=$1 AND owner.deleted_at IS NULL
-			AND owner.deletion_requested_at IS NULL`, wsID).Scan(&owner, &privacy)
-	if isNoRows(e) {
+	member, effective, err := workspaceRoles(ctx, s.pool, userID, wsID)
+	if err != nil {
+		return false, err
+	}
+	if effective == "" {
 		return false, ErrNotFound
 	}
-	if e != nil {
-		return false, e
-	}
-	if owner != nil && *owner == userID {
-		return true, nil
-	}
-	if role, roleErr := s.WorkspaceRole(ctx, userID, wsID); roleErr == nil && role != "" {
-		return role == RoleOwner, nil
-	} else if roleErr != nil {
-		return false, roleErr
-	}
-	if privacy == PrivacyLink || privacy == PrivacyPublic {
-		return false, nil
-	}
-	return false, ErrNotFound
+	return member == RoleOwner, nil
 }
 
-// WorkspaceRole returns only a persisted membership role. It intentionally
-// does not apply workspaces.share_role: structural workspace authorization is
-// always membership-based. The legacy
-// workspaces.user_id owner remains authoritative and is returned as owner even
-// if a membership row has not yet been backfilled.
+// WorkspaceRole returns only the persisted membership role ("" for a
+// nonmember). Workspace settings and the member roster use it.
 func (s *Store) WorkspaceRole(ctx context.Context, userID, wsID string) (WorkspaceRole, error) {
-	var role WorkspaceRole
-	err := s.pool.QueryRow(ctx, `
-		SELECT CASE WHEN w.user_id=$2 THEN 'owner' ELSE COALESCE(wm.role,'') END
-		FROM workspaces w
-		JOIN users owner ON owner.id=w.user_id
-		LEFT JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.user_id=$2
-		WHERE w.id=$1 AND owner.deleted_at IS NULL
-			AND owner.deletion_requested_at IS NULL`, wsID, userID).Scan(&role)
-	if isNoRows(err) {
-		return "", ErrNotFound
-	}
-	return role, err
+	member, _, err := workspaceRoles(ctx, s.pool, userID, wsID)
+	return member, err
 }
 
-// WorkspaceEffectiveRole is the workspace-wide counterpart of
-// MaterialEffectiveAccess: membership raised by the share role wherever the
-// workspace is link/public. It answers collaboration questions that are not
-// scoped to one material, such as who may read the collaborator directory.
-// Structural authorization keeps using WorkspaceRole.
+// WorkspaceEffectiveRole is the membership raised by the share role wherever
+// the workspace is link/public. ErrNotFound when the caller has no access.
 func (s *Store) WorkspaceEffectiveRole(ctx context.Context, userID, wsID string) (WorkspaceRole, error) {
 	if userID == "" {
 		return "", ErrNotFound
 	}
-	var owner *string
-	var privacy Privacy
-	var shareRole *ShareRole
-	var memberRole WorkspaceRole
-	err := s.pool.QueryRow(ctx, `
-		SELECT w.user_id, w.privacy, w.share_role, COALESCE(wm.role,'')
-		FROM workspaces w
-		JOIN users owner ON owner.id=w.user_id
-		LEFT JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.user_id=$2
-		WHERE w.id=$1 AND owner.deleted_at IS NULL
-			AND owner.deletion_requested_at IS NULL`, wsID, userID).Scan(&owner, &privacy, &shareRole, &memberRole)
-	if isNoRows(err) {
-		return "", ErrNotFound
-	}
+	_, effective, err := workspaceRoles(ctx, s.pool, userID, wsID)
 	if err != nil {
 		return "", err
 	}
-	if userID != "" && owner != nil && *owner == userID {
-		return RoleOwner, nil
-	}
-	var sharedRole WorkspaceRole
-	if privacy == PrivacyLink || privacy == PrivacyPublic {
-		sharedRole = RoleViewer
-		if userID != "" && shareRole != nil {
-			sharedRole = shareRole.WorkspaceRole()
-		}
-	}
-	if memberRole == "" && sharedRole == "" {
+	if effective == "" {
 		return "", ErrNotFound
 	}
-	return MaxRole(memberRole, sharedRole), nil
+	return effective, nil
 }
 
+// AssertWorkspaceEditor gates workspace content: chapters, files, materials,
+// generation. Member editors and link/public share-role editors both pass.
 func (s *Store) AssertWorkspaceEditor(ctx context.Context, userID, wsID string) error {
-	role, err := s.WorkspaceRole(ctx, userID, wsID)
+	role, err := s.WorkspaceEffectiveRole(ctx, userID, wsID)
 	if err != nil {
 		return err
 	}
@@ -131,12 +120,14 @@ func (s *Store) AssertWorkspaceEditor(ctx context.Context, userID, wsID string) 
 	return nil
 }
 
-func (s *Store) AssertWorkspaceCommenter(ctx context.Context, userID, wsID string) error {
+// AssertWorkspaceMemberEditor gates workspace settings (name, color, tags,
+// sharing, stats), which stay with persisted owner/editor membership.
+func (s *Store) AssertWorkspaceMemberEditor(ctx context.Context, userID, wsID string) error {
 	role, err := s.WorkspaceRole(ctx, userID, wsID)
 	if err != nil {
 		return err
 	}
-	if !RoleCanComment(role) {
+	if !RoleCanEdit(role) {
 		return ErrForbidden
 	}
 	return nil
@@ -149,10 +140,8 @@ func RoleCanEdit(role WorkspaceRole) bool {
 func roleRank(role WorkspaceRole) int {
 	switch role {
 	case RoleOwner:
-		return 4
-	case RoleEditor:
 		return 3
-	case RoleCommenter:
+	case RoleEditor:
 		return 2
 	case RoleViewer:
 		return 1
@@ -161,8 +150,16 @@ func roleRank(role WorkspaceRole) int {
 	}
 }
 
-// MaxRole returns the more permissive of two grants. Roles are grants rather
-// than caps, so a caller holding several of them keeps the strongest.
+// nonmemberGrant is the role a link/public workspace hands to every signed-in
+// nonmember; a private workspace grants nothing.
+func nonmemberGrant(privacy Privacy, shareRole ShareRole) WorkspaceRole {
+	if privacy == PrivacyLink || privacy == PrivacyPublic {
+		return shareRole.WorkspaceRole()
+	}
+	return ""
+}
+
+// MaxRole returns the more permissive of two grants.
 func MaxRole(a, b WorkspaceRole) WorkspaceRole {
 	if roleRank(b) > roleRank(a) {
 		return b
@@ -170,75 +167,27 @@ func MaxRole(a, b WorkspaceRole) WorkspaceRole {
 	return a
 }
 
-func RoleCanComment(role WorkspaceRole) bool {
-	return RoleCanEdit(role) || role == RoleCommenter
-}
-
 func CapabilitiesForRole(role WorkspaceRole, canView bool) AccessCapabilities {
 	return AccessCapabilities{
 		CanView:          canView || role != "",
 		CanEdit:          RoleCanEdit(role),
-		CanComment:       RoleCanComment(role),
 		CanManageMembers: role == RoleOwner,
 	}
 }
 
-// MaterialRole returns only the requester's persisted role inherited from the
-// parent workspace. Standalone material owners are represented as owners. Use
-// MaterialEffectiveAccess for request-scoped shared material capabilities.
-func (s *Store) MaterialRole(ctx context.Context, userID, matID string) (WorkspaceRole, error) {
-	var owner, wsID *string
-	err := s.pool.QueryRow(ctx, `SELECT m.owner_user_id, m.workspace_id
-		FROM materials m
-		JOIN users owner ON owner.id=m.owner_user_id
-		WHERE m.id=$1 AND owner.deleted_at IS NULL
-			AND owner.deletion_requested_at IS NULL`, matID).
-		Scan(&owner, &wsID)
-	if isNoRows(err) {
-		return "", ErrNotFound
-	}
-	if err != nil {
-		return "", err
-	}
-	if owner != nil && *owner == userID {
-		return RoleOwner, nil
-	}
-	if wsID != nil {
-		return s.WorkspaceRole(ctx, userID, *wsID)
-	}
-	return "", nil
-}
-
-// MaterialAccessInfo separates the caller's persisted membership from the
-// role that actually applies to this request.
-//
-// Role is the more permissive of the two grants that can reach the caller:
-// their membership and, on a link/public workspace, the share role. Capping a
-// member at their invited role would not restrain anyone — a workspace shared
-// for editing hands that same access to every other signed-in account — while
-// it does surprise the one person who accepted an invitation.
-//
-// MemberRole carries the persisted role on its own for the checks that must
-// stay membership-based, such as material metadata edits. A shared grant
-// governs document collaboration and never workspace structure.
-type MaterialAccessInfo struct {
-	Role       WorkspaceRole
-	MemberRole WorkspaceRole
-}
-
-// MaterialEffectiveAccess derives material access for this request:
-//   - direct owner: owner
-//   - explicit member: their role, raised to the share role where the
-//     workspace is shared more permissively
-//   - signed-in nonmember of a link/public workspace: workspace share_role
-//   - standalone material-level sharing: viewer
+// materialEffectiveAccess derives the caller's role on a material:
+//   - material or workspace owner: owner
+//   - workspace member: their role, raised to the share role where the
+//     workspace is link/public
+//   - signed-in nonmember of a link/public workspace: the share role
+//   - standalone link/public material: viewer
 func materialEffectiveAccess(
 	ctx context.Context,
 	q rowQueryer,
 	userID, matID string,
-) (MaterialAccessInfo, error) {
+) (WorkspaceRole, error) {
 	if userID == "" {
-		return MaterialAccessInfo{}, ErrNotFound
+		return "", ErrNotFound
 	}
 	var materialOwner, wsID, workspaceOwner *string
 	var materialPrivacy Privacy
@@ -264,16 +213,16 @@ func materialEffectiveAccess(
 		&memberRole,
 	)
 	if isNoRows(err) {
-		return MaterialAccessInfo{}, ErrNotFound
+		return "", ErrNotFound
 	}
 	if err != nil {
-		return MaterialAccessInfo{}, err
+		return "", err
 	}
-	if userID != "" && materialOwner != nil && *materialOwner == userID {
-		return MaterialAccessInfo{Role: RoleOwner, MemberRole: RoleOwner}, nil
+	if materialOwner != nil && *materialOwner == userID {
+		return RoleOwner, nil
 	}
-	if userID != "" && workspaceOwner != nil && *workspaceOwner == userID {
-		return MaterialAccessInfo{Role: RoleOwner, MemberRole: RoleOwner}, nil
+	if workspaceOwner != nil && *workspaceOwner == userID {
+		return RoleOwner, nil
 	}
 
 	workspaceShared := wsID != nil && workspacePrivacy != nil &&
@@ -283,27 +232,14 @@ func materialEffectiveAccess(
 	switch {
 	case workspaceShared && shareRole != nil:
 		sharedRole = shareRole.WorkspaceRole()
-	case workspaceShared:
-		sharedRole = RoleViewer
-	case materialShared:
-		// Standalone material links are intentionally view-only.
+	case workspaceShared, materialShared:
 		sharedRole = RoleViewer
 	}
-
-	if memberRole != "" {
-		return MaterialAccessInfo{
-			Role:       MaxRole(memberRole, sharedRole),
-			MemberRole: memberRole,
-		}, nil
+	role := MaxRole(memberRole, sharedRole)
+	if role == "" {
+		return "", ErrNotFound
 	}
-	if sharedRole != "" {
-		return MaterialAccessInfo{Role: sharedRole}, nil
-	}
-	return MaterialAccessInfo{}, ErrNotFound
-}
-
-func (s *Store) MaterialEffectiveAccess(ctx context.Context, userID, matID string) (MaterialAccessInfo, error) {
-	return materialEffectiveAccess(ctx, s.pool, userID, matID)
+	return role, nil
 }
 
 // UpdateStandaloneMaterialPrivacy is the only material-sharing write. It
@@ -328,59 +264,29 @@ func (s *Store) UpdateStandaloneMaterialPrivacy(
 }
 
 func (s *Store) MaterialEffectiveRole(ctx context.Context, userID, matID string) (WorkspaceRole, error) {
-	access, err := s.MaterialEffectiveAccess(ctx, userID, matID)
-	return access.Role, err
+	return materialEffectiveAccess(ctx, s.pool, userID, matID)
 }
 
 // MaterialAccess reports whether userID may read the material.
 func (s *Store) MaterialAccess(ctx context.Context, userID, matID string) (isOwner bool, err error) {
-	access, err := s.MaterialEffectiveAccess(ctx, userID, matID)
+	role, err := s.MaterialEffectiveRole(ctx, userID, matID)
 	if err != nil {
 		return false, err
 	}
-	return access.Role == RoleOwner, nil
+	return role == RoleOwner, nil
 }
 
+// AssertMaterialEditor gates document, comment and metadata writes. A
+// standalone material is editable by its owner only.
 func (s *Store) AssertMaterialEditor(ctx context.Context, userID, matID string) error {
-	var owner, wsID *string
-	err := s.pool.QueryRow(ctx, `SELECT owner_user_id, workspace_id FROM materials WHERE id=$1`, matID).Scan(&owner, &wsID)
-	if isNoRows(err) {
-		return ErrNotFound
-	}
+	role, err := s.MaterialEffectiveRole(ctx, userID, matID)
 	if err != nil {
 		return err
 	}
-	if owner != nil && *owner == userID {
-		return nil
-	}
-	if wsID != nil {
-		return s.AssertWorkspaceEditor(ctx, userID, *wsID)
-	}
-	return ErrForbidden
-}
-
-func (s *Store) AssertMaterialCommenter(ctx context.Context, userID, matID string) error {
-	access, err := s.MaterialEffectiveAccess(ctx, userID, matID)
-	if err != nil {
-		return err
-	}
-	if !RoleCanComment(access.Role) {
+	if !RoleCanEdit(role) {
 		return ErrForbidden
 	}
 	return nil
-}
-
-// AssertMaterialContentEditor permits effective shared editors to patch Plate
-// content. Callers must still enforce the shared-editor field allow-list.
-func (s *Store) AssertMaterialContentEditor(ctx context.Context, userID, matID string) (MaterialAccessInfo, error) {
-	access, err := s.MaterialEffectiveAccess(ctx, userID, matID)
-	if err != nil {
-		return MaterialAccessInfo{}, err
-	}
-	if !RoleCanEdit(access.Role) {
-		return MaterialAccessInfo{}, ErrForbidden
-	}
-	return access, nil
 }
 
 // FileWorkspaceID resolves the owning workspace of a file (for access checks).
@@ -428,13 +334,16 @@ func (s *Store) GetWorkspaceShared(ctx context.Context, id string) (Workspace, e
 Explore reads live rows: everything with privacy='public' plus its author name
 and clone counter. The seeded public_* snapshot tables are no longer used. */
 
-func (s *Store) ListPublicWorkspaces(ctx context.Context) ([]PublicWorkspace, error) {
-	rows, err := s.pool.Query(ctx, `SELECT `+wsCols+`, COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0)
+// ListPublicWorkspaces lists Explore rows with the caller's persisted
+// membership on each, so the response can carry their real capabilities.
+func (s *Store) ListPublicWorkspaces(ctx context.Context, userID string) ([]PublicWorkspace, error) {
+	rows, err := s.pool.Query(ctx, `SELECT `+wsCols+`, COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0), `+memberRoleCol+`
 		FROM workspaces w LEFT JOIN users u ON u.id=w.user_id
 		LEFT JOIN workspace_clone_counts cc ON cc.workspace_id=w.id
+		LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1
 		WHERE w.privacy='public'
 		  AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL
-		ORDER BY COALESCE(cc.clone_count,0) DESC, w.created_at DESC`)
+		ORDER BY COALESCE(cc.clone_count,0) DESC, w.created_at DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -445,7 +354,7 @@ func (s *Store) ListPublicWorkspaces(ctx context.Context) ([]PublicWorkspace, er
 		if err := rows.Scan(&w.ID, &w.Name, &w.Description, &w.Color, &w.Privacy, &w.ShareRole,
 			&w.Tags, &w.OwnerUserID, &w.OwnerName, &w.OwnerPlanTier,
 			&w.ChapterCount, &w.FileCount, &w.CreatedAt, &w.LastAccessedAt, &w.AutoReparse, &w.AutoReindex,
-			&w.Author, &w.Clones); err != nil {
+			&w.Author, &w.Clones, &w.MemberRole); err != nil {
 			return nil, err
 		}
 		limits, err := s.PlanLimits(w.OwnerPlanTier)
@@ -1040,13 +949,17 @@ func (s *Store) cloneWorkspaceOnce(
 	}
 	isOwner := src.OwnerUserID == userID
 	if !isOwner {
-		var member bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM workspace_members
-			WHERE workspace_id=$1 AND user_id=$2)`, srcID, userID).Scan(&member); err != nil {
+		// Members of any role and share-role editors may copy the workspace;
+		// a link/public viewer may read it but not clone it.
+		member, effective, err := workspaceRoles(ctx, tx, userID, srcID)
+		if err != nil {
 			return Workspace{}, err
 		}
-		if !member && src.Privacy != PrivacyLink && src.Privacy != PrivacyPublic {
+		if effective == "" {
 			return Workspace{}, ErrNotFound
+		}
+		if member == "" && !RoleCanEdit(effective) {
+			return Workspace{}, ErrForbidden
 		}
 	}
 	limits, err := s.gateOwnedWorkspacesTx(ctx, tx, userID, 1)

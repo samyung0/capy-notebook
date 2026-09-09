@@ -13,8 +13,10 @@ import (
 /* Sharing & cloning.
 
 Read access follows the privacy model in store/share.go: owners get full
-access, link/public resources are readable (and clonable) by any signed-in
-user. Clone endpoints deep-copy into the caller's account; a workspace clone
+access, link/public resources are readable by any signed-in user; standalone
+materials are clonable by any reader, while a workspace clone additionally
+requires membership or an effective editor grant. Clone endpoints deep-copy
+into the caller's account; a workspace clone
 copies the retrieval index in the same transaction as the content, so the copy
 is queryable the moment it exists. */
 

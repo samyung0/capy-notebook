@@ -733,11 +733,6 @@
       "targets": ["quality"],
       "environments": ["uat"]
     },
-    "UAT_COMMENTER_EMAIL": {
-      "kind": "variable",
-      "targets": ["quality"],
-      "environments": ["uat"]
-    },
     "UAT_EDITOR_EMAIL": {
       "kind": "variable",
       "targets": ["quality"],

@@ -22,10 +22,9 @@ enrich agentic loop tools. Add edit files (both uploaded/imported files -> need 
 , then make categories like: list, read, create, edit (for how we display them in the UI). I dont think we need to set tool permissions yet or set available services for the tools (only chat right now).
 and make sure the context reporting (before + after)/ tool runtime, mostly i need in telementry and not something that needs to be reported to user.
 remove agentic review required to promote to prod
-1. separate orchestrator (go server + pythong) and worker flow (the Netcup ingest host currently does parsing and ingest)
 1. diagrams.net (generate have a 1 turn generate->QA->fix loop on server)
    we need to orchestrate the behavior for material generation for different surfaces (for anything that includes non-text):
-    -> determine the surface needing this (chat or editor (plate))
+    -> determine the slot needing this (chat or editor (plate))
     -> start flow in go server
     -> QA loop necessary: run the job on the ingest host (because it might involve spawning different processes and I dont want to have the load on the main server)
         not necessary (like generating images -> one shot, cant really tune after pixel is generated): run in main server is fine

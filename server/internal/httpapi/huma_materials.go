@@ -50,8 +50,8 @@ func (a *api) registerMaterials(api huma.API) {
 	a.registerCollaboration(api)
 }
 
-// assertMaterialOwner checks direct material ownership. This supports both
-// workspace-contained and truly standalone quizzes/flashcardSets.
+// assertMaterialOwner checks material edit authority: the owner of a
+// standalone material, or an effective editor of the containing workspace.
 func (a *api) assertMaterialOwner(ctx context.Context, matID string) error {
 	err := a.s.AssertMaterialEditor(ctx, userID(ctx), matID)
 	if errors.Is(err, store.ErrForbidden) {
@@ -177,15 +177,8 @@ func (a *api) updateMaterial(
 	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
-	access, err := a.s.AssertMaterialContentEditor(ctx, userID(ctx), in.ID)
-	if err != nil {
+	if err := a.s.AssertMaterialEditor(ctx, userID(ctx), in.ID); err != nil {
 		return nil, collaborationError(err)
-	}
-	// Metadata is workspace structure, so it needs an editing membership rather
-	// than the effective role: a link share can raise someone to editing the
-	// document body without letting them retitle, refile, or publish it.
-	if !store.RoleCanEdit(access.MemberRole) {
-		return nil, collaborationError(store.ErrForbidden)
 	}
 	if in.Body.Title != nil && in.Body.ExpectedRevision == nil {
 		return nil, huma.Error400BadRequest("expectedRevision is required when changing title")

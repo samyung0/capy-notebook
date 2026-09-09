@@ -16,6 +16,7 @@ export interface PublicWorkspace {
   author: string;
   autoReindex: boolean;
   autoReparse: boolean;
+  canClone: boolean;
   capabilities: AccessCapabilities;
   chapterCount: number;
   clones: number;

@@ -1,10 +1,9 @@
 import { createClerkClient } from '@clerk/backend';
 import type { Page } from '@playwright/test';
 
-export type Actor = 'commenter' | 'editor' | 'other' | 'owner' | 'viewer';
+export type Actor = 'editor' | 'other' | 'owner' | 'viewer';
 
 const emails: Record<Actor, string> = {
-  commenter: process.env.UAT_COMMENTER_EMAIL!,
   editor: process.env.UAT_EDITOR_EMAIL!,
   other: process.env.UAT_OTHER_EMAIL!,
   owner: process.env.UAT_OWNER_EMAIL!,

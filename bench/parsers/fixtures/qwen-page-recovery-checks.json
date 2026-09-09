@@ -1,0 +1,165 @@
+{
+  "description": "Sixteen source-reviewed checks frozen before first Qwen or GLM caption request on these eight pages. Pages are new to caption evaluation, while the full PDFs have been parsed previously. These are selected diagnostics, not population accuracy.",
+  "checks": [
+    {
+      "id": "de-scale",
+      "job": "holdout-rag__de__grosse-sprachmodelle-p13",
+      "case": "rag__de__grosse-sprachmodelle",
+      "page": 12,
+      "source_image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-08-qwen-java-recovery/holdout/holdout-rag__de__grosse-sprachmodelle-p13.png",
+      "image_sha256": "3a2794d1cb0b597f6b5c737ed11af2cd6778582a0377c614be88853909b9e558",
+      "question": "What are the graph units and scale?",
+      "expected": "Compute in petaFLOPS on a logarithmic vertical scale; 1 petaFLOP is 10^15 FLOPS."
+    },
+    {
+      "id": "de-domains",
+      "job": "holdout-rag__de__grosse-sprachmodelle-p13",
+      "case": "rag__de__grosse-sprachmodelle",
+      "page": 12,
+      "source_image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-08-qwen-java-recovery/holdout/holdout-rag__de__grosse-sprachmodelle-p13.png",
+      "image_sha256": "3a2794d1cb0b597f6b5c737ed11af2cd6778582a0377c614be88853909b9e558",
+      "question": "List the eight domain legend entries.",
+      "expected": "Language, Driving, Drawing, Games, Vision, Speech, Multimodal, Other."
+    },
+    {
+      "id": "en-axes",
+      "job": "holdout-rag__en__biology-ib-chapter-1-p8",
+      "case": "rag__en__biology-ib-chapter-1",
+      "page": 7,
+      "source_image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-08-qwen-java-recovery/holdout/holdout-rag__en__biology-ib-chapter-1-p8.png",
+      "image_sha256": "d7e923680425526bdf6f1f096f004841f2005d8b7d14f43c4edd0cabdd1aa4f4",
+      "question": "What do the axes measure?",
+      "expected": "Horizontal: number of people taking an annual holiday times 1000. Vertical: number of hotels in a holiday resort."
+    },
+    {
+      "id": "en-causality",
+      "job": "holdout-rag__en__biology-ib-chapter-1-p8",
+      "case": "rag__en__biology-ib-chapter-1",
+      "page": 7,
+      "source_image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-08-qwen-java-recovery/holdout/holdout-rag__en__biology-ib-chapter-1-p8.png",
+      "image_sha256": "d7e923680425526bdf6f1f096f004841f2005d8b7d14f43c4edd0cabdd1aa4f4",
+      "question": "What relationship and caution accompany Figure 1.5?",
+      "expected": "Positive correlation. A trend does not necessarily mean there is a causal relationship."
+    },
+    {
+      "id": "es-table5",
+      "job": "holdout-rag__es__variedades-espanol-p5",
+      "case": "rag__es__variedades-espanol",
+      "page": 4,
+      "source_image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-08-qwen-java-recovery/holdout/holdout-rag__es__variedades-espanol-p5.png",
+      "image_sha256": "6110b112c62543454f6747e7633a3e92dca35cb1f8bdd116bc9652f4bab960cd",
+      "question": "What is the GPT-4o row in Table 5 for continental Caribbean Spanish?",
+      "expected": "Score 19.3/30, correct 22/30, errors 25% morphosyntax and 30% lexicon."
+    },
+    {
+      "id": "es-table6",
+      "job": "holdout-rag__es__variedades-espanol-p5",
+      "case": "rag__es__variedades-espanol",
+      "page": 4,
+      "source_image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-08-qwen-java-recovery/holdout/holdout-rag__es__variedades-espanol-p5.png",
+      "image_sha256": "6110b112c62543454f6747e7633a3e92dca35cb1f8bdd116bc9652f4bab960cd",
+      "question": "What is the GPT-4o row in Table 6 for Chilean Spanish?",
+      "expected": "Score 20.4/30, correct 24/30, errors 25% morphosyntax and 10% lexicon."
+    },
+    {
+      "id": "fr-steps",
+      "job": "holdout-rag__fr__camembert-taln-p8",
+      "case": "rag__fr__camembert-taln",
+      "page": 7,
+      "source_image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-08-qwen-java-recovery/holdout/holdout-rag__fr__camembert-taln-p8.png",
+      "image_sha256": "f413d473030a9daf9b265c29e56969c904cc8f7b8cd60da5356b55a0d7fc6f53",
+      "question": "How many steps make an epoch, and when do low-level tasks plateau?",
+      "expected": "8360 steps per epoch; plateau around 22000 steps."
+    },
+    {
+      "id": "fr-nli",
+      "job": "holdout-rag__fr__camembert-taln-p8",
+      "case": "rag__fr__camembert-taln",
+      "page": 7,
+      "source_image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-08-qwen-java-recovery/holdout/holdout-rag__fr__camembert-taln-p8.png",
+      "image_sha256": "f413d473030a9daf9b265c29e56969c904cc8f7b8cd60da5356b55a0d7fc6f53",
+      "question": "What changes between CCNET trained for 100k and 500k steps?",
+      "expected": "NLI increases by 0.84 while tagging and parsing stagnate."
+    },
+    {
+      "id": "ja-cost-row",
+      "job": "holdout-rag__ja__jp_llm2-p18",
+      "case": "rag__ja__jp_llm2",
+      "page": 17,
+      "source_image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-08-qwen-java-recovery/holdout/holdout-rag__ja__jp_llm2-p18.png",
+      "image_sha256": "93910d409dd21ed56e4dccfc4600d94f658f50b21b39ac2c6860102eb3059f69",
+      "question": "What does the GPT3-1.3B row with 128 A100-40GB GPUs report?",
+      "expected": "561152 tokens/sec; 0.50 hours per 1B tokens; 14.42x speedup; prices per 1B tokens Oracle $193.25, AWS on-demand $259.55, AWS spot $77.86."
+    },
+    {
+      "id": "ja-cost-scaling",
+      "job": "holdout-rag__ja__jp_llm2-p18",
+      "case": "rag__ja__jp_llm2",
+      "page": 17,
+      "source_image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-08-qwen-java-recovery/holdout/holdout-rag__ja__jp_llm2-p18.png",
+      "image_sha256": "93910d409dd21ed56e4dccfc4600d94f658f50b21b39ac2c6860102eb3059f69",
+      "question": "What are GPT3-125M throughput and multi-node speedup for 8 and 128 GPUs?",
+      "expected": "8 GPUs: 191693 tokens/sec and 1.00x. 128 GPUs: 2471936 tokens/sec and 12.90x."
+    },
+    {
+      "id": "ja-hallucination-definition",
+      "job": "holdout-rag__ja__jp_llm-p15",
+      "case": "rag__ja__jp_llm",
+      "page": 14,
+      "source_image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-08-qwen-java-recovery/holdout/holdout-rag__ja__jp_llm-p15.png",
+      "image_sha256": "5466a136297a7fce1ff9075070dfe07b79f165deb198b872ac8baf10a8887070",
+      "question": "What English definition of hallucination and citation are provided?",
+      "expected": "content that is nonsensical or unfaithful to the provided source content; Farquhar et al., 2024, p. 625."
+    },
+    {
+      "id": "ja-experiment",
+      "job": "holdout-rag__ja__jp_llm-p15",
+      "case": "rag__ja__jp_llm",
+      "page": 14,
+      "source_image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-08-qwen-java-recovery/holdout/holdout-rag__ja__jp_llm-p15.png",
+      "image_sha256": "5466a136297a7fce1ff9075070dfe07b79f165deb198b872ac8baf10a8887070",
+      "question": "What is the title of section 5 and subsection 5.1?",
+      "expected": "5 実験2：書誌情報のhallucination生成. 5.1 目的. Experiment 2 concerns generating hallucinated bibliographic information."
+    },
+    {
+      "id": "zh-cil-stages",
+      "job": "holdout-rag__zh__zh-CN-p4",
+      "case": "rag__zh__zh-CN",
+      "page": 3,
+      "source_image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-08-qwen-java-recovery/holdout/holdout-rag__zh__zh-CN-p4.png",
+      "image_sha256": "fec63ff6fa1706f4c24f9691727a66d4a2da4799084e92dcaac1c529a94191f8",
+      "question": "What is the numbered order of the three stages?",
+      "expected": "Stage 1 section 2.1 skill generation; Stage 2 section 2.2 skill selection; Stage 3 section 2.3 skill library update. Bottom left is stage 3, bottom right is stage 2."
+    },
+    {
+      "id": "zh-cil-sampling",
+      "job": "holdout-rag__zh__zh-CN-p4",
+      "case": "rag__zh__zh-CN",
+      "page": 3,
+      "source_image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-08-qwen-java-recovery/holdout/holdout-rag__zh__zh-CN-p4.png",
+      "image_sha256": "fec63ff6fa1706f4c24f9691727a66d4a2da4799084e92dcaac1c529a94191f8",
+      "question": "Which four sampling methods precede which compression tool?",
+      "expected": "K-means clustering, hierarchical clustering, hard samples, random samples; LLMLingua-2 compression."
+    },
+    {
+      "id": "hk-symbols",
+      "job": "holdout-rag__zh__zh_HK-p7",
+      "case": "rag__zh__zh_HK",
+      "page": 6,
+      "source_image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-08-qwen-java-recovery/holdout/holdout-rag__zh__zh_HK-p7.png",
+      "image_sha256": "9274388cf3a3d329bda3b914740db7505bece3bd245ae8e8d1f393e9c6734442",
+      "question": "What do the four table symbols mean?",
+      "expected": "+ can be used, - cannot be used, ± depends on circumstances, ? no clear determination."
+    },
+    {
+      "id": "hk-education-row",
+      "job": "holdout-rag__zh__zh_HK-p7",
+      "case": "rag__zh__zh_HK",
+      "page": 6,
+      "source_image": "/Users/sam/web/capy-notebook/bench/parsers/reports/local/2026-09-08-qwen-java-recovery/holdout/holdout-rag__zh__zh_HK-p7.png",
+      "image_sha256": "9274388cf3a3d329bda3b914740db7505bece3bd245ae8e8d1f393e9c6734442",
+      "question": "What are the five symbols in the education row, with their language categories?",
+      "expected": "国家通用语言文字 +; 少数民族语言 ±; 汉语方言 ?; 外国语文 ±; 繁体字 ±. Traditional or simplified transcription is acceptable if meanings and column associations are correct."
+    }
+  ]
+}

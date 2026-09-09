@@ -96,7 +96,7 @@ func (a *api) getQuiz(ctx context.Context, in *quizIDInput) (*quizOutput, error)
 	if _, err := a.materialRead(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	access, err := a.s.MaterialEffectiveAccess(ctx, userID(ctx), in.ID)
+	role, err := a.s.MaterialEffectiveRole(ctx, userID(ctx), in.ID)
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -105,8 +105,8 @@ func (a *api) getQuiz(ctx context.Context, in *quizIDInput) (*quizOutput, error)
 		return nil, hErr(err)
 	}
 	body := apimodel.FromQuiz(res)
-	body.IsOwner = access.Role == store.RoleOwner
-	body.CanEdit = store.RoleCanEdit(access.MemberRole)
+	body.IsOwner = role == store.RoleOwner
+	body.CanEdit = store.RoleCanEdit(role)
 	return &quizOutput{Body: body}, nil
 }
 
@@ -191,12 +191,12 @@ func (a *api) updateQuizSharing(ctx context.Context, in *updateQuizSharingInput)
 }
 
 func (a *api) quizOutputWithAccess(ctx context.Context, id string, res store.Quiz) (*quizOutput, error) {
-	access, err := a.s.MaterialEffectiveAccess(ctx, userID(ctx), id)
+	role, err := a.s.MaterialEffectiveRole(ctx, userID(ctx), id)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	res.IsOwner = access.Role == store.RoleOwner
-	res.CanEdit = store.RoleCanEdit(access.MemberRole)
+	res.IsOwner = role == store.RoleOwner
+	res.CanEdit = store.RoleCanEdit(role)
 	return &quizOutput{Body: apimodel.FromQuiz(res)}, nil
 }
 

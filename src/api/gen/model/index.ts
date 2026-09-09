@@ -205,3 +205,4 @@ export * from './workspaceRole.ts';
 export * from './workspaceStats.ts';
 export * from './workspaceSummary.ts';
 export * from './workspaceSummaryChapter.ts';
+export * from './workspaceSummaryFile.ts';

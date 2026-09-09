@@ -54,13 +54,14 @@ export interface CollaborationActions {
     parentCommentId: string,
     text: string
   ) => Promise<void>;
-  canComment: boolean;
   canEdit: boolean;
   collaborationError: string | null;
   currentUserId: string | null;
   deleteComment: (comment: MaterialComment) => void;
   deleteDiscussion: (discussion: MaterialDiscussion) => void;
   discussions: MaterialDiscussion[];
+  /** Only the workspace owner deletes another user's comment. */
+  isOwner: boolean;
   mutationPending: boolean;
   openComment: () => void;
   resolve: (discussion: MaterialDiscussion) => void;
@@ -290,7 +291,7 @@ export function CollaborationProvider({
   currentUserId: string | null;
 }) {
   const editor = useEditorRef();
-  const { materialId, canEdit, canComment } = useEditorRuntime();
+  const { materialId, canEdit, role } = useEditorRuntime();
   const { isPending: deleteDiscussionIsPending, mutate: deleteDiscussion } =
     useDeleteMaterialDiscussion(materialId);
   const {
@@ -372,7 +373,6 @@ export function CollaborationProvider({
           parentCommentId,
         });
       },
-      canComment,
       canEdit,
       collaborationError: error,
       currentUserId,
@@ -385,10 +385,10 @@ export function CollaborationProvider({
         deleteDiscussion(discussion.id);
       },
       discussions,
+      isOwner: role === 'owner',
       mutationPending,
       openComment: () => {
-        if (!canComment || !editor.selection || editor.api.isCollapsed())
-          return;
+        if (!canEdit || !editor.selection || editor.api.isCollapsed()) return;
         commentSelection.current = structuredClone(editor.selection);
         setComment('');
         setError(null);
@@ -408,7 +408,6 @@ export function CollaborationProvider({
     }),
     [
       addComment,
-      canComment,
       canEdit,
       currentUserId,
       deleteComment,
@@ -418,6 +417,7 @@ export function CollaborationProvider({
       error,
       mutationPending,
       resolveDiscussion,
+      role,
       updateComment,
     ]
   );
@@ -486,7 +486,7 @@ export function DiscussionThread({
   const actions = useCollaborationActions();
   if (!actions) return null;
   const canDeleteThread =
-    discussion.userId === actions.currentUserId || actions.canEdit;
+    discussion.userId === actions.currentUserId || actions.isOwner;
   return (
     <section
       className={cn(
@@ -501,7 +501,7 @@ export function DiscussionThread({
       )}
       <DiscussionComments discussion={discussion} />
       <div className="mt-2 flex flex-wrap gap-1">
-        {actions.canComment && (
+        {actions.canEdit && (
           <Button
             onClick={() => actions.resolve(discussion)}
             size="sm"
@@ -548,7 +548,7 @@ function DiscussionComments({
           setReplyTo={setReplyTo}
         />
       ))}
-      {actions?.canComment && (
+      {actions?.canEdit && (
         <div className="flex gap-2">
           <Textarea
             aria-label={m.editor_add_comment()}
@@ -613,7 +613,7 @@ function CommentEntry({
     ? m.editor_deleted_comment()
     : commentContentText(entry.contentRich);
   const own = entry.userId === actions.currentUserId;
-  const canDelete = own || actions.canEdit;
+  const canDelete = own || actions.isOwner;
   return (
     <div
       className={cn(
@@ -657,7 +657,7 @@ function CommentEntry({
       )}
       {!entry.isDeleted && (
         <div className="mt-1 flex gap-1">
-          {canReplyAtDepth(depth, actions.canComment) && (
+          {canReplyAtDepth(depth, actions.canEdit) && (
             <Button
               onClick={() => {
                 setReplyTo(entry.id);

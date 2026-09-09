@@ -68,12 +68,6 @@ function sharedRoleOptions(): Array<{
       value: 'viewer',
     },
     {
-      hint: m.share_can_comment_hint(),
-      icon: MATERIALMODE_ICON['comment'],
-      label: m.share_can_comment(),
-      value: 'commenter',
-    },
-    {
       hint: m.share_can_edit_hint(),
       icon: MATERIALMODE_ICON['edit'],
       label: m.share_can_edit(),
@@ -117,6 +111,7 @@ export function ShareDialog({
   workspaceId,
   shareRole,
   onShareRoleChange,
+  canManageMembers = false,
   embedded = false,
 }: {
   embedded?: boolean;
@@ -129,8 +124,10 @@ export function ShareDialog({
   /** Absolute or app-relative URL viewers should open. */
   link: string;
   saving?: boolean;
-  /** Enables workspace member management and link/public material permissions. */
+  /** Enables link/public workspace permissions. */
   workspaceId?: string;
+  /** Owner-only: mounts invitation and member management. */
+  canManageMembers?: boolean;
   shareRole?: SharedRole;
   onShareRoleChange?: (role: SharedRole) => void | Promise<unknown>;
 }) {
@@ -326,7 +323,7 @@ export function ShareDialog({
             </Button>
           </div>
         )}
-        {workspaceId && open && (
+        {workspaceId && canManageMembers && open && (
           <>
             <Separator />
             <WorkspaceMemberManager workspaceId={workspaceId} />

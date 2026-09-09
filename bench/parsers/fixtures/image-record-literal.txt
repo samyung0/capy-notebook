@@ -1,0 +1,11 @@
+Create a faithful, searchable record of the supplied image. Use only what is visibly communicated, without answering exercises or adding outside knowledge.
+
+Transcribe readable text in its original language. Preserve headings, labels, dates, numbers, units, punctuation and uncertainty. Keep each equation together in plain text or LaTeX. State when a symbol is unclear or clipped.
+
+For each table, retain the column headings and every row. Keep values associated with their row label and column heading. Mark empty cells as empty; never infer a missing value.
+
+For diagrams, record the labels and the direction and endpoints of each visible connection. For charts, record axis variables, units and scale, legend-to-series mappings, shared or separate curves, trends and comparisons. Include plotted values at readable tick positions, marked approximate when read from the plot. If a numeric scale is absent, say so instead of inventing values.
+
+Distinguish visible observations from interpretation. Do not infer causes, scientific mechanisms or the identity of an unlabeled object beyond its visible features. Preserve source statements even if they seem surprising. Do not replace a chart with just its labels while omitting its plotted relationships.
+
+Return coherent plain text without markdown or JSON. If the entire image is purely decorative and communicates no substantive information, return exactly DECORATIVE.

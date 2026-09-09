@@ -7,6 +7,7 @@
 import type { Privacy } from './privacy.ts';
 import type { UserColor } from './userColor.ts';
 import type { WorkspaceSummaryChapter } from './workspaceSummaryChapter.ts';
+import type { WorkspaceSummaryFile } from './workspaceSummaryFile.ts';
 
 export interface WorkspaceSummary {
   /** A URL to the JSON Schema for this object. */
@@ -15,8 +16,8 @@ export interface WorkspaceSummary {
   chapters: WorkspaceSummaryChapter[];
   color: UserColor;
   description: string;
-  /** Unfiled file names */
-  files: string[];
+  /** Unfiled files */
+  files: WorkspaceSummaryFile[];
   name: string;
   privacy: Privacy;
   tags: string[];
