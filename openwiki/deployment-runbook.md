@@ -194,6 +194,20 @@ The prod file runs `/migrate` once per deploy, starts the API with
    API into `502`s; `coolify-deploy.sh` treats that as an unknown status and
    keeps polling rather than abandoning a deployment that is still running.
 
+   Give the host swap before deploying. Those builds peaked at load 71 and
+   58 MB free on a 3.9 GB host, and the kernel killed Coolify's own PHP queue
+   worker, which left its deployment stuck `in_progress` with an idle machine
+   and no terminal status for the workflow to poll. Recover that state with
+   `POST /deployments/<uuid>/cancel`, then provision swap as in section 7 step 5
+   (6 GiB is enough here; the ingest host's 24 GiB sizing is for parsing):
+
+   ```bash
+   fallocate -l 6G /swapfile && chmod 600 /swapfile && mkswap /swapfile
+   swapon /swapfile
+   grep -q '^/swapfile none swap sw 0 0$' /etc/fstab || \
+     printf '%s\n' '/swapfile none swap sw 0 0' >> /etc/fstab
+   ```
+
 7. Disable Coolify **Auto Deploy**. The GitHub deployment workflow updates
    `git_commit_sha`, starts the deployment through the Coolify API, polls its
    result, and verifies the reported commit. A native Coolify webhook would
