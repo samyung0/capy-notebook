@@ -10,16 +10,6 @@ on:
         description: Full main-branch SHA; blank deploys the selected main revision
         required: false
         type: string
-      bootstrap_ingest:
-        description: Init ingest stack (once only)
-        required: false
-        default: false
-        type: boolean
-      reclaim_pending:
-        description: Cleanup previous pending release
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: read
@@ -63,8 +53,6 @@ jobs:
     uses: ./.github/workflows/deploy-environment.yml
     with:
       environment_name: uat
-      bootstrap_ingest: ${{ inputs.bootstrap_ingest || false }}
-      reclaim_pending: ${{ inputs.reclaim_pending || false }}
       revision: ${{ needs.resolve_revision.outputs.revision }}
     secrets: inherit
 

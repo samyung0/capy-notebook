@@ -11,16 +11,6 @@ on:
         description: Full Git commit SHA to deploy
         required: true
         type: string
-      bootstrap_ingest:
-        description: Init ingest stack (once only)
-        required: false
-        default: false
-        type: boolean
-      reclaim_pending:
-        description: Cleanup pending release
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: read
@@ -91,21 +81,8 @@ jobs:
         if: always()
         run: rm -rf "$RUNNER_TEMP/capy-config"
 
-  ingest_prepare:
-    needs: build
-    uses: ./.github/workflows/deploy-ingest.yml
-    with:
-      environment_name: ${{ inputs.environment_name }}
-      revision: ${{ inputs.revision }}
-      phase: ${{ inputs.bootstrap_ingest && 'bootstrap-prepare' || 'prepare' }}
-      reclaim_pending: ${{ inputs.reclaim_pending }}
-    secrets: inherit
-
   deploy:
-    outputs:
-      coolify_deployment_uuid: ${{ steps.coolify.outputs.deployment_uuid }}
-      coolify_outcome: ${{ steps.coolify.outcome }}
-    needs: ingest_prepare
+    needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     environment:
@@ -127,7 +104,6 @@ jobs:
           COOLIFY_RESOURCE_UUID: ${{ vars.COOLIFY_RESOURCE_UUID }}
         run: python3 scripts/env/config.py apply-coolify --file "$RUNNER_TEMP/capy-config/coolify.json"
       - name: Deploy the pinned backend revision through Coolify
-        id: coolify
         env:
           COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
           COOLIFY_API_URL: ${{ vars.COOLIFY_API_URL }}
@@ -138,17 +114,8 @@ jobs:
         if: always()
         run: rm -rf "$RUNNER_TEMP/capy-config"
 
-  ingest_activate:
-    needs: deploy
-    uses: ./.github/workflows/deploy-ingest.yml
-    with:
-      environment_name: ${{ inputs.environment_name }}
-      revision: ${{ inputs.revision }}
-      phase: activate
-    secrets: inherit
-
   site:
-    needs: [deploy, ingest_activate]
+    needs: deploy
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment:
@@ -210,15 +177,3 @@ jobs:
           DEPLOYMENT_COLLAB_URL: ${{ vars.DEPLOYMENT_COLLAB_URL }}
           EXPECTED_REVISION: ${{ inputs.revision }}
         run: scripts/deploy/verify-release.sh
-
-  ingest_recover:
-    if: always() && needs.ingest_prepare.result != 'skipped' && (needs.ingest_prepare.result != 'success' || needs.deploy.result != 'success' || needs.ingest_activate.result != 'success')
-    needs: [ingest_prepare, deploy, ingest_activate]
-    uses: ./.github/workflows/deploy-ingest.yml
-    with:
-      environment_name: ${{ inputs.environment_name }}
-      revision: ${{ inputs.revision }}
-      phase: ${{ needs.deploy.result == 'skipped' && 'rollback-if-pending' || 'recover' }}
-      coolify_deployment_uuid: ${{ needs.deploy.outputs.coolify_deployment_uuid }}
-      coolify_outcome: ${{ needs.deploy.outputs.coolify_outcome }}
-    secrets: inherit

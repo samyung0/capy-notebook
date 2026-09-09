@@ -15,9 +15,16 @@ that file.
 pnpm review:uat:smoke
 ```
 
-Probes the SPA, `uat-api/healthz`, `uat-collab/healthz`, and the ops edge, and
-fails loudly on anything outside the accepted status range. It reads
-`deploy/.env.uat` and requires `UAT_TARGET_AUTHORIZED=true`.
+Probes the SPA, `uat-api/healthz` and `uat-collab/healthz` — what **Deploy UAT**
+publishes — and fails loudly on anything outside the accepted status range. It
+reads `deploy/.env.uat` and requires `UAT_TARGET_AUTHORIZED=true`.
+
+Ops deploys separately, so its edge has its own probe, run by **Deploy Ops** and
+available as `pnpm review:ops:smoke`:
+
+```bash
+pnpm review:ops:smoke
+```
 
 The ops probe checks both directions of the Access gate. An anonymous request
 must be redirected to `OPS_CF_ACCESS_ISSUER`'s login page for the ops hostname,

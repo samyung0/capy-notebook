@@ -299,23 +299,6 @@ class ConfigTest(unittest.TestCase):
         ):
             config.apply_coolify(values)
 
-    def test_recovery_requires_a_terminal_provider_job(self):
-        for status in ("queued", "in_progress", "building", "unknown"):
-            with (
-                patch.object(
-                    config, "coolify_request", return_value={"status": status}
-                ),
-                self.assertRaisesRegex(ValueError, "not terminal"),
-            ):
-                config.verify_coolify_terminal("job-id")
-        with self.assertRaisesRegex(ValueError, "UUID unavailable"):
-            config.verify_coolify_terminal("")
-        with (
-            patch.object(config, "coolify_request", return_value={"status": "failed"}),
-            contextlib.redirect_stdout(io.StringIO()),
-        ):
-            config.verify_coolify_terminal("job-id")
-
     def test_secret_upload_uses_stdin_and_redacts_errors(self):
         secret = "private-value"
         with patch.object(config.subprocess, "run") as run:

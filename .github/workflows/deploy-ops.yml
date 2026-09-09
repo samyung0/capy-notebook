@@ -79,3 +79,14 @@ jobs:
       - name: Remove runner configuration
         if: always()
         run: rm -rf "$RUNNER_TEMP/capy-ops-config"
+      # Only UAT holds an Access service token, so production stops at the deploy.
+      - name: Probe the Ops edge
+        if: inputs.environment_name == 'uat'
+        env:
+          UAT_ALLOWED_HOSTS: ${{ vars.UAT_ALLOWED_HOSTS }}
+          UAT_TARGET_AUTHORIZED: ${{ vars.UAT_TARGET_AUTHORIZED }}
+          DEPLOYMENT_OPS_URL: ${{ vars.DEPLOYMENT_OPS_URL }}
+          OPS_CF_ACCESS_ISSUER: ${{ vars.OPS_CF_ACCESS_ISSUER }}
+          UAT_OPS_ACCESS_CLIENT_ID: ${{ secrets.UAT_OPS_ACCESS_CLIENT_ID }}
+          UAT_OPS_ACCESS_CLIENT_SECRET: ${{ secrets.UAT_OPS_ACCESS_CLIENT_SECRET }}
+        run: scripts/review/ops-smoke.sh

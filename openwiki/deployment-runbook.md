@@ -775,9 +775,10 @@ those services start.
    Verify with `swapon --show --bytes` and `free -h`. Do not interpret available
    swap as permission to raise the four-slice cap.
 
-6. On the first coordinated app deployment, select `bootstrap_ingest`. The
-   workflow builds and warms the parser, deploys/migrates the backend, then
-   activates its matching coordinator, ingest worker, import worker and sampler.
+6. On the first **Deploy ingest** run, select `bootstrap`. That workflow warms
+   the candidate parser, then activates its matching coordinator, ingest worker,
+   import worker and sampler. It refuses unless the backend already serves the
+   same SHA, so deploy the app first.
    Verify parser `/healthz` through WireGuard. It must return HTTP 200 with `ok=true`,
    `state=ready`, and a `release_sha` equal to the app's deployed revision. No
    parser port may listen on the public address.
@@ -786,14 +787,15 @@ those services start.
    rejected row and the rendered page comparisons. A 610-page PDF should yield
    24 slices at the 26-page default. Record wall time, peak RAM, swap, and
    ordering/geometry accuracy at one and four concurrent slices.
-8. App deployment builds the site before pausing ingest, prepares the candidate
-   parser, applies GitHub config to Coolify, deploys the backend, then activates
-   matching queue consumers. It publishes the Worker last. A Worker failure
-   cannot resume old ingest against the new backend. Recovery before backend
-   deployment can restore the previous ingest snapshot. If backend deployment
-   has started, recovery must know that Coolify's exact deployment is terminal
-   and identify the live backend SHA. Unknown or still-running provider state
-   leaves consumers paused with pending evidence for investigation.
+8. App deployment and ingest are separate workflows: **Deploy UAT** builds the
+   site, applies GitHub config to Coolify, deploys the backend and publishes the
+   Workers, and never touches the ingest host. Deploy the app first, then run
+   **Deploy ingest** for the same SHA; it verifies the backend already reports
+   that revision before it pauses consumers. Prepare and activate share one job
+   and one release owner, so its exit trap settles any pending release the run
+   created — either activating the candidate or restoring the previous snapshot
+   from the live backend SHA. A run killed before that trap leaves pending
+   behind for `reclaim_pending` to adopt.
 
 Each stack has its own checkout and durable release state:
 
@@ -1605,9 +1607,11 @@ fixture IDs belong in the GitHub `uat` environment and use the same upload
 path. The local scanner authorization flag still requires explicit permission
 to scan that UAT target.
 
-Use **Deploy UAT** for the coordinated app/backend/ingest/site release,
-**Deploy ingest** for an ingest-only run against an already matching backend
-SHA, and **Deploy Ops** for the independent dashboard and its Go backend. All
+Use **Deploy UAT** for the app/backend/site release, **Deploy ingest** for the
+ingest host against an already matching backend SHA, and **Deploy Ops** for the
+independent dashboard and its Go backend. The three are isolated: neither the
+ingest host nor Ops can fail a **Deploy UAT** run, and its quality gate checks
+only what it deployed. All
 apply their selected GitHub configuration on every run. Native Coolify
 Git auto-deploy stays disabled. Production promotion retains the UAT,
 editor-perf, and protected-environment gates.

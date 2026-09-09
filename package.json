@@ -156,6 +156,7 @@
     "review:local:full": "scripts/review/run-local-tests.sh full",
     "review:preflight": "scripts/review/preflight.sh local",
     "review:uat:smoke": "scripts/review/remote-smoke.sh",
+    "review:ops:smoke": "scripts/review/ops-smoke.sh",
     "review:uat:strix": "scripts/review/strix-scan.sh",
     "review:source:codex": "scripts/review/codex-security-scan.sh",
     "review:validate-boundaries": "node --test scripts/review/validate-review-boundaries.test.mjs",

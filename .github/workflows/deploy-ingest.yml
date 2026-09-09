@@ -22,41 +22,15 @@ on:
         required: false
         default: false
         type: boolean
-  workflow_call:
-    inputs:
-      environment_name:
-        required: true
-        type: string
-      revision:
-        required: true
-        type: string
-      phase:
-        description: Coordinated app release phase
-        required: true
-        type: string
-      coolify_deployment_uuid:
-        description: Provider job to confirm terminal before coordinated recovery
-        required: false
-        type: string
-      coolify_outcome:
-        description: Whether the backend deployment step ran
-        required: false
-        type: string
-      reclaim_pending:
-        description: Cleanup previous pending release
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: read
 
-# A manual dispatch shares the app deployments' group, so a pending release
-# owner on the host is always a finished run, which is what makes reclaim safe.
-# A call already runs inside its caller's group: reusing that name here waits
-# on itself and GitHub cancels the run as a deadlock, so each phase gets its own.
+# Sharing the app deployments' group keeps ingest off the host while a backend
+# release is migrating, and means a pending release owner is always a finished
+# run, which is what makes reclaim safe.
 concurrency:
-  group: ${{ inputs.phase && format('deploy-ingest-{0}-{1}', github.run_id, inputs.phase) || 'uat-promotion-flow' }}
+  group: uat-promotion-flow
   cancel-in-progress: false
 
 jobs:
@@ -79,14 +53,12 @@ jobs:
           [[ "$DEPLOY_REVISION" =~ ^[0-9a-f]{40}$ ]]
           [[ "$(git rev-parse HEAD)" == "$DEPLOY_REVISION" ]]
           git merge-base --is-ancestor "$DEPLOY_REVISION" origin/main
-      - name: Verify manual deployment matches the running backend
-        if: github.event_name == 'workflow_dispatch' && inputs.phase == ''
+      - name: Verify the deployment matches the running backend
         env:
           DEPLOYMENT_API_URL: ${{ vars.DEPLOYMENT_API_URL }}
           EXPECTED_REVISION: ${{ inputs.revision }}
         run: python3 scripts/deploy/verify-backend.py
       - name: Render environment configuration from GitHub
-        if: inputs.phase == 'prepare' || inputs.phase == 'bootstrap-prepare' || inputs.phase == ''
         env:
           CAPY_GITHUB_VARS: ${{ toJSON(vars) }}
           CAPY_GITHUB_SECRETS: ${{ toJSON(secrets) }}
@@ -101,16 +73,10 @@ jobs:
           umask 077
           printf '%s\n' "$INGEST_HOST_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           printf '%s\n' "$INGEST_HOST_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
-      - name: Apply the ingest release phase
+      - name: Release the ingest stack
         env:
           TARGET_ENVIRONMENT: ${{ inputs.environment_name }}
           DEPLOY_REVISION: ${{ inputs.revision }}
-          RELEASE_PHASE: ${{ inputs.phase }}
-          COOLIFY_DEPLOYMENT_UUID: ${{ inputs.coolify_deployment_uuid }}
-          COOLIFY_OUTCOME: ${{ inputs.coolify_outcome }}
-          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
-          COOLIFY_API_URL: ${{ vars.COOLIFY_API_URL }}
-          COOLIFY_RESOURCE_UUID: ${{ vars.COOLIFY_RESOURCE_UUID }}
           DEPLOYMENT_API_URL: ${{ vars.DEPLOYMENT_API_URL }}
           BOOTSTRAP: ${{ inputs.bootstrap }}
           RECLAIM_PENDING: ${{ inputs.reclaim_pending }}
@@ -121,36 +87,28 @@ jobs:
           INGEST_HOST_USER: ${{ vars.INGEST_HOST_USER }}
           INGEST_HOST_SSH_PORT: ${{ vars.INGEST_HOST_SSH_PORT }}
         run: |
+          # Prepare and activate run under one owner here, so the trap settles
+          # any pending release this run created before the job ends.
           recover() {
             CAPY_BACKEND_REVISION="$(python3 scripts/deploy/verify-backend.py --print)" || return 1
             export CAPY_BACKEND_REVISION
             scripts/deploy/ingest-host-release.sh recover
           }
-          # Only the prepare callers set RECLAIM_PENDING. The host decides what
-          # the pending release permits; a bootstrap needs no backend revision.
+          # A run killed before its trap leaves pending behind; reclaim adopts it.
+          # The host decides what that pending release permits; a bootstrap needs
+          # no backend revision.
           if [[ "$RECLAIM_PENDING" == true ]]; then
             CAPY_BACKEND_REVISION="$(python3 scripts/deploy/verify-backend.py --print)" || CAPY_BACKEND_REVISION=""
             export CAPY_BACKEND_REVISION
             scripts/deploy/ingest-host-release.sh reclaim
           fi
-          if [[ "$RELEASE_PHASE" == recover ]]; then
-            if [[ "$COOLIFY_OUTCOME" == skipped ]]; then
-              scripts/deploy/ingest-host-release.sh rollback-if-pending
-            else
-              python3 scripts/env/config.py verify-coolify-terminal --deployment-uuid "$COOLIFY_DEPLOYMENT_UUID"
-              recover
-            fi
-          elif [[ -n "$RELEASE_PHASE" ]]; then
-            scripts/deploy/ingest-host-release.sh "$RELEASE_PHASE"
+          trap recover EXIT
+          if [[ "$BOOTSTRAP" == true ]]; then
+            scripts/deploy/ingest-host-release.sh bootstrap-prepare
           else
-            trap recover EXIT
-            if [[ "$BOOTSTRAP" == true ]]; then
-              scripts/deploy/ingest-host-release.sh bootstrap-prepare
-            else
-              scripts/deploy/ingest-host-release.sh prepare
-            fi
-            scripts/deploy/ingest-host-release.sh activate
+            scripts/deploy/ingest-host-release.sh prepare
           fi
+          scripts/deploy/ingest-host-release.sh activate
       - name: Remove runner configuration and SSH key
         if: always()
         run: rm -rf "$RUNNER_TEMP/capy-config" "$HOME/.ssh/id_ed25519"

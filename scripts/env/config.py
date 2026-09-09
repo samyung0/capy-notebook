@@ -281,28 +281,6 @@ def coolify_request(method, route, payload=None, *, application=True):
         fail("Coolify configuration request failed (response redacted)")
 
 
-def verify_coolify_terminal(deployment_uuid):
-    if not re.fullmatch(r"[A-Za-z0-9_-]+", deployment_uuid or ""):
-        fail("Coolify deployment UUID unavailable; pending ingest must remain paused")
-    deployment = coolify_request(
-        "GET", "/deployments/" + deployment_uuid, application=False
-    )
-    terminal = {
-        "finished",
-        "completed",
-        "success",
-        "successful",
-        "failed",
-        "error",
-        "cancelled",
-        "cancelled-by-user",
-        "cancelled-by-system",
-    }
-    if deployment.get("status") not in terminal:
-        fail("Coolify deployment is not terminal; pending ingest must remain paused")
-    print("Coolify deployment is terminal; safe to inspect the backend revision")
-
-
 def verify_ops_target():
     main_uuid = os.environ["COOLIFY_MAIN_RESOURCE_UUID"]
     if not re.fullmatch("[A-Za-z0-9_-]+", main_uuid):
@@ -408,7 +386,6 @@ def main():
             "verify-ops-target",
             "apply-coolify",
             "build",
-            "verify-coolify-terminal",
         ],
     )
     parser.add_argument("--environment", choices=["uat", "production"])
@@ -416,13 +393,9 @@ def main():
     parser.add_argument("--repo")
     parser.add_argument("--output")
     parser.add_argument("--revision")
-    parser.add_argument("--deployment-uuid")
     args = parser.parse_args()
     if args.command == "verify-ops-target":
         verify_ops_target()
-        return
-    if args.command == "verify-coolify-terminal":
-        verify_coolify_terminal(args.deployment_uuid)
         return
     if args.command in ("apply-coolify", "build"):
         values = json.loads(read_file(args.file))

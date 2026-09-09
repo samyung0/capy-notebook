@@ -73,6 +73,18 @@ review_require_authorized_uat() {
   fi
 }
 
+# Extra arguments after the accepted pattern are passed to curl (headers).
+review_probe() {
+  local label="$1" url="$2" accepted="$3" code
+  shift 3
+  code="$(curl --silent --show-error --output /dev/null --max-time 20 \
+    --max-redirs 0 --write-out '%{http_code}' "$@" "$url")"
+  if [[ ! "$code" =~ $accepted ]]; then
+    review_die "$label returned HTTP $code from $url"
+  fi
+  printf '%-18s %s  %s\n' "$label" "$code" "$url"
+}
+
 review_results_dir() {
   local kind="$1" stamp
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
