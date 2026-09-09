@@ -61,6 +61,12 @@ export async function signIn(page: Page, actor: Actor) {
     await clerk.setActive({ session: attempt.createdSessionId });
   }, signInToken.token);
   await page.goto('/');
+  // Clerk bootstraps again after this navigation. Wait for the session it
+  // restores, so signing in guarantees what api() below requires.
+  await page.waitForFunction(() => {
+    const clerk = (window as unknown as { Clerk?: ClerkBrowser }).Clerk;
+    return clerk?.loaded === true && Boolean(clerk.session);
+  });
 }
 
 export async function signOut(page: Page) {
