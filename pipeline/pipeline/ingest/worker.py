@@ -39,7 +39,7 @@ from .. import (
     registry,
     use_compatible_event_loop,
 )
-from ..config import cfg, require_model_concurrency_in_production
+from ..config import cfg
 from ..jobs import (
     CONTENT_CLAIM_STALE_S,
     CONTENT_CLAIM_WAIT_S,
@@ -2871,10 +2871,6 @@ async def _handle_job_failure_bound(job: dict, exc: BaseException) -> None:
 
 
 def main(job_type: str = "ingest") -> None:
-    if job_type == "ingest":
-        # Parse and import roles never call a provider and are not given the
-        # variable; only the role that spends against the gate must have it.
-        require_model_concurrency_in_production()
     use_compatible_event_loop()
     asyncio.run(main_async(job_type))
 

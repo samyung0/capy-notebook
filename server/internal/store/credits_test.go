@@ -942,7 +942,7 @@ func TestCreateSourceWithJobTakesIngestLease(t *testing.T) {
 	}
 
 	f, _, err := s.CreateSourceWithJob(ctx, ws.ID, owner, "notes.md", "md",
-		nil, "", 1, "sources/"+uid("blob"), "", "", "none", false)
+		nil, "", 1, "sources/"+uid("blob"), "", "none", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1001,7 +1001,7 @@ func TestCreateSourceWithJobWithoutRegistryLeavesNoLease(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, _, err = s.CreateSourceWithJob(ctx, ws.ID, owner, "notes.md", "md",
-		nil, "", 1, "sources/"+uid("blob"), "", "", "none", false)
+		nil, "", 1, "sources/"+uid("blob"), "", "none", false)
 	if !errors.Is(err, ErrIngestUnpinnable) {
 		t.Fatalf("err = %v, want ErrIngestUnpinnable", err)
 	}

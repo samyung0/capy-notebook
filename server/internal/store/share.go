@@ -498,17 +498,17 @@ type workspaceCloneChapter struct {
 }
 
 type workspaceCloneFile struct {
-	id, name, kind, status              string
-	chapterID, parser, engine, blobPath *string
-	previewBlobPath                     *string
-	url, content                        *string
-	parsedFingerprint                   *string
-	parsedParserVersion, sourceETag     *string
-	contentHash, sourceSHA256           *string
-	sizeBytes                           int64
-	position                            int64
-	indexed, captionImages, everParsed  bool
-	parseMode                           string
+	id, name, kind, status             string
+	chapterID, parser, blobPath        *string
+	previewBlobPath                    *string
+	url, content                       *string
+	parsedFingerprint                  *string
+	parsedParserVersion, sourceETag    *string
+	contentHash, sourceSHA256          *string
+	sizeBytes                          int64
+	position                           int64
+	indexed, captionImages, everParsed bool
+	parseMode                          string
 }
 
 type workspaceCloneAsset struct {
@@ -665,7 +665,7 @@ func (s *Store) snapshotWorkspaceForClone(
 				JOIN rag_contents rc ON rc.id=fc.content_id
 				WHERE fc.file_id=files.id AND rc.status='ready'
 			)),
-			parser, engine, blob_path, preview_blob_path, url, content,
+			parser, blob_path, preview_blob_path, url, content,
 			parsed_fingerprint, parsed_parser_version, source_etag,
 			content_hash, source_sha256, parse_mode, caption_images, ever_parsed_successfully
 		 FROM files
@@ -688,7 +688,6 @@ func (s *Store) snapshotWorkspaceForClone(
 			&file.status,
 			&file.indexed,
 			&file.parser,
-			&file.engine,
 			&file.blobPath,
 			&file.previewBlobPath,
 			&file.url,
@@ -973,10 +972,10 @@ func (s *Store) cloneWorkspaceOnce(
 				url = &u
 			}
 			if _, err := tx.Exec(ctx, `INSERT INTO files
-				(id, workspace_id, user_id, created_by, chapter_id, position, name, kind, size_bytes, added_at, status, indexed, parser, engine, blob_path, preview_blob_path, url, content,
+				(id, workspace_id, user_id, created_by, chapter_id, position, name, kind, size_bytes, added_at, status, indexed, parser, blob_path, preview_blob_path, url, content,
 				 parsed_fingerprint, parsed_parser_version, source_etag, content_hash, source_sha256, parse_mode, caption_images, ever_parsed_successfully)
-				VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)`,
-				nid, newID, userID, chapterID, f.position, f.name, f.kind, f.sizeBytes, time.Now().UTC(), f.status, f.indexed, f.parser, f.engine, f.blobPath, f.previewBlobPath, url, f.content,
+				VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
+				nid, newID, userID, chapterID, f.position, f.name, f.kind, f.sizeBytes, time.Now().UTC(), f.status, f.indexed, f.parser, f.blobPath, f.previewBlobPath, url, f.content,
 				f.parsedFingerprint, f.parsedParserVersion, f.sourceETag, f.contentHash, f.sourceSHA256, f.parseMode, f.captionImages, f.everParsed); err != nil {
 				return Workspace{}, err
 			}

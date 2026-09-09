@@ -130,7 +130,7 @@ func TestCompletedSourceImportReplaysBeforeMutableAdmission(t *testing.T) {
 		"parseMode": "none",
 		"requestId": requestID,
 	}
-	configured := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", "capy", httpapi.Config{
+	configured := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", httpapi.Config{
 		AuthDisabled: true, DevUserID: actor,
 		PipelineSecret: "test-pipeline-secret",
 	})
@@ -158,7 +158,7 @@ func TestCompletedSourceImportReplaysBeforeMutableAdmission(t *testing.T) {
 			withoutChapter.Code, withoutChapter.Body.String(), first.Body.String())
 	}
 
-	unavailable := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", "capy", httpapi.Config{
+	unavailable := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", httpapi.Config{
 		AuthDisabled: true, DevUserID: actor,
 	})
 	withoutRelay := doReq(t, unavailable, http.MethodPost,

@@ -33,48 +33,6 @@ def platform_api_key(provider_slug: str) -> str:
     return _env(env_name_for_provider(provider_slug))
 
 
-def parse_model_concurrency(raw: str) -> dict[tuple[str, str], tuple[int, int]]:
-    """Parse ``provider:model=total/reserve`` entries separated by commas."""
-    out: dict[tuple[str, str], tuple[int, int]] = {}
-    for entry in raw.split(","):
-        entry = entry.strip()
-        if not entry:
-            continue
-        key, sep, limits = entry.rpartition("=")
-        provider, colon, model = key.strip().partition(":")
-        provider, model = provider.strip(), model.strip()
-        total_text, _slash, reserve_text = limits.strip().partition("/")
-        total_text, reserve_text = total_text.strip(), reserve_text.strip()
-        try:
-            total = int(total_text)
-            reserve = int(reserve_text) if reserve_text else 0
-        except ValueError:
-            total = reserve = -1
-        # reserve == total would leave ingest with no capacity at all and
-        # fail every file as busy without naming the configuration.
-        if not (
-            sep and colon and provider and model and total >= 1 and 0 <= reserve < total
-        ):
-            raise ValueError(
-                "CAPY_MODEL_CONCURRENCY entries must look like "
-                f"provider:model=total/reserve with 0 <= reserve < total, got {entry!r}"
-            )
-        out[(provider, model)] = (total, reserve)
-    return out
-
-
-def require_model_concurrency_in_production() -> None:
-    """Refuse to serve provider calls ungated in production.
-
-    Called by the two processes that call providers, so a deploy that forgot
-    the variable fails at startup instead of running with no cap.
-    """
-    if cfg.app_env == "production" and not cfg.model_concurrency:
-        raise ValueError(
-            "CAPY_MODEL_CONCURRENCY must name the per-model caps under APP_ENV=production"
-        )
-
-
 class Config:
     # ---- shared infra -----------------------------------------------------
     release_sha: str = _env("RELEASE_SHA", "dev")
@@ -134,14 +92,6 @@ class Config:
     ingest_provider_timeout_s: float = float(
         _env("CAPY_INGEST_PROVIDER_TIMEOUT_S", "120")
     )
-    # Per-model outbound concurrency, keyed by transport provider and model:
-    # "deepinfra:zai-org/GLM-5.3-Flash=200/120,deepinfra:Qwen/Qwen3-Embedding-4B=200/80".
-    # total/reserve: interactive callers may use the whole total, ingest callers
-    # total minus the reserve. A model without an entry is ungated.
-    model_concurrency: dict[tuple[str, str], tuple[int, int]] = parse_model_concurrency(
-        _env("CAPY_MODEL_CONCURRENCY", "")
-    )
-
     # ---- provider imports (Drive / OneDrive) -----------------------------
     # The import worker streams one provider file into B2 per claim and needs
     # GATEWAY_URL + PIPELINE_SECRET for the download grant and completion.

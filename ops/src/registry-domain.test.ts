@@ -4,6 +4,7 @@ import {
   assembleRegistryRequest,
   cloneCatalogToDraft,
   createRegistryState,
+  embeddingChanged,
   modelRefId,
   registryReducer,
 } from './registry-domain';
@@ -16,6 +17,7 @@ function config(
   return {
     byokEnabled: false,
     capabilities: slots.includes('retrieval') ? ['embedding'] : [],
+    concurrencyTotal: 10,
     contextWindowTokens: 128_000,
     createdAt: '2026-08-24T12:00:00Z',
     createdBy: '',
@@ -23,6 +25,7 @@ function config(
     embeddingDefaultEligible: slots.includes('retrieval'),
     embeddingValidationError: '',
     enabled: true,
+    interactiveReserve: 2,
     isDefaultFor: defaults,
     microsPerCachedInputToken: 1,
     microsPerInputToken: 2,
@@ -169,6 +172,50 @@ describe('registry request assembly', () => {
             row.providerSlug === 'deepseek' && row.modelSlug === 'test/alpha'
         )?.slots
       ).toEqual(['retrieval']);
+    }
+  });
+
+  it('edits embedding capacity without retarget acknowledgement and rejects missing limits', () => {
+    const snapshot = registry();
+    let state = createRegistryState(snapshot);
+    const draft = cloneCatalogToDraft(snapshot.configs[0], 'capacity-edit');
+    draft.concurrencyTotal = 4;
+    draft.interactiveReserve = 1;
+    state = registryReducer(state, { draft, type: 'upsert-draft' });
+    const rowId = modelRefId(draft);
+    for (const slot of snapshot.configs[0].slots) {
+      state = registryReducer(state, {
+        cell: {
+          isDefault: true,
+          rowId,
+          slot,
+          target: { draftId: draft.id, kind: 'draft' },
+        },
+        type: 'set-cell',
+      });
+    }
+    expect(embeddingChanged(state)).toBe(false);
+    const assembled = assembleRegistryRequest(snapshot, state);
+    expect(assembled.valid).toBe(true);
+    if (assembled.valid) {
+      expect(assembled.request.active[0]).toMatchObject({
+        concurrencyTotal: 4,
+        interactiveReserve: 1,
+      });
+    }
+    for (const invalid of [
+      { concurrencyTotal: null, interactiveReserve: 1 },
+      { concurrencyTotal: 4, interactiveReserve: null },
+      { concurrencyTotal: 4, interactiveReserve: 4 },
+    ]) {
+      state = registryReducer(state, {
+        draft: { ...draft, ...invalid },
+        type: 'upsert-draft',
+      });
+      const blocked = assembleRegistryRequest(snapshot, state);
+      expect(blocked.valid).toBe(false);
+      if (!blocked.valid)
+        expect(blocked.issues.map((issue) => issue.code)).toContain('capacity');
     }
   });
 

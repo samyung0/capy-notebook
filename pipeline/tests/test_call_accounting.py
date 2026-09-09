@@ -452,31 +452,35 @@ def _gated_spec() -> ModelConfig:
     )
 
 
-def test_model_capacity_splits_the_interactive_reserve(monkeypatch):
+@pytest.mark.parametrize("paid_by, mode", [("platform", "gateway"), ("user", None)])
+async def test_open_call_bypasses_capacity_only_for_byok(monkeypatch, paid_by, mode):
     from pipeline import registry
 
-    monkeypatch.setattr(
-        accounting.cfg,
-        "model_concurrency",
-        {("deepinfra", "Qwen/Qwen3-Embedding-4B"): (200, 80)},
-    )
-    key = "deepinfra:Qwen/Qwen3-Embedding-4B"
-    registry.bind_request_llm(paid_by="platform")
-    assert accounting.model_capacity(
-        "deepinfra", "Qwen/Qwen3-Embedding-4B", "gateway"
-    ) == (key, 200)
-    assert accounting.model_capacity(
-        "deepinfra", "Qwen/Qwen3-Embedding-4B", "ingest"
-    ) == (key, 120)
-    # A model without an entry is ungated; a user's own key is never gated.
-    assert accounting.model_capacity("deepinfra", "other", "ingest") is None
-    registry.bind_request_llm(paid_by="user")
+    monkeypatch.setattr(accounting.cfg, "gateway_url", "http://gateway")
+    monkeypatch.setattr(accounting.cfg, "pipeline_secret", "secret")
+
+    monkeypatch.setattr(accounting.cfg, "dsn", "postgres://unused")
+    admissions = []
+
+    async def to_thread(function, *args):
+        assert function is accounting._open_call_sync
+        admissions.append(args[9])
+        return True
+
+    monkeypatch.setattr(accounting.asyncio, "to_thread", to_thread)
+    registry.bind_request_llm(paid_by=paid_by)
+    token = accounting.bind("cr_1")
     try:
-        assert (
-            accounting.model_capacity("deepinfra", "Qwen/Qwen3-Embedding-4B", "gateway")
-            is None
+        await accounting.open_call(
+            "pc_1",
+            kind=accounting.KIND_EMBEDDING,
+            purpose=accounting.KIND_EMBEDDING,
+            spec=_gated_spec(),
         )
+        assert admissions == [mode]
+        assert bool(accounting.current().leased_calls) == (paid_by == "platform")
     finally:
+        accounting.reset(token)
         registry.bind_request_llm(paid_by="platform")
 
 
@@ -484,11 +488,6 @@ async def test_open_call_polls_the_full_gate_until_its_deadline(monkeypatch):
     monkeypatch.setattr(accounting.cfg, "gateway_url", "http://gateway")
     monkeypatch.setattr(accounting.cfg, "pipeline_secret", "secret")
     monkeypatch.setattr(accounting.cfg, "dsn", "postgres://unused")
-    monkeypatch.setattr(
-        accounting.cfg,
-        "model_concurrency",
-        {("deepinfra", "Qwen/Qwen3-Embedding-4B"): (2, 1)},
-    )
     answers = [False, False, True]
     leases = []
 
@@ -515,9 +514,8 @@ async def test_open_call_polls_the_full_gate_until_its_deadline(monkeypatch):
         )
         state = accounting.current()
         assert state is not None and state.leased_calls == {"pc_1"}
-        # Interactive callers see the whole total; the row and lease were
-        # attempted together on every poll.
-        assert leases == [("deepinfra:Qwen/Qwen3-Embedding-4B", 2)] * 3
+        # Each poll passes the admission mode so the transaction reads live limits.
+        assert leases == ["gateway"] * 3
         assert len(sleeps) == 2
 
         answers.append(False)
@@ -597,11 +595,6 @@ async def test_a_cancelled_admission_is_undone_without_delaying_the_cancel(
     monkeypatch.setattr(accounting.cfg, "gateway_url", "http://gateway")
     monkeypatch.setattr(accounting.cfg, "pipeline_secret", "secret")
     monkeypatch.setattr(accounting.cfg, "dsn", "postgres://unused")
-    monkeypatch.setattr(
-        accounting.cfg,
-        "model_concurrency",
-        {("deepinfra", "Qwen/Qwen3-Embedding-4B"): (2, 1)},
-    )
     thread_may_finish = asyncio.Event()
     undone: list[str] = []
 

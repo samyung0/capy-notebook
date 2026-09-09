@@ -820,22 +820,30 @@ sweeper releases after 30 minutes. BYOK does not take a lease. Ingest
 concurrency is the separate cap of 20 above, not this one.
 
 **Per-model outbound concurrency** bounds what reaches a provider.
-`CAPY_MODEL_CONCURRENCY` lists `provider:model=total/reserve` entries keyed by
-transport provider and model (the routed GLM counts as
-`deepinfra:zai-org/GLM-5.3-Flash`); a model without an entry is ungated.
+`model_capacities` stores `concurrency_total` and `interactive_reserve` per
+transport provider/model, independently of versioned `model_configs`. Ops exposes
+both required fields in the model form, including for existing embedding models;
+capacity-only edits do not create a catalog version. Routed GLM shares
+`deepinfra:zai-org/GLM-5.3-Flash` across all its versions. Each environment's database
+holds its own limits; no capacity values are seeded across environments.
+
 Interactive callers may use the whole total, ingest callers total minus the
-reserve, so a chat search never queues behind a wave of captions. The lease is
-one row in `provider_capacity_leases`, taken in the same transaction as the
-pre-call `provider_calls` row with the call id as lease id and the receipt
-deadline as expiry, and released when the call ends; the app host and the
-ingest host share that table, so the cap holds across both. A waiter polls with
-jitter within its call's retry budget and then fails as `provider_busy`. Only
-platform keys are gated; a BYOK call answers to the user's own limits. A reserve
-must be below its total, and the retrieval service and ingest worker refuse to
-start under `APP_ENV=production` when the variable is unset. DeepInfra
-documents 200 concurrent requests per model per account; production runs GLM at
-200/120 and the Qwen embedding at 200/80, and UAT sets its own numbers against
-its own account. Health shows attempts abandoned on a provider 429, 503 or 529
+reserve. Require total > 0 and 0 <= reserve < total. Every admission attempt reads
+the capacity row with `FOR SHARE` in the transaction that creates the pre-call
+`provider_calls` row and takes its `provider_capacity_leases` lease. Capacity
+updates wait for an admission transaction to finish; subsequent attempts see the
+committed limits immediately, without a restart or the catalog's ten-minute poll.
+The app and ingest hosts share the lease table. Lowering a limit leaves existing
+calls running and blocks new admissions until usage falls below the new limit.
+Only platform-key calls take a lease; BYOK uses the user's own provider limits.
+Missing capacity raises an explicit configuration error before a call row or
+provider request is created. A full gate polls with jitter within the call budget,
+then fails as `provider_busy`. Leases use the call id and receipt deadline and are
+released when the call ends.
+
+Before enabling traffic, configure the environment's limits in Ops. The approved
+production values are GLM 200/120 and Qwen embedding 200/80; UAT uses its own account
+and limits. Health shows attempts abandoned on a provider 429, 503 or 529
 answer per provider and model over the last hour, and the usage explorer's
 provider-attempts table shows every attempt (applied, abandoned, busy, open) by
 transport provider and model for the selected range; the pre-call row carries
@@ -1016,7 +1024,6 @@ the likelihood grew every time the registry was reconfigured.
 | `CORS_ALLOWED_ORIGINS` | gateway | comma separated; empty means `*` |
 | `RATE_LIMIT_DISABLED` | gateway | forced true under `APP_ENV=e2e` |
 | `RATE_LIMIT_AI_PER_HOUR` | gateway | overrides the default 200; 15/min burst and editor 120/min are code-only |
-| `CAPY_MODEL_CONCURRENCY` | retrieval, ingest workers | `provider:model=total/reserve` entries, reserve below total; required under `APP_ENV=production`, otherwise unset leaves every model ungated |
 | `CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S` | retrieval | idle bound per interactive stream, whole-call bound for non-streaming interactive calls; default 15 |
 | `CAPY_INTERACTIVE_STREAM_MAX_S` | retrieval | whole-stream backstop; the interactive receipt window is this plus five minutes; default 600 |
 | `GATEWAY_URL` / `PIPELINE_SECRET` | import worker | the gateway's private URL and shared secret for `/api/internal/import/*`; the gateway's empty `PIPELINE_SECRET` disables Drive imports |

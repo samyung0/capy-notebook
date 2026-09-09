@@ -5,6 +5,7 @@ import type {
   RegistrySaveRequest,
   Slot,
 } from './api';
+import { capacitySchema } from './api';
 
 export type CellTarget =
   | {
@@ -43,6 +44,7 @@ export type RegistryAction =
 
 export type RegistryIssue = {
   code:
+    | 'capacity'
     | 'aliases'
     | 'missing-default'
     | 'embedding-acknowledgement'
@@ -205,10 +207,20 @@ export function embeddingChanged(state: RegistryState): boolean {
   }
   return original.some((cell) => {
     const desired = state.cells.get(cellId(cell.rowId, cell.slot));
+    const draft =
+      desired?.target.kind === 'draft'
+        ? state.drafts.get(desired.target.draftId)
+        : undefined;
+    // Embedding drafts can edit capacity; the server rejects changes to their pinned configuration.
+    const retainsPin =
+      draft &&
+      cell.target.kind === 'catalog' &&
+      draft.providerSlug === cell.target.providerSlug &&
+      draft.modelSlug === cell.target.modelSlug;
     return (
       !desired ||
       desired.isDefault !== cell.isDefault ||
-      !sameTarget(desired.target, cell.target)
+      (!sameTarget(desired.target, cell.target) && !retainsPin)
     );
   });
 }
@@ -244,9 +256,11 @@ export function cloneCatalogToDraft(
   return {
     byokEnabled: config.byokEnabled,
     capabilities: [...config.capabilities],
+    concurrencyTotal: config.concurrencyTotal,
     contextWindowTokens: config.contextWindowTokens,
     defaultThinking: config.defaultThinking,
     id,
+    interactiveReserve: config.interactiveReserve,
     microsPerCachedInputToken: config.microsPerCachedInputToken,
     microsPerInputToken: config.microsPerInputToken,
     microsPerOutputToken: config.microsPerOutputToken,
@@ -264,9 +278,11 @@ export function emptyDraft(id: string): DraftConfig {
   return {
     byokEnabled: false,
     capabilities: [],
+    concurrencyTotal: null,
     contextWindowTokens: 0,
     defaultThinking: 'instant',
     id,
+    interactiveReserve: null,
     microsPerCachedInputToken: 0,
     microsPerInputToken: 0,
     microsPerOutputToken: 0,
@@ -366,7 +382,17 @@ export function assembleRegistryRequest(
       });
       continue;
     }
+    const capacity = capacitySchema.safeParse(source);
+    if (!capacity.success) {
+      issues.push({
+        code: 'capacity',
+        message: `${modelRefLabel(source)} needs a positive concurrency total and a reserve below it.`,
+        rowId,
+      });
+      continue;
+    }
     active.push({
+      ...capacity.data,
       byokEnabled: source.byokEnabled,
       capabilities: [...source.capabilities],
       contextWindowTokens: source.contextWindowTokens,

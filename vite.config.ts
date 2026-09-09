@@ -16,18 +16,27 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, ENV_DIR, '');
   // Match src/main.tsx: MSW is on unless explicitly disabled.
   const useMsw = env.VITE_USE_MSW !== 'false' && mode === 'development';
-  // Public hostname when the dev server is served through a tunnel. A Clerk
-  // production instance refuses to authenticate on localhost, so hitting a
-  // deployed gateway from `pnpm dev` needs a real origin. Vite blocks unknown
-  // Host headers, so the name is always allowed when set; only `pnpm
-  // dev:public` repoints HMR at the tunnel's 443, because that override breaks
-  // HMR for an ordinary localhost session.
-  const devHost = env.VITE_DEV_HOST;
+  // Caddy terminates local HTTPS; plain pnpm dev keeps the localhost lane.
+  const serveLocalUat = mode === 'local-uat';
+  const devHost = 'local.uat.capynotebook.com';
+  if (
+    serveLocalUat &&
+    (env.VITE_USE_MSW !== 'false' ||
+      env.VITE_API_URL !== 'https://uat-api.capynotebook.com' ||
+      !env.VITE_CLERK_PUBLISHABLE_KEY?.startsWith('pk_live_') ||
+      Buffer.from(
+        env.VITE_CLERK_PUBLISHABLE_KEY.slice(8),
+        'base64'
+      ).toString() !== 'clerk.uat.capynotebook.com$')
+  ) {
+    throw new Error(
+      'dev:uat requires VITE_USE_MSW=false, VITE_API_URL=https://uat-api.capynotebook.com and the UAT Clerk pk_live key in deploy/.env.'
+    );
+  }
   // Maps are generated only when they will be uploaded and then deleted, so a
   // released bundle ships none and a local build pays nothing for them.
   // Without them every browser stack trace in Sentry is minified.
   const uploadSourceMaps = Boolean(env.SENTRY_AUTH_TOKEN);
-  const servePublic = devHost !== undefined && env.VITE_DEV_PUBLIC === 'true';
   return {
     assetsInclude: ['**/*.wasm'],
     build: {
@@ -68,7 +77,7 @@ export default defineConfig(({ mode }) => {
       llmRuntimePlugin(),
       summaryVitePlugin(
         env.VITE_API_URL || 'http://localhost:8080',
-        servePublic && devHost
+        serveLocalUat
           ? `https://${devHost}`
           : `http://localhost:${Number.parseInt(env.VITE_PORT, 10) || 5173}`
       ),
@@ -213,13 +222,13 @@ export default defineConfig(({ mode }) => {
       ],
     },
     server: {
-      allowedHosts: devHost ? [devHost] : undefined,
-      hmr: servePublic
+      allowedHosts: serveLocalUat ? [devHost] : undefined,
+      hmr: serveLocalUat
         ? { clientPort: 443, host: devHost, protocol: 'wss' }
         : undefined,
-      host: true,
-      open: !servePublic,
-      port: Number.parseInt(env.VITE_PORT, 10) || 5173,
+      host: serveLocalUat ? '127.0.0.1' : true,
+      open: !serveLocalUat,
+      port: serveLocalUat ? 5173 : Number.parseInt(env.VITE_PORT, 10) || 5173,
       // Only proxy when hitting the real Go gateway. With MSW on, the service
       // worker normally intercepts /api in the browser — but during HMR / SW
       // updates a request can briefly leak to Vite. If the proxy is still
@@ -244,6 +253,7 @@ export default defineConfig(({ mode }) => {
               target: env.VITE_API_URL || 'http://localhost:8080',
             },
           },
+      strictPort: serveLocalUat,
       // Plate is lazily imported behind a Suspense boundary, so nothing pulls
       // it until a note is opened and the transform then runs as a serial
       // import waterfall. Transforming it up front costs a few seconds of

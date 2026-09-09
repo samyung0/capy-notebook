@@ -6,7 +6,7 @@ import secrets
 import pytest
 
 from pipeline.registry import ModelConfig
-from pipeline.retrieval import agent, pending, tools, workflows
+from pipeline.retrieval import agent, contract, pending, tools, workflows
 from pipeline.retrieval.stream import AssembledResponse, ToolCall
 from pipeline.retrieval.usage_extract import NormalizedUsage
 
@@ -165,7 +165,10 @@ async def test_chat_rejects_publication_after_tool_read_before_compaction_or_nex
         async for event in agent.run_agent(
             query="What changed?",
             ctx=tools.ToolContext(
-                workspace_id=workspace.id, user_id=workspace.user_id, file_ids=[file_id]
+                workspace_id=workspace.id,
+                user_id=workspace.user_id,
+                operations=frozenset(contract.OPERATIONS),
+                file_ids=[file_id],
             ),
             history=None,
             model=_model(),
@@ -297,6 +300,7 @@ async def test_source_image_tool_rejects_published_baseline_before_caption(
             tools.ToolContext(
                 workspace_id=workspace.id,
                 user_id=workspace.user_id,
+                operations=frozenset(contract.OPERATIONS),
                 file_ids=[file_id],
                 pending_sources=captured,
             ),

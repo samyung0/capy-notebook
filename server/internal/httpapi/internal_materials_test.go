@@ -49,7 +49,7 @@ func openInternalHTTPWithBlob(t *testing.T) (http.Handler, *store.Store, *blob.M
 	}
 	st.SetModelRegistry(reg)
 	mem := blob.NewMemory()
-	h := httpapi.New(st, mem, nil, nil, "docling", "capy", httpapi.Config{
+	h := httpapi.New(st, mem, nil, nil, "docling", httpapi.Config{
 		AuthDisabled:   true,
 		E2EAuth:        true,
 		E2ESecret:      "e2e-test-secret",

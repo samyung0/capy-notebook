@@ -242,7 +242,7 @@ func (s *Store) GetReplacementUploadSession(ctx context.Context, id string) (Upl
 
 // FinalizeUploadSession creates the source and its first pipeline job exactly once. The
 // B2 promotion happens before this transaction and is safe to retry.
-func (s *Store) FinalizeUploadSession(ctx context.Context, uploadID, sourceETag, parser, engine string) (File, error) {
+func (s *Store) FinalizeUploadSession(ctx context.Context, uploadID, sourceETag, parser string) (File, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return File{}, err
@@ -286,7 +286,7 @@ func (s *Store) FinalizeUploadSession(ctx context.Context, uploadID, sourceETag,
 	}
 
 	file, err := s.finalizeUploadSessionTx(
-		ctx, tx, uploadID, sourceETag, parser, engine,
+		ctx, tx, uploadID, sourceETag, parser,
 	)
 	if err != nil {
 		return File{}, err
@@ -300,7 +300,7 @@ func (s *Store) FinalizeUploadSession(ctx context.Context, uploadID, sourceETag,
 func (s *Store) finalizeUploadSessionTx(
 	ctx context.Context,
 	tx pgx.Tx,
-	uploadID, sourceETag, parser, engine string,
+	uploadID, sourceETag, parser string,
 ) (File, error) {
 	u, err := scanUploadSession(tx.QueryRow(ctx,
 		`SELECT `+uploadSessionCols+uploadSessionFrom+`id=$1 FOR UPDATE`, uploadID))
@@ -342,10 +342,10 @@ func (s *Store) finalizeUploadSessionTx(
 		status = "ready"
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO files
-		(id, workspace_id, user_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, parser, engine, blob_path, url, source_etag, parse_mode, caption_images)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+		(id, workspace_id, user_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, parser, blob_path, url, source_etag, parse_mode, caption_images)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
 		fileID, u.WorkspaceID, u.UserID, u.CreatedBy, chapterID, u.Name, u.Kind, u.DeclaredSize,
-		now, status, parser, engine, u.FinalPath, fileURL, sourceETag, u.ParseMode, u.CaptionImages)
+		now, status, parser, u.FinalPath, fileURL, sourceETag, u.ParseMode, u.CaptionImages)
 	if err != nil {
 		return File{}, err
 	}
@@ -362,7 +362,7 @@ func (s *Store) finalizeUploadSessionTx(
 		}
 		payload, err := s.ingestJobPayload(ctx, actor, map[string]any{
 			"fileId": fileID, "workspaceId": u.WorkspaceID, "blobPath": u.FinalPath,
-			"kind": u.Kind, "parser": parser, "engine": engine,
+			"kind": u.Kind, "parser": parser,
 			"parseMode": u.ParseMode, "captionImages": u.CaptionImages,
 			"processingPlan": processingPlan,
 			"sourceETag":     sourceETag,
@@ -401,7 +401,7 @@ func (s *Store) finalizeUploadSessionTx(
 // policy that was chosen for the original upload.
 func (s *Store) FinalizeReplacementUploadSession(
 	ctx context.Context,
-	uploadID, sourceETag, parser, engine string,
+	uploadID, sourceETag, parser string,
 ) (File, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -504,13 +504,13 @@ func (s *Store) FinalizeReplacementUploadSession(
 		return File{}, err
 	}
 	file, err := scanFile(tx.QueryRow(ctx, `UPDATE files SET
-		size_bytes=$3, status=$4, indexed=false, parser=$5, engine=$6,
-		blob_path=$7, source_etag=$8, source_sha256=NULL, content_hash=NULL,
+		size_bytes=$3, status=$4, indexed=false, parser=$5,
+		blob_path=$6, source_etag=$7, source_sha256=NULL, content_hash=NULL,
 		content=NULL, preview_blob_path=NULL, parsed_blob_path=NULL, parsed_fingerprint=NULL,
 		parsed_parser_version=NULL, caption_blob_path=NULL,
-		parse_mode=$9, caption_images=$10, revision=revision+1
+		parse_mode=$8, caption_images=$9, revision=revision+1
 		WHERE id=$1 AND revision=$2 AND trashed_at IS NULL RETURNING `+fileCols,
-		*u.FileID, *u.ExpectedRevision, u.DeclaredSize, status, parser, engine,
+		*u.FileID, *u.ExpectedRevision, u.DeclaredSize, status, parser,
 		u.FinalPath, sourceETag, u.ParseMode, u.CaptionImages))
 	if err != nil {
 		return File{}, err
@@ -543,7 +543,7 @@ func (s *Store) FinalizeReplacementUploadSession(
 		payload, err := s.ingestJobPayload(ctx, actor, map[string]any{
 			"fileId": *u.FileID, "workspaceId": u.WorkspaceID,
 			"blobPath": u.FinalPath, "kind": u.Kind, "parser": parser,
-			"engine": engine, "parseMode": u.ParseMode,
+			"parseMode":     u.ParseMode,
 			"captionImages": u.CaptionImages, "sourceETag": sourceETag,
 			"processingPlan": processingPlan,
 			"sourceRevision": file.Revision, "reservationId": reservationID,

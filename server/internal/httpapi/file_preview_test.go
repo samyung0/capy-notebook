@@ -26,7 +26,7 @@ func TestFilePreviewUsesTheAuthorizedNormalizedPDF(t *testing.T) {
 	}
 	st.SetModelRegistry(registry)
 	memory := blob.NewMemory()
-	handler := httpapi.New(st, memory, nil, nil, "marker", "capy", httpapi.Config{
+	handler := httpapi.New(st, memory, nil, nil, "mineru", httpapi.Config{
 		AuthDisabled:  true,
 		E2EAuth:       true,
 		E2ESecret:     "e2e-test-secret",

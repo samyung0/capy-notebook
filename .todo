@@ -24,7 +24,6 @@ give better exit signals and search directions (check other libraries) -- low pr
 2. allow llm to embed interactive html files (deterministic santizing after generate (no jailbreak) and rendered in sandbox iframe), no editing allowed
 3. check equations, formulas and math graphs, both plate editors, and chat
 4. confirm db pool mechanism
-4. llm chat compaction
 5. cloudflare zero trust,on uat ops dashboard
 6. feature flags should allow for A/B testing, current way of env variables do not allow that
 check how search files/chunks work
@@ -45,6 +44,3 @@ check how search files/chunks work
     - tasks title
     - Remove: thinking space (not worked on yet)
 11. drag and drop on workspace files tree shows dropping line for both bottom of a file item and top of the next file item but its the same gap between
-13. llm telementry?
-14. why events use array text for label id?
-15. workspaceopen, read only does not have the chat panel, we should scope chat sessions/histories to per user and per workspace so users dont see the chat sessions of other people. then reenable the chat panel (disable generate if read only), conversations user_id doesnt have declared foreign key

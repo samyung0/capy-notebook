@@ -1,12 +1,9 @@
+import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Copy, Plus, Star, Trash2, TriangleAlert } from 'lucide-react';
-import {
-  type FormEvent,
-  useEffect,
-  useMemo,
-  useReducer,
-  useState,
-} from 'react';
+import { useEffect, useMemo, useReducer, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { type CapacityFields, capacitySchema } from '@/api';
 import { useOpsApp } from '@/app-context';
 import {
   ErrorState,
@@ -110,21 +107,31 @@ function DraftDialog({
     JSON.stringify(initial.params, null, 2)
   );
   const [error, setError] = useState('');
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<CapacityFields>({
+    defaultValues: {
+      concurrencyTotal: draft.concurrencyTotal ?? undefined,
+      interactiveReserve: draft.interactiveReserve ?? undefined,
+    },
+    resolver: zodResolver(capacitySchema),
+  });
 
   if (!config) {
     return null;
   }
   const embedding = config.slots.includes('retrieval');
 
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function submit(capacity: CapacityFields) {
     const parsed = parseParams(paramsText);
     if (!parsed.ok) {
       setError(parsed.error);
       return;
     }
     setError('');
-    onCreate({ ...draft, params: parsed.params });
+    onCreate({ ...draft, ...capacity, params: parsed.params });
     onOpenChange(false);
   }
 
@@ -134,18 +141,21 @@ function DraftDialog({
         <DialogHeader>
           <DialogTitle>Clone {modelRefLabel(config)} to draft</DialogTitle>
           <DialogDescription>
-            The draft is assigned to this model row. The server creates a new
-            immutable version when you use the page-level Save action.
+            The draft is assigned to this model row. The page-level Save action
+            applies capacity changes immediately. Other configuration edits
+            create a new model version.
           </DialogDescription>
         </DialogHeader>
-        <form id="draft-form" onSubmit={submit}>
+        <form id="draft-form" onSubmit={handleSubmit(submit)}>
           <DraftFields
             capabilities={capabilities}
+            capacityErrors={errors}
             draft={draft}
             embedding={embedding}
             idPrefix="draft"
             paramsText={paramsText}
             providers={providers}
+            registerCapacity={register}
             setDraft={setDraft}
             setParamsText={setParamsText}
           />
@@ -186,9 +196,20 @@ function AddModelDialog({
   const [draft, setDraft] = useState(() => emptyDraft(crypto.randomUUID()));
   const [paramsText, setParamsText] = useState('{}');
   const [error, setError] = useState('');
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<CapacityFields>({
+    defaultValues: {
+      concurrencyTotal: draft.concurrencyTotal ?? undefined,
+      interactiveReserve: draft.interactiveReserve ?? undefined,
+    },
+    resolver: zodResolver(capacitySchema),
+  });
 
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function submit(capacity: CapacityFields) {
     if (!draft.providerSlug.trim() || !draft.modelSlug.trim()) {
       setError('Provider and model slug are required.');
       return;
@@ -199,7 +220,7 @@ function AddModelDialog({
       return;
     }
     setError('');
-    onCreate({ ...draft, params: parsed.params });
+    onCreate({ ...draft, ...capacity, params: parsed.params });
     onOpenChange(false);
   }
 
@@ -210,6 +231,7 @@ function AddModelDialog({
           setDraft(emptyDraft(crypto.randomUUID()));
           setParamsText('{}');
           setError('');
+          reset({ concurrencyTotal: undefined, interactiveReserve: undefined });
         }
         onOpenChange(next);
       }}
@@ -223,14 +245,16 @@ function AddModelDialog({
             slots on the grid and save.
           </DialogDescription>
         </DialogHeader>
-        <form id="add-model-form" onSubmit={submit}>
+        <form id="add-model-form" onSubmit={handleSubmit(submit)}>
           <DraftFields
             capabilities={capabilities}
+            capacityErrors={errors}
             draft={draft}
             embedding={false}
             idPrefix="add"
             paramsText={paramsText}
             providers={providers}
+            registerCapacity={register}
             setDraft={setDraft}
             setParamsText={setParamsText}
           />

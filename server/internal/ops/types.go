@@ -275,7 +275,7 @@ type Health struct {
 	FailedTurns                 []TurnLifecycle          `json:"failedTurns"`
 	AbandonedCalls              []ProviderCallDiagnostic `json:"abandonedCalls"`
 	// BusyCalls counts attempts abandoned on a provider 429, 503 or 529 answer
-	// in the last hour, the signal for tuning CAPY_MODEL_CONCURRENCY. A gate
+	// in the last hour, the signal for tuning model capacity in the registry. A gate
 	// refusal writes no call row and is not counted.
 	BusyCalls []ModelBusyRow `json:"busyCalls"`
 	DataAsOf  time.Time      `json:"dataAsOf"`
@@ -546,6 +546,8 @@ type ContextSummary struct {
 }
 
 type CatalogConfig struct {
+	ConcurrencyTotal          *int            `json:"concurrencyTotal"`
+	InteractiveReserve        *int            `json:"interactiveReserve"`
 	Version                   int             `json:"version"`
 	ProviderName              string          `json:"providerName"`
 	ModelName                 string          `json:"modelName"`
@@ -601,6 +603,8 @@ type RegistrySnapshot struct {
 }
 
 type DraftConfig struct {
+	ConcurrencyTotal    *int            `json:"concurrencyTotal"`
+	InteractiveReserve  *int            `json:"interactiveReserve"`
 	ProviderName        string          `json:"providerName"`
 	ModelName           string          `json:"modelName"`
 	ProviderSlug        string          `json:"providerSlug"`

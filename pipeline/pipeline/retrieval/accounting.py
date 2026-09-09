@@ -236,23 +236,22 @@ def new_call_id() -> str:
 
 
 def model_capacity(
-    provider: str, model: str, settlement_mode: str
-) -> tuple[str, int] | None:
-    """Gate key and capacity for one platform-key call; None when ungated.
-
-    Interactive callers may use the model's whole total. Ingest callers stop at
-    total minus the interactive reserve, so a chat search never queues behind a
-    wave of captions. A user's own key answers to that user's provider limits
-    and is never gated here.
-    """
-    if registry.current_request_llm().paid_by == "user":
-        return None
-    limits = cfg.model_concurrency.get((provider, model))
+    cur, provider: str, model: str, settlement_mode: str
+) -> tuple[str, int]:
+    """Read live limits; hold the row stable until admission commits."""
+    cur.execute(
+        "SELECT concurrency_total, interactive_reserve FROM model_capacities "
+        "WHERE provider=%s AND model=%s FOR SHARE",
+        (provider, model),
+    )
+    limits = cur.fetchone()
     if limits is None:
-        return None
+        raise AccountingError(
+            f"model capacity is not configured for {provider}:{model}"
+        )
     total, reserve = limits
     capacity = total - reserve if settlement_mode == "ingest" else total
-    return f"{provider}:{model}", max(0, capacity)
+    return f"{provider}:{model}", capacity
 
 
 def _gate_poll_s(settlement_mode: str) -> float:
@@ -302,9 +301,9 @@ async def open_call(
     receipt_timeout_s = (
         max(1, math.ceil(provider_timeout_s)) + _RECEIPT_SETTLEMENT_GRACE_S
     )
-    lease = (
-        model_capacity(provider, model, state.settlement_mode)
-        if spec is not None
+    admission_mode = (
+        state.settlement_mode
+        if spec is not None and registry.current_request_llm().paid_by != "user"
         else None
     )
     while True:
@@ -320,7 +319,7 @@ async def open_call(
                 receipt_timeout_s,
                 provider,
                 model,
-                lease,
+                admission_mode,
                 state.job_attempt_id,
                 state.job_stage,
             )
@@ -342,7 +341,7 @@ async def open_call(
                 retry_after=BUSY_RETRY_AFTER_S,
             )
         await asyncio.sleep(wait)
-    if lease is not None:
+    if admission_mode is not None:
         state.leased_calls.add(call_id)
     state.receipt_deadlines[call_id] = time.monotonic() + receipt_timeout_s
 
@@ -431,7 +430,7 @@ def _open_call_sync(
     receipt_timeout_s: int,
     provider: str = "",
     model: str = "",
-    lease: tuple[str, int] | None = None,
+    admission_mode: str | None = None,
     job_attempt_id: int | None = None,
     job_stage: str = "",
 ) -> bool:
@@ -440,6 +439,11 @@ def _open_call_sync(
 
     with db.connect() as conn:
         with conn.cursor() as cur:
+            lease = (
+                model_capacity(cur, provider, model, admission_mode)
+                if admission_mode is not None
+                else None
+            )
             if lease is not None:
                 # Unlocked look first: a full gate returns without touching
                 # the session or call rows, and without the model-wide lock.

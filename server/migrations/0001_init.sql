@@ -255,7 +255,6 @@ CREATE TABLE IF NOT EXISTS files (
   indexed               boolean NOT NULL DEFAULT false,
   ever_parsed_successfully boolean NOT NULL DEFAULT false,
   parser                text,
-  engine                text,
   blob_path             text,
   -- Exact LibreOffice PDF that Office parser coordinates were measured
   -- against. PDFs use blob_path directly and leave this null.
@@ -1157,6 +1156,18 @@ CREATE INDEX IF NOT EXISTS ingest_job_attempts_environment_idx
 CREATE UNIQUE INDEX IF NOT EXISTS ingest_job_attempts_running_claim_idx
   ON ingest_job_attempts(job_id, attempt)
   WHERE status = 'running';
+
+-- Environment-specific operational limits, shared by all catalog versions.
+-- Configure these in Ops before platform calls; no cross-environment defaults.
+CREATE TABLE IF NOT EXISTS model_capacities (
+  provider text NOT NULL CHECK (provider <> ''),
+  model text NOT NULL CHECK (model <> ''),
+  concurrency_total integer NOT NULL CHECK (concurrency_total > 0),
+  interactive_reserve integer NOT NULL CHECK (
+    interactive_reserve >= 0 AND interactive_reserve < concurrency_total
+  ),
+  PRIMARY KEY (provider, model)
+);
 
 -- Synchronous provider calls still consume ElevenLabs' weighted concurrency.
 -- Short durable leases keep separate worker processes within the configured

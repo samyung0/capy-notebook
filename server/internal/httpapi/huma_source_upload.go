@@ -145,7 +145,7 @@ func (a *api) uploadSource(ctx context.Context, in *uploadSourceInput) (*sourceF
 	}
 	var res apimodel.File
 	if needsJob {
-		res, _, err = a.s.CreateSourceWithJob(ctx, wsID, userID(ctx), name, kind, chapterID, chapterName, size, blobPath, a.parser, a.engine, parseMode, captionImages)
+		res, _, err = a.s.CreateSourceWithJob(ctx, wsID, userID(ctx), name, kind, chapterID, chapterName, size, blobPath, a.parser, parseMode, captionImages)
 	} else {
 		res, err = a.s.CreateSourceReady(ctx, wsID, userID(ctx), name, kind, chapterID, chapterName, size, blobPath)
 	}

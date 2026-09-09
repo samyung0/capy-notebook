@@ -63,7 +63,7 @@ func TestUploadFinalizationRechecksCreatorMembership(t *testing.T) {
 		WHERE workspace_id=$1 AND user_id=$2`, workspace.ID, editorID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.FinalizeUploadSession(ctx, uploadID, "etag", "", ""); !errors.Is(err, ErrNotFound) {
+	if _, err := s.FinalizeUploadSession(ctx, uploadID, "etag", ""); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("removed editor finalize error = %v, want not found", err)
 	}
 	var files int

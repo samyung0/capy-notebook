@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from .. import elitellm, obs, registry, use_compatible_event_loop
-from ..config import cfg, require_model_concurrency_in_production
+from ..config import cfg
 from ..prompts import generate as generate_prompts
 from ..prompts import quiz as quiz_prompts
 from ..retrieval import accounting, compact, contract, models, pending, store, workflows
@@ -160,7 +160,6 @@ async def request_context(request: Request, call_next):
 
 
 app.include_router(plate_ai_router)
-require_model_concurrency_in_production()
 
 
 def _uid(prefix: str) -> str:

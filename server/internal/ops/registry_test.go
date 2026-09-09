@@ -541,6 +541,7 @@ func TestActiveDraftRejectsEmbeddingHopChange(t *testing.T) {
 	request := RegistrySaveRequest{
 		Revision: 7,
 		Active: []DraftConfig{{
+			ConcurrencyTotal: intPointer(10), InteractiveReserve: intPointer(2),
 			ProviderSlug: current.ProviderSlug, ProviderName: current.ProviderName,
 			ModelName: current.ModelName,
 			ModelSlug: "deepseek-v4-flash", PlatformEnabled: current.PlatformEnabled,
@@ -867,4 +868,74 @@ func sameJSONTest(left, right json.RawMessage) bool {
 		return false
 	}
 	return reflect.DeepEqual(leftValue, rightValue)
+}
+
+func intPointer(value int) *int { return &value }
+
+func TestCapacitySaveIsLiveAndIndependentOfCatalogVersion(t *testing.T) {
+	store, tx := openRegistryTestTx(t)
+	ctx := context.Background()
+	before, err := snapshotFrom(ctx, tx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := registryRequestFromSnapshot(before)
+	for i := range request.Active {
+		request.Active[i].ConcurrencyTotal = intPointer(200)
+		request.Active[i].InteractiveReserve = intPointer(80)
+	}
+	grid, err := activeToGrid(request, before)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.saveTx(ctx, tx, grid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.InsertedRows != 0 {
+		t.Fatalf("capacity edit inserted %d model versions", result.InsertedRows)
+	}
+	after, err := snapshotFrom(ctx, tx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, config := range after.Configs {
+		if !config.Enabled {
+			continue
+		}
+		if config.ConcurrencyTotal == nil || *config.ConcurrencyTotal != 200 ||
+			config.InteractiveReserve == nil || *config.InteractiveReserve != 80 {
+			t.Fatalf("capacity missing on %s: %+v", config.Ref(), config)
+		}
+	}
+	var total int
+	if err := tx.QueryRow(ctx, "SELECT concurrency_total FROM model_capacities WHERE provider='deepinfra' AND model='zai-org/GLM-5.3-Flash'").Scan(&total); err != nil || total != 200 {
+		t.Fatalf("routed capacity: %d, %v", total, err)
+	}
+	request = registryRequestFromSnapshot(after)
+	for i := range request.Active {
+		request.Active[i].ConcurrencyTotal = intPointer(4)
+		request.Active[i].InteractiveReserve = intPointer(1)
+	}
+	grid, err = activeToGrid(request, after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err = store.saveTx(ctx, tx, grid)
+	if err != nil || result.InsertedRows != 0 {
+		t.Fatalf("live update: %+v, %v", result, err)
+	}
+	if err := tx.QueryRow(ctx, "SELECT concurrency_total FROM model_capacities WHERE provider='deepinfra' AND model='zai-org/GLM-5.3-Flash'").Scan(&total); err != nil || total != 4 {
+		t.Fatalf("updated capacity: %d, %v", total, err)
+	}
+	for _, invalid := range []struct{ total, reserve *int }{
+		{nil, intPointer(0)}, {intPointer(1), nil}, {intPointer(0), intPointer(0)},
+		{intPointer(2), intPointer(-1)}, {intPointer(2), intPointer(2)},
+	} {
+		request.Active[0].ConcurrencyTotal = invalid.total
+		request.Active[0].InteractiveReserve = invalid.reserve
+		if _, err := activeToGrid(request, after); !IsValidation(err) {
+			t.Fatalf("invalid capacity accepted: %+v, %v", invalid, err)
+		}
+	}
 }

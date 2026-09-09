@@ -271,7 +271,7 @@ func (a *api) completeSourceUpload(ctx context.Context, in *completeSourceUpload
 		return nil, hErr(err)
 	}
 	if session.Status == "completed" {
-		res, err := a.s.FinalizeUploadSession(ctx, in.UploadID, "", a.parser, a.engine)
+		res, err := a.s.FinalizeUploadSession(ctx, in.UploadID, "", a.parser)
 		if err != nil {
 			return nil, hErr(err)
 		}
@@ -305,7 +305,7 @@ func (a *api) completeSourceUpload(ctx context.Context, in *completeSourceUpload
 			return nil, hErr(err)
 		}
 	}
-	res, err := a.s.FinalizeUploadSession(ctx, in.UploadID, info.ETag, a.parser, a.engine)
+	res, err := a.s.FinalizeUploadSession(ctx, in.UploadID, info.ETag, a.parser)
 	if errors.Is(err, store.ErrUploadExpired) || errors.Is(err, store.ErrUploadState) {
 		return nil, huma.Error409Conflict(err.Error())
 	}
@@ -404,7 +404,7 @@ func (a *api) completeFileReplacementUpload(
 		return nil, hErr(err)
 	}
 	if session.Status == "completed" {
-		res, err := a.s.FinalizeReplacementUploadSession(ctx, in.UploadID, "", a.parser, a.engine)
+		res, err := a.s.FinalizeReplacementUploadSession(ctx, in.UploadID, "", a.parser)
 		if err != nil {
 			return nil, hErr(err)
 		}
@@ -438,7 +438,7 @@ func (a *api) completeFileReplacementUpload(
 			return nil, hErr(err)
 		}
 	}
-	res, err := a.s.FinalizeReplacementUploadSession(ctx, in.UploadID, info.ETag, a.parser, a.engine)
+	res, err := a.s.FinalizeReplacementUploadSession(ctx, in.UploadID, info.ETag, a.parser)
 	if errors.Is(err, store.ErrFileRevisionConflict) || errors.Is(err, store.ErrFileNotReady) {
 		_ = a.s.MarkUploadExpired(ctx, in.UploadID)
 		return nil, huma.Error409Conflict(err.Error())

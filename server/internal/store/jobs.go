@@ -21,7 +21,7 @@ import (
 // 'fast' (MinerU pipeline with automatic OCR selection). Unknown names fail validation.
 // Text kinds ignore it and are inserted directly. captionImages asks the
 // worker to describe the figures that parse extracted.
-func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, kind string, chapterID *string, chapterName string, sizeBytes int64, blobPath, parser, engine, parseMode string, captionImages bool) (File, string, error) {
+func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, kind string, chapterID *string, chapterName string, sizeBytes int64, blobPath, parser, parseMode string, captionImages bool) (File, string, error) {
 	processingPlan, err := sourceupload.BuildProcessingPlan(name, kind, parseMode, captionImages)
 	if err != nil || processingPlan.Route == sourceupload.RouteStoreOnly {
 		if err == nil {
@@ -57,16 +57,16 @@ func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, 
 	url := "/api/files/" + fileID + "/raw"
 	now := time.Now().UTC()
 	if _, err := tx.Exec(ctx, `INSERT INTO files
-		(id, workspace_id, user_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, parser, engine, blob_path, url, parse_mode, caption_images)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending',$10,$11,$12,$13,$14,$15)`,
-		fileID, wsID, ownerID, nullStr(createdBy), chapterID, name, kind, sizeBytes, now, parser, engine, blobPath, url, parseMode, captionImages); err != nil {
+		(id, workspace_id, user_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, parser, blob_path, url, parse_mode, caption_images)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending',$10,$11,$12,$13,$14)`,
+		fileID, wsID, ownerID, nullStr(createdBy), chapterID, name, kind, sizeBytes, now, parser, blobPath, url, parseMode, captionImages); err != nil {
 		return File{}, "", err
 	}
 
 	jobID := uid("job")
 	payload, err := s.ingestJobPayload(ctx, createdBy, map[string]any{
 		"fileId": fileID, "workspaceId": wsID, "blobPath": blobPath, "kind": kind,
-		"parser": parser, "engine": engine, "parseMode": parseMode,
+		"parser": parser, "parseMode": parseMode,
 		"captionImages":  captionImages,
 		"processingPlan": processingPlan,
 		"sourceETag":     "",

@@ -19,6 +19,13 @@ Probes the SPA, `uat-api/healthz`, `uat-collab/healthz`, and the ops edge, and
 fails loudly on anything outside the accepted status range. It reads
 `deploy/.env.uat` and requires `UAT_TARGET_AUTHORIZED=true`.
 
+The ops probe checks both directions of the Access gate. An anonymous request
+must be redirected to `OPS_CF_ACCESS_ISSUER`'s login page for the ops hostname,
+and the smoke service token (`UAT_OPS_ACCESS_CLIENT_ID`/`_SECRET`) must get a
+`200` shell and a `401` from `/api/ops/session`. A `404` with the token means
+Access passed but no Coolify service owns the hostname yet; a `401` means the
+ops container rejected Cloudflare's token, usually a wrong issuer or audience.
+
 Then, from the ingest host, confirm the import worker can reach the gateway on
 WireGuard (`CAPY_PRIVATE_BIND_ADDRESS` must be set on the UAT app host):
 
@@ -34,7 +41,7 @@ If the gateway is unhealthy, check these before anything else:
 | Gateway exits complaining about the email secret | `EMAIL_UNSUBSCRIBE_SECRET` needs 32+ characters across 3 character classes. Plain hex fails. |
 | Gateway refuses to start with Clerk configured | `CLERK_SECRET_KEY` or `CLERK_WEBHOOK_SECRET` is blank. Both are required unless `AUTH_DISABLED` or `E2E_AUTH` is on. |
 | Variables changed but the container behaves as before | Coolify's compose parse is cached and only refreshes on deploy. Redeploy rather than restart. |
-| Retrieval or an ingest worker exits naming `CAPY_MODEL_CONCURRENCY` | The variable is required under `APP_ENV=production`; set UAT's own per-model caps (see the runbook §1.4). |
+| A platform model call fails with `model capacity is not configured` | Apply the Ops grants, then enter UAT’s own total and interactive reserve for each active model in Ops. |
 
 ## 2. Clerk webhook
 
@@ -79,25 +86,20 @@ burst on retry and will trip a WAF rule written for browser traffic.
 
 ## 4. The local development lane
 
-Two entries have to name each developer's dev hostname
-(`dev-<name>.uat.capynotebook.com`):
+Verify the shared local origin `https://local.uat.capynotebook.com` is present
+in `COLLABORATION_ALLOWED_ORIGINS` and `OFFICE_ALLOWED_PARENT_ORIGINS` in GitHub
+UAT and the deployed services. Clerk shares subdomain sessions by default; add
+this origin only if the optional Clerk subdomain allowlist is enabled.
 
-- `COLLABORATION_ALLOWED_ORIGINS` on the gateway, then redeploy. The collab
-  server matches the browser `Origin` against an exact set
-  (`collaboration/src/config.ts`).
-- Nothing in Clerk, unless the instance has the subdomain allowlist enabled.
-  Sessions are shared across subdomains of the primary domain by default.
-
-`deploy/b2-cors.uat.json` already covers every such hostname with
-`https://*.uat.capynotebook.com`. Re-apply it to the bucket if it was applied
-before that wildcard existed.
-
-Then, from a developer machine running `pnpm dev:tunnel` and `pnpm dev:public`:
+`deploy/b2-cors.uat.json` already covers it with `https://*.uat.capynotebook.com`.
+On a developer machine, complete [local HTTPS and hosts setup](../scripts/dev/README.md),
+then run Caddy and `pnpm dev:uat`:
 
 | Check | Proves |
 | --- | --- |
-| Sign in on `https://dev-<name>.uat.capynotebook.com` | Clerk subdomain session sharing, and that `VITE_CLERK_PUBLISHABLE_KEY` is the UAT `pk_live` the gateway validates against |
-| Open a note and type | Collab websocket accepted the origin |
+| Sign in on `https://local.uat.capynotebook.com` | Trusted local HTTPS and matching UAT Clerk instance |
+| Open a note and type | Collaboration WebSocket accepted the shared local origin |
+| Open an Office document | Office Worker permits the shared local parent origin |
 | Upload a file | Presigned PUT passed bucket CORS, `complete` recorded the object |
 | Open a citation preview | Gateway-served preview path and B2 read credentials |
 

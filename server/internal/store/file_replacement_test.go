@@ -84,7 +84,7 @@ func TestFileReplacementReusesIngestPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	replaced, err := s.FinalizeReplacementUploadSession(
-		ctx, session.ID, "presentation-etag", "parser", "engine",
+		ctx, session.ID, "presentation-etag", "parser",
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -286,7 +286,7 @@ func TestFileReplacementPreservesIdentityAndRejectsStaleEditor(t *testing.T) {
 	}
 
 	replaced, err := s.FinalizeReplacementUploadSession(
-		ctx, first.ID, "new-etag", "parser", "engine",
+		ctx, first.ID, "new-etag", "parser",
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -327,7 +327,7 @@ func TestFileReplacementPreservesIdentityAndRejectsStaleEditor(t *testing.T) {
 	}
 
 	if _, err := s.FinalizeReplacementUploadSession(
-		ctx, stale.ID, "stale-etag", "parser", "engine",
+		ctx, stale.ID, "stale-etag", "parser",
 	); !errors.Is(err, ErrFileRevisionConflict) {
 		t.Fatalf("stale finalize error = %v, want revision conflict", err)
 	}

@@ -1,0 +1,10 @@
+{
+	admin off
+	auto_https disable_redirects
+}
+
+https://local.uat.capynotebook.com {
+	bind 127.0.0.1
+	tls internal
+	reverse_proxy 127.0.0.1:5173
+}

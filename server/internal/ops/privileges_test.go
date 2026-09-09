@@ -369,6 +369,14 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 		))
 	})
 
+	if _, err := owner.Exec(ctx, fmt.Sprintf(`
+        GRANT SELECT (provider, model, concurrency_total, interactive_reserve) ON model_capacities TO %s, %s;
+        GRANT INSERT (provider, model, concurrency_total, interactive_reserve) ON model_capacities TO %s;
+        GRANT UPDATE (concurrency_total, interactive_reserve) ON model_capacities TO %s;
+    `, readIdent, adminIdent, adminIdent, adminIdent)); err != nil {
+		t.Fatal(err)
+	}
+
 	readPool := rolePool(t, ctx, ownerDSN, readRole, password)
 	adminPool := rolePool(t, ctx, ownerDSN, adminRole, password)
 	if err := ValidateDatabaseRole(ctx, readPool, ReadDatabaseRole); err != nil {

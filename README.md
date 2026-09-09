@@ -30,80 +30,70 @@ Study workspace: notes, sources, quizzes, flashcards, schedule, and AI retrieval
   - **Windows:** run `rustup-init.exe` from [rustup.rs](https://rustup.rs), which
     also prompts for the Visual Studio C++ build tools
 - Install Bun
-- Copy `deploy/.env.example` to `deploy/.env`.
-
-### Office engine setup
-
-1. Initialize the pinned fork and install the WASM build tools:
-
-   ```sh
-   git config push.recurseSubmodules check
-   git config submodule.recurse true
-   git submodule update --init vendor/betteroffice
-   rustup target add wasm32-unknown-unknown
-   cargo install wasm-pack --version 0.15.0 --locked
-   ```
-
-   The fork checks for exactly `wasm-pack 0.15.0`.
-
-2. Install **Binaryen**, which supplies `wasm-opt`. CI uses version 132.
-
+- Install **Binaryen**
    **Windows:** [Binaryen 132 release](https://github.com/WebAssembly/binaryen/releases/tag/version_132):
    `binaryen-version_132-x86_64-windows.tar.gz` for Intel/AMD PCs, or
    `binaryen-version_132-arm64-windows.tar.gz` for Windows on ARM. Add `bin` directory to your user
    PATH.
 
    **macOS:** `brew install binaryen`
+- Copy `deploy/.env.example` to `deploy/.env`.
 
-3. Verify the tools, install app dependencies, and generate the Office assets:
+Then run:
+```sh
+# office setup
+git config push.recurseSubmodules check
+git config submodule.recurse true
+git submodule update --init vendor/betteroffice
+rustup target add wasm32-unknown-unknown
+cargo install wasm-pack --version 0.15.0 --locked
 
-   ```sh
-   bun --version
-   rustc --version
-   wasm-pack --version
-   wasm-opt --version
-   pnpm install --frozen-lockfile
-   pnpm run office:prepare
-   ```
+# UI Local - UAT api
+# Mac / Windows
+brew install caddy | choco install caddy
+pnpm run dev:hosts
 
-See [`openwiki/frontend/office-files.md`](openwiki/frontend/office-files.md) for more.
+pnpm install --frozen-lockfile
+pnpm run office:prepare
+```
 
-### UI/Frontend Only:
+### Local UI:
 
 Very happy, very demure.
 
 If you don't need UAT data or backend (pure UI):
 - `VITE_USE_MSW=true`
 - `pnpm run dev`
+- Open `https://localhost:5173`
 
 Otherwise:
 
  - `VITE_USE_MSW=false`
  - `VITE_API_URL=https://uat-api.capynotebook.com`
  - `VITE_CLERK_PUBLISHABLE_KEY=pk_live_Y2xlcmsudWF0LmNhcHlub3RlYm9vay5jb20k`
- - `VITE_DEV_HOST=dev-<yourname>.uat.capynotebook.com` (pick a funny name)
- - `pnpm dev:tunnel` and `pnpm dev:public` in separate terminal
+ - `pnpm dev:https` and `pnpm dev:uat` in separate terminals
+ - Open `https://local.uat.capynotebook.com`.
 
-Ask for your origin to be added to `COLLABORATION_ALLOWED_ORIGINS`, or
-notes will not connect.
+No Cloudflare tunnel. The host is needed for collab server and clerk auth.
 
 ### Full Stack
 
 Everything local, on the Clerk development instance (UAT). 
 
-- Webhook events are sent to your machine via your endpoint in clerk (ask Epo to help create/manage).
-  Deliveries ride your own tunnel, so `pnpm dev:tunnel` has to be up to receive them.
-
-```bash
-docker compose -f deploy/docker-compose.yml up --build
-pnpm dev
-```
-
  - `VITE_USE_MSW=false`
  - `VITE_API_URL=http://localhost:8080`
  - `VITE_CLERK_PUBLISHABLE_KEY=pk_test_ZGlyZWN0LWdlbGRpbmctMTM1NS5jbGVyay5hY2NvdW50cy5kZXYk`
- - `CLERK_SECRET_KEY` set to the `sk_test`
+ - `CLERK_SECRET_KEY` set to the `sk_test` (UAT development instance)
  - `CLERK_WEBHOOK_SECRET` set to your endpoint's `whsec_`, or random value if you dont care about webhook events.
+ - `docker compose -f deploy/docker-compose.yml up --build`
+ - `pnpm dev`
+ - Open `https://localhost:5173`
+
+ - **Clerk Webhook Events**:
+
+  - Set `CLERK_WEBHOOK_HOST=dev-<yourname>.uat.capynotebook.com`
+  - Give `dev-<yourname>.uat.capynotebook.com/webhooks/clerk` to Epo, ask the big bro to add a webhook in clerk uat development instance with that url. Subscribed to `user.created`, `user.deleted`, `user.updated`.
+  - update `CLERK_WEBHOOK_SECRET` with the webhook secret
 
  - **Email**:
 

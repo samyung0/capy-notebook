@@ -117,8 +117,8 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    parent origins in GitHub. `workers/office` stages the runtime HTML and assets
    from the same build as the SPA, replaces inherited headers, and publishes
    before the SPA. UAT uses `uat-office.capynotebook.com` and allows
-   `https://uat.capynotebook.com,https://dev-sam.uat.capynotebook.com`; add each
-   future developer origin explicitly. Production requires its own Office custom
+   `https://uat.capynotebook.com,https://local.uat.capynotebook.com` for the deployed
+   and locally served UI. Production requires its own Office custom
    domain configured in `wrangler.office.jsonc` before first rollout. The Worker
    supplies the matching `frame-ancestors` policy and allows embedded blob fonts. Do not proxy `/api`, issue authentication cookies, or set
    parent-domain cookies on this hostname. The Office host transfers protected
@@ -303,12 +303,17 @@ Same values whether Coolify, bare compose, or A records. Coolify domain fields
 are `http://`; these vars stay `https://` / `wss://`. Copy the rest from
 `deploy/.env.example` (Clerk, Stripe, Sentry DSNs, provider keys).
 `RATE_LIMIT_AI_PER_HOUR` defaults to 200; the 15/minute AI burst and
-120/minute editor class are not env-overridable. `CAPY_MODEL_CONCURRENCY` is
-required on both the app host (retrieval) and the ingest host (workers): the
-retrieval service and the ingest worker refuse to start under
-`APP_ENV=production` without it. Production runs
-`deepinfra:zai-org/GLM-5.3-Flash=200/120,deepinfra:Qwen/Qwen3-Embedding-4B=200/80`;
-UAT sets its own values against its own DeepInfra account.
+120/minute editor class are not env-overridable. Configure model capacity in the
+Ops model catalog before allowing platform model calls. Each environment stores
+its own transport provider/model limits in `model_capacities`; new databases start
+without limits and missing capacity fails explicitly. Production uses GLM
+200 total / 120 interactive reserve and Qwen embedding 200 / 80. UAT and full local
+development must use limits appropriate to their own provider accounts.
+
+The initial schema in `0001_init.sql` creates the capacity table. Apply the Ops
+role grants in §8, then enter each environment's limits through Ops before
+allowing traffic. Runtime admission reads current limits without worker restarts.
+Do not copy production capacity into another environment automatically.
 
 `ELEVENLABS_API_KEY` is needed only by the Netcup ingest worker. Audio sends the
 model and presigned source URL as multipart fields and waits for the synchronous
@@ -451,6 +456,13 @@ provider group that contains only operators. Do not use `Emails ending in` for
 a mixed-use domain, and do not add a Bypass or Everyone policy. A short session
 duration, such as eight hours, limits a forgotten browser session.
 
+Add a second, `Service Auth` policy that allows only the smoke service token
+(Zero Trust → Access → Service Auth). Its client id and secret go in
+`UAT_OPS_ACCESS_CLIENT_ID`/`UAT_OPS_ACCESS_CLIENT_SECRET`; `pnpm review:uat:smoke`
+sends them to prove the gate lets an allowed caller through. The token carries
+no email, so the ops service treats it like any other Access identity and Clerk
+still applies.
+
 Copy the application audience tag from the Access application's overview into
 `OPS_CF_ACCESS_AUDIENCE`. Copy the Zero Trust team domain, for example
 `acme.cloudflareaccess.com`, and use it as the issuer:
@@ -482,7 +494,8 @@ Keep the Access application in front of static files and `/api/*`. Do not
 add a bypass policy for `/healthz` at Cloudflare. Docker calls the health route
 on the private container network. The public hostname still requires Access.
 
-Test both failure paths before granting an operator row:
+Test both failure paths before granting an operator row (`pnpm review:uat:smoke`
+covers 1 and 2 with the service token):
 
 1. An email outside the Access policy must stop at Cloudflare.
 2. An allowed Access identity without a Clerk session can load the sign-in
@@ -732,8 +745,9 @@ those services start.
    measured default is MinerU pipeline with OCR `auto`. Synchronous audio calls
    use `CAPY_ELEVENLABS_SYNC_TIMEOUT_S` (12 hours by default) so the documented
    10-hour source limit is not cut off by the ordinary 20-minute ingest timeout.
-   The worker also requires `CAPY_MODEL_CONCURRENCY` (§1.4) and exits at
-   startup without it.
+   Configure its platform model capacities through Ops (§1.4) before ingest.
+   `CAPY_PARSE_COORDINATOR_CONCURRENCY` is a production-only input listed in
+   `.env.prod.example` and `ingest-host.env.example`; local/UAT Compose fixes it at one.
    Initial limits are four coordinator processes, four admitted document jobs,
    and four active 26-page slices. The default time hierarchy is a 600-second
    per-slice execution deadline, 40-minute parser request, 45-minute Redis slot,
@@ -1050,6 +1064,8 @@ to prevent a repair loop.
      micros_per_cached_input_token, micros_per_output_token, enabled,
      is_default_for, created_at, updated_at, created_by, updated_by
    ) ON model_configs TO capy_ops;
+   GRANT SELECT (provider, model, concurrency_total, interactive_reserve)
+     ON model_capacities TO capy_ops;
    GRANT SELECT (
      resource_key, version, unit, credit_micros_per_unit, active, created_at
    ) ON resource_credit_rates TO capy_ops;
@@ -1119,6 +1135,8 @@ to prevent a repair loop.
      micros_per_cached_input_token, micros_per_output_token, enabled,
      is_default_for, created_at, updated_at, created_by, updated_by
    ) ON model_configs TO capy_ops_admin;
+   GRANT SELECT (provider, model, concurrency_total, interactive_reserve)
+     ON model_capacities TO capy_ops_admin;
    GRANT SELECT (id, version, updated_at)
      ON model_registry_state TO capy_ops_admin;
    GRANT SELECT (
@@ -1150,6 +1168,10 @@ to prevent a repair loop.
      micros_per_cached_input_token, micros_per_output_token, enabled,
      is_default_for, created_by, updated_by
    ) ON model_configs TO capy_ops_admin;
+   GRANT INSERT (provider, model, concurrency_total, interactive_reserve)
+     ON model_capacities TO capy_ops_admin;
+   GRANT UPDATE (concurrency_total, interactive_reserve)
+     ON model_capacities TO capy_ops_admin;
    GRANT UPDATE (enabled, is_default_for, updated_at, updated_by)
      ON model_configs TO capy_ops_admin;
    GRANT EXECUTE ON FUNCTION model_configs_thinking_ok(text[], text[], text)
@@ -1507,45 +1529,41 @@ exemptions.
 
 #### Running the SPA locally against UAT
 
-A Clerk production instance does not authenticate on `localhost`, so a local
-`pnpm dev` that talks to the UAT gateway has to be served from a real origin.
-`pnpm dev:tunnel` publishes the dev server through its own Cloudflare tunnel,
-created on the developer's machine and unrelated to the `capy-uat` tunnel on
-the VM, at the hostname in `VITE_DEV_HOST`. The DNS record points at that
-laptop; only the API calls Vite proxies reach the VM. `pnpm dev:public` then
-serves it (plain `pnpm dev` stays on localhost).
+Use `https://local.uat.capynotebook.com`, mapped to `127.0.0.1` on each developer's
+machine. Local Caddy provides HTTPS on port 443 with its internal CA and proxies
+to Vite on loopback port 5173. `pnpm dev:uat` configures that hostname, HMR, and
+the UAT API proxy; `pnpm dev` retains the full-local localhost lane. The deployed
+UAT site remains reachable normally. No public DNS or UI tunnel is needed.
 
-The hostname is one label under the instance's Clerk primary domain,
-`dev-<name>.uat.capynotebook.com`. Clerk shares sessions across subdomains of
-the primary domain with no SPA configuration; a sibling such as
-`dev.capynotebook.com` would be a satellite domain instead, needing its own
-Clerk registration, a `clerk.` CNAME per developer, and `isSatellite` props in
-`AppAuthProvider`. Two labels is past the free Universal certificate, so the
-zone carries an Advanced Certificate Manager pack for `uat.capynotebook.com`
-and `*.uat.capynotebook.com`. The tunnel script derives the expected domain by
-decoding `VITE_CLERK_PUBLISHABLE_KEY` and refuses a hostname that would land
-outside it.
+Follow [the macOS and Windows setup commands](../scripts/dev/README.md).
+`pnpm dev:hosts` edits the system hosts file, with administrator privileges,
+backing it up and preserving existing entries. Both `pnpm dev:hosts` and
+`pnpm dev:https` request privileges automatically through macOS sudo or Windows
+UAC. Run `pnpm dev:uat` in a separate normal terminal as your regular user.
 
-Per developer, the only entry that is not already a wildcard is the collab
-origin: append `https://dev-<name>.uat.capynotebook.com` to
-`COLLABORATION_ALLOWED_ORIGINS` and redeploy, or no note connects to the
-editor websocket. `deploy/b2-cors.uat.json` covers every such hostname with
-`https://*.uat.capynotebook.com`, and Clerk needs nothing unless the instance
-has the subdomain allowlist enabled.
+The local hostname sits under the UAT Clerk primary domain, so it uses the UAT
+production instance's subdomain sessions. Set these in `deploy/.env`:
+`VITE_USE_MSW=false`, `VITE_API_URL=https://uat-api.capynotebook.com`, and the UAT
+`pk_live` in `VITE_CLERK_PUBLISHABLE_KEY`. `pnpm dev:uat` rejects other values.
+Add `https://local.uat.capynotebook.com` to both
+`COLLABORATION_ALLOWED_ORIGINS` and `OFFICE_ALLOWED_PARENT_ORIGINS` in GitHub UAT
+and the ignored UAT file. Deploy the collaboration service and Office Worker to
+apply those settings. `deploy/b2-cors.uat.json` already covers this origin with
+`https://*.uat.capynotebook.com`. Clerk needs an additional allowlist entry only
+if its optional subdomain allowlist is enabled.
 
-The browser key must belong to the instance the gateway validates against:
-`VITE_API_URL=https://uat-api.capynotebook.com` requires the UAT `pk_live` in
-`VITE_CLERK_PUBLISHABLE_KEY`. A `pk_test` there is a 401 on every request.
+For full-local development, the gateway, database and UI run locally using the
+Clerk development keys. Open `http://localhost:5173` with `pnpm dev`. Clerk's
+servers still need a public route to deliver webhooks: set `CLERK_WEBHOOK_HOST`
+to your own `dev-<name>.uat.capynotebook.com` and run `pnpm dev:tunnel`. The tunnel
+publishes only `/webhooks/` to the local gateway; other public paths return 404.
+It requires a development `pk_test` key and does not need Vite running.
 
-The same tunnel carries `/webhooks/` to a locally-run gateway on port 8080,
-ahead of the catch-all rule that serves Vite. That is how the Clerk
-**development** instance reaches a developer's machine, which it otherwise
-cannot: point its webhook at
-`https://dev-<name>.uat.capynotebook.com/webhooks/clerk` with the same three
-events, and put that endpoint's signing secret in the developer's
-`CLERK_WEBHOOK_SECRET`. Those deliveries return 502 whenever no local gateway
-is running, which is the normal state in this lane. The UAT production
-instance keeps delivering to `uat-api` and is unaffected.
+Register the Clerk development endpoint at
+`https://dev-<name>.uat.capynotebook.com/webhooks/clerk` for `user.created`,
+`user.updated`, and `user.deleted`; put its signing secret in the local gateway's
+`CLERK_WEBHOOK_SECRET`. UAT's Clerk production instance keeps delivering directly
+to `uat-api`, independently of local UI or tunnel state.
 
 Endpoints are per developer, never shared: a hostname reaches exactly one
 laptop, and each endpoint carries its own signing secret. The development
@@ -1749,7 +1767,7 @@ The uploader needs `gh auth login` with repository/environment administration
 access. It sends secrets through stdin, rejects unknown/duplicate keys, and
 does no shell expansion. An explicit blank deletes that key in GitHub; omitted
 keys are left alone. Review-only `STRIX_*`, `LLM_API_KEY`, tunnel/dev controls,
-and derived release values remain local. `VITE_DEV_HOST` also stays local. Double-quoted `\n` escapes can hold
+and derived release values remain local. `CLERK_WEBHOOK_HOST` also stays local. Double-quoted `\n` escapes can hold
 an SSH private key. Do not put actual multiline shell fragments in the file.
 
 Every deployment reads GitHub's environment values afresh, renders private

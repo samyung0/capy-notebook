@@ -165,6 +165,98 @@ def test_provider_capacity_leases_enforce_weighted_limit(workspace):
         )
 
 
+def test_model_capacity_changes_apply_to_each_admission(workspace):
+    import psycopg
+
+    from pipeline.retrieval import accounting
+
+    model = "capacity_" + secrets.token_hex(6)
+    key = f"deepinfra:{model}"
+    file_id = workspace.add_file("capacity.txt")
+    with psycopg.connect(workspace.dsn) as conn:
+        conn.execute("UPDATE files SET source_etag='etag-a' WHERE id=%s", (file_id,))
+        job_id, attempt_id, session_id = _install_running_pipeline_claim(
+            conn,
+            workspace_id=workspace.id,
+            file_id=file_id,
+            actor_user_id=workspace.user_id,
+        )
+    calls = ["pc_" + secrets.token_hex(6) for _ in range(4)]
+
+    def admit(call_id, mode="ingest"):
+        return accounting._open_call_sync(
+            session_id,
+            call_id,
+            "llm",
+            "ingest_summary",
+            "instant",
+            accounting.ContextComposition(),
+            300,
+            "deepinfra",
+            model,
+            mode,
+            attempt_id,
+            "ingest_summary",
+        )
+
+    try:
+        with pytest.raises(
+            accounting.AccountingError, match="capacity is not configured"
+        ):
+            admit(calls[0])
+        with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+            assert (
+                conn.execute(
+                    "SELECT count(*) FROM provider_calls WHERE id=%s", (calls[0],)
+                ).fetchone()[0]
+                == 0
+            )
+            conn.execute(
+                "INSERT INTO model_capacities VALUES (%s,%s,3,1)", ("deepinfra", model)
+            )
+            for total, reserve in [(0, 0), (2, -1), (2, 2)]:
+                with pytest.raises(psycopg.errors.CheckViolation):
+                    conn.execute(
+                        "UPDATE model_capacities SET concurrency_total=%s, interactive_reserve=%s WHERE provider=%s AND model=%s",
+                        (total, reserve, "deepinfra", model),
+                    )
+        assert admit(calls[0])
+        assert admit(calls[1])
+        assert not admit(calls[2])  # Two ingest calls leave the interactive reserve.
+        assert admit(calls[2], "gateway")  # Interactive callers use the full total.
+        with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+            conn.execute(
+                "UPDATE model_capacities SET concurrency_total=2 WHERE provider=%s AND model=%s",
+                ("deepinfra", model),
+            )
+            assert (
+                conn.execute(
+                    "SELECT count(*) FROM provider_capacity_leases WHERE provider=%s",
+                    (key,),
+                ).fetchone()[0]
+                == 3
+            )
+        assert not admit(calls[3], "gateway")
+        with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
+            db.release_provider_capacity(cur, calls[0])
+            db.release_provider_capacity(cur, calls[1])
+        assert not admit(calls[3])  # One remaining call fills the new ingest allowance.
+        with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
+            db.release_provider_capacity(cur, calls[2])
+        assert admit(calls[3])
+    finally:
+        with psycopg.connect(workspace.dsn) as conn:
+            conn.execute(
+                "DELETE FROM provider_capacity_leases WHERE provider=%s", (key,)
+            )
+            conn.execute(
+                "DELETE FROM model_capacities WHERE provider=%s AND model=%s",
+                ("deepinfra", model),
+            )
+            conn.execute("DELETE FROM provider_sessions WHERE id=%s", (session_id,))
+            conn.execute("DELETE FROM jobs WHERE id=%s", (job_id,))
+
+
 def test_ingest_provider_call_links_context_and_usage_atomically(workspace):
     import psycopg
 

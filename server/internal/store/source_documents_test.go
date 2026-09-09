@@ -447,7 +447,7 @@ func TestSourceRoomResetsOnlyAfterReplacementCommit(t *testing.T) {
 	if err != nil || string(before.State) != "saved-edit" || before.Epoch != doc.Epoch {
 		t.Fatalf("reservation changed source: %+v %v", before, err)
 	}
-	if _, err = s.FinalizeReplacementUploadSession(ctx, upload.ID, "replacement-etag", "", ""); err != nil {
+	if _, err = s.FinalizeReplacementUploadSession(ctx, upload.ID, "replacement-etag", ""); err != nil {
 		t.Fatal(err)
 	}
 	after, err := s.SourceSession(ctx, owner, file.ID)

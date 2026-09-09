@@ -32,6 +32,7 @@ func registryRequestFromSnapshot(snapshot RegistrySnapshot) RegistrySaveRequest 
 	for _, ref := range refs {
 		config := latest[ref]
 		request.Active = append(request.Active, DraftConfig{
+			ConcurrencyTotal: intPointer(10), InteractiveReserve: intPointer(2),
 			ProviderName:        config.ProviderName,
 			ModelName:           config.ModelName,
 			ProviderSlug:        config.ProviderSlug,

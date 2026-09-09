@@ -80,7 +80,7 @@ Other local commands:
 | `scripts/review/run-local-tests.sh --list` | Print the local deterministic matrix.                                     |
 | `pnpm review:local` / `review:local:full`  | Fast static/unit/offline matrix; `full` adds Go, pipeline, browser, perf. |
 | `node scripts/review/source-snapshot.mjs`  | Record revision and source-tree metadata under `review-results/`.         |
-| `pnpm review:uat:smoke`                    | Probe the authorized UAT SPA, gateway, collab, and optional ops edge.     |
+| `pnpm review:uat:smoke`                    | Probe the authorized UAT SPA, gateway, collab, and the ops Access gate.   |
 | `pnpm e2e:uat`                             | Clerk-backed authz matrix, accessibility, and reflow checks against UAT.  |
 | `pnpm review:validate-boundaries`          | Prove no workflow is scheduled, runs a scanner, or stages UAT on push.    |
 | `pnpm review:validate-scanners`            | Test the Strix and Codex result validators.                               |

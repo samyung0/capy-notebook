@@ -393,7 +393,7 @@ func TestSourceImportFinalizeRejectsReplacedAttemptAtomically(t *testing.T) {
 		t.Fatalf("stale prepare err=%v", err)
 	}
 	if _, err := s.FinalizeSourceImport(
-		ctx, job.ID, first.LeaseToken, "etag-stale", "default", "default",
+		ctx, job.ID, first.LeaseToken, "etag-stale", "default",
 	); !errors.Is(err, ErrImportLeaseLost) {
 		t.Fatalf("stale finalize err=%v", err)
 	}
@@ -403,7 +403,7 @@ func TestSourceImportFinalizeRejectsReplacedAttemptAtomically(t *testing.T) {
 	}
 
 	file, err := s.FinalizeSourceImport(
-		ctx, job.ID, second.LeaseToken, "etag-current", "default", "default",
+		ctx, job.ID, second.LeaseToken, "etag-current", "default",
 	)
 	if err != nil {
 		t.Fatal(err)

@@ -222,7 +222,7 @@ export function HealthPage() {
           <CardDescription>
             Attempts abandoned in the last hour on a provider 429, 503 or 529
             answer, by transport provider and model. This is the signal for
-            tuning CAPY_MODEL_CONCURRENCY; a gate refusal writes no row.
+            tuning model capacity in the registry; a gate refusal writes no row.
           </CardDescription>
         </CardHeader>
         <CardContent>

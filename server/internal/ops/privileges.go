@@ -29,6 +29,11 @@ type tablePrivilege struct {
 }
 
 var readRequiredPrivileges = []columnPrivilege{
+	{"model_capacities", "provider", "SELECT"},
+	{"model_capacities", "model", "SELECT"},
+	{"model_capacities", "concurrency_total", "SELECT"},
+	{"model_capacities", "interactive_reserve", "SELECT"},
+
 	{"plan_limits", "plan_tier", "SELECT"},
 	{"plan_limits", "storage_limit_bytes", "SELECT"},
 	{"plan_limits", "credit_limit_micros", "SELECT"},
@@ -304,6 +309,17 @@ var readRequiredPrivileges = []columnPrivilege{
 }
 
 var registryRequiredPrivileges = []columnPrivilege{
+	{"model_capacities", "provider", "SELECT"},
+	{"model_capacities", "provider", "INSERT"},
+	{"model_capacities", "model", "SELECT"},
+	{"model_capacities", "model", "INSERT"},
+	{"model_capacities", "concurrency_total", "SELECT"},
+	{"model_capacities", "concurrency_total", "INSERT"},
+	{"model_capacities", "concurrency_total", "UPDATE"},
+	{"model_capacities", "interactive_reserve", "SELECT"},
+	{"model_capacities", "interactive_reserve", "INSERT"},
+	{"model_capacities", "interactive_reserve", "UPDATE"},
+
 	{"model_configs", "version", "SELECT"},
 	{"model_configs", "provider_name", "SELECT"},
 	{"model_configs", "model_name", "SELECT"},

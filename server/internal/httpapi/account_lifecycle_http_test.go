@@ -45,7 +45,7 @@ func deletionAPI(t *testing.T, mapped bool) (http.Handler, *pgxpool.Pool, string
 		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID)
 	})
 
-	handler := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", "capy", httpapi.Config{
+	handler := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", httpapi.Config{
 		AuthDisabled: true,
 		DevUserID:    userID,
 	})

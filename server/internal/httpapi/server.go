@@ -87,7 +87,6 @@ type api struct {
 	pipe               *pipeline.Client
 	rdb                *redis.Client
 	parser             string
-	engine             string
 	cfg                Config
 	mailRecorder       mail.Recorder
 	limiter            *ratelimit.Limiter
@@ -105,7 +104,7 @@ type api struct {
 // webhooks, and the pipeline chat passthrough — stay on raw chi and are
 // intentionally absent from the spec. /api/internal/* stays off Huma so Orval
 // does not generate a browser client for the service-to-service secret.
-func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client, parser, engine string, cfg Config) http.Handler {
+func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client, parser string, cfg Config) http.Handler {
 	billing.Init(billing.Config{SecretKey: cfg.StripeSecretKey})
 	a := &api{
 		s:                  s,
@@ -114,7 +113,6 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		pipe:               pipe,
 		rdb:                rdb,
 		parser:             parser,
-		engine:             engine,
 		cfg:                cfg,
 		mailRecorder:       cfg.MailRecorder,
 		limiter:            ratelimit.New(rdb, cfg.RateLimit),

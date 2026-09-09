@@ -406,7 +406,7 @@ func (a *api) internalCompleteSourceImport(w http.ResponseWriter, r *http.Reques
 		}
 	}
 	file, err := a.s.FinalizeSourceImport(
-		r.Context(), job.ID, req.AttemptToken, info.ETag, a.parser, a.engine,
+		r.Context(), job.ID, req.AttemptToken, info.ETag, a.parser,
 	)
 	if errors.Is(err, store.ErrImportLeaseLost) {
 		writeJSON(w, http.StatusConflict, map[string]string{"code": "import_lease_lost"})

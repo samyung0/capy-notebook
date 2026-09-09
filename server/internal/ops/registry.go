@@ -105,6 +105,31 @@ func snapshotFrom(ctx context.Context, q querier) (RegistrySnapshot, error) {
 		return out, err
 	}
 	rows.Close()
+	capacityRows, err := q.Query(ctx, "SELECT provider, model, concurrency_total, interactive_reserve FROM model_capacities")
+	if err != nil {
+		return out, err
+	}
+	capacities := make(map[models.Ref]modelCapacity)
+	for capacityRows.Next() {
+		var ref models.Ref
+		var capacity modelCapacity
+		if err := capacityRows.Scan(&ref.ProviderSlug, &ref.ModelSlug, &capacity.Total, &capacity.Reserve); err != nil {
+			capacityRows.Close()
+			return out, err
+		}
+		capacities[ref] = capacity
+	}
+	err = capacityRows.Err()
+	capacityRows.Close()
+	if err != nil {
+		return out, err
+	}
+	for i := range out.Configs {
+		if capacity, exists := capacities[models.TransportRef(out.Configs[i].Ref())]; exists {
+			out.Configs[i].ConcurrencyTotal = &capacity.Total
+			out.Configs[i].InteractiveReserve = &capacity.Reserve
+		}
+	}
 	catalog := models.MustEliteLLMProviders()
 	for _, provider := range catalog.All() {
 		out.ProviderCredentials = append(
@@ -199,7 +224,13 @@ func (d gridDraft) Ref() models.Ref {
 	return models.Ref{ProviderSlug: d.ProviderSlug, ModelSlug: d.ModelSlug}
 }
 
+type modelCapacity struct {
+	Total   int
+	Reserve int
+}
+
 type gridSaveRequest struct {
+	Capacities            map[models.Ref]modelCapacity
 	ExpectedVersion       int64
 	Cells                 []GridCell
 	Drafts                []gridDraft
@@ -222,6 +253,7 @@ type existingTarget struct {
 
 func activeToGrid(req RegistrySaveRequest, current RegistrySnapshot) (gridSaveRequest, error) {
 	grid := gridSaveRequest{
+		Capacities:            make(map[models.Ref]modelCapacity),
 		ExpectedVersion:       req.Revision,
 		EmbeddingAcknowledged: req.AcknowledgeEmbeddingRetarget,
 	}
@@ -239,6 +271,17 @@ func activeToGrid(req RegistrySaveRequest, current RegistrySnapshot) (gridSaveRe
 			return grid, validation("active provider/model identities must be unique")
 		}
 		seenModels[ref] = true
+		if draft.ConcurrencyTotal == nil || draft.InteractiveReserve == nil ||
+			*draft.ConcurrencyTotal <= 0 || *draft.InteractiveReserve < 0 ||
+			*draft.InteractiveReserve >= *draft.ConcurrencyTotal {
+			return grid, validation("model %s needs concurrency total > 0 and 0 <= interactive reserve < total", ref)
+		}
+		transport := models.TransportRef(ref)
+		capacity := modelCapacity{Total: *draft.ConcurrencyTotal, Reserve: *draft.InteractiveReserve}
+		if previous, exists := grid.Capacities[transport]; exists && previous != capacity {
+			return grid, validation("models sharing transport %s must use the same capacity", transport)
+		}
+		grid.Capacities[transport] = capacity
 		if len(draft.Slots) == 0 {
 			return grid, validation("active config %s needs at least one slot", ref)
 		}
@@ -539,6 +582,18 @@ func (s *RegistryStore) saveTx(
 	}
 	if err := validateEmbeddingDefault(ctx, tx, current, defaults); err != nil {
 		return RegistrySaveResult{}, err
+	}
+	// Capacity changes are operational, independent of immutable catalog versions.
+	for ref, capacity := range req.Capacities {
+		if _, err := tx.Exec(ctx, `
+            INSERT INTO model_capacities (provider, model, concurrency_total, interactive_reserve)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (provider, model) DO UPDATE SET
+              concurrency_total = EXCLUDED.concurrency_total,
+              interactive_reserve = EXCLUDED.interactive_reserve`,
+			ref.ProviderSlug, ref.ModelSlug, capacity.Total, capacity.Reserve); err != nil {
+			return RegistrySaveResult{}, err
+		}
 	}
 	result := RegistrySaveResult{}
 	if _, err := tx.Exec(ctx, `

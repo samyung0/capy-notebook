@@ -68,7 +68,7 @@ func openBilling(t *testing.T) billingFixture {
 		t.Fatal(err)
 	}
 
-	h := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", "capy", httpapi.Config{
+	h := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", httpapi.Config{
 		E2EAuth:       true,
 		E2ESecret:     "e2e-test-secret",
 		E2EUserIDs:    []string{ownerID, actorID},

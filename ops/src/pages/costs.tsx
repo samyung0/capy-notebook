@@ -615,9 +615,9 @@ export function CostsPage() {
               <CardTitle>Provider attempts</CardTitle>
               <CardDescription>
                 Every provider attempt in the same range, keyed by transport
-                provider and model (the CAPY_MODEL_CONCURRENCY key). Busy is the
-                subset abandoned on a provider 429, 503 or 529 answer. Tokens
-                and credits come from the applied attempts.
+                provider and model. Busy is the subset abandoned on a provider
+                429, 503 or 529 answer. Tokens and credits come from the applied
+                attempts.
               </CardDescription>
             </CardHeader>
             <CardContent>

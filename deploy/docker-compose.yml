@@ -117,10 +117,9 @@ services:
       COLLABORATION_SECRET: ${COLLABORATION_SECRET:-dev-collaboration-secret}
       COLLABORATION_URL: ${COLLABORATION_URL:-ws://localhost:1234}
       COLLABORATION_INTERNAL_URL: http://collaboration:1234
-      # Vestigial labels stored on the job payload; the parse route is chosen by
-      # the file's parseMode, not by these.
+      # Vestigial label stored on the job payload; the parse route is chosen by
+      # the file's parseMode, not by this.
       CAPY_PARSER: ${CAPY_PARSER:-mineru}
-      CAPY_ENGINE: ${CAPY_ENGINE:-capy}
       PIPELINE_URL: http://retrieval:8001
       PIPELINE_SECRET: ${PIPELINE_SECRET:-dev-pipeline-secret}
       LLM_CREDENTIALS_KEY: ${LLM_CREDENTIALS_KEY:-}
@@ -250,7 +249,6 @@ services:
       ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
       ELEVENLABS_BASE_URL: ${ELEVENLABS_BASE_URL:-https://api.elevenlabs.io}
       EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}
-      CAPY_MODEL_CONCURRENCY: ${CAPY_MODEL_CONCURRENCY:-}
       CAPY_CAPTION_CONCURRENCY: ${CAPY_CAPTION_CONCURRENCY:-8}
       CAPY_CAPTION_MAX_EDGE: ${CAPY_CAPTION_MAX_EDGE:-1280}
       CAPY_IMAGE_MAX_PIXELS: ${CAPY_IMAGE_MAX_PIXELS:-100000000}
@@ -325,7 +323,6 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}
-      CAPY_MODEL_CONCURRENCY: ${CAPY_MODEL_CONCURRENCY:-}
       CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S: ${CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S:-15}
       CAPY_INTERACTIVE_STREAM_MAX_S: ${CAPY_INTERACTIVE_STREAM_MAX_S:-600}
     ports:

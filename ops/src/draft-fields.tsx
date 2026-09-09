@@ -1,10 +1,12 @@
 import type { Dispatch, SetStateAction } from 'react';
+import type { FieldErrors, UseFormRegister } from 'react-hook-form';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import type {
   Capability,
+  CapacityFields,
   DraftConfig,
   EliteLLMProvider,
   ThinkingLevel,
@@ -58,6 +60,8 @@ export function applyProvider(
 
 export function DraftFields({
   capabilities,
+  registerCapacity,
+  capacityErrors,
   draft,
   embedding,
   idPrefix,
@@ -67,6 +71,8 @@ export function DraftFields({
   setParamsText,
 }: {
   capabilities: Capability[];
+  registerCapacity: UseFormRegister<CapacityFields>;
+  capacityErrors: FieldErrors<CapacityFields>;
   draft: DraftConfig;
   embedding: boolean;
   idPrefix: string;
@@ -245,6 +251,41 @@ export function DraftFields({
           value={draft.contextWindowTokens}
         />
       </div>
+      <div className="space-y-2">
+        <Label htmlFor={`${idPrefix}-concurrency`}>Total concurrency</Label>
+        <Input
+          aria-invalid={Boolean(capacityErrors.concurrencyTotal)}
+          id={`${idPrefix}-concurrency`}
+          min="1"
+          required
+          step="1"
+          type="number"
+          {...registerCapacity('concurrencyTotal', { valueAsNumber: true })}
+        />
+        <p className="text-destructive text-sm" role="alert">
+          {capacityErrors.concurrencyTotal?.message}
+        </p>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor={`${idPrefix}-reserve`}>Interactive reserve</Label>
+        <Input
+          aria-invalid={Boolean(capacityErrors.interactiveReserve)}
+          id={`${idPrefix}-reserve`}
+          min="0"
+          required
+          step="1"
+          type="number"
+          {...registerCapacity('interactiveReserve', { valueAsNumber: true })}
+        />
+        <p className="text-destructive text-sm" role="alert">
+          {capacityErrors.interactiveReserve?.message}
+        </p>
+      </div>
+      <p className="text-muted-foreground text-xs sm:col-span-2">
+        Shared across this model's versions in this environment. Ingest uses
+        total minus reserve; interactive calls can use the full total. Saving
+        applies to new calls immediately.
+      </p>
       <div className="space-y-2 sm:col-span-2">
         <span className="font-medium text-sm">Capabilities</span>
         <p className="text-muted-foreground text-xs">

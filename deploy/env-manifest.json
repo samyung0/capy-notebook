@@ -83,10 +83,6 @@
       "kind": "variable",
       "targets": ["ingest-production", "ingest-shared"]
     },
-    "CAPY_ENGINE": {
-      "kind": "variable",
-      "targets": ["coolify"]
-    },
     "CAPY_HOST_SAMPLE_ACTIVE_SECONDS": {
       "kind": "variable",
       "targets": ["ingest-production", "ingest-shared"]
@@ -246,11 +242,6 @@
     "CAPY_MINERU_SLICE_PAGES": {
       "kind": "variable",
       "targets": ["ingest-production", "ingest-shared"]
-    },
-    "CAPY_MODEL_CONCURRENCY": {
-      "kind": "variable",
-      "targets": ["coolify", "ingest-production", "ingest-shared"],
-      "required_for": ["coolify", "ingest-production", "ingest-shared"]
     },
     "CAPY_OFFICE_CONVERT_TIMEOUT": {
       "kind": "variable",
@@ -556,7 +547,7 @@
     },
     "OPS_CF_ACCESS_ISSUER": {
       "kind": "variable",
-      "targets": ["ops"],
+      "targets": ["ops", "quality"],
       "required_for": ["ops"]
     },
     "OPS_CF_ACCESS_JWKS_URL": {
@@ -753,6 +744,16 @@
       "targets": ["quality"],
       "environments": ["uat"]
     },
+    "UAT_OPS_ACCESS_CLIENT_ID": {
+      "kind": "secret",
+      "targets": ["quality"],
+      "environments": ["uat"]
+    },
+    "UAT_OPS_ACCESS_CLIENT_SECRET": {
+      "kind": "secret",
+      "targets": ["quality"],
+      "environments": ["uat"]
+    },
     "UAT_OVER_QUOTA_EMAIL": {
       "kind": "variable",
       "targets": ["quality"],
@@ -782,7 +783,7 @@
       "kind": "variable",
       "targets": ["local"]
     },
-    "VITE_DEV_HOST": {
+    "CLERK_WEBHOOK_HOST": {
       "kind": "variable",
       "targets": ["local"]
     },

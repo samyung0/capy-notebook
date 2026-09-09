@@ -37,7 +37,7 @@ func openShareAPI(t *testing.T, pipe *pipeline.Client) http.Handler {
 		t.Fatalf("registry: %v", err)
 	}
 	st.SetModelRegistry(reg)
-	return httpapi.New(st, blob.NewMemory(), pipe, nil, "docling", "capy", httpapi.Config{
+	return httpapi.New(st, blob.NewMemory(), pipe, nil, "docling", httpapi.Config{
 		AuthDisabled:  true,
 		E2EAuth:       true,
 		E2ESecret:     "e2e-test-secret",

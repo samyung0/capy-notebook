@@ -57,9 +57,9 @@ func overQuotaFixture(t *testing.T) quotaFixture {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID)
 	})
 
-	ownerHandler := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", "capy",
+	ownerHandler := httpapi.New(st, blob.NewMemory(), nil, nil, "docling",
 		httpapi.Config{AuthDisabled: true, DevUserID: userID})
-	memberHandler := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", "capy",
+	memberHandler := httpapi.New(st, blob.NewMemory(), nil, nil, "docling",
 		httpapi.Config{
 			AuthDisabled: true, E2EAuth: true, E2ESecret: "e2e-test-secret",
 			E2EUserIDs: []string{"u_editor"},

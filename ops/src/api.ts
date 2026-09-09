@@ -516,9 +516,21 @@ export const costReportSchema = z.object({
   to: daySchema,
 });
 
+export const capacitySchema = z
+  .object({
+    concurrencyTotal: z.number().int().positive(),
+    interactiveReserve: z.number().int().nonnegative(),
+  })
+  .refine((value) => value.interactiveReserve < value.concurrencyTotal, {
+    message: 'Reserve must be below total concurrency.',
+    path: ['interactiveReserve'],
+  });
+export type CapacityFields = z.infer<typeof capacitySchema>;
+
 export const catalogConfigSchema = z.object({
   byokEnabled: z.boolean(),
   capabilities: z.array(capabilitySchema),
+  concurrencyTotal: z.number().int().positive().nullable(),
   contextWindowTokens: countSchema,
   createdAt: dateTimeSchema,
   createdBy: z.string(),
@@ -526,6 +538,7 @@ export const catalogConfigSchema = z.object({
   embeddingDefaultEligible: z.boolean(),
   embeddingValidationError: z.string(),
   enabled: z.boolean(),
+  interactiveReserve: countSchema.nullable(),
   isDefaultFor: z.array(slotSchema),
   microsPerCachedInputToken: countSchema,
   microsPerInputToken: countSchema,
@@ -570,9 +583,11 @@ export const registrySchema = z.object({
 export const draftConfigSchema = z.object({
   byokEnabled: z.boolean(),
   capabilities: z.array(capabilitySchema),
+  concurrencyTotal: z.number().int().positive().nullable(),
   contextWindowTokens: countSchema,
   defaultThinking: z.string(),
   id: z.string().min(1),
+  interactiveReserve: countSchema.nullable(),
   microsPerCachedInputToken: countSchema,
   microsPerInputToken: countSchema,
   microsPerOutputToken: countSchema,

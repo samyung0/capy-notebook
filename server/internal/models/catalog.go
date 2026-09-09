@@ -227,3 +227,11 @@ func JoinModelLabel(providerName, modelName string) string {
 func ProviderModelID(providerSlug, modelSlug string) string {
 	return strings.TrimSpace(providerSlug) + "-" + strings.TrimSpace(modelSlug)
 }
+
+// TransportRef identifies the shared provider account/model capacity pool.
+func TransportRef(ref Ref) Ref {
+	if ref.ProviderSlug == "zai" && ref.ModelSlug == "glm-5.3-flash" {
+		return Ref{ProviderSlug: "deepinfra", ModelSlug: "zai-org/GLM-5.3-Flash"}
+	}
+	return ref
+}
