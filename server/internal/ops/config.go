@@ -1,11 +1,15 @@
 package ops
 
 import (
+	"encoding/base64"
 	"errors"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 )
+
+var clerkFrontendHost = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$`)
 
 type Config struct {
 	AppEnv                 string
@@ -14,6 +18,7 @@ type Config struct {
 	AuthDisabled           bool
 	DevUserID              string
 	ClerkSecretKey         string
+	ClerkPublishableKey    string
 	CloudflareAccessIssuer string
 	CloudflareAccessAUD    string
 	CloudflareAccessJWKS   string
@@ -24,6 +29,30 @@ type Config struct {
 	IngestLocalDatabaseURL string
 }
 
+// ClerkFrontendAPI is the https origin Clerk serves its browser bundle from.
+// A publishable key carries it as base64 of "<host>$", so the value follows the
+// environment instead of being pinned per deployment. An unreadable key yields
+// no origin, which leaves the policy at 'self' rather than widening it wrongly.
+func (c Config) ClerkFrontendAPI() string {
+	key := strings.TrimSpace(c.ClerkPublishableKey)
+	for _, prefix := range []string{"pk_live_", "pk_test_"} {
+		encoded, found := strings.CutPrefix(key, prefix)
+		if !found {
+			continue
+		}
+		decoded, err := base64.RawStdEncoding.DecodeString(strings.TrimRight(encoded, "="))
+		if err != nil {
+			return ""
+		}
+		host := strings.TrimSuffix(string(decoded), "$")
+		if !clerkFrontendHost.MatchString(host) {
+			return ""
+		}
+		return "https://" + host
+	}
+	return ""
+}
+
 func ConfigFromEnv() Config {
 	return Config{
 		AppEnv:                 envOr("APP_ENV", "development"),
@@ -32,6 +61,7 @@ func ConfigFromEnv() Config {
 		AuthDisabled:           envEnabled("OPS_AUTH_DISABLED"),
 		DevUserID:              envOr("OPS_DEV_USER_ID", "u_1"),
 		ClerkSecretKey:         os.Getenv("CLERK_SECRET_KEY"),
+		ClerkPublishableKey:    os.Getenv("VITE_CLERK_PUBLISHABLE_KEY"),
 		CloudflareAccessIssuer: os.Getenv("OPS_CF_ACCESS_ISSUER"),
 		CloudflareAccessAUD:    os.Getenv("OPS_CF_ACCESS_AUDIENCE"),
 		CloudflareAccessJWKS:   os.Getenv("OPS_CF_ACCESS_JWKS_URL"),

@@ -6,12 +6,15 @@ import { AccountStatusBanner } from './AccountStatusBanner';
 import { ConnectionBanner } from './ConnectionBanner';
 import { Sidebar } from './Sidebar';
 
-const WORKSPACE_PATH_PATTERN = /^\/workspaces\/[^/]+$/;
-
 export function AppShell() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  // Opened-workspace view collapses the nav to the icon rail to relieve crowding.
-  const hideSidebar = WORKSPACE_PATH_PATTERN.test(pathname);
+  // Opened-workspace view drops the nav to relieve crowding. Selected from the
+  // committed matches, not `location`: `location` flips to the target as soon
+  // as navigation starts, which would strip the nav off the outgoing page while
+  // its replacement is still being fetched.
+  const hideSidebar = useRouterState({
+    select: (s) => s.matches.some((m) => m.staticData.hideSidebar === true),
+  });
 
   useEffect(() => {
     if (pathname !== '/schedule') scheduleAutoScroll.reset();

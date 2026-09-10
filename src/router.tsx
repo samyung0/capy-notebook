@@ -174,6 +174,7 @@ const appRoutes = [
       qc.prefetchQuery(conversationsQuery(id));
     },
     path: '/workspaces/$workspaceId',
+    staticData: { hideSidebar: true },
     validateSearch: parseWorkspaceOpenSearch,
   }),
   page(
@@ -335,5 +336,10 @@ export const router = createRouter({
 declare module '@tanstack/react-router' {
   interface Register {
     router: typeof router;
+  }
+  interface StaticDataRouteOption {
+    /** Route renders without the app nav. Read from committed matches, so the
+     * shell only reshapes once the route's chunk has landed. */
+    hideSidebar?: boolean;
   }
 }

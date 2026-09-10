@@ -21,6 +21,9 @@ import (
 type HandlerConfig struct {
 	StaticDir       string
 	StuckJobMinutes int
+	// ClerkFrontendAPI is the https origin Clerk serves its browser bundle
+	// from. The dashboard cannot sign anyone in when the policy omits it.
+	ClerkFrontendAPI string
 }
 
 func NewHandler(
@@ -30,7 +33,7 @@ func NewHandler(
 	config HandlerConfig,
 ) http.Handler {
 	router := chi.NewRouter()
-	router.Use(noIndexHeaders)
+	router.Use(noIndexHeaders(config.ClerkFrontendAPI))
 	router.Use(noStore)
 	router.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -392,17 +395,39 @@ func noStore(next http.Handler) http.Handler {
 	})
 }
 
-func noIndexHeaders(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-Robots-Tag", "noindex, nofollow, noarchive")
-		w.Header().Set("Referrer-Policy", "same-origin")
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("Content-Security-Policy",
-			"default-src 'self'; connect-src 'self'; img-src 'self' data:; "+
-				"script-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'")
-		next.ServeHTTP(w, r)
-	})
+// contentSecurityPolicy keeps the dashboard to its own origin, widened only
+// where Clerk must reach its own service: the browser bundle and the calls it
+// makes, avatars, the worker it spawns, and the Cloudflare challenge frame that
+// bot protection renders during sign-in.
+func contentSecurityPolicy(clerkFrontendAPI string) string {
+	script := "'self'"
+	connect := "'self'"
+	if clerkFrontendAPI != "" {
+		script += " " + clerkFrontendAPI
+		connect += " " + clerkFrontendAPI
+	}
+	return "default-src 'self'; " +
+		"script-src " + script + "; " +
+		"connect-src " + connect + "; " +
+		"img-src 'self' data: https://img.clerk.com; " +
+		"worker-src 'self' blob:; " +
+		"style-src 'self' 'unsafe-inline'; " +
+		"frame-src https://challenges.cloudflare.com; " +
+		"frame-ancestors 'none'"
+}
+
+func noIndexHeaders(clerkFrontendAPI string) func(http.Handler) http.Handler {
+	policy := contentSecurityPolicy(clerkFrontendAPI)
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Robots-Tag", "noindex, nofollow, noarchive")
+			w.Header().Set("Referrer-Policy", "same-origin")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.Header().Set("X-Frame-Options", "DENY")
+			w.Header().Set("Content-Security-Policy", policy)
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 func spaHandler(staticDir string) http.Handler {

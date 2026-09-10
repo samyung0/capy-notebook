@@ -133,8 +133,9 @@ func main() {
 	defer admin.Close()
 	registry := ops.NewRegistryStoreWithAdmin(readApp.Pool(), admin)
 	handler := ops.NewHandler(read, registry, admin, ops.HandlerConfig{
-		StaticDir:       env("OPS_STATIC_DIR", ""),
-		StuckJobMinutes: envInt("OPS_STUCK_JOB_MINUTES", 30),
+		StaticDir:        env("OPS_STATIC_DIR", ""),
+		StuckJobMinutes:  envInt("OPS_STUCK_JOB_MINUTES", 30),
+		ClerkFrontendAPI: cfg.ClerkFrontendAPI(),
 	})
 	authenticator := ops.Authenticator{
 		Operators:    ops.NewOperatorDirectory(read, ops.NewAuthStore(readPool)),

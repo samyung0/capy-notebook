@@ -1,6 +1,10 @@
 package ops
 
-import "testing"
+import (
+	"encoding/base64"
+	"strings"
+	"testing"
+)
 
 func validOpsConfig(env string) Config {
 	return Config{
@@ -225,5 +229,39 @@ func TestConfigFromEnvReadsDocumentedNames(t *testing.T) {
 	}
 	if config.DevUserID != "dev-operator" || !config.AllowOwnerDSN() {
 		t.Fatalf("config = %+v", config)
+	}
+}
+
+func TestClerkFrontendAPIFollowsThePublishableKey(t *testing.T) {
+	// pk_live_ carries base64 of "<host>$".
+	live := Config{ClerkPublishableKey: "pk_live_" + base64.RawStdEncoding.EncodeToString([]byte("clerk.uat.example.com$"))}
+	if got := live.ClerkFrontendAPI(); got != "https://clerk.uat.example.com" {
+		t.Fatalf("live key: got %q", got)
+	}
+	padded := Config{ClerkPublishableKey: "pk_test_" + base64.StdEncoding.EncodeToString([]byte("clerk.example.com$"))}
+	if got := padded.ClerkFrontendAPI(); got != "https://clerk.example.com" {
+		t.Fatalf("padded test key: got %q", got)
+	}
+	// An unusable key must not widen the policy.
+	for _, key := range []string{"", "not-a-key", "pk_live_%%%"} {
+		if got := (Config{ClerkPublishableKey: key}).ClerkFrontendAPI(); got != "" {
+			t.Fatalf("key %q should yield no origin, got %q", key, got)
+		}
+	}
+}
+
+func TestContentSecurityPolicyNamesClerkOnlyWhenKnown(t *testing.T) {
+	with := contentSecurityPolicy("https://clerk.uat.example.com")
+	if !strings.Contains(with, "script-src 'self' https://clerk.uat.example.com") ||
+		!strings.Contains(with, "connect-src 'self' https://clerk.uat.example.com") {
+		t.Fatalf("clerk origin missing: %s", with)
+	}
+	// img.clerk.com is always present, so check the frontend origin specifically.
+	without := contentSecurityPolicy("")
+	if strings.Contains(without, "clerk.uat.example.com") {
+		t.Fatalf("unknown origin must not appear: %s", without)
+	}
+	if !strings.Contains(without, "script-src 'self';") {
+		t.Fatalf("policy should stay at self: %s", without)
 	}
 }

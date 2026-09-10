@@ -1654,6 +1654,14 @@ editor-perf, and protected-environment gates.
 
 ### Independent Ops application
 
+The Ops dashboard sends a strict content security policy, widened only for
+Clerk: its browser bundle and API calls, `img.clerk.com` avatars, the worker it
+spawns, and the Cloudflare challenge frame bot protection renders at sign-in.
+The origin comes from decoding `VITE_CLERK_PUBLISHABLE_KEY`, so it follows the
+environment; an unreadable key leaves the policy at `'self'` and the dashboard
+reports that Clerk failed to load. The SPA sends no such policy, which is why
+the same Clerk setup works there without configuration.
+
 Every hostname a stack publishes on the shared `coolify` network has to be
 unique, because Coolify's own infrastructure containers claim bare service
 aliases there too: `coolify-redis` answers to `redis` and `coolify-db` to
