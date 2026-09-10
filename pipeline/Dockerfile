@@ -22,7 +22,11 @@ COPY pyproject.toml uv.lock ./
 COPY pipeline ./pipeline
 COPY server/internal/models/elitellm_providers.json ./server/internal/models/elitellm_providers.json
 COPY server/internal/sourceupload/text_extensions.json ./server/internal/sourceupload/text_extensions.json
-RUN uv sync --frozen --no-dev --no-editable
+# Coolify injects the build arguments as ARG lines near the top of this file and
+# their values change per deployment, so no layer below them is ever reused.
+# Cache mounts live outside the layer cache and survive that.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-editable
 # Retrieval diagnostics run inside this image via `docker compose exec`.
 COPY bench/rag/scripts ./bench/rag/scripts
 COPY bench/rag/fixtures ./bench/rag/fixtures

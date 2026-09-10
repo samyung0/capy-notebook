@@ -18,12 +18,21 @@ tar -xzf /tmp/binaryen.tar.gz -C /opt/binaryen --strip-components=1
 rm /tmp/binaryen.tar.gz /tmp/binaryen-pin /tmp/wasm-toolchain.yml
 SH
 ENV PATH="/opt/binaryen/bin:${PATH}"
+# Coolify injects the build arguments as ARG lines near the top of this file and
+# their values change per deployment, so no layer below them is ever reused.
+# Cache mounts live outside the layer cache and survive that.
 RUN rustup target add wasm32-unknown-unknown
-RUN cargo install wasm-pack --version 0.15.0 --locked
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    cargo install wasm-pack --version 0.15.0 --locked
 WORKDIR /office
 COPY vendor/betteroffice ./
-RUN bun install --frozen-lockfile
-RUN bun scripts/build-office-wasm.ts
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    bun install --frozen-lockfile
+# wasm.ts re-vendors from a restored target/ instead of rebuilding: the
+# expensive part is wasm-opt, not the copy into packages/.
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/office/target,sharing=locked \
+    bun scripts/build-office-wasm.ts
 
 FROM node:22-alpine AS build
 RUN corepack enable
