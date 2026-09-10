@@ -1640,7 +1640,10 @@ Use **Deploy UAT** for the app/backend/site release, **Deploy ingest** for the
 ingest host against an already matching backend SHA — leave its `revision` blank
 and it takes whatever the backend reports, which is the only revision it can
 safely run, and is usually not the head of `main` — and **Deploy Ops** for the
-independent dashboard and its Go backend. The three are isolated: neither the
+independent dashboard and its Go backend, which resolves a blank `revision` the
+same way because it reads the database the backend migrates. Name the revision
+explicitly on a UAT Ops run you intend to promote: the promotion gate finds the
+prior UAT run by its title, and a blank run's title carries no SHA. The three are isolated: neither the
 ingest host nor Ops can fail a **Deploy UAT** run, and its quality gate checks
 only that what it deployed is answering. The authenticated Playwright suite is
 opt-in: it runs on a manual **Deterministic UAT quality** dispatch and as the

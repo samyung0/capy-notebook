@@ -1,5 +1,5 @@
 name: Deploy Ops
-run-name: Deploy Ops ${{ inputs.environment_name }} ${{ inputs.revision || github.sha }}
+run-name: Deploy Ops ${{ inputs.environment_name }} ${{ inputs.revision || 'from backend' }}
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ on:
         type: choice
         options: [uat, production]
       revision:
-        description: Full main-branch SHA; blank uses the selected main revision
+        description: Full SHA; blank uses whatever the backend already serves
         required: false
         type: string
 
@@ -25,7 +25,37 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Ops reads the same database the backend migrates, so the revision that
+  # matters is the one the backend serves rather than the head of main. The
+  # backend reports it; an operator names a revision only to override.
+  resolve_revision:
+    runs-on: ubuntu-24.04
+    environment: ${{ inputs.environment_name }}
+    outputs:
+      revision: ${{ steps.resolve.outputs.revision }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+      - name: Resolve the revision the backend already serves
+        id: resolve
+        env:
+          DEPLOYMENT_API_URL: ${{ vars.DEPLOYMENT_API_URL }}
+          REQUESTED_REVISION: ${{ inputs.revision }}
+        run: |
+          if [[ -n "$REQUESTED_REVISION" ]]; then
+            revision="$REQUESTED_REVISION"
+          else
+            revision="$(python3 scripts/deploy/verify-backend.py --print)"
+          fi
+          [[ "$revision" =~ ^[0-9a-fA-F]{40}$ ]] || {
+            echo "Could not determine a full Git SHA for the Ops release." >&2
+            exit 1
+          }
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+
   deploy:
+    needs: resolve_revision
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     environment:
@@ -33,7 +63,7 @@ jobs:
       url: ${{ vars.DEPLOYMENT_OPS_URL }}
     env:
       TARGET_ENVIRONMENT: ${{ inputs.environment_name }}
-      DEPLOY_REVISION: ${{ inputs.revision || github.sha }}
+      DEPLOY_REVISION: ${{ needs.resolve_revision.outputs.revision }}
       COOLIFY_API_URL: ${{ vars.COOLIFY_API_URL }}
       COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
       COOLIFY_RESOURCE_UUID: ${{ vars.COOLIFY_OPS_RESOURCE_UUID }}
@@ -41,7 +71,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.revision || github.sha }}
+          ref: ${{ needs.resolve_revision.outputs.revision }}
           fetch-depth: 0
       - name: Validate candidate and require successful CI
         env:
@@ -62,7 +92,11 @@ jobs:
         run: |
           gh api "repos/$GITHUB_REPOSITORY/actions/workflows/deploy-ops.yml/runs?status=success&event=workflow_dispatch&per_page=100" \
             --jq ".workflow_runs | any(.head_branch == \"main\" and .display_title == \"Deploy Ops uat $DEPLOY_REVISION\")" \
-            | grep -qx true || { echo "Deploy this Ops revision to UAT successfully first." >&2; exit 1; }
+            | grep -qx true || {
+              echo "Deploy this Ops revision to UAT successfully first, naming it explicitly:" >&2
+              echo "a UAT run left with a blank revision does not record which SHA it deployed." >&2
+              exit 1
+            }
       - name: Verify the separate Ops application
         run: |
           [[ -n "$COOLIFY_RESOURCE_UUID" && -n "$COOLIFY_MAIN_RESOURCE_UUID" ]]

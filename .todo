@@ -19,7 +19,7 @@ low priority:
 high PRIORITIES:
 workspace ownership transfer
 add read material file tool, add take snapshot tool (how expensive?) -> need a signal to tell llm that the chunk is extracted with low confidence,
-give better exit signals and search directions (check other libraries) -- low prio, build UI first, I want UAT to be functional first
+give better exit signals and search directions (check other libraries), also alibaba on beijing can control the thinking tokens? -- low prio, build UI first, I want UAT to be functional first
 1. diagrams.net (generate have a 1 turn generate->QA->fix loop on server)
 2. allow llm to embed interactive html files (deterministic santizing after generate (no jailbreak) and rendered in sandbox iframe), no editing allowed
 3. check equations, formulas and math graphs, both plate editors, and chat
