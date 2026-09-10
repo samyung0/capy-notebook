@@ -32,6 +32,18 @@ const PRIVATE_CONTENT = /PRIVATE BODY|u_secret|capy-summary-body/;
 
 const upstream = (data: unknown = summary) =>
   vi.fn<typeof fetch>().mockResolvedValue(Response.json(data));
+const SHARED_CACHE = 'public, s-maxage=300, max-age=0, must-revalidate';
+
+const cacheStub = () => {
+  const store = new Map<string, Response>();
+  return {
+    match: vi.fn(async (key: Request) => store.get(key.url)?.clone()),
+    put: vi.fn(async (key: Request, response: Response) => {
+      store.set(key.url, response);
+    }),
+    store,
+  };
+};
 
 describe('public workspace SSR', () => {
   it('renders the selected single-column outline, trusted canonical and built entry without exposing other backend fields', async () => {
@@ -43,7 +55,7 @@ describe('public workspace SSR', () => {
     const response = await handleSiteRequest(request(), env, fetcher);
     const html = await response.text();
     expect(response.status).toBe(200);
-    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(response.headers.get('Cache-Control')).toBe(SHARED_CACHE);
     expect(html).toContain('<h1>Biology</h1>');
     expect(html).toContain('Cells.pdf');
     expect(html).toContain('Reading.pdf');
@@ -160,6 +172,46 @@ describe('public workspace SSR', () => {
     );
     expect(redirect.status).toBe(301);
     expect(redirect.headers.get('Location')).toBe('/w/ws_0123456789');
+  });
+});
+
+describe('summary edge caching', () => {
+  it('serves a repeat visit from cache and keys each locale separately', async () => {
+    const cache = cacheStub();
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () => Response.json(summary));
+    const first = await handleSiteRequest(request(), env, fetcher, cache);
+    expect(first.headers.get('Cache-Control')).toBe(SHARED_CACHE);
+    const repeat = await handleSiteRequest(request(), env, fetcher, cache);
+    expect(await repeat.text()).toContain('<h1>Biology</h1>');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    const chinese = await handleSiteRequest(
+      request('/w/ws_0123456789?lang=zh'),
+      env,
+      fetcher,
+      cache
+    );
+    expect(await chinese.text()).toContain('打开工作区');
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect([...cache.store.keys()]).toEqual([
+      'https://app.example.test/w/ws_0123456789?lang=en',
+      'https://app.example.test/w/ws_0123456789?lang=zh',
+    ]);
+  });
+  it('leaves failures uncached so publishing takes effect at once', async () => {
+    const cache = cacheStub();
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(null, { status: 404 }));
+    const missing = await handleSiteRequest(request(), env, fetcher, cache);
+    expect(missing.status).toBe(404);
+    expect(missing.headers.get('Cache-Control')).toBe('no-store');
+    expect(cache.put).not.toHaveBeenCalled();
+    fetcher.mockResolvedValue(Response.json(summary));
+    const published = await handleSiteRequest(request(), env, fetcher, cache);
+    expect(published.status).toBe(200);
+    expect(await published.text()).toContain('<h1>Biology</h1>');
   });
 });
 

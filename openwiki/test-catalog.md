@@ -465,7 +465,7 @@ Supporting (not tests): [`bench/editor/scripts/metrics.ts`](../bench/editor/scri
 
 | Test | Coverage |
 | --- | --- |
-| `workers/site/summary.test.ts` | Live SSR, identical non-disclosing upstream 401/403/404 errors, privacy/no-store, escaped metadata, canonical origins, legacy links, bounded upstream data, valid Unicode and configurable file counts, safe API forwarding and runtime headers. Run `pnpm test:site`. |
+| `workers/site/summary.test.ts` | Live SSR, identical non-disclosing upstream 401/403/404 errors, privacy/no-store, escaped metadata, canonical origins, legacy links, bounded upstream data, valid Unicode and configurable file counts, safe API forwarding and runtime headers, and edge caching of the render keyed per locale with failures left uncached. Run `pnpm test:site`. |
 | `src/summary/main.test.tsx` | Signed-in account controls and theme drawer render without the app router. Included in `pnpm test`. |
 | `scripts/env/test_config.py` | Literal dotenv, key classification including the environment-scoped ops URL, secret stdin/redaction, private render output, derived DSNs, verified Coolify replacement, and scoped retired-key cleanup including the old query-model key. Run `pnpm test:deployment`. |
 | `scripts/deploy/test_ingest_release.py` | Bootstrap, ownership/lock exclusion, UAT/local/production isolation, failed preparation, crash-looping parser, activation interruption, coordinated recovery, reclaiming a finished run's pending release, and the wrapper's remote argument positions. Run `pnpm test:deployment`. |

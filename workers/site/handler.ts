@@ -11,6 +11,7 @@ const SUMMARY_PATH = /^\/(?:w|share\/workspaces)\/([^/]+)$/;
 type SiteBindings = Pick<Cloudflare.Env, 'API_ORIGIN' | 'APP_ORIGIN'> & {
   ASSETS: Pick<Cloudflare.Env['ASSETS'], 'fetch'>;
 };
+type SummaryCache = Pick<Cache, 'match' | 'put'>;
 
 export function trustedOrigin(value: string): string {
   const url = new URL(value);
@@ -67,7 +68,8 @@ const headers = (extra: HeadersInit = {}) => {
 export async function handleSiteRequest(
   request: Request,
   env: SiteBindings,
-  fetcher: typeof fetch = fetch
+  fetcher: typeof fetch = fetch,
+  cache?: SummaryCache
 ): Promise<Response> {
   const url = new URL(request.url);
   const locale = localeFor(request);
@@ -146,6 +148,12 @@ export async function handleSiteRequest(
       });
     const apiOrigin = trustedOrigin(env.API_ORIGIN);
     const appOrigin = trustedOrigin(env.APP_ORIGIN);
+    // Cloudflare's cache ignores Vary: Accept-Language, so the resolved locale
+    // belongs in the key rather than in a header the edge will not read.
+    const cacheKey = new Request(`${appOrigin}/w/${id}?lang=${locale}`);
+    const cached =
+      request.method === 'GET' ? await cache?.match(cacheKey) : undefined;
+    if (cached) return cached;
     const upstream = await fetcher(
       new Request(`${apiOrigin}/api/public/workspaces/${id}/summary`, {
         headers: { Accept: 'application/json' },
@@ -168,6 +176,13 @@ export async function handleSiteRequest(
       'Content-Type': 'text/html; charset=utf-8',
       Vary: 'Accept-Language',
     });
+    // Shared caches hold the render for five minutes; browsers revalidate every
+    // time, so a privacy change reaches a reloading reader once the edge entry
+    // expires. Failure pages stay no-store so publishing takes effect at once.
+    responseHeaders.set(
+      'Cache-Control',
+      'public, s-maxage=300, max-age=0, must-revalidate'
+    );
     if (summary.privacy === 'link')
       responseHeaders.set('X-Robots-Tag', 'noindex, nofollow');
     if (request.method === 'HEAD')
@@ -185,10 +200,12 @@ export async function handleSiteRequest(
       !template.includes('<!--capy-summary-body-->')
     )
       return failure(503);
-    return new Response(
+    const rendered = new Response(
       renderSummary(template, summary, id, appOrigin, locale),
       { headers: responseHeaders }
     );
+    await cache?.put(cacheKey, rendered.clone());
+    return rendered;
   } catch (error) {
     console.error(
       JSON.stringify({
