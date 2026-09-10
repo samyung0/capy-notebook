@@ -163,10 +163,10 @@ describe('isolated Office runtime', () => {
     expect(response.headers.has('location')).toBe(false);
     expect(response.headers.has('content-length')).toBe(false);
   });
-  it('runs all requests through the Worker and stages only the allowed build entries', () => {
+  it('serves bundles directly with dedicated security/cache headers and stages only the allowed build entries', () => {
     const config = JSON.parse(readFileSync('wrangler.office.jsonc', 'utf8'));
     for (const target of [config, config.env.uat, config.env.production]) {
-      expect(target.assets.run_worker_first).toBe(true);
+      expect(target.assets.run_worker_first).toEqual(['/office-runtime.html']);
       expect(target.assets.not_found_handling).toBe('none');
       expect(target.assets.html_handling).toBe('none');
     }
@@ -190,9 +190,18 @@ describe('isolated Office runtime', () => {
         target,
       ]);
       expect(readdirSync(target).sort()).toEqual([
+        '_headers',
         'assets',
         'office-runtime.html',
       ]);
+      const headers = readFileSync(join(target, '_headers'), 'utf8');
+      expect(headers).toContain('/assets/*');
+      expect(headers).toContain('public, max-age=31536000, immutable');
+      expect(headers).toContain("frame-ancestors 'none'");
+      expect(headers).toContain("worker-src 'self' blob:");
+      expect(headers).toContain('Referrer-Policy: no-referrer');
+      expect(headers).toContain('X-Content-Type-Options: nosniff');
+      expect(headers).toContain('X-Robots-Tag: noindex, nofollow');
       expect(readFileSync(join(target, 'assets/runtime.js'), 'utf8')).toBe(
         'runtime'
       );

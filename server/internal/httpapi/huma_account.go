@@ -44,6 +44,9 @@ type notificationPrefsOutput struct {
 type notificationPrefsInput struct {
 	Body apimodel.NotificationPrefs
 }
+type updateMeInput struct {
+	Body apimodel.UpdateMeReq
+}
 type localeInput struct {
 	Body struct {
 		Locale string `json:"locale" enum:"en,zh"`
@@ -87,6 +90,7 @@ func (a *api) registerAccount(api huma.API) {
 	const tag = "Account"
 	reg(api, http.MethodGet, "/api/me", "getMe", tag, "Current user", http.StatusOK, a.getMe)
 	reg(api, http.MethodGet, "/api/me/ingest-slots", "getIngestSlots", tag, "Actor ingest slot remaining", http.StatusOK, a.getIngestSlots)
+	reg(api, http.MethodPatch, "/api/me", "updateMe", tag, "Update display name", http.StatusOK, a.updateMe)
 	reg(api, http.MethodPatch, "/api/me/locale", "setLocale", tag, "Set account locale", http.StatusNoContent, a.setLocale)
 	reg(api, http.MethodGet, "/api/search", "search", tag, "Global search", http.StatusOK, a.searchAll)
 	reg(api, http.MethodGet, "/api/notifications", "listNotifications", tag, "List notifications", http.StatusOK, a.listNotifications)
@@ -129,6 +133,17 @@ func (a *api) getMe(ctx context.Context, _ *struct{}) (*meOutput, error) {
 		return nil, hErr(err)
 	}
 	return &meOutput{Body: u}, nil
+}
+
+func (a *api) updateMe(ctx context.Context, in *updateMeInput) (*meOutput, error) {
+	name := strings.TrimSpace(string(in.Body.Name))
+	if name == "" {
+		return nil, huma.Error422UnprocessableEntity("name is required")
+	}
+	if err := a.s.SetName(ctx, userID(ctx), name); err != nil {
+		return nil, hErr(err)
+	}
+	return a.getMe(ctx, nil)
 }
 
 func (a *api) searchAll(ctx context.Context, in *searchInput) (*searchOutput, error) {

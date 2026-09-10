@@ -7,6 +7,8 @@ import (
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/samyung0/capy-notebook/server/internal/models"
 )
 
 func TestFailedWebhookRemainsRetryableUntilSuccessful(t *testing.T) {
@@ -1064,5 +1066,39 @@ func TestPurgeRemovesMembershipsInvitesAndAuxiliaryPII(t *testing.T) {
 	}
 	if webhookPayload != "{}" {
 		t.Fatalf("webhook payload after purge=%s, want scrubbed", webhookPayload)
+	}
+}
+
+func TestClerkProfileSyncSeedsNameOnInsertOnly(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	userID := "u_name_owned_" + uid("name")
+	t.Cleanup(func() {
+		_, _ = s.pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID)
+	})
+	if _, err := s.UpsertUserFromClerk(ctx, userID, "Provider Name", userID+"@example.test", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetName(ctx, userID, "Typed Name"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpsertUserFromClerk(ctx, userID, "Provider Renamed", "", "https://example.test/new-avatar"); err != nil {
+		t.Fatal(err)
+	}
+	var name, avatar string
+	if err := s.pool.QueryRow(ctx, `SELECT name, COALESCE(avatar_url,'') FROM users WHERE id=$1`, userID).
+		Scan(&name, &avatar); err != nil {
+		t.Fatal(err)
+	}
+	if name != "Typed Name" {
+		t.Fatalf("name after refresh = %q, want the typed name", name)
+	}
+	if avatar != "https://example.test/new-avatar" {
+		t.Fatalf("avatar after refresh = %q, want the refreshed avatar", avatar)
 	}
 }

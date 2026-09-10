@@ -96,6 +96,7 @@ import type {
   UpdateFlashcardSetReq,
   UpdateLabelReq,
   UpdateMaterialReq,
+  UpdateMeReq,
   UpdateQuizContentReq,
   UpdateQuizMetadataReq,
   UpdateStandaloneSharingReq,
@@ -509,6 +510,15 @@ export function useSetNotificationPrefs() {
       void qc.invalidateQueries({ queryKey: qk.notificationPrefs });
     },
     onSuccess: (prefs) => qc.setQueryData(qk.notificationPrefs, prefs),
+  });
+}
+
+export function useUpdateMe(options?: MutationUiOptions) {
+  const qc = useQueryClient();
+  return useMutation({
+    meta: mutationMeta(options),
+    mutationFn: (body: UpdateMeReq) => api.patch<User>('/me', body),
+    onSuccess: (user) => qc.setQueryData(qk.me, user),
   });
 }
 

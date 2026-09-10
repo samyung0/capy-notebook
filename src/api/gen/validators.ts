@@ -1786,6 +1786,47 @@ export const GetMeResponse = zod.object({
 
 
 /**
+ * @summary Update display name
+ */
+export const updateMeBodyNameMax = 60;
+
+
+
+export const UpdateMeBody = zod.object({
+  "name": zod.string().min(1).max(updateMeBodyNameMax).describe('Display name')
+})
+
+export const UpdateMeResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "avatarUrl": zod.string().optional(),
+  "chatModel": zod.object({
+  "modelSlug": zod.string(),
+  "providerSlug": zod.string()
+}),
+  "classLabel": zod.string().optional(),
+  "editorModel": zod.object({
+  "modelSlug": zod.string(),
+  "providerSlug": zod.string()
+}),
+  "email": zod.string(),
+  "generateModel": zod.object({
+  "modelSlug": zod.string(),
+  "providerSlug": zod.string()
+}),
+  "id": zod.string(),
+  "locale": zod.string(),
+  "name": zod.string(),
+  "planTier": zod.enum(['free', 'pro']),
+  "quizModel": zod.object({
+  "modelSlug": zod.string(),
+  "providerSlug": zod.string()
+}),
+  "streak": zod.int(),
+  "subscriptionStatus": zod.enum(['none', 'active', 'past_due', 'canceled', 'trialing'])
+})
+
+
+/**
  * @summary Actor ingest slot remaining
  */
 export const GetIngestSlotsResponse = zod.object({

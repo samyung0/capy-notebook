@@ -10,7 +10,7 @@
     "binding": "ASSETS",
     "html_handling": "none",
     "not_found_handling": "none",
-    "run_worker_first": true
+    "run_worker_first": ["/office-runtime.html"]
   },
   "vars": {
     "PARENT_ORIGINS": ""
@@ -28,7 +28,7 @@
         "binding": "ASSETS",
         "html_handling": "none",
         "not_found_handling": "none",
-        "run_worker_first": true
+        "run_worker_first": ["/office-runtime.html"]
       },
       "routes": [
         {
@@ -49,7 +49,7 @@
         "binding": "ASSETS",
         "html_handling": "none",
         "not_found_handling": "none",
-        "run_worker_first": true
+        "run_worker_first": ["/office-runtime.html"]
       }
     }
   }

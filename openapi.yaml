@@ -3736,6 +3736,23 @@ components:
           minLength: 1
           type: string
       type: object
+    UpdateMeReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/UpdateMeReq.json
+          format: uri
+          readOnly: true
+          type: string
+        name:
+          description: Display name
+          maxLength: 60
+          minLength: 1
+          type: string
+      required:
+        - name
+      type: object
     UpdateQuizContentReq:
       additionalProperties: false
       properties:
@@ -5919,6 +5936,30 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Current user
+      tags:
+        - Account
+    patch:
+      operationId: updateMe
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMeReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Update display name
       tags:
         - Account
   /api/me/ingest-slots:

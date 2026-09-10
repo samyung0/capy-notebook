@@ -131,6 +131,7 @@ export type {
   UpdateFlashcardSetReq,
   UpdateLabelReq,
   UpdateMaterialReq,
+  UpdateMeReq,
   UpdateQuizMetadataReq,
   UpdateStandaloneSharingReq,
   UpdateTaskReq,

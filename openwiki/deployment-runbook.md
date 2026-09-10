@@ -103,7 +103,12 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    invocation. `public/_headers` marks the content-hashed `/assets/*` bundles
    `immutable`; the rest keep the Workers Assets default of
    `public, max-age=0, must-revalidate` with an `ETag`.
-   The quiz judge is `llm-runtime.html`, usually same-origin as the SPA.
+   The quiz judge is `llm-runtime.html`, usually same-origin as the SPA. It is
+   served directly by Workers Assets, without a Worker invocation. Before
+   deploying, CI runs `node workers/site/headers.mjs dist "$APP_ORIGIN"` to
+   generate `dist/_headers` from `public/_headers`, allowing only `'self'` and
+   the exact deployment app origin in `frame-ancestors`. Manual deployments
+   must run the same command; the checked-in headers allow local development.
    Isolation headers live only on that document (`COOP`/`COEP` plus
    `Document-Isolation-Policy: isolate-and-credentialless`). The SPA stays
    unisolated so Clerk, Google Picker, Stripe, and PDF.js keep working.
@@ -111,7 +116,7 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    CPU threads even when the parent is not isolated. COOP/COEP alone
    cannot. Safari and Firefox stay single-thread. A second hostname
    (`llm.abcd.com`, `VITE_LLM_RUNTIME_ORIGIN`) is optional. If you use one,
-   add the SPA origin to `frame-ancestors` and set `VITE_APP_URL`. Do not
+   stage its headers with the SPA's `APP_ORIGIN` and set `VITE_APP_URL`. Do not
    set `Cross-Origin-Resource-Policy: same-origin` on the runtime document
    or the parent cannot embed it.
    The Office viewer/editor is different: production requires a separate
@@ -125,7 +130,14 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    `https://uat.capynotebook.com,https://local.uat.capynotebook.com` for the deployed
    and locally served UI. Production requires its own Office custom
    domain configured in `wrangler.office.jsonc` before first rollout. The Worker
-   supplies the matching `frame-ancestors` policy and allows embedded blob fonts. Do not proxy `/api`, issue authentication cookies, or set
+   handles runtime HTML with `no-store`, supplies the matching `frame-ancestors`
+   policy, allows embedded blob fonts, and rejects other routes. Existing
+   `/assets/*` bundles bypass the Worker and use
+   `public, max-age=31536000, immutable`; staging copies the dedicated
+   `workers/office/_headers` policy, including `nosniff`, `no-referrer`, noindex,
+   and a CSP that prevents framing asset URLs. Missing assets still reach the
+   Worker's rejection checks; the static layer rejects unsupported methods on
+   existing assets with 405. Do not proxy `/api`, issue authentication cookies, or set
    parent-domain cookies on this hostname. The Office host transfers protected
    bytes by exact-origin `postMessage`; it does not need CORS access to the API.
 2. **API + collab.** Pick one of §1.1 Coolify (typical), §1.2 bare compose, or

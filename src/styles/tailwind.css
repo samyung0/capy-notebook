@@ -138,6 +138,13 @@
   border-radius: var(--top-inset-bar-radius);
 }
 
+@utility t-display {
+  font-size: var(--display-font-size);
+  font-weight: var(--display-font-weight);
+  line-height: var(--display-line-height);
+  letter-spacing: var(--display-letter-spacing);
+}
+
 @utility t-page-title {
   font-size: var(--page-title-font-size);
   font-weight: var(--page-title-font-weight);

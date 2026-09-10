@@ -18,3 +18,4 @@ await cp(
 await cp(resolve(source, 'assets'), resolve(target, 'assets'), {
   recursive: true,
 });
+await cp(new URL('./_headers', import.meta.url), resolve(target, '_headers'));

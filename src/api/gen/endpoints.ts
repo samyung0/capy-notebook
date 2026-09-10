@@ -119,6 +119,7 @@ import type {
   UpdateFlashcardSetReq,
   UpdateLabelReq,
   UpdateMaterialReq,
+  UpdateMeReq,
   UpdateQuizContentReq,
   UpdateQuizMetadataReq,
   UpdateStandaloneSharingReq,
@@ -3460,6 +3461,56 @@ export const getMe = async ( options?: RequestInit): Promise<getMeResponse> => {
 
   const data: getMeResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getMeResponse
+}
+
+
+
+export type updateMeResponse200 = {
+  data: User
+  status: 200
+}
+
+export type updateMeResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type updateMeResponseSuccess = (updateMeResponse200) & {
+  headers: Headers;
+};
+export type updateMeResponseError = (updateMeResponseDefault) & {
+  headers: Headers;
+};
+
+export type updateMeResponse = (updateMeResponseSuccess | updateMeResponseError)
+
+export const getUpdateMeUrl = () => {
+
+
+
+
+  return `/api/me`
+}
+
+/**
+ * @summary Update display name
+ */
+export const updateMe = async (updateMeReq: NonReadonly<UpdateMeReq>, options?: RequestInit): Promise<updateMeResponse> => {
+
+  const res = await fetch(getUpdateMeUrl(),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updateMeReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateMeResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateMeResponse
 }
 
 

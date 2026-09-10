@@ -10,6 +10,12 @@ import (
 
 /* ------------------------------------------------------------------ requests */
 
+// UpdateMeReq is the body for PATCH /api/me. Name is the display name the user
+// typed; the handler trims it and refuses an empty result.
+type UpdateMeReq struct {
+	Name UserName `json:"name" minLength:"1" doc:"Display name"`
+}
+
 // CreateWorkspaceReq is the body for POST /api/workspaces. New workspaces are
 // always private; visibility is configured later through the sharing endpoint.
 type CreateWorkspaceReq struct {

@@ -1,4 +1,5 @@
 import { Link } from '@tanstack/react-router';
+import { USE_MSW } from '@/api/auth';
 import { useMe, useWorkspaces } from '@/api/hooks';
 import { CloudConnectBanner } from '@/components/app/CloudConnectBanner';
 import { Panel } from '@/components/app/layout';
@@ -11,8 +12,11 @@ import {
   WorkspaceCard,
   WorkspaceCardSkeleton,
 } from '@/components/ui/WorkspaceCard';
+import { OnboardingDialog } from '@/features/auth/OnboardingDialog';
 import { RecentItemsCard } from '@/features/dashboard/RecentItemsCard';
 import { m } from '@/i18n';
+
+const CLERK_ACTIVE = !USE_MSW && !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
 function StreakHeading() {
   const { data: me } = useMe({ errorBoundary: false });
@@ -106,6 +110,7 @@ export default function Dashboard() {
         <DashboardDefaultBanner />
         <WorkspacesSection />
       </Panel>
+      {CLERK_ACTIVE && <OnboardingDialog />}
 
       <div className="order-first flex h-auto min-h-0 w-(--top-inset-bar-width) shrink-0 flex-col gap-2.5 overflow-visible lg:order-last lg:h-full lg:min-h-full lg:overflow-hidden">
         <TopInsetBar />

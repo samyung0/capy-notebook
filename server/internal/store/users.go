@@ -79,6 +79,24 @@ func (s *Store) Me(ctx context.Context, userID string) (User, error) {
 	return u, err
 }
 
+// SetName stores the display name the user typed. name is already trimmed and
+// bounded by the request schema.
+func (s *Store) SetName(ctx context.Context, userID, name string) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE users SET name=$2, updated_at=now()
+		WHERE id=$1`, userID, name); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 func (s *Store) SetLocale(ctx context.Context, userID, locale string) error {
 	if locale != "en" && locale != "zh" {
 		return ErrForbidden
@@ -391,7 +409,9 @@ func (s *Store) accountModelPrefs(ctx context.Context) (chat, generate, editor, 
 	return refs[0], refs[1], refs[2], refs[3], nil
 }
 
-// UpsertUserFromClerk inserts or updates a user. The returned bool reports
+// UpsertUserFromClerk inserts or refreshes a user. The Clerk name seeds the
+// row only on insert; afterwards name belongs to the user (SetName) and a
+// refresh carries email and avatar. The returned bool reports
 // whether the account still needs its one-time starter workspace. Keeping that
 // state on the user row lets a later request retry a failed first provision.
 //
@@ -420,15 +440,16 @@ func (s *Store) UpsertUserFromClerk(ctx context.Context, id, name, email, avatar
 	// the signup defaults must not make an existing session fail. Locked rows
 	// intentionally do not match this update.
 	var needsDefaultWorkspace bool
+	// name is user-owned once the row exists (PATCH /api/me); a refresh only
+	// carries email and avatar.
 	err := s.pool.QueryRow(ctx, `UPDATE users SET
-			name=$2,
-			email=COALESCE(NULLIF($3,''), email),
-			avatar_url=COALESCE(NULLIF($4,''), avatar_url),
+			email=COALESCE(NULLIF($2,''), email),
+			avatar_url=COALESCE(NULLIF($3,''), avatar_url),
 			updated_at=now()
 		WHERE id=$1 AND deleted_at IS NULL
 			AND deletion_requested_at IS NULL
 			AND suspended_at IS NULL
-		RETURNING starter_workspace_provisioned_at IS NULL`, id, name, email, avatarURL).
+		RETURNING starter_workspace_provisioned_at IS NULL`, id, email, avatarURL).
 		Scan(&needsDefaultWorkspace)
 	if err == nil {
 		return needsDefaultWorkspace, nil
@@ -457,7 +478,6 @@ func (s *Store) UpsertUserFromClerk(ctx context.Context, id, name, email, avatar
 			 quiz_model_provider_slug, quiz_model_slug)
 			VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),$5,$6,$7,$8,$9,$10,$11,$12)
 		ON CONFLICT (id) DO UPDATE SET
-			name=EXCLUDED.name,
 			email=COALESCE(EXCLUDED.email, users.email),
 			avatar_url=COALESCE(NULLIF(EXCLUDED.avatar_url,''), users.avatar_url),
 			updated_at=now()

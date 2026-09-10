@@ -438,6 +438,14 @@ export const handlers = [
     db.accountStatus.userId = db.user.id;
     return HttpResponse.json({ ...db.accountStatus });
   }),
+  http.patch('/api/me', async ({ request }) => {
+    const body = (await request.json()) as { name?: string };
+    const name = body.name?.trim() ?? '';
+    if (!name || name.length > 60)
+      return HttpResponse.json({ detail: 'name is required' }, { status: 422 });
+    db.user.name = name;
+    return HttpResponse.json(db.user);
+  }),
   http.patch('/api/me/locale', async ({ request }) => {
     const body = (await request.json()) as { locale?: string };
     if (body.locale === 'en' || body.locale === 'zh')

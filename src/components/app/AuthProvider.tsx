@@ -61,7 +61,12 @@ export function AppAuthProvider({ children, pending }: AuthProviderProps) {
     return <>{children}</>;
   }
   return (
-    <ClerkProvider afterSignOutUrl="/sign-in" publishableKey={PUBLISHABLE_KEY}>
+    <ClerkProvider
+      afterSignOutUrl="/sign-in"
+      publishableKey={PUBLISHABLE_KEY}
+      signInUrl="/sign-in"
+      signUpUrl="/sign-up"
+    >
       <AuthTokenBridge pending={pending}>{children}</AuthTokenBridge>
     </ClerkProvider>
   );

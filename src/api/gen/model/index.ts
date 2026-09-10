@@ -200,6 +200,7 @@ export * from './updateFileReq.ts';
 export * from './updateFlashcardSetReq.ts';
 export * from './updateLabelReq.ts';
 export * from './updateMaterialReq.ts';
+export * from './updateMeReq.ts';
 export * from './updateQuizContentReq.ts';
 export * from './updateQuizContentReqQuestionsItem.ts';
 export * from './updateQuizMetadataReq.ts';

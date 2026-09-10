@@ -14,8 +14,7 @@
       "/w/*",
       "/share/workspaces/*",
       "/summary",
-      "/summary.html",
-      "/llm-runtime.html"
+      "/summary.html"
     ]
   },
   "observability": {
@@ -42,8 +41,7 @@
           "/w/*",
           "/share/workspaces/*",
           "/summary",
-          "/summary.html",
-          "/llm-runtime.html"
+          "/summary.html"
         ]
       },
       "workers_dev": false,
@@ -73,8 +71,7 @@
           "/w/*",
           "/share/workspaces/*",
           "/summary",
-          "/summary.html",
-          "/llm-runtime.html"
+          "/summary.html"
         ]
       }
     }

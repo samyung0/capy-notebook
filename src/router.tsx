@@ -139,6 +139,18 @@ const publicRoutes = [
           getParentRoute: () => rootRoute,
           path: '/sign-up',
         }),
+        createRoute({
+          component: lazyRouteComponent(
+            () => import('@/routes/ForgotPassword')
+          ),
+          getParentRoute: () => rootRoute,
+          path: '/forgot-password',
+        }),
+        createRoute({
+          component: lazyRouteComponent(() => import('@/routes/SsoCallback')),
+          getParentRoute: () => rootRoute,
+          path: '/sso-callback',
+        }),
       ]),
 ];
 

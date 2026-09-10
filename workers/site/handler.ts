@@ -112,25 +112,7 @@ export async function handleSiteRequest(
         statusText: upstream.statusText,
       });
     }
-    if (!isSummary) {
-      const response = await env.ASSETS.fetch(request);
-      if (url.pathname !== '/llm-runtime.html') return response;
-      const runtimeHeaders = new Headers(response.headers);
-      runtimeHeaders.set('Cross-Origin-Opener-Policy', 'same-origin');
-      runtimeHeaders.set('Cross-Origin-Embedder-Policy', 'credentialless');
-      runtimeHeaders.set(
-        'Document-Isolation-Policy',
-        'isolate-and-credentialless'
-      );
-      runtimeHeaders.set(
-        'Content-Security-Policy',
-        `frame-ancestors 'self' ${trustedOrigin(env.APP_ORIGIN)}`
-      );
-      return new Response(response.body, {
-        headers: runtimeHeaders,
-        status: response.status,
-      });
-    }
+    if (!isSummary) return await env.ASSETS.fetch(request);
     if (request.method !== 'GET' && request.method !== 'HEAD')
       return new Response(null, {
         headers: headers({ Allow: 'GET, HEAD' }),

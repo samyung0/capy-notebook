@@ -428,6 +428,14 @@ its payload redacted. The application retains purged local user rows as its
 normal tombstone policy; it does not create a negative-identity row for an
 identity that was never provisioned.
 
+The stored `name` belongs to the user. The Clerk name (first plus last, else
+username, else email, else a localized fallback) seeds the row only when the
+local account is inserted, by the request-time sync or the `user.created`
+webhook, whichever runs first. Every later sync, including `user.updated`,
+refreshes email and avatar only. `PATCH /api/me` stores the name the user
+typed, trimmed, 1 to 60 runes, rejected with `422` otherwise. Stripe customers
+are created with that same name because no separate legal name is stored.
+
 Clerk profile retrieval and local identity provisioning are separate gates. A
 temporary profile-read failure skips synchronization for an existing local
 account, preserving its stored name, email, and avatar. If profile retrieval or
@@ -440,6 +448,31 @@ Starter provisioning locks the same user row as ordinary creation, then checks
 for an existing workspace, inserts if needed, and stores the marker in one
 transaction. If ordinary creation commits first, provisioning records only the
 marker.
+
+### Sign-in pages and first-run onboarding
+
+The SPA owns the sign-in UI; Clerk's prebuilt pages are not mounted. Routes
+outside the app shell: `/sign-in` (landing page with the auth card: Google,
+Microsoft, email plus password, forgot-password and create-account links),
+`/sign-up` (same page, sign-up mode with an email-code step and the
+`clerk-captcha` container), `/forgot-password` (email, then code plus new
+password; the verified reset also signs the user in) and `/sso-callback`
+(Clerk's redirect callback, which completes the session or transfers a
+first-time OAuth account into sign-up). A same-origin `redirect_url` query
+carries the post-auth destination through every hop. Sign-up and new-password
+forms require 12 characters with a digit and a symbol; sign-in only checks
+non-empty. OAuth accounts are never asked for a password.
+
+The dashboard opens a first-run dialog when the Clerk user has no
+`unsafeMetadata.onboardedAt`. Confirm uploads the avatar to Clerk, saves the
+name through `PATCH /api/me` and writes `onboardedAt`; Skip writes only
+`onboardedAt`. The gateway picks the new avatar up through the ordinary profile
+sync on the next request.
+
+Sources: [auth landing](../src/features/auth/AuthLanding.tsx),
+[password reset](../src/routes/ForgotPassword.tsx),
+[onboarding dialog](../src/features/auth/OnboardingDialog.tsx), and
+[name endpoint](../server/internal/httpapi/huma_account.go).
 
 If the middleware cannot load account lifecycle state, authenticated requests
 fail closed with `503 account_state_unavailable`. Database failure is not

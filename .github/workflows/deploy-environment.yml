@@ -146,6 +146,10 @@ jobs:
           --strategy localStorage preferredLanguage baseLocale
       - name: Stage the isolated Office runtime
         run: node workers/office/stage.mjs dist "$RUNNER_TEMP/capy-office-assets"
+      - name: Set the static LLM runtime framing policy
+        env:
+          APP_ORIGIN: ${{ vars.DEPLOYMENT_APP_URL }}
+        run: node workers/site/headers.mjs dist "$APP_ORIGIN"
       - name: Deploy the matching Office Worker
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}

@@ -274,23 +274,4 @@ describe('site routing and isolation', () => {
     ).toBe(503);
     expect(fetcher).not.toHaveBeenCalled();
   });
-  it('applies runtime isolation when the Worker handles asset responses', async () => {
-    const response = await handleSiteRequest(
-      request('/llm-runtime.html'),
-      env,
-      upstream()
-    );
-    expect(response.headers.get('Cross-Origin-Opener-Policy')).toBe(
-      'same-origin'
-    );
-    expect(response.headers.get('Cross-Origin-Embedder-Policy')).toBe(
-      'credentialless'
-    );
-    expect(response.headers.get('Document-Isolation-Policy')).toBe(
-      'isolate-and-credentialless'
-    );
-    expect(response.headers.get('Content-Security-Policy')).toBe(
-      "frame-ancestors 'self' https://app.example.test"
-    );
-  });
 });

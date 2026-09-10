@@ -1,0 +1,16 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web-clerk-dev",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "VITE_USE_MSW=false",
+        "VITE_CLERK_PUBLISHABLE_KEY=pk_test_ZGlyZWN0LWdlbGRpbmctMTM1NS5jbGVyay5hY2NvdW50cy5kZXYk",
+        "pnpm",
+        "dev"
+      ],
+      "port": 5173
+    }
+  ]
+}
