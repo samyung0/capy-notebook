@@ -1647,6 +1647,14 @@ editor-perf, and protected-environment gates.
 
 ### Independent Ops application
 
+Point the Ops database URLs at the compose service alias `db`, not at
+`db-<main-uuid>`. Coolify appends a fresh timestamp to every compose container
+name, so it aliases the database on the shared network as both
+`db-<main-uuid>-<timestamp>` and `db`; only the latter survives a redeploy. A
+wrong host here fails as `hostname resolving error: lookup db-... no such host`
+in the Ops container logs, and the edge answers `404` because Traefik has a
+router but no healthy backend.
+
 Keep `${...}` defaults in `deploy/docker-compose.ops.yml` simple. Coolify parses
 the compose and materialises each variable's default expression into a real
 environment row, so a nested `:?` default becomes a `build-time.env` line that
