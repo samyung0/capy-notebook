@@ -812,8 +812,10 @@ those services start.
 8. App deployment and ingest are separate workflows: **Deploy UAT** builds the
    site, applies GitHub config to Coolify, deploys the backend and publishes the
    Workers, and never touches the ingest host. Deploy the app first, then run
-   **Deploy ingest** for the same SHA; it verifies the backend already reports
-   that revision before it pauses consumers. Prepare and activate share one job
+   **Deploy ingest**, leaving `revision` blank so it resolves the SHA from the
+   backend's own `X-Capy-Release`; it then verifies the backend still reports
+   that revision before it pauses consumers. Name a revision only to override
+   that, and expect it to fail unless the backend already serves it. Prepare and activate share one job
    and one release owner, so its exit trap settles any pending release the run
    created — either activating the candidate or restoring the previous snapshot
    from the live backend SHA. A run killed before that trap leaves pending
@@ -1635,7 +1637,9 @@ path. The local scanner authorization flag still requires explicit permission
 to scan that UAT target.
 
 Use **Deploy UAT** for the app/backend/site release, **Deploy ingest** for the
-ingest host against an already matching backend SHA, and **Deploy Ops** for the
+ingest host against an already matching backend SHA — leave its `revision` blank
+and it takes whatever the backend reports, which is the only revision it can
+safely run, and is usually not the head of `main` — and **Deploy Ops** for the
 independent dashboard and its Go backend. The three are isolated: neither the
 ingest host nor Ops can fail a **Deploy UAT** run, and its quality gate checks
 only that what it deployed is answering. The authenticated Playwright suite is

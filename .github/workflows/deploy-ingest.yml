@@ -9,8 +9,8 @@ on:
         type: choice
         options: [uat, production]
       revision:
-        description: Full SHA already deployed to the matching backend
-        required: true
+        description: Full SHA; blank uses whatever the backend already serves
+        required: false
         type: string
       bootstrap:
         description: Init ingest stack (once only)
@@ -34,19 +34,49 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The ingest stack shares the backend's database and calls its gateway, so the
+  # revision that matters is the one the backend serves, not the head of main.
+  # The backend reports it, so an operator only names a revision to override.
+  resolve_revision:
+    runs-on: ubuntu-24.04
+    environment: ${{ inputs.environment_name }}
+    outputs:
+      revision: ${{ steps.resolve.outputs.revision }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+      - name: Resolve the revision the backend already serves
+        id: resolve
+        env:
+          DEPLOYMENT_API_URL: ${{ vars.DEPLOYMENT_API_URL }}
+          REQUESTED_REVISION: ${{ inputs.revision }}
+        run: |
+          if [[ -n "$REQUESTED_REVISION" ]]; then
+            revision="$REQUESTED_REVISION"
+          else
+            revision="$(python3 scripts/deploy/verify-backend.py --print)"
+          fi
+          [[ "$revision" =~ ^[0-9a-fA-F]{40}$ ]] || {
+            echo "Could not determine a full Git SHA for the ingest release." >&2
+            exit 1
+          }
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+
   ingest:
+    needs: resolve_revision
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     environment: ${{ inputs.environment_name }}
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.revision }}
+          ref: ${{ needs.resolve_revision.outputs.revision }}
           fetch-depth: 0
       - name: Validate target and immutable revision
         env:
           TARGET_ENVIRONMENT: ${{ inputs.environment_name }}
-          DEPLOY_REVISION: ${{ inputs.revision }}
+          DEPLOY_REVISION: ${{ needs.resolve_revision.outputs.revision }}
         run: |
           [[ "$GITHUB_REF" == refs/heads/main ]]
           [[ "$TARGET_ENVIRONMENT" == uat || "$TARGET_ENVIRONMENT" == production ]]
@@ -56,13 +86,13 @@ jobs:
       - name: Verify the deployment matches the running backend
         env:
           DEPLOYMENT_API_URL: ${{ vars.DEPLOYMENT_API_URL }}
-          EXPECTED_REVISION: ${{ inputs.revision }}
+          EXPECTED_REVISION: ${{ needs.resolve_revision.outputs.revision }}
         run: python3 scripts/deploy/verify-backend.py
       - name: Render environment configuration from GitHub
         env:
           CAPY_GITHUB_VARS: ${{ toJSON(vars) }}
           CAPY_GITHUB_SECRETS: ${{ toJSON(secrets) }}
-        run: python3 scripts/env/config.py render --environment '${{ inputs.environment_name }}' --revision '${{ inputs.revision }}' --output "$RUNNER_TEMP/capy-config"
+        run: python3 scripts/env/config.py render --environment '${{ inputs.environment_name }}' --revision '${{ needs.resolve_revision.outputs.revision }}' --output "$RUNNER_TEMP/capy-config"
       - name: Configure SSH access
         env:
           INGEST_HOST_KNOWN_HOSTS: ${{ secrets.INGEST_HOST_KNOWN_HOSTS }}
@@ -76,7 +106,7 @@ jobs:
       - name: Release the ingest stack
         env:
           TARGET_ENVIRONMENT: ${{ inputs.environment_name }}
-          DEPLOY_REVISION: ${{ inputs.revision }}
+          DEPLOY_REVISION: ${{ needs.resolve_revision.outputs.revision }}
           DEPLOYMENT_API_URL: ${{ vars.DEPLOYMENT_API_URL }}
           BOOTSTRAP: ${{ inputs.bootstrap }}
           RECLAIM_PENDING: ${{ inputs.reclaim_pending }}
