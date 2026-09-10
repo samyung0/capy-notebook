@@ -1647,6 +1647,15 @@ editor-perf, and protected-environment gates.
 
 ### Independent Ops application
 
+Keep `${...}` defaults in `deploy/docker-compose.ops.yml` simple. Coolify parses
+the compose and materialises each variable's default expression into a real
+environment row, so a nested `:?` default becomes a `build-time.env` line that
+Compose cannot read — the deploy then fails with `failed to read
+/artifacts/build-time.env: required variable RELEASE_SHA is missing a value`
+before any image builds. `render-ops` always supplies `RELEASE_SHA`, so refer to
+it directly rather than defaulting through `SOURCE_COMMIT`. Delete any stored
+`SOURCE_COMMIT` row that already holds such an expression.
+
 Ops is a separate Coolify Git application on the same host as the main stack.
 It builds `ops/Dockerfile`, containing the dashboard and Go Ops API, using
 `deploy/docker-compose.ops.yml`. The main stack owns Postgres and migrations.
