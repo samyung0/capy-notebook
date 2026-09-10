@@ -181,6 +181,7 @@
     "typecheck:office": "tsc --noEmit -p workers/office/tsconfig.json",
     "uat:seed": "python3 scripts/uat/seed.py",
     "uat:grant-operator": "scripts/uat/grant-operator.sh",
+    "uat:ops-roles": "scripts/uat/apply-ops-roles.sh",
     "test:uat-seed": "python3 -m unittest discover -s scripts/uat -p test_*.py"
   },
   "lint-staged": {

@@ -1014,7 +1014,11 @@ to prevent a repair loop.
    Revoke access with `DELETE FROM operators WHERE user_id='user_2abc...'`.
    There is no operator membership API by design.
 
-3. Create two roles with independent random passwords. The grants name every
+3. Create two roles with independent random passwords. `pnpm uat:ops-roles`
+   applies `deploy/ops-roles.sql` for UAT, taking both passwords from the
+   configured DSNs so they match by construction; edit those DSNs first and
+   `env:push` them after. Re-running only resets the passwords and re-grants, so
+   it is also the way to pick up a migration that adds a column Ops reads. The grants name every
    readable column. In particular, neither role can read `messages`, file
    `content` or blob paths, job `payload`, email recipients or `payload`, or
    `usage_events.metadata`. Apply them as the database owner:
