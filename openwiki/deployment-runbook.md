@@ -25,7 +25,8 @@ This repository defines deployment as follows:
    **Deploy UAT** from `main` with a full SHA (blank takes the selected main
    revision). It deploys that SHA to the isolated UAT Coolify and Cloudflare
    Worker resources and calls the reusable **Deterministic UAT quality**
-   workflow. Nothing stages UAT on push.
+   workflow, which on a deploy only probes that the services answer. Nothing
+   stages UAT on push.
 2. **Push to production:** manually dispatch **Promote revision to production**
    from `main` with a full 40-character SHA. The workflow re-deploys that SHA
    to UAT and re-runs the deterministic UAT gate and the editor perf budgets;
@@ -1633,7 +1634,9 @@ Use **Deploy UAT** for the app/backend/site release, **Deploy ingest** for the
 ingest host against an already matching backend SHA, and **Deploy Ops** for the
 independent dashboard and its Go backend. The three are isolated: neither the
 ingest host nor Ops can fail a **Deploy UAT** run, and its quality gate checks
-only what it deployed. All
+only that what it deployed is answering. The authenticated Playwright suite is
+opt-in: it runs on a manual **Deterministic UAT quality** dispatch and as the
+production promotion gate, not on every deploy. All
 apply their selected GitHub configuration on every run. Native Coolify
 Git auto-deploy stays disabled. Production promotion retains the UAT,
 editor-perf, and protected-environment gates.
@@ -1691,9 +1694,11 @@ first. Roll back compatible Ops changes by selecting a previous passing SHA.
 ### 12.8 Baseline, automation, and release gate
 
 1. Manually dispatch **Deploy UAT** from `main`. It deploys the selected SHA and
-   automatically calls **Deterministic UAT quality**. Inspect Coolify, Worker,
-   smoke, and Playwright evidence, including release-SHA, accessibility, and
-   320 CSS-pixel reflow checks.
+   automatically calls **Deterministic UAT quality**, which probes the SPA,
+   gateway and collaboration health and verifies the released SHA. For the
+   authenticated functional and UI evidence — authorization, accessibility and
+   the 320 CSS-pixel reflow — dispatch **Deterministic UAT quality** yourself
+   with `browser_suite`, which promotion also requires.
 2. Repair the fixture and tune only documented budgets or exclusions. Do not
    weaken authorization assertions or allow-host guards to make a run green.
 3. Dispatch **Editor perf** once so later runs have a baseline to diff. No

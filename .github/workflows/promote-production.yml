@@ -68,6 +68,7 @@ jobs:
     uses: ./.github/workflows/uat-quality.yml
     with:
       revision: ${{ needs.validate_candidate.outputs.revision }}
+      browser_suite: true
     secrets: inherit
 
   editor_perf:

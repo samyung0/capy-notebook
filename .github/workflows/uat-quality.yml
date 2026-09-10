@@ -7,12 +7,22 @@ on:
         description: Full deployed SHA; blank verifies the selected revision
         required: false
         type: string
+      browser_suite:
+        description: Also run the authenticated Playwright suite
+        required: false
+        default: true
+        type: boolean
   workflow_call:
     inputs:
       revision:
         description: Full deployed SHA to verify
         required: true
         type: string
+      browser_suite:
+        description: Also run the authenticated Playwright suite
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -40,7 +50,10 @@ jobs:
           EXPECTED_REVISION: ${{ inputs.revision || github.sha }}
         run: scripts/review/remote-smoke.sh
 
+  # A deploy only has to prove the services answer. The functional and UI checks
+  # are run deliberately, before promoting UAT to production.
   authenticated_browser:
+    if: inputs.browser_suite
     needs: smoke
     runs-on: ubuntu-24.04
     environment: uat

@@ -370,6 +370,9 @@ material-mode specs fail even though the flows complete. Use `pnpm e2e:slow`
 
 ## Playwright e2e — authorized UAT (`e2e/uat/`)
 
+Opt-in: a **Deploy UAT** run only probes service health. These run on a manual
+**Deterministic UAT quality** dispatch and as the production promotion gate.
+
 Remote Chromium against an explicitly authorized UAT deployment
 (`pnpm e2e:uat`). It requires the dedicated Clerk UAT keys, five synthetic
 account emails, and private fixture IDs described in
