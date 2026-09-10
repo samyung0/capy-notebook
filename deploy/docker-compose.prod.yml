@@ -56,7 +56,11 @@ services:
       retries: 12
     restart: unless-stopped
 
-  redis:
+  # Named for this stack: Coolify's own redis answers to the bare alias "redis"
+  # on the network both applications share, so that name resolves to either
+  # container and the gateway intermittently talks to the wrong, password-only
+  # one. Every hostname this stack publishes on that network must be unique.
+  capy-redis:
     image: redis:7-alpine
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -87,7 +91,7 @@ services:
       ADDR: ":8080"
       MIGRATE: "false"
       SENTRY_DSN: ${SENTRY_DSN_GATEWAY:-}
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://capy-redis:6379/0
       COLLABORATION_SECRET: ${COLLABORATION_SECRET:?set COLLABORATION_SECRET}
       COLLABORATION_URL: ${COLLABORATION_URL:?set COLLABORATION_URL}
       COLLABORATION_INTERNAL_URL: http://collaboration:1234
@@ -125,7 +129,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      redis:
+      capy-redis:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
@@ -141,7 +145,7 @@ services:
       COLLABORATION_ALLOWED_ORIGINS: ${COLLABORATION_ALLOWED_ORIGINS:-${APP_URL:?set APP_URL}}
       COLLABORATION_SECRET: ${COLLABORATION_SECRET:?set COLLABORATION_SECRET}
       DATABASE_URL: *database-url
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://capy-redis:6379/0
       PORT: "1234"
       SENTRY_DSN: ${SENTRY_DSN_COLLABORATION:-}
     expose:
@@ -154,7 +158,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      redis:
+      capy-redis:
         condition: service_healthy
       server:
         condition: service_healthy

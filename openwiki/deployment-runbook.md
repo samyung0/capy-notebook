@@ -1654,6 +1654,14 @@ editor-perf, and protected-environment gates.
 
 ### Independent Ops application
 
+Every hostname a stack publishes on the shared `coolify` network has to be
+unique, because Coolify's own infrastructure containers claim bare service
+aliases there too: `coolify-redis` answers to `redis` and `coolify-db` to
+`postgres`. A service named `redis` therefore resolves to both containers, and
+the gateway reaches the password-protected Coolify one about half the time,
+which surfaces as intermittent `503`s from SSE endpoints while ordinary requests
+keep working. The stack's own cache is named `capy-redis` for that reason.
+
 Point the Ops database URLs at the compose service alias `db`, not at
 `db-<main-uuid>`. Coolify appends a fresh timestamp to every compose container
 name, so it aliases the database on the shared network as both
