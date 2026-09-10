@@ -338,6 +338,20 @@ services:
         "--port",
         "8001",
       ]
+    healthcheck:
+      # python:3.11-slim carries neither curl nor wget, so probe with urllib.
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/healthz').read()",
+        ]
+      interval: 10s
+      timeout: 5s
+      # uvicorn imports the whole pipeline package before it starts listening.
+      start_period: 60s
+      retries: 6
     depends_on:
       db:
         condition: service_healthy
