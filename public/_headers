@@ -3,3 +3,8 @@
   Cross-Origin-Embedder-Policy: credentialless
   Document-Isolation-Policy: isolate-and-credentialless
   Content-Security-Policy: frame-ancestors 'self' https://abcd.com http://localhost:5173 http://127.0.0.1:5173
+
+# Vite content-hashes everything under /assets/, so a changed file arrives
+# under a new name and the old name is never reused.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

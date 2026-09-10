@@ -122,7 +122,7 @@ export default function WorkspaceOpen() {
   const readOnly = isWorkspaceReadOnly(ws?.capabilities);
   const canShare = canManageWorkspaceSettings(ws);
   const canClone = !!ws?.canClone;
-  useIngestProgress(workspaceId, !readOnly);
+  useIngestProgress(workspaceId, files, !readOnly);
   const { mutateAsync: addChapter } = useAddChapter(workspaceId);
   const { mutateAsync: updateChapter } = useUpdateChapter(workspaceId);
   const { mutate: reorder } = useReorderChapters(workspaceId);

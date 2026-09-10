@@ -78,7 +78,7 @@ operator hostname before traffic reaches its origin.
 
 The browser talks to the gateway at same-origin `/api` (`src/api/client.ts`
 hard-codes `API_BASE = '/api'`; `VITE_API_URL` is only the Vite **dev** proxy).
-So the apex must reverse-proxy `/api/*` to the Go process, **and**
+So the site hostname must route `/api/*` to the Go process, **and**
 `api.abcd.com` must still exist as its own hostname for Clerk/Stripe webhooks
 (`POST /webhooks/clerk`, `POST /webhooks/stripe`). Retrieval is reached only
 from the gateway over the docker network (`PIPELINE_URL=http://retrieval:8001`).
@@ -87,18 +87,22 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
 
 1. **Site.** Deploy `wrangler.jsonc` with `--env uat` or `--env production`.
    The Worker serves `dist/`, renders `/w/{workspaceId}` from the live Go summary
-   endpoint, and proxies `/api/*` to the configured `API_ORIGIN`. `APP_ORIGIN`
+   endpoint. The UAT zone routes `/api/*` directly through the tunnel as described
+   in §1.0.1; other environments retain the Worker's proxy to `API_ORIGIN`. `APP_ORIGIN`
    is the canonical browser origin. CI supplies both from the GitHub deployment
-   URLs. Attach the corresponding custom domain to that Worker.
-   When replacing the old UAT Pages project, deploy and verify the Worker first,
-   then detach the Pages custom domain and attach it to the Worker. Verify the
-   public release before deleting the retired Pages project.
-   On this first cutover, the workflow's public revision check cannot pass while
-   the domain still serves Pages. Once the Worker publish step succeeds, move
-   the domain and rerun the failed site job; the successfully activated backend
-   and ingest release stays in place.
-   Coolify serves the backend, not the site. Summary responses and errors are
-   `no-store`; link summaries are `noindex, nofollow`. There is no KV/R2 cache.
+   URLs. UAT uses the Worker Route in `wrangler.jsonc`, with DNS pointing at the
+   tunnel. Do not reattach `uat.capynotebook.com` as a Worker Custom Domain:
+   that would replace the tunnel destination. Production custom domains remain
+   a separate setup until the same routing is explicitly adopted there.
+   Coolify serves the backend, not the site. Rendered summaries are
+   `public, s-maxage=300, max-age=0, must-revalidate` and are held in the
+   Worker's Cache API keyed by workspace id and resolved locale; failure pages
+   stay `no-store`, and link summaries are `noindex, nofollow`. There is no
+   KV/R2 cache. Only the `run_worker_first` paths reach the Worker; every other
+   request, SPA fallbacks included, is served by the asset layer without an
+   invocation. `public/_headers` marks the content-hashed `/assets/*` bundles
+   `immutable`; the rest keep the Workers Assets default of
+   `public, max-age=0, must-revalidate` with an `ETag`.
    The quiz judge is `llm-runtime.html`, usually same-origin as the SPA.
    Isolation headers live only on that document (`COOP`/`COEP` plus
    `Document-Isolation-Policy: isolate-and-credentialless`). The SPA stays
@@ -133,7 +137,8 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    optimizer configuration. The current checksum covers Linux x86_64; on ARM
    hosts, use `DOCKER_DEFAULT_PLATFORM=linux/amd64` for Compose or
    `docker build --platform=linux/amd64`.
-3. **Same-origin API.** The site Worker forwards `/api/*` only to its explicit
+3. **Same-origin API.** UAT bypasses the Worker for `/api/*` using §1.0.1.
+   In other environments, the site Worker forwards `/api/*` only to its explicit
    `API_ORIGIN` and streams request/response bodies. It passes Go's file redirects
    back to the browser without following them with credentials. `/webhooks/*`
    stays on the API hostname. Do not attach the cookie-less Office hostname to
@@ -145,6 +150,70 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
 > **Both the SPA and the API must be proxied.** Proxying only the SPA leaves
 > `api.abcd.com` publicly resolvable, which is where the rate limiting, the WAF,
 > and the origin's anonymity actually matter.
+
+### 1.0.1 UAT API routing without Workers
+
+The browser keeps `https://uat.capynotebook.com/api/*`; the edge sends these
+requests directly to `capy-uat`, then Traefik and Go. Static assets and workspace
+summary renders keep using the existing `capy-notebook-uat` deployment.
+
+| Setting | UAT value |
+| --- | --- |
+| Proxied `uat` CNAME | `3abcfdb8-68f3-4b11-b475-7b0379a1affe.cfargotunnel.com` |
+| Worker Route | `uat.capynotebook.com/*` → `capy-notebook-uat` |
+| More-specific zone route | `uat.capynotebook.com/api/*` → **None**, no script |
+| Tunnel ingress | Host `uat.capynotebook.com`, path `^/api/`, service `http://localhost:80` |
+| Ingress HTTP Host Header | `uat-api.capynotebook.com` |
+
+The ingress uses `originRequest.httpHostHeader` so Traefik selects the existing
+API service. Keep this ingress before the tunnel's final `http_status:404`
+entry and preserve every other ingress. There is no new Coolify domain or
+public VM port. Keep `uat-api.capynotebook.com` for local Vite, server-rendered
+summary fetches, and Clerk/Stripe webhooks.
+
+The scriptless zone route is managed in Cloudflare's **Workers Routes**, outside
+Wrangler: Wrangler's `routes` list assigns every entry to its Worker and cannot
+declare a no-script exclusion. Its deploy updates routes belonging to the site
+Worker and leaves the scriptless route in place. Keep `/api/*` in the Worker's
+`run_worker_first` list for the existing proxy handler; the zone exclusion
+bypasses that asset/script routing altogether. Removing it from that list alone
+would serve the SPA fallback, not the API.
+
+Two zone rules preserve the API behavior previously supplied by the Worker.
+Both match only:
+
+```text
+(http.host eq "uat.capynotebook.com" and starts_with(http.request.uri.path, "/api/"))
+```
+
+- **Cache Rule:** bypass cache (`cache: false`).
+- **Response Header Transform Rule:** set `Cache-Control: no-store` and
+  `X-Content-Type-Options: nosniff`.
+
+For the initial cutover, save the current DNS, Worker domain/routes, tunnel
+configuration and these rules. Add the tunnel ingress and zone rules, then the
+site Worker Route. Detach the old Worker Custom Domain and create the proxied
+`uat` CNAME to the tunnel. Verify the site still responds before adding the
+scriptless API route. No Worker code, assets or backend deployment is needed.
+To undo only the bypass, delete the scriptless route: the existing Worker proxy
+handles `/api/*` again while the tunnel-backed DNS and site route remain valid.
+
+Verify the SPA and a static asset, workspace summary HTML and legacy redirect,
+anonymous API 401, authenticated API JSON, and an authenticated SSE connection
+through at least one heartbeat. Check API `no-store`/`nosniff` headers and cache
+bypass. Tail the site Worker with uniquely marked requests: a summary render
+must appear, and requests to `/api/*` must not. Read back both Worker routes and
+the tunnel configuration. Local `pnpm dev:uat` still sends `/api` directly to
+`uat-api`; its HTTPS hostname, Clerk instance, and summary renderer are unchanged.
+
+Verified on 2026-09-10: authenticated `/api/me` returned 200 through the UAT site,
+direct API hostname, and local Vite. Notification SSE delivered its connection
+frame and 25-second heartbeat through both the site and Vite. Marked summary
+requests appeared in the site Worker tail; marked API requests did not. The
+private summary fixture returned HTML 404 and its legacy link redirected with
+301; the SPA and a built asset returned 200. `wrangler triggers deploy --env uat`
+preserved the scriptless route. This check used local Vite directly; local Caddy
+and a browser sign-in were not started.
 
 ### 1.1 Coolify + Cloudflare Tunnel (recommended for this stack)
 

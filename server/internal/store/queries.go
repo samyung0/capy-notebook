@@ -930,27 +930,38 @@ const fileCols = `id, workspace_id, chapter_id, position, name, kind, size_bytes
 		THEN '/api/files/' || id || '/preview' END,
 	content, revision`
 
+// fileListCols mirrors fileCols without `content`. A source body is unbounded,
+// so listing it once per file is the expensive part of this query — and the
+// list is polled. Single-file reads use fileCols and still carry the body.
+const fileListCols = `f.id, f.workspace_id, f.chapter_id, f.position, f.name, f.kind, f.size_bytes, f.added_at, f.status, f.indexed, f.url,
+	CASE WHEN f.status='ready' AND ((f.kind='pdf' AND f.blob_path IS NOT NULL) OR f.preview_blob_path IS NOT NULL)
+		THEN '/api/files/' || f.id || '/preview' END,
+	f.revision`
+
 func scanFile(row pgx.Row) (File, error) {
 	var f File
 	err := row.Scan(&f.ID, &f.WorkspaceID, &f.ChapterID, &f.Position, &f.Name, &f.Kind, &f.SizeBytes, &f.AddedAt, &f.Status, &f.Indexed, &f.URL, &f.PreviewURL, &f.Content, &f.Revision)
 	return f, err
 }
 
+// scanFileListRow scans a fileListCols row; Content stays nil.
+func scanFileListRow(row pgx.Row) (File, error) {
+	var f File
+	err := row.Scan(&f.ID, &f.WorkspaceID, &f.ChapterID, &f.Position, &f.Name, &f.Kind, &f.SizeBytes, &f.AddedAt, &f.Status, &f.Indexed, &f.URL, &f.PreviewURL, &f.Revision)
+	return f, err
+}
+
 func (s *Store) ListFiles(ctx context.Context, userID, wsID string) ([]File, error) {
-	const fCols = `f.id, f.workspace_id, f.chapter_id, f.position, f.name, f.kind, f.size_bytes, f.added_at, f.status, f.indexed, f.url,
-		CASE WHEN f.status='ready' AND ((f.kind='pdf' AND f.blob_path IS NOT NULL) OR f.preview_blob_path IS NOT NULL)
-			THEN '/api/files/' || f.id || '/preview' END,
-		f.content, f.revision`
-	q := `SELECT ` + fileCols + ` FROM files WHERE trashed_at IS NULL`
+	q := `SELECT ` + fileListCols + ` FROM files f WHERE f.trashed_at IS NULL`
 	args := []any{}
 	if wsID != "" {
-		q += ` AND workspace_id=$1`
+		q += ` AND f.workspace_id=$1`
 		args = append(args, wsID)
 	} else if userID != "" {
-		q = `SELECT ` + fCols + ` FROM files f JOIN workspaces w ON w.id=f.workspace_id WHERE w.user_id=$1 AND f.trashed_at IS NULL`
+		q = `SELECT ` + fileListCols + ` FROM files f JOIN workspaces w ON w.id=f.workspace_id WHERE w.user_id=$1 AND f.trashed_at IS NULL`
 		args = append(args, userID)
 	}
-	q += ` ORDER BY position, added_at DESC`
+	q += ` ORDER BY f.position, f.added_at DESC`
 	rows, err := s.pool.Query(ctx, q, args...)
 	if err != nil {
 		return nil, err
@@ -958,7 +969,7 @@ func (s *Store) ListFiles(ctx context.Context, userID, wsID string) ([]File, err
 	defer rows.Close()
 	out := []File{}
 	for rows.Next() {
-		f, err := scanFile(rows)
+		f, err := scanFileListRow(rows)
 		if err != nil {
 			return nil, err
 		}

@@ -383,6 +383,14 @@ function trashMaterial(id: string, kind?: string) {
   });
 }
 
+/** List endpoints omit `content` (see fileListCols in the Go store). Strip it
+ * here too so a viewer that forgets to fetch the full row fails in dev, not
+ * only in production. */
+function fileRef<T extends { content?: unknown }>(file: T): Omit<T, 'content'> {
+  const { content: _content, ...ref } = file;
+  return ref;
+}
+
 export const handlers = [
   http.all('/api/*', async () => {
     await latency();
@@ -1270,9 +1278,11 @@ export const handlers = [
     }
     return new HttpResponse(null, { status: 204 });
   }),
-  http.get('/api/files', async () => HttpResponse.json(db.files)),
+  http.get('/api/files', async () => HttpResponse.json(db.files.map(fileRef))),
   http.get('/api/workspaces/:id/files', async ({ params }) =>
-    HttpResponse.json(db.files.filter((f) => f.workspaceId === params.id))
+    HttpResponse.json(
+      db.files.filter((f) => f.workspaceId === params.id).map(fileRef)
+    )
   ),
   http.get('/api/files/:id', async ({ params }) => {
     const f = db.files.find((x) => x.id === params.id);

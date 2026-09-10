@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { consumeSSE } from './sse';
+import { consumeSSE, sseData } from './sse';
 
 describe('consumeSSE', () => {
   it('reassembles events split across response chunks', async () => {
@@ -24,5 +24,18 @@ describe('consumeSSE', () => {
       'event: notification\ndata: {"type":"created"}',
       'data: {"type":"read","ids":["nt_1"]}',
     ]);
+  });
+});
+
+describe('sseData', () => {
+  it('ignores the keep-alive comments EventSource used to hide', () => {
+    expect(sseData(': connected')).toBe('');
+    expect(sseData(': ping')).toBe('');
+  });
+
+  it('returns the payload of a data event', () => {
+    expect(sseData('event: ingest\ndata: {"fileId":"f_1","pct":42}')).toBe(
+      '{"fileId":"f_1","pct":42}'
+    );
   });
 });

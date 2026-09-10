@@ -975,8 +975,13 @@ Worth knowing before trusting a dashboard:
   local categories. The estimator includes serialized request framing and is
   useful for trends and window pressure, but the actual-minus-estimated delta
   must remain visible and the categories must not be treated as invoice data.
-- **The gateway's in-process SSE notification cap** (100 global / 6 per user) is
-  still per-replica and unrelated to the Redis limiter.
+- **The gateway's in-process SSE notification cap** (10,000 global / 6 per user)
+  is still per-replica and unrelated to the Redis limiter. Streams no longer
+  hold a Redis connection each — one `PSUBSCRIBE ingest:*, notif:*` per process
+  fans out in memory (`server/internal/httpapi/fanout.go`) — so the remaining
+  ceiling is the container's open-file limit. A refusal logs
+  `notification stream refused at capacity`; the browser falls back to 30s
+  polling, so nothing else surfaces it.
 - **Reindexing a workspace into a different embedding model.** Not implemented,
   deliberately: see [agentic-retrieval.md](agentic-retrieval.md).
 - **Retrieval quality per language.** Visible only through `rag_search_events`

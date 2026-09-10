@@ -23,7 +23,11 @@ import (
 
 const (
 	postgresImage = "pgvector/pgvector:pg16"
+	redisImage    = "redis:7-alpine"
 	testDBMarker  = "CAPY_GO_DISPOSABLE_DATABASE"
+	// Redis-backed tests (the SSE fanout) read this. Unset means skip, so the
+	// suite still runs against a plain `go test` without a container.
+	redisURLVar = "CAPY_GO_TEST_REDIS_URL"
 )
 
 func main() {
@@ -75,6 +79,22 @@ func run(ctx context.Context, testArgs []string) error {
 		return err
 	}
 
+	redisName := name + "-redis"
+	log.Printf("starting disposable Redis %s", redisName)
+	if output, err := docker(ctx,
+		"run", "--detach", "--rm", "--name", redisName,
+		"--publish", "127.0.0.1::6379",
+		redisImage,
+	); err != nil {
+		return fmt.Errorf("start Redis: %w\n%s", err, output)
+	}
+	defer removeContainer(redisName)
+	redisPort, err := mappedContainerPort(ctx, redisName, "6379/tcp")
+	if err != nil {
+		return err
+	}
+	redisURL := "redis://" + net.JoinHostPort("127.0.0.1", redisPort) + "/0"
+
 	if len(testArgs) > 0 && testArgs[0] == "--" {
 		testArgs = testArgs[1:]
 	}
@@ -86,7 +106,7 @@ func run(ctx context.Context, testArgs []string) error {
 	}
 	command := exec.CommandContext(ctx, "go", goArgs...)
 	command.Dir = filepath.Join(repositoryRoot, "server")
-	command.Env = testEnvironment(os.Environ(), dsn, name)
+	command.Env = testEnvironment(os.Environ(), dsn, name, redisURL)
 	command.Stdin = os.Stdin
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
@@ -116,9 +136,13 @@ func removeContainer(name string) {
 }
 
 func mappedPort(ctx context.Context, name string) (string, error) {
-	output, err := docker(ctx, "port", name, "5432/tcp")
+	return mappedContainerPort(ctx, name, "5432/tcp")
+}
+
+func mappedContainerPort(ctx context.Context, name, containerPort string) (string, error) {
+	output, err := docker(ctx, "port", name, containerPort)
 	if err != nil {
-		return "", fmt.Errorf("read Postgres port: %w: %s", err, output)
+		return "", fmt.Errorf("read %s port for %s: %w: %s", containerPort, name, err, output)
 	}
 	line := strings.Split(output, "\n")[0]
 	_, port, err := net.SplitHostPort(strings.TrimSpace(line))
@@ -208,18 +232,20 @@ func fileExists(path string) bool {
 	return err == nil && !info.IsDir()
 }
 
-func testEnvironment(base []string, dsn, container string) []string {
+func testEnvironment(base []string, dsn, container, redisURL string) []string {
 	blocked := map[string]struct{}{
 		"DATABASE_URL":           {},
 		testDBMarker:             {},
 		"CAPY_GO_TEST_CONTAINER": {},
+		redisURLVar:              {},
 	}
-	out := make([]string, 0, len(base)+2)
+	out := make([]string, 0, len(base)+4)
 	for _, item := range base {
 		key, _, _ := strings.Cut(item, "=")
 		if _, drop := blocked[key]; !drop {
 			out = append(out, item)
 		}
 	}
-	return append(out, "DATABASE_URL="+dsn, testDBMarker+"=1", "CAPY_GO_TEST_CONTAINER="+container)
+	return append(out, "DATABASE_URL="+dsn, testDBMarker+"=1",
+		"CAPY_GO_TEST_CONTAINER="+container, redisURLVar+"="+redisURL)
 }

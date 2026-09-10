@@ -19,12 +19,15 @@ func TestTestEnvironmentOwnsDatabaseConfiguration(t *testing.T) {
 		"DATABASE_URL=postgres://existing",
 		"CAPY_GO_DISPOSABLE_DATABASE=old",
 		"CAPY_GO_TEST_CONTAINER=unrelated",
-	}, "postgres://disposable", "capy-go-test-0123456789")
+		"CAPY_GO_TEST_REDIS_URL=redis://existing",
+	}, "postgres://disposable", "capy-go-test-0123456789", "redis://disposable")
 	if !slices.Contains(got, "PATH=/bin") ||
 		!slices.Contains(got, "DATABASE_URL=postgres://disposable") ||
 		!slices.Contains(got, "CAPY_GO_DISPOSABLE_DATABASE=1") ||
 		!slices.Contains(got, "CAPY_GO_TEST_CONTAINER=capy-go-test-0123456789") ||
-		slices.Contains(got, "CAPY_GO_TEST_CONTAINER=unrelated") {
+		!slices.Contains(got, "CAPY_GO_TEST_REDIS_URL=redis://disposable") ||
+		slices.Contains(got, "CAPY_GO_TEST_CONTAINER=unrelated") ||
+		slices.Contains(got, "CAPY_GO_TEST_REDIS_URL=redis://existing") {
 		t.Fatalf("testEnvironment() = %#v", got)
 	}
 	for _, item := range got {

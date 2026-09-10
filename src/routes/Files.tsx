@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   useAllFiles,
+  useFile,
   usePurgeTrashed,
   useRestoreTrashed,
   useTrash,
@@ -15,7 +16,11 @@ import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
 import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { Tabs } from '@/components/ui/Tabs';
-import { FileNotIndexedBanner } from '@/features/files/FileStates';
+import {
+  FileError,
+  FileLoading,
+  FileNotIndexedBanner,
+} from '@/features/files/FileStates';
 import { FileViewer } from '@/features/files/FileViewer';
 import { formatFileSize } from '@/features/files/fileUtils';
 import { useOfficeEditGuard } from '@/features/files/useOfficeEditGuard';
@@ -50,6 +55,14 @@ function ActiveFiles() {
   const [officeEditDirty, setOfficeEditDirty] = useState(false);
   const confirmViewerReplacement = useOfficeEditGuard(officeEditDirty);
   const open = data?.find((file) => file.id === openFileId) ?? null;
+  // The list omits `content`, so the viewer needs the full row. The header and
+  // the indexed banner render from the list entry meanwhile.
+  const {
+    data: viewerFile,
+    isError: viewerError,
+    isPending: viewerPending,
+    refetch: refetchViewer,
+  } = useFile(openFileId, { errorBoundary: false });
 
   const openFile = (fileId: string) => {
     if (openFileId !== fileId && !confirmViewerReplacement()) return;
@@ -98,8 +111,15 @@ function ActiveFiles() {
         <div className="flex min-h-[50vh] flex-col">
           {open && <FileNotIndexedBanner file={open} />}
           <div className="min-h-0 flex-1">
-            {open && (
-              <FileViewer file={open} onDirtyChange={setOfficeEditDirty} />
+            {viewerFile ? (
+              <FileViewer
+                file={viewerFile}
+                onDirtyChange={setOfficeEditDirty}
+              />
+            ) : viewerError ? (
+              <FileError onRetry={() => void refetchViewer()} />
+            ) : (
+              openFileId && viewerPending && <FileLoading />
             )}
           </div>
         </div>

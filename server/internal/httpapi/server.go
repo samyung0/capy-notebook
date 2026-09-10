@@ -96,6 +96,9 @@ type api struct {
 	notifMu            sync.Mutex
 	notifByUser        map[string]int
 	notifTotal         int
+	// broker fans the ingest and notification channels out from one Redis
+	// subscription; see fanout.go.
+	broker *channelBroker
 }
 
 // New builds the full HTTP handler. huma owns every JSON operation (and the
@@ -120,6 +123,9 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		stripeSubscription: billing.RetrieveSubscription,
 		stripeEntitlements: billing.ListEntitlingSubscriptions,
 		notifByUser:        make(map[string]int),
+	}
+	if rdb != nil {
+		a.broker = newChannelBroker(rdb, "ingest:*", "notif:*")
 	}
 	r := chi.NewRouter()
 	// Trace first so the recovery handler and every log line below it can name

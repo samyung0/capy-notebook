@@ -1,6 +1,6 @@
 import { authHeaders } from './auth';
 import { API_BASE } from './client';
-import { consumeSSE } from './sse';
+import { consumeSSE, sseData } from './sse';
 import type { AppNotification } from './types';
 
 export interface NotificationStreamEvent {
@@ -10,11 +10,7 @@ export interface NotificationStreamEvent {
 }
 
 function parseEvent(chunk: string): NotificationStreamEvent | null {
-  const data = chunk
-    .split('\n')
-    .filter((line) => line.startsWith('data:'))
-    .map((line) => line.slice(5).trim())
-    .join('\n');
+  const data = sseData(chunk);
   if (!data) return null;
   try {
     return JSON.parse(data) as NotificationStreamEvent;

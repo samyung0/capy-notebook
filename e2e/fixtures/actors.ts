@@ -38,9 +38,9 @@ type ActorFixtures = {
 };
 
 /**
- * Identity comes from headers the Vite proxy forwards to the Go gateway, and
- * `EventSource` cannot set headers of its own, so the streaming endpoints need
- * an interceptor rather than a fetch-level default.
+ * Identity comes from headers the Vite proxy forwards to the Go gateway. The
+ * app itself only ever attaches a Clerk token, so the E2E headers have to be
+ * injected at the network layer, for every `/api` request the page makes.
  *
  * The pattern has to stay this narrow. Every intercepted request is a round
  * trip through the test process, and the dev server serves ~500 modules per

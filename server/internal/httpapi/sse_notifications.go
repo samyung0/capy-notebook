@@ -7,11 +7,17 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 const (
-	maxNotificationStreams = 100
+	// Streams no longer hold a Redis connection each (see fanout.go), so this
+	// bounds only what a stream still costs this process: a goroutine, a socket
+	// and a 64-slot buffer. The binding constraint is the open-file limit of
+	// the container, so raising this past what `ulimit -n` allows just moves
+	// the failure from a clean 429 to accept() errors.
+	maxNotificationStreams = 10_000
 	// One stream per tab, plus headroom for the brief overlap while a client
 	// reconnects after the bounded lifetime expires.
 	maxNotificationStreamsUser = 6
@@ -57,11 +63,15 @@ func (a *api) notificationEvents(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if a.rdb == nil {
+	if a.broker == nil {
 		http.Error(w, "redis not configured", http.StatusServiceUnavailable)
 		return
 	}
 	if !a.acquireNotificationStream(userID) {
+		// Refusal is invisible to the user (the client falls back to polling),
+		// so it has to be visible here or the ceiling is reached silently.
+		obs.Log(r.Context()).Warn("notification stream refused at capacity",
+			"total", a.notificationStreamCount())
 		w.Header().Set("Retry-After", "10")
 		http.Error(w, "notification stream limit reached", http.StatusTooManyRequests)
 		return
@@ -81,15 +91,14 @@ func (a *api) notificationEvents(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), notificationStreamLifetime)
 	defer cancel()
-	sub := a.rdb.Subscribe(ctx, "notif:"+userID)
-	defer sub.Close()
-	if _, err := sub.Receive(ctx); err != nil {
+	sub, err := a.broker.subscribe(ctx, "notif:"+userID)
+	if err != nil {
 		if ctx.Err() == nil {
 			http.Error(w, "notification stream unavailable", http.StatusServiceUnavailable)
 		}
 		return
 	}
-	ch := sub.Channel()
+	defer a.broker.unsubscribe(sub)
 
 	if _, err := fmt.Fprint(w, ": connected\n\n"); err != nil {
 		return
@@ -103,11 +112,15 @@ func (a *api) notificationEvents(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-ctx.Done():
 			return
-		case msg, ok := <-ch:
+		case <-sub.dropped:
+			// Evicted for falling behind. The client reconnects, and its
+			// reconcile-on-connect refetches whatever it missed from Postgres.
+			return
+		case payload, ok := <-sub.events:
 			if !ok {
 				return
 			}
-			if _, err := fmt.Fprintf(w, "data: %s\n\n", msg.Payload); err != nil {
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", payload); err != nil {
 				return
 			}
 			flusher.Flush()
@@ -134,6 +147,12 @@ func (a *api) acquireNotificationStream(userID string) bool {
 	a.notifByUser[userID]++
 	a.notifTotal++
 	return true
+}
+
+func (a *api) notificationStreamCount() int {
+	a.notifMu.Lock()
+	defer a.notifMu.Unlock()
+	return a.notifTotal
 }
 
 func (a *api) releaseNotificationStream(userID string) {

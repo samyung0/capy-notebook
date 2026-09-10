@@ -19,7 +19,7 @@ Study workspace: notes, sources, quizzes, flashcards, schedule, and AI retrieval
 - **Deploy** (`deploy/`) — Docker Compose for the backend stack. `ops` and `reconcile` are opt-in profiles.
 - **Docs** (`openwiki/`) — Authz, quota, retrieval, editor, observability/metering (operator access), deployment runbook, tests.
 - **Tests** — Vitest (`src/`, `ops/`, `collaboration/`), Go (`server/`), pytest (`pipeline/`), Playwright (`e2e/`).
-- **Office engines** (`vendor/betteroffice/`) — pinned fork used for lazy XLSX/PPTX viewing, analysis, editing, and save round-trips.
+- **Office engines** (`vendor/betteroffice/`) — pinned fork used for lazy DOCX/XLSX/PPTX viewing, analysis, editing, and save round-trips.
 
 ## Get Restarted
 

@@ -53,6 +53,7 @@ export default defineConfig({
       ...process.env,
       VITE_CLERK_PUBLISHABLE_KEY: '',
       VITE_E2E_EDITOR_SEED: 'true',
+      VITE_RELEASE_SHA: 'e2e',
       VITE_USE_MSW: 'true',
     },
     reuseExistingServer: false,

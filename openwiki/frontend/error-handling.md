@@ -35,6 +35,12 @@ The owning component must then destructure and render the relevant query error
 state. Destructuring is required so TanStack Query's tracked-property proxy
 subscribes to those fields.
 
+Query metadata is shared by observers of the same key. A secondary consumer
+must preserve the primary consumer's error policy. The ingest hook takes the
+workspace page's loaded files rather than adding an observer with a different
+policy. The Files preview dialog handles its detail-query failure inline with
+`FileError` and a manual Retry action.
+
 Mutation failures produce an error toast by default. A mutation that renders its
 own inline error, needs domain-specific messaging, or treats cancellation as
 normal must use:
@@ -109,6 +115,12 @@ retrieval chunks (`indexed: false`, including ingest failure and
 `parseMode=none` store-only uploads) still renders its viewer. The center pane
 shows a pinned status banner (`[data-testid="file-not-indexed"]`) under the
 header instead of replacing the body with a full-page error.
+
+Ingest connects only while the page's file list contains pending or processing
+files. Every successful connection refetches that list because Redis does not
+replay missed events. A list read that finds a ready or failed file invalidates
+its cached detail if that detail still says pending or processing. This also
+repairs an open viewer when polling discovers completion and closes the stream.
 
 ## Chat tool results
 

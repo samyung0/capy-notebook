@@ -1,5 +1,6 @@
 import type { SourceFile } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
+import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/feedback';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -23,11 +24,26 @@ export function FileLoading({
 export function FileError({
   title = m.error_file_title(),
   message = m.error_file_body(),
+  onRetry,
 }: {
   title?: string;
   message?: string;
+  onRetry?: () => void;
 }) {
-  return <ErrorState description={message} title={title} variant="panel" />;
+  return (
+    <ErrorState
+      action={
+        onRetry && (
+          <Button onClick={onRetry} size="sm">
+            {m.error_action_retry()}
+          </Button>
+        )
+      }
+      description={message}
+      title={title}
+      variant="panel"
+    />
+  );
 }
 
 export function FileEmpty({

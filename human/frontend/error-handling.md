@@ -1,0 +1,1 @@
+- Developer Epo approved the SSE review fixes: ingest uses the workspace page's file list with its primary error policy, reconciles on connect, and refreshes stale file details when list reads observe completion; failed Files previews display an inline error with manual retry. src/api/hooks.ts src/routes/WorkspaceOpen.tsx src/routes/Files.tsx src/features/files/FileStates.tsx

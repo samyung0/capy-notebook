@@ -9,14 +9,16 @@ import (
 // ingestEvents streams live ingest progress for a workspace over SSE.
 //
 // The Python worker PUBLISHes JSON events to the Redis channel
-// `ingest:{workspaceId}` ({fileId, stage, pct, status, message, indexed}); we subscribe
-// and relay each event to the browser's EventSource. This replaces polling for
-// upload status — the UI patches its file cache as events arrive.
+// `ingest:{workspaceId}` ({fileId, stage, pct, status, message, indexed}). One
+// process-wide subscription fans those out to every open stream (fanout.go);
+// this handler only relays its own channel's events. The UI patches its file
+// cache as they arrive, and holds this stream open only while a file is
+// actually ingesting.
 func (a *api) ingestEvents(w http.ResponseWriter, r *http.Request) {
 	if !a.assertWSRead(w, r, id(r)) {
 		return
 	}
-	if a.rdb == nil {
+	if a.broker == nil {
 		http.Error(w, "redis not configured", http.StatusServiceUnavailable)
 		return
 	}
@@ -35,9 +37,12 @@ func (a *api) ingestEvents(w http.ResponseWriter, r *http.Request) {
 	userID := uid(r)
 	ctx, cancelLiveAuthorization := a.liveWorkspaceContext(r.Context(), userID, wsID)
 	defer cancelLiveAuthorization()
-	sub := a.rdb.Subscribe(ctx, "ingest:"+wsID)
-	defer sub.Close()
-	ch := sub.Channel()
+	sub, err := a.broker.subscribe(ctx, "ingest:"+wsID)
+	if err != nil {
+		http.Error(w, "ingest stream unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	defer a.broker.unsubscribe(sub)
 
 	// Open the stream so the client's onopen fires promptly.
 	fmt.Fprint(w, ": connected\n\n")
@@ -51,11 +56,15 @@ func (a *api) ingestEvents(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-ctx.Done():
 			return
-		case msg, ok := <-ch:
+		case <-sub.dropped:
+			// Evicted for falling behind. Ending the response is the recovery:
+			// the client reconnects and re-reads status from the file list.
+			return
+		case payload, ok := <-sub.events:
 			if !ok {
 				return
 			}
-			fmt.Fprintf(w, "data: %s\n\n", msg.Payload)
+			fmt.Fprintf(w, "data: %s\n\n", payload)
 			flusher.Flush()
 		case <-ping.C:
 			fmt.Fprint(w, ": ping\n\n")

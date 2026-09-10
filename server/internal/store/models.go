@@ -119,8 +119,11 @@ type File struct {
 	// PreviewURL renders the exact paginated bytes used for citation regions.
 	// It is absent until ingest has finished.
 	PreviewURL *string `json:"previewUrl,omitempty"`
-	Content    *string `json:"content,omitempty"`
-	Revision   int64   `json:"revision"`
+	// Content is the inline body for text-ish sources. Single-file reads carry
+	// it; list endpoints omit it (see fileListCols), so read it from GET
+	// /files/{id} rather than from a list row.
+	Content  *string `json:"content,omitempty"`
+	Revision int64   `json:"revision"`
 }
 
 type Quiz struct {

@@ -23,3 +23,14 @@ export async function consumeSSE(
     reader.releaseLock();
   }
 }
+
+/** Join the `data:` lines of one SSE chunk. Returns "" for the comment-only
+ * chunks (`: ping`) the server sends to keep proxies from dropping the
+ * connection — those carry no payload. */
+export function sseData(chunk: string): string {
+  return chunk
+    .split('\n')
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice(5).trim())
+    .join('\n');
+}

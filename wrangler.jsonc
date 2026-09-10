@@ -48,10 +48,12 @@
       },
       "workers_dev": false,
       "preview_urls": false,
+      // UAT DNS points to capy-uat. A separate zone route with no Worker assigned
+      // to uat.capynotebook.com/api/* bypasses this route; see the deployment runbook.
       "routes": [
         {
-          "pattern": "uat.capynotebook.com",
-          "custom_domain": true
+          "pattern": "uat.capynotebook.com/*",
+          "zone_name": "capynotebook.com"
         }
       ]
     },
