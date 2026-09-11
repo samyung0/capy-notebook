@@ -608,13 +608,18 @@ Claim-time gating is two lookups, not one widened check:
 | Subject                       | Checked for                        | On failure     |
 | ----------------------------- | ---------------------------------- | -------------- |
 | Owner (`files.user_id`)       | lifecycle state, storage           | refuse the job |
-| Actor (payload `actorUserId`) | lifecycle state, available credits | refuse the job |
+| Actor (payload `actorUserId`) | lifecycle state, available credits (first claim only) | refuse the job |
 
-This admission check runs on a direct ingest job and the initial parse job.
-Long work is not allowed to rely on that snapshot: opening a provider call,
-persisting parse/preview/caption/source metadata, handing off parse or repair
-work, and final success all lock and recheck both the actor and storage owner in
-the same transaction as the stage outcome. Job-claim and source-revision fences
+Credits are checked at a job's first claim only (`attempts == 1`, no
+`provider_waits`, and no `parseJobId`; busy-provider and capacity re-pends hand
+the attempt back but keep their admission). A job admitted there runs to completion: the parse-to-ingest
+continuation and every later stage recheck lifecycle and storage but not
+credits, so a parse that pushes the actor past the limit still gets indexed and
+the next interactive request is what refuses. Long work is not allowed to rely
+on the lifecycle snapshot: opening a provider call, persisting
+parse/preview/caption/source metadata, handing off parse or repair work, and
+final success all lock and recheck both the actor and storage owner in the same
+transaction as the stage outcome. Job-claim and source-revision fences
 also prevent a canceled or replaced job from reviving stale work. Ingest
 provider admission requires its durable attempt id, locks the current file and
 exact running job and attempt, and verifies the live lease, job attempt token,
@@ -625,8 +630,20 @@ attempt. Lease reclamation therefore skips an admission transaction instead of
 changing the job and then waiting on its attempt. Suspension or deletion stops
 an in-flight actor before its next durable stage or external provider call.
 
-Upload reservation (`createSourceUpload`) checks the same two budgets up front,
-with the same distinct errors.
+Upload reservation (`createSourceUpload`, and the proxied multipart upload)
+checks the same two budgets up front, with the same distinct errors, plus a
+headroom gate: the browser sends `estimatedCreditMicros` from the upload policy
+rates, and the reservation refuses as `llm_credits_exhausted` when used +
+reserved + estimate would exceed 1.3× the plan limit; provider import
+reservations stay on the plain exhaustion check. The dialog
+holds submit while any fast-parse analysis is running or failed, so every
+reserved document carries an estimate. The browser reads the fast-parse
+extension list from the upload policy; a format added to the server's
+`parseExtensions` that the browser estimator cannot open shows as unsupported
+in the dialog; the user can still add it store-only, and fast parsing for it
+waits until the estimator learns the format. The estimate is trusted
+because it only decides admission; the parser receipt bills measured pages, so
+an under-estimate lets one job finish past the limit and nothing more.
 
 Charging happens after the fact because nothing is waiting on an ingest job,
 the file was already accepted, and refusing halfway leaves a half-indexed
@@ -637,10 +654,14 @@ continuation. Either path can push a user past their limit;
 the next interactive request is what refuses.
 
 The parse event uses `kind='parse'`, `unit='pages'`, and one row per actual
-fingerprint parse. The parser embeds a creator-job-owned receipt inside the
-atomically published local bundle. `parse-receipt:{fingerprint}` is the
-idempotency key for that work, so a lost HTTP response can be recovered from the
-bundle without charging again. Concurrent waiters receive the artifact but not
+fingerprint parse. The parser client runs in a worker thread, so its
+measurement is added in place to the attempt's shared `ParseUsage` accumulator
+(`obs.record_parse_usage`); rebinding the context variable from the thread
+would only update the thread's copy and bill nothing. The parser embeds a creator-job-owned receipt inside the
+atomically published local bundle. `parse-receipt:{fingerprint}:{job id}` is
+the idempotency key for that work, so a lost HTTP response can be recovered from
+the bundle without charging again, while a later job that really re-parses the
+same bytes (after the caches were swept) is billed on its own row. Concurrent waiters receive the artifact but not
 the creator's receipt. Legacy responses without a receipt retain
 `parse:{job id}:{attempt}` as their compatibility key. Cache and donor hits do
 not create parse events because they did not run MinerU.
@@ -975,13 +996,19 @@ Worth knowing before trusting a dashboard:
   local categories. The estimator includes serialized request framing and is
   useful for trends and window pressure, but the actual-minus-estimated delta
   must remain visible and the categories must not be treated as invoice data.
-- **The gateway's in-process SSE notification cap** (10,000 global / 6 per user)
-  is still per-replica and unrelated to the Redis limiter. Streams no longer
-  hold a Redis connection each — one `PSUBSCRIBE ingest:*, notif:*` per process
-  fans out in memory (`server/internal/httpapi/fanout.go`) — so the remaining
-  ceiling is the container's open-file limit. A refusal logs
-  `notification stream refused at capacity`; the browser falls back to 30s
-  polling, so nothing else surfaces it.
+- **The gateway's in-process event stream cap** (10,000 global / 7 per user)
+  is still per-replica and unrelated to the Redis limiter. `GET /api/stream`
+  is the one SSE stream a tab holds: streams do not hold a Redis connection
+  each — one `PSUBSCRIBE ingest:*, notif:*` per process fans out in memory
+  (`server/internal/httpapi/fanout.go`), and workspace tree changes reach the
+  same fanout from one Postgres `LISTEN workspace_tree` connection per process
+  (raised by the `files`/`materials` triggers in migration 0004; while that
+  LISTEN is detached, workspace streams are refused with 503 and `workspace
+  tree listener stopped` is logged) — so the remaining ceiling is the
+  container's open-file limit. Access is re-checked at the 25 s ping, not the
+  LLM streams' 5 s live context. A refusal logs `event stream refused at
+  capacity`; the browser shows the reconnecting banner and retries with
+  backoff, with no polling fallback, so nothing else surfaces it.
 - **Reindexing a workspace into a different embedding model.** Not implemented,
   deliberately: see [agentic-retrieval.md](agentic-retrieval.md).
 - **Retrieval quality per language.** Visible only through `rag_search_events`

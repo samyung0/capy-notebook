@@ -10,11 +10,6 @@ export interface UpdateMaterialReq {
   readonly $schema?: string;
   /** Chapter to file under; empty string unfiles; omit to leave unchanged */
   chapterId?: string;
-  /**
-     * Required when changing title
-     * @minimum 1
-     */
-  expectedRevision?: number;
   scopeChapters?: string[];
   scopeFileNames?: string[];
   /**

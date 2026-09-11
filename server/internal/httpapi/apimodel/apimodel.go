@@ -494,3 +494,13 @@ type DeletionPreflight struct {
 	// GraceDays is the reactivation window before the purge runs.
 	GraceDays int `json:"graceDays"`
 }
+
+// FileLinks carries short-lived presigned reads for a file's bytes. Viewers
+// fetch it through the authenticated API because B2 URLs cannot carry the
+// bearer token and the gateway must not proxy file bytes.
+type FileLinks struct {
+	URL string `json:"url"`
+	// PreviewURL is the paginated PDF whose coordinates citation regions use.
+	PreviewURL *string   `json:"previewUrl,omitempty"`
+	ExpiresAt  time.Time `json:"expiresAt"`
+}

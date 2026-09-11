@@ -8,7 +8,7 @@
 --
 -- The passwords must match OPS_DATABASE_URL and OPS_ADMIN_DATABASE_URL, which
 -- the ops service uses. The grants name every readable column: neither role can
--- read messages, file content or blob paths, job payloads, email recipients or
+-- read messages, file names or blob paths, job payloads, email recipients or
 -- payloads, or usage_events.metadata. Ops validates its own role at startup and
 -- refuses to boot when this file has not been applied, grants too much, or
 -- misses a column.

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Y from 'yjs';
-import type { SourceFile } from '@/api/types';
+import { api } from '@/api/client';
+import type { SourceFile, SourceSession, ViewableFile } from '@/api/types';
 import { m } from '@/i18n';
 import {
   isOfficeRuntimeMessage,
@@ -11,18 +12,22 @@ import {
   type OfficeMode,
 } from './officeProtocol';
 import { getOfficeRuntimeConfig } from './officeRuntimeConfig';
-import { SOURCE_IFRAME_ORIGIN, useSourceSession } from './useSourceSession';
+import {
+  decodeSourceState,
+  SOURCE_IFRAME_ORIGIN,
+  useSourceSession,
+} from './useSourceSession';
 
 interface OfficeRuntimeOptions {
   canEdit: boolean;
-  file: SourceFile;
+  file: ViewableFile;
   format: OfficeFormat;
   initialMode?: OfficeMode;
   revision: number;
 }
 
 export function officeRuntimeKey(
-  file: Pick<SourceFile, 'id' | 'url'>,
+  file: Pick<SourceFile, 'id'>,
   revision: number
 ): string {
   void revision;
@@ -50,7 +55,10 @@ export function useOfficeRuntime({
   const [frameGeneration, setFrameGeneration] = useState(0);
   const [frameLoaded, setFrameLoaded] = useState(false);
   const [frameBoot, setFrameBoot] = useState(0);
-  const [viewBytes, setViewBytes] = useState<ArrayBuffer | null>(null);
+  const [viewBytes, setViewBytes] = useState<{
+    bytes: ArrayBuffer;
+    checkpoint?: ArrayBuffer;
+  } | null>(null);
   const [analysis, setAnalysis] = useState<OfficeAnalysis | null>(null);
   const [error, setError] = useState<string | null>(config.error);
   const [replicaReady, setReplicaReady] = useState(false);
@@ -153,22 +161,32 @@ export function useOfficeRuntime({
     setError(config.error);
   }, [revision, mode, config.error]);
 
+  // View mode reads the published base plus the saved checkpoint, so a viewer
+  // sees what was last saved rather than what was last published. The
+  // checkpoint rides along only when it is ahead of the indexed one; the
+  // runtime exports it over the base before opening the viewer.
   useEffect(() => {
     if (mode !== 'view' || viewBytes || config.error) return;
     const controller = new AbortController();
-    void fetch(file.url ?? '', { signal: controller.signal })
-      .then(async (response) => {
+    void api
+      .get<SourceSession>(`/files/${file.id}/source-session?view=true`)
+      .then(async (session) => {
+        const response = await fetch(session.sourceURL, {
+          signal: controller.signal,
+        });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.arrayBuffer();
-      })
-      .then((bytes) => {
-        if (!controller.signal.aborted) setViewBytes(bytes);
+        const bytes = await response.arrayBuffer();
+        const checkpoint =
+          session.checkpoint !== session.indexedCheckpoint && session.state
+            ? decodeSourceState(session.state).slice().buffer
+            : undefined;
+        if (!controller.signal.aborted) setViewBytes({ bytes, checkpoint });
       })
       .catch((value: unknown) => {
         if (!controller.signal.aborted) setError(toError(value).message);
       });
     return () => controller.abort();
-  }, [file.id, file.url, revision, mode, config.error, viewBytes]);
+  }, [file.id, revision, mode, config.error, viewBytes]);
 
   useEffect(() => {
     if (!frameLoaded || initializedFrame.current === frameGeneration) return;
@@ -182,7 +200,11 @@ export function useOfficeRuntime({
       return;
     if (mode === 'view' && !viewBytes) return;
     const bytes =
-      mode === 'edit' ? source.bytes!.slice().buffer : viewBytes!.slice(0);
+      mode === 'edit'
+        ? source.bytes!.slice().buffer
+        : viewBytes!.bytes.slice(0);
+    const checkpoint =
+      mode === 'view' ? viewBytes!.checkpoint?.slice(0) : undefined;
     const collaboration =
       mode === 'edit'
         ? {
@@ -195,6 +217,7 @@ export function useOfficeRuntime({
       {
         bytes,
         canEdit,
+        checkpoint,
         collaboration,
         fileName: file.name,
         format,
@@ -203,7 +226,9 @@ export function useOfficeRuntime({
         type: 'load',
         version: OFFICE_PROTOCOL_VERSION,
       },
-      collaboration ? [bytes, collaboration.initialUpdate] : [bytes]
+      [bytes, collaboration?.initialUpdate, checkpoint].filter(
+        (item): item is ArrayBuffer => !!item
+      )
     );
   }, [
     frameLoaded,
@@ -364,7 +389,7 @@ export function useOfficeRuntime({
         try {
           await checkpoint();
           const bytes = await request('export');
-          setViewBytes(bytes);
+          setViewBytes({ bytes });
         } catch (value) {
           setError(toError(value).message);
           setLeaving(false);

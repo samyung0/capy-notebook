@@ -13,6 +13,8 @@ export interface CreateSourceUploadReq {
   /** @maxLength 60 */
   chapterName?: string;
   contentType?: string;
+  /** @minimum 0 */
+  estimatedCreditMicros?: number;
   kind?: string;
   /**
      * @minLength 1

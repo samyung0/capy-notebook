@@ -1,3 +1,6 @@
+import type { SourceUploadPolicy } from '@/api/types';
+import { fileExt } from '@/features/files/fileUtils';
+
 export type SourceAnalysisOoxmlExtension = 'docx' | 'pptx' | 'xlsx';
 export type SourceAnalysisExtension = SourceAnalysisOoxmlExtension | 'pdf';
 
@@ -86,25 +89,43 @@ export function sourceAnalysisCacheKey(
   return [file.name, file.size, file.lastModified, file.type].join('\0');
 }
 
+/** Extensions the server parses in fast mode, from the upload policy: the
+ * single source of truth for which sources need a page estimate. */
+export function fastParseExtensions(
+  policy: Pick<SourceUploadPolicy, 'parseModes'>
+): ReadonlySet<string> {
+  return new Set(
+    (
+      policy.parseModes.find((mode) => mode.mode === 'fast')?.extensions ?? []
+    ).map((ext) => (ext.startsWith('.') ? ext.slice(1) : ext).toLowerCase())
+  );
+}
+
+const WORKER_EXTENSIONS: ReadonlySet<SourceAnalysisExtension> = new Set([
+  'pdf',
+  'docx',
+  'pptx',
+  'xlsx',
+]);
+
+/** The worker format for a name the policy fast-parses, or null when the
+ * source is not fast-parsed or the browser cannot open that format. */
 export function sourceAnalysisExtension(
-  name: string
+  name: string,
+  policy: Pick<SourceUploadPolicy, 'parseModes'>
 ): SourceAnalysisExtension | null {
-  const value = name.split('.').pop()?.toLowerCase();
-  if (
-    value === 'pdf' ||
-    value === 'docx' ||
-    value === 'pptx' ||
-    value === 'xlsx'
-  ) {
-    return value;
-  }
-  return null;
+  const value = fileExt(name);
+  if (!fastParseExtensions(policy).has(value)) return null;
+  return WORKER_EXTENSIONS.has(value as SourceAnalysisExtension)
+    ? (value as SourceAnalysisExtension)
+    : null;
 }
 
 export function localSourceAnalysisInput(
-  file: File
+  file: File,
+  policy: Pick<SourceUploadPolicy, 'parseModes'>
 ): SourceAnalysisInput | null {
-  const kind = sourceAnalysisExtension(file.name);
+  const kind = sourceAnalysisExtension(file.name, policy);
   if (!kind) return null;
   return {
     key: sourceAnalysisCacheKey(file),

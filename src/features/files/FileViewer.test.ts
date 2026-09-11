@@ -1,30 +1,30 @@
 import { describe, expect, it } from 'vitest';
 
-import { officeCitationPreviewUrl } from './FileViewer';
+import { hasOfficeCitationPreview } from './FileViewer';
 
-describe('officeCitationPreviewUrl', () => {
+describe('hasOfficeCitationPreview', () => {
   it.each(['store-only.xlsx', 'store-only.pptx', 'store-only.docx'])(
     'keeps %s on its native viewer when no exact citation preview exists',
     (name) => {
-      expect(officeCitationPreviewUrl({ name }, 1)).toBeUndefined();
+      expect(hasOfficeCitationPreview({ name }, 1)).toBe(false);
       expect(
-        officeCitationPreviewUrl({ name }, undefined, [
+        hasOfficeCitationPreview({ name }, undefined, [
           {
             bbox: [0, 0, 100, 100],
             page: 1,
             space: 'page-1000-topleft',
           },
         ])
-      ).toBeUndefined();
+      ).toBe(false);
     }
   );
 
-  it('uses only the exact parser-derived preview URL for Office citations', () => {
+  it('opens the preview only when the row advertises a parser-derived PDF', () => {
     expect(
-      officeCitationPreviewUrl(
-        { name: 'indexed.xlsx', previewUrl: '/api/files/f_1/preview' },
+      hasOfficeCitationPreview(
+        { name: 'indexed.xlsx', previewUrl: '/api/files/f1/preview' },
         2
       )
-    ).toBe('/api/files/f_1/preview');
+    ).toBe(true);
   });
 });

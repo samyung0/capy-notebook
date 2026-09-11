@@ -13,7 +13,6 @@ export const mockScenarioOptions = [
   { id: 'workspace-flaky', label: 'Workspace GET flaky (1 in 3)' },
   { id: 'chat-sse-error', label: 'Chat SSE error frame' },
   { id: 'chat-stream-close', label: 'Chat stream closes early' },
-  { id: 'ingest-failed', label: 'Ingest failed event' },
   { id: 'collaboration-token', label: 'Collaboration token 503' },
   { id: 'offline', label: 'Browser offline' },
 ] as const;
@@ -184,18 +183,6 @@ export function getMockScenarioHandlers(
               type: 'start',
             },
             { text: 'Partial mock response ', type: 'token' },
-          ])
-        ),
-      ];
-    case 'ingest-failed':
-      return [
-        http.get('/api/workspaces/:id/ingest-events', () =>
-          sseResponse([
-            {
-              fileId: 'f_mock_failed',
-              pct: 42,
-              status: 'failed',
-            },
           ])
         ),
       ];

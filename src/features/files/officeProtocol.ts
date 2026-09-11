@@ -34,6 +34,8 @@ export type OfficeHostMessage =
       mode: OfficeMode;
       revision: number;
       collaboration?: { epoch: number; initialUpdate: ArrayBuffer };
+      /** View mode only: saved Yrs state to export over `bytes` before opening. */
+      checkpoint?: ArrayBuffer;
     }
   | {
       version: typeof OFFICE_PROTOCOL_VERSION;

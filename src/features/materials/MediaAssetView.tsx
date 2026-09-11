@@ -1,5 +1,5 @@
 import { FileText, LoaderCircle } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { resolveEditorAsset } from '@/api/editorAssets';
 import { m } from '@/i18n';
 
@@ -18,6 +18,7 @@ type AssetState =
 
 export function useResolvedAsset(assetId: string | undefined) {
   const [state, setState] = useState<AssetState>({ status: 'loading' });
+  const [generation, setGeneration] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -44,15 +45,36 @@ export function useResolvedAsset(assetId: string | undefined) {
         }
       });
     return () => controller.abort();
-  }, [assetId]);
+  }, [assetId, generation]);
 
-  return state;
+  return [state, () => setGeneration((value) => value + 1)] as const;
 }
 
 /** Presentational media renderer shared by the editable node component and the
  * static preview. Resolves the asset URL and renders by media type. */
 export function MediaAssetView({ element }: { element: MediaAssetNode }) {
-  const asset = useResolvedAsset(element.assetId);
+  const [asset, reload] = useResolvedAsset(element.assetId);
+  // A presigned URL is short-lived; seeking past the buffered range re-reads
+  // it. Re-resolve once, then let a second failure surface.
+  const retried = useRef(false);
+  const onMediaError = () => {
+    if (retried.current) return;
+    retried.current = true;
+    reload();
+  };
+  // Signed when clicked, not when rendered: open the tab first so the
+  // navigation stays inside the click's popup allowance.
+  const openFile = () => {
+    if (!element.assetId) return;
+    const tab = window.open('', '_blank');
+    if (tab) tab.opener = null;
+    resolveEditorAsset(element.assetId).then(
+      (resolved) => {
+        if (tab) tab.location.href = resolved.url;
+      },
+      () => tab?.close()
+    );
+  };
   return (
     <figure className="group relative m-0" contentEditable={false}>
       {asset.status === 'loading' && (
@@ -76,18 +98,23 @@ export function MediaAssetView({ element }: { element: MediaAssetNode }) {
         />
       )}
       {asset.status === 'ready' && element.type === 'audio' && (
-        <audio className="w-full" controls src={asset.url} />
+        <audio
+          className="w-full"
+          controls
+          key={asset.url}
+          onError={onMediaError}
+          src={asset.url}
+        />
       )}
       {asset.status === 'ready' && element.type === 'file' && (
-        <a
-          className="flex items-center gap-2 rounded-card border border-line bg-surface-hover-bg px-3 py-2 text-fg text-sm hover:border-line-strong"
-          href={asset.url}
-          rel="noreferrer"
-          target="_blank"
+        <button
+          className="flex w-full items-center gap-2 rounded-card border border-line bg-surface-hover-bg px-3 py-2 text-fg text-sm hover:border-line-strong"
+          onClick={openFile}
+          type="button"
         >
           <FileText className="size-4 text-fg-muted" />
           <span className="truncate">{element.name || asset.name}</span>
-        </a>
+        </button>
       )}
     </figure>
   );

@@ -191,6 +191,11 @@ export type AttemptDetail = Omit<GenAttemptDetail, 'questions'> & {
 
 /** `ingestPct` is transient upload progress, never persisted. */
 export type SourceFile = GenFile & { ingestPct?: number };
+/** A file the viewer has resolved through GET /files/{id}/links: `url` is a
+ * short-lived presigned read, the only URL the browser ever holds for file
+ * bytes; `previewUrl` stays the row's presence marker and the citation
+ * preview signs its own link. */
+export type ViewableFile = SourceFile & { url: string };
 
 /** `color` is a client-side tint derived from the owning workspace/label/flashcardSet. */
 export type SearchResult = GenSearchResult & { color?: UserColor };
@@ -257,7 +262,7 @@ export type UpdateWorkspaceMemberReq = Omit<
    from the generated spec. ChatMessage is the UI-facing turn: the generated
    Message shape with role/status narrowed to unions and an optional client-only
    `pending` flag while a temp (pre-persisted) row streams. */
-export type { Conversation } from './gen/model';
+export type { Conversation, FileLinks } from './gen/model';
 
 export type Citation = GenCitation & { chunkId?: string };
 

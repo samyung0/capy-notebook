@@ -309,27 +309,32 @@ def _source_refresh_published(job_id: str, payload: dict) -> bool:
 
 def _settle_published_source_refresh(job_id: str, payload: dict) -> None:
     usage = obs.take_parse_usage()
-    with db.connect() as conn, conn.cursor() as cur:
-        _record_parse_usage_tx(
-            cur,
-            usage=usage,
-            file_id=str(payload["fileId"]),
-            workspace_id=str(payload["workspaceId"]),
-            actor_user_id=str(payload["actorUserId"]),
-            reservation_id=_reservation_id(payload),
-            job_id=job_id,
-            attempt=int(payload.get("_attempt") or 1),
-            outcome="succeeded",
-        )
-        db.settle_credit_reservation(cur, _reservation_id(payload))
-        db.set_job(cur, job_id, "done")
-        db.finish_job_attempt(
-            cur,
-            attempt_id=telemetry.current_attempt_id(),
-            outcome="succeeded",
-            snapshot=telemetry.snapshot(),
-        )
-        conn.commit()
+    try:
+        with db.connect() as conn, conn.cursor() as cur:
+            _record_parse_usage_tx(
+                cur,
+                usage=usage,
+                file_id=str(payload["fileId"]),
+                workspace_id=str(payload["workspaceId"]),
+                actor_user_id=str(payload["actorUserId"]),
+                reservation_id=_reservation_id(payload),
+                job_id=job_id,
+                attempt=int(payload.get("_attempt") or 1),
+                outcome="succeeded",
+            )
+            db.settle_credit_reservation(cur, _reservation_id(payload))
+            db.set_job(cur, job_id, "done")
+            db.finish_job_attempt(
+                cur,
+                attempt_id=telemetry.current_attempt_id(),
+                outcome="succeeded",
+                snapshot=telemetry.snapshot(),
+            )
+            conn.commit()
+    except Exception:
+        # Same as the other settle paths: keep the pages for the retry.
+        obs.restore_parse_usage(usage)
+        raise
 
 
 def _finish_source_refresh(
@@ -492,24 +497,7 @@ def _finish_ok(
                 )
             conn.commit()
     except Exception:
-        obs.record_parse_usage(
-            pages=usage.pages,
-            ocr_pages=usage.ocr_pages,
-            cpu_milliseconds=usage.cpu_milliseconds,
-            elapsed_milliseconds=usage.elapsed_milliseconds,
-            queue_milliseconds=usage.queue_milliseconds,
-            execution_milliseconds=usage.execution_milliseconds,
-            slices=usage.slices,
-            download_milliseconds=usage.download_milliseconds,
-            upload_milliseconds=usage.upload_milliseconds,
-            worker_rss_bytes=usage.worker_rss_bytes,
-            worker_pss_bytes=usage.worker_pss_bytes,
-            io_read_bytes=usage.io_read_bytes,
-            io_write_bytes=usage.io_write_bytes,
-            method=usage.method,
-            source_format=usage.source_format,
-            receipt_id=usage.receipt_id,
-        )
+        obs.restore_parse_usage(usage)
         raise
     try:
         with db.connect() as conn:
@@ -606,11 +594,11 @@ def _finish_superseded(
     attempt: int,
     reservation_id: str,
 ) -> None:
-    """Close a stale job without mutating or notifying for the replacement."""
+    """Close a stale job without mutating or notifying for the newer revision."""
     with db.connect() as conn, conn.cursor() as cur:
         if not _lost_claim(cur, job_id, attempt):
-            db.set_job(cur, job_id, "failed", "superseded by file replacement")
-        # Replacement may already have made the job terminal. The generated
+            db.set_job(cur, job_id, "failed", "superseded by newer source revision")
+        # The publish may already have made the job terminal. The generated
         # attempt id still identifies this exact run and must be closed rather
         # than left permanently visible as running.
         db.finish_job_attempt(
@@ -621,8 +609,8 @@ def _finish_superseded(
             error_category="superseded",
             error_code="source_superseded",
         )
-        # Replacement normally closes this while canceling the old job. This
-        # also covers the SKIP LOCKED race where the worker held the job row.
+        # Cancellation normally closes this with the old job. This also covers
+        # the SKIP LOCKED race where the worker held the job row.
         db.close_credit_reservation(cur, reservation_id)
         active = db.source_refresh_for_job(job_id)
         if active is not None:
@@ -735,8 +723,14 @@ def _read_name(file_id: str) -> str:
         return db.file_name(cur, file_id)
 
 
-def _account_allows_ingest(file_id: str, payload: dict) -> bool:
-    """Claim-time gate: owner lifecycle/storage, actor lifecycle/credits.
+def _account_allows_ingest(file_id: str, payload: dict, check_credits: bool) -> bool:
+    """Stage gate: owner lifecycle/storage, actor lifecycle, optionally credits.
+
+    Credits are checked once, at a job's first claim. A job admitted there runs
+    to completion even if its own parse pushes the actor past the limit; the
+    next interactive request is what refuses. Later stages and the parse-to-
+    ingest continuation pass ``check_credits=False`` so a half-parsed file is
+    never abandoned over the bill it already ran up.
 
     A missing actor is refused rather than waved through. It used to mean "no
     actor, nothing to check", which let a job parse, caption and embed
@@ -751,11 +745,22 @@ def _account_allows_ingest(file_id: str, payload: dict) -> bool:
         if not db.ingest_accounts_active(cur, file_id, actor):
             return False
         owner = db.file_owner_user_id(cur, file_id)
-        if not owner or not db.account_allows_ingest(
-            cur, owner, allow_over_quota=bool(payload.get("quotaRecovery"))
-        ):
+        if not owner or not db.account_allows_ingest(cur, owner):
             return False
-        return db.actor_has_credits(cur, actor)
+        return db.actor_has_credits(cur, actor) if check_credits else True
+
+
+def _first_claim(job: dict, payload: dict) -> bool:
+    """True for the first attempt of a job that is not a parse continuation.
+
+    Busy-provider and capacity re-pends hand the attempt back, so a re-claimed
+    job would look first again; the wait counter tells them apart.
+    """
+    return (
+        int(job.get("attempts") or 1) == 1
+        and int(job.get("provider_waits") or 0) == 0
+        and not payload.get("parseJobId")
+    )
 
 
 def _read_text(path: str) -> str:
@@ -1316,8 +1321,11 @@ def _record_parse_usage_tx(
             ocr_rate=_rate(_RESOURCE_OCR_PAGE)["creditMicrosPerUnit"],
         ),
         reservation_id=reservation_id,
+        # Job-scoped: the fingerprint alone is a global content hash, and the
+        # ledger key is globally unique, so two jobs that each really ran the
+        # parser on identical bytes would otherwise bill only the first.
         idempotency_key=(
-            f"parse-receipt:{usage.receipt_id}"
+            f"parse-receipt:{usage.receipt_id}:{job_id}"
             if usage.receipt_id
             else f"parse:{job_id}:{attempt}"
         ),
@@ -1369,24 +1377,7 @@ def _record_parse_attempt(
     except Exception:
         # Keep the receipt in this context if the database write failed. The job
         # stays running, so its lease/retry path can try the same idempotency key.
-        obs.record_parse_usage(
-            pages=usage.pages,
-            ocr_pages=usage.ocr_pages,
-            cpu_milliseconds=usage.cpu_milliseconds,
-            elapsed_milliseconds=usage.elapsed_milliseconds,
-            queue_milliseconds=usage.queue_milliseconds,
-            execution_milliseconds=usage.execution_milliseconds,
-            slices=usage.slices,
-            download_milliseconds=usage.download_milliseconds,
-            upload_milliseconds=usage.upload_milliseconds,
-            worker_rss_bytes=usage.worker_rss_bytes,
-            worker_pss_bytes=usage.worker_pss_bytes,
-            io_read_bytes=usage.io_read_bytes,
-            io_write_bytes=usage.io_write_bytes,
-            method=usage.method,
-            source_format=usage.source_format,
-            receipt_id=usage.receipt_id,
-        )
+        obs.restore_parse_usage(usage)
         raise
 
 
@@ -1448,24 +1439,7 @@ def _handoff_parsed_artifact(
             )
             conn.commit()
     except Exception:
-        obs.record_parse_usage(
-            pages=usage.pages,
-            ocr_pages=usage.ocr_pages,
-            cpu_milliseconds=usage.cpu_milliseconds,
-            elapsed_milliseconds=usage.elapsed_milliseconds,
-            queue_milliseconds=usage.queue_milliseconds,
-            execution_milliseconds=usage.execution_milliseconds,
-            slices=usage.slices,
-            download_milliseconds=usage.download_milliseconds,
-            upload_milliseconds=usage.upload_milliseconds,
-            worker_rss_bytes=usage.worker_rss_bytes,
-            worker_pss_bytes=usage.worker_pss_bytes,
-            io_read_bytes=usage.io_read_bytes,
-            io_write_bytes=usage.io_write_bytes,
-            method=usage.method,
-            source_format=usage.source_format,
-            receipt_id=usage.receipt_id,
-        )
+        obs.restore_parse_usage(usage)
         raise
     return True
 
@@ -2237,7 +2211,9 @@ async def _process_ingest_job(
         _require_current_source, file_id, source_revision, source_etag
     )
     _set_stage("admission_check")
-    if not await asyncio.to_thread(_account_allows_ingest, file_id, payload):
+    if not await asyncio.to_thread(
+        _account_allows_ingest, file_id, payload, _first_claim(job, payload)
+    ):
         note = f"{name}: ingest refused because the account is locked or over quota."
         committed = await asyncio.to_thread(
             _finish_fail,
@@ -2359,7 +2335,7 @@ async def _process_ingest_job(
                 return
 
     if job_type == "parse":
-        if not await asyncio.to_thread(_account_allows_ingest, file_id, payload):
+        if not await asyncio.to_thread(_account_allows_ingest, file_id, payload, False):
             raise TerminalError(
                 "ingest stopped because an account is suspended or deleting"
             )
@@ -2395,7 +2371,7 @@ async def _process_ingest_job(
         return
 
     _set_stage("content_prepare")
-    if not await asyncio.to_thread(_account_allows_ingest, file_id, payload):
+    if not await asyncio.to_thread(_account_allows_ingest, file_id, payload, False):
         raise TerminalError(
             "ingest stopped because an account is suspended or deleting"
         )
@@ -2444,7 +2420,7 @@ async def _process_ingest_job(
     telemetry.record(chunks_created=len(chunks))
 
     digest = indexing.content_hash(chunks)
-    if not await asyncio.to_thread(_account_allows_ingest, file_id, payload):
+    if not await asyncio.to_thread(_account_allows_ingest, file_id, payload, False):
         raise TerminalError(
             "ingest stopped because an account is suspended or deleting"
         )
@@ -2508,7 +2484,7 @@ async def _process_ingest_job(
         return
 
     _set_stage("indexing")
-    if not await asyncio.to_thread(_account_allows_ingest, file_id, payload):
+    if not await asyncio.to_thread(_account_allows_ingest, file_id, payload, False):
         raise TerminalError(
             "ingest stopped because an account is suspended or deleting"
         )
@@ -2756,7 +2732,7 @@ async def _handle_job_failure_bound(job: dict, exc: BaseException) -> None:
                 str(payload.get("sourceETag") or ""),
             )
         except db.SourceSupersededError as superseded:
-            # Any error after replacement is terminal for the old source, even
+            # Any error after a publish is terminal for the old source, even
             # if the original error would normally retry. Never re-pend A once
             # the logical file points at B.
             exc = superseded

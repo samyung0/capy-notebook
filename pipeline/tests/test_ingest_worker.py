@@ -94,7 +94,7 @@ def test_heartbeat_cancels_work_when_the_exact_claim_is_gone(monkeypatch):
                 "superseded",
                 "superseded",
                 "source_superseded",
-                "superseded by file replacement",
+                "superseded by newer source revision",
             ),
         ),
         (
@@ -751,9 +751,11 @@ async def test_parsed_document_continuation_rechecks_account_lifecycle(monkeypat
             _plan(),
         )
 
+    # A parse continuation was admitted at its parse claim: both rechecks are
+    # lifecycle and storage only, never credits.
     assert admission_checks == [
-        ("f_1", _ingest_payload()),
-        ("f_1", _ingest_payload()),
+        ("f_1", _ingest_payload(), False),
+        ("f_1", _ingest_payload(), False),
     ]
 
 

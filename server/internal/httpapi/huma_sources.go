@@ -35,8 +35,6 @@ func (a *api) registerSourceUploads(api huma.API) {
 	reg(api, http.MethodGet, "/api/source-upload-policy", "getSourceUploadPolicy", tag, "Get source upload policy", http.StatusOK, a.getSourceUploadPolicy)
 	regWithMaxBody(api, http.MethodPost, "/api/workspaces/{id}/sources/uploads", "createSourceUpload", tag, "Reserve a direct source upload", http.StatusCreated, 64<<10, a.createSourceUpload)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/sources/uploads/{uploadId}/complete", "completeSourceUpload", tag, "Complete a direct source upload", http.StatusCreated, a.completeSourceUpload)
-	regWithMaxBody(api, http.MethodPost, "/api/files/{id}/replacement-uploads", "createFileReplacementUpload", tag, "Reserve a direct file replacement", http.StatusCreated, 64<<10, a.createFileReplacementUpload)
-	reg(api, http.MethodPost, "/api/files/{id}/replacement-uploads/{uploadId}/complete", "completeFileReplacementUpload", tag, "Complete a direct file replacement", http.StatusOK, a.completeFileReplacementUpload)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/sources/import", "importSources", tag, "Queue sources from a connected drive", http.StatusAccepted, a.importSources)
 	regWithMaxBody(api, http.MethodPost, "/api/workspaces/{id}/sources/import-inspect", "inspectSourceImports", tag, "Inspect sources selected from a connected drive", http.StatusOK, 64<<10, a.inspectSourceImports)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/sources/imports/{jobId}", "getSourceImport", tag, "Get source import status", http.StatusOK, a.getSourceImport)
@@ -140,16 +138,6 @@ type completeSourceUploadInput struct {
 	UploadID string `path:"uploadId"`
 }
 
-type createFileReplacementUploadInput struct {
-	ID   string `path:"id"`
-	Body apimodel.CreateFileReplacementUploadReq
-}
-
-type completeFileReplacementUploadInput struct {
-	ID       string `path:"id"`
-	UploadID string `path:"uploadId"`
-}
-
 type sourceFileOutput struct {
 	Status int
 	Body   apimodel.File
@@ -208,7 +196,7 @@ func (a *api) createSourceUpload(ctx context.Context, in *createSourceUploadInpu
 	}
 	body.CaptionImages = sourceupload.NormalizeCaptionImages(body.Kind, body.ParseMode, body.CaptionImages)
 	if sourceupload.NeedsIngestJob(name, body.Kind, body.ParseMode) {
-		if err := a.s.AssertCreditsAvailable(ctx, userID(ctx)); err != nil {
+		if err := a.s.AssertCreditsForEstimate(ctx, userID(ctx), body.EstimatedCreditMicros); err != nil {
 			return nil, hErr(err)
 		}
 	}
@@ -315,143 +303,6 @@ func (a *api) completeSourceUpload(ctx context.Context, in *completeSourceUpload
 	log.Printf("direct upload completed upload=%s file=%s bytes=%d etag=%s",
 		in.UploadID, res.ID, info.Size, info.ETag)
 	return &sourceFileOutput{Status: http.StatusCreated, Body: res}, nil
-}
-
-func (a *api) createFileReplacementUpload(
-	ctx context.Context,
-	in *createFileReplacementUploadInput,
-) (*sourceUploadReservationOutput, error) {
-	if err := a.assertFileEditor(ctx, in.ID); err != nil {
-		return nil, hErr(err)
-	}
-	if a.blob == nil {
-		return nil, huma.Error503ServiceUnavailable("blob store not configured")
-	}
-	workspaceID, err := a.s.FileWorkspaceID(ctx, in.ID)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	maxBytes, err := a.sourceMaxBytes(ctx, workspaceID)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	body := in.Body
-	if body.SizeBytes < 0 || body.SizeBytes > maxBytes {
-		return nil, huma.Error400BadRequest(fmt.Sprintf("uploads support files up to %d MB", maxBytes>>20))
-	}
-	if body.ExpectedRevision < 1 {
-		return nil, huma.Error400BadRequest("expectedRevision must be positive")
-	}
-	if body.ContentType == "" {
-		body.ContentType = "application/octet-stream"
-	}
-	if _, _, err := mime.ParseMediaType(body.ContentType); err != nil || strings.ContainsAny(body.ContentType, "\r\n") {
-		return nil, huma.Error400BadRequest("invalid content type")
-	}
-	name, kind, parseMode, err := a.s.FileIngestPolicy(ctx, in.ID)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	if sourceupload.NeedsIngestJob(name, kind, parseMode) {
-		if err := a.s.AssertCreditsAvailable(ctx, userID(ctx)); err != nil {
-			return nil, hErr(err)
-		}
-	}
-
-	uploadID := randID("up")
-	blobID := randID("blob")
-	incoming := incomingObjectKey(uploadID, blobID)
-	finalPath := sourceObjectKey(blobID)
-	signed, err := a.blob.PresignPut(ctx, incoming, body.ContentType)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	session, err := a.s.CreateReplacementUploadSession(ctx, store.NewReplacementUploadSession{
-		ID: uploadID, FileID: in.ID, CreatedBy: userID(ctx),
-		ObjectPath: incoming, FinalPath: finalPath, ContentType: body.ContentType,
-		DeclaredSize: body.SizeBytes, ExpectedRevision: body.ExpectedRevision,
-		ExpiresAt: signed.ExpiresAt,
-	})
-	if errors.Is(err, store.ErrFileRevisionConflict) || errors.Is(err, store.ErrFileNotReady) {
-		return nil, huma.Error409Conflict(err.Error())
-	}
-	if err != nil {
-		return nil, hErr(err)
-	}
-	if signed.Headers == nil {
-		signed.Headers = map[string]string{}
-	}
-	log.Printf("file replacement reserved upload=%s file=%s bytes=%d revision=%d",
-		session.ID, in.ID, session.DeclaredSize, body.ExpectedRevision)
-	return &sourceUploadReservationOutput{Body: apimodel.SourceUploadReservation{
-		UploadID: session.ID, URL: signed.URL, Method: "PUT",
-		Headers: signed.Headers, ExpiresAt: signed.ExpiresAt,
-	}}, nil
-}
-
-func (a *api) completeFileReplacementUpload(
-	ctx context.Context,
-	in *completeFileReplacementUploadInput,
-) (*sourceFileOutput, error) {
-	session, err := a.s.GetReplacementUploadSession(ctx, in.UploadID)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	if session.FileID == nil || *session.FileID != in.ID {
-		return nil, hErr(store.ErrNotFound)
-	}
-	if err := a.assertFileEditor(ctx, in.ID); err != nil {
-		return nil, hErr(err)
-	}
-	if session.Status == "completed" {
-		res, err := a.s.FinalizeReplacementUploadSession(ctx, in.UploadID, "", a.parser)
-		if err != nil {
-			return nil, hErr(err)
-		}
-		return &sourceFileOutput{Status: http.StatusOK, Body: res}, nil
-	}
-	if time.Now().UTC().After(session.ExpiresAt) {
-		return nil, &huma.ErrorModel{
-			Status: http.StatusGone,
-			Title:  http.StatusText(http.StatusGone),
-			Detail: store.ErrUploadExpired.Error(),
-		}
-	}
-
-	info, finalErr := a.blob.Head(ctx, session.FinalPath)
-	if finalErr != nil {
-		info, err = a.blob.Head(ctx, session.ObjectPath)
-		if err != nil {
-			return nil, huma.Error409Conflict("uploaded object is not available")
-		}
-	}
-	if info.Size != session.DeclaredSize {
-		_ = a.blob.Delete(ctx, session.ObjectPath)
-		return nil, huma.Error400BadRequest("uploaded size does not match the reserved size")
-	}
-	if info.ContentType != "" && info.ContentType != session.ContentType {
-		return nil, huma.Error400BadRequest("uploaded content type does not match the reservation")
-	}
-	if finalErr != nil {
-		info, err = promoteUploadObject(ctx, a.blob, session, info)
-		if err != nil {
-			return nil, hErr(err)
-		}
-	}
-	res, err := a.s.FinalizeReplacementUploadSession(ctx, in.UploadID, info.ETag, a.parser)
-	if errors.Is(err, store.ErrFileRevisionConflict) || errors.Is(err, store.ErrFileNotReady) {
-		_ = a.s.MarkUploadExpired(ctx, in.UploadID)
-		return nil, huma.Error409Conflict(err.Error())
-	}
-	if errors.Is(err, store.ErrUploadExpired) || errors.Is(err, store.ErrUploadState) {
-		return nil, huma.Error409Conflict(err.Error())
-	}
-	if err != nil {
-		return nil, hErr(err)
-	}
-	log.Printf("file replacement completed upload=%s file=%s bytes=%d revision=%d",
-		in.UploadID, res.ID, info.Size, res.Revision)
-	return &sourceFileOutput{Status: http.StatusOK, Body: res}, nil
 }
 
 // promoteUploadObject treats a matching stable object as success when another
@@ -719,6 +570,8 @@ func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourc
 		})
 	}
 	if needsCredits {
+		// Imports stay on the plain exhaustion check; the 1.3× estimate
+		// headroom applies to new uploads only (decision 2026-09-11).
 		if err := a.s.AssertCreditsAvailable(ctx, actor); err != nil {
 			return nil, hErr(err)
 		}

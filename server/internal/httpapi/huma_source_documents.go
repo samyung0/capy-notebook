@@ -58,6 +58,13 @@ type annotationUpdateInput struct {
 	AnnotationID string `path:"annotationId"`
 	Body         store.PDFAnnotationBody
 }
+type sourceSessionInput struct {
+	ID string `path:"id"`
+	// View is the lock-free viewer read: read authorization only, no row
+	// insert, no indexed state or pending effects, and state only when a saved
+	// checkpoint is ahead of the indexed one.
+	View bool `query:"view" doc:"Viewer read: read access only, omits indexedState and pendingEffects, and state unless checkpoint is ahead of indexedCheckpoint"`
+}
 type annotationIDInput struct {
 	ID           string `path:"id"`
 	AnnotationID string `path:"annotationId"`
@@ -98,7 +105,17 @@ func (a *api) sourceSessionResponse(ctx context.Context, session store.SourceSes
 	session.SourceURL = url
 	return &sourceSessionOutput{Body: session}, nil
 }
-func (a *api) getSourceSession(ctx context.Context, in *collaborationTokenInput) (*sourceSessionOutput, error) {
+func (a *api) getSourceSession(ctx context.Context, in *sourceSessionInput) (*sourceSessionOutput, error) {
+	if in.View {
+		if _, err := a.fileRead(ctx, in.ID); err != nil {
+			return nil, hErr(err)
+		}
+		session, err := a.s.ViewSourceSession(ctx, in.ID)
+		if err != nil {
+			return nil, hErr(err)
+		}
+		return a.sourceSessionResponse(ctx, session)
+	}
 	session, err := a.s.SourceSession(ctx, userID(ctx), in.ID)
 	if err != nil {
 		return nil, hErr(err)

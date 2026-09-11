@@ -137,8 +137,7 @@ func TestOverQuotaOwnerKeepsSizeNeutralEditsButCannotPublish(t *testing.T) {
 	}
 
 	rec = doReq(t, h, http.MethodPatch, "/api/materials/"+material.ID+"/metadata", "", map[string]any{
-		"title":            "After",
-		"expectedRevision": material.Revision,
+		"title": "After",
 	})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("an over-quota owner must still be able to rename their own material, "+

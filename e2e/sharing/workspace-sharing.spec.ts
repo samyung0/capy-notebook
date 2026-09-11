@@ -271,10 +271,7 @@ test.describe('workspace sharing', () => {
     const viewerEdit = await otherApi.patch(
       `/api/materials/${viewerFixture.id}/metadata`,
       {
-        data: {
-          expectedRevision: viewerBody.revision,
-          title: 'Viewers cannot rename',
-        },
+        data: { title: 'Viewers cannot rename' },
       }
     );
     expect(viewerEdit.status()).toBe(403);
@@ -305,10 +302,7 @@ test.describe('workspace sharing', () => {
     const metadataEdit = await otherApi.patch(
       `/api/materials/${editorFixture.id}/metadata`,
       {
-        data: {
-          expectedRevision: editorBody.revision,
-          title: 'Shared editor renamed',
-        },
+        data: { title: 'Shared editor renamed' },
       }
     );
     expect(metadataEdit.status()).toBe(200);
@@ -373,10 +367,7 @@ test.describe('workspace sharing', () => {
     const metadataEdit = await viewerApi.patch(
       `/api/materials/${fixture.id}/metadata`,
       {
-        data: {
-          expectedRevision: body.revision,
-          title: 'A raised viewer renamed',
-        },
+        data: { title: 'A raised viewer renamed' },
       }
     );
     expect(metadataEdit.status()).toBe(200);

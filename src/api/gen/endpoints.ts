@@ -29,7 +29,6 @@ import type {
   CreateConversationReq,
   CreateDiscussionReq,
   CreateEventReq,
-  CreateFileReplacementUploadReq,
   CreateFlashcardSetReq,
   CreateMaterialReq,
   CreateQuizReq,
@@ -44,10 +43,12 @@ import type {
   ErrorModel,
   Event,
   File,
+  FileLinks,
   Flashcard,
   FlashcardSet,
   Generate200,
   GenerateReq,
+  GetSourceSessionParams,
   GetSourceUploadPolicyParams,
   ImportSourcesAccepted,
   ImportSourcesReq,
@@ -1894,6 +1895,56 @@ export const createSourceCollaborationToken = async (id: string, options?: Reque
 
 
 
+export type getFileLinksResponse200 = {
+  data: FileLinks
+  status: 200
+}
+
+export type getFileLinksResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getFileLinksResponseSuccess = (getFileLinksResponse200) & {
+  headers: Headers;
+};
+export type getFileLinksResponseError = (getFileLinksResponseDefault) & {
+  headers: Headers;
+};
+
+export type getFileLinksResponse = (getFileLinksResponseSuccess | getFileLinksResponseError)
+
+export const getGetFileLinksUrl = (id: string,) => {
+
+
+
+
+  return `/api/files/${id}/links`
+}
+
+/**
+ * @summary Get presigned file reads
+ */
+export const getFileLinks = async (id: string, options?: RequestInit): Promise<getFileLinksResponse> => {
+
+  const res = await fetch(getGetFileLinksUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getFileLinksResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getFileLinksResponse
+}
+
+
+
 export type processSourceChangesResponse202 = {
   data: SourceProcessResult
   status: 202
@@ -1944,109 +1995,6 @@ export const processSourceChanges = async (id: string, options?: RequestInit): P
 
 
 
-export type createFileReplacementUploadResponse201 = {
-  data: SourceUploadReservation
-  status: 201
-}
-
-export type createFileReplacementUploadResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 201>
-}
-
-export type createFileReplacementUploadResponseSuccess = (createFileReplacementUploadResponse201) & {
-  headers: Headers;
-};
-export type createFileReplacementUploadResponseError = (createFileReplacementUploadResponseDefault) & {
-  headers: Headers;
-};
-
-export type createFileReplacementUploadResponse = (createFileReplacementUploadResponseSuccess | createFileReplacementUploadResponseError)
-
-export const getCreateFileReplacementUploadUrl = (id: string,) => {
-
-
-
-
-  return `/api/files/${id}/replacement-uploads`
-}
-
-/**
- * @summary Reserve a direct file replacement
- */
-export const createFileReplacementUpload = async (id: string,
-    createFileReplacementUploadReq: NonReadonly<CreateFileReplacementUploadReq>, options?: RequestInit): Promise<createFileReplacementUploadResponse> => {
-
-  const res = await fetch(getCreateFileReplacementUploadUrl(id),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(createFileReplacementUploadReq)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: createFileReplacementUploadResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as createFileReplacementUploadResponse
-}
-
-
-
-export type completeFileReplacementUploadResponse200 = {
-  data: File
-  status: 200
-}
-
-export type completeFileReplacementUploadResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type completeFileReplacementUploadResponseSuccess = (completeFileReplacementUploadResponse200) & {
-  headers: Headers;
-};
-export type completeFileReplacementUploadResponseError = (completeFileReplacementUploadResponseDefault) & {
-  headers: Headers;
-};
-
-export type completeFileReplacementUploadResponse = (completeFileReplacementUploadResponseSuccess | completeFileReplacementUploadResponseError)
-
-export const getCompleteFileReplacementUploadUrl = (id: string,
-    uploadId: string,) => {
-
-
-
-
-  return `/api/files/${id}/replacement-uploads/${uploadId}/complete`
-}
-
-/**
- * @summary Complete a direct file replacement
- */
-export const completeFileReplacementUpload = async (id: string,
-    uploadId: string, options?: RequestInit): Promise<completeFileReplacementUploadResponse> => {
-
-  const res = await fetch(getCompleteFileReplacementUploadUrl(id,uploadId),
-  {
-    ...options,
-    method: 'POST'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: completeFileReplacementUploadResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as completeFileReplacementUploadResponse
-}
-
-
-
 export type getSourceSessionResponse200 = {
   data: SourceSession
   status: 200
@@ -2066,20 +2014,29 @@ export type getSourceSessionResponseError = (getSourceSessionResponseDefault) & 
 
 export type getSourceSessionResponse = (getSourceSessionResponseSuccess | getSourceSessionResponseError)
 
-export const getGetSourceSessionUrl = (id: string,) => {
+export const getGetSourceSessionUrl = (id: string,
+    params?: GetSourceSessionParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/files/${id}/source-session`
+  return stringifiedParams.length > 0 ? `/api/files/${id}/source-session?${stringifiedParams}` : `/api/files/${id}/source-session`
 }
 
 /**
  * @summary Read source editing session
  */
-export const getSourceSession = async (id: string, options?: RequestInit): Promise<getSourceSessionResponse> => {
+export const getSourceSession = async (id: string,
+    params?: GetSourceSessionParams, options?: RequestInit): Promise<getSourceSessionResponse> => {
 
-  const res = await fetch(getGetSourceSessionUrl(id),
+  const res = await fetch(getGetSourceSessionUrl(id,params),
   {
     ...options,
     method: 'GET'
@@ -6848,6 +6805,9 @@ if(uploadSourceBody?.chapterId !== undefined) {
  }
 if(uploadSourceBody?.chapterName !== undefined) {
  formData.append(`chapterName`, uploadSourceBody.chapterName instanceof Blob ? uploadSourceBody.chapterName : new Blob([uploadSourceBody.chapterName], { type: 'text/plain' }));
+ }
+if(uploadSourceBody?.estimatedCreditMicros !== undefined) {
+ formData.append(`estimatedCreditMicros`, uploadSourceBody.estimatedCreditMicros.toString())
  }
 if(uploadSourceBody?.file !== undefined) {
  formData.append(`file`, uploadSourceBody.file);

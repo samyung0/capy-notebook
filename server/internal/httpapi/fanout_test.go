@@ -82,3 +82,29 @@ func TestFanoutShutdownEndsEveryStream(t *testing.T) {
 		t.Fatalf("subs after shutdown = %d, want 0", len(broker.subs))
 	}
 }
+
+// A lost Postgres LISTEN ends only the tree streams; notification and ingest
+// streams fed by Redis stay attached.
+func TestFanoutEvictPrefixLeavesOtherChannelsAttached(t *testing.T) {
+	broker := newChannelBroker(nil, "notif:*")
+	ctx := context.Background()
+	tree, _ := broker.register(ctx, "tree:ws_1")
+	notif, _ := broker.register(ctx, "notif:u_1")
+
+	broker.evictPrefix("tree:")
+
+	select {
+	case <-tree.dropped:
+	default:
+		t.Fatal("tree stream was not evicted")
+	}
+	select {
+	case <-notif.dropped:
+		t.Fatal("notification stream was evicted")
+	default:
+	}
+	broker.deliver(ctx, "notif:u_1", "still here")
+	if got := <-notif.events; got != "still here" {
+		t.Fatalf("notification stream got %q", got)
+	}
+}

@@ -3,7 +3,6 @@ import { useState } from 'react';
 import {
   useMarkNotificationRead,
   useMarkNotificationsRead,
-  useNotificationStream,
   useNotifications,
   useUnreadNotificationCount,
 } from '@/api/hooks';
@@ -25,7 +24,6 @@ export function NotificationsBell() {
   const { data: unreadCount } = useUnreadNotificationCount({
     errorBoundary: false,
   });
-  useNotificationStream();
   const { mutate: markNotificationRead } = useMarkNotificationRead();
   const { mutate: markRead } = useMarkNotificationsRead();
   const navigate = useNavigate();

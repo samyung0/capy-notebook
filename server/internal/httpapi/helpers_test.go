@@ -113,22 +113,6 @@ func TestKindFromName(t *testing.T) {
 	}
 }
 
-func TestContentType(t *testing.T) {
-	cases := map[string]string{
-		"pdf":     "application/pdf",
-		"md":      "text/plain; charset=utf-8",
-		"txt":     "text/plain; charset=utf-8",
-		"doc":     "text/plain; charset=utf-8",
-		"image":   "application/octet-stream",
-		"unknown": "application/octet-stream",
-	}
-	for kind, want := range cases {
-		if got := contentType(kind); got != want {
-			t.Errorf("contentType(%q) = %q, want %q", kind, got, want)
-		}
-	}
-}
-
 func TestRandID(t *testing.T) {
 	id := randID("f")
 	if !strings.HasPrefix(id, "f_") {

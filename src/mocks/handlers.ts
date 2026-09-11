@@ -306,9 +306,13 @@ const sourceImportResponses = new Map<
 function completeMockSourceImport(sourceImport: MockSourceImport) {
   if (sourceImport.completed) return;
   sourceImport.completed = true;
+  db.fileLinks[sourceImport.fileId] = {
+    url: db.textUrl(`Imported ${sourceImport.name}`),
+  };
   const file: (typeof db.files)[number] = {
     addedAt: new Date().toISOString(),
     chapterId: sourceImport.chapterId,
+    hasBytes: true,
     id: sourceImport.fileId,
     indexed: true,
     ingestPct: 100,
@@ -381,14 +385,6 @@ function trashMaterial(id: string, kind?: string) {
     }),
     material: removed,
   });
-}
-
-/** List endpoints omit `content` (see fileListCols in the Go store). Strip it
- * here too so a viewer that forgets to fetch the full row fails in dev, not
- * only in production. */
-function fileRef<T extends { content?: unknown }>(file: T): Omit<T, 'content'> {
-  const { content: _content, ...ref } = file;
-  return ref;
 }
 
 export const handlers = [
@@ -1152,6 +1148,8 @@ export const handlers = [
       .forEach((file) => {
         const id = uid('f');
         fileMap.set(file.id, id);
+        const links = db.fileLinks[file.id];
+        if (links) db.fileLinks[id] = { ...links };
         db.files.push({
           ...file,
           chapterId: file.chapterId
@@ -1286,40 +1284,21 @@ export const handlers = [
     }
     return new HttpResponse(null, { status: 204 });
   }),
-  http.get('/api/files', async () => HttpResponse.json(db.files.map(fileRef))),
+  http.get('/api/files', async () => HttpResponse.json(db.files)),
   http.get('/api/workspaces/:id/files', async ({ params }) =>
-    HttpResponse.json(
-      db.files.filter((f) => f.workspaceId === params.id).map(fileRef)
-    )
+    HttpResponse.json(db.files.filter((f) => f.workspaceId === params.id))
   ),
   http.get('/api/files/:id', async ({ params }) => {
     const f = db.files.find((x) => x.id === params.id);
     return f ? HttpResponse.json(f) : new HttpResponse(null, { status: 404 });
   }),
-  http.post('/api/files/:id/replacement', async ({ params, request }) => {
-    const f = db.files.find((x) => x.id === params.id);
-    if (!f) return new HttpResponse(null, { status: 404 });
-    const form = await request.formData();
-    const replacement = form.get('file');
-    const expectedRevision = Number(form.get('expectedRevision'));
-    if (!(replacement instanceof File)) {
-      return HttpResponse.json(
-        { message: 'replacement file is required' },
-        { status: 400 }
-      );
-    }
-    if (f.status !== 'ready' || expectedRevision !== (f.revision ?? 1)) {
-      return HttpResponse.json(
-        { code: 'file_revision_conflict', message: 'file revision changed' },
-        { status: 409 }
-      );
-    }
-    f.indexed = false;
-    f.revision = (f.revision ?? 1) + 1;
-    f.sizeBytes = replacement.size;
-    f.status = 'pending';
-    f.url = URL.createObjectURL(replacement);
-    return HttpResponse.json(f);
+  http.get('/api/files/:id/links', async ({ params }) => {
+    const links = db.fileLinks[String(params.id)];
+    if (!links) return new HttpResponse(null, { status: 404 });
+    return HttpResponse.json({
+      expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+      ...links,
+    });
   }),
   http.patch('/api/files/:id', async ({ params, request }) => {
     const f = db.files.find((x) => x.id === params.id);
@@ -1429,7 +1408,6 @@ export const handlers = [
         maxDepth: mt.maxDepth,
         nodeCount: mt.nodeCount,
         position: mt.position,
-        revision: mt.revision,
         sizeBytes: mt.contentBytes,
         title: mt.title,
         type: refType(mt.kind),
@@ -1494,23 +1472,11 @@ export const handlers = [
     if (!mt) return new HttpResponse(null, { status: 404 });
     const body = (await request.json().catch(() => ({}))) as {
       title?: string;
-      expectedRevision?: number;
       chapterId?: string;
       scopeChapters?: string[];
       scopeFileNames?: string[];
     };
-    if (
-      body.title != null &&
-      body.expectedRevision != null &&
-      body.expectedRevision !== mt.revision
-    ) {
-      return HttpResponse.json(
-        { message: 'material revision is stale' },
-        { status: 409 }
-      );
-    }
     if (body.title != null) mt.title = body.title;
-    if (body.title != null) mt.revision += 1;
     // Empty-string sentinel unfiles; a real id files it; omitted leaves it.
     if (body.chapterId != null)
       mt.chapterId = body.chapterId === '' ? null : body.chapterId;
@@ -1735,6 +1701,9 @@ export const handlers = [
     const f: (typeof db.files)[number] = {
       addedAt: new Date().toISOString(),
       chapterId,
+      // Mirror the real backend: uploads start 'pending' until a worker
+      // claims the ingest job, then the client animates progress.
+      hasBytes: Boolean(uploadedFile),
       id: uid('f'),
       indexed: false,
       kind,
@@ -1743,12 +1712,12 @@ export const handlers = [
       revision: 1,
       sizeBytes:
         uploadedFile?.size ?? Math.round(200 + Math.random() * 3000) * 1024,
-      // Mirror the real backend: uploads start 'pending' until a worker
-      // claims the ingest job, then the client animates progress.
       status: 'pending',
-      url: uploadedFile ? URL.createObjectURL(uploadedFile) : undefined,
       workspaceId: String(params.id),
     };
+    if (uploadedFile) {
+      db.fileLinks[f.id] = { url: URL.createObjectURL(uploadedFile) };
+    }
     db.files.push(f);
     const ws = db.workspaces.find((w) => w.id === params.id);
     if (ws) ws.fileCount += 1;

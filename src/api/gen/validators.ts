@@ -660,7 +660,7 @@ export const ListAllFilesResponseItem = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
-  "content": zod.string().optional(),
+  "hasBytes": zod.boolean(),
   "id": zod.string(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
@@ -670,7 +670,6 @@ export const ListAllFilesResponseItem = zod.object({
   "revision": zod.int(),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
-  "url": zod.string().optional(),
   "workspaceId": zod.string()
 })
 export const ListAllFilesResponse = zod.array(ListAllFilesResponseItem)
@@ -705,7 +704,7 @@ export const GetFileResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
-  "content": zod.string().optional(),
+  "hasBytes": zod.boolean(),
   "id": zod.string(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
@@ -715,7 +714,6 @@ export const GetFileResponse = zod.object({
   "revision": zod.int(),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
-  "url": zod.string().optional(),
   "workspaceId": zod.string()
 })
 
@@ -740,7 +738,7 @@ export const UpdateFileResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
-  "content": zod.string().optional(),
+  "hasBytes": zod.boolean(),
   "id": zod.string(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
@@ -750,7 +748,6 @@ export const UpdateFileResponse = zod.object({
   "revision": zod.int(),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
-  "url": zod.string().optional(),
   "workspaceId": zod.string()
 })
 
@@ -924,6 +921,21 @@ export const CreateSourceCollaborationTokenResponse = zod.object({
 
 
 /**
+ * @summary Get presigned file reads
+ */
+export const GetFileLinksParams = zod.object({
+  "id": zod.string()
+})
+
+export const GetFileLinksResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "expiresAt": zod.iso.datetime({"offset":true}),
+  "previewUrl": zod.string().optional(),
+  "url": zod.string()
+})
+
+
+/**
  * @summary Process the latest saved source changes
  */
 export const ProcessSourceChangesParams = zod.object({
@@ -940,65 +952,14 @@ export const ProcessSourceChangesResponse = zod.object({
 
 
 /**
- * @summary Reserve a direct file replacement
- */
-export const CreateFileReplacementUploadParams = zod.object({
-  "id": zod.string()
-})
-
-
-export const createFileReplacementUploadBodySizeBytesMin = 0;
-
-
-
-export const CreateFileReplacementUploadBody = zod.object({
-  "contentType": zod.string().optional(),
-  "expectedRevision": zod.int().min(1),
-  "sizeBytes": zod.int().min(createFileReplacementUploadBodySizeBytesMin)
-})
-
-export const CreateFileReplacementUploadResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "expiresAt": zod.iso.datetime({"offset":true}),
-  "headers": zod.record(zod.string(), zod.string()),
-  "method": zod.string(),
-  "uploadId": zod.string(),
-  "url": zod.string()
-})
-
-
-/**
- * @summary Complete a direct file replacement
- */
-export const CompleteFileReplacementUploadParams = zod.object({
-  "id": zod.string(),
-  "uploadId": zod.string()
-})
-
-export const CompleteFileReplacementUploadResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "addedAt": zod.iso.datetime({"offset":true}),
-  "chapterId": zod.string().nullable(),
-  "content": zod.string().optional(),
-  "id": zod.string(),
-  "indexed": zod.boolean(),
-  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
-  "name": zod.string(),
-  "position": zod.int(),
-  "previewUrl": zod.string().optional(),
-  "revision": zod.int(),
-  "sizeBytes": zod.int(),
-  "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
-  "url": zod.string().optional(),
-  "workspaceId": zod.string()
-})
-
-
-/**
  * @summary Read source editing session
  */
 export const GetSourceSessionParams = zod.object({
   "id": zod.string()
+})
+
+export const GetSourceSessionQueryParams = zod.object({
+  "view": zod.boolean().optional().describe('Viewer read: read access only, omits indexedState and pendingEffects, and state unless checkpoint is ahead of indexedCheckpoint')
 })
 
 export const GetSourceSessionResponse = zod.object({
@@ -1684,14 +1645,12 @@ export const UpdateMaterialParams = zod.object({
   "id": zod.string()
 })
 
-
 export const updateMaterialBodyTitleMax = 120;
 
 
 
 export const UpdateMaterialBody = zod.object({
   "chapterId": zod.string().optional().describe('Chapter to file under; empty string unfiles; omit to leave unchanged'),
-  "expectedRevision": zod.int().min(1).optional().describe('Required when changing title'),
   "scopeChapters": zod.array(zod.string()).optional(),
   "scopeFileNames": zod.array(zod.string()).optional(),
   "title": zod.string().min(1).max(updateMaterialBodyTitleMax).optional()
@@ -3158,7 +3117,7 @@ export const ListWorkspaceFilesResponseItem = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
-  "content": zod.string().optional(),
+  "hasBytes": zod.boolean(),
   "id": zod.string(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
@@ -3168,7 +3127,6 @@ export const ListWorkspaceFilesResponseItem = zod.object({
   "revision": zod.int(),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
-  "url": zod.string().optional(),
   "workspaceId": zod.string()
 })
 export const ListWorkspaceFilesResponse = zod.array(ListWorkspaceFilesResponseItem)
@@ -3244,7 +3202,6 @@ export const ListMaterialsResponseItem = zod.object({
   "maxDepth": zod.int(),
   "nodeCount": zod.int(),
   "position": zod.int(),
-  "revision": zod.int(),
   "sizeBytes": zod.int(),
   "title": zod.string(),
   "type": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note'])
@@ -3411,6 +3368,7 @@ export const UploadSourceBody = zod.object({
   "captionImages": zod.boolean().optional(),
   "chapterId": zod.instanceof(File).or(zod.string()).optional(),
   "chapterName": zod.instanceof(File).or(zod.string()).optional(),
+  "estimatedCreditMicros": zod.int().optional(),
   "file": zod.instanceof(File),
   "kind": zod.instanceof(File).or(zod.string()).optional(),
   "name": zod.instanceof(File).or(zod.string()).optional(),
@@ -3421,7 +3379,7 @@ export const UploadSourceResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
-  "content": zod.string().optional(),
+  "hasBytes": zod.boolean(),
   "id": zod.string(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
@@ -3431,7 +3389,6 @@ export const UploadSourceResponse = zod.object({
   "revision": zod.int(),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
-  "url": zod.string().optional(),
   "workspaceId": zod.string()
 })
 
@@ -3539,6 +3496,8 @@ export const CreateSourceUploadParams = zod.object({
 
 export const createSourceUploadBodyChapterNameMax = 60;
 
+export const createSourceUploadBodyEstimatedCreditMicrosMin = 0;
+
 export const createSourceUploadBodyNameMax = 120;
 
 
@@ -3548,6 +3507,7 @@ export const CreateSourceUploadBody = zod.object({
   "chapterId": zod.string().optional(),
   "chapterName": zod.string().max(createSourceUploadBodyChapterNameMax).optional(),
   "contentType": zod.string().optional(),
+  "estimatedCreditMicros": zod.int().min(createSourceUploadBodyEstimatedCreditMicrosMin).optional(),
   "kind": zod.string().optional(),
   "name": zod.string().min(1).max(createSourceUploadBodyNameMax),
   "parseMode": zod.string().optional(),
@@ -3576,7 +3536,7 @@ export const CompleteSourceUploadResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
-  "content": zod.string().optional(),
+  "hasBytes": zod.boolean(),
   "id": zod.string(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
@@ -3586,7 +3546,6 @@ export const CompleteSourceUploadResponse = zod.object({
   "revision": zod.int(),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
-  "url": zod.string().optional(),
   "workspaceId": zod.string()
 })
 

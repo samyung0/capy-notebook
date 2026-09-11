@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useState } from 'react';
-import type { SourceFile } from '@/api/types';
+import type { ViewableFile } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { m } from '@/i18n';
 import { SourceTextEditor } from './SourceTextEditor';
@@ -11,7 +11,7 @@ export function SourceTextView({
   onDirtyChange,
   renderPreview,
 }: {
-  file: SourceFile;
+  file: ViewableFile;
   canEdit: boolean;
   onDirtyChange?: (dirty: boolean) => void;
   renderPreview: (url: string | undefined) => ReactNode;

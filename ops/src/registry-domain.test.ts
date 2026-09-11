@@ -5,6 +5,7 @@ import {
   cloneCatalogToDraft,
   createRegistryState,
   embeddingChanged,
+  missingRuntimeConfig,
   modelRefId,
   registryReducer,
 } from './registry-domain';
@@ -236,5 +237,41 @@ describe('registry request assembly', () => {
         'embedding-acknowledgement'
       );
     }
+  });
+});
+
+describe('missingRuntimeConfig', () => {
+  const credentials = [
+    {
+      configured: true,
+      environment: 'DEEPSEEK_API_KEY',
+      providerSlug: 'deepseek',
+    },
+    {
+      configured: false,
+      environment: 'DEEPINFRA_API_KEY',
+      providerSlug: 'deepinfra',
+    },
+  ];
+
+  it('names the capacity row and provider credential a serving row lacks', () => {
+    const row = { ...config('flash', ['chat'], []), concurrencyTotal: null };
+    expect(missingRuntimeConfig(row, credentials)).toEqual(['capacity']);
+    expect(
+      missingRuntimeConfig({ ...row, providerSlug: 'deepinfra' }, credentials)
+    ).toEqual(['capacity', 'DEEPINFRA_API_KEY credential']);
+    expect(
+      missingRuntimeConfig(config('flash', ['chat'], []), credentials)
+    ).toEqual([]);
+  });
+
+  it('ignores rows that never admit platform calls', () => {
+    const row = { ...config('flash', ['chat'], []), concurrencyTotal: null };
+    expect(
+      missingRuntimeConfig({ ...row, enabled: false }, credentials)
+    ).toEqual([]);
+    expect(
+      missingRuntimeConfig({ ...row, platformEnabled: false }, credentials)
+    ).toEqual([]);
   });
 });

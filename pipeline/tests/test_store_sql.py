@@ -2366,8 +2366,8 @@ async def test_replaced_source_rejects_a_paused_ingests_stale_writes(workspace):
         ),
     )
 
-    # Replacement B commits while the A worker is paused outside a DB
-    # transaction. This is the state FinalizeReplacementUploadSession creates.
+    # Publish B commits while the A worker is paused outside a DB
+    # transaction. This is the state PublishSourceRefresh creates.
     workspace.scalar(
         """
         UPDATE files SET revision=2, source_etag='etag-b', status='pending',
@@ -2474,7 +2474,7 @@ def test_heartbeat_cancels_replacement_job_skipped_while_locked(workspace):
             SELECT cancel_pipeline_jobs(
               COALESCE(array_agg(id), ARRAY[]::text[]),
               'superseded', 'superseded', 'source_superseded',
-              'superseded by file replacement'
+              'superseded by newer source revision'
             ) FROM candidates
             """,
             (file_id,),
@@ -2485,7 +2485,7 @@ def test_heartbeat_cancels_replacement_job_skipped_while_locked(workspace):
     with psycopg.connect(workspace.dsn) as conn:
         with (
             conn.cursor() as cur,
-            pytest.raises(RuntimeError, match="superseded by file replacement"),
+            pytest.raises(RuntimeError, match="superseded by newer source revision"),
         ):
             db.open_provider_call(
                 cur,
@@ -2827,7 +2827,7 @@ def test_pipeline_lock_order_serializes_with_file_lifecycle(
                     """
                     SELECT cancel_pipeline_jobs(
                       ARRAY[%s]::text[], 'superseded', 'superseded',
-                      'source_superseded', 'superseded by file replacement'
+                      'source_superseded', 'superseded by newer source revision'
                     )
                     """,
                     (job_id,),

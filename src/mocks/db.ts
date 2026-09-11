@@ -342,10 +342,51 @@ export const chapters: Chapter[] = [
   },
 ];
 
+/** Inline text sources for MSW: the links handler hands this back as the
+ * presigned URL, and `fetch` reads data: URLs like any other. */
+export function textUrl(body: string): string {
+  return `data:text/plain;charset=utf-8,${encodeURIComponent(body)}`;
+}
+
+/** Presigned-link stand-ins per file id, served by the mock links handler.
+ * Rows only carry `hasBytes`, like production, so a viewer that reads bytes
+ * without asking for links fails here too. */
+export const fileLinks: Record<string, { previewUrl?: string; url: string }> = {
+  f_1: {
+    url: 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf',
+  },
+  f_2: {
+    url: textUrl(
+      '# Organelles\n\n- **Nucleus** — stores DNA, controls the cell.\n- **Mitochondria** — the powerhouse; ATP via respiration.\n- **Ribosomes** — protein synthesis.\n- **Golgi apparatus** — packaging & shipping.\n\nThe cell membrane is a *phospholipid bilayer* that controls what enters and leaves.'
+    ),
+  },
+  f_3: {
+    url: textUrl(
+      'Osmosis is the diffusion of water across a semi-permeable membrane from low to high solute concentration.'
+    ),
+  },
+  f_4: {
+    url: 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf',
+  },
+  f_5: { url: 'https://picsum.photos/2000/3000' },
+  f_6: {
+    url: 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf',
+  },
+  f_7: {
+    url: textUrl(
+      '# Taylor series\n\nA function f(x) near a point a:\n\nf(x) = Σ fⁿ(a)/n! · (x − a)ⁿ'
+    ),
+  },
+  f_8: {
+    url: 'https://essentials.pixfort.com/original/wp-content/uploads/sites/4/2020/02/skanews.wav',
+  },
+};
+
 export const files: SourceFile[] = [
   {
     addedAt: days(20),
     chapterId: 'ch_1',
+    hasBytes: true,
     id: 'f_1',
     indexed: true,
     kind: 'pdf',
@@ -353,14 +394,12 @@ export const files: SourceFile[] = [
     position: 0,
     revision: 1,
     sizeBytes: 2480 * 1024,
-    url: 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf',
     workspaceId: 'ws_bio',
   },
   {
     addedAt: days(19),
     chapterId: 'ch_1',
-    content:
-      '# Organelles\n\n- **Nucleus** — stores DNA, controls the cell.\n- **Mitochondria** — the powerhouse; ATP via respiration.\n- **Ribosomes** — protein synthesis.\n- **Golgi apparatus** — packaging & shipping.\n\nThe cell membrane is a *phospholipid bilayer* that controls what enters and leaves.',
+    hasBytes: true,
     id: 'f_2',
     indexed: true,
     kind: 'md',
@@ -373,8 +412,7 @@ export const files: SourceFile[] = [
   {
     addedAt: days(18),
     chapterId: 'ch_2',
-    content:
-      'Osmosis is the diffusion of water across a semi-permeable membrane from low to high solute concentration.',
+    hasBytes: true,
     id: 'f_3',
     indexed: true,
     kind: 'txt',
@@ -387,6 +425,7 @@ export const files: SourceFile[] = [
   {
     addedAt: days(15),
     chapterId: 'ch_3',
+    hasBytes: true,
     id: 'f_4',
     indexed: true,
     kind: 'pdf',
@@ -394,12 +433,12 @@ export const files: SourceFile[] = [
     position: 0,
     revision: 1,
     sizeBytes: 1890 * 1024,
-    url: 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf',
     workspaceId: 'ws_bio',
   },
   {
     addedAt: days(14),
     chapterId: null,
+    hasBytes: true,
     id: 'f_5',
     indexed: true,
     kind: 'image',
@@ -407,12 +446,12 @@ export const files: SourceFile[] = [
     position: 0,
     revision: 1,
     sizeBytes: 420 * 1024,
-    url: 'https://picsum.photos/2000/3000',
     workspaceId: 'ws_bio',
   },
   {
     addedAt: days(10),
     chapterId: 'ch_c1',
+    hasBytes: true,
     id: 'f_6',
     indexed: true,
     kind: 'pdf',
@@ -420,14 +459,12 @@ export const files: SourceFile[] = [
     position: 0,
     revision: 1,
     sizeBytes: 980 * 1024,
-    url: 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf',
     workspaceId: 'ws_calc',
   },
   {
     addedAt: days(9),
     chapterId: 'ch_c2',
-    content:
-      '# Taylor series\n\nA function f(x) near a point a:\n\nf(x) = Σ fⁿ(a)/n! · (x − a)ⁿ',
+    hasBytes: true,
     id: 'f_7',
     indexed: true,
     kind: 'md',
@@ -440,6 +477,7 @@ export const files: SourceFile[] = [
   {
     addedAt: days(14),
     chapterId: null,
+    hasBytes: true,
     id: 'f_8',
     indexed: false,
     kind: 'audio',
@@ -447,7 +485,6 @@ export const files: SourceFile[] = [
     position: 1,
     revision: 1,
     sizeBytes: 10_000 * 1024,
-    url: 'https://essentials.pixfort.com/original/wp-content/uploads/sites/4/2020/02/skanews.wav',
     workspaceId: 'ws_bio',
   },
 ];

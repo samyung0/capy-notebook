@@ -925,29 +925,22 @@ func (s *Store) DeleteChapter(ctx context.Context, actorID, id string) error {
 	return tx.Commit(ctx)
 }
 
-const fileCols = `id, workspace_id, chapter_id, position, name, kind, size_bytes, added_at, status, indexed, url,
+// previewUrl is a presence marker shaped like the historical route; the
+// fetchable URL comes from the links endpoint.
+const fileCols = `id, workspace_id, chapter_id, position, name, kind, size_bytes, added_at, status, indexed, COALESCE(blob_path, '') <> '',
 	CASE WHEN status='ready' AND ((kind='pdf' AND blob_path IS NOT NULL) OR preview_blob_path IS NOT NULL)
 		THEN '/api/files/' || id || '/preview' END,
-	content, revision`
+	revision`
 
-// fileListCols mirrors fileCols without `content`. A source body is unbounded,
-// so listing it once per file is the expensive part of this query — and the
-// list is polled. Single-file reads use fileCols and still carry the body.
-const fileListCols = `f.id, f.workspace_id, f.chapter_id, f.position, f.name, f.kind, f.size_bytes, f.added_at, f.status, f.indexed, f.url,
+// fileListCols is fileCols qualified for joins.
+const fileListCols = `f.id, f.workspace_id, f.chapter_id, f.position, f.name, f.kind, f.size_bytes, f.added_at, f.status, f.indexed, COALESCE(f.blob_path, '') <> '',
 	CASE WHEN f.status='ready' AND ((f.kind='pdf' AND f.blob_path IS NOT NULL) OR f.preview_blob_path IS NOT NULL)
 		THEN '/api/files/' || f.id || '/preview' END,
 	f.revision`
 
 func scanFile(row pgx.Row) (File, error) {
 	var f File
-	err := row.Scan(&f.ID, &f.WorkspaceID, &f.ChapterID, &f.Position, &f.Name, &f.Kind, &f.SizeBytes, &f.AddedAt, &f.Status, &f.Indexed, &f.URL, &f.PreviewURL, &f.Content, &f.Revision)
-	return f, err
-}
-
-// scanFileListRow scans a fileListCols row; Content stays nil.
-func scanFileListRow(row pgx.Row) (File, error) {
-	var f File
-	err := row.Scan(&f.ID, &f.WorkspaceID, &f.ChapterID, &f.Position, &f.Name, &f.Kind, &f.SizeBytes, &f.AddedAt, &f.Status, &f.Indexed, &f.URL, &f.PreviewURL, &f.Revision)
+	err := row.Scan(&f.ID, &f.WorkspaceID, &f.ChapterID, &f.Position, &f.Name, &f.Kind, &f.SizeBytes, &f.AddedAt, &f.Status, &f.Indexed, &f.HasBytes, &f.PreviewURL, &f.Revision)
 	return f, err
 }
 
@@ -969,7 +962,7 @@ func (s *Store) ListFiles(ctx context.Context, userID, wsID string) ([]File, err
 	defer rows.Close()
 	out := []File{}
 	for rows.Next() {
-		f, err := scanFileListRow(rows)
+		f, err := scanFile(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -1427,15 +1420,14 @@ func (s *Store) GetMaterial(ctx context.Context, id string) (Material, error) {
 // written. Used for user-authored notes (title/content/scope edits) and filing
 // a material under a chapter.
 type MaterialPatch struct {
-	Title            *string
-	Color            *UserColor
-	Content          *string
-	ChapterID        **string // double pointer: nil = leave, &nil = unfile, &&v = set
-	ScopeChapters    *[]string
-	ScopeFileNames   *[]string
-	Privacy          *Privacy
-	ExpectedRevision *int64
-	UpdatedBy        string
+	Title          *string
+	Color          *UserColor
+	Content        *string
+	ChapterID      **string // double pointer: nil = leave, &nil = unfile, &&v = set
+	ScopeChapters  *[]string
+	ScopeFileNames *[]string
+	Privacy        *Privacy
+	UpdatedBy      string
 }
 
 func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) (Material, error) {
@@ -1560,21 +1552,21 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 	if len(sets) == 0 {
 		return s.GetMaterial(ctx, id)
 	}
+	// Revision counts content versions only; a title rename is last write
+	// wins, like a file rename.
 	if p.Content != nil || p.Title != nil {
-		sets = append(sets, "revision=revision+1")
 		add("updated_at", time.Now().UTC())
 		if p.UpdatedBy != "" {
 			add("updated_by", p.UpdatedBy)
 		}
 	}
+	if p.Content != nil {
+		sets = append(sets, "revision=revision+1")
+	}
 	args = append(args, id)
 	where := fmt.Sprintf(" WHERE id=$%d AND trashed_at IS NULL", i)
-	effectiveExpectedRevision := p.ExpectedRevision
-	if effectiveExpectedRevision == nil && p.Content != nil {
-		effectiveExpectedRevision = &contentBaseRevision
-	}
-	if effectiveExpectedRevision != nil {
-		args = append(args, *effectiveExpectedRevision)
+	if p.Content != nil {
+		args = append(args, contentBaseRevision)
 		where += fmt.Sprintf(" AND revision=$%d", i+1)
 	}
 	tx, err := s.pool.Begin(ctx)
@@ -1648,7 +1640,7 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 	if ct.RowsAffected() == 0 {
 		var exists bool
 		_ = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM materials WHERE id=$1 AND trashed_at IS NULL)`, id).Scan(&exists)
-		if exists && effectiveExpectedRevision != nil {
+		if exists && p.Content != nil {
 			return Material{}, ErrConflict
 		}
 		return Material{}, ErrNotFound
@@ -1698,7 +1690,7 @@ func (s *Store) MaterialIDsOwnedByUser(ctx context.Context, userID string) ([]st
 // Plate materials, newest first.
 func (s *Store) ListMaterialRefs(ctx context.Context, wsID string) ([]MaterialRef, error) {
 	out := []MaterialRef{}
-	rows, err := s.pool.Query(ctx, `SELECT id, kind, title, chapter_id, position, created_at, revision, size_bytes, node_count, max_depth
+	rows, err := s.pool.Query(ctx, `SELECT id, kind, title, chapter_id, position, created_at, size_bytes, node_count, max_depth
 		FROM materials WHERE workspace_id=$1 AND trashed_at IS NULL ORDER BY position, created_at DESC`, wsID)
 	if err != nil {
 		return nil, err
@@ -1714,7 +1706,6 @@ func (s *Store) ListMaterialRefs(ctx context.Context, wsID string) ([]MaterialRe
 			&r.ChapterID,
 			&r.Position,
 			&r.CreatedAt,
-			&r.Revision,
 			&r.SizeBytes,
 			&r.NodeCount,
 			&r.MaxDepth,

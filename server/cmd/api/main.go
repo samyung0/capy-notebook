@@ -155,6 +155,7 @@ func openBlobStore(appEnv string) (blob.Store, error) {
 			AppKey:       env("B2_APP_KEY", ""),
 			UsePathStyle: envBool("B2_FORCE_PATH_STYLE"),
 			PresignTTL:   time.Duration(envInt("B2_PRESIGN_TTL", 900)) * time.Second,
+			LinkTTL:      time.Duration(envInt("B2_LINK_TTL", 300)) * time.Second,
 		})
 		if err != nil {
 			return nil, err

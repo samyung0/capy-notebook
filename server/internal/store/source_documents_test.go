@@ -6,7 +6,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/models"
 )
@@ -430,34 +429,5 @@ func TestSourceExportLeaseExhaustionPreservesEdits(t *testing.T) {
 	}
 	if retry, err := s.RequestSourceRefresh(ctx, owner, doc.FileID, false); err != nil || retry.JobID == job.JobID {
 		t.Fatalf("manual retry: %+v %v", retry, err)
-	}
-}
-
-func TestSourceRoomResetsOnlyAfterReplacementCommit(t *testing.T) {
-	s := openAccessTestStore(t)
-	ctx := context.Background()
-	owner := newBlobTestUser(t, s, "source_replace_room")
-	_, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
-	doc := sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "saved-edit")
-	upload, err := s.CreateReplacementUploadSession(ctx, NewReplacementUploadSession{ID: uid("up"), FileID: file.ID, CreatedBy: owner, ObjectPath: "incoming/" + uid("up"), FinalPath: "sources/" + uid("replace"), ContentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", DeclaredSize: 100, ExpectedRevision: 1, ExpiresAt: time.Now().Add(time.Hour)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	before, err := s.SourceSession(ctx, owner, file.ID)
-	if err != nil || string(before.State) != "saved-edit" || before.Epoch != doc.Epoch {
-		t.Fatalf("reservation changed source: %+v %v", before, err)
-	}
-	if _, err = s.FinalizeReplacementUploadSession(ctx, upload.ID, "replacement-etag", ""); err != nil {
-		t.Fatal(err)
-	}
-	after, err := s.SourceSession(ctx, owner, file.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if after.Epoch != doc.Epoch+1 || after.BaseRevision != 2 || len(after.State) != 0 || after.Checkpoint != 0 || after.BaseBlobPath != upload.FinalPath {
-		t.Fatalf("replacement retained old room: %+v", after)
-	}
-	if _, err = s.SaveSourceCheckpoint(ctx, file.ID, SourceCheckpoint{ActorIDs: []string{owner}, Epoch: doc.Epoch, ExpectedCheckpoint: doc.Checkpoint, State: []byte("late"), PendingEffects: json.RawMessage(`[]`)}); !errors.Is(err, ErrConflict) {
-		t.Fatalf("old room replay: %v", err)
 	}
 }

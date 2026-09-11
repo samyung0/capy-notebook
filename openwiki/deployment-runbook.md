@@ -686,8 +686,10 @@ Pick one:
 2. Create an application key **scoped to that bucket only**, with
    `listBuckets`, `listFiles`, `readFiles`, `writeFiles`, `deleteFiles`.
    Record `B2_KEY_ID` / `B2_APP_KEY` — the secret is shown once.
-3. Set `B2_ENDPOINT`, `B2_REGION`, `B2_BUCKET`, and `B2_PRESIGN_TTL` (default
-   900 s).
+3. Set `B2_ENDPOINT`, `B2_REGION`, `B2_BUCKET`, `B2_PRESIGN_TTL` (default
+   900 s: upload PUT lifetime and the reservation deadline completion checks,
+   so it must cover a slow full-size upload) and `B2_LINK_TTL` (default 300 s:
+   read links, which the browser fetches as soon as they land).
 4. **CORS rules on the bucket.** The browser uploads directly to B2 via
    presigned PUT (`VITE_DIRECT_B2_UPLOAD`, on by default in every deployed
    build), so B2 itself must allow the SPA origin. Apply the file for the
@@ -1117,7 +1119,9 @@ to prevent a repair loop.
    applied; the grants name tables and fail when the schema is absent. Re-running
    is safe and resets both passwords to the supplied values. Column grants do not
    extend to columns added later, so re-run it after a migration that adds a
-   table or column ops reads.
+   table or column ops reads. The ops boot probe skips a forbidden column that a
+   migration has since dropped, so an older ops build still starts; do not roll
+   ops back past a release that dropped a column it names.
 
    Ops validates the eight `plan_limits` column grants before it loads the
    startup catalog. A missing grant therefore fails as a role-contract error,

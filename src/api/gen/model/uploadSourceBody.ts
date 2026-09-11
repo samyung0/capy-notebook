@@ -10,6 +10,7 @@ export type UploadSourceBody = {
   chapterId?: Blob | string;
   /** @maxLength 60 */
   chapterName?: Blob | string;
+  estimatedCreditMicros?: number;
   file: Blob;
   kind?: Blob | string;
   /** @maxLength 120 */

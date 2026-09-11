@@ -114,16 +114,14 @@ type File struct {
 	// Indexed is true after ingest has written retrieval chunks. Ready files
 	// stored without parsing stay false: they are viewable but invisible to
 	// chat and generate.
-	Indexed bool    `json:"indexed"`
-	URL     *string `json:"url,omitempty"`
+	Indexed bool `json:"indexed"`
+	// HasBytes says a source object exists. Bytes are read through the links
+	// endpoint's presigned URLs; the row never carries a fetchable URL.
+	HasBytes bool `json:"hasBytes"`
 	// PreviewURL renders the exact paginated bytes used for citation regions.
 	// It is absent until ingest has finished.
 	PreviewURL *string `json:"previewUrl,omitempty"`
-	// Content is the inline body for text-ish sources. Single-file reads carry
-	// it; list endpoints omit it (see fileListCols), so read it from GET
-	// /files/{id} rather than from a list row.
-	Content  *string `json:"content,omitempty"`
-	Revision int64   `json:"revision"`
+	Revision   int64   `json:"revision"`
 }
 
 type Quiz struct {
@@ -341,9 +339,6 @@ type MaterialRef struct {
 	ChapterID *string         `json:"chapterId"`
 	Position  int64           `json:"position"`
 	CreatedAt time.Time       `json:"createdAt"`
-	// Revision is required when renaming from the list so title updates can
-	// satisfy the material expectedRevision precondition.
-	Revision int64 `json:"revision"`
 	// SizeBytes lets the client decide how to open a document before paying to
 	// fetch it. Maintained by the materials trigger as octet_length(content).
 	SizeBytes int64 `json:"sizeBytes"`

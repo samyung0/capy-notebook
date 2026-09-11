@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { sourceUploadPolicy } from '@/mocks/sourceUploadPolicy';
 import {
   aggregateSourceAnalysis,
+  initialAnalysisStatus,
   remoteSourceAnalysisInput,
   sourceAnalysisBlocksSubmit,
   validateLocalSourceSelection,
@@ -68,7 +69,8 @@ describe('unified source details', () => {
       },
       'google',
       { Authorization: 'Bearer test', 'X-Trace-ID': 'trace_1' },
-      'inspection_1'
+      'inspection_1',
+      sourceUploadPolicy
     );
 
     expect(input).toMatchObject({
@@ -95,7 +97,8 @@ describe('unified source details', () => {
       },
       'microsoft',
       {},
-      'inspection_1'
+      'inspection_1',
+      sourceUploadPolicy
     );
 
     expect(input).toBeUndefined();
@@ -111,7 +114,8 @@ describe('unified source details', () => {
       },
       'google',
       {},
-      'inspection_1'
+      'inspection_1',
+      sourceUploadPolicy
     );
     if (!analysisInput) throw new Error('Expected PDF analysis input');
     const base = {
@@ -133,19 +137,26 @@ describe('unified source details', () => {
     expect(sourceAnalysisBlocksSubmit(base, sourceUploadPolicy)).toBe(false);
     expect(
       sourceAnalysisBlocksSubmit(
-        { ...base, analysisInput: undefined },
-        sourceUploadPolicy
-      )
-    ).toBe(true);
-    expect(
-      sourceAnalysisBlocksSubmit(
-        { ...base, analysisResult: undefined },
+        { ...base, analysisStatus: 'queued' },
         sourceUploadPolicy
       )
     ).toBe(true);
     expect(
       sourceAnalysisBlocksSubmit(
         { ...base, analysisStatus: 'analyzing' },
+        sourceUploadPolicy
+      )
+    ).toBe(true);
+    // A failed analysis holds submit until the source is removed.
+    expect(
+      sourceAnalysisBlocksSubmit(
+        { ...base, analysisResult: undefined, analysisStatus: 'error' },
+        sourceUploadPolicy
+      )
+    ).toBe(true);
+    expect(
+      sourceAnalysisBlocksSubmit(
+        { ...base, analysisInput: undefined },
         sourceUploadPolicy
       )
     ).toBe(true);
@@ -165,22 +176,36 @@ describe('unified source details', () => {
       item,
       'google',
       {},
-      'inspection_1'
+      'inspection_1',
+      sourceUploadPolicy
     );
     const sameRow = remoteSourceAnalysisInput(
       item,
       'google',
       {},
-      'inspection_1'
+      'inspection_1',
+      sourceUploadPolicy
     );
     const newSelection = remoteSourceAnalysisInput(
       item,
       'google',
       {},
-      'inspection_2'
+      'inspection_2',
+      sourceUploadPolicy
     );
 
     expect(sameRow?.key).toBe(firstSelection?.key);
     expect(newSelection?.key).not.toBe(firstSelection?.key);
+  });
+});
+
+describe('initialAnalysisStatus', () => {
+  it('flags a fast-parsed source the browser cannot estimate right away', () => {
+    expect(
+      initialAnalysisStatus('notes.pdf', undefined, sourceUploadPolicy)
+    ).toBe('error');
+    expect(
+      initialAnalysisStatus('notes.txt', undefined, sourceUploadPolicy)
+    ).toBe('idle');
   });
 });

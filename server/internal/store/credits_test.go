@@ -1013,3 +1013,21 @@ func TestCreateSourceWithJobWithoutRegistryLeavesNoLease(t *testing.T) {
 		t.Fatalf("rolled-back enqueue left a lease: %#v", slots)
 	}
 }
+
+func TestEstimateExceedsHeadroom(t *testing.T) {
+	usage := CreditUsage{UsedMicros: 900, ReservedMicros: 100, LimitMicros: 1000}
+	cases := []struct {
+		estimate int64
+		want     bool
+	}{
+		{0, false},                        // store-only or unknown: no estimate, no refusal
+		{300, false},                      // lands exactly on the 30% headroom
+		{301, true},                       // one past it
+		{9_223_372_036_854_775_000, true}, // absurd: refused before overflow
+	}
+	for _, tc := range cases {
+		if got := estimateExceedsHeadroom(usage, tc.estimate); got != tc.want {
+			t.Errorf("estimate %d over headroom = %v, want %v", tc.estimate, got, tc.want)
+		}
+	}
+}

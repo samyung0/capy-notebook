@@ -5,12 +5,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface CreateFileReplacementUploadReq {
+export interface FileLinks {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  contentType?: string;
-  /** @minimum 1 */
-  expectedRevision: number;
-  /** @minimum 0 */
-  sizeBytes: number;
+  expiresAt: string;
+  previewUrl?: string;
+  url: string;
 }

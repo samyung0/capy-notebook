@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
@@ -93,12 +94,14 @@ type api struct {
 	modelReg           *models.Registry
 	stripeSubscription func(string) (*stripe.Subscription, error)
 	stripeEntitlements func(string) ([]*stripe.Subscription, error)
-	notifMu            sync.Mutex
-	notifByUser        map[string]int
-	notifTotal         int
+	streamMu           sync.Mutex
+	streamByUser       map[string]int
+	streamTotal        int
 	// broker fans the ingest and notification channels out from one Redis
-	// subscription; see fanout.go.
-	broker *channelBroker
+	// subscription, and the workspace tree channel from one Postgres LISTEN
+	// (treeLive says whether that LISTEN is attached); see fanout.go.
+	broker   *channelBroker
+	treeLive atomic.Bool
 }
 
 // New builds the full HTTP handler. huma owns every JSON operation (and the
@@ -122,10 +125,11 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		modelReg:           cfg.ModelRegistry,
 		stripeSubscription: billing.RetrieveSubscription,
 		stripeEntitlements: billing.ListEntitlingSubscriptions,
-		notifByUser:        make(map[string]int),
+		streamByUser:       make(map[string]int),
 	}
 	if rdb != nil {
 		a.broker = newChannelBroker(rdb, "ingest:*", "notif:*")
+		go a.listenWorkspaceTree(context.Background())
 	}
 	r := chi.NewRouter()
 	// Trace first so the recovery handler and every log line below it can name
@@ -185,7 +189,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	r.Get("/healthz", healthHandler(cfg.ReleaseSHA))
 	r.Post("/webhooks/clerk", a.clerkWebhook)
 	r.Post("/webhooks/stripe", a.stripeWebhook)
-	r.Get("/api/notifications/stream", a.notificationEvents)
+	r.Get("/api/stream", a.stream)
 	r.Get("/api/email/unsubscribe", a.emailUnsubscribe)
 	r.Post("/api/email/unsubscribe", a.emailUnsubscribe)
 	if cfg.E2EAuth && a.mailRecorder != nil {
@@ -193,7 +197,6 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	}
 	r.Post("/api/workspaces/{id}/editor-assets/uploads", a.reserveEditorAsset)
 	r.Post("/api/workspaces/{id}/editor-assets/uploads/{uploadId}/complete", a.completeEditorAssetUpload)
-	r.Get("/api/workspaces/{id}/ingest-events", a.ingestEvents)
 	r.Get("/api/editor-assets/{assetId}/resolve", a.resolveEditorAsset)
 	r.Post("/api/workspaces/{id}/chat/stream", a.chatStream)
 	r.Post("/api/workspaces/{id}/ai/command", a.aiCommand)
@@ -215,8 +218,6 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		r.Post("/api/internal/import/complete", a.internalCompleteSourceImport)
 		r.Post("/api/internal/import/fail", a.internalFailSourceImport)
 	}
-	r.Get("/api/files/{id}/raw", a.getFileRaw)
-	r.Get("/api/files/{id}/preview", a.getFilePreview)
 	r.Get("/api/workspaces/{id}/sources/import-content", a.getSourceImportContent)
 
 	return r
@@ -512,72 +513,6 @@ func (a *api) assertWSRead(w http.ResponseWriter, r *http.Request, wsID string) 
 
 /* ------------------------------------------------------ raw source handlers */
 
-func (a *api) getFileRaw(w http.ResponseWriter, r *http.Request) {
-	// Owners plus link/public viewers (shared workspaces expose their sources).
-	if _, err := a.fileRead(r.Context(), id(r)); err != nil {
-		a.fail(w, err)
-		return
-	}
-	blobPath, kind, content, url, err := a.s.FileBlob(r.Context(), id(r))
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	switch {
-	case blobPath != "" && a.blob != nil:
-		// B2 redirects to a short-lived presigned URL so bytes never proxy
-		// through the gateway.
-		signed, err := a.blob.PresignGet(r.Context(), blobPath)
-		if err != nil {
-			a.fail(w, err)
-			return
-		}
-		http.Redirect(w, r, signed, http.StatusFound)
-	case content != nil:
-		w.Header().Set("Content-Type", contentType(kind))
-		_, _ = w.Write([]byte(*content))
-	case url != nil && *url != "" && !strings.HasPrefix(*url, "/api/"):
-		http.Redirect(w, r, *url, http.StatusFound)
-	default:
-		writeJSON(w, http.StatusNotFound, map[string]string{"message": "no content"})
-	}
-}
-
-func (a *api) getFilePreview(w http.ResponseWriter, r *http.Request) {
-	// Preview visibility follows the source file. Private workspace existence is
-	// still hidden behind fileRead's not-found response.
-	if _, err := a.fileRead(r.Context(), id(r)); err != nil {
-		a.fail(w, err)
-		return
-	}
-	path, err := a.s.FilePreviewBlob(r.Context(), id(r))
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	if a.blob == nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"message": "no preview"})
-		return
-	}
-	signed, err := a.blob.PresignGet(r.Context(), path)
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	http.Redirect(w, r, signed, http.StatusFound)
-}
-
 func kindFromName(name string) string {
 	return sourceupload.KindFromName(name)
-}
-
-func contentType(kind string) string {
-	switch kind {
-	case "pdf":
-		return "application/pdf"
-	case "md", "txt", "doc":
-		return "text/plain; charset=utf-8"
-	default:
-		return "application/octet-stream"
-	}
 }

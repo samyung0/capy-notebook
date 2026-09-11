@@ -13,6 +13,7 @@ its own.
 from __future__ import annotations
 
 import contextvars
+import dataclasses
 import json
 import logging
 import os
@@ -372,6 +373,9 @@ class ParseUsage:
             self.pages > 0 or self.cpu_milliseconds > 0 or self.elapsed_milliseconds > 0
         )
 
+    def reset(self) -> None:
+        self.__dict__.update(ParseUsage().__dict__)
+
 
 _parse_usage: contextvars.ContextVar[ParseUsage | None] = contextvars.ContextVar(
     "parse_usage", default=None
@@ -405,44 +409,54 @@ def record_parse_usage(
     source_format: str = "",
     receipt_id: str = "",
 ) -> None:
+    """Add one measurement to the attempt's accumulator, in place.
+
+    The parser client runs inside ``asyncio.to_thread``, which copies the
+    context. Mutating the shared object is what lets the coroutine's billing
+    transaction see work measured in that thread; rebinding the variable there
+    would only update the copy.
+    """
     pages = max(0, int(pages))
     ocr_pages = min(pages, max(0, int(ocr_pages)))
-    current = _parse_usage.get() or ParseUsage()
-    _parse_usage.set(
-        ParseUsage(
-            pages=current.pages + pages,
-            ocr_pages=current.ocr_pages + ocr_pages,
-            cpu_milliseconds=current.cpu_milliseconds + max(0, int(cpu_milliseconds)),
-            elapsed_milliseconds=current.elapsed_milliseconds
-            + max(0, int(elapsed_milliseconds)),
-            queue_milliseconds=current.queue_milliseconds
-            + max(0, int(queue_milliseconds)),
-            execution_milliseconds=current.execution_milliseconds
-            + max(0, int(execution_milliseconds)),
-            slices=current.slices + max(0, int(slices)),
-            download_milliseconds=current.download_milliseconds
-            + max(0, int(download_milliseconds)),
-            upload_milliseconds=current.upload_milliseconds
-            + max(0, int(upload_milliseconds)),
-            worker_rss_bytes=max(
-                current.worker_rss_bytes, max(0, int(worker_rss_bytes))
-            ),
-            worker_pss_bytes=max(
-                current.worker_pss_bytes, max(0, int(worker_pss_bytes))
-            ),
-            io_read_bytes=current.io_read_bytes + max(0, int(io_read_bytes)),
-            io_write_bytes=current.io_write_bytes + max(0, int(io_write_bytes)),
-            method=method or current.method,
-            source_format=source_format or current.source_format,
-            receipt_id=receipt_id or current.receipt_id,
-        )
+    current = _parse_usage.get()
+    if current is None:
+        # Binding one here from a worker thread would land in the thread's
+        # context copy and bill nothing: the caller forgot start_usage().
+        raise RuntimeError("parse usage recorded outside an attempt")
+    current.pages += pages
+    current.ocr_pages += ocr_pages
+    current.cpu_milliseconds += max(0, int(cpu_milliseconds))
+    current.elapsed_milliseconds += max(0, int(elapsed_milliseconds))
+    current.queue_milliseconds += max(0, int(queue_milliseconds))
+    current.execution_milliseconds += max(0, int(execution_milliseconds))
+    current.slices += max(0, int(slices))
+    current.download_milliseconds += max(0, int(download_milliseconds))
+    current.upload_milliseconds += max(0, int(upload_milliseconds))
+    current.worker_rss_bytes = max(
+        current.worker_rss_bytes, max(0, int(worker_rss_bytes))
     )
+    current.worker_pss_bytes = max(
+        current.worker_pss_bytes, max(0, int(worker_pss_bytes))
+    )
+    current.io_read_bytes += max(0, int(io_read_bytes))
+    current.io_write_bytes += max(0, int(io_write_bytes))
+    current.method = method or current.method
+    current.source_format = source_format or current.source_format
+    current.receipt_id = receipt_id or current.receipt_id
+
+
+def restore_parse_usage(usage: ParseUsage) -> None:
+    """Hand a taken measurement back after its billing transaction failed."""
+    record_parse_usage(**usage.__dict__)
 
 
 def take_parse_usage() -> ParseUsage:
     """Read and reset parse work, so one attempt cannot be charged twice."""
-    value = _parse_usage.get() or ParseUsage()
-    _parse_usage.set(ParseUsage())
+    current = _parse_usage.get()
+    if current is None:
+        return ParseUsage()
+    value = dataclasses.replace(current)
+    current.reset()
     return value
 
 

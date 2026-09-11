@@ -243,7 +243,7 @@ describe('site routing and isolation', () => {
       Response.redirect('https://files.example.test/signed', 302)
     );
     const redirected = await handleSiteRequest(
-      request('/api/files/f_1/raw'),
+      request('/api/legacy-redirect'),
       env,
       fetcher
     );

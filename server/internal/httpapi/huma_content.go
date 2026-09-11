@@ -67,6 +67,7 @@ func (a *api) registerContent(api huma.API) {
 	reg(api, http.MethodGet, "/api/files", "listAllFiles", tag, "List all files", http.StatusOK, a.listAllFiles)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/files", "listWorkspaceFiles", tag, "List workspace files", http.StatusOK, a.listWorkspaceFiles)
 	reg(api, http.MethodGet, "/api/files/{id}", "getFile", tag, "Get a file", http.StatusOK, a.getFile)
+	reg(api, http.MethodGet, "/api/files/{id}/links", "getFileLinks", tag, "Get presigned file reads", http.StatusOK, a.getFileLinks)
 	reg(api, http.MethodPatch, "/api/files/{id}", "updateFile", tag, "Update a file", http.StatusOK, a.updateFile)
 	reg(api, http.MethodDelete, "/api/files/{id}", "deleteFile", tag, "Move a file to the trash", http.StatusNoContent, a.deleteFile)
 }
@@ -174,6 +175,42 @@ func (a *api) getFile(ctx context.Context, in *fileIDInput) (*fileOutput, error)
 		return nil, hErr(err)
 	}
 	return &fileOutput{Body: res}, nil
+}
+
+type fileLinksOutput struct {
+	Body apimodel.FileLinks
+}
+
+// getFileLinks presigns the source and citation-preview objects. Owners plus
+// link/public viewers, like every other file read. Bytes never proxy through
+// the gateway.
+func (a *api) getFileLinks(ctx context.Context, in *fileIDInput) (*fileLinksOutput, error) {
+	if _, err := a.fileRead(ctx, in.ID); err != nil {
+		return nil, hErr(err)
+	}
+	if a.blob == nil {
+		return nil, huma.Error503ServiceUnavailable("blob store not configured")
+	}
+	source, preview, err := a.s.FileBlobPaths(ctx, in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	if source == "" {
+		return nil, huma.Error404NotFound("no content")
+	}
+	signed, err := a.blob.PresignGetWithExpiry(ctx, source)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	out := apimodel.FileLinks{URL: signed.URL, ExpiresAt: signed.ExpiresAt}
+	if preview != "" {
+		signedPreview, err := a.blob.PresignGetWithExpiry(ctx, preview)
+		if err != nil {
+			return nil, hErr(err)
+		}
+		out.PreviewURL = &signedPreview.URL
+	}
+	return &fileLinksOutput{Body: out}, nil
 }
 
 func (a *api) updateFile(ctx context.Context, in *updateFileInput) (*fileOutput, error) {

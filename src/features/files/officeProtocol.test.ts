@@ -118,15 +118,15 @@ describe('office host protocol', () => {
 });
 
 describe('office save fencing', () => {
-  const fileA = { id: 'file-a', url: '/api/files/file-a/content' };
-  const fileB = { id: 'file-b', url: '/api/files/file-b/content' };
+  const fileA = { id: 'file-a' };
+  const fileB = { id: 'file-b' };
 
-  it('keeps the editor mounted across metadata and content URL refetches', () => {
+  it('keeps the editor mounted across metadata and link refetches', () => {
     expect(officeRuntimeKey(fileA, 1)).not.toBe(officeRuntimeKey(fileB, 1));
     expect(officeRuntimeKey(fileA, 1)).toBe(officeRuntimeKey(fileA, 2));
-    expect(officeRuntimeKey(fileA, 1)).toBe(
-      officeRuntimeKey({ ...fileA, url: `${fileA.url}?v=2` }, 1)
-    );
+    // A refreshed presigned URL must not remount the runtime.
+    const relinked = { ...fileA, url: 'https://blob.test/file-a?sig=2' };
+    expect(officeRuntimeKey(relinked, 1)).toBe(officeRuntimeKey(fileA, 1));
   });
 
   it.each(['ready', 'mode', 'dirty', 'error', 'save'])(

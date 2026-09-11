@@ -430,6 +430,28 @@ export function assembleRegistryRequest(
   };
 }
 
+/** Runtime config an enabled platform model needs before its calls admit:
+ * a capacity row (missing capacity fails admission) and the provider key in
+ * the environment. Returns the missing items, empty when the row is serving. */
+export function missingRuntimeConfig(
+  config: Pick<
+    CatalogConfig,
+    'concurrencyTotal' | 'enabled' | 'platformEnabled' | 'providerSlug'
+  >,
+  credentials: Registry['providerCredentials']
+): string[] {
+  if (!(config.enabled && config.platformEnabled)) return [];
+  const missing: string[] = [];
+  if (config.concurrencyTotal == null) missing.push('capacity');
+  const credential = credentials.find(
+    (item) => item.providerSlug === config.providerSlug
+  );
+  if (credential && !credential.configured) {
+    missing.push(`${credential.environment} credential`);
+  }
+  return missing;
+}
+
 export function canMutateRegistry(permissions: readonly string[]): boolean {
   return permissions.includes('write_registry');
 }

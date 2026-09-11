@@ -19,7 +19,13 @@ import (
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
-const defaultPresignTTL = 15 * time.Minute
+// PresignTTL bounds an upload: the PUT and the reservation deadline that
+// completion is checked against, so it must cover a slow full-size upload.
+// LinkTTL bounds a read link, which the browser fetches as soon as it lands.
+const (
+	defaultPresignTTL = 15 * time.Minute
+	defaultLinkTTL    = 5 * time.Minute
+)
 
 // B2Config contains the B2 S3 endpoint and application-key credentials.
 type B2Config struct {
@@ -30,6 +36,7 @@ type B2Config struct {
 	AppKey       string
 	UsePathStyle bool          // B2 supports virtual-hosted and path-style endpoints.
 	PresignTTL   time.Duration // 0 → defaultPresignTTL.
+	LinkTTL      time.Duration // 0 → defaultLinkTTL.
 }
 
 type B2 struct {
@@ -38,6 +45,7 @@ type B2 struct {
 	presign    *s3.PresignClient
 	bucket     string
 	presignTTL time.Duration
+	linkTTL    time.Duration
 }
 
 func NewB2(cfg B2Config) (*B2, error) {
@@ -63,6 +71,10 @@ func NewB2(cfg B2Config) (*B2, error) {
 	if ttl <= 0 {
 		ttl = defaultPresignTTL
 	}
+	linkTTL := cfg.LinkTTL
+	if linkTTL <= 0 {
+		linkTTL = defaultLinkTTL
+	}
 	client := s3.New(opts)
 	return &B2{
 		client:     client,
@@ -70,6 +82,7 @@ func NewB2(cfg B2Config) (*B2, error) {
 		presign:    s3.NewPresignClient(client),
 		bucket:     cfg.Bucket,
 		presignTTL: ttl,
+		linkTTL:    linkTTL,
 	}, nil
 }
 
@@ -110,11 +123,11 @@ func (s *B2) PresignGetWithExpiry(ctx context.Context, path string) (PresignedGe
 	req, err := s.presign.PresignGetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(path),
-	}, s3.WithPresignExpires(s.presignTTL))
+	}, s3.WithPresignExpires(s.linkTTL))
 	if err != nil {
 		return PresignedGet{}, err
 	}
-	return PresignedGet{URL: req.URL, ExpiresAt: time.Now().UTC().Add(s.presignTTL)}, nil
+	return PresignedGet{URL: req.URL, ExpiresAt: time.Now().UTC().Add(s.linkTTL)}, nil
 }
 
 func (s *B2) PresignPut(ctx context.Context, path, contentType string) (PresignedPut, error) {

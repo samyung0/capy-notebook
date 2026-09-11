@@ -54,15 +54,11 @@ INSERT INTO chapters (id, workspace_id, name, position) VALUES
   ('ch_e2e_mutate',  'ws_e2e_mutate',  'Mutate chapter',  0)
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO files (id, workspace_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, indexed, content) VALUES
-  ('f_e2e_private', 'ws_e2e_private', 'u_owner', 'ch_e2e_private', 'secret-notes.md', 'md', 1024, now(), 'ready', true,
-   '# Secret private notes\nOnly owner and editor should see this.'),
-  ('f_e2e_link', 'ws_e2e_link', 'u_owner', 'ch_e2e_link', 'shared-notes.md', 'md', 1024, now(), 'ready', true,
-   '# Shared link notes\nAnyone with the link can read this.'),
-  ('f_e2e_public', 'ws_e2e_public', 'u_owner', 'ch_e2e_public', 'public-notes.md', 'md', 1024, now(), 'ready', true,
-   '# Public notes\nDiscoverable on Explore.'),
-  ('f_e2e_edit', 'ws_e2e_edit', 'u_owner', 'ch_e2e_edit', 'editable-notes.md', 'md', 1024, now(), 'ready', true,
-   '# Editable shared notes\nMaterial content may be edited by signed-in visitors.')
+INSERT INTO files (id, workspace_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, indexed) VALUES
+  ('f_e2e_private', 'ws_e2e_private', 'u_owner', 'ch_e2e_private', 'secret-notes.md', 'md', 1024, now(), 'ready', true),
+  ('f_e2e_link', 'ws_e2e_link', 'u_owner', 'ch_e2e_link', 'shared-notes.md', 'md', 1024, now(), 'ready', true),
+  ('f_e2e_public', 'ws_e2e_public', 'u_owner', 'ch_e2e_public', 'public-notes.md', 'md', 1024, now(), 'ready', true),
+  ('f_e2e_edit', 'ws_e2e_edit', 'u_owner', 'ch_e2e_edit', 'editable-notes.md', 'md', 1024, now(), 'ready', true)
 ON CONFLICT (id) DO NOTHING;
 
 -- Minimal Plate quiz / flashcard documents.

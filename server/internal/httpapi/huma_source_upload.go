@@ -25,6 +25,8 @@ type uploadSourceForm struct {
 	ChapterName   apimodel.ChapterName `form:"chapterName" required:"false"`
 	ParseMode     string               `form:"parseMode" required:"false"`
 	CaptionImages bool                 `form:"captionImages" required:"false"`
+	// EstimatedCreditMicros mirrors CreateSourceUploadReq for the proxied path.
+	EstimatedCreditMicros int64 `form:"estimatedCreditMicros" required:"false"`
 }
 
 type uploadSourceInput struct {
@@ -134,7 +136,7 @@ func (a *api) uploadSource(ctx context.Context, in *uploadSourceInput) (*sourceF
 	captionImages := sourceupload.NormalizeCaptionImages(kind, parseMode, form.CaptionImages)
 	needsJob := sourceupload.NeedsIngestJob(name, kind, parseMode)
 	if needsJob {
-		if err := a.s.AssertCreditsAvailable(ctx, userID(ctx)); err != nil {
+		if err := a.s.AssertCreditsForEstimate(ctx, userID(ctx), form.EstimatedCreditMicros); err != nil {
 			return nil, hErr(err)
 		}
 	}

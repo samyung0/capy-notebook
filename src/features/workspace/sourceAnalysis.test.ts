@@ -1,5 +1,6 @@
 import { zipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
+import { sourceUploadPolicy } from '@/mocks/sourceUploadPolicy';
 
 import {
   calculateParseCreditMicros,
@@ -85,7 +86,7 @@ function file(name: string): File {
 }
 
 function input(name: string) {
-  const value = localSourceAnalysisInput(file(name));
+  const value = localSourceAnalysisInput(file(name), sourceUploadPolicy);
   if (!value) throw new Error(`Unsupported test input: ${name}`);
   return value;
 }
@@ -124,8 +125,12 @@ describe('source analysis classification', () => {
 
   it('keeps images out of document page analysis', () => {
     for (const extension of ['png', 'jp2', 'svg', 'avif']) {
-      expect(sourceAnalysisExtension(`scan.${extension}`)).toBeNull();
-      expect(localSourceAnalysisInput(file(`scan.${extension}`))).toBeNull();
+      expect(
+        sourceAnalysisExtension(`scan.${extension}`, sourceUploadPolicy)
+      ).toBeNull();
+      expect(
+        localSourceAnalysisInput(file(`scan.${extension}`), sourceUploadPolicy)
+      ).toBeNull();
     }
   });
 });
@@ -420,7 +425,10 @@ describe('SourceAnalysisQueue', () => {
       return worker;
     });
     const selected = file('cached.pdf');
-    const selectedInput = localSourceAnalysisInput(selected);
+    const selectedInput = localSourceAnalysisInput(
+      selected,
+      sourceUploadPolicy
+    );
     if (!selectedInput) throw new Error('Expected supported test input');
     const first = queue.enqueue({ id: 'first', input: selectedInput });
     workers[0].respond({ jobId: 'first', result: result(), type: 'result' });
@@ -430,5 +438,25 @@ describe('SourceAnalysisQueue', () => {
       queue.enqueue({ id: 'second', input: selectedInput }).promise
     ).resolves.toEqual(result());
     expect(workers).toHaveLength(1);
+  });
+});
+
+describe('fast-parse extensions come from the upload policy', () => {
+  it('estimates only what the policy fast-parses and the browser can open', () => {
+    expect(sourceAnalysisExtension('notes.pdf', sourceUploadPolicy)).toBe(
+      'pdf'
+    );
+    const narrowed = {
+      parseModes: [
+        { ...sourceUploadPolicy.parseModes[0]!, extensions: ['.docx'] },
+      ],
+    };
+    expect(sourceAnalysisExtension('notes.pdf', narrowed)).toBeNull();
+    const widened = {
+      parseModes: [
+        { ...sourceUploadPolicy.parseModes[0]!, extensions: ['.pdf', '.epub'] },
+      ],
+    };
+    expect(sourceAnalysisExtension('book.epub', widened)).toBeNull();
   });
 });

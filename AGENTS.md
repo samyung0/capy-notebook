@@ -46,7 +46,7 @@ Understand the following terms so we can communicate on the same page:
 - Do not introduce machinery because it looks architectually impressive. Understand the real constraint and push for the smallest model that solves the issue.
 - Tests are good, but endless smoke tests, "regression tests" for feature deletion, etc are not good. Make tests focused.
 - Comments are good way to clarify functionality and how code is used, but dont comment every line, make it concise.
-- Keep documentation and comments up to date.
+- Clean up dead codes and test cases if the changes deprecate it.
 - Avoid using type `any` unless absolutely necessary. Inferring types is good.
 - Avoid setting defaults and fallbacks without a human signoff, sometime failing explicitly is better than assigning a wrong behavior.
 

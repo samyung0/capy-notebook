@@ -35,7 +35,6 @@ export interface ContentActionTarget {
   maxDepth?: number;
   name: string;
   nodeCount?: number;
-  revision?: number;
   sizeBytes?: number;
   status?: SourceFile['status'];
   type: 'file' | 'material';
@@ -65,7 +64,6 @@ export function toMaterialActionTarget(
     maxDepth: material.maxDepth,
     name: material.title,
     nodeCount: material.nodeCount,
-    revision: material.revision,
     type: 'material',
   };
 }
@@ -163,10 +161,7 @@ export function ContentActions({
     } else {
       await updateMaterial({
         id: content.id,
-        patch: {
-          expectedRevision: content.revision,
-          title: nextName,
-        },
+        patch: { title: nextName },
       });
     }
   };

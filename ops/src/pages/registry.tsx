@@ -33,6 +33,7 @@ import {
   createRegistryState,
   embeddingChanged,
   emptyDraft,
+  missingRuntimeConfig,
   modelRefId,
   modelRefLabel,
   type RegistryIssue,
@@ -416,6 +417,9 @@ function RegistryEditor({ registry }: { registry: Registry }) {
                 (item) => modelRefId(item) === rowId
               );
               const model = draft ?? config;
+              const missing = config
+                ? missingRuntimeConfig(config, registry.providerCredentials)
+                : [];
               return (
                 <tr className="hover:bg-muted/30" key={rowId}>
                   <th
@@ -425,6 +429,15 @@ function RegistryEditor({ registry }: { registry: Registry }) {
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="truncate font-mono font-semibold text-xs">
+                          {missing.length > 0 ? (
+                            <span title={`Missing ${missing.join(', ')}`}>
+                              <TriangleAlert
+                                aria-label={`Missing ${missing.join(', ')}`}
+                                className="mr-1 inline size-3.5 text-destructive"
+                                role="img"
+                              />
+                            </span>
+                          ) : null}
                           {model ? modelRefLabel(model) : rowId}
                         </p>
                         <p className="mt-1 truncate font-normal text-muted-foreground text-xs">

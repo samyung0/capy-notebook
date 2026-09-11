@@ -188,6 +188,29 @@ func (s *Store) SourceSession(ctx context.Context, actor, fileID string) (Source
 	return out, tx.Commit(ctx)
 }
 
+// ViewSourceSession is the viewer's read: authorization is the caller's
+// (fileRead), so it takes no locks, inserts no row and never consults account
+// state. State rides along only when a saved checkpoint is ahead of the
+// indexed one; a file nobody has edited answers with its blob alone.
+func (s *Store) ViewSourceSession(ctx context.Context, fileID string) (SourceSession, error) {
+	out := SourceSession{FileID: fileID, Access: "read"}
+	var name, kind string
+	err := s.pool.QueryRow(ctx, `SELECT f.workspace_id,f.name,f.kind,COALESCE(d.epoch,0),COALESCE(d.checkpoint,0),COALESCE(d.indexed_checkpoint,0),COALESCE(d.base_revision,f.revision),COALESCE(d.base_blob_path,f.blob_path,''),COALESCE(d.base_source_sha256,f.source_sha256,''),CASE WHEN d.checkpoint>d.indexed_checkpoint THEN d.state END FROM files f LEFT JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1 AND f.trashed_at IS NULL`, fileID).Scan(&out.WorkspaceID, &name, &kind, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State)
+	if isNoRows(err) {
+		return out, ErrNotFound
+	}
+	if err != nil {
+		return out, err
+	}
+	out.Format = editableSourceFormat(name, kind)
+	if out.Format == "" || out.BaseBlobPath == "" {
+		return out, ErrForbidden
+	}
+	out.Room = fmt.Sprintf("source:%s:epoch:%d", fileID, out.Epoch)
+	out.SourceIdentity = fmt.Sprintf("revision:%d", out.BaseRevision)
+	return out, nil
+}
+
 // CheckSourceAccess revalidates each incoming edit without loading or encoding
 // the complete current and indexed document states.
 func (s *Store) CheckSourceAccess(ctx context.Context, actor, fileID string, epoch int64, edit bool) error {

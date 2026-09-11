@@ -124,8 +124,7 @@ func TestShareHTTPReads(t *testing.T) {
 		{"anon link files", "", "/api/workspaces/ws_e2e_link/files", 401},
 		{"anon link materials", "", "/api/workspaces/ws_e2e_link/materials", 401},
 		{"anon file", "", "/api/files/f_missing", 401},
-		{"anon raw", "", "/api/files/f_missing/raw", 401},
-		{"anon preview", "", "/api/files/f_missing/preview", 401},
+		{"anon links", "", "/api/files/f_missing/links", 401},
 		{"anon asset resolve", "", "/api/editor-assets/a_missing/resolve", 401},
 		{"anon material", "", "/api/materials/note_e2e_private", 401},
 		{"anon explore workspace", "", "/api/explore/workspaces", 401},
@@ -230,43 +229,6 @@ func TestCloudImportAuthorization(t *testing.T) {
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("cloud content by %s = %d body=%s", user, rec.Code, rec.Body.String())
 		}
-	}
-}
-
-func TestFileReplacementAuthorizationAndRevisionGate(t *testing.T) {
-	h := openShareHTTP(t)
-	body := map[string]any{
-		"contentType":      "application/octet-stream",
-		"expectedRevision": 1,
-		"sizeBytes":        1024,
-	}
-
-	for _, tc := range []struct {
-		name   string
-		user   string
-		status int
-	}{
-		{name: "owner", user: "u_owner", status: http.StatusCreated},
-		{name: "editor", user: "u_editor", status: http.StatusCreated},
-		{name: "viewer", user: "u_viewer", status: http.StatusNotFound},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			rec := doReq(t, h, http.MethodPost,
-				"/api/files/f_e2e_private/replacement-uploads", tc.user, body)
-			if rec.Code != tc.status {
-				t.Fatalf("replacement reserve by %s = %d body=%s", tc.user, rec.Code, rec.Body.String())
-			}
-		})
-	}
-
-	stale := doReq(t, h, http.MethodPost,
-		"/api/files/f_e2e_private/replacement-uploads", "u_editor", map[string]any{
-			"contentType":      "application/octet-stream",
-			"expectedRevision": 2,
-			"sizeBytes":        1024,
-		})
-	if stale.Code != http.StatusConflict {
-		t.Fatalf("stale replacement reserve = %d body=%s", stale.Code, stale.Body.String())
 	}
 }
 

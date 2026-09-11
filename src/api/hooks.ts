@@ -1,5 +1,6 @@
-import type { QueryClient } from '@tanstack/react-query';
+import type { QueryClient, QueryKey } from '@tanstack/react-query';
 import {
+  focusManager,
   type InfiniteData,
   queryOptions,
   useInfiniteQuery,
@@ -18,13 +19,14 @@ import {
 } from '@/lib/analytics';
 import { NOTIFICATION_PAGE_SIZE } from '@/lib/const';
 import { track, trackItemCloned } from '@/lib/observability';
-import { authHeaders, USE_MSW } from './auth';
-import { API_BASE, api, qk } from './client';
+import { USE_MSW } from './auth';
+import { api, qk } from './client';
 import {
+  type IngestEvent,
   type NotificationStreamEvent,
-  readNotificationStream,
-} from './notificationStream';
-import { consumeSSE, sseData } from './sse';
+  readEventStream,
+  type StreamEvent,
+} from './eventStream';
 import type {
   AccountStatus,
   Attempt,
@@ -47,7 +49,7 @@ import type {
   CreateWorkspaceInviteReq,
   CreateWorkspaceReq,
   DeletionPreflight,
-  FileStatus,
+  FileLinks,
   Flashcard,
   FlashcardSet,
   GenerateOptions,
@@ -265,9 +267,7 @@ export const useSearch = (q: string, options?: QueryUiOptions) =>
   });
 
 type NotificationCache = InfiniteData<NotificationPage, string>;
-type NotificationStreamState = {
-  status: 'connecting' | 'connected' | 'disconnected';
-};
+export type EventStreamState = { status: 'connected' | 'disconnected' };
 
 export const useNotifications = (options?: QueryUiOptions) =>
   useInfiniteQuery<
@@ -388,64 +388,88 @@ export function applyNotificationEvent(
   }
 }
 
-export function useNotificationStream(enabled = true) {
+/** The one SSE connection a signed-in tab holds: notifications always, plus
+ * ingest progress and tree changes for the workspace being viewed. Redis
+ * Pub/Sub and Postgres NOTIFY replay nothing, so every connect refetches the
+ * lists the stream feeds; while disconnected there is no polling, only the
+ * banner and a backoff reconnect. No-op under MSW (the dev mock has no event
+ * stream). */
+export function useEventStream(wsId: string) {
   const qc = useQueryClient();
   useEffect(() => {
-    if (!enabled || USE_MSW) {
-      return;
-    }
+    if (USE_MSW) return;
     let stopped = false;
     let controller: AbortController | undefined;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
-    let pollTimer: ReturnType<typeof setInterval> | undefined;
     let delay = 1000;
+    const treeTimers: Partial<
+      Record<'files' | 'materials', ReturnType<typeof setTimeout>>
+    > = {};
 
+    const setStatus = (status: EventStreamState['status']) =>
+      qc.setQueryData<EventStreamState>(qk.eventStream, { status });
     const reconcile = () => {
-      void qc.refetchQueries({ queryKey: qk.notifications, type: 'active' });
-      void qc.refetchQueries({
-        queryKey: qk.notificationUnread,
-        type: 'active',
-      });
-    };
-    const markDisconnected = () => {
-      qc.setQueryData<NotificationStreamState>(qk.notificationStream, {
-        status: 'disconnected',
-      });
-      if (!pollTimer) {
-        pollTimer = setInterval(reconcile, 30_000);
+      const keys: QueryKey[] = [qk.notifications, qk.notificationUnread];
+      if (wsId) {
+        keys.push(qk.files(wsId), qk.materials(wsId), qk.chapters(wsId));
+      }
+      for (const queryKey of keys) {
+        void qc.refetchQueries({ queryKey, type: 'active' });
       }
     };
-    const markConnected = () => {
-      qc.setQueryData<NotificationStreamState>(qk.notificationStream, {
-        status: 'connected',
-      });
-      if (pollTimer) {
-        clearInterval(pollTimer);
-        pollTimer = undefined;
+    // One ingest raises several tree events seconds apart and a bulk write
+    // raises one per transaction, so a trailing debounce per kind collapses a
+    // burst into one refetch. Chapters ride along: a row that arrives in a
+    // chapter this tab has not loaded would otherwise render nowhere. A
+    // hidden tab only marks the lists stale; refetch-on-focus reads them when
+    // it comes back.
+    const refetchTree = (kind: 'files' | 'materials') => {
+      const keys: QueryKey[] = [
+        kind === 'files' ? qk.files(wsId) : qk.materials(wsId),
+        qk.chapters(wsId),
+      ];
+      for (const queryKey of keys) {
+        void qc.invalidateQueries({
+          queryKey,
+          refetchType: focusManager.isFocused() ? 'active' : 'none',
+        });
       }
-      // Redis Pub/Sub is not durable; always reconcile after every connect.
-      reconcile();
+    };
+    const handle = (event: StreamEvent) => {
+      switch (event.name) {
+        case 'notification':
+          applyNotificationEvent(qc, event.data);
+          return;
+        case 'ingest':
+          applyIngestEvent(qc, wsId, event.data);
+          return;
+        case 'tree': {
+          const { kind } = event.data;
+          clearTimeout(treeTimers[kind]);
+          treeTimers[kind] = setTimeout(() => refetchTree(kind), 300);
+        }
+      }
     };
     const connect = async () => {
       if (stopped) return;
-      qc.setQueryData<NotificationStreamState>(qk.notificationStream, {
-        status: 'connecting',
-      });
       controller = new AbortController();
+      let clean = false;
       try {
-        await readNotificationStream(
-          (event) => applyNotificationEvent(qc, event),
-          controller.signal,
-          markConnected
-        );
-        // A clean end is the server's bounded stream lifetime, not a fault.
-        delay = 1000;
+        await readEventStream(wsId, handle, controller.signal, () => {
+          delay = 1000;
+          setStatus('connected');
+          reconcile();
+        });
+        clean = true;
       } catch {
-        delay = Math.min(delay * 2, 30_000);
+        /* reconnect below */
       }
       if (stopped) return;
-      markDisconnected();
-      retryTimer = setTimeout(connect, delay);
+      // A clean end is the server's bounded stream lifetime or a fanout
+      // eviction, not a fault: reconnect without raising the banner.
+      if (!clean) setStatus('disconnected');
+      retryTimer = setTimeout(connect, clean ? 1000 : delay);
+      if (!clean) delay = Math.min(delay * 2, 30_000);
     };
     void connect();
 
@@ -453,10 +477,10 @@ export function useNotificationStream(enabled = true) {
       stopped = true;
       controller?.abort();
       if (retryTimer) clearTimeout(retryTimer);
-      if (pollTimer) clearInterval(pollTimer);
-      qc.removeQueries({ queryKey: qk.notificationStream });
+      for (const timer of Object.values(treeTimers)) clearTimeout(timer);
+      qc.removeQueries({ queryKey: qk.eventStream });
     };
-  }, [enabled, qc]);
+  }, [wsId, qc]);
 }
 
 export function useMarkNotificationRead() {
@@ -736,6 +760,33 @@ export function useDeleteWorkspace() {
 }
 
 /* ---------------- chapters & files ---------------- */
+/** A presigned pair is read once, at fetch time, by whichever consumer mounts
+ * it: nothing tracks expiresAt, nothing invalidates it, and neither focus nor
+ * reconnect refetches, so a mounted view never sees a changed URL. gcTime 0
+ * drops the pair on unmount so a reopen never renders a cached URL that may
+ * have expired. */
+export const fileLinksQuery = (
+  fileId: string,
+  consumer: 'view' | 'preview' = 'view'
+) =>
+  queryOptions({
+    enabled: !!fileId,
+    gcTime: 0,
+    queryFn: () =>
+      api.get<FileLinks>(`/files/${encodeURIComponent(fileId)}/links`),
+    queryKey: qk.fileLinks(fileId, consumer),
+    refetchOnReconnect: false,
+  });
+export const useFileLinks = (fileId: string, options?: QueryUiOptions) =>
+  useQuery({ ...fileLinksQuery(fileId), meta: queryMeta(options) });
+/** The citation preview's own entry: sharing the viewer's pair would paint
+ * the old link first and then swap in the mount refetch's new one. */
+export const useOfficePreviewLinks = (
+  fileId: string,
+  options?: QueryUiOptions
+) =>
+  useQuery({ ...fileLinksQuery(fileId, 'preview'), meta: queryMeta(options) });
+
 export const sourceUploadPolicyQuery = (wsId?: string) =>
   queryOptions({
     queryFn: () =>
@@ -758,29 +809,32 @@ export const chaptersQuery = (wsId: string) =>
     queryKey: qk.chapters(wsId),
   });
 export const useChapters = (wsId: string, options?: QueryUiOptions) =>
-  useQuery({ ...chaptersQuery(wsId), meta: queryMeta(options) });
-
-/** Once the ingest stream closes, the workspace tree has no live signal left:
- * files and materials both appear from work this tab did not start — a
- * collaborator's upload, an async generate writing a material server-side.
- * Both list endpoints return refs without bodies, so polling them is cheap.
- * Set on the hooks rather than the query factories because the dashboard
- * spreads `materialsQuery` across every workspace and must not poll them all.
- * `refetchIntervalInBackground` stays false, so a background tab is idle. */
-const WORKSPACE_TREE_POLL = {
-  refetchInterval: 30_000,
-  refetchOnWindowFocus: true,
-} as const;
+  useQuery({
+    ...chaptersQuery(wsId),
+    meta: queryMeta(options),
+    refetchOnWindowFocus: true,
+  });
 
 export const filesQuery = (wsId: string) =>
   queryOptions({
     enabled: !!wsId,
     queryFn: async ({ client }) => {
       const files = await api.get<SourceFile[]>(`/workspaces/${wsId}/files`);
-      // A terminal event may have been missed before subscribing or while
-      // disconnected. Refresh the body too when polling finds completion.
+      // `ingestPct` lives only in this cache (stream events patch it in), so
+      // carry it over for rows still ingesting or a list read mid-ingest
+      // would snap the progress bar back to zero.
+      const previous = new Map(
+        client
+          .getQueryData<SourceFile[]>(qk.files(wsId))
+          ?.map((file) => [file.id, file.ingestPct])
+      );
       for (const file of files) {
-        if (file.status !== 'ready' && file.status !== 'failed') continue;
+        if (file.status === 'pending' || file.status === 'processing') {
+          file.ingestPct = previous.get(file.id);
+          continue;
+        }
+        // A terminal event may have been missed before subscribing or while
+        // disconnected. Refresh the body too when a list read finds completion.
         const queryKey = qk.file(file.id);
         const cached = client.getQueryData<SourceFile>(queryKey);
         if (cached?.status === 'pending' || cached?.status === 'processing') {
@@ -794,8 +848,8 @@ export const filesQuery = (wsId: string) =>
 export const useFiles = (wsId: string, options?: QueryUiOptions) =>
   useQuery({
     ...filesQuery(wsId),
-    ...WORKSPACE_TREE_POLL,
     meta: queryMeta(options),
+    refetchOnWindowFocus: true,
   });
 
 export const useFile = (id: string | null, options?: QueryUiOptions) =>
@@ -1131,6 +1185,7 @@ export function useUploadSource(wsId: string) {
       chapterName,
       parseMode,
       captionImages,
+      estimatedCreditMicros,
       onUploadProgress,
       signal,
     }: {
@@ -1144,6 +1199,10 @@ export function useUploadSource(wsId: string) {
       parseMode?: 'fast' | 'none';
       /** Caption the figures found while parsing so they become searchable. */
       captionImages?: boolean;
+      /** Browser-side cost estimate at the upload policy rates. The gateway
+       * refuses a reservation that would land past its credit headroom; the
+       * parser receipt still bills the measured pages. */
+      estimatedCreditMicros?: number;
       onUploadProgress?: (pct: number) => void;
       signal?: AbortSignal;
     }) => {
@@ -1156,6 +1215,9 @@ export function useUploadSource(wsId: string) {
         if (chapterName) form.append('chapterName', chapterName);
         if (parseMode) form.append('parseMode', parseMode);
         if (captionImages) form.append('captionImages', 'true');
+        if (estimatedCreditMicros) {
+          form.append('estimatedCreditMicros', String(estimatedCreditMicros));
+        }
         return api.upload<SourceFile>(
           `/workspaces/${wsId}/sources`,
           form,
@@ -1175,6 +1237,7 @@ export function useUploadSource(wsId: string) {
           chapterId: chapterId ?? null,
           chapterName: chapterName ?? null,
           contentType: file.type || 'application/octet-stream',
+          estimatedCreditMicros: estimatedCreditMicros || undefined,
           kind,
           name: file.name,
           parseMode,
@@ -1222,209 +1285,25 @@ export function useUploadSource(wsId: string) {
   });
 }
 
-function officeContentType(file: SourceFile) {
-  const ext = file.name.split('.').pop()?.toLowerCase();
-  if (ext === 'xlsx')
-    return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-  if (ext === 'pptx')
-    return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
-  return 'application/octet-stream';
-}
-
-export function updateSourceFileCaches(qc: QueryClient, saved: SourceFile) {
-  const replaceSaved = (prev: SourceFile[] | undefined) =>
-    prev?.map((entry) => (entry.id === saved.id ? saved : entry));
-  qc.setQueryData<SourceFile>(qk.file(saved.id), saved);
-  qc.setQueryData<SourceFile[]>(qk.files(saved.workspaceId), replaceSaved);
-  qc.setQueryData<SourceFile[]>(qk.allFiles, replaceSaved);
-}
-
-export async function replaceSourceFile(
-  file: SourceFile,
-  bytes: Uint8Array,
-  expectedRevision: number
-) {
-  const replacement = new File(
-    [bytes.slice().buffer as ArrayBuffer],
-    file.name,
-    {
-      type: officeContentType(file),
-    }
-  );
-  if (USE_MSW) {
-    const form = new FormData();
-    form.append('file', replacement, replacement.name);
-    form.append('expectedRevision', String(expectedRevision));
-    return api.upload<SourceFile>(`/files/${file.id}/replacement`, form);
+/** Patch the file caches from one ingest progress event. */
+function applyIngestEvent(qc: QueryClient, wsId: string, value: IngestEvent) {
+  const { fileId, status } = value;
+  const patch: Partial<SourceFile> = { ingestPct: value.pct, status };
+  if (typeof value.indexed === 'boolean') patch.indexed = value.indexed;
+  if (status === 'pending' || status === 'processing') {
+    ingestTracker.markStart(fileId);
   }
-  const reservation = await api.post<{
-    uploadId: string;
-    url: string;
-    method: 'PUT';
-    headers: Record<string, string>;
-    expiresAt: string;
-  }>(`/files/${file.id}/replacement-uploads`, {
-    contentType: replacement.type,
-    expectedRevision,
-    sizeBytes: replacement.size,
-  });
-  await api.putFile(reservation.url, replacement, reservation.headers);
-  return api.post<SourceFile>(
-    `/files/${file.id}/replacement-uploads/${reservation.uploadId}/complete`
-  );
-}
-
-/** Replace a source blob without changing the logical file id. The server
- * invalidates derived RAG data and rejects stale editor revisions. */
-export function useReplaceSource(file: SourceFile | null) {
-  const qc = useQueryClient();
-  return useMutation({
-    meta: { errorToast: false },
-    mutationFn: async ({
-      bytes,
-      expectedRevision,
-    }: {
-      bytes: Uint8Array;
-      expectedRevision: number;
-    }) => {
-      if (!file) throw new Error('No source file is selected.');
-      return replaceSourceFile(file, bytes, expectedRevision);
-    },
-    onSuccess: (saved) => {
-      updateSourceFileCaches(qc, saved);
-      void Promise.all([
-        qc.invalidateQueries({ queryKey: qk.accountStatus }),
-        qc.invalidateQueries({
-          queryKey: qk.workspaceStats(saved.workspaceId),
-        }),
-      ]);
-      if (saved.status !== 'ready') ingestTracker.markStart(saved.id);
-      if (USE_MSW && saved.status !== 'ready')
-        simulateMswProgress(qc, saved.workspaceId, saved.id);
-    },
-  });
-}
-
-export type IngestStreamState = {
-  status: 'connecting' | 'connected' | 'disconnected';
-};
-
-/** Subscribe to live ingest progress for a workspace (SSE) and patch the file
- * caches as events arrive. Connects only while a file is actually ingesting, so
- * idle viewers cost nothing. No-op under MSW (dev mock has no event stream). */
-export function useIngestProgress(
-  wsId: string,
-  files: SourceFile[] | undefined,
-  enabled = true
-) {
-  const qc = useQueryClient();
-  // Only hold the stream open while there is work that will emit events. The
-  // upload mutation inserts the new file as `pending` before ingest starts, so
-  // this flips on without the call site having to signal an upload, and covers
-  // a reload mid-ingest because the status comes from the server's file list.
-  const active =
-    enabled &&
-    !!files?.some((f) => f.status === 'pending' || f.status === 'processing');
-  useEffect(() => {
-    const streamKey = qk.ingestStream(wsId);
-    if (!wsId || !active || USE_MSW) {
-      qc.removeQueries({ queryKey: streamKey });
-      return;
-    }
-
-    let stopped = false;
-    const controller = new AbortController();
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
-    let retryDelay = 1000;
-
-    const handleEvent = (chunk: string) => {
-      const data = sseData(chunk);
-      if (!data) return;
-      try {
-        const value = JSON.parse(data) as Record<string, unknown>;
-        if (
-          typeof value.fileId !== 'string' ||
-          typeof value.pct !== 'number' ||
-          !Number.isFinite(value.pct) ||
-          !['pending', 'processing', 'ready', 'failed'].includes(
-            String(value.status)
-          )
-        ) {
-          return;
-        }
-        const status = value.status as FileStatus;
-        const patch: Partial<SourceFile> = {
-          ingestPct: value.pct,
-          status,
-        };
-        if (typeof value.indexed === 'boolean') {
-          patch.indexed = value.indexed;
-        }
-        if (status === 'pending' || status === 'processing') {
-          ingestTracker.markStart(value.fileId);
-        }
-        patchFileInCache(qc, wsId, value.fileId, patch);
-        if (status === 'ready' || status === 'failed') {
-          trackIngestTerminal(qc, wsId, value.fileId, status, value.stage);
-          qc.invalidateQueries({ queryKey: qk.files(wsId) });
-          qc.invalidateQueries({ queryKey: qk.file(value.fileId) });
-        }
-      } catch {
-        /* ignore malformed events */
-      }
-    };
-
-    // fetch rather than EventSource: the Clerk session token only travels in an
-    // Authorization header, which EventSource cannot set. Each reconnect mints a
-    // fresh token, and the server re-checks access for the life of the stream.
-    const connect = async () => {
-      if (stopped) return;
-      qc.setQueryData<IngestStreamState>(streamKey, (current) =>
-        current?.status === 'disconnected' ? current : { status: 'connecting' }
-      );
-      try {
-        const response = await fetch(
-          `${API_BASE}/workspaces/${wsId}/ingest-events`,
-          {
-            headers: {
-              Accept: 'text/event-stream',
-              ...(await authHeaders()),
-            },
-            signal: controller.signal,
-          }
-        );
-        if (!response.ok || !response.body) {
-          throw new Error(`${response.status} ${response.statusText}`);
-        }
-        retryDelay = 1000;
-        qc.setQueryData<IngestStreamState>(streamKey, { status: 'connected' });
-        // Redis does not replay events missed before this subscription.
-        // The list refresh also reconciles cached file details at completion.
-        void qc.refetchQueries({ queryKey: qk.files(wsId), type: 'active' });
-        await consumeSSE(response.body, handleEvent);
-      } catch {
-        /* fall through to the reconnect below */
-      }
-      // Reached on a clean end of stream too — the server closes idle streams.
-      if (stopped) return;
-      qc.setQueryData<IngestStreamState>(streamKey, {
-        status: 'disconnected',
-      });
-      retryTimer = setTimeout(() => {
-        retryTimer = undefined;
-        connect();
-      }, retryDelay);
-      retryDelay = Math.min(retryDelay * 2, 30_000);
-    };
-
-    connect();
-    return () => {
-      stopped = true;
-      controller.abort();
-      if (retryTimer) clearTimeout(retryTimer);
-      qc.removeQueries({ queryKey: streamKey });
-    };
-  }, [wsId, active, qc]);
+  patchFileInCache(qc, wsId, fileId, patch);
+  if (status === 'ready' || status === 'failed') {
+    trackIngestTerminal(qc, wsId, fileId, status, value.stage);
+    qc.invalidateQueries({ queryKey: qk.files(wsId) });
+    qc.invalidateQueries({ queryKey: qk.file(fileId) });
+    // A ready file gains its citation preview; refresh the pending pair.
+    qc.invalidateQueries({
+      queryKey: qk.fileLinks(fileId),
+      refetchType: 'active',
+    });
+  }
 }
 
 /* ---------------- chat & generate ---------------- */
@@ -1489,8 +1368,8 @@ export const materialsQuery = (wsId: string) =>
 export const useMaterials = (wsId: string, options?: QueryUiOptions) =>
   useQuery({
     ...materialsQuery(wsId),
-    ...WORKSPACE_TREE_POLL,
     meta: queryMeta(options),
+    refetchOnWindowFocus: true,
   });
 
 export const materialQuery = (id: string | null) =>

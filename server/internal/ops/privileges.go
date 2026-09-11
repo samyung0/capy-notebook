@@ -442,7 +442,6 @@ var customerContentColumns = []columnPrivilege{
 	{"rag_content_summaries", "summary", "SELECT"},
 	{"files", "name", "SELECT"},
 	{"files", "blob_path", "SELECT"},
-	{"files", "url", "SELECT"},
 	{"jobs", "payload", "SELECT"},
 	{"webhook_events", "payload", "SELECT"},
 	{"user_llm_credentials", "key_ciphertext", "SELECT"},
@@ -668,6 +667,25 @@ func validateForbiddenColumns(
 ) []string {
 	var problems []string
 	for _, privilege := range forbidden {
+		// A column a later migration dropped is strictly safer than a granted
+		// one; skipping it lets an older ops build boot against the new schema.
+		// Resolved through search_path, the same way has_column_privilege
+		// resolves its table below.
+		var exists bool
+		if err := pool.QueryRow(ctx,
+			`SELECT EXISTS (SELECT 1 FROM pg_attribute
+			  WHERE attrelid = to_regclass($1) AND attname = $2
+			    AND attnum > 0 AND NOT attisdropped)`,
+			privilege.table, privilege.column,
+		).Scan(&exists); err != nil {
+			problems = append(problems, fmt.Sprintf(
+				"cannot inspect forbidden %s.%s", privilege.table, privilege.column,
+			))
+			continue
+		}
+		if !exists {
+			continue
+		}
 		var allowed bool
 		if err := pool.QueryRow(ctx,
 			`SELECT has_column_privilege(current_user, $1, $2, $3)`,

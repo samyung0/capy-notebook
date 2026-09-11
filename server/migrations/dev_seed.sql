@@ -36,26 +36,8 @@ INSERT INTO chapters (id, workspace_id, name, position) VALUES
   ('ch_c2', 'ws_calc', 'Sequences & series',       1)
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO files (id, workspace_id, chapter_id, name, kind, size_bytes, added_at, status, indexed, url, content) VALUES
-  ('f_1', 'ws_bio',  'ch_1', 'Cell structure.pdf',       'pdf',   2480 * 1024, now()-interval '20 day', 'ready', true, 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf', NULL),
-  ('f_2', 'ws_bio',  'ch_1', 'Organelles cheatsheet.md', 'md',      14 * 1024, now()-interval '19 day', 'ready', true, NULL, '# Organelles
-
-- **Nucleus** — stores DNA, controls the cell.
-- **Mitochondria** — the powerhouse; ATP via respiration.
-- **Ribosomes** — protein synthesis.
-- **Golgi apparatus** — packaging & shipping.
-
-The cell membrane is a *phospholipid bilayer* that controls what enters and leaves.'),
-  ('f_3', 'ws_bio',  'ch_2', 'Osmosis notes.txt',        'txt',      6 * 1024, now()-interval '18 day', 'ready', true, NULL, 'Osmosis is the diffusion of water across a semi-permeable membrane from low to high solute concentration.'),
-  ('f_4', 'ws_bio',  'ch_3', 'Mendelian genetics.pdf',   'pdf',   1890 * 1024, now()-interval '15 day', 'ready', true, 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf', NULL),
-  ('f_5', 'ws_bio',  NULL,   'Punnett squares.png',      'image',  420 * 1024, now()-interval '14 day', 'ready', true, NULL, NULL),
-  ('f_6', 'ws_calc', 'ch_c1','Integration by parts.pdf', 'pdf',    980 * 1024, now()-interval '10 day', 'ready', true, 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf', NULL),
-  ('f_7', 'ws_calc', 'ch_c2','Taylor series.md',         'md',      11 * 1024, now()-interval '9 day',  'ready', true, NULL, '# Taylor series
-
-A function f(x) near a point a:
-
-f(x) = Σ fⁿ(a)/n! · (x − a)ⁿ')
-ON CONFLICT (id) DO NOTHING;
+-- No seeded files: a file row needs a real object in the blob store, which the
+-- seed cannot create. Upload fixtures through the app instead.
 
 INSERT INTO tags (id, user_id, kind, name) VALUES
   ('tag_1', 'u_1', 'workspace', 'Cells'),

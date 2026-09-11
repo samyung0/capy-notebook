@@ -11,6 +11,7 @@ function file(id: string, addedAt: string, workspaceId = 'ws_1'): SourceFile {
   return {
     addedAt,
     chapterId: null,
+    hasBytes: true,
     id,
     indexed: true,
     kind: 'pdf',
@@ -34,7 +35,6 @@ function material(
       maxDepth: 1,
       nodeCount: 1,
       position: 0,
-      revision: 1,
       sizeBytes: 1,
       title: id,
       type: 'note',

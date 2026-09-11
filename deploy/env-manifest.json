@@ -54,6 +54,10 @@
       "kind": "variable",
       "targets": ["coolify"]
     },
+    "B2_LINK_TTL": {
+      "kind": "variable",
+      "targets": ["coolify"]
+    },
     "B2_REGION": {
       "kind": "variable",
       "targets": ["coolify", "ingest-production", "ingest-queue"],

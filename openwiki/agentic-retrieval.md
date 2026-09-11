@@ -219,7 +219,7 @@ changed. Until a workspace model-migration job exists:
 
 | Type | Enqueued by | Does |
 | --- | --- | --- |
-| Parse | Go upload/replacement finalization for `document_parse` plans | Validate → download/hash once → exact-vector donor reuse or MinerU artifact publication → atomic ingest handoff |
+| Parse | Go upload finalization for `document_parse` plans | Validate → download/hash once → exact-vector donor reuse or MinerU artifact publication → atomic ingest handoff |
 | Ingest | Go for direct routes; parse coordinator for documents | Extract a completed document artifact or normalize a direct source → chunk/caption/transcribe → embed → two-tier file summary |
 
 Both stages get one retry (two total attempts), exponential backoff

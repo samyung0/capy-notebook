@@ -612,7 +612,7 @@ def _pipeline_source_cancellation(
     Go workspace mutations lock workspace, ordered account rows, membership,
     then file. Pipeline heartbeats, provider admission, and final writes use the
     same order. The job row comes afterward; provider admission then locks its
-    exact attempt. This prevents lifecycle deletion/replacement from forming a
+    exact attempt. This prevents lifecycle deletion/publish from forming a
     file-to-user or job-to-workspace cycle with a worker.
     """
     payload = source_boundary_payload(payload)
@@ -773,7 +773,7 @@ def _pipeline_source_cancellation(
             "superseded",
             "superseded",
             "source_superseded",
-            "superseded by file replacement",
+            "superseded by newer source revision",
         )
     return None
 
@@ -1156,7 +1156,7 @@ def reclaim_expired_leases(
             cap is None or attempts >= cap
         )
         if terminal_pipeline:
-            # Replacement and lifecycle cancellation lock the source boundary
+            # Publish and lifecycle cancellation lock the source boundary
             # before the job. Follow that order before the terminal transaction
             # updates the exact file revision and closes its reservation.
             _pipeline_source_cancellation(cur, payload, file_lock="UPDATE")
@@ -1361,10 +1361,10 @@ def require_current_file_source(
 ) -> None:
     """Lock and fence a file mutation to the source version that queued it.
 
-    Replacement keeps the logical file id but increments ``revision`` and
-    changes ``source_etag``. Without this lock/check, an older worker can write
-    its parse outcome into the replacement after the replacement transaction
-    has cleared the old association.
+    Publishing a source refresh keeps the logical file id but increments
+    ``revision`` and changes ``source_etag``. Without this lock/check, an older
+    worker can write its parse outcome into the new source after the publish
+    transaction has cleared the old association.
     """
     refresh = source_refresh_for(file_id)
     if refresh is not None:
@@ -2319,7 +2319,7 @@ def close_credit_reservation(cur, reservation_id: str) -> None:
     )
 
 
-def account_allows_ingest(cur, user_id: str, *, allow_over_quota: bool = False) -> bool:
+def account_allows_ingest(cur, user_id: str) -> bool:
     """Mirror store.AccountStatus.CanCreate for the ingest worker.
 
     Locked / over-quota accounts must not keep consuming parse capacity. The
@@ -2390,10 +2390,7 @@ def account_allows_ingest(cur, user_id: str, *, allow_over_quota: bool = False) 
         )
         if end <= now:
             plan_tier = "free"
-    return not (
-        effective_used > plan_limits.for_tier(plan_tier).storage_bytes
-        and not allow_over_quota
-    )
+    return effective_used <= plan_limits.for_tier(plan_tier).storage_bytes
 
 
 def ingest_accounts_active(cur, file_id: str, actor_user_id: str) -> bool:

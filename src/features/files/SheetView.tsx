@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import type { SourceFile } from '@/api/types';
+import type { ViewableFile } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { m } from '@/i18n';
@@ -12,7 +12,7 @@ export default function SheetView({
   startEditing = false,
 }: {
   canEdit: boolean;
-  file: SourceFile;
+  file: ViewableFile;
   onDirtyChange?: (dirty: boolean) => void;
   startEditing?: boolean;
 }) {

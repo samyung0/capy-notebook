@@ -70,6 +70,20 @@ Yrs projection, and viewer linear memory are absent during ordinary reading.
 Viewer analysis reuses the already-open handle, so sheet/slide metadata does not
 trigger a second parse.
 
+Viewing shows the last saved state, not only the last published blob. View
+mode reads `GET /api/files/{id}/source-session?view=true`, a lock-free read
+(read authorization only, no `source_documents` row is created, no account
+lock, so a suspended owner's shared files keep rendering) that returns the
+presigned base URL and checkpoint numbers and carries `state` only when the
+saved checkpoint is ahead of the indexed one (`indexedState` and
+`pendingEffects` are omitted). The host passes that state as `checkpoint` on
+the `load` message; the runtime applies it over the base with the editor
+engines in a disposable `exportCheckpoint` worker (the same composition as the
+collaboration service's headless export), terminates it, and opens the viewer
+on the exported bytes. With no unpublished edits the base opens directly and
+no editor engine loads. The view is not live: it reflects the state at open,
+and a reopen or revision change reads again.
+
 View and edit use separate iframe lifetimes so the browser can reclaim each
 WASM realm. Entering Edit replaces the viewer iframe. Leaving Edit keeps durable
 shared changes and previews the exported current replica. Saving requests a database
@@ -152,12 +166,23 @@ Office editor is active.
 Office coordinates belong to the exact LibreOffice PDF that MinerU parsed, not
 to BetterOffice's native layout. Parser bundle v3 therefore includes
 `preview.pdf` for Office inputs. Ingest stores it as a reusable
-`office_preview` artifact and exposes `/api/files/{id}/preview` after the file
-is ready. An Office citation opens that PDF and highlights its regions; ordinary
+`office_preview` artifact and advertises it as `previewUrl` on the file row once
+the file is ready (a presence marker, not a fetchable URL, like `hasBytes`). The viewer fetches `GET /api/files/{id}/links` through the
+authenticated API, which returns short-lived presigned B2 URLs for the source
+and that preview; B2 cannot check a bearer token and the gateway never proxies
+bytes. Each consumer fetches its pair when it mounts and reads it at fetch
+time: the client ignores `expiresAt`, never refetches on expiry, focus,
+reconnect or file-row change, and drops the pair on unmount so a reopen signs
+afresh; a mounted view therefore never sees a changed URL. The citation
+preview resolves its own pair when it opens, and the unsupported-file download
+signs on click. Only lazily read media can meet an expired URL: audio seeking
+shows the retryable file error, whose retry signs a fresh pair. Read links use
+`B2_LINK_TTL` (300 s); upload PUTs keep `B2_PRESIGN_TTL` (900 s) because it
+doubles as the reservation deadline. An Office citation opens that PDF and highlights its regions; ordinary
 file browsing opens the native viewer, and Edit swaps from the citation preview
 to BetterOffice. A store-only or legacy Office file with no exact preview stays
 on its native viewer without an overlay; the client never invents a preview URL.
-Native PDFs use their source blob as the same preview route.
+Native PDFs use their source blob as the preview.
 
 LibreOffice output is checked against `CAPY_OFFICE_PREVIEW_MAX_BYTES` before the
 parser reads it. Bundle creation, ingest caching, and donor reuse enforce the
@@ -209,8 +234,8 @@ edits; publication metadata does not replace a mounted editor's newer state.
 
 The published file remains readable and cloneable while a candidate is being
 exported or processed. Clones copy its published source/index and caption
-associations, without pending edits or jobs. Deleting or explicitly replacing a
-source fences its old room and cancels dependent work. Candidate sources live
+associations, without pending edits or jobs. Deleting a source fences its old
+room and cancels dependent work. Candidate sources live
 in B2; job-local downloads are temporary. Source base bytes are cached in the
 collaboration process by SHA within a bounded 128 MiB cache. Headless export,
 comparison and asset extraction run in a worker thread.

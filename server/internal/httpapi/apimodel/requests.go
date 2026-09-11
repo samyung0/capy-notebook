@@ -99,11 +99,10 @@ type CreateMaterialReq struct {
 // empty-string sentinel is needed because JSON null is indistinguishable from
 // an omitted field with a single pointer.
 type UpdateMaterialReq struct {
-	Title            *MaterialTitle `json:"title,omitempty" minLength:"1"`
-	ExpectedRevision *int64         `json:"expectedRevision,omitempty" minimum:"1" doc:"Required when changing title"`
-	ChapterID        *string        `json:"chapterId,omitempty" doc:"Chapter to file under; empty string unfiles; omit to leave unchanged"`
-	ScopeChapters    *[]string      `json:"scopeChapters,omitempty"`
-	ScopeFileNames   *[]string      `json:"scopeFileNames,omitempty"`
+	Title          *MaterialTitle `json:"title,omitempty" minLength:"1"`
+	ChapterID      *string        `json:"chapterId,omitempty" doc:"Chapter to file under; empty string unfiles; omit to leave unchanged"`
+	ScopeChapters  *[]string      `json:"scopeChapters,omitempty"`
+	ScopeFileNames *[]string      `json:"scopeFileNames,omitempty"`
 }
 
 type UpdateStandaloneSharingReq struct {
@@ -212,6 +211,10 @@ type CreateSourceUploadReq struct {
 	CaptionImages bool        `json:"captionImages"`
 	SizeBytes     int64       `json:"sizeBytes"`
 	ContentType   string      `json:"contentType,omitempty"`
+	// EstimatedCreditMicros is the browser's page/duration estimate at the
+	// upload policy rates. It only gates admission headroom; the parser
+	// receipt bills the measured pages.
+	EstimatedCreditMicros int64 `json:"estimatedCreditMicros,omitempty" minimum:"0"`
 }
 
 // SourceUploadReservation is the presigned PUT the browser uses after reserve.
@@ -221,15 +224,6 @@ type SourceUploadReservation struct {
 	Method    string            `json:"method"`
 	Headers   map[string]string `json:"headers" nullable:"false"`
 	ExpiresAt time.Time         `json:"expiresAt"`
-}
-
-// CreateFileReplacementUploadReq reserves a direct-to-blob PUT for bytes saved
-// by a browser editor. ExpectedRevision prevents a stale tab overwriting a
-// newer save of the same logical file.
-type CreateFileReplacementUploadReq struct {
-	ExpectedRevision int64  `json:"expectedRevision" minimum:"1"`
-	SizeBytes        int64  `json:"sizeBytes" minimum:"0"`
-	ContentType      string `json:"contentType,omitempty"`
 }
 
 // ImportSourcesReq pulls files from a connected Drive/OneDrive account.

@@ -13,7 +13,7 @@ export interface File {
   addedAt: string;
   /** @nullable */
   chapterId: string | null;
-  content?: string;
+  hasBytes: boolean;
   id: string;
   indexed: boolean;
   kind: FileKind;
@@ -23,6 +23,5 @@ export interface File {
   revision: number;
   sizeBytes: number;
   status?: FileStatus;
-  url?: string;
   workspaceId: string;
 }

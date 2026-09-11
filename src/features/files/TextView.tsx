@@ -8,33 +8,18 @@ const MaterialPreview = lazy(() =>
   }))
 );
 
-/** Markdown / plain-text / JSON viewer. Prefers inline `content` (legacy paste)
- * and otherwise fetches the stored blob. */
+/** Markdown / plain-text / JSON viewer over the stored blob. */
 export default function TextView({
-  content,
   markdown,
   url,
 }: {
-  content?: string | null;
   markdown?: boolean;
-  url?: string;
+  url: string;
 }) {
-  const [text, setText] = useState<string | null>(
-    content == null ? null : content
-  );
+  const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    if (content != null) {
-      setText(content);
-      setError(false);
-      return;
-    }
-    if (!url) {
-      setText(null);
-      setError(true);
-      return;
-    }
     let cancelled = false;
     setText(null);
     setError(false);
@@ -52,7 +37,7 @@ export default function TextView({
     return () => {
       cancelled = true;
     };
-  }, [content, url]);
+  }, [url]);
 
   if (error) {
     return (

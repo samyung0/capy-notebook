@@ -106,9 +106,11 @@ they do not crash a page boundary or emit the default mutation toast. A
 with copy that sends the user to Settings → LLM. A rejected or unclear user
 provider key (`invalid_llm_key` / `llm_key_failed`, or the matching stream
 `invalid_key` / `key_failed` frames) stays on that same chat/editor/quiz
-surface and asks the user to check the key. Ingest and
-notification streams update cached connection status, reconnect with backoff,
-and use the status banner when disconnected. An ingest `pending` or
+surface and asks the user to check the key. The one events stream
+(`useEventStream`, mounted by `AppShell`) updates cached connection status,
+reconnects with backoff, and raises the status banner while a connection
+attempt fails; the server's bounded stream lifetime ends cleanly and
+reconnects without the banner. An ingest `pending` or
 `processing` event updates the file row in place; a `failed` event updates
 the affected file state and triggers a refetch. A file that finished without
 retrieval chunks (`indexed: false`, including ingest failure and
@@ -116,11 +118,20 @@ retrieval chunks (`indexed: false`, including ingest failure and
 shows a pinned status banner (`[data-testid="file-not-indexed"]`) under the
 header instead of replacing the body with a full-page error.
 
-Ingest connects only while the page's file list contains pending or processing
-files. Every successful connection refetches that list because Redis does not
-replay missed events. A list read that finds a ready or failed file invalidates
-its cached detail if that detail still says pending or processing. This also
-repairs an open viewer when polling discovers completion and closes the stream.
+A signed-in tab holds `GET /api/stream` open for its whole life, with
+`?workspace=` set on the workspace page. It carries three named SSE events:
+`notification` (patched into the notification caches), `ingest` (patched into
+the file caches) and `tree` (`{kind: files | materials}`, which invalidates
+that workspace list plus the chapters list after a 300 ms trailing debounce
+per kind, so one ingest's several writes cost one refetch; a hidden tab only
+marks them stale and reads them on focus). Neither Redis Pub/Sub nor Postgres
+NOTIFY replays missed events, so every successful connection refetches the
+notification list, the unread count, and the file, material and chapter
+lists. There is no polling while disconnected; the workspace lists keep only
+`refetchOnWindowFocus`. A list read carries the client-only `ingestPct` over
+for rows still ingesting, and one that finds a ready or failed file
+invalidates its cached detail if that detail still says pending or
+processing, which repairs an open viewer after a missed terminal event.
 
 ## Chat tool results
 

@@ -82,6 +82,7 @@ import {
 } from './sourceAnalysis';
 import {
   aggregateSourceAnalysis,
+  initialAnalysisStatus,
   remoteSourceAnalysisInput,
   type SourceAnalysisStatus,
   sourceAnalysisBlocksSubmit,
@@ -509,12 +510,16 @@ function localRows(
   const now = Date.now();
   return selections.map(({ file, kind }, index) => {
     const key = `local-${now}-${index}-${file.name}`;
-    const input = localSourceAnalysisInput(file);
+    const input = localSourceAnalysisInput(file, policy);
     return {
       analysisInput: input
         ? { ...input, key: `${key}\0${input.key}` }
         : undefined,
-      analysisStatus: 'idle',
+      analysisStatus: initialAnalysisStatus(
+        file.name,
+        input ?? undefined,
+        policy
+      ),
       audioDurationPending: kind === 'audio',
       captionImages: false,
       chapterId: null,
@@ -648,14 +653,20 @@ function SourceChooser({
       if (!isCurrent()) return;
       const rows: PendingSource[] = inspection.items.map((item) => {
         const kind = getFileKind(item.name, uploadPolicy);
+        const analysisInput = remoteSourceAnalysisInput(
+          item,
+          provider,
+          headers,
+          inspectionKey,
+          uploadPolicy
+        );
         return {
-          analysisInput: remoteSourceAnalysisInput(
-            item,
-            provider,
-            headers,
-            inspectionKey
+          analysisInput,
+          analysisStatus: initialAnalysisStatus(
+            item.name,
+            analysisInput,
+            uploadPolicy
           ),
-          analysisStatus: 'idle',
           captionImages: false,
           chapterId: null,
           chapterName: null,
@@ -903,6 +914,28 @@ function SourceChooser({
   );
 }
 
+/** Expected cost of one source at the policy rates: audio by duration,
+ * fast-parsed documents by digital/OCR page count, everything else free. */
+function sourceCreditEstimate(
+  source: Pick<
+    PendingSource,
+    'analysisResult' | 'audioDurationSeconds' | 'kind' | 'parseMode'
+  >,
+  uploadPolicy: SourceUploadPolicy
+): number {
+  if (source.kind === 'audio' && source.audioDurationSeconds != null) {
+    return (
+      Math.ceil(source.audioDurationSeconds) *
+      uploadPolicy.audioSecondCreditMicros
+    );
+  }
+  if (source.parseMode !== 'fast' || !source.analysisResult) return 0;
+  return calculateParseCreditMicros(source.analysisResult, {
+    digitalPageRateMicros: uploadPolicy.digitalParsePageCreditMicros,
+    ocrPageRateMicros: uploadPolicy.ocrParsePageCreditMicros,
+  });
+}
+
 function SourceDetailsDialog({
   initialSources,
   onClose,
@@ -951,9 +984,27 @@ function SourceDetailsDialog({
     []
   );
 
+  // Read through a ref so a policy refetch cannot change this callback's
+  // identity: the effect below tears down the queue and aborts uploads when
+  // it does.
+  const uploadPolicyRef = useRef(uploadPolicy);
+  uploadPolicyRef.current = uploadPolicy;
   const enqueueAnalysis = useCallback(
     (source: PendingSource) => {
-      if (!source.analysisInput || source.parseMode !== 'fast') return;
+      if (source.parseMode !== 'fast') return;
+      if (!source.analysisInput) {
+        // Fast-parsed by policy but not estimable here: say so rather than
+        // leave the row idle behind a disabled Add button.
+        patchSource(source.key, {
+          analysisProgress: undefined,
+          analysisStatus: initialAnalysisStatus(
+            source.name,
+            undefined,
+            uploadPolicyRef.current
+          ),
+        });
+        return;
+      }
       const cached = queueRef.current?.getCached(source.analysisInput.key);
       if (cached) {
         patchSource(source.key, {
@@ -1134,6 +1185,7 @@ function SourceDetailsDialog({
               captionImages: source.captionImages,
               chapterId: source.chapterId,
               chapterName: source.chapterName,
+              estimatedCreditMicros: sourceCreditEstimate(source, uploadPolicy),
               file,
               kind: source.kind,
               onUploadProgress: (uploadPct) =>
@@ -1330,23 +1382,10 @@ function SourceDetailsDialog({
       .filter((source) => source.parseMode === 'fast')
       .map((source) => source.analysisResult)
   );
-  const estimatedCreditMicros = sources.reduce((total, source) => {
-    if (source.kind === 'audio' && source.audioDurationSeconds != null) {
-      return (
-        total +
-        Math.ceil(source.audioDurationSeconds) *
-          uploadPolicy.audioSecondCreditMicros
-      );
-    }
-    if (source.parseMode !== 'fast' || !source.analysisResult) return total;
-    return (
-      total +
-      calculateParseCreditMicros(source.analysisResult, {
-        digitalPageRateMicros: uploadPolicy.digitalParsePageCreditMicros,
-        ocrPageRateMicros: uploadPolicy.ocrParsePageCreditMicros,
-      })
-    );
-  }, 0);
+  const estimatedCreditMicros = sources.reduce(
+    (total, source) => total + sourceCreditEstimate(source, uploadPolicy),
+    0
+  );
   const waitingForAnalysis = sources.some(
     (source) =>
       source.audioDurationPending ||
@@ -1497,7 +1536,9 @@ function SourceDetailsDialog({
                           text: source.analysisResult.textPageCount,
                         })}
                       {source.analysisStatus === 'error' &&
-                        m.source_analysis_failed()}
+                        (source.analysisInput
+                          ? m.source_analysis_failed()
+                          : m.source_analysis_unsupported())}
                       {source.analysisStatus !== 'ready' &&
                         source.analysisStatus !== 'error' &&
                         m.source_analyzing_progress({

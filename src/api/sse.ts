@@ -34,3 +34,9 @@ export function sseData(chunk: string): string {
     .map((line) => line.slice(5).trim())
     .join('\n');
 }
+
+/** The `event:` name of one SSE chunk, "" when the server sent none. */
+export function sseEvent(chunk: string): string {
+  const line = chunk.split('\n').find((entry) => entry.startsWith('event:'));
+  return line ? line.slice(6).trim() : '';
+}

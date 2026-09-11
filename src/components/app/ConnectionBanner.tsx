@@ -1,40 +1,21 @@
 import { useQuery } from '@tanstack/react-query';
-import { useRouterState } from '@tanstack/react-router';
 import { qk } from '@/api/client';
-import type { IngestStreamState } from '@/api/hooks';
+import type { EventStreamState } from '@/api/hooks';
 import { Icon } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 import { useOnlineStatus } from '@/lib/online';
 
-type StreamState = {
-  status: 'connecting' | 'connected' | 'disconnected';
-};
-
-const WORKSPACE_PATH_PATTERN = /^\/workspaces\/([^/]+)$/;
-
 export function ConnectionBanner() {
   const online = useOnlineStatus();
-  const pathname = useRouterState({
-    select: (state) => state.location.pathname,
-  });
-  const workspaceId = WORKSPACE_PATH_PATTERN.exec(pathname)?.[1] ?? '';
-  const { data: notificationStream } = useQuery<StreamState>({
+  const { data: stream } = useQuery<EventStreamState>({
     enabled: false,
     meta: { errorBoundary: false },
-    queryFn: async () => ({ status: 'connecting' }),
-    queryKey: qk.notificationStream,
+    queryFn: async () => ({ status: 'connected' }),
+    queryKey: qk.eventStream,
   });
-  const { data: ingestStream } = useQuery<IngestStreamState>({
-    enabled: false,
-    meta: { errorBoundary: false },
-    queryFn: async () => ({ status: 'connecting' }),
-    queryKey: qk.ingestStream(workspaceId),
-  });
-  const disconnected =
-    notificationStream?.status === 'disconnected' ||
-    (!!workspaceId && ingestStream?.status === 'disconnected');
   let message: string | null = null;
-  if (online && disconnected) message = m.connection_reconnecting();
+  if (online && stream?.status === 'disconnected')
+    message = m.connection_reconnecting();
   if (!online) message = m.connection_offline();
 
   if (!message) return null;

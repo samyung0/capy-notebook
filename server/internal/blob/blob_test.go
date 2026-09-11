@@ -42,6 +42,9 @@ func TestNewB2BuildsB2Client(t *testing.T) {
 	if store.presignTTL != defaultPresignTTL {
 		t.Errorf("presignTTL = %s, want %s", store.presignTTL, defaultPresignTTL)
 	}
+	if store.linkTTL != defaultLinkTTL {
+		t.Errorf("linkTTL = %s, want %s", store.linkTTL, defaultLinkTTL)
+	}
 	if got := aws.ToString(store.client.Options().BaseEndpoint); got != "https://s3.us-west-004.backblazeb2.com" {
 		t.Errorf("BaseEndpoint = %q", got)
 	}

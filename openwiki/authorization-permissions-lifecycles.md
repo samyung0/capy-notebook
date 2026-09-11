@@ -226,8 +226,9 @@ Sources: [chapter and file handlers](../server/internal/httpapi/huma_content.go#
 - The chat agent edits materials and sources with the actor's own edit access;
   Undo of such an edit belongs to that actor alone and requires current edit
   access at Undo time.
-- Materials keep no snapshot history. `materials.revision` is only the
-  title-rename concurrency counter.
+- Materials keep no snapshot history. `materials.revision` counts content
+  versions (collaboration projections and content patches); a title rename
+  is last write wins, like a file rename, and carries no precondition.
 
 Sources: [material handlers](../server/internal/httpapi/huma_materials.go#L41)
 and [material editor checks](../server/internal/store/share.go#L209).
@@ -508,12 +509,6 @@ Upload reservations count immediately so concurrent uploads cannot both spend
 the same remaining quota. Quota errors use `storage_quota_exceeded`; lifecycle
 over-quota errors use `account_over_quota`.
 
-Replacing an existing source reserves only positive byte growth. A replacement
-that is the same size or smaller remains available to an over-quota owner as a
-recovery action; it still cannot proceed for suspended, deletion-pending, or
-deleted owners. The ingest worker receives this recovery mode explicitly and
-does not reinterpret it as permission for a growing replacement.
-
 Growing an **existing** material does not re-run the plan-byte creation gate;
 it only appends size deltas. Over-quota owners are still limited to
 shrink-only document edits via collaboration token access (see account
@@ -564,7 +559,7 @@ upload returns the already-created file. Concurrent duplicate completions may
 race before either database commit. If one request has already moved the
 incoming object, the other accepts the stable object only when its recorded
 size and content type match, then converges through the same idempotent
-finalization transaction. Source replacements use the same rule.
+finalization transaction.
 
 The upload sweeper runs once on server startup and every minute afterward. It
 finds pending sessions whose presigned deadline has passed, marks each one
@@ -879,8 +874,8 @@ Source collaboration uses the containing workspace's current owner/editor or
 shared editor permission. Tokens bind a file and editing epoch. The gateway
 rechecks access, account state and source identity when opening a room, saving
 a checkpoint and admitting processing; disconnected old-epoch buffers require
-explicit recovery. Source deletion, replacement, member/account changes and
-workspace transfer use the collaboration eviction/outbox and processing fences.
+explicit recovery. Source deletion, member/account changes and workspace
+transfer use the collaboration eviction/outbox and processing fences.
 
 Private PDF annotations belong to one actor and exact source identity. Reading
 and mutation require current file access, and one actor cannot read or modify

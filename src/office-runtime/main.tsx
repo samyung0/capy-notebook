@@ -19,6 +19,7 @@ import {
 } from '@/features/files/officeProtocol';
 import { parentOriginFromRuntimeUrl } from '@/features/files/officeRuntimeConfig';
 import { m } from '@/i18n';
+import { exportCheckpoint } from './exportCheckpoint';
 import type {
   OfficeExporter,
   OfficeFlusher,
@@ -182,8 +183,16 @@ function OfficeRuntime() {
         setCanEdit(message.canEdit);
         setError(null);
         setMode(nextMode);
+        const bytes =
+          nextMode === 'view' && message.checkpoint
+            ? await exportCheckpoint(
+                message.format,
+                message.bytes,
+                message.checkpoint
+              )
+            : new Uint8Array(message.bytes);
         setFile({
-          bytes: new Uint8Array(message.bytes),
+          bytes,
           epoch: message.collaboration?.epoch,
           fileName: message.fileName,
           format: message.format,

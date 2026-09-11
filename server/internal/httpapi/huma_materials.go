@@ -187,15 +187,11 @@ func (a *api) updateMaterial(
 	if err := a.s.AssertMaterialEditor(ctx, userID(ctx), in.ID); err != nil {
 		return nil, collaborationError(err)
 	}
-	if in.Body.Title != nil && in.Body.ExpectedRevision == nil {
-		return nil, huma.Error400BadRequest("expectedRevision is required when changing title")
-	}
 	patch := store.MaterialPatch{
-		Title:            apimodel.Str(in.Body.Title),
-		ScopeChapters:    in.Body.ScopeChapters,
-		ScopeFileNames:   in.Body.ScopeFileNames,
-		ExpectedRevision: in.Body.ExpectedRevision,
-		UpdatedBy:        userID(ctx),
+		Title:          apimodel.Str(in.Body.Title),
+		ScopeChapters:  in.Body.ScopeChapters,
+		ScopeFileNames: in.Body.ScopeFileNames,
+		UpdatedBy:      userID(ctx),
 	}
 	// chapterId: "" unfiles (NULL), a real id files it, omitted leaves it.
 	if in.Body.ChapterID != nil {
@@ -210,9 +206,6 @@ func (a *api) updateMaterial(
 	}
 	res, err := a.s.UpdateMaterial(ctx, in.ID, patch)
 	if err != nil {
-		if errors.Is(err, store.ErrConflict) {
-			return nil, huma.Error409Conflict("material revision is stale")
-		}
 		if errors.Is(err, materialdoc.ErrInvalid) {
 			return nil, huma.Error400BadRequest(err.Error())
 		}

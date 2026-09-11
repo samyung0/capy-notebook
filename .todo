@@ -17,6 +17,8 @@ low priority:
 15. add suspend/unsuspend account controls to the Ops dashboard (separate feature; current suspension is database/operator-only)
 
 high PRIORITIES:
+deepseekv4.1 flash for caption, group images on the same page for context providing, around 60 word before and 60 words after each image group
+mineru needs to convert office files into pdf for accurate bbox information, leading to a separate preview pdf artifact, can the odl java solve this without a new preview pdf artifcact?
 workspace ownership transfer
 add read material file tool, add take snapshot tool (how expensive?) -> need a signal to tell llm that the chunk is extracted with low confidence,
 give better exit signals and search directions (check other libraries), also alibaba on beijing can control the thinking tokens? -- low prio, build UI first, I want UAT to be functional first

@@ -15,7 +15,6 @@ import {
   useDeleteChapter,
   useDeleteMaterial,
   useFiles,
-  useIngestProgress,
   useMaterials,
   useMoveMaterial,
   useReorderChapters,
@@ -122,7 +121,6 @@ export default function WorkspaceOpen() {
   const readOnly = isWorkspaceReadOnly(ws?.capabilities);
   const canShare = canManageWorkspaceSettings(ws);
   const canClone = !!ws?.canClone;
-  useIngestProgress(workspaceId, files, !readOnly);
   const { mutateAsync: addChapter } = useAddChapter(workspaceId);
   const { mutateAsync: updateChapter } = useUpdateChapter(workspaceId);
   const { mutate: reorder } = useReorderChapters(workspaceId);
@@ -736,7 +734,6 @@ export default function WorkspaceOpen() {
                               maxDepth: 0,
                               nodeCount: 0,
                               position: Number.MAX_SAFE_INTEGER,
-                              revision: 0,
                               sizeBytes: 0,
                               title: GENERATING_MATERIAL[generating].title(),
                               type: GENERATING_MATERIAL[generating].type,

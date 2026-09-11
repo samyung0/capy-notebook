@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"strings"
 	"sync"
 
 	"github.com/redis/go-redis/v9"
@@ -14,7 +15,8 @@ import (
 const streamBuffer = 64
 
 // channelBroker turns one Redis pattern subscription into per-stream delivery
-// for every SSE handler in this process.
+// for every SSE handler in this process. Postgres-sourced channels (`tree:*`,
+// see sse_events.go) are pushed in through deliver by their own listener.
 //
 // Subscribing per stream is what forced the low ceiling on concurrent streams:
 // go-redis gives every PubSub its own TCP connection (Client.pubSub →
@@ -136,6 +138,38 @@ func (b *channelBroker) deliver(ctx context.Context, channel, payload string) {
 
 func (s *subscription) evict() {
 	s.once.Do(func() { close(s.dropped) })
+}
+
+// eventsOrNil and droppedOrNil let a handler select over a subscription it
+// may not have opened: a nil channel is never chosen.
+func (s *subscription) eventsOrNil() <-chan string {
+	if s == nil {
+		return nil
+	}
+	return s.events
+}
+
+func (s *subscription) droppedOrNil() <-chan struct{} {
+	if s == nil {
+		return nil
+	}
+	return s.dropped
+}
+
+// evictPrefix ends every stream on channels with the prefix, for a source
+// that lost its feed and cannot say what it missed.
+func (b *channelBroker) evictPrefix(prefix string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for channel, set := range b.subs {
+		if !strings.HasPrefix(channel, prefix) {
+			continue
+		}
+		for sub := range set {
+			sub.evict()
+		}
+		delete(b.subs, channel)
+	}
 }
 
 func (b *channelBroker) run(ctx context.Context) {

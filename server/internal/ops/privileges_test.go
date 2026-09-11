@@ -665,3 +665,45 @@ func isInsufficientPrivilege(err error) bool {
 		errors.As(err, &postgresError) &&
 		postgresError.Code == "42501"
 }
+
+func TestForbiddenColumnProbeReportsGrantsAndSkipsDroppedColumns(t *testing.T) {
+	ownerDSN := integrationDSN(t)
+	ctx := context.Background()
+	owner, err := pgxpool.New(ctx, ownerDSN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(owner.Close)
+	role := fmt.Sprintf("ops_probe_test_%d", time.Now().UnixNano())
+	password := "ops-test-password"
+	ident := pgx.Identifier{role}.Sanitize()
+	if _, err := owner.Exec(ctx, fmt.Sprintf(`
+		CREATE ROLE %s LOGIN NOINHERIT PASSWORD '%s';
+		GRANT CONNECT ON DATABASE %s TO %s;
+		GRANT USAGE ON SCHEMA public TO %s;
+		GRANT SELECT (name) ON files TO %s`,
+		ident, password,
+		pgx.Identifier{owner.Config().ConnConfig.Database}.Sanitize(), ident,
+		ident, ident,
+	)); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = owner.Exec(ctx, fmt.Sprintf(`
+			SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename='%s';
+			DROP OWNED BY %s;
+			DROP ROLE IF EXISTS %s`, role, ident, ident,
+		))
+	})
+	pool := rolePool(t, ctx, ownerDSN, role, password)
+	// files.url was dropped by 0002; a named column that no longer exists
+	// must be skipped, a granted one reported, an ungranted one silent.
+	problems := validateForbiddenColumns(ctx, pool, []columnPrivilege{
+		{"files", "name", "SELECT"},
+		{"files", "blob_path", "SELECT"},
+		{"files", "url", "SELECT"},
+	})
+	if len(problems) != 1 || problems[0] != "can SELECT files.name" {
+		t.Fatalf("forbidden column probe = %v", problems)
+	}
+}

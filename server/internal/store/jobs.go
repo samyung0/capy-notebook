@@ -15,9 +15,7 @@ import (
 // first pipeline stage in the same transaction. Document routes start as parse
 // jobs; direct routes start as ingest jobs. The file stays pending until a
 // coordinator/worker actually starts (and, for documents, gets a parser slot);
-// then it becomes 'processing'. The
-// file's url points at the raw-blob endpoint so the viewer can render it
-// immediately. parseMode selects the CPU parser the coordinator runs:
+// then it becomes 'processing'. parseMode selects the CPU parser the coordinator runs:
 // 'fast' (MinerU pipeline with automatic OCR selection). Unknown names fail validation.
 // Text kinds ignore it and are inserted directly. captionImages asks the
 // worker to describe the figures that parse extracted.
@@ -54,12 +52,11 @@ func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, 
 		return File{}, "", err
 	}
 	fileID := uid("f")
-	url := "/api/files/" + fileID + "/raw"
 	now := time.Now().UTC()
 	if _, err := tx.Exec(ctx, `INSERT INTO files
-		(id, workspace_id, user_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, parser, blob_path, url, parse_mode, caption_images)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending',$10,$11,$12,$13,$14)`,
-		fileID, wsID, ownerID, nullStr(createdBy), chapterID, name, kind, sizeBytes, now, parser, blobPath, url, parseMode, captionImages); err != nil {
+		(id, workspace_id, user_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, parser, blob_path, parse_mode, caption_images)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending',$10,$11,$12,$13)`,
+		fileID, wsID, ownerID, nullStr(createdBy), chapterID, name, kind, sizeBytes, now, parser, blobPath, parseMode, captionImages); err != nil {
 		return File{}, "", err
 	}
 
@@ -84,7 +81,7 @@ func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, 
 		return File{}, "", err
 	}
 
-	f := File{ID: fileID, WorkspaceID: wsID, ChapterID: chapterID, Name: name, Kind: FileKind(kind), SizeBytes: sizeBytes, AddedAt: now, Status: "pending", Indexed: false, URL: &url, Revision: 1}
+	f := File{ID: fileID, WorkspaceID: wsID, ChapterID: chapterID, Name: name, Kind: FileKind(kind), SizeBytes: sizeBytes, AddedAt: now, Status: "pending", Indexed: false, HasBytes: blobPath != "", Revision: 1}
 	return f, jobID, nil
 }
 
@@ -120,18 +117,17 @@ func (s *Store) CreateSourceReady(ctx context.Context, wsID, createdBy, name, ki
 		return File{}, err
 	}
 	fileID := uid("f")
-	url := "/api/files/" + fileID + "/raw"
 	now := time.Now().UTC()
 	if _, err := tx.Exec(ctx, `INSERT INTO files
-		(id, workspace_id, user_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, blob_path, url)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'ready',$10,$11)`,
-		fileID, wsID, ownerID, nullStr(createdBy), chapterID, name, kind, sizeBytes, now, blobPath, url); err != nil {
+		(id, workspace_id, user_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, blob_path)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'ready',$10)`,
+		fileID, wsID, ownerID, nullStr(createdBy), chapterID, name, kind, sizeBytes, now, blobPath); err != nil {
 		return File{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return File{}, err
 	}
-	file := File{ID: fileID, WorkspaceID: wsID, ChapterID: chapterID, Name: name, Kind: FileKind(kind), SizeBytes: sizeBytes, AddedAt: now, Status: "ready", Indexed: false, URL: &url, Revision: 1}
+	file := File{ID: fileID, WorkspaceID: wsID, ChapterID: chapterID, Name: name, Kind: FileKind(kind), SizeBytes: sizeBytes, AddedAt: now, Status: "ready", Indexed: false, HasBytes: blobPath != "", Revision: 1}
 	if FileKind(kind) == FilePDF && blobPath != "" {
 		previewURL := "/api/files/" + fileID + "/preview"
 		file.PreviewURL = &previewURL
@@ -139,38 +135,30 @@ func (s *Store) CreateSourceReady(ctx context.Context, wsID, createdBy, name, ki
 	return file, nil
 }
 
-// FileBlob returns the B2 object key and kind for a raw file.
-func (s *Store) FileBlob(ctx context.Context, id string) (blobPath string, kind string, content *string, url *string, err error) {
-	var bp *string
-	err = s.pool.QueryRow(ctx, `SELECT blob_path, kind, content, url FROM files WHERE id=$1 AND trashed_at IS NULL`, id).Scan(&bp, &kind, &content, &url)
+// FileBlobPaths returns the source object and, once the file is ready, the
+// preview object whose page coordinates match citation regions. Native PDFs
+// preview from their source object; Office files use the exact PDF emitted by
+// LibreOffice before parsing. Either path is empty when there are no bytes.
+func (s *Store) FileBlobPaths(ctx context.Context, id string) (source, preview string, err error) {
+	var sourcePath, previewPath *string
+	err = s.pool.QueryRow(ctx, `SELECT blob_path,
+		CASE WHEN status='ready' THEN
+			CASE WHEN kind='pdf' THEN blob_path ELSE preview_blob_path END
+		END
+	FROM files WHERE id=$1 AND trashed_at IS NULL`, id).Scan(&sourcePath, &previewPath)
 	if isNoRows(err) {
-		return "", "", nil, nil, ErrNotFound
-	}
-	if bp != nil {
-		blobPath = *bp
-	}
-	return blobPath, kind, content, url, err
-}
-
-// FilePreviewBlob returns the PDF bytes whose page coordinates match citation
-// regions. Native PDFs use their source object. Office files use the exact PDF
-// emitted by LibreOffice before Marker parsed it.
-func (s *Store) FilePreviewBlob(ctx context.Context, id string) (string, error) {
-	var path *string
-	err := s.pool.QueryRow(ctx, `SELECT CASE
-		WHEN kind='pdf' THEN blob_path
-		ELSE preview_blob_path
-	END FROM files WHERE id=$1 AND status='ready' AND trashed_at IS NULL`, id).Scan(&path)
-	if isNoRows(err) {
-		return "", ErrNotFound
+		return "", "", ErrNotFound
 	}
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	if path == nil || *path == "" {
-		return "", ErrNotFound
+	if sourcePath != nil {
+		source = *sourcePath
 	}
-	return *path, nil
+	if previewPath != nil {
+		preview = *previewPath
+	}
+	return source, preview, nil
 }
 
 // ErrIngestUnpinnable means an ingest job could not be given the identity it

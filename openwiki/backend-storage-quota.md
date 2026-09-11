@@ -183,16 +183,6 @@ Expiry marks the session expired and releases the reservation in the same
 transaction before best-effort blob cleanup (cleanup details in the
 authorization doc).
 
-Explicit source replacement keeps the logical file. Ordinary collaborative Office saves use durable checkpoints, as described below.
-Its upload session reserves `max(new_size - current_size, 0)`, so unchanged or
-smaller saves do not need free quota they will not consume. Finalization locks
-the file, verifies its expected revision, swaps the blob and size, then releases
-the growth reservation. The normal file-size trigger applies the signed used
-byte delta. A same-size or smaller replacement is explicitly permitted while
-the storage owner is over quota, so Office editing provides a replacement-based
-recovery path. Suspended, deletion-pending, and deleted owners remain blocked.
-A stale editor or a file that is no longer ready cannot finalize.
-
 Collaborative source saves account `source_documents` state, indexed state and
 serialized pending JSON through generated `storage_bytes` and the same storage
 delta ledger. `source_refresh_candidates` accounts its captured state, new

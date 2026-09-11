@@ -35,7 +35,7 @@ func TestPublicWorkspaceSummary(t *testing.T) {
 	defer pool.Exec(ctx, `DELETE FROM users WHERE id=$1`, owner)
 	exec(`INSERT INTO workspaces (id,user_id,name,description,privacy) VALUES ($1,$2,'<script>title</script>','Only metadata','public')`, ws, owner)
 	exec(`INSERT INTO chapters (id,workspace_id,name) VALUES ($1,$2,'Chapter A')`, chapter, ws)
-	exec(`INSERT INTO files (id,workspace_id,user_id,name,kind,chapter_id,content) VALUES ($1,$2,$3,'Source.pdf','pdf',$4,'SECRET CONTENT')`, file, ws, owner, chapter)
+	exec(`INSERT INTO files (id,workspace_id,user_id,name,kind,chapter_id) VALUES ($1,$2,$3,'Source.pdf','pdf',$4)`, file, ws, owner, chapter)
 	path := "/api/public/workspaces/" + ws + "/summary"
 	rec := doReq(t, h, http.MethodGet, path, "", nil)
 	if rec.Code != 200 {
@@ -59,7 +59,7 @@ func TestPublicWorkspaceSummary(t *testing.T) {
 	if len(keys) != 8 {
 		t.Fatalf("unexpected projection keys: %v", keys)
 	}
-	for _, secret := range []string{owner, ws, chapter, file, "SECRET CONTENT", "summary@example.test", "workspaceId", "content", "blob"} {
+	for _, secret := range []string{owner, ws, chapter, file, "summary@example.test", "workspaceId", "content", "blob"} {
 		if strings.Contains(rec.Body.String(), secret) {
 			t.Fatalf("summary leaked %q", secret)
 		}

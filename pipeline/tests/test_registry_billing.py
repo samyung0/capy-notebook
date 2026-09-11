@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from pipeline import plan_limits
@@ -155,7 +157,6 @@ def test_claim_gating_matrix(monkeypatch):
         "owner_ok": True,
         "actor_ok": True,
         "owner": "u_owner",
-        "allow_over_quota": False,
     }
 
     monkeypatch.setattr(db, "connect", lambda: _Conn())
@@ -164,10 +165,7 @@ def test_claim_gating_matrix(monkeypatch):
     monkeypatch.setattr(
         db,
         "account_allows_ingest",
-        lambda _cur, uid, *, allow_over_quota=False: (
-            state.update(allow_over_quota=allow_over_quota)
-            or (state["owner_ok"] if uid == "u_owner" else False)
-        ),
+        lambda _cur, uid: state["owner_ok"] if uid == "u_owner" else False,
     )
     monkeypatch.setattr(
         db,
@@ -176,22 +174,86 @@ def test_claim_gating_matrix(monkeypatch):
     )
 
     payload = {"actorUserId": "u_actor"}
-    assert worker._account_allows_ingest("f_1", payload) is True
-    assert worker._account_allows_ingest("f_1", {}) is False
+    assert worker._account_allows_ingest("f_1", payload, True) is True
+    assert worker._account_allows_ingest("f_1", {}, True) is False
 
     state["owner_ok"] = False
-    assert worker._account_allows_ingest("f_1", payload) is False
+    assert worker._account_allows_ingest("f_1", payload, True) is False
 
     state["owner_ok"] = True
     state["actor_ok"] = False
-    assert worker._account_allows_ingest("f_1", payload) is False
+    assert worker._account_allows_ingest("f_1", payload, True) is False
+    # An admitted job finishes even after its own parse exhausted the actor.
+    assert worker._account_allows_ingest("f_1", payload, False) is True
 
     state["actor_ok"] = True
-    assert worker._account_allows_ingest("f_1", payload) is True
+    assert worker._account_allows_ingest("f_1", payload, True) is True
 
-    payload["quotaRecovery"] = True
-    assert worker._account_allows_ingest("f_1", payload) is True
-    assert state["allow_over_quota"] is True
+
+def test_credits_gate_only_the_first_claim():
+    assert worker._first_claim({"attempts": 1}, {}) is True
+    assert worker._first_claim({"attempts": 2}, {}) is False
+    assert worker._first_claim({"attempts": 1}, {"parseJobId": "job_1"}) is False
+    # A busy-provider re-pend hands the attempt back but keeps its admission.
+    assert worker._first_claim({"attempts": 1, "provider_waits": 1}, {}) is False
+
+
+def test_restored_parse_usage_round_trips():
+    # Runs in its own task context so the accumulator does not leak into
+    # later tests in this process.
+    async def run():
+        worker.obs.start_usage()
+        worker.obs.record_parse_usage(
+            pages=3,
+            ocr_pages=1,
+            cpu_milliseconds=10,
+            elapsed_milliseconds=20,
+            slices=2,
+            method="fast",
+            source_format="pdf",
+            receipt_id="fp-2",
+        )
+        taken = worker.obs.take_parse_usage()
+        worker.obs.restore_parse_usage(taken)
+        return taken, worker.obs.take_parse_usage()
+
+    taken, restored = asyncio.run(run())
+    assert restored == taken
+
+
+def test_parse_usage_outside_an_attempt_fails_loudly():
+    async def run():
+        return await asyncio.to_thread(
+            worker.obs.record_parse_usage,
+            pages=1,
+            ocr_pages=0,
+            cpu_milliseconds=0,
+            elapsed_milliseconds=0,
+        )
+
+    with pytest.raises(RuntimeError, match="outside an attempt"):
+        asyncio.run(run())
+
+
+def test_parse_usage_recorded_in_a_worker_thread_reaches_the_coroutine():
+    async def run():
+        worker.obs.start_usage()
+        await asyncio.to_thread(
+            worker.obs.record_parse_usage,
+            pages=40,
+            ocr_pages=14,
+            cpu_milliseconds=1,
+            elapsed_milliseconds=1,
+            receipt_id="fp-1",
+        )
+        # The handoff takes the usage from another thread, like the worker does.
+        first = await asyncio.to_thread(worker.obs.take_parse_usage)
+        return first, await asyncio.to_thread(worker.obs.take_parse_usage)
+
+    usage, second = asyncio.run(run())
+    assert (usage.pages, usage.ocr_pages, usage.receipt_id) == (40, 14, "fp-1")
+    # One attempt cannot be charged twice: the take reset the shared object.
+    assert second.is_empty()
 
 
 def test_superseded_worker_closes_exact_attempt_after_job_is_terminal(monkeypatch):
@@ -355,7 +417,7 @@ def test_parser_receipt_uses_fingerprint_idempotency(monkeypatch):
     finally:
         worker._resource_rates.reset(token)
 
-    assert billed[0]["idempotency_key"] == "parse-receipt:fingerprint-1"
+    assert billed[0]["idempotency_key"] == "parse-receipt:fingerprint-1:job_1"
     assert billed[0]["metadata"]["parseReceiptId"] == "fingerprint-1"
 
 

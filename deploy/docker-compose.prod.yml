@@ -37,6 +37,7 @@ x-b2: &b2
   B2_APP_KEY: ${B2_APP_KEY:?set B2_APP_KEY}
   B2_FORCE_PATH_STYLE: ${B2_FORCE_PATH_STYLE:-}
   B2_PRESIGN_TTL: ${B2_PRESIGN_TTL:-}
+  B2_LINK_TTL: ${B2_LINK_TTL:-}
 
 services:
   db:

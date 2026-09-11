@@ -303,6 +303,52 @@ func (s *Store) AssertCreditsAvailable(ctx context.Context, userID string) error
 	return exhaustedIfOverLimit(usage)
 }
 
+// The estimate headroom lets one admitted job overrun the monthly limit by
+// 30% (limit × 13/10, kept in integers so the boundary is exact). The
+// browser's estimate is trusted here because the parser receipt still bills
+// the measured pages: a low estimate only lets a user finish one job past the
+// limit before the next interactive request refuses.
+const (
+	creditHeadroomNumerator   = 13
+	creditHeadroomDenominator = 10
+)
+
+// AssertCreditsForEstimate is the upload-reservation gate: the plain
+// exhaustion check plus a refusal when the estimated cost would land past the
+// headroom. Unlocked like AssertCreditsAvailable; the job's own claim rechecks.
+func (s *Store) AssertCreditsForEstimate(ctx context.Context, userID string, estimateMicros int64) error {
+	usage, err := s.CreditBalance(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if err := exhaustedIfOverLimit(usage); err != nil {
+		return err
+	}
+	if !estimateExceedsHeadroom(usage, estimateMicros) {
+		return nil
+	}
+	return &CreditsExhaustedError{
+		UserID:         usage.UserID,
+		UsedMicros:     usage.UsedMicros,
+		ReservedMicros: usage.ReservedMicros,
+		LimitMicros:    usage.LimitMicros,
+		PlanTier:       usage.PlanTier,
+	}
+}
+
+func estimateExceedsHeadroom(usage CreditUsage, estimateMicros int64) bool {
+	if estimateMicros <= 0 {
+		return false
+	}
+	// An estimate larger than the whole headroom refuses before any arithmetic
+	// that a client-supplied value could overflow.
+	if estimateMicros > usage.LimitMicros*creditHeadroomNumerator {
+		return true
+	}
+	projected := usage.UsedMicros + usage.ReservedMicros + estimateMicros
+	return projected*creditHeadroomDenominator > usage.LimitMicros*creditHeadroomNumerator
+}
+
 func exhaustedIfOverLimit(usage CreditUsage) error {
 	if usage.UsedMicros+usage.ReservedMicros < usage.LimitMicros {
 		return nil

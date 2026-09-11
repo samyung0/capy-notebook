@@ -304,7 +304,7 @@ function FileBody({
   });
   if (isLoading) return <FileLoading />;
   if (!file && isError) return <FileError />;
-  if (file && fileIsIngesting(file.status) && !file.url) {
+  if (file && fileIsIngesting(file.status) && !file.hasBytes) {
     const waiting = file.status === 'pending';
     return (
       <div className="grid h-full place-items-center">
@@ -327,7 +327,7 @@ function FileBody({
   }
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {file && fileIsIngesting(file.status) && file.url && (
+      {file && fileIsIngesting(file.status) && file.hasBytes && (
         <div className="flex shrink-0 items-center gap-3 border-divider border-b bg-surface-hover-bg px-4 py-2">
           <p className="t-meta min-w-0 flex-1 truncate text-fg-secondary">
             {file.status === 'pending'

@@ -1,21 +1,13 @@
 import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
 import { api, qk } from './client';
-import { filesQuery, materialsQuery } from './hooks';
+import { filesQuery } from './hooks';
 import type { SourceFile } from './types';
 
-// The workspace page polls its file and material lists through useFiles /
-// useMaterials. The polling must stay on those hooks: the dashboard's
-// RecentItemsCard spreads materialsQuery across every workspace at once, so a
-// refetchInterval on the factory would quietly poll all of them.
-describe('workspace tree query factories', () => {
-  it('carry no polling of their own', () => {
-    for (const options of [filesQuery('ws_1'), materialsQuery('ws_1')]) {
-      expect(options).not.toHaveProperty('refetchInterval');
-      expect(options).not.toHaveProperty('refetchOnWindowFocus');
-    }
-  });
-
+// The event stream replays nothing, so a terminal ingest event can be missed.
+// A list read is the recovery: it refreshes a cached detail still marked
+// pending or processing once the list reports completion.
+describe('files list reconciliation', () => {
   it.each(['ready', 'failed'] as const)(
     'refreshes a stale detail when the list discovers %s, then stops fetching its body',
     async (status) => {
@@ -23,6 +15,7 @@ describe('workspace tree query factories', () => {
       const pending: SourceFile = {
         addedAt: '2026-09-10T00:00:00Z',
         chapterId: null,
+        hasBytes: true,
         id: 'f_poll',
         indexed: false,
         kind: 'md',
@@ -66,4 +59,34 @@ describe('workspace tree query factories', () => {
       }
     }
   );
+
+  it('keeps client-only ingest progress across a list read while the file is still ingesting', async () => {
+    const client = new QueryClient();
+    const processing: SourceFile = {
+      addedAt: '2026-09-10T00:00:00Z',
+      chapterId: null,
+      hasBytes: true,
+      id: 'f_pct',
+      indexed: false,
+      kind: 'md',
+      name: 'notes.md',
+      position: 0,
+      revision: 0,
+      sizeBytes: 20,
+      status: 'processing',
+      workspaceId: 'ws_pct',
+    };
+    const get = vi
+      .spyOn(api, 'get')
+      .mockImplementation(async <T>() => [processing] as T);
+    client.setQueryData(qk.files('ws_pct'), [{ ...processing, ingestPct: 40 }]);
+    try {
+      expect(await client.fetchQuery(filesQuery('ws_pct'))).toEqual([
+        { ...processing, ingestPct: 40 },
+      ]);
+    } finally {
+      client.clear();
+      get.mockRestore();
+    }
+  });
 });
