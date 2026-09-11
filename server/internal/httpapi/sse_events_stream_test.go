@@ -90,7 +90,7 @@ func TestEventStreamCarriesNotificationsAndTreeChanges(t *testing.T) {
 	// relays the first insert.
 	deadline := time.Now().Add(5 * time.Second)
 	for attached := false; !attached; {
-		if _, err := st.CreateSourceReady(ctx, ws.ID, userID, "notes.md", "md", nil, "", 10, "sources/notes"); err != nil {
+		if _, err := st.CreateSourceReady(ctx, ws.ID, userID, "notes.md", "md", nil, "", 10, "sources/"+ws.ID+"/notes.md"); err != nil {
 			t.Fatal(err)
 		}
 		select {

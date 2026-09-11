@@ -56,7 +56,9 @@ func TestWorkspaceTreeNotifiesListVisibleWrites(t *testing.T) {
 		}
 	}
 
-	file, err := s.CreateSourceReady(ctx, workspace.ID, ownerID, "notes.md", "md", nil, "", 10, "sources/notes")
+	// Blob paths are reference-counted across the shared test database; a
+	// path another test released may still be mid-deletion.
+	file, err := s.CreateSourceReady(ctx, workspace.ID, ownerID, "notes.md", "md", nil, "", 10, "sources/"+workspace.ID+"/notes.md")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -2700,6 +2700,7 @@ def test_ingest_boundaries_cancel_after_editor_membership_is_revoked(
             "sourceRevision": 1,
             "workspaceId": workspace.id,
         },
+        False,
     )
     with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
         with pytest.raises(RuntimeError, match="editor access was revoked"):
