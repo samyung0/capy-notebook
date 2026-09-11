@@ -34,5 +34,13 @@ printf '%-18s %s  %s\n' "ops access" "${answer%% *}" "$login"
 # the API still demands a Clerk session.
 token=(-H "CF-Access-Client-Id: $UAT_OPS_ACCESS_CLIENT_ID"
   -H "CF-Access-Client-Secret: $UAT_OPS_ACCESS_CLIENT_SECRET")
+# Coolify reports the deployment finished once the new container starts, but
+# Traefik only routes it after its first healthcheck passes and answers 404
+# until then. A cached build gets here within seconds, so allow up to a minute.
+for _ in $(seq 12); do
+  [[ "$(curl --silent --output /dev/null --max-time 20 --max-redirs 0 \
+    --write-out '%{http_code}' "${token[@]}" "${DEPLOYMENT_OPS_URL%/}/")" == 404 ]] || break
+  sleep 5
+done
 review_probe "ops shell" "${DEPLOYMENT_OPS_URL%/}/" '^200$' "${token[@]}"
 review_probe "ops session" "${DEPLOYMENT_OPS_URL%/}/api/ops/session" '^401$' "${token[@]}"
