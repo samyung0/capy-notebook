@@ -250,7 +250,13 @@ The prod file runs `/migrate` once per deploy, starts the API with
    below, and needs the §8 roles first. Do **not** set
    `AUTH_DISABLED=true` or `MIGRATE=true`. In Advanced settings, enable
    **Include Source Commit in Build** so Coolify supplies `SOURCE_COMMIT` to
-   the Compose build and runtime; the release verifier depends on it.
+   the Compose build and runtime; the release verifier depends on it. Turn
+   **off** "Inject build args into Dockerfile" (Advanced, both applications).
+   With it on, Coolify writes `ARG KEY=value` for every build-time variable
+   under each `FROM`, so `SOURCE_COMMIT` and `RELEASE_SHA` sit above every
+   `RUN`, no layer below them is ever reused, every deploy leaves 5–7 GB of
+   dead build cache, and the values appear in `docker history`. Compose still
+   passes the `VITE_*` args the Dockerfiles declare.
 5. **Deploy.** Coolify runs `docker compose up --build`. `migrate` applies
    pending `NNNN_*.sql` files and exits 0; `server` / `worker` / `retrieval`
    wait on `service_completed_successfully`. An exited `migrate` container
@@ -269,9 +275,12 @@ The prod file runs `/migrate` once per deploy, starts the API with
 
    Redeploy or wait for the proxy to pick up the domains.
 
-   Expect a full rebuild of every image on each new commit. Coolify injects the
-   build arguments as `ARG` lines near the top of each Dockerfile, and their
-   values change per deployment, so nothing after them hits the layer cache.
+   A warm deploy rebuilds only what changed: `go build`, the Vite/collab
+   bundles and the pipeline source copy. Dependency installs, the BetterOffice
+   WASM toolchain and `uv sync` come from the layer cache until their lockfile
+   or `vendor/betteroffice` moves. `ARG RELEASE_SHA` in `pipeline/Dockerfile`
+   stays below `uv sync` for the same reason. A cold build (empty cache) takes
+   about 16 minutes on the UAT host.
    On the 2 vCPU UAT host the four concurrent builds also starve Coolify's own
    API into `502`s; `coolify-deploy.sh` treats that as an unknown status and
    keeps polling rather than abandoning a deployment that is still running.
@@ -289,6 +298,24 @@ The prod file runs `/migrate` once per deploy, starts the API with
    grep -q '^/swapfile none swap sw 0 0$' /etc/fstab || \
      printf '%s\n' '/swapfile none swap sw 0 0' >> /etc/fstab
    ```
+
+   Cap the BuildKit cache. Docker's default GC on a 78 GB disk keeps up to
+   ~58 GiB of build cache and only evicts when under 15 GiB is free, so the
+   host sits at 80% by design. Add to `/etc/docker/daemon.json` and
+   `systemctl restart docker` (containers return through their restart
+   policies; `docker start coolify-sentinel` by hand, it has none):
+
+   ```json
+   "builder": { "gc": { "enabled": true, "defaultKeepStorage": "20GB" } }
+   ```
+
+   BuildKit then prunes least-recently-used entries after each build; the
+   `--mount=type=cache` mounts and the last build's layers are the most
+   recent and survive. In Coolify's server settings set **Docker cleanup**
+   to `force off`, threshold 85%. That cleanup always runs
+   `docker builder prune -af`, which empties the cache mounts too and makes
+   the next deploy cold, so it should only fire as a last resort when old
+   image generations push the disk past the threshold.
 
 7. Disable Coolify **Auto Deploy**. The GitHub deployment workflow updates
    `git_commit_sha`, starts the deployment through the Coolify API, polls its

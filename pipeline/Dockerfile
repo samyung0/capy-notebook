@@ -9,12 +9,8 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-ARG RELEASE_SHA=dev
-LABEL org.opencontainers.image.revision=$RELEASE_SHA
-
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1
-ENV RELEASE_SHA=$RELEASE_SHA
 ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
 
@@ -22,9 +18,6 @@ COPY pyproject.toml uv.lock ./
 COPY pipeline ./pipeline
 COPY server/internal/models/elitellm_providers.json ./server/internal/models/elitellm_providers.json
 COPY server/internal/sourceupload/text_extensions.json ./server/internal/sourceupload/text_extensions.json
-# Coolify injects the build arguments as ARG lines near the top of this file and
-# their values change per deployment, so no layer below them is ever reused.
-# Cache mounts live outside the layer cache and survive that.
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-editable
 # Retrieval diagnostics run inside this image via `docker compose exec`.
@@ -32,6 +25,11 @@ COPY bench/rag/scripts ./bench/rag/scripts
 COPY bench/rag/fixtures ./bench/rag/fixtures
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONPATH="/app/pipeline"
+
+# RELEASE_SHA changes every deployment; keep it below every cacheable layer.
+ARG RELEASE_SHA=dev
+LABEL org.opencontainers.image.revision=$RELEASE_SHA
+ENV RELEASE_SHA=$RELEASE_SHA
 
 # Default role: the ingest worker (compose overrides for the retrieval service).
 CMD ["python", "-m", "pipeline.ingest.worker"]

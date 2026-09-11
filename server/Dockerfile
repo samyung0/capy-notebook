@@ -1,9 +1,8 @@
 # Build the gateway as a small static binary.
 FROM golang:1.25-alpine AS build
 WORKDIR /src
-# Coolify injects the build arguments as ARG lines near the top of this file and
-# their values change per deployment, so no layer below them is ever reused.
-# Cache mounts live outside the layer cache and survive that.
+# Cache mounts keep compiled output across deploys even when the layer cache
+# misses (Coolify ARG injection must stay off, see the deployment runbook).
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download

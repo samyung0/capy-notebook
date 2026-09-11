@@ -18,9 +18,8 @@ tar -xzf /tmp/binaryen.tar.gz -C /opt/binaryen --strip-components=1
 rm /tmp/binaryen.tar.gz /tmp/binaryen-pin /tmp/wasm-toolchain.yml
 SH
 ENV PATH="/opt/binaryen/bin:${PATH}"
-# Coolify injects the build arguments as ARG lines near the top of this file and
-# their values change per deployment, so no layer below them is ever reused.
-# Cache mounts live outside the layer cache and survive that.
+# Cache mounts keep compiled output across deploys even when the layer cache
+# misses (Coolify ARG injection must stay off, see the deployment runbook).
 RUN rustup target add wasm32-unknown-unknown
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cargo install wasm-pack --version 0.15.0 --locked
