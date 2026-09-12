@@ -483,6 +483,16 @@ receipts. The developer paused this region's tests; no successful model
 responses or quality/latency comparison are available. `bench_beijing_ocr.py
 --check` verifies request construction without making network requests.
 
+The [Qwen3.5-OCR report](reports/2026-09-12-qwen35-ocr-digital-math.md) is the
+first successful run on that model: a 19-page mathematics paper, an 84-slide
+Japanese deck and part of the 610-page biology textbook, chat-completions
+prompt versus DashScope `document_parsing`. `bench_qwen_ocr_pdf.py run` renders
+and sends every page of one PDF; `score` compares run directories against the
+PDF's embedded text (`--cjk` for character-level); `probe` applies the frozen
+page probes from `opendataloader-checks.json`. The key comes from
+`ALIBABA_API_KEY` only. The endpoint takes images and PDF, not Office files,
+and direct PDF upload is capped at 50 pages.
+
 Run the corpus check with the recorded PDF dependencies:
 
 ```sh
