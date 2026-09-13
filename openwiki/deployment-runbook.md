@@ -1857,7 +1857,8 @@ One-time setup per environment:
    move the hostname from the old application and retire that service before
    starting the new one. Remove `COMPOSE_PROFILES=ops` from old configuration.
 7. Run **Deploy Ops** from `main`, select `uat`, and choose a full commit SHA
-   or leave it blank for the selected main revision. Successful CI is required.
+   or leave it blank to use the running backend's revision. UAT and production
+   Ops deployments run independently of CI results.
 
 Each run verifies that its target is a different Coolify application with the
 Ops Compose file and a shared Coolify destination with predefined networking

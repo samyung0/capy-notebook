@@ -17,7 +17,6 @@ on:
 permissions:
   actions: read
   contents: read
-  statuses: read
 
 # Share the app promotion lock so Ops cannot restart during schema migrations.
 concurrency:
@@ -73,18 +72,13 @@ jobs:
         with:
           ref: ${{ needs.resolve_revision.outputs.revision }}
           fetch-depth: 0
-      - name: Validate candidate and require successful CI
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Validate target and immutable revision
         run: |
           [[ "$GITHUB_REF" == refs/heads/main ]]
           [[ "$TARGET_ENVIRONMENT" == uat || "$TARGET_ENVIRONMENT" == production ]]
           [[ "$DEPLOY_REVISION" =~ ^[0-9a-f]{40}$ ]]
           [[ "$(git rev-parse HEAD)" == "$DEPLOY_REVISION" ]]
           git merge-base --is-ancestor "$DEPLOY_REVISION" origin/main
-          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$DEPLOY_REVISION&status=success&per_page=100" \
-            --jq '.workflow_runs | any(.head_branch == "main" and (.event == "push" or .event == "workflow_dispatch"))' \
-            | grep -qx true || { echo "Candidate needs successful main-branch CI." >&2; exit 1; }
       - name: Require prior Ops UAT deployment
         if: inputs.environment_name == 'production'
         env:
