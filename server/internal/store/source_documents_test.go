@@ -149,6 +149,9 @@ func TestSourceRefreshClaimPublicationAndStaleOffice(t *testing.T) {
 		t.Fatal(err)
 	}
 	publish := SourceRefreshPublish{AttemptID: sourceTestAttempt(t, s, job.JobID), JobID: job.JobID, Epoch: 1, Checkpoint: 1, LeaseToken: candidate.LeaseToken, SourceETag: "etag-b", ContentID: contentID, ContentHash: "hash-b", PreviewBlobPath: "previews/b", ExpectedLatestCheckpoint: doc.Checkpoint}
+	if _, err = s.pool.Exec(ctx, `UPDATE source_refresh_candidates SET content_id=$2,content_hash=$3,preview_blob_path=$4 WHERE file_id=$1`, file.ID, publish.ContentID, publish.ContentHash, publish.PreviewBlobPath); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = s.PublishSourceRefresh(ctx, file.ID, publish); !errors.Is(err, ErrConflict) {
 		t.Fatalf("stale office published: %v", err)
 	}
@@ -170,7 +173,7 @@ func TestSourceRefreshClaimPublicationAndStaleOffice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(retained.State) != "newer-state" || retained.Epoch != 1 || retained.NetTokens != 6000 {
+	if string(retained.State) != "newer-state" || retained.Checkpoint != doc.Checkpoint || retained.Epoch != 1 || retained.NetTokens != 6000 {
 		t.Fatalf("stale candidate lost history: %+v", retained)
 	}
 	// A fresh candidate at the current checkpoint can replace the base.
@@ -195,6 +198,10 @@ func TestSourceRefreshClaimPublicationAndStaleOffice(t *testing.T) {
 	publish.JobID = job.JobID
 	publish.Checkpoint = doc.Checkpoint
 	publish.LeaseToken = candidate.LeaseToken
+	publish.ContentID = uid("rc")
+	if _, err = s.pool.Exec(ctx, `INSERT INTO rag_contents(id,workspace_id,content_hash,status) VALUES($1,$2,'hash-b','ready')`, publish.ContentID, ws.ID); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = s.pool.Exec(ctx, `UPDATE source_refresh_candidates SET content_id=$2,content_hash=$3,preview_blob_path=$4,image_sha256s=ARRAY[$5::text] WHERE file_id=$1`, file.ID, publish.ContentID, publish.ContentHash, publish.PreviewBlobPath, strings.Repeat("c", 64)); err != nil {
 		t.Fatal(err)
 	}
