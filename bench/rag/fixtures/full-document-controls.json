@@ -1,0 +1,464 @@
+{
+  "schema_version": 1,
+  "id": "full-document-controls-2026-09-13",
+  "scope": "All eight full source documents are candidates together. No active-file input. Exact filenames/source references are present in user text; source IDs below are gold labels only.",
+  "provenance": "Questions authored by root from visually inspected source pages before candidate outcomes. Labels identify locator units, not complete answer correctness. Seven sources have prior experimental exposure; Korean is newly downloaded. No natural-traffic or unseen-family claim.",
+  "normalization": "NFKC and whitespace normalization only for source-anchor checks. Preserve separate raw-glyph variants; do not repair text by fiat.",
+  "sources": [
+    {
+      "source_id": "bert",
+      "locale": "en",
+      "filename": "bert.pdf",
+      "source_ref": "bert.pdf",
+      "pdf": "bench/rag/fixtures/local/2026-09-09-odl-agentic/pdfs/bert.pdf",
+      "sha256": "5692a5514787a8c6727b4ff3b726a3385798bc68e12138d1d4af83947e2acf6e",
+      "provenance": "retained real source, previously inspected in other experiments"
+    },
+    {
+      "source_id": "jlpt-n1-2019",
+      "locale": "ja",
+      "filename": "N1 7-2019.pdf",
+      "source_ref": "N1 7-2019.pdf",
+      "pdf": "bench/parsers/reports/local/2026-09-13-odl-next-directions/source.pdf",
+      "sha256": "98ef94c2fd3e7cd9dc103f936ccf6c4b624137e4c25cc059e7b1fe50f40d3aca",
+      "provenance": "retained real source, previously inspected in other experiments"
+    },
+    {
+      "source_id": "ko-etri-processors",
+      "locale": "ko",
+      "filename": "ko-etri-processors.pdf",
+      "source_ref": "ko-etri-processors.pdf",
+      "pdf": "bench/rag/fixtures/local/2026-09-13-full-document-controls/ko-etri-processors.pdf",
+      "sha256": "768334f55c683c99653c20865c33df50324b7b599505de5a681310bc09104abe",
+      "provenance": "new public institutional PDF",
+      "url": "https://ettrends.etri.re.kr/ettrends/204/0905204001/001-011.%20%EC%A0%84%EC%9B%90_204%ED%98%B8.pdf"
+    },
+    {
+      "source_id": "rag__zh__zh-CN",
+      "locale": "zh-CN",
+      "filename": "zh-CN.pdf",
+      "source_ref": "zh-CN.pdf",
+      "pdf": "bench/rag/fixtures/local/2026-09-09-odl-agentic/pdfs/rag__zh__zh-CN.pdf",
+      "sha256": "73e000eadee1d6fcfc374c1b37803b0492b648a3afdda95c1f01cf75cbc0f1dd",
+      "provenance": "retained real source, previously inspected in other experiments"
+    },
+    {
+      "source_id": "rag__zh__zh_TW_llm",
+      "locale": "zh-TW",
+      "filename": "zh_TW_llm.pdf",
+      "source_ref": "zh_TW_llm.pdf",
+      "pdf": "bench/rag/fixtures/local/2026-09-09-odl-agentic/pdfs/rag__zh__zh_TW_llm.pdf",
+      "sha256": "d55d954482a9a6404b9fe0b120aabf734de1c2045cd1928ba7fa1f544a32c92b",
+      "provenance": "retained real source, previously inspected in other experiments"
+    },
+    {
+      "source_id": "rag__zh__zh_HK",
+      "locale": "zh-HK",
+      "filename": "zh_HK.pdf",
+      "source_ref": "zh_HK.pdf",
+      "pdf": "bench/rag/fixtures/local/2026-09-09-odl-agentic/pdfs/rag__zh__zh_HK.pdf",
+      "sha256": "37ee98f3cc724c6eb69a8fc8120e87ddccdf8c7169a57339402daa12311e9211",
+      "provenance": "retained real source, previously inspected in other experiments"
+    },
+    {
+      "source_id": "rag__es__variedades-espanol",
+      "locale": "es",
+      "filename": "variedades-espanol.pdf",
+      "source_ref": "variedades-espanol.pdf",
+      "pdf": "bench/rag/fixtures/local/2026-09-09-odl-agentic/pdfs/rag__es__variedades-espanol.pdf",
+      "sha256": "6e9ee0972e0932c99b3d26e2fb9a8618edfbf06b883c8c3c3f872aa76d43cb24",
+      "provenance": "retained real source, previously inspected in other experiments"
+    },
+    {
+      "source_id": "rag__fr__camembert-taln",
+      "locale": "fr",
+      "filename": "camembert-taln.pdf",
+      "source_ref": "camembert-taln.pdf",
+      "pdf": "bench/rag/fixtures/local/2026-09-09-odl-agentic/pdfs/rag__fr__camembert-taln.pdf",
+      "sha256": "5499969bf0f52657722c22220ee8f6f7fe763629d438a9a67d376b05e115dff3",
+      "provenance": "retained real source, previously inspected in other experiments"
+    }
+  ],
+  "cases": [
+    {
+      "id": "real-en-section",
+      "locale": "en",
+      "query": "Find section 3.1 in bert.pdf.",
+      "expected": {
+        "outcome": "resolve",
+        "source_id": "bert",
+        "kind": "section",
+        "number": "3.1",
+        "physical_pages": [
+          4
+        ],
+        "anchors": [
+          "Pre-training BERT"
+        ]
+      }
+    },
+    {
+      "id": "real-en-table",
+      "locale": "en",
+      "query": "Find Table 1 in bert.pdf.",
+      "expected": {
+        "outcome": "resolve",
+        "source_id": "bert",
+        "kind": "table",
+        "number": "1",
+        "physical_pages": [
+          6
+        ],
+        "anchors": [
+          "GLUE Test results"
+        ]
+      }
+    },
+    {
+      "id": "real-ja-question",
+      "locale": "ja",
+      "query": "N1 7-2019.pdfの問題10の文章を探してください。",
+      "expected": {
+        "outcome": "resolve",
+        "source_id": "jlpt-n1-2019",
+        "kind": "question",
+        "number": "10",
+        "physical_pages": [
+          10
+        ],
+        "anchors": [
+          "問題10",
+          "シアノバクテリアと藻類"
+        ]
+      }
+    },
+    {
+      "id": "real-ja-bare-question",
+      "locale": "ja",
+      "query": "N1 7-2019.pdfの問57を探してください。",
+      "expected": {
+        "outcome": "resolve",
+        "source_id": "jlpt-n1-2019",
+        "kind": "question",
+        "number": "57",
+        "physical_pages": [
+          10
+        ],
+        "anchors": [
+          "57.自分が"
+        ],
+        "note": "Visible question marker is a bare57., so generic ordered-list metadata must not be assumed to prove question type."
+      }
+    },
+    {
+      "id": "real-ko-table",
+      "locale": "ko",
+      "query": "ko-etri-processors.pdf에서 표 1을 찾아 주세요.",
+      "expected": {
+        "outcome": "resolve",
+        "source_id": "ko-etri-processors",
+        "kind": "table",
+        "number": "1",
+        "physical_pages": [
+          2
+        ],
+        "anchors": [
+          "서비스별 월간 1억 사용자 달성 시간"
+        ]
+      }
+    },
+    {
+      "id": "real-ko-roman-section",
+      "locale": "ko",
+      "query": "ko-etri-processors.pdf의 III장을 찾아 주세요.",
+      "expected": {
+        "outcome": "resolve",
+        "source_id": "ko-etri-processors",
+        "kind": "section",
+        "number": "3",
+        "physical_pages": [
+          4
+        ],
+        "anchors": [
+          "초거대 AI 프로세서 기술"
+        ],
+        "printed_number": "Ⅲ"
+      }
+    },
+    {
+      "id": "real-cn-section",
+      "locale": "zh-CN",
+      "query": "请找出zh-CN.pdf的第2.1.1节。",
+      "expected": {
+        "outcome": "resolve",
+        "source_id": "rag__zh__zh-CN",
+        "kind": "section",
+        "number": "2.1.1",
+        "physical_pages": [
+          4
+        ],
+        "anchors": [
+          "代表性样本选择与压缩"
+        ]
+      }
+    },
+    {
+      "id": "real-cn-table",
+      "locale": "zh-CN",
+      "query": "请找出zh-CN.pdf的表2。",
+      "expected": {
+        "outcome": "resolve",
+        "source_id": "rag__zh__zh-CN",
+        "kind": "table",
+        "number": "2",
+        "physical_pages": [
+          7
+        ],
+        "anchors": [
+          "THUCNews数据子集基本信息"
+        ]
+      }
+    },
+    {
+      "id": "real-tw-physical-page",
+      "locale": "zh-TW",
+      "query": "請找出zh_TW_llm.pdf的PDF第14頁。",
+      "expected": {
+        "outcome": "resolve",
+        "source_id": "rag__zh__zh_TW_llm",
+        "kind": "physical_page",
+        "number": "14",
+        "physical_pages": [
+          14
+        ],
+        "anchors": [
+          "語言模型 vs AlphaGo"
+        ],
+        "note": "Explicit PDF page index, not a printed page label. Unsupported physical-page lookup should abstain, never fabricate printed metadata."
+      }
+    },
+    {
+      "id": "real-tw-phase",
+      "locale": "zh-TW",
+      "query": "zh_TW_llm.pdf的第二階段訓練和AlphaGo有甚麼相似之處？",
+      "expected": {
+        "outcome": "abstain",
+        "reason": "A training phase is semantic content, not an ordinal section request; repeated phase labels exist on several pages."
+      }
+    },
+    {
+      "id": "real-hk-table",
+      "locale": "zh-HK",
+      "query": "請找出zh_HK.pdf的表1。",
+      "expected": {
+        "outcome": "resolve",
+        "source_id": "rag__zh__zh_HK",
+        "kind": "table",
+        "number": "1",
+        "physical_pages": [
+          7
+        ],
+        "anchors": [
+          "語言功能規劃表"
+        ],
+        "raw_glyph_anchor": "語⾔言功能規劃表",
+        "note": "Visible source is correct; text layer duplicates a compatibility glyph. Record extraction mismatch rather than silently normalizing it away."
+      }
+    },
+    {
+      "id": "real-hk-printed-page",
+      "locale": "zh-HK",
+      "query": "請找出zh_HK.pdf印刷頁碼第6頁。",
+      "expected": {
+        "outcome": "resolve",
+        "source_id": "rag__zh__zh_HK",
+        "kind": "page",
+        "number": "6",
+        "physical_pages": [
+          7
+        ],
+        "anchors": [
+          "來源：李宇明"
+        ],
+        "note": "Visually checked printed6 corresponds to physical7; page8 is printed7."
+      }
+    },
+    {
+      "id": "real-es-section",
+      "locale": "es",
+      "query": "Busca la sección 3.1 en variedades-espanol.pdf.",
+      "expected": {
+        "outcome": "resolve",
+        "source_id": "rag__es__variedades-espanol",
+        "kind": "section",
+        "number": "3.1",
+        "physical_pages": [
+          4
+        ],
+        "anchors": [
+          "3.1 Andino"
+        ]
+      }
+    },
+    {
+      "id": "real-es-table",
+      "locale": "es",
+      "query": "Busca la tabla 3 en variedades-espanol.pdf.",
+      "expected": {
+        "outcome": "resolve",
+        "source_id": "rag__es__variedades-espanol",
+        "kind": "table",
+        "number": "3",
+        "physical_pages": [
+          4
+        ],
+        "anchors": [
+          "Tabla 3",
+          "español andino"
+        ]
+      }
+    },
+    {
+      "id": "real-fr-section",
+      "locale": "fr",
+      "query": "Trouve la section 2.1 dans camembert-taln.pdf.",
+      "expected": {
+        "outcome": "resolve",
+        "source_id": "rag__fr__camembert-taln",
+        "kind": "section",
+        "number": "2.1",
+        "physical_pages": [
+          3
+        ],
+        "anchors": [
+          "Modèles et architectures"
+        ]
+      }
+    },
+    {
+      "id": "real-fr-table",
+      "locale": "fr",
+      "query": "Trouve le tableau 2 dans camembert-taln.pdf.",
+      "expected": {
+        "outcome": "resolve",
+        "source_id": "rag__fr__camembert-taln",
+        "kind": "table",
+        "number": "2",
+        "physical_pages": [
+          4
+        ],
+        "anchors": [
+          "Statistiques des corpus arborés"
+        ]
+      }
+    },
+    {
+      "id": "semantic-en-number",
+      "locale": "en",
+      "query": "In bert.pdf, why does masking choose 15% of tokens?",
+      "expected": {
+        "outcome": "abstain",
+        "reason": "Percentage is content, not a locator."
+      }
+    },
+    {
+      "id": "semantic-ja-number",
+      "locale": "ja",
+      "query": "N1 7-2019.pdfでは人間が100～200年で環境を変えた理由を説明して。",
+      "expected": {
+        "outcome": "abstain",
+        "reason": "Years are content, not a locator."
+      }
+    },
+    {
+      "id": "semantic-ko-number",
+      "locale": "ko",
+      "query": "ko-etri-processors.pdf에서 2개월 만에 사용자가 늘어난 서비스는 무엇인가요?",
+      "expected": {
+        "outcome": "abstain",
+        "reason": "Duration is content, not a locator."
+      }
+    },
+    {
+      "id": "semantic-cn-identifier",
+      "locale": "zh-CN",
+      "query": "zh-CN.pdf中的THU1包含哪些类别？",
+      "expected": {
+        "outcome": "abstain",
+        "reason": "Dataset identifier is not a section label."
+      }
+    },
+    {
+      "id": "missing-tw-section",
+      "locale": "zh-TW",
+      "query": "請找出zh_TW_llm.pdf的第999節。",
+      "expected": {
+        "outcome": "abstain",
+        "reason": "Requested section does not exist."
+      }
+    },
+    {
+      "id": "semantic-hk-year",
+      "locale": "zh-HK",
+      "query": "zh_HK.pdf引用的2008年語言功能規劃有甚麼含義？",
+      "expected": {
+        "outcome": "abstain",
+        "reason": "Citation year is content, not a locator."
+      }
+    },
+    {
+      "id": "semantic-es-count",
+      "locale": "es",
+      "query": "¿Cómo se puntuaron las 30 preguntas en variedades-espanol.pdf?",
+      "expected": {
+        "outcome": "abstain",
+        "reason": "Question count is not a request for question30."
+      }
+    },
+    {
+      "id": "semantic-fr-count",
+      "locale": "fr",
+      "query": "Pourquoi utiliser 12 couches dans camembert-taln.pdf ?",
+      "expected": {
+        "outcome": "abstain",
+        "reason": "Layer count is content, not a locator."
+      }
+    },
+    {
+      "id": "ambiguous-source",
+      "locale": "en",
+      "query": "Find Table 1.",
+      "expected": {
+        "outcome": "abstain",
+        "reason": "Multiple candidate source documents have Table1 and no source was named."
+      }
+    },
+    {
+      "id": "missing-source",
+      "locale": "en",
+      "query": "Find Table 1 in unavailable.pdf.",
+      "expected": {
+        "outcome": "abstain",
+        "reason": "Explicit source is unavailable; do not choose a different file."
+      }
+    },
+    {
+      "id": "multiple-sources",
+      "locale": "en",
+      "query": "Compare Table 1 in bert.pdf and camembert-taln.pdf.",
+      "expected": {
+        "outcome": "abstain",
+        "reason": "Single-source promotion cannot represent two requested sources."
+      }
+    },
+    {
+      "id": "multiple-units",
+      "locale": "en",
+      "query": "Find section 3.1 and Table 1 in bert.pdf.",
+      "expected": {
+        "outcome": "abstain",
+        "reason": "Single-locator promotion cannot represent two distinct requested units."
+      }
+    }
+  ]
+}

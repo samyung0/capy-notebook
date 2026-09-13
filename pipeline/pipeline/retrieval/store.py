@@ -1159,6 +1159,27 @@ async def file_ids_for_names(workspace_id: str, names: list[str]) -> list[str]:
         return [row["id"] for row in await cur.fetchall()]
 
 
+async def history_passages(
+    workspace_id: str, chunk_ids: list[str]
+) -> list[dict[str, Any]]:
+    """Validate saved evidence against the current untrashed workspace index."""
+    db = await pool()
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT c.id, fc.file_id, c.chunk_idx, c.section_path, c.text, c.page_start,
+                   c.page_end, c.regions, c.confidence, c.confidence_reasons,
+                   f.name AS file_name
+            FROM rag_file_contents fc
+            JOIN files f ON f.id = fc.file_id
+            JOIN rag_chunks c ON c.content_id = fc.content_id
+            WHERE f.workspace_id = %s AND f.trashed_at IS NULL AND c.id = ANY(%s)
+            """,
+            (workspace_id, chunk_ids),
+        )
+        return [dict(row) for row in await cur.fetchall()]
+
+
 async def read_file_range(
     *, workspace_id: str, file_id: str, start: int, count: int
 ) -> list[dict[str, Any]]:

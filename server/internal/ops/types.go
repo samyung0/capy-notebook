@@ -443,6 +443,12 @@ type UserWorkspace struct {
 	LastActivityAt time.Time `json:"lastActivityAt"`
 }
 
+type ToolCallDetail struct {
+	Name    string `json:"name"`
+	Detail  string `json:"detail"`
+	Outcome string `json:"outcome"`
+}
+
 type UsageEvent struct {
 	TraceID                   string    `json:"traceId"`
 	Kind                      string    `json:"kind"`
@@ -476,6 +482,8 @@ type UsageEvent struct {
 	ContextWindowTokens       int64     `json:"contextWindowTokens"`
 	ContextCountingMethod     string    `json:"contextCountingMethod"`
 	ContextCountingVersion    int       `json:"contextCountingVersion"`
+
+	ToolCalls []ToolCallDetail `json:"toolCalls"`
 }
 
 type UserDetail struct {

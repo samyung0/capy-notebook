@@ -82,6 +82,7 @@ type pipeChatEvent struct {
 	RetryAfterSeconds int                         `json:"retryAfterSeconds,omitempty"`
 	Usage             pipeUsage                   `json:"usage,omitempty"`
 	Activity          []store.ActivityBlock       `json:"activity,omitempty"`
+	ToolEvidence      json.RawMessage             `json:"toolEvidence,omitempty"`
 	Answer            string                      `json:"answer,omitempty"`
 	ThroughMessageID  string                      `json:"throughMessageId,omitempty"`
 	Summary           string                      `json:"summary,omitempty"`
@@ -207,13 +208,14 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 	})
 
 	var (
-		currentText strings.Builder
-		answer      strings.Builder
-		citations   []store.Citation
-		activity    []store.ActivityBlock
-		genID       string
-		tokens      int
-		usage       pipeUsage
+		currentText  strings.Builder
+		answer       strings.Builder
+		citations    []store.Citation
+		activity     []store.ActivityBlock
+		toolEvidence json.RawMessage
+		genID        string
+		tokens       int
+		usage        pipeUsage
 	)
 
 	streamErr := a.relayChat(ctx, userID, agenttools.OperationsForRole(string(access.role)), conv, llm, charge.id, req.Text, assistant.ID, prompt, func(ev pipeChatEvent) {
@@ -271,6 +273,7 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 				activity = ev.Activity
 			}
 			genID = ev.GenerationID
+			toolEvidence = ev.ToolEvidence
 		}
 	})
 
@@ -290,7 +293,9 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 	if tokens == 0 {
 		tokens = int(usage.InputTokens + usage.OutputTokens)
 	}
-	_ = a.s.FinalizeAssistantMessage(saveCtx, assistant.ID, answer.String(), status, tokens, citations, genID, activity)
+	if err := a.s.FinalizeAssistantMessage(saveCtx, assistant.ID, answer.String(), status, tokens, citations, genID, activity, toolEvidence); err != nil {
+		log.Printf("finalize assistant message %s: %v", assistant.ID, err)
+	}
 	charge.settle(saveCtx)
 
 	if ctx.Err() == nil {
@@ -355,6 +360,9 @@ func (a *api) relayChat(
 		}
 		if len(m.Citations) > 0 {
 			row["citations"] = m.Citations
+		}
+		if len(m.ToolEvidence) > 0 {
+			row["toolEvidence"] = m.ToolEvidence
 		}
 		history = append(history, row)
 	}

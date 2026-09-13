@@ -25,6 +25,8 @@ type Conversation struct {
 // (streaming -> complete | aborted | error). Citations are the RAG sources the
 // assistant grounded its answer on (persisted in the metadata jsonb column).
 type Message struct {
+	// Private prompt evidence is not returned by the browser message API.
+	ToolEvidence     json.RawMessage `json:"-"`
 	ID               string          `json:"id"`
 	ConversationID   string          `json:"conversationId"`
 	Role             string          `json:"role"`
@@ -136,6 +138,7 @@ type Region struct {
 
 // msgMetadata is the on-disk (jsonb) shape of a message's metadata column.
 type msgMetadata struct {
+	ToolEvidence     json.RawMessage `json:"toolEvidence,omitempty"`
 	Citations        []Citation      `json:"citations,omitempty"`
 	Activity         []ActivityBlock `json:"activity,omitempty"`
 	GenerationID     string          `json:"generationId,omitempty"`
@@ -320,7 +323,7 @@ func (s *Store) ListMessages(ctx context.Context, userID, convID string) ([]Mess
 		return nil, err
 	}
 	rows, err := s.pool.Query(ctx,
-		`SELECT id, conversation_id, role, content, status, metadata, created_at
+		`SELECT id, conversation_id, role, content, status, metadata - 'toolEvidence', created_at
 		   FROM messages
 		  WHERE conversation_id=$1 AND status <> 'streaming'
 		  ORDER BY created_at, id`, convID)
@@ -485,7 +488,7 @@ func (s *Store) StartAssistantMessage(ctx context.Context, userID, convID string
 // (complete | aborted | error), token count and citations for an assistant row.
 // Uses a fresh context so persistence still succeeds when the request context
 // was cancelled by a client disconnect.
-func (s *Store) FinalizeAssistantMessage(ctx context.Context, msgID, content, status string, tokenCount int, citations []Citation, generationID string, activity []ActivityBlock) error {
+func (s *Store) FinalizeAssistantMessage(ctx context.Context, msgID, content, status string, tokenCount int, citations []Citation, generationID string, activity []ActivityBlock, toolEvidence json.RawMessage) error {
 	// Committed mutation receipts are the authority for effects: a lost SSE
 	// frame or an early disconnect must not erase a material the turn created.
 	ops, err := messageOperationsTx(ctx, s.pool, msgID)
@@ -493,7 +496,10 @@ func (s *Store) FinalizeAssistantMessage(ctx context.Context, msgID, content, st
 		return err
 	}
 	activity = mergeOperationEffects(activity, ops)
-	meta, _ := json.Marshal(msgMetadata{Citations: citations, GenerationID: generationID, Activity: activity})
+	meta, err := json.Marshal(msgMetadata{Citations: citations, GenerationID: generationID, Activity: activity, ToolEvidence: toolEvidence})
+	if err != nil {
+		return err
+	}
 	var tc *int
 	if tokenCount > 0 {
 		tc = &tokenCount
@@ -548,6 +554,7 @@ func (s *Store) ConversationPrompt(ctx context.Context, convID string) (Conversa
 		var meta msgMetadata
 		_ = json.Unmarshal(raw, &meta)
 		m.Citations = meta.Citations
+		m.ToolEvidence = meta.ToolEvidence
 		history = append(history, m)
 	}
 	if err := rows.Err(); err != nil {

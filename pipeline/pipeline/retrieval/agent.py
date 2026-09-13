@@ -21,7 +21,18 @@ from typing import Any
 from .. import elitellm, obs
 from ..config import cfg
 from ..prompts import chat as chat_prompts
-from . import accounting, capture, compact, events, models, pending, store, tools
+from . import (
+    accounting,
+    capture,
+    citation_regions,
+    compact,
+    events,
+    evidence,
+    models,
+    pending,
+    store,
+    tools,
+)
 from .chunking import estimate_tokens
 from .limits import (
     MAX_CONCURRENT,
@@ -103,20 +114,6 @@ class ClientDrop:
 
 def _client_gone(client: ClientDrop | None) -> bool:
     return bool(client and client.dropped)
-
-
-def _history_turns(history: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = []
-    for turn in history or []:
-        role = turn.get("role")
-        if role in ("user", "assistant") and turn.get("content"):
-            row: dict[str, Any] = {
-                "id": turn.get("id") or "",
-                "role": role,
-                "content": turn["content"],
-            }
-            out.append(row)
-    return out
 
 
 def _with_usage(event: dict[str, Any]) -> dict[str, Any]:
@@ -205,7 +202,7 @@ async def run_agent(
             return
 
     ctx.pending_sources = await pending.load(ctx.workspace_id, ctx.file_ids)
-    prior = _history_turns(history)
+    prior = await evidence.history_turns(history, ctx)
     messages = chat_prompts.chat_messages(
         locale=locale, checkpoint=checkpoint, history=prior, query=query
     )
@@ -558,13 +555,19 @@ async def run_agent(
                 started = True
                 yield events.block_delta(block_id, answer)
             yield events.block_end(block_id, "answer")
-            if not (0 < sent_order == len(cited_order)):
-                # Replace the shown list with the used one (possibly empty)
-                # unless the last streamed list already is that list.
+            final_citations = await citation_regions.refine(
+                ctx.workspace_id,
+                [
+                    ctx.citations[n - 1]
+                    for n in cited_order
+                    if 1 <= n <= len(ctx.citations)
+                ],
+            )
+            if not (
+                0 < sent_order == len(cited_order)
+            ) or final_citations != _ordered_citations(ctx, cited_order):
                 citation_version += 1
-                yield events.citations(
-                    _ordered_citations(ctx, cited_order), citation_version, final=True
-                )
+                yield events.citations(final_citations, citation_version, final=True)
             budget.stop_reason = STOP_ANSWER
             break
         budget.stop_reason = budget.stop_reason or STOP_PLANNING_CAP
@@ -581,6 +584,7 @@ async def run_agent(
         activity,
         answer,
     )
+    done["toolEvidence"] = evidence.pack(ctx, cited_order)
     usage = obs.current_usage()
     if usage is not None and not usage.is_empty():
         done["usage"] = usage.as_dict()
@@ -789,6 +793,18 @@ async def _run_tools(
     for call, result in ordered:
         numbered = tools.assign_citations(ctx, result.passages)
         text = tools.limit_tool_result(tools.render_result(result, numbered))
+        definition = tools.contract.definition(call.name)
+        if definition and definition["retention"] in ("full", "cited_passages"):
+            ctx.evidence_passage_ids.update(p.chunk_id for p in result.passages)
+        if definition and definition["retention"] == "full":
+            ctx.evidence_notes.append(
+                {
+                    "name": call.name,
+                    "detail": _describe(call.name, _parse_args(call.arguments))[:240],
+                    "outcome": result.outcome,
+                    "text": text,
+                }
+            )
         result.text_parts = [text]
         messages.append({"role": "tool", "tool_call_id": call.id, "content": text})
 

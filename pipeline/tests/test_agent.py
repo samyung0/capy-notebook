@@ -128,6 +128,66 @@ def _script_stream(responses: list[AssembledResponse]):
     return _stream, seen
 
 
+async def test_completed_tool_evidence_is_reused_in_the_next_turn(monkeypatch):
+    from dataclasses import asdict
+
+    passage = _passage()
+    stream, seen = _script_stream(
+        [
+            _assembled(
+                "",
+                [
+                    _call("read_document", '{"file_id":"f_1"}'),
+                    _call("describe_documents", '{"file_ids":["f_1"]}', "describe"),
+                ],
+            ),
+            _assembled(_answer(("First answer.", [1]))),
+            _assembled(_answer(("Follow-up from the same passage.", [1]))),
+        ]
+    )
+
+    async def run(name, *_):
+        if name == "describe_documents":
+            return ToolResult(text_parts=["Full document description"])
+        return ToolResult(
+            passages=[passage, _passage(chunk_id="unused", text="Uncited")],
+            text_parts=["Continue at start=1"],
+        )
+
+    async def current(*_):
+        return [{**asdict(passage), "id": passage.chunk_id}]
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.tools, "run", run)
+    monkeypatch.setattr(agent.store, "history_passages", current)
+    first = await _collect("First question", ToolContext(workspace_id="ws_1"))
+    done = first[-1]
+    history = [
+        {
+            "id": "a1",
+            "role": "assistant",
+            "content": done["answer"],
+            "toolEvidence": done["toolEvidence"],
+        }
+    ]
+    second = [
+        event
+        async for event in agent.run_agent(
+            query="Explain that",
+            ctx=ToolContext(workspace_id="ws_1"),
+            history=history,
+            model=_model(),
+        )
+    ]
+    assert len(seen) == 3 and not any(e["type"] == "tool_start" for e in second)
+    replay = "\n".join(m["content"] for m in seen[-1]["messages"])
+    assert passage.text in replay and "Full document description" in replay
+    assert "Continue at start=1" not in replay and "Uncited" not in replay
+    final = [e for e in second if e["type"] == "citations"][-1]
+    assert final["citations"][0]["chunkId"] == passage.chunk_id
+    assert second[-1]["toolEvidence"]["passages"][0]["chunk_id"] == passage.chunk_id
+
+
 async def test_search_embedding_count_is_telemetry_not_a_cap(monkeypatch):
     async def _search(**_kwargs):
         return [_passage()]
@@ -895,7 +955,7 @@ async def test_admit_checkpoint_folds_all_completed_history(monkeypatch):
     ]
     assert [message["content"] for message in messages] == [
         "sys",
-        "Earlier conversation:\nall prior messages",
+        agent.chat_prompts.memory_message("all prior messages")["content"],
         "q",
     ]
 
@@ -1001,7 +1061,7 @@ async def test_checkpoint_folds_trailing_user_message_from_failed_turn(monkeypat
     assert [turn["id"] for turn in folded["turns"]] == ["m1", "m2", "m3"]
     assert [message["content"] for message in rebuilt] == [
         "system",
-        "Earlier conversation:\nfolded memory",
+        agent.chat_prompts.memory_message("folded memory")["content"],
         "current",
     ]
 

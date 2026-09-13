@@ -33,7 +33,9 @@ func TestReadQuerySourceUsesBoundedRawUsageLedgerQueries(t *testing.T) {
 	recentQuery := source[strings.Index(source, "func (s *ReadStore) User"):costsStart]
 	if strings.Count(recentQuery, "FROM usage_events") != 2 ||
 		!strings.Contains(recentQuery, "date_trunc('month'") ||
-		!strings.Contains(recentQuery, "ORDER BY ue.created_at DESC, ue.id DESC LIMIT $2") {
+		!strings.Contains(recentQuery, "WITH recent AS MATERIALIZED") ||
+		!strings.Contains(recentQuery, "ORDER BY created_at DESC, id DESC LIMIT $2") ||
+		!strings.Contains(recentQuery, "FROM recent JOIN usage_events ue ON ue.id = recent.id") {
 		t.Fatal("user detail raw-ledger queries must be current-month or newest-first bounded")
 	}
 	if recentUsageLimit != 50 || userSearchLimit != 20 || topUsersLimit != 20 {

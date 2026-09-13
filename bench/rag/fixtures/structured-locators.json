@@ -1,0 +1,3746 @@
+{
+  "schema": 1,
+  "provenance": "Hand-authored synthetic locator stress fixtures, frozen before scoring. No claim of natural language representativeness. Baseline is SHA256 query/chunk permutation, not retrieval. Gold marks useful content chunks, excluding orphan headings and prose cross-references.",
+  "sources": [
+    {
+      "file_id": "en-A",
+      "filename": "en-A.pdf",
+      "source_ref": "SRC-en-A"
+    },
+    {
+      "file_id": "en-B",
+      "filename": "en-B.pdf",
+      "source_ref": "SRC-en-B"
+    },
+    {
+      "file_id": "en-C",
+      "filename": "shared.pdf",
+      "source_ref": "SRC-en-C"
+    },
+    {
+      "file_id": "en-D",
+      "filename": "shared.pdf",
+      "source_ref": "SRC-en-D"
+    },
+    {
+      "file_id": "ja-A",
+      "filename": "ja-A.pdf",
+      "source_ref": "SRC-ja-A"
+    },
+    {
+      "file_id": "ja-B",
+      "filename": "ja-B.pdf",
+      "source_ref": "SRC-ja-B"
+    },
+    {
+      "file_id": "ja-C",
+      "filename": "shared.pdf",
+      "source_ref": "SRC-ja-C"
+    },
+    {
+      "file_id": "ja-D",
+      "filename": "shared.pdf",
+      "source_ref": "SRC-ja-D"
+    },
+    {
+      "file_id": "ko-A",
+      "filename": "ko-A.pdf",
+      "source_ref": "SRC-ko-A"
+    },
+    {
+      "file_id": "ko-B",
+      "filename": "ko-B.pdf",
+      "source_ref": "SRC-ko-B"
+    },
+    {
+      "file_id": "ko-C",
+      "filename": "shared.pdf",
+      "source_ref": "SRC-ko-C"
+    },
+    {
+      "file_id": "ko-D",
+      "filename": "shared.pdf",
+      "source_ref": "SRC-ko-D"
+    },
+    {
+      "file_id": "zh-CN-A",
+      "filename": "zh-CN-A.pdf",
+      "source_ref": "SRC-zh-CN-A"
+    },
+    {
+      "file_id": "zh-CN-B",
+      "filename": "zh-CN-B.pdf",
+      "source_ref": "SRC-zh-CN-B"
+    },
+    {
+      "file_id": "zh-CN-C",
+      "filename": "shared.pdf",
+      "source_ref": "SRC-zh-CN-C"
+    },
+    {
+      "file_id": "zh-CN-D",
+      "filename": "shared.pdf",
+      "source_ref": "SRC-zh-CN-D"
+    },
+    {
+      "file_id": "zh-TW-A",
+      "filename": "zh-TW-A.pdf",
+      "source_ref": "SRC-zh-TW-A"
+    },
+    {
+      "file_id": "zh-TW-B",
+      "filename": "zh-TW-B.pdf",
+      "source_ref": "SRC-zh-TW-B"
+    },
+    {
+      "file_id": "zh-TW-C",
+      "filename": "shared.pdf",
+      "source_ref": "SRC-zh-TW-C"
+    },
+    {
+      "file_id": "zh-TW-D",
+      "filename": "shared.pdf",
+      "source_ref": "SRC-zh-TW-D"
+    },
+    {
+      "file_id": "zh-HK-A",
+      "filename": "zh-HK-A.pdf",
+      "source_ref": "SRC-zh-HK-A"
+    },
+    {
+      "file_id": "zh-HK-B",
+      "filename": "zh-HK-B.pdf",
+      "source_ref": "SRC-zh-HK-B"
+    },
+    {
+      "file_id": "zh-HK-C",
+      "filename": "shared.pdf",
+      "source_ref": "SRC-zh-HK-C"
+    },
+    {
+      "file_id": "zh-HK-D",
+      "filename": "shared.pdf",
+      "source_ref": "SRC-zh-HK-D"
+    },
+    {
+      "file_id": "es-A",
+      "filename": "es-A.pdf",
+      "source_ref": "SRC-es-A"
+    },
+    {
+      "file_id": "es-B",
+      "filename": "es-B.pdf",
+      "source_ref": "SRC-es-B"
+    },
+    {
+      "file_id": "es-C",
+      "filename": "shared.pdf",
+      "source_ref": "SRC-es-C"
+    },
+    {
+      "file_id": "es-D",
+      "filename": "shared.pdf",
+      "source_ref": "SRC-es-D"
+    },
+    {
+      "file_id": "fr-A",
+      "filename": "fr-A.pdf",
+      "source_ref": "SRC-fr-A"
+    },
+    {
+      "file_id": "fr-B",
+      "filename": "fr-B.pdf",
+      "source_ref": "SRC-fr-B"
+    },
+    {
+      "file_id": "fr-C",
+      "filename": "shared.pdf",
+      "source_ref": "SRC-fr-C"
+    },
+    {
+      "file_id": "fr-D",
+      "filename": "shared.pdf",
+      "source_ref": "SRC-fr-D"
+    }
+  ],
+  "chunks": [
+    {
+      "id": "en:q9",
+      "file_id": "en-A",
+      "scope": "en",
+      "locale": "en",
+      "text": "Question 9\nExplain the cooling process."
+    },
+    {
+      "id": "en:q7a",
+      "file_id": "en-A",
+      "scope": "en",
+      "locale": "en",
+      "text": "Question 7\nThere are 9 participants."
+    },
+    {
+      "id": "en:q7b",
+      "file_id": "en-B",
+      "scope": "en",
+      "locale": "en",
+      "text": "Question 7\nExplain the cooling process."
+    },
+    {
+      "id": "en:s23",
+      "file_id": "en-A",
+      "scope": "en",
+      "locale": "en",
+      "text": "Section 2.3\nExplain the cooling process."
+    },
+    {
+      "id": "en:native-s4",
+      "file_id": "en-A",
+      "scope": "en",
+      "locale": "en",
+      "text": "Explain the cooling process.",
+      "native_blocks": [
+        {
+          "id": "en-heading4",
+          "kind": "heading",
+          "text": "IV Explain the cooling process."
+        }
+      ]
+    },
+    {
+      "id": "en:native-q4",
+      "file_id": "en-A",
+      "scope": "en",
+      "locale": "en",
+      "text": "Explain the cooling process.",
+      "native_blocks": [
+        {
+          "id": "en-question4",
+          "kind": "item",
+          "item_type": "question",
+          "label": "4",
+          "text": "Explain the cooling process."
+        }
+      ]
+    },
+    {
+      "id": "en:table2",
+      "file_id": "en-A",
+      "scope": "en",
+      "locale": "en",
+      "text": "Table 2\n10 | 20 | 30"
+    },
+    {
+      "id": "en:printed12",
+      "file_id": "en-A",
+      "scope": "en",
+      "locale": "en",
+      "text": "Explain the cooling process.",
+      "printed_pages": [
+        {
+          "label": "12",
+          "provenance": "native_printed_footer"
+        }
+      ],
+      "page_start": 20
+    },
+    {
+      "id": "en:physical12",
+      "file_id": "en-B",
+      "scope": "en",
+      "locale": "en",
+      "text": "There are 9 participants.",
+      "page_start": 12
+    },
+    {
+      "id": "en:content",
+      "file_id": "en-C",
+      "scope": "en",
+      "locale": "en",
+      "text": "There are 9 participants.",
+      "section_path": "Question 10"
+    },
+    {
+      "id": "en:crossref",
+      "file_id": "en-C",
+      "scope": "en",
+      "locale": "en",
+      "text": "Question 13 Explain the cooling process. Reference only; the question itself is elsewhere."
+    },
+    {
+      "id": "en:missinganswer",
+      "file_id": "en-C",
+      "scope": "en",
+      "locale": "en",
+      "text": "Explain the cooling process."
+    },
+    {
+      "id": "en:orphan",
+      "file_id": "en-A",
+      "scope": "en",
+      "locale": "en",
+      "text": "Question 15"
+    },
+    {
+      "id": "en:continuation",
+      "file_id": "en-A",
+      "scope": "en",
+      "locale": "en",
+      "text": "Explain the cooling process.\nThere are 9 participants."
+    },
+    {
+      "id": "en:q6a",
+      "file_id": "en-A",
+      "scope": "en",
+      "locale": "en",
+      "text": "Question 6\nExplain the cooling process."
+    },
+    {
+      "id": "en:q6b",
+      "file_id": "en-A",
+      "scope": "en",
+      "locale": "en",
+      "text": "Question 6\nThere are 9 participants."
+    },
+    {
+      "id": "en:q18c",
+      "file_id": "en-C",
+      "scope": "en",
+      "locale": "en",
+      "text": "Question 18\nThere are 9 participants."
+    },
+    {
+      "id": "en:q18d",
+      "file_id": "en-D",
+      "scope": "en",
+      "locale": "en",
+      "text": "Question 18\nExplain the cooling process."
+    },
+    {
+      "id": "ja:q9",
+      "file_id": "ja-A",
+      "scope": "ja",
+      "locale": "ja",
+      "text": "問題 9\n冷却の仕組みを説明してください。"
+    },
+    {
+      "id": "ja:q7a",
+      "file_id": "ja-A",
+      "scope": "ja",
+      "locale": "ja",
+      "text": "問題 7\n参加者は9人です。"
+    },
+    {
+      "id": "ja:q7b",
+      "file_id": "ja-B",
+      "scope": "ja",
+      "locale": "ja",
+      "text": "問題 7\n冷却の仕組みを説明してください。"
+    },
+    {
+      "id": "ja:s23",
+      "file_id": "ja-A",
+      "scope": "ja",
+      "locale": "ja",
+      "text": "第2.3節\n冷却の仕組みを説明してください。"
+    },
+    {
+      "id": "ja:native-s4",
+      "file_id": "ja-A",
+      "scope": "ja",
+      "locale": "ja",
+      "text": "冷却の仕組みを説明してください。",
+      "native_blocks": [
+        {
+          "id": "ja-heading4",
+          "kind": "heading",
+          "text": "IV 冷却の仕組みを説明してください。"
+        }
+      ]
+    },
+    {
+      "id": "ja:native-q4",
+      "file_id": "ja-A",
+      "scope": "ja",
+      "locale": "ja",
+      "text": "冷却の仕組みを説明してください。",
+      "native_blocks": [
+        {
+          "id": "ja-question4",
+          "kind": "item",
+          "item_type": "question",
+          "label": "4",
+          "text": "冷却の仕組みを説明してください。"
+        }
+      ]
+    },
+    {
+      "id": "ja:table2",
+      "file_id": "ja-A",
+      "scope": "ja",
+      "locale": "ja",
+      "text": "表 2\n10 | 20 | 30"
+    },
+    {
+      "id": "ja:printed12",
+      "file_id": "ja-A",
+      "scope": "ja",
+      "locale": "ja",
+      "text": "冷却の仕組みを説明してください。",
+      "printed_pages": [
+        {
+          "label": "12",
+          "provenance": "native_printed_footer"
+        }
+      ],
+      "page_start": 20
+    },
+    {
+      "id": "ja:physical12",
+      "file_id": "ja-B",
+      "scope": "ja",
+      "locale": "ja",
+      "text": "参加者は9人です。",
+      "page_start": 12
+    },
+    {
+      "id": "ja:content",
+      "file_id": "ja-C",
+      "scope": "ja",
+      "locale": "ja",
+      "text": "参加者は9人です。",
+      "section_path": "問題 10"
+    },
+    {
+      "id": "ja:crossref",
+      "file_id": "ja-C",
+      "scope": "ja",
+      "locale": "ja",
+      "text": "問題 13 冷却の仕組みを説明してください。 Reference only; the question itself is elsewhere."
+    },
+    {
+      "id": "ja:missinganswer",
+      "file_id": "ja-C",
+      "scope": "ja",
+      "locale": "ja",
+      "text": "冷却の仕組みを説明してください。"
+    },
+    {
+      "id": "ja:orphan",
+      "file_id": "ja-A",
+      "scope": "ja",
+      "locale": "ja",
+      "text": "問題 15"
+    },
+    {
+      "id": "ja:continuation",
+      "file_id": "ja-A",
+      "scope": "ja",
+      "locale": "ja",
+      "text": "冷却の仕組みを説明してください。\n参加者は9人です。"
+    },
+    {
+      "id": "ja:q6a",
+      "file_id": "ja-A",
+      "scope": "ja",
+      "locale": "ja",
+      "text": "問題 6\n冷却の仕組みを説明してください。"
+    },
+    {
+      "id": "ja:q6b",
+      "file_id": "ja-A",
+      "scope": "ja",
+      "locale": "ja",
+      "text": "問題 6\n参加者は9人です。"
+    },
+    {
+      "id": "ja:q18c",
+      "file_id": "ja-C",
+      "scope": "ja",
+      "locale": "ja",
+      "text": "問題 18\n参加者は9人です。"
+    },
+    {
+      "id": "ja:q18d",
+      "file_id": "ja-D",
+      "scope": "ja",
+      "locale": "ja",
+      "text": "問題 18\n冷却の仕組みを説明してください。"
+    },
+    {
+      "id": "ko:q9",
+      "file_id": "ko-A",
+      "scope": "ko",
+      "locale": "ko",
+      "text": "9번 문제\n냉각 과정을 설명해 주세요."
+    },
+    {
+      "id": "ko:q7a",
+      "file_id": "ko-A",
+      "scope": "ko",
+      "locale": "ko",
+      "text": "7번 문제\n참가자는 9명입니다."
+    },
+    {
+      "id": "ko:q7b",
+      "file_id": "ko-B",
+      "scope": "ko",
+      "locale": "ko",
+      "text": "7번 문제\n냉각 과정을 설명해 주세요."
+    },
+    {
+      "id": "ko:s23",
+      "file_id": "ko-A",
+      "scope": "ko",
+      "locale": "ko",
+      "text": "2.3절\n냉각 과정을 설명해 주세요."
+    },
+    {
+      "id": "ko:native-s4",
+      "file_id": "ko-A",
+      "scope": "ko",
+      "locale": "ko",
+      "text": "냉각 과정을 설명해 주세요.",
+      "native_blocks": [
+        {
+          "id": "ko-heading4",
+          "kind": "heading",
+          "text": "IV 냉각 과정을 설명해 주세요."
+        }
+      ]
+    },
+    {
+      "id": "ko:native-q4",
+      "file_id": "ko-A",
+      "scope": "ko",
+      "locale": "ko",
+      "text": "냉각 과정을 설명해 주세요.",
+      "native_blocks": [
+        {
+          "id": "ko-question4",
+          "kind": "item",
+          "item_type": "question",
+          "label": "4",
+          "text": "냉각 과정을 설명해 주세요."
+        }
+      ]
+    },
+    {
+      "id": "ko:table2",
+      "file_id": "ko-A",
+      "scope": "ko",
+      "locale": "ko",
+      "text": "표 2\n10 | 20 | 30"
+    },
+    {
+      "id": "ko:printed12",
+      "file_id": "ko-A",
+      "scope": "ko",
+      "locale": "ko",
+      "text": "냉각 과정을 설명해 주세요.",
+      "printed_pages": [
+        {
+          "label": "12",
+          "provenance": "native_printed_footer"
+        }
+      ],
+      "page_start": 20
+    },
+    {
+      "id": "ko:physical12",
+      "file_id": "ko-B",
+      "scope": "ko",
+      "locale": "ko",
+      "text": "참가자는 9명입니다.",
+      "page_start": 12
+    },
+    {
+      "id": "ko:content",
+      "file_id": "ko-C",
+      "scope": "ko",
+      "locale": "ko",
+      "text": "참가자는 9명입니다.",
+      "section_path": "10번 문제"
+    },
+    {
+      "id": "ko:crossref",
+      "file_id": "ko-C",
+      "scope": "ko",
+      "locale": "ko",
+      "text": "13번 문제 냉각 과정을 설명해 주세요. Reference only; the question itself is elsewhere."
+    },
+    {
+      "id": "ko:missinganswer",
+      "file_id": "ko-C",
+      "scope": "ko",
+      "locale": "ko",
+      "text": "냉각 과정을 설명해 주세요."
+    },
+    {
+      "id": "ko:orphan",
+      "file_id": "ko-A",
+      "scope": "ko",
+      "locale": "ko",
+      "text": "15번 문제"
+    },
+    {
+      "id": "ko:continuation",
+      "file_id": "ko-A",
+      "scope": "ko",
+      "locale": "ko",
+      "text": "냉각 과정을 설명해 주세요.\n참가자는 9명입니다."
+    },
+    {
+      "id": "ko:q6a",
+      "file_id": "ko-A",
+      "scope": "ko",
+      "locale": "ko",
+      "text": "6번 문제\n냉각 과정을 설명해 주세요."
+    },
+    {
+      "id": "ko:q6b",
+      "file_id": "ko-A",
+      "scope": "ko",
+      "locale": "ko",
+      "text": "6번 문제\n참가자는 9명입니다."
+    },
+    {
+      "id": "ko:q18c",
+      "file_id": "ko-C",
+      "scope": "ko",
+      "locale": "ko",
+      "text": "18번 문제\n참가자는 9명입니다."
+    },
+    {
+      "id": "ko:q18d",
+      "file_id": "ko-D",
+      "scope": "ko",
+      "locale": "ko",
+      "text": "18번 문제\n냉각 과정을 설명해 주세요."
+    },
+    {
+      "id": "zh-CN:q9",
+      "file_id": "zh-CN-A",
+      "scope": "zh-CN",
+      "locale": "zh-CN",
+      "text": "第9题\n请解释冷却过程。"
+    },
+    {
+      "id": "zh-CN:q7a",
+      "file_id": "zh-CN-A",
+      "scope": "zh-CN",
+      "locale": "zh-CN",
+      "text": "第7题\n共有9名参与者。"
+    },
+    {
+      "id": "zh-CN:q7b",
+      "file_id": "zh-CN-B",
+      "scope": "zh-CN",
+      "locale": "zh-CN",
+      "text": "第7题\n请解释冷却过程。"
+    },
+    {
+      "id": "zh-CN:s23",
+      "file_id": "zh-CN-A",
+      "scope": "zh-CN",
+      "locale": "zh-CN",
+      "text": "第2.3节\n请解释冷却过程。"
+    },
+    {
+      "id": "zh-CN:native-s4",
+      "file_id": "zh-CN-A",
+      "scope": "zh-CN",
+      "locale": "zh-CN",
+      "text": "请解释冷却过程。",
+      "native_blocks": [
+        {
+          "id": "zh-CN-heading4",
+          "kind": "heading",
+          "text": "IV 请解释冷却过程。"
+        }
+      ]
+    },
+    {
+      "id": "zh-CN:native-q4",
+      "file_id": "zh-CN-A",
+      "scope": "zh-CN",
+      "locale": "zh-CN",
+      "text": "请解释冷却过程。",
+      "native_blocks": [
+        {
+          "id": "zh-CN-question4",
+          "kind": "item",
+          "item_type": "question",
+          "label": "4",
+          "text": "请解释冷却过程。"
+        }
+      ]
+    },
+    {
+      "id": "zh-CN:table2",
+      "file_id": "zh-CN-A",
+      "scope": "zh-CN",
+      "locale": "zh-CN",
+      "text": "表 2\n10 | 20 | 30"
+    },
+    {
+      "id": "zh-CN:printed12",
+      "file_id": "zh-CN-A",
+      "scope": "zh-CN",
+      "locale": "zh-CN",
+      "text": "请解释冷却过程。",
+      "printed_pages": [
+        {
+          "label": "12",
+          "provenance": "native_printed_footer"
+        }
+      ],
+      "page_start": 20
+    },
+    {
+      "id": "zh-CN:physical12",
+      "file_id": "zh-CN-B",
+      "scope": "zh-CN",
+      "locale": "zh-CN",
+      "text": "共有9名参与者。",
+      "page_start": 12
+    },
+    {
+      "id": "zh-CN:content",
+      "file_id": "zh-CN-C",
+      "scope": "zh-CN",
+      "locale": "zh-CN",
+      "text": "共有9名参与者。",
+      "section_path": "第10题"
+    },
+    {
+      "id": "zh-CN:crossref",
+      "file_id": "zh-CN-C",
+      "scope": "zh-CN",
+      "locale": "zh-CN",
+      "text": "第13题 请解释冷却过程。 Reference only; the question itself is elsewhere."
+    },
+    {
+      "id": "zh-CN:missinganswer",
+      "file_id": "zh-CN-C",
+      "scope": "zh-CN",
+      "locale": "zh-CN",
+      "text": "请解释冷却过程。"
+    },
+    {
+      "id": "zh-CN:orphan",
+      "file_id": "zh-CN-A",
+      "scope": "zh-CN",
+      "locale": "zh-CN",
+      "text": "第15题"
+    },
+    {
+      "id": "zh-CN:continuation",
+      "file_id": "zh-CN-A",
+      "scope": "zh-CN",
+      "locale": "zh-CN",
+      "text": "请解释冷却过程。\n共有9名参与者。"
+    },
+    {
+      "id": "zh-CN:q6a",
+      "file_id": "zh-CN-A",
+      "scope": "zh-CN",
+      "locale": "zh-CN",
+      "text": "第6题\n请解释冷却过程。"
+    },
+    {
+      "id": "zh-CN:q6b",
+      "file_id": "zh-CN-A",
+      "scope": "zh-CN",
+      "locale": "zh-CN",
+      "text": "第6题\n共有9名参与者。"
+    },
+    {
+      "id": "zh-CN:q18c",
+      "file_id": "zh-CN-C",
+      "scope": "zh-CN",
+      "locale": "zh-CN",
+      "text": "第18题\n共有9名参与者。"
+    },
+    {
+      "id": "zh-CN:q18d",
+      "file_id": "zh-CN-D",
+      "scope": "zh-CN",
+      "locale": "zh-CN",
+      "text": "第18题\n请解释冷却过程。"
+    },
+    {
+      "id": "zh-TW:q9",
+      "file_id": "zh-TW-A",
+      "scope": "zh-TW",
+      "locale": "zh-TW",
+      "text": "第9題\n請解釋冷卻過程。"
+    },
+    {
+      "id": "zh-TW:q7a",
+      "file_id": "zh-TW-A",
+      "scope": "zh-TW",
+      "locale": "zh-TW",
+      "text": "第7題\n共有9名參與者。"
+    },
+    {
+      "id": "zh-TW:q7b",
+      "file_id": "zh-TW-B",
+      "scope": "zh-TW",
+      "locale": "zh-TW",
+      "text": "第7題\n請解釋冷卻過程。"
+    },
+    {
+      "id": "zh-TW:s23",
+      "file_id": "zh-TW-A",
+      "scope": "zh-TW",
+      "locale": "zh-TW",
+      "text": "第2.3節\n請解釋冷卻過程。"
+    },
+    {
+      "id": "zh-TW:native-s4",
+      "file_id": "zh-TW-A",
+      "scope": "zh-TW",
+      "locale": "zh-TW",
+      "text": "請解釋冷卻過程。",
+      "native_blocks": [
+        {
+          "id": "zh-TW-heading4",
+          "kind": "heading",
+          "text": "IV 請解釋冷卻過程。"
+        }
+      ]
+    },
+    {
+      "id": "zh-TW:native-q4",
+      "file_id": "zh-TW-A",
+      "scope": "zh-TW",
+      "locale": "zh-TW",
+      "text": "請解釋冷卻過程。",
+      "native_blocks": [
+        {
+          "id": "zh-TW-question4",
+          "kind": "item",
+          "item_type": "question",
+          "label": "4",
+          "text": "請解釋冷卻過程。"
+        }
+      ]
+    },
+    {
+      "id": "zh-TW:table2",
+      "file_id": "zh-TW-A",
+      "scope": "zh-TW",
+      "locale": "zh-TW",
+      "text": "表 2\n10 | 20 | 30"
+    },
+    {
+      "id": "zh-TW:printed12",
+      "file_id": "zh-TW-A",
+      "scope": "zh-TW",
+      "locale": "zh-TW",
+      "text": "請解釋冷卻過程。",
+      "printed_pages": [
+        {
+          "label": "12",
+          "provenance": "native_printed_footer"
+        }
+      ],
+      "page_start": 20
+    },
+    {
+      "id": "zh-TW:physical12",
+      "file_id": "zh-TW-B",
+      "scope": "zh-TW",
+      "locale": "zh-TW",
+      "text": "共有9名參與者。",
+      "page_start": 12
+    },
+    {
+      "id": "zh-TW:content",
+      "file_id": "zh-TW-C",
+      "scope": "zh-TW",
+      "locale": "zh-TW",
+      "text": "共有9名參與者。",
+      "section_path": "第10題"
+    },
+    {
+      "id": "zh-TW:crossref",
+      "file_id": "zh-TW-C",
+      "scope": "zh-TW",
+      "locale": "zh-TW",
+      "text": "第13題 請解釋冷卻過程。 Reference only; the question itself is elsewhere."
+    },
+    {
+      "id": "zh-TW:missinganswer",
+      "file_id": "zh-TW-C",
+      "scope": "zh-TW",
+      "locale": "zh-TW",
+      "text": "請解釋冷卻過程。"
+    },
+    {
+      "id": "zh-TW:orphan",
+      "file_id": "zh-TW-A",
+      "scope": "zh-TW",
+      "locale": "zh-TW",
+      "text": "第15題"
+    },
+    {
+      "id": "zh-TW:continuation",
+      "file_id": "zh-TW-A",
+      "scope": "zh-TW",
+      "locale": "zh-TW",
+      "text": "請解釋冷卻過程。\n共有9名參與者。"
+    },
+    {
+      "id": "zh-TW:q6a",
+      "file_id": "zh-TW-A",
+      "scope": "zh-TW",
+      "locale": "zh-TW",
+      "text": "第6題\n請解釋冷卻過程。"
+    },
+    {
+      "id": "zh-TW:q6b",
+      "file_id": "zh-TW-A",
+      "scope": "zh-TW",
+      "locale": "zh-TW",
+      "text": "第6題\n共有9名參與者。"
+    },
+    {
+      "id": "zh-TW:q18c",
+      "file_id": "zh-TW-C",
+      "scope": "zh-TW",
+      "locale": "zh-TW",
+      "text": "第18題\n共有9名參與者。"
+    },
+    {
+      "id": "zh-TW:q18d",
+      "file_id": "zh-TW-D",
+      "scope": "zh-TW",
+      "locale": "zh-TW",
+      "text": "第18題\n請解釋冷卻過程。"
+    },
+    {
+      "id": "zh-HK:q9",
+      "file_id": "zh-HK-A",
+      "scope": "zh-HK",
+      "locale": "zh-HK",
+      "text": "第9題\n請解釋冷卻過程。"
+    },
+    {
+      "id": "zh-HK:q7a",
+      "file_id": "zh-HK-A",
+      "scope": "zh-HK",
+      "locale": "zh-HK",
+      "text": "第7題\n共有9位參加者。"
+    },
+    {
+      "id": "zh-HK:q7b",
+      "file_id": "zh-HK-B",
+      "scope": "zh-HK",
+      "locale": "zh-HK",
+      "text": "第7題\n請解釋冷卻過程。"
+    },
+    {
+      "id": "zh-HK:s23",
+      "file_id": "zh-HK-A",
+      "scope": "zh-HK",
+      "locale": "zh-HK",
+      "text": "第2.3節\n請解釋冷卻過程。"
+    },
+    {
+      "id": "zh-HK:native-s4",
+      "file_id": "zh-HK-A",
+      "scope": "zh-HK",
+      "locale": "zh-HK",
+      "text": "請解釋冷卻過程。",
+      "native_blocks": [
+        {
+          "id": "zh-HK-heading4",
+          "kind": "heading",
+          "text": "IV 請解釋冷卻過程。"
+        }
+      ]
+    },
+    {
+      "id": "zh-HK:native-q4",
+      "file_id": "zh-HK-A",
+      "scope": "zh-HK",
+      "locale": "zh-HK",
+      "text": "請解釋冷卻過程。",
+      "native_blocks": [
+        {
+          "id": "zh-HK-question4",
+          "kind": "item",
+          "item_type": "question",
+          "label": "4",
+          "text": "請解釋冷卻過程。"
+        }
+      ]
+    },
+    {
+      "id": "zh-HK:table2",
+      "file_id": "zh-HK-A",
+      "scope": "zh-HK",
+      "locale": "zh-HK",
+      "text": "表 2\n10 | 20 | 30"
+    },
+    {
+      "id": "zh-HK:printed12",
+      "file_id": "zh-HK-A",
+      "scope": "zh-HK",
+      "locale": "zh-HK",
+      "text": "請解釋冷卻過程。",
+      "printed_pages": [
+        {
+          "label": "12",
+          "provenance": "native_printed_footer"
+        }
+      ],
+      "page_start": 20
+    },
+    {
+      "id": "zh-HK:physical12",
+      "file_id": "zh-HK-B",
+      "scope": "zh-HK",
+      "locale": "zh-HK",
+      "text": "共有9位參加者。",
+      "page_start": 12
+    },
+    {
+      "id": "zh-HK:content",
+      "file_id": "zh-HK-C",
+      "scope": "zh-HK",
+      "locale": "zh-HK",
+      "text": "共有9位參加者。",
+      "section_path": "第10題"
+    },
+    {
+      "id": "zh-HK:crossref",
+      "file_id": "zh-HK-C",
+      "scope": "zh-HK",
+      "locale": "zh-HK",
+      "text": "第13題 請解釋冷卻過程。 Reference only; the question itself is elsewhere."
+    },
+    {
+      "id": "zh-HK:missinganswer",
+      "file_id": "zh-HK-C",
+      "scope": "zh-HK",
+      "locale": "zh-HK",
+      "text": "請解釋冷卻過程。"
+    },
+    {
+      "id": "zh-HK:orphan",
+      "file_id": "zh-HK-A",
+      "scope": "zh-HK",
+      "locale": "zh-HK",
+      "text": "第15題"
+    },
+    {
+      "id": "zh-HK:continuation",
+      "file_id": "zh-HK-A",
+      "scope": "zh-HK",
+      "locale": "zh-HK",
+      "text": "請解釋冷卻過程。\n共有9位參加者。"
+    },
+    {
+      "id": "zh-HK:q6a",
+      "file_id": "zh-HK-A",
+      "scope": "zh-HK",
+      "locale": "zh-HK",
+      "text": "第6題\n請解釋冷卻過程。"
+    },
+    {
+      "id": "zh-HK:q6b",
+      "file_id": "zh-HK-A",
+      "scope": "zh-HK",
+      "locale": "zh-HK",
+      "text": "第6題\n共有9位參加者。"
+    },
+    {
+      "id": "zh-HK:q18c",
+      "file_id": "zh-HK-C",
+      "scope": "zh-HK",
+      "locale": "zh-HK",
+      "text": "第18題\n共有9位參加者。"
+    },
+    {
+      "id": "zh-HK:q18d",
+      "file_id": "zh-HK-D",
+      "scope": "zh-HK",
+      "locale": "zh-HK",
+      "text": "第18題\n請解釋冷卻過程。"
+    },
+    {
+      "id": "es:q9",
+      "file_id": "es-A",
+      "scope": "es",
+      "locale": "es",
+      "text": "Pregunta 9\nExplica el proceso de enfriamiento."
+    },
+    {
+      "id": "es:q7a",
+      "file_id": "es-A",
+      "scope": "es",
+      "locale": "es",
+      "text": "Pregunta 7\nHay 9 participantes."
+    },
+    {
+      "id": "es:q7b",
+      "file_id": "es-B",
+      "scope": "es",
+      "locale": "es",
+      "text": "Pregunta 7\nExplica el proceso de enfriamiento."
+    },
+    {
+      "id": "es:s23",
+      "file_id": "es-A",
+      "scope": "es",
+      "locale": "es",
+      "text": "Sección 2.3\nExplica el proceso de enfriamiento."
+    },
+    {
+      "id": "es:native-s4",
+      "file_id": "es-A",
+      "scope": "es",
+      "locale": "es",
+      "text": "Explica el proceso de enfriamiento.",
+      "native_blocks": [
+        {
+          "id": "es-heading4",
+          "kind": "heading",
+          "text": "IV Explica el proceso de enfriamiento."
+        }
+      ]
+    },
+    {
+      "id": "es:native-q4",
+      "file_id": "es-A",
+      "scope": "es",
+      "locale": "es",
+      "text": "Explica el proceso de enfriamiento.",
+      "native_blocks": [
+        {
+          "id": "es-question4",
+          "kind": "item",
+          "item_type": "question",
+          "label": "4",
+          "text": "Explica el proceso de enfriamiento."
+        }
+      ]
+    },
+    {
+      "id": "es:table2",
+      "file_id": "es-A",
+      "scope": "es",
+      "locale": "es",
+      "text": "Tabla 2\n10 | 20 | 30"
+    },
+    {
+      "id": "es:printed12",
+      "file_id": "es-A",
+      "scope": "es",
+      "locale": "es",
+      "text": "Explica el proceso de enfriamiento.",
+      "printed_pages": [
+        {
+          "label": "12",
+          "provenance": "native_printed_footer"
+        }
+      ],
+      "page_start": 20
+    },
+    {
+      "id": "es:physical12",
+      "file_id": "es-B",
+      "scope": "es",
+      "locale": "es",
+      "text": "Hay 9 participantes.",
+      "page_start": 12
+    },
+    {
+      "id": "es:content",
+      "file_id": "es-C",
+      "scope": "es",
+      "locale": "es",
+      "text": "Hay 9 participantes.",
+      "section_path": "Pregunta 10"
+    },
+    {
+      "id": "es:crossref",
+      "file_id": "es-C",
+      "scope": "es",
+      "locale": "es",
+      "text": "Pregunta 13 Explica el proceso de enfriamiento. Reference only; the question itself is elsewhere."
+    },
+    {
+      "id": "es:missinganswer",
+      "file_id": "es-C",
+      "scope": "es",
+      "locale": "es",
+      "text": "Explica el proceso de enfriamiento."
+    },
+    {
+      "id": "es:orphan",
+      "file_id": "es-A",
+      "scope": "es",
+      "locale": "es",
+      "text": "Pregunta 15"
+    },
+    {
+      "id": "es:continuation",
+      "file_id": "es-A",
+      "scope": "es",
+      "locale": "es",
+      "text": "Explica el proceso de enfriamiento.\nHay 9 participantes."
+    },
+    {
+      "id": "es:q6a",
+      "file_id": "es-A",
+      "scope": "es",
+      "locale": "es",
+      "text": "Pregunta 6\nExplica el proceso de enfriamiento."
+    },
+    {
+      "id": "es:q6b",
+      "file_id": "es-A",
+      "scope": "es",
+      "locale": "es",
+      "text": "Pregunta 6\nHay 9 participantes."
+    },
+    {
+      "id": "es:q18c",
+      "file_id": "es-C",
+      "scope": "es",
+      "locale": "es",
+      "text": "Pregunta 18\nHay 9 participantes."
+    },
+    {
+      "id": "es:q18d",
+      "file_id": "es-D",
+      "scope": "es",
+      "locale": "es",
+      "text": "Pregunta 18\nExplica el proceso de enfriamiento."
+    },
+    {
+      "id": "fr:q9",
+      "file_id": "fr-A",
+      "scope": "fr",
+      "locale": "fr",
+      "text": "Question 9\nExplique le processus de refroidissement."
+    },
+    {
+      "id": "fr:q7a",
+      "file_id": "fr-A",
+      "scope": "fr",
+      "locale": "fr",
+      "text": "Question 7\nIl y a 9 participants."
+    },
+    {
+      "id": "fr:q7b",
+      "file_id": "fr-B",
+      "scope": "fr",
+      "locale": "fr",
+      "text": "Question 7\nExplique le processus de refroidissement."
+    },
+    {
+      "id": "fr:s23",
+      "file_id": "fr-A",
+      "scope": "fr",
+      "locale": "fr",
+      "text": "Section 2.3\nExplique le processus de refroidissement."
+    },
+    {
+      "id": "fr:native-s4",
+      "file_id": "fr-A",
+      "scope": "fr",
+      "locale": "fr",
+      "text": "Explique le processus de refroidissement.",
+      "native_blocks": [
+        {
+          "id": "fr-heading4",
+          "kind": "heading",
+          "text": "IV Explique le processus de refroidissement."
+        }
+      ]
+    },
+    {
+      "id": "fr:native-q4",
+      "file_id": "fr-A",
+      "scope": "fr",
+      "locale": "fr",
+      "text": "Explique le processus de refroidissement.",
+      "native_blocks": [
+        {
+          "id": "fr-question4",
+          "kind": "item",
+          "item_type": "question",
+          "label": "4",
+          "text": "Explique le processus de refroidissement."
+        }
+      ]
+    },
+    {
+      "id": "fr:table2",
+      "file_id": "fr-A",
+      "scope": "fr",
+      "locale": "fr",
+      "text": "Tableau 2\n10 | 20 | 30"
+    },
+    {
+      "id": "fr:printed12",
+      "file_id": "fr-A",
+      "scope": "fr",
+      "locale": "fr",
+      "text": "Explique le processus de refroidissement.",
+      "printed_pages": [
+        {
+          "label": "12",
+          "provenance": "native_printed_footer"
+        }
+      ],
+      "page_start": 20
+    },
+    {
+      "id": "fr:physical12",
+      "file_id": "fr-B",
+      "scope": "fr",
+      "locale": "fr",
+      "text": "Il y a 9 participants.",
+      "page_start": 12
+    },
+    {
+      "id": "fr:content",
+      "file_id": "fr-C",
+      "scope": "fr",
+      "locale": "fr",
+      "text": "Il y a 9 participants.",
+      "section_path": "Question 10"
+    },
+    {
+      "id": "fr:crossref",
+      "file_id": "fr-C",
+      "scope": "fr",
+      "locale": "fr",
+      "text": "Question 13 Explique le processus de refroidissement. Reference only; the question itself is elsewhere."
+    },
+    {
+      "id": "fr:missinganswer",
+      "file_id": "fr-C",
+      "scope": "fr",
+      "locale": "fr",
+      "text": "Explique le processus de refroidissement."
+    },
+    {
+      "id": "fr:orphan",
+      "file_id": "fr-A",
+      "scope": "fr",
+      "locale": "fr",
+      "text": "Question 15"
+    },
+    {
+      "id": "fr:continuation",
+      "file_id": "fr-A",
+      "scope": "fr",
+      "locale": "fr",
+      "text": "Explique le processus de refroidissement.\nIl y a 9 participants."
+    },
+    {
+      "id": "fr:q6a",
+      "file_id": "fr-A",
+      "scope": "fr",
+      "locale": "fr",
+      "text": "Question 6\nExplique le processus de refroidissement."
+    },
+    {
+      "id": "fr:q6b",
+      "file_id": "fr-A",
+      "scope": "fr",
+      "locale": "fr",
+      "text": "Question 6\nIl y a 9 participants."
+    },
+    {
+      "id": "fr:q18c",
+      "file_id": "fr-C",
+      "scope": "fr",
+      "locale": "fr",
+      "text": "Question 18\nIl y a 9 participants."
+    },
+    {
+      "id": "fr:q18d",
+      "file_id": "fr-D",
+      "scope": "fr",
+      "locale": "fr",
+      "text": "Question 18\nExplique le processus de refroidissement."
+    }
+  ],
+  "queries": [
+    {
+      "id": "en-unique",
+      "locale": "en",
+      "scope": "en",
+      "kind": "unique",
+      "q": "Question 9",
+      "qrels": {
+        "en:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "en-fullwidth",
+      "locale": "en",
+      "scope": "en",
+      "kind": "fullwidth",
+      "q": "Question ９",
+      "qrels": {
+        "en:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "en-cross-language",
+      "locale": "en",
+      "scope": "en",
+      "kind": "cross-language",
+      "q": "Question 9",
+      "qrels": {
+        "en:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "en-named-source",
+      "locale": "en",
+      "scope": "en",
+      "kind": "named-source",
+      "q": "en-A.pdf Question 7",
+      "qrels": {
+        "en:q7a": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "en-source-reference",
+      "locale": "en",
+      "scope": "en",
+      "kind": "source-reference",
+      "q": "SRC-en-A Question 7",
+      "qrels": {
+        "en:q7a": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "en-ambiguous-files",
+      "locale": "en",
+      "scope": "en",
+      "kind": "ambiguous-files",
+      "q": "Question 7",
+      "qrels": {
+        "en:q7a": 1,
+        "en:q7b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "en-ambiguous-within-file",
+      "locale": "en",
+      "scope": "en",
+      "kind": "ambiguous-within-file",
+      "q": "en-A.pdf Question 6",
+      "qrels": {
+        "en:q6a": 1,
+        "en:q6b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "en-semantic",
+      "locale": "en",
+      "scope": "en",
+      "kind": "semantic",
+      "q": "Explain the cooling process.",
+      "qrels": {
+        "en:continuation": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "en-content-number",
+      "locale": "en",
+      "scope": "en",
+      "kind": "content-number",
+      "q": "There are 9 participants.",
+      "qrels": {
+        "en:content": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "en-subsection",
+      "locale": "en",
+      "scope": "en",
+      "kind": "subsection",
+      "q": "Section 2.3",
+      "qrels": {
+        "en:s23": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "en-native-roman-heading",
+      "locale": "en",
+      "scope": "en",
+      "kind": "native-roman-heading",
+      "q": "Section 4",
+      "qrels": {
+        "en:native-s4": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "en-native-question-item",
+      "locale": "en",
+      "scope": "en",
+      "kind": "native-question-item",
+      "q": "Question 4",
+      "qrels": {
+        "en:native-q4": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "en-table",
+      "locale": "en",
+      "scope": "en",
+      "kind": "table",
+      "q": "Table 2",
+      "qrels": {
+        "en:table2": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "en-printed-page",
+      "locale": "en",
+      "scope": "en",
+      "kind": "printed-page",
+      "q": "Page 12",
+      "qrels": {
+        "en:printed12": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "en-physical-page-only",
+      "locale": "en",
+      "scope": "en",
+      "kind": "physical-page-only",
+      "q": "Page 20",
+      "qrels": {
+        "en:printed12": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "en-missing",
+      "locale": "en",
+      "scope": "en",
+      "kind": "missing",
+      "q": "Question 99",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "en-unsupported",
+      "locale": "en",
+      "scope": "en",
+      "kind": "unsupported",
+      "q": "Figure 8",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "en-body-cross-reference",
+      "locale": "en",
+      "scope": "en",
+      "kind": "body-cross-reference",
+      "q": "Question 13",
+      "qrels": {
+        "en:missinganswer": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "en-orphan-heading",
+      "locale": "en",
+      "scope": "en",
+      "kind": "orphan-heading",
+      "q": "Question 15",
+      "qrels": {
+        "en:continuation": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "en-multiple-same-kind",
+      "locale": "en",
+      "scope": "en",
+      "kind": "multiple-same-kind",
+      "q": "Question 9 and Question 7",
+      "qrels": {
+        "en:q9": 1,
+        "en:q7a": 1,
+        "en:q7b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "en-multiple-short-form",
+      "locale": "en",
+      "scope": "en",
+      "kind": "multiple-short-form",
+      "q": "Question 9 and 7",
+      "qrels": {
+        "en:q9": 1,
+        "en:q7a": 1,
+        "en:q7b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "en-multiple-kinds",
+      "locale": "en",
+      "scope": "en",
+      "kind": "multiple-kinds",
+      "q": "Section 2 Question 9",
+      "qrels": {
+        "en:q9": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "en-unknown-source",
+      "locale": "en",
+      "scope": "en",
+      "kind": "unknown-source",
+      "q": "absent.pdf Question 9",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "en-two-sources",
+      "locale": "en",
+      "scope": "en",
+      "kind": "two-sources",
+      "q": "en-A.pdf en-B.pdf Question 9",
+      "qrels": {
+        "en:q9": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "en-stale-inherited-heading",
+      "locale": "en",
+      "scope": "en",
+      "kind": "stale-inherited-heading",
+      "q": "Question 10",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "en-duplicate-filename",
+      "locale": "en",
+      "scope": "en",
+      "kind": "duplicate-filename",
+      "q": "shared.pdf Question 18",
+      "qrels": {
+        "en:q18c": 1,
+        "en:q18d": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "en-ordinary-numeral",
+      "locale": "en",
+      "scope": "en",
+      "kind": "ordinary-numeral",
+      "q": "Question IX",
+      "qrels": {
+        "en:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "ja-unique",
+      "locale": "ja",
+      "scope": "ja",
+      "kind": "unique",
+      "q": "問題 9",
+      "qrels": {
+        "ja:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "ja-fullwidth",
+      "locale": "ja",
+      "scope": "ja",
+      "kind": "fullwidth",
+      "q": "問題 ９",
+      "qrels": {
+        "ja:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "ja-cross-language",
+      "locale": "ja",
+      "scope": "ja",
+      "kind": "cross-language",
+      "q": "Question 9",
+      "qrels": {
+        "ja:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "ja-named-source",
+      "locale": "ja",
+      "scope": "ja",
+      "kind": "named-source",
+      "q": "ja-A.pdf 問題 7",
+      "qrels": {
+        "ja:q7a": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "ja-source-reference",
+      "locale": "ja",
+      "scope": "ja",
+      "kind": "source-reference",
+      "q": "SRC-ja-A 問題 7",
+      "qrels": {
+        "ja:q7a": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "ja-ambiguous-files",
+      "locale": "ja",
+      "scope": "ja",
+      "kind": "ambiguous-files",
+      "q": "問題 7",
+      "qrels": {
+        "ja:q7a": 1,
+        "ja:q7b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "ja-ambiguous-within-file",
+      "locale": "ja",
+      "scope": "ja",
+      "kind": "ambiguous-within-file",
+      "q": "ja-A.pdf 問題 6",
+      "qrels": {
+        "ja:q6a": 1,
+        "ja:q6b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "ja-semantic",
+      "locale": "ja",
+      "scope": "ja",
+      "kind": "semantic",
+      "q": "冷却の仕組みを説明してください。",
+      "qrels": {
+        "ja:continuation": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "ja-content-number",
+      "locale": "ja",
+      "scope": "ja",
+      "kind": "content-number",
+      "q": "参加者は9人です。",
+      "qrels": {
+        "ja:content": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "ja-subsection",
+      "locale": "ja",
+      "scope": "ja",
+      "kind": "subsection",
+      "q": "第2.3節",
+      "qrels": {
+        "ja:s23": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "ja-native-roman-heading",
+      "locale": "ja",
+      "scope": "ja",
+      "kind": "native-roman-heading",
+      "q": "第4節",
+      "qrels": {
+        "ja:native-s4": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "ja-native-question-item",
+      "locale": "ja",
+      "scope": "ja",
+      "kind": "native-question-item",
+      "q": "問題 4",
+      "qrels": {
+        "ja:native-q4": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "ja-table",
+      "locale": "ja",
+      "scope": "ja",
+      "kind": "table",
+      "q": "表 2",
+      "qrels": {
+        "ja:table2": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "ja-printed-page",
+      "locale": "ja",
+      "scope": "ja",
+      "kind": "printed-page",
+      "q": "12ページ",
+      "qrels": {
+        "ja:printed12": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "ja-physical-page-only",
+      "locale": "ja",
+      "scope": "ja",
+      "kind": "physical-page-only",
+      "q": "20ページ",
+      "qrels": {
+        "ja:printed12": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "ja-missing",
+      "locale": "ja",
+      "scope": "ja",
+      "kind": "missing",
+      "q": "問題 99",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "ja-unsupported",
+      "locale": "ja",
+      "scope": "ja",
+      "kind": "unsupported",
+      "q": "Figure 8",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "ja-body-cross-reference",
+      "locale": "ja",
+      "scope": "ja",
+      "kind": "body-cross-reference",
+      "q": "問題 13",
+      "qrels": {
+        "ja:missinganswer": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "ja-orphan-heading",
+      "locale": "ja",
+      "scope": "ja",
+      "kind": "orphan-heading",
+      "q": "問題 15",
+      "qrels": {
+        "ja:continuation": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "ja-multiple-same-kind",
+      "locale": "ja",
+      "scope": "ja",
+      "kind": "multiple-same-kind",
+      "q": "問題 9 and 問題 7",
+      "qrels": {
+        "ja:q9": 1,
+        "ja:q7a": 1,
+        "ja:q7b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "ja-multiple-short-form",
+      "locale": "ja",
+      "scope": "ja",
+      "kind": "multiple-short-form",
+      "q": "問題 9 and 7",
+      "qrels": {
+        "ja:q9": 1,
+        "ja:q7a": 1,
+        "ja:q7b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "ja-multiple-kinds",
+      "locale": "ja",
+      "scope": "ja",
+      "kind": "multiple-kinds",
+      "q": "第2節 問題 9",
+      "qrels": {
+        "ja:q9": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "ja-unknown-source",
+      "locale": "ja",
+      "scope": "ja",
+      "kind": "unknown-source",
+      "q": "absent.pdf 問題 9",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "ja-two-sources",
+      "locale": "ja",
+      "scope": "ja",
+      "kind": "two-sources",
+      "q": "ja-A.pdf ja-B.pdf 問題 9",
+      "qrels": {
+        "ja:q9": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "ja-stale-inherited-heading",
+      "locale": "ja",
+      "scope": "ja",
+      "kind": "stale-inherited-heading",
+      "q": "問題 10",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "ja-duplicate-filename",
+      "locale": "ja",
+      "scope": "ja",
+      "kind": "duplicate-filename",
+      "q": "shared.pdf 問題 18",
+      "qrels": {
+        "ja:q18c": 1,
+        "ja:q18d": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "ja-ordinary-numeral",
+      "locale": "ja",
+      "scope": "ja",
+      "kind": "ordinary-numeral",
+      "q": "問題 九",
+      "qrels": {
+        "ja:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "ko-unique",
+      "locale": "ko",
+      "scope": "ko",
+      "kind": "unique",
+      "q": "9번 문제",
+      "qrels": {
+        "ko:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "ko-fullwidth",
+      "locale": "ko",
+      "scope": "ko",
+      "kind": "fullwidth",
+      "q": "９번 문제",
+      "qrels": {
+        "ko:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "ko-cross-language",
+      "locale": "ko",
+      "scope": "ko",
+      "kind": "cross-language",
+      "q": "Question 9",
+      "qrels": {
+        "ko:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "ko-named-source",
+      "locale": "ko",
+      "scope": "ko",
+      "kind": "named-source",
+      "q": "ko-A.pdf 7번 문제",
+      "qrels": {
+        "ko:q7a": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "ko-source-reference",
+      "locale": "ko",
+      "scope": "ko",
+      "kind": "source-reference",
+      "q": "SRC-ko-A 7번 문제",
+      "qrels": {
+        "ko:q7a": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "ko-ambiguous-files",
+      "locale": "ko",
+      "scope": "ko",
+      "kind": "ambiguous-files",
+      "q": "7번 문제",
+      "qrels": {
+        "ko:q7a": 1,
+        "ko:q7b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "ko-ambiguous-within-file",
+      "locale": "ko",
+      "scope": "ko",
+      "kind": "ambiguous-within-file",
+      "q": "ko-A.pdf 6번 문제",
+      "qrels": {
+        "ko:q6a": 1,
+        "ko:q6b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "ko-semantic",
+      "locale": "ko",
+      "scope": "ko",
+      "kind": "semantic",
+      "q": "냉각 과정을 설명해 주세요.",
+      "qrels": {
+        "ko:continuation": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "ko-content-number",
+      "locale": "ko",
+      "scope": "ko",
+      "kind": "content-number",
+      "q": "참가자는 9명입니다.",
+      "qrels": {
+        "ko:content": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "ko-subsection",
+      "locale": "ko",
+      "scope": "ko",
+      "kind": "subsection",
+      "q": "2.3절",
+      "qrels": {
+        "ko:s23": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "ko-native-roman-heading",
+      "locale": "ko",
+      "scope": "ko",
+      "kind": "native-roman-heading",
+      "q": "4절",
+      "qrels": {
+        "ko:native-s4": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "ko-native-question-item",
+      "locale": "ko",
+      "scope": "ko",
+      "kind": "native-question-item",
+      "q": "4번 문제",
+      "qrels": {
+        "ko:native-q4": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "ko-table",
+      "locale": "ko",
+      "scope": "ko",
+      "kind": "table",
+      "q": "표 2",
+      "qrels": {
+        "ko:table2": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "ko-printed-page",
+      "locale": "ko",
+      "scope": "ko",
+      "kind": "printed-page",
+      "q": "12쪽",
+      "qrels": {
+        "ko:printed12": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "ko-physical-page-only",
+      "locale": "ko",
+      "scope": "ko",
+      "kind": "physical-page-only",
+      "q": "20쪽",
+      "qrels": {
+        "ko:printed12": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "ko-missing",
+      "locale": "ko",
+      "scope": "ko",
+      "kind": "missing",
+      "q": "99번 문제",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "ko-unsupported",
+      "locale": "ko",
+      "scope": "ko",
+      "kind": "unsupported",
+      "q": "Figure 8",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "ko-body-cross-reference",
+      "locale": "ko",
+      "scope": "ko",
+      "kind": "body-cross-reference",
+      "q": "13번 문제",
+      "qrels": {
+        "ko:missinganswer": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "ko-orphan-heading",
+      "locale": "ko",
+      "scope": "ko",
+      "kind": "orphan-heading",
+      "q": "15번 문제",
+      "qrels": {
+        "ko:continuation": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "ko-multiple-same-kind",
+      "locale": "ko",
+      "scope": "ko",
+      "kind": "multiple-same-kind",
+      "q": "9번 문제 and 7번 문제",
+      "qrels": {
+        "ko:q9": 1,
+        "ko:q7a": 1,
+        "ko:q7b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "ko-multiple-short-form",
+      "locale": "ko",
+      "scope": "ko",
+      "kind": "multiple-short-form",
+      "q": "9번 문제 and 7",
+      "qrels": {
+        "ko:q9": 1,
+        "ko:q7a": 1,
+        "ko:q7b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "ko-multiple-kinds",
+      "locale": "ko",
+      "scope": "ko",
+      "kind": "multiple-kinds",
+      "q": "2절 9번 문제",
+      "qrels": {
+        "ko:q9": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "ko-unknown-source",
+      "locale": "ko",
+      "scope": "ko",
+      "kind": "unknown-source",
+      "q": "absent.pdf 9번 문제",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "ko-two-sources",
+      "locale": "ko",
+      "scope": "ko",
+      "kind": "two-sources",
+      "q": "ko-A.pdf ko-B.pdf 9번 문제",
+      "qrels": {
+        "ko:q9": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "ko-stale-inherited-heading",
+      "locale": "ko",
+      "scope": "ko",
+      "kind": "stale-inherited-heading",
+      "q": "10번 문제",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "ko-duplicate-filename",
+      "locale": "ko",
+      "scope": "ko",
+      "kind": "duplicate-filename",
+      "q": "shared.pdf 18번 문제",
+      "qrels": {
+        "ko:q18c": 1,
+        "ko:q18d": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "ko-ordinary-numeral",
+      "locale": "ko",
+      "scope": "ko",
+      "kind": "ordinary-numeral",
+      "q": "IX번 문제",
+      "qrels": {
+        "ko:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-CN-unique",
+      "locale": "zh-CN",
+      "scope": "zh-CN",
+      "kind": "unique",
+      "q": "第9题",
+      "qrels": {
+        "zh-CN:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-CN-fullwidth",
+      "locale": "zh-CN",
+      "scope": "zh-CN",
+      "kind": "fullwidth",
+      "q": "第９题",
+      "qrels": {
+        "zh-CN:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-CN-cross-language",
+      "locale": "zh-CN",
+      "scope": "zh-CN",
+      "kind": "cross-language",
+      "q": "Question 9",
+      "qrels": {
+        "zh-CN:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-CN-named-source",
+      "locale": "zh-CN",
+      "scope": "zh-CN",
+      "kind": "named-source",
+      "q": "zh-CN-A.pdf 第7题",
+      "qrels": {
+        "zh-CN:q7a": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-CN-source-reference",
+      "locale": "zh-CN",
+      "scope": "zh-CN",
+      "kind": "source-reference",
+      "q": "SRC-zh-CN-A 第7题",
+      "qrels": {
+        "zh-CN:q7a": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-CN-ambiguous-files",
+      "locale": "zh-CN",
+      "scope": "zh-CN",
+      "kind": "ambiguous-files",
+      "q": "第7题",
+      "qrels": {
+        "zh-CN:q7a": 1,
+        "zh-CN:q7b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-CN-ambiguous-within-file",
+      "locale": "zh-CN",
+      "scope": "zh-CN",
+      "kind": "ambiguous-within-file",
+      "q": "zh-CN-A.pdf 第6题",
+      "qrels": {
+        "zh-CN:q6a": 1,
+        "zh-CN:q6b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-CN-semantic",
+      "locale": "zh-CN",
+      "scope": "zh-CN",
+      "kind": "semantic",
+      "q": "请解释冷却过程。",
+      "qrels": {
+        "zh-CN:continuation": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-CN-content-number",
+      "locale": "zh-CN",
+      "scope": "zh-CN",
+      "kind": "content-number",
+      "q": "共有9名参与者。",
+      "qrels": {
+        "zh-CN:content": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-CN-subsection",
+      "locale": "zh-CN",
+      "scope": "zh-CN",
+      "kind": "subsection",
+      "q": "第2.3节",
+      "qrels": {
+        "zh-CN:s23": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-CN-native-roman-heading",
+      "locale": "zh-CN",
+      "scope": "zh-CN",
+      "kind": "native-roman-heading",
+      "q": "第4节",
+      "qrels": {
+        "zh-CN:native-s4": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-CN-native-question-item",
+      "locale": "zh-CN",
+      "scope": "zh-CN",
+      "kind": "native-question-item",
+      "q": "第4题",
+      "qrels": {
+        "zh-CN:native-q4": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-CN-table",
+      "locale": "zh-CN",
+      "scope": "zh-CN",
+      "kind": "table",
+      "q": "表 2",
+      "qrels": {
+        "zh-CN:table2": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-CN-printed-page",
+      "locale": "zh-CN",
+      "scope": "zh-CN",
+      "kind": "printed-page",
+      "q": "第12页",
+      "qrels": {
+        "zh-CN:printed12": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-CN-physical-page-only",
+      "locale": "zh-CN",
+      "scope": "zh-CN",
+      "kind": "physical-page-only",
+      "q": "第20页",
+      "qrels": {
+        "zh-CN:printed12": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-CN-missing",
+      "locale": "zh-CN",
+      "scope": "zh-CN",
+      "kind": "missing",
+      "q": "第99题",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "zh-CN-unsupported",
+      "locale": "zh-CN",
+      "scope": "zh-CN",
+      "kind": "unsupported",
+      "q": "Figure 8",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "zh-CN-body-cross-reference",
+      "locale": "zh-CN",
+      "scope": "zh-CN",
+      "kind": "body-cross-reference",
+      "q": "第13题",
+      "qrels": {
+        "zh-CN:missinganswer": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-CN-orphan-heading",
+      "locale": "zh-CN",
+      "scope": "zh-CN",
+      "kind": "orphan-heading",
+      "q": "第15题",
+      "qrels": {
+        "zh-CN:continuation": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-CN-multiple-same-kind",
+      "locale": "zh-CN",
+      "scope": "zh-CN",
+      "kind": "multiple-same-kind",
+      "q": "第9题 and 第7题",
+      "qrels": {
+        "zh-CN:q9": 1,
+        "zh-CN:q7a": 1,
+        "zh-CN:q7b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-CN-multiple-short-form",
+      "locale": "zh-CN",
+      "scope": "zh-CN",
+      "kind": "multiple-short-form",
+      "q": "第9题 and 7",
+      "qrels": {
+        "zh-CN:q9": 1,
+        "zh-CN:q7a": 1,
+        "zh-CN:q7b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-CN-multiple-kinds",
+      "locale": "zh-CN",
+      "scope": "zh-CN",
+      "kind": "multiple-kinds",
+      "q": "第2节 第9题",
+      "qrels": {
+        "zh-CN:q9": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-CN-unknown-source",
+      "locale": "zh-CN",
+      "scope": "zh-CN",
+      "kind": "unknown-source",
+      "q": "absent.pdf 第9题",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "zh-CN-two-sources",
+      "locale": "zh-CN",
+      "scope": "zh-CN",
+      "kind": "two-sources",
+      "q": "zh-CN-A.pdf zh-CN-B.pdf 第9题",
+      "qrels": {
+        "zh-CN:q9": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-CN-stale-inherited-heading",
+      "locale": "zh-CN",
+      "scope": "zh-CN",
+      "kind": "stale-inherited-heading",
+      "q": "第10题",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "zh-CN-duplicate-filename",
+      "locale": "zh-CN",
+      "scope": "zh-CN",
+      "kind": "duplicate-filename",
+      "q": "shared.pdf 第18题",
+      "qrels": {
+        "zh-CN:q18c": 1,
+        "zh-CN:q18d": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-CN-ordinary-numeral",
+      "locale": "zh-CN",
+      "scope": "zh-CN",
+      "kind": "ordinary-numeral",
+      "q": "第九题",
+      "qrels": {
+        "zh-CN:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-TW-unique",
+      "locale": "zh-TW",
+      "scope": "zh-TW",
+      "kind": "unique",
+      "q": "第9題",
+      "qrels": {
+        "zh-TW:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-TW-fullwidth",
+      "locale": "zh-TW",
+      "scope": "zh-TW",
+      "kind": "fullwidth",
+      "q": "第９題",
+      "qrels": {
+        "zh-TW:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-TW-cross-language",
+      "locale": "zh-TW",
+      "scope": "zh-TW",
+      "kind": "cross-language",
+      "q": "Question 9",
+      "qrels": {
+        "zh-TW:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-TW-named-source",
+      "locale": "zh-TW",
+      "scope": "zh-TW",
+      "kind": "named-source",
+      "q": "zh-TW-A.pdf 第7題",
+      "qrels": {
+        "zh-TW:q7a": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-TW-source-reference",
+      "locale": "zh-TW",
+      "scope": "zh-TW",
+      "kind": "source-reference",
+      "q": "SRC-zh-TW-A 第7題",
+      "qrels": {
+        "zh-TW:q7a": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-TW-ambiguous-files",
+      "locale": "zh-TW",
+      "scope": "zh-TW",
+      "kind": "ambiguous-files",
+      "q": "第7題",
+      "qrels": {
+        "zh-TW:q7a": 1,
+        "zh-TW:q7b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-TW-ambiguous-within-file",
+      "locale": "zh-TW",
+      "scope": "zh-TW",
+      "kind": "ambiguous-within-file",
+      "q": "zh-TW-A.pdf 第6題",
+      "qrels": {
+        "zh-TW:q6a": 1,
+        "zh-TW:q6b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-TW-semantic",
+      "locale": "zh-TW",
+      "scope": "zh-TW",
+      "kind": "semantic",
+      "q": "請解釋冷卻過程。",
+      "qrels": {
+        "zh-TW:continuation": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-TW-content-number",
+      "locale": "zh-TW",
+      "scope": "zh-TW",
+      "kind": "content-number",
+      "q": "共有9名參與者。",
+      "qrels": {
+        "zh-TW:content": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-TW-subsection",
+      "locale": "zh-TW",
+      "scope": "zh-TW",
+      "kind": "subsection",
+      "q": "第2.3節",
+      "qrels": {
+        "zh-TW:s23": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-TW-native-roman-heading",
+      "locale": "zh-TW",
+      "scope": "zh-TW",
+      "kind": "native-roman-heading",
+      "q": "第4節",
+      "qrels": {
+        "zh-TW:native-s4": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-TW-native-question-item",
+      "locale": "zh-TW",
+      "scope": "zh-TW",
+      "kind": "native-question-item",
+      "q": "第4題",
+      "qrels": {
+        "zh-TW:native-q4": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-TW-table",
+      "locale": "zh-TW",
+      "scope": "zh-TW",
+      "kind": "table",
+      "q": "表 2",
+      "qrels": {
+        "zh-TW:table2": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-TW-printed-page",
+      "locale": "zh-TW",
+      "scope": "zh-TW",
+      "kind": "printed-page",
+      "q": "第12頁",
+      "qrels": {
+        "zh-TW:printed12": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-TW-physical-page-only",
+      "locale": "zh-TW",
+      "scope": "zh-TW",
+      "kind": "physical-page-only",
+      "q": "第20頁",
+      "qrels": {
+        "zh-TW:printed12": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-TW-missing",
+      "locale": "zh-TW",
+      "scope": "zh-TW",
+      "kind": "missing",
+      "q": "第99題",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "zh-TW-unsupported",
+      "locale": "zh-TW",
+      "scope": "zh-TW",
+      "kind": "unsupported",
+      "q": "Figure 8",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "zh-TW-body-cross-reference",
+      "locale": "zh-TW",
+      "scope": "zh-TW",
+      "kind": "body-cross-reference",
+      "q": "第13題",
+      "qrels": {
+        "zh-TW:missinganswer": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-TW-orphan-heading",
+      "locale": "zh-TW",
+      "scope": "zh-TW",
+      "kind": "orphan-heading",
+      "q": "第15題",
+      "qrels": {
+        "zh-TW:continuation": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-TW-multiple-same-kind",
+      "locale": "zh-TW",
+      "scope": "zh-TW",
+      "kind": "multiple-same-kind",
+      "q": "第9題 and 第7題",
+      "qrels": {
+        "zh-TW:q9": 1,
+        "zh-TW:q7a": 1,
+        "zh-TW:q7b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-TW-multiple-short-form",
+      "locale": "zh-TW",
+      "scope": "zh-TW",
+      "kind": "multiple-short-form",
+      "q": "第9題 and 7",
+      "qrels": {
+        "zh-TW:q9": 1,
+        "zh-TW:q7a": 1,
+        "zh-TW:q7b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-TW-multiple-kinds",
+      "locale": "zh-TW",
+      "scope": "zh-TW",
+      "kind": "multiple-kinds",
+      "q": "第2節 第9題",
+      "qrels": {
+        "zh-TW:q9": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-TW-unknown-source",
+      "locale": "zh-TW",
+      "scope": "zh-TW",
+      "kind": "unknown-source",
+      "q": "absent.pdf 第9題",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "zh-TW-two-sources",
+      "locale": "zh-TW",
+      "scope": "zh-TW",
+      "kind": "two-sources",
+      "q": "zh-TW-A.pdf zh-TW-B.pdf 第9題",
+      "qrels": {
+        "zh-TW:q9": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-TW-stale-inherited-heading",
+      "locale": "zh-TW",
+      "scope": "zh-TW",
+      "kind": "stale-inherited-heading",
+      "q": "第10題",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "zh-TW-duplicate-filename",
+      "locale": "zh-TW",
+      "scope": "zh-TW",
+      "kind": "duplicate-filename",
+      "q": "shared.pdf 第18題",
+      "qrels": {
+        "zh-TW:q18c": 1,
+        "zh-TW:q18d": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-TW-ordinary-numeral",
+      "locale": "zh-TW",
+      "scope": "zh-TW",
+      "kind": "ordinary-numeral",
+      "q": "第九題",
+      "qrels": {
+        "zh-TW:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-HK-unique",
+      "locale": "zh-HK",
+      "scope": "zh-HK",
+      "kind": "unique",
+      "q": "第9題",
+      "qrels": {
+        "zh-HK:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-HK-fullwidth",
+      "locale": "zh-HK",
+      "scope": "zh-HK",
+      "kind": "fullwidth",
+      "q": "第９題",
+      "qrels": {
+        "zh-HK:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-HK-cross-language",
+      "locale": "zh-HK",
+      "scope": "zh-HK",
+      "kind": "cross-language",
+      "q": "Question 9",
+      "qrels": {
+        "zh-HK:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-HK-named-source",
+      "locale": "zh-HK",
+      "scope": "zh-HK",
+      "kind": "named-source",
+      "q": "zh-HK-A.pdf 第7題",
+      "qrels": {
+        "zh-HK:q7a": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-HK-source-reference",
+      "locale": "zh-HK",
+      "scope": "zh-HK",
+      "kind": "source-reference",
+      "q": "SRC-zh-HK-A 第7題",
+      "qrels": {
+        "zh-HK:q7a": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-HK-ambiguous-files",
+      "locale": "zh-HK",
+      "scope": "zh-HK",
+      "kind": "ambiguous-files",
+      "q": "第7題",
+      "qrels": {
+        "zh-HK:q7a": 1,
+        "zh-HK:q7b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-HK-ambiguous-within-file",
+      "locale": "zh-HK",
+      "scope": "zh-HK",
+      "kind": "ambiguous-within-file",
+      "q": "zh-HK-A.pdf 第6題",
+      "qrels": {
+        "zh-HK:q6a": 1,
+        "zh-HK:q6b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-HK-semantic",
+      "locale": "zh-HK",
+      "scope": "zh-HK",
+      "kind": "semantic",
+      "q": "請解釋冷卻過程。",
+      "qrels": {
+        "zh-HK:continuation": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-HK-content-number",
+      "locale": "zh-HK",
+      "scope": "zh-HK",
+      "kind": "content-number",
+      "q": "共有9位參加者。",
+      "qrels": {
+        "zh-HK:content": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-HK-subsection",
+      "locale": "zh-HK",
+      "scope": "zh-HK",
+      "kind": "subsection",
+      "q": "第2.3節",
+      "qrels": {
+        "zh-HK:s23": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-HK-native-roman-heading",
+      "locale": "zh-HK",
+      "scope": "zh-HK",
+      "kind": "native-roman-heading",
+      "q": "第4節",
+      "qrels": {
+        "zh-HK:native-s4": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-HK-native-question-item",
+      "locale": "zh-HK",
+      "scope": "zh-HK",
+      "kind": "native-question-item",
+      "q": "第4題",
+      "qrels": {
+        "zh-HK:native-q4": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-HK-table",
+      "locale": "zh-HK",
+      "scope": "zh-HK",
+      "kind": "table",
+      "q": "表 2",
+      "qrels": {
+        "zh-HK:table2": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-HK-printed-page",
+      "locale": "zh-HK",
+      "scope": "zh-HK",
+      "kind": "printed-page",
+      "q": "第12頁",
+      "qrels": {
+        "zh-HK:printed12": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "zh-HK-physical-page-only",
+      "locale": "zh-HK",
+      "scope": "zh-HK",
+      "kind": "physical-page-only",
+      "q": "第20頁",
+      "qrels": {
+        "zh-HK:printed12": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-HK-missing",
+      "locale": "zh-HK",
+      "scope": "zh-HK",
+      "kind": "missing",
+      "q": "第99題",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "zh-HK-unsupported",
+      "locale": "zh-HK",
+      "scope": "zh-HK",
+      "kind": "unsupported",
+      "q": "Figure 8",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "zh-HK-body-cross-reference",
+      "locale": "zh-HK",
+      "scope": "zh-HK",
+      "kind": "body-cross-reference",
+      "q": "第13題",
+      "qrels": {
+        "zh-HK:missinganswer": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-HK-orphan-heading",
+      "locale": "zh-HK",
+      "scope": "zh-HK",
+      "kind": "orphan-heading",
+      "q": "第15題",
+      "qrels": {
+        "zh-HK:continuation": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-HK-multiple-same-kind",
+      "locale": "zh-HK",
+      "scope": "zh-HK",
+      "kind": "multiple-same-kind",
+      "q": "第9題 and 第7題",
+      "qrels": {
+        "zh-HK:q9": 1,
+        "zh-HK:q7a": 1,
+        "zh-HK:q7b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-HK-multiple-short-form",
+      "locale": "zh-HK",
+      "scope": "zh-HK",
+      "kind": "multiple-short-form",
+      "q": "第9題 and 7",
+      "qrels": {
+        "zh-HK:q9": 1,
+        "zh-HK:q7a": 1,
+        "zh-HK:q7b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-HK-multiple-kinds",
+      "locale": "zh-HK",
+      "scope": "zh-HK",
+      "kind": "multiple-kinds",
+      "q": "第2節 第9題",
+      "qrels": {
+        "zh-HK:q9": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-HK-unknown-source",
+      "locale": "zh-HK",
+      "scope": "zh-HK",
+      "kind": "unknown-source",
+      "q": "absent.pdf 第9題",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "zh-HK-two-sources",
+      "locale": "zh-HK",
+      "scope": "zh-HK",
+      "kind": "two-sources",
+      "q": "zh-HK-A.pdf zh-HK-B.pdf 第9題",
+      "qrels": {
+        "zh-HK:q9": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-HK-stale-inherited-heading",
+      "locale": "zh-HK",
+      "scope": "zh-HK",
+      "kind": "stale-inherited-heading",
+      "q": "第10題",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "zh-HK-duplicate-filename",
+      "locale": "zh-HK",
+      "scope": "zh-HK",
+      "kind": "duplicate-filename",
+      "q": "shared.pdf 第18題",
+      "qrels": {
+        "zh-HK:q18c": 1,
+        "zh-HK:q18d": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "zh-HK-ordinary-numeral",
+      "locale": "zh-HK",
+      "scope": "zh-HK",
+      "kind": "ordinary-numeral",
+      "q": "第九題",
+      "qrels": {
+        "zh-HK:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "es-unique",
+      "locale": "es",
+      "scope": "es",
+      "kind": "unique",
+      "q": "Pregunta 9",
+      "qrels": {
+        "es:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "es-fullwidth",
+      "locale": "es",
+      "scope": "es",
+      "kind": "fullwidth",
+      "q": "Pregunta ９",
+      "qrels": {
+        "es:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "es-cross-language",
+      "locale": "es",
+      "scope": "es",
+      "kind": "cross-language",
+      "q": "Question 9",
+      "qrels": {
+        "es:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "es-named-source",
+      "locale": "es",
+      "scope": "es",
+      "kind": "named-source",
+      "q": "es-A.pdf Pregunta 7",
+      "qrels": {
+        "es:q7a": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "es-source-reference",
+      "locale": "es",
+      "scope": "es",
+      "kind": "source-reference",
+      "q": "SRC-es-A Pregunta 7",
+      "qrels": {
+        "es:q7a": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "es-ambiguous-files",
+      "locale": "es",
+      "scope": "es",
+      "kind": "ambiguous-files",
+      "q": "Pregunta 7",
+      "qrels": {
+        "es:q7a": 1,
+        "es:q7b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "es-ambiguous-within-file",
+      "locale": "es",
+      "scope": "es",
+      "kind": "ambiguous-within-file",
+      "q": "es-A.pdf Pregunta 6",
+      "qrels": {
+        "es:q6a": 1,
+        "es:q6b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "es-semantic",
+      "locale": "es",
+      "scope": "es",
+      "kind": "semantic",
+      "q": "Explica el proceso de enfriamiento.",
+      "qrels": {
+        "es:continuation": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "es-content-number",
+      "locale": "es",
+      "scope": "es",
+      "kind": "content-number",
+      "q": "Hay 9 participantes.",
+      "qrels": {
+        "es:content": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "es-subsection",
+      "locale": "es",
+      "scope": "es",
+      "kind": "subsection",
+      "q": "Sección 2.3",
+      "qrels": {
+        "es:s23": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "es-native-roman-heading",
+      "locale": "es",
+      "scope": "es",
+      "kind": "native-roman-heading",
+      "q": "Sección 4",
+      "qrels": {
+        "es:native-s4": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "es-native-question-item",
+      "locale": "es",
+      "scope": "es",
+      "kind": "native-question-item",
+      "q": "Pregunta 4",
+      "qrels": {
+        "es:native-q4": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "es-table",
+      "locale": "es",
+      "scope": "es",
+      "kind": "table",
+      "q": "Tabla 2",
+      "qrels": {
+        "es:table2": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "es-printed-page",
+      "locale": "es",
+      "scope": "es",
+      "kind": "printed-page",
+      "q": "Página 12",
+      "qrels": {
+        "es:printed12": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "es-physical-page-only",
+      "locale": "es",
+      "scope": "es",
+      "kind": "physical-page-only",
+      "q": "Página 20",
+      "qrels": {
+        "es:printed12": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "es-missing",
+      "locale": "es",
+      "scope": "es",
+      "kind": "missing",
+      "q": "Pregunta 99",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "es-unsupported",
+      "locale": "es",
+      "scope": "es",
+      "kind": "unsupported",
+      "q": "Figure 8",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "es-body-cross-reference",
+      "locale": "es",
+      "scope": "es",
+      "kind": "body-cross-reference",
+      "q": "Pregunta 13",
+      "qrels": {
+        "es:missinganswer": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "es-orphan-heading",
+      "locale": "es",
+      "scope": "es",
+      "kind": "orphan-heading",
+      "q": "Pregunta 15",
+      "qrels": {
+        "es:continuation": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "es-multiple-same-kind",
+      "locale": "es",
+      "scope": "es",
+      "kind": "multiple-same-kind",
+      "q": "Pregunta 9 and Pregunta 7",
+      "qrels": {
+        "es:q9": 1,
+        "es:q7a": 1,
+        "es:q7b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "es-multiple-short-form",
+      "locale": "es",
+      "scope": "es",
+      "kind": "multiple-short-form",
+      "q": "Pregunta 9 and 7",
+      "qrels": {
+        "es:q9": 1,
+        "es:q7a": 1,
+        "es:q7b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "es-multiple-kinds",
+      "locale": "es",
+      "scope": "es",
+      "kind": "multiple-kinds",
+      "q": "Sección 2 Pregunta 9",
+      "qrels": {
+        "es:q9": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "es-unknown-source",
+      "locale": "es",
+      "scope": "es",
+      "kind": "unknown-source",
+      "q": "absent.pdf Pregunta 9",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "es-two-sources",
+      "locale": "es",
+      "scope": "es",
+      "kind": "two-sources",
+      "q": "es-A.pdf es-B.pdf Pregunta 9",
+      "qrels": {
+        "es:q9": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "es-stale-inherited-heading",
+      "locale": "es",
+      "scope": "es",
+      "kind": "stale-inherited-heading",
+      "q": "Pregunta 10",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "es-duplicate-filename",
+      "locale": "es",
+      "scope": "es",
+      "kind": "duplicate-filename",
+      "q": "shared.pdf Pregunta 18",
+      "qrels": {
+        "es:q18c": 1,
+        "es:q18d": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "es-ordinary-numeral",
+      "locale": "es",
+      "scope": "es",
+      "kind": "ordinary-numeral",
+      "q": "Pregunta IX",
+      "qrels": {
+        "es:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "fr-unique",
+      "locale": "fr",
+      "scope": "fr",
+      "kind": "unique",
+      "q": "Question 9",
+      "qrels": {
+        "fr:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "fr-fullwidth",
+      "locale": "fr",
+      "scope": "fr",
+      "kind": "fullwidth",
+      "q": "Question ９",
+      "qrels": {
+        "fr:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "fr-cross-language",
+      "locale": "fr",
+      "scope": "fr",
+      "kind": "cross-language",
+      "q": "Question 9",
+      "qrels": {
+        "fr:q9": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "fr-named-source",
+      "locale": "fr",
+      "scope": "fr",
+      "kind": "named-source",
+      "q": "fr-A.pdf Question 7",
+      "qrels": {
+        "fr:q7a": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "fr-source-reference",
+      "locale": "fr",
+      "scope": "fr",
+      "kind": "source-reference",
+      "q": "SRC-fr-A Question 7",
+      "qrels": {
+        "fr:q7a": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "fr-ambiguous-files",
+      "locale": "fr",
+      "scope": "fr",
+      "kind": "ambiguous-files",
+      "q": "Question 7",
+      "qrels": {
+        "fr:q7a": 1,
+        "fr:q7b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "fr-ambiguous-within-file",
+      "locale": "fr",
+      "scope": "fr",
+      "kind": "ambiguous-within-file",
+      "q": "fr-A.pdf Question 6",
+      "qrels": {
+        "fr:q6a": 1,
+        "fr:q6b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "fr-semantic",
+      "locale": "fr",
+      "scope": "fr",
+      "kind": "semantic",
+      "q": "Explique le processus de refroidissement.",
+      "qrels": {
+        "fr:continuation": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "fr-content-number",
+      "locale": "fr",
+      "scope": "fr",
+      "kind": "content-number",
+      "q": "Il y a 9 participants.",
+      "qrels": {
+        "fr:content": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "fr-subsection",
+      "locale": "fr",
+      "scope": "fr",
+      "kind": "subsection",
+      "q": "Section 2.3",
+      "qrels": {
+        "fr:s23": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "fr-native-roman-heading",
+      "locale": "fr",
+      "scope": "fr",
+      "kind": "native-roman-heading",
+      "q": "Section 4",
+      "qrels": {
+        "fr:native-s4": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "fr-native-question-item",
+      "locale": "fr",
+      "scope": "fr",
+      "kind": "native-question-item",
+      "q": "Question 4",
+      "qrels": {
+        "fr:native-q4": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "fr-table",
+      "locale": "fr",
+      "scope": "fr",
+      "kind": "table",
+      "q": "Tableau 2",
+      "qrels": {
+        "fr:table2": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "fr-printed-page",
+      "locale": "fr",
+      "scope": "fr",
+      "kind": "printed-page",
+      "q": "Page 12",
+      "qrels": {
+        "fr:printed12": 1
+      },
+      "should_promote": true
+    },
+    {
+      "id": "fr-physical-page-only",
+      "locale": "fr",
+      "scope": "fr",
+      "kind": "physical-page-only",
+      "q": "Page 20",
+      "qrels": {
+        "fr:printed12": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "fr-missing",
+      "locale": "fr",
+      "scope": "fr",
+      "kind": "missing",
+      "q": "Question 99",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "fr-unsupported",
+      "locale": "fr",
+      "scope": "fr",
+      "kind": "unsupported",
+      "q": "Figure 8",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "fr-body-cross-reference",
+      "locale": "fr",
+      "scope": "fr",
+      "kind": "body-cross-reference",
+      "q": "Question 13",
+      "qrels": {
+        "fr:missinganswer": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "fr-orphan-heading",
+      "locale": "fr",
+      "scope": "fr",
+      "kind": "orphan-heading",
+      "q": "Question 15",
+      "qrels": {
+        "fr:continuation": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "fr-multiple-same-kind",
+      "locale": "fr",
+      "scope": "fr",
+      "kind": "multiple-same-kind",
+      "q": "Question 9 and Question 7",
+      "qrels": {
+        "fr:q9": 1,
+        "fr:q7a": 1,
+        "fr:q7b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "fr-multiple-short-form",
+      "locale": "fr",
+      "scope": "fr",
+      "kind": "multiple-short-form",
+      "q": "Question 9 and 7",
+      "qrels": {
+        "fr:q9": 1,
+        "fr:q7a": 1,
+        "fr:q7b": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "fr-multiple-kinds",
+      "locale": "fr",
+      "scope": "fr",
+      "kind": "multiple-kinds",
+      "q": "Section 2 Question 9",
+      "qrels": {
+        "fr:q9": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "fr-unknown-source",
+      "locale": "fr",
+      "scope": "fr",
+      "kind": "unknown-source",
+      "q": "absent.pdf Question 9",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "fr-two-sources",
+      "locale": "fr",
+      "scope": "fr",
+      "kind": "two-sources",
+      "q": "fr-A.pdf fr-B.pdf Question 9",
+      "qrels": {
+        "fr:q9": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "fr-stale-inherited-heading",
+      "locale": "fr",
+      "scope": "fr",
+      "kind": "stale-inherited-heading",
+      "q": "Question 10",
+      "qrels": {},
+      "should_promote": false
+    },
+    {
+      "id": "fr-duplicate-filename",
+      "locale": "fr",
+      "scope": "fr",
+      "kind": "duplicate-filename",
+      "q": "shared.pdf Question 18",
+      "qrels": {
+        "fr:q18c": 1,
+        "fr:q18d": 1
+      },
+      "should_promote": false
+    },
+    {
+      "id": "fr-ordinary-numeral",
+      "locale": "fr",
+      "scope": "fr",
+      "kind": "ordinary-numeral",
+      "q": "Question IX",
+      "qrels": {
+        "fr:q9": 1
+      },
+      "should_promote": true
+    }
+  ]
+}

@@ -1,0 +1,196 @@
+{
+  "schema_version": 1,
+  "id": "structure-chunking-2026-09-13",
+  "frozen_before_candidate_run": true,
+  "protocol": {
+    "purpose": "Compare current token packing with document-structure boundaries without phrase- or language-specific rules.",
+    "claim_boundary": "The source files and retrieval questions predate this experiment. The JLPT probe was written from the cited source before either candidate arm ran. Results measure chunk contamination, evidence completeness, citation regions and a small lexical retrieval diagnostic; they do not measure dense retrieval or answer quality.",
+    "development_sources": [
+      "bert",
+      "rag__fr__camembert-taln",
+      "rag__zh__zh-CN",
+      "hongkong-figures",
+      "jlpt-n1-2019"
+    ],
+    "heldout_source_families": [
+      "resnet",
+      "german-education",
+      "rag__fr__wikiner-fr-gold",
+      "rag__ja__jp_llm",
+      "rag__zh__zh_HK",
+      "rag__zh__zh_TW_llm"
+    ],
+    "language_coverage": "Real source PDFs: de, en, fr, ja, zh-CN, zh-HK and zh-TW. No real Korean source was available in the preserved corpus, so the experiment makes no Korean claim."
+  },
+  "question_fixtures": [
+    {
+      "path": "bench/rag/fixtures/odl-agentic-questions.json",
+      "sha256": "a358e66b453e4f25040e4a9bd6f5f1927558d63e846c5521cb23dc806c9708b5",
+      "question_ids": [
+        "odl-agentic-015",
+        "odl-agentic-016",
+        "odl-agentic-017",
+        "odl-agentic-021",
+        "odl-agentic-023",
+        "odl-agentic-024",
+        "odl-agentic-025",
+        "odl-agentic-027",
+        "odl-agentic-039",
+        "odl-agentic-040",
+        "odl-agentic-041",
+        "odl-agentic-042",
+        "odl-agentic-049",
+        "odl-agentic-050",
+        "odl-agentic-051",
+        "odl-agentic-052",
+        "odl-agentic-055",
+        "odl-agentic-061",
+        "odl-agentic-064"
+      ]
+    },
+    {
+      "path": "bench/rag/fixtures/odl-agentic-stress-questions.json",
+      "sha256": "54bf4a3ccdca37977ea6b357bf8e8b073f916c4c0a1cf68873171a1e30cb3a0e",
+      "question_ids": [
+        "odl-agentic-stress-001",
+        "odl-agentic-stress-002"
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "id": "bert",
+      "language": "en",
+      "role": "development",
+      "artifact_dir": "bench/parsers/reports/local/2026-09-13-odl-native-improvements/default-r1/bert",
+      "pdf_sha256": "5692a5514787a8c6727b4ff3b726a3385798bc68e12138d1d4af83947e2acf6e"
+    },
+    {
+      "id": "hongkong-figures",
+      "language": "zh-HK/en",
+      "role": "development",
+      "artifact_dir": "bench/parsers/reports/local/2026-09-13-odl-native-improvements/default-r1/hongkong-figures",
+      "pdf_sha256": "c3490cc7c1664ce8e75edcce55898be58dc21fceade53b3c1cbfd7f30411f2d9"
+    },
+    {
+      "id": "rag__fr__camembert-taln",
+      "language": "fr",
+      "role": "development",
+      "artifact_dir": "bench/parsers/reports/local/2026-09-13-odl-native-improvements/default-r1/rag__fr__camembert-taln",
+      "pdf_sha256": "5499969bf0f52657722c22220ee8f6f7fe763629d438a9a67d376b05e115dff3"
+    },
+    {
+      "id": "rag__zh__zh-CN",
+      "language": "zh-CN",
+      "role": "development",
+      "artifact_dir": "bench/parsers/reports/local/2026-09-13-odl-native-improvements/default-r1/rag__zh__zh-CN",
+      "pdf_sha256": "73e000eadee1d6fcfc374c1b37803b0492b648a3afdda95c1f01cf75cbc0f1dd"
+    },
+    {
+      "id": "resnet",
+      "language": "en",
+      "role": "heldout",
+      "artifact_dir": "bench/parsers/reports/local/2026-09-13-odl-native-improvements/default-r1/resnet",
+      "pdf_sha256": "1e0651b6810ecba34a3dbc5b5b0209226f889004607c1f203540a48d64e5a93a"
+    },
+    {
+      "id": "german-education",
+      "language": "de",
+      "role": "heldout",
+      "artifact_dir": "bench/parsers/reports/local/2026-09-13-odl-native-improvements/controls-native-r3/german-education",
+      "pdf_sha256": "2608aecd1c675ee8dcd7de740bae4f87b497229f18889ae67454966176691dfd"
+    },
+    {
+      "id": "rag__fr__wikiner-fr-gold",
+      "language": "fr",
+      "role": "heldout",
+      "artifact_dir": "bench/parsers/reports/local/2026-09-13-odl-native-improvements/controls-native-r3/rag__fr__wikiner-fr-gold",
+      "pdf_sha256": "d8c5b3f432b8c928224816ed8f155983b5e53ad48ac4e906f9d1c0c8918716ca"
+    },
+    {
+      "id": "rag__ja__jp_llm",
+      "language": "ja",
+      "role": "heldout",
+      "artifact_dir": "bench/parsers/reports/local/2026-09-13-odl-native-improvements/controls-native-r3/rag__ja__jp_llm",
+      "pdf_sha256": "28fbf744d91750133f60ebb1ad4bf50854d234441ceaae692400a874276c2c7b"
+    },
+    {
+      "id": "rag__zh__zh_HK",
+      "language": "zh-HK",
+      "role": "heldout",
+      "pdf": "bench/rag/fixtures/local/2026-09-09-odl-agentic/pdfs/rag__zh__zh_HK.pdf",
+      "pdf_sha256": "37ee98f3cc724c6eb69a8fc8120e87ddccdf8c7169a57339402daa12311e9211"
+    },
+    {
+      "id": "rag__zh__zh_TW_llm",
+      "language": "zh-TW",
+      "role": "heldout",
+      "pdf": "bench/rag/fixtures/local/2026-09-09-odl-agentic/pdfs/rag__zh__zh_TW_llm.pdf",
+      "pdf_sha256": "d55d954482a9a6404b9fe0b120aabf734de1c2045cd1928ba7fa1f544a32c92b"
+    },
+    {
+      "id": "jlpt-n1-2019",
+      "language": "ja",
+      "role": "development-diagnostic",
+      "artifact_dir": "bench/parsers/reports/local/2026-09-13-odl-next-directions",
+      "pdf": "bench/parsers/reports/local/2026-09-13-odl-next-directions/source.pdf",
+      "pdf_sha256": "98ef94c2fd3e7cd9dc103f936ccf6c4b624137e4c25cc059e7b1fe50f40d3aca"
+    }
+  ],
+  "source_span_probes": [
+    {
+      "id": "jlpt-question-10-opening",
+      "source_id": "jlpt-n1-2019",
+      "page": 10,
+      "required_anchors": [
+        "問題 10 次の文章を読んで",
+        "シアノバクテリアと藻類が誕生し",
+        "そのため、人間は"
+      ],
+      "forbidden_anchors": [
+        "自分の存在価値は自分で明らかにしなければならないから"
+      ],
+      "provenance": "Manually copied from the source-visible Question 10 opening and preceding Question 57 choice before candidate packing ran."
+    },
+    {
+      "id": "fr-masking-result",
+      "source_id": "rag__fr__camembert-taln",
+      "page": 7,
+      "required_anchors": ["whole word masking", "0,5 point"],
+      "forbidden_anchors": [],
+      "provenance": "Pre-existing source-grounded parser probe opendataloader-checks.json."
+    },
+    {
+      "id": "ja-role-result",
+      "source_id": "rag__ja__jp_llm",
+      "page": 14,
+      "required_anchors": ["an expert university professor", "4.04", "0.0116"],
+      "forbidden_anchors": [],
+      "provenance": "Pre-existing source-grounded parser probe opendataloader-checks.json."
+    },
+    {
+      "id": "zh-prompt-length",
+      "source_id": "rag__zh__zh-CN",
+      "page": 6,
+      "required_anchors": ["提示词最终还限制了输出的长度", "上下文容量"],
+      "forbidden_anchors": [],
+      "provenance": "Pre-existing source-grounded parser probe opendataloader-checks.json."
+    },
+    {
+      "id": "hk-language-identity",
+      "source_id": "rag__zh__zh_HK",
+      "page": 8,
+      "required_anchors": ["Tong", "1999", "159位同學", "social identity"],
+      "forbidden_anchors": [],
+      "provenance": "Pre-existing source-grounded parser probe opendataloader-checks.json; its zero-based page 7 is recorded here as one-based page 8."
+    },
+    {
+      "id": "tw-feedback-limit",
+      "source_id": "rag__zh__zh_TW_llm",
+      "page": 17,
+      "required_anchors": ["需要人類提供回饋", "時間", "精力是有限的"],
+      "forbidden_anchors": [],
+      "provenance": "Pre-existing source-grounded parser probe opendataloader-checks.json; its zero-based page 16 is recorded here as one-based page 17."
+    }
+  ]
+}

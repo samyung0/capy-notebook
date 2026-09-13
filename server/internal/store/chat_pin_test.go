@@ -1,10 +1,12 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -46,7 +48,8 @@ func TestAssistantMessagePinsTheResolvedChatModel(t *testing.T) {
 	if assistant.ProviderSlug != cfg.ProviderSlug || assistant.ModelSlug != cfg.ModelSlug || assistant.ModelVersion != cfg.Version {
 		t.Fatalf("start dropped the pin: %#v", assistant)
 	}
-	if err := s.FinalizeAssistantMessage(ctx, assistant.ID, "hi", "complete", 1, nil, "", nil); err != nil {
+	evidence := json.RawMessage(`{"tools":[{"name":"list_sources","text":"saved evidence"}],"passages":[]}`)
+	if err := s.FinalizeAssistantMessage(ctx, assistant.ID, "hi", "complete", 1, nil, "", nil, evidence); err != nil {
 		t.Fatal(err)
 	}
 	msgs, err := s.ListMessages(ctx, userID, conv.ID)
@@ -61,6 +64,20 @@ func TestAssistantMessagePinsTheResolvedChatModel(t *testing.T) {
 	}
 	if msgs[0].ModelDisplayName == "" {
 		t.Fatal("expected display name on the assistant row")
+	}
+	prompt, err := s.ConversationPrompt(ctx, conv.ID)
+	if err != nil || len(prompt.History) != 1 || len(prompt.History[0].ToolEvidence) == 0 {
+		t.Fatalf("prompt evidence lost: %+v, %v", prompt, err)
+	}
+	var saved, expected any
+	_ = json.Unmarshal(prompt.History[0].ToolEvidence, &saved)
+	_ = json.Unmarshal(evidence, &expected)
+	if !reflect.DeepEqual(saved, expected) {
+		t.Fatalf("evidence = %v, want %v", saved, expected)
+	}
+	encoded, err := json.Marshal(prompt.History[0])
+	if err != nil || bytes.Contains(encoded, []byte("saved evidence")) {
+		t.Fatalf("private evidence leaked into browser message: %s, %v", encoded, err)
 	}
 }
 
@@ -92,7 +109,7 @@ func TestConversationPromptLoadsEveryMessageAfterCheckpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.FinalizeAssistantMessage(ctx, assistant.ID, "checkpoint answer", "complete", 1, nil, "", nil); err != nil {
+	if err := s.FinalizeAssistantMessage(ctx, assistant.ID, "checkpoint answer", "complete", 1, nil, "", nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.PersistCheckpoint(ctx, conv.ID, ConversationCheckpoint{

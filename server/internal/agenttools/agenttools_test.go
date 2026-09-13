@@ -25,6 +25,11 @@ func TestDefinitionsAreClosedObjects(t *testing.T) {
 		if def.Mutates != (def.Concurrency == "mutate") {
 			t.Fatalf("%s: mutate flag and concurrency class disagree", def.Name)
 		}
+		switch def.Retention {
+		case RetainFull, RetainCitedPassages, RetainNone:
+		default:
+			t.Fatalf("%s: missing conversation-result retention", def.Name)
+		}
 		assertClosed(t, def.Name, def.InputSchema)
 	}
 	for _, name := range []string{"search_workspace", "create_material", "trash_file"} {

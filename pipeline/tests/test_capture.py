@@ -228,7 +228,7 @@ def test_capture_page_is_offered_with_the_read_operation():
             / "agent_tools.json"
         ).read_text()
     )
-    assert spec["version"] == 2
+    assert spec["version"] == tools.contract.VERSION
     assert any(t["name"] == "capture_page" for t in spec["tools"])
 
 

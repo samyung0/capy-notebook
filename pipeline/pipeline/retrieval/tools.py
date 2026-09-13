@@ -82,6 +82,8 @@ class ToolContext:
     # widen the scope to every file.
     file_ids: list[str] | None = None
     citations: list[Passage] = field(default_factory=list)
+    evidence_notes: list[dict[str, Any]] = field(default_factory=list)
+    evidence_passage_ids: set[str] = field(default_factory=set)
     assistant_message_id: str = ""
     budget: TurnBudget | None = None
     pending_sources: pending.PendingSources = field(

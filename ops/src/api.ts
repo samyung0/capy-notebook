@@ -433,6 +433,13 @@ export const userDetailSchema = z.object({
       reasoningTokens: countSchema,
       surface: z.string(),
       thinking: z.string(),
+      toolCalls: z.array(
+        z.object({
+          detail: z.string(),
+          name: z.string(),
+          outcome: z.string(),
+        })
+      ),
       traceId: z.string(),
     })
   ),

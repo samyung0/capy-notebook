@@ -367,8 +367,8 @@ export function UserDetailPage({ userId }: { userId: string }) {
         <CardHeader>
           <CardTitle>Recent usage events</CardTitle>
           <CardDescription>
-            Operational metadata only. Prompts, responses, and event metadata
-            are not shown.
+            Usage and brief tool details. Source passages and full tool
+            arguments and results are not shown.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -394,7 +394,7 @@ export function UserDetailPage({ userId }: { userId: string }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {data.recentUsage.map((event) => (
+                {data.recentUsage.map((event, index) => (
                   <TableRow key={`${event.traceId}:${event.createdAt}`}>
                     <TableCell className="whitespace-nowrap">
                       {formatDateTime(event.createdAt)}
@@ -474,6 +474,28 @@ export function UserDetailPage({ userId }: { userId: string }) {
                         <span className="block text-amber-700">
                           {event.cacheAnomaly}
                         </span>
+                      ) : null}
+                      {event.toolCalls.length > 0 &&
+                      data.recentUsage.findIndex(
+                        (item) => item.traceId === event.traceId
+                      ) === index ? (
+                        <details className="mt-2 font-sans">
+                          <summary className="cursor-pointer">
+                            Tool calls in this turn: {event.toolCalls.length}
+                          </summary>
+                          <ol className="mt-2 list-decimal space-y-2 pl-4">
+                            {event.toolCalls.map((tool, toolIndex) => (
+                              <li key={`${toolIndex}:${tool.name}`}>
+                                <span className="block font-mono">
+                                  {tool.name} · {tool.outcome}
+                                </span>
+                                <span className="whitespace-normal break-words text-muted-foreground">
+                                  {tool.detail}
+                                </span>
+                              </li>
+                            ))}
+                          </ol>
+                        </details>
                       ) : null}
                     </TableCell>
                   </TableRow>

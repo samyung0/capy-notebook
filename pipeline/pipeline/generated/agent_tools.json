@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "operations": [
     "source.read",
     "material.read",
@@ -68,7 +68,8 @@
       ],
       "requiredOperations": [
         "source.read"
-      ]
+      ],
+      "retention": "cited_passages"
     },
     {
       "name": "list_sources",
@@ -87,7 +88,8 @@
       ],
       "requiredOperations": [
         "source.read"
-      ]
+      ],
+      "retention": "full"
     },
     {
       "name": "describe_documents",
@@ -120,7 +122,8 @@
       ],
       "requiredOperations": [
         "source.read"
-      ]
+      ],
+      "retention": "full"
     },
     {
       "name": "read_document",
@@ -158,7 +161,8 @@
       ],
       "requiredOperations": [
         "source.read"
-      ]
+      ],
+      "retention": "cited_passages"
     },
     {
       "name": "capture_page",
@@ -201,7 +205,8 @@
       ],
       "requiredOperations": [
         "source.read"
-      ]
+      ],
+      "retention": "none"
     },
     {
       "name": "create_material",
@@ -291,7 +296,8 @@
       ],
       "requiredOperations": [
         "material.create"
-      ]
+      ],
+      "retention": "full"
     },
     {
       "name": "resolve_source_change",
@@ -328,7 +334,8 @@
       ],
       "requiredOperations": [
         "source.read"
-      ]
+      ],
+      "retention": "full"
     },
     {
       "name": "list_documents",
@@ -362,7 +369,8 @@
       "requiredOperations": [
         "source.read",
         "material.read"
-      ]
+      ],
+      "retention": "full"
     },
     {
       "name": "inspect_document",
@@ -420,7 +428,8 @@
       "requiredOperations": [
         "source.read",
         "material.read"
-      ]
+      ],
+      "retention": "full"
     },
     {
       "name": "edit_document",
@@ -739,7 +748,8 @@
       ],
       "requiredOperations": [
         "document.edit"
-      ]
+      ],
+      "retention": "full"
     },
     {
       "name": "trash_file",
@@ -784,7 +794,8 @@
       ],
       "requiredOperations": [
         "resource.trash"
-      ]
+      ],
+      "retention": "full"
     },
     {
       "name": "list_trashed_files",
@@ -803,7 +814,8 @@
       ],
       "requiredOperations": [
         "trash.read"
-      ]
+      ],
+      "retention": "full"
     },
     {
       "name": "restore_file",
@@ -848,7 +860,8 @@
       ],
       "requiredOperations": [
         "trash.restore"
-      ]
+      ],
+      "retention": "full"
     }
   ]
 }

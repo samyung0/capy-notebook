@@ -480,7 +480,7 @@ stored on `provider_calls`; prompt, schema, tool argument, and response content
 are not stored. Provider-reported `input_tokens` remains authoritative, and Ops
 shows the actual-minus-estimated delta. Operators can set a model catalog
 `context_safety_margin_tokens` from that observed error. Chat admission uses
-the smaller of the selected model's input budget and a 200,000-token effective
+the smaller of the selected model's input budget and a 250,000-token effective
 cap, minus the greater of that value and the 512-token protocol minimum. Keeping this
 telemetry on the pre-call row means failed and retried attempts remain visible
 too.
@@ -945,6 +945,16 @@ metadata, and it cannot update `operators` directly. The shared
 `execute_reconciliation_job` token check. It contains the restricted registry
 grants and can execute `request_reconciliation`; that function checks
 `ops_permissions` again before it inserts a pending storage or Stripe run.
+
+The user detail page's recent usage table offers a tool-call disclosure once per
+trace. `ops_assistant_turns.tool_calls` projects existing assistant activity into
+ordered tool names, details capped at 240 characters, and outcomes. Narration,
+raw arguments/results, errors, effects and private conversation evidence stay
+outside this view. It adds no table or tool-history storage; incomplete turns
+may have only the activity that the gateway managed to persist.
+Older activity with only a `status` uses the same outcome mapping as chat history.
+The usage query selects its 50 rows first, then fetches tool details for their
+trace set once, rather than scanning assistant messages separately for each call.
 Browser sessions never receive database credentials. Read endpoints require
 `read_all`. Tokens are rows on `ops_permissions` keyed by `operators.role`;
 the two database login roles stay deploy-time DSNs. Startup validates both role

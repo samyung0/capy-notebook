@@ -2,9 +2,11 @@ package ops
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -161,6 +163,28 @@ func TestHealthClassifiesTurnAndProviderLifecycles(t *testing.T) {
 			t.Fatal(err)
 		}
 		if fixture.name == "recovered" {
+			metadata, err := json.Marshal(map[string]any{
+				"traceId":      traceID,
+				"toolEvidence": map[string]string{"private": "source body"},
+				"activity": []map[string]any{
+					{"kind": "narration", "text": "private narration"},
+					{"kind": "tool", "name": "search_workspace", "detail": strings.Repeat("日", 260), "outcome": "succeeded", "effects": []string{"private effect"}},
+					{"kind": "tool", "name": "read_document", "detail": "f_source", "outcome": "refused", "error": map[string]string{"message": "private error"}},
+					{"kind": "tool", "name": "list_sources", "status": "success"},
+					{"kind": "tool", "name": "read_document", "status": "refused"},
+					{"kind": "tool", "name": "read_document", "status": "error"},
+					{"kind": "tool", "name": "read_document", "status": "failed"},
+					{"kind": "tool", "name": "read_document", "status": "running"},
+					{"kind": "tool", "name": "list_sources", "outcome": "", "status": "success"},
+					{"kind": "tool", "name": "list_sources", "outcome": "succeeded", "status": "error"},
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := pool.Exec(ctx, `UPDATE messages SET metadata=$2 WHERE id=$1`, messageID, metadata); err != nil {
+				t.Fatal(err)
+			}
 			appliedID := "pc_applied_" + suffix
 			if _, err := pool.Exec(ctx, `
 				INSERT INTO provider_calls (
@@ -181,6 +205,29 @@ func TestHealthClassifiesTurnAndProviderLifecycles(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
+	}
+	user, err := read.User(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(user.RecentUsage) != 1 || len(user.RecentUsage[0].ToolCalls) != 9 {
+		t.Fatalf("brief tool calls missing: %+v", user.RecentUsage)
+	}
+	calls := user.RecentUsage[0].ToolCalls
+	if calls[0].Name != "search_workspace" || len([]rune(calls[0].Detail)) != 240 || calls[1].Outcome != "refused" {
+		t.Fatalf("tool order, length or outcome: %+v", calls)
+	}
+	for i, expected := range []string{"succeeded", "refused", "succeeded", "refused", "failed", "failed", "outcome_unknown", "succeeded", "succeeded"} {
+		if calls[i].Outcome != expected {
+			t.Fatalf("tool %d outcome = %q, want %q", i, calls[i].Outcome, expected)
+		}
+	}
+	var projection string
+	if err := pool.QueryRow(ctx, `SELECT tool_calls::text FROM ops_assistant_turns WHERE id=$1`, "m_recovered_"+suffix).Scan(&projection); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(projection, "private") || strings.Contains(projection, "effects") || strings.Contains(projection, "error") {
+		t.Fatalf("restricted view exposed raw metadata: %s", projection)
 	}
 	staleMessageID := "m_stale_" + suffix
 	if _, err := pool.Exec(ctx, `

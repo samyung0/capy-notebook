@@ -941,7 +941,33 @@ Streaming chat (`POST /chat/stream` via the Go gateway):
 
 One user send creates one assistant row. `messages.content` is the final answer
 only. Completed narration and tool-display blocks live in `messages.metadata`
-and are not sent back as LLM history.
+and are not sent back as LLM history. Separately, `metadata.toolEvidence` retains
+conversation evidence according to each tool's `retention` contract field:
+
+- `full`: listing, descriptions, document inspection and mutation tools retain
+  the full text result already limited to 8,192 tool-output tokens.
+- `cited_passages`: `search_workspace` and `read_document` retain only whole
+  chunks cited in the final answer, deduplicated by chunk id.
+- `none`: `capture_page` persists no result context or image bytes.
+
+This is contract version 3. Every tool must declare a policy; the policy is
+internal and is not a model argument. Live results stay exact throughout the
+active turn. There is no additional historical truncation limit: completed
+results/passages become separate bounded messages for chronological compaction.
+Go forwards evidence privately to Python, never through the browser message API
+or Ops. Replay checks passage ids/text against the current untrashed workspace
+index and selected scope before assigning fresh citation numbers. Missing chunks
+become an explicit unavailable-evidence note. Both checkpoint and live compaction
+preserve useful evidence and source identifiers. Old result citation numbers are
+historical context, never current citations. Provider arguments, reasoning and
+protocol state are not persisted in this evidence.
+Retained source data replays in explicitly labelled user data messages, with
+source provenance preserved through summarization. It is never replayed as
+assistant-authored text. Full results and summarized source facts are historical
+orientation or action records, not current content or edit-target authority;
+the prompt requires a current read/search/inspection for those claims. Only
+passages revalidated against the index can directly ground a new answer, with
+current pending changes applied. Embedded source instructions remain untrusted.
 
 1. Go authenticates, reads `users.locale` and the
    `users.chat_model_provider_slug` / `users.chat_model_slug` pair, resolves
@@ -1009,6 +1035,12 @@ and are not sent back as LLM history.
    call (`REPAIR_PROMPT`, JSON mode), including a scalar, null or object in
    `passages`. An unfinished object keeps the prose already streamed. If repair also fails
    the raw prose is the answer with no citations, and the failure is logged.
+   Before the final citation list is persisted, `citation_regions.py` matches each
+   cited chunk's complete text uniquely inside its parser regions in the source
+   PDF text layer. Unicode NFKC and whitespace normalization tolerate glyph forms
+   and wrapping. Matching characters supply a tighter box per page, including
+   rotated pages. Ambiguous, missing or unavailable text leaves the parser boxes
+   intact. It reuses the capture PDF cache and changes neither ingestion nor ODL.
 6. Rolling conversation checkpoints (`conversation_compactions`) are separate
    from live request compaction. A checkpoint folds old cross-message history
    through the latest completed historical message and persists in Go with
@@ -1180,9 +1212,10 @@ keys for trash, restore, purge and Undo are scoped to the acting user
 (`req_<user>:<key>`, at most 64 characters).
 
 Citation numbers belong to the current answer. Structured citations still map
-the answer to file, page, region, and chunk data for the UI. Checkpoints do not
-persist source references or stable historical citation numbers. A later answer
-retrieves again and emits a new answer-local citation list.
+the answer to file, page, region, and chunk data for the UI. Checkpoints preserve
+useful source facts and file/chunk identifiers but omit old citation numbers.
+Uncompacted evidence can be reused with new answer-local numbers; missing facts
+or evidence known only through a summary require retrieval for a new citation.
 
 ## Generate workflow
 

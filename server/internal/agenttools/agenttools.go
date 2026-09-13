@@ -20,8 +20,8 @@ import (
 // name or result shape changes incompatibly. Python refuses to start on a
 // version it does not know.
 //
-// v2: capture_page added.
-const ContractVersion = 2
+// v3: each tool explicitly declares conversation-result retention.
+const ContractVersion = 3
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -78,7 +78,17 @@ type Definition struct {
 	Concurrency        string         `json:"concurrency" enum:"search,read,mutate"`
 	AllowedSlots       []Slot         `json:"allowedSlots"`
 	RequiredOperations []Operation    `json:"requiredOperations"`
+	// Retention applies after the answer completes; live tool results stay exact.
+	Retention ResultRetention `json:"retention" enum:"full,cited_passages,none"`
 }
+
+type ResultRetention string
+
+const (
+	RetainFull          ResultRetention = "full"
+	RetainCitedPassages ResultRetention = "cited_passages"
+	RetainNone          ResultRetention = "none"
+)
 
 // ResourceKind tags a ResourceRef.
 type ResourceKind string
@@ -356,7 +366,8 @@ func chatTool(def Definition) Definition {
 func Definitions() []Definition {
 	return []Definition{
 		chatTool(Definition{
-			Name: "search_workspace",
+			Name:      "search_workspace",
+			Retention: RetainCitedPassages,
 			Description: "Search the user's sources for passages relevant to a query. One " +
 				"call per assistant message, with one focused query. Search again " +
 				"in a later step rather than concatenating several questions.",
@@ -369,7 +380,8 @@ func Definitions() []Definition {
 			RequiredOperations: []Operation{OpSourceRead},
 		}),
 		chatTool(Definition{
-			Name: "list_sources",
+			Name:      "list_sources",
+			Retention: RetainFull,
 			Description: "List the chapters and documents in this workspace with a short " +
 				"descriptor of each file. Use this first when the question is " +
 				"about what the workspace contains, or to decide which documents " +
@@ -379,7 +391,8 @@ func Definitions() []Definition {
 			RequiredOperations: []Operation{OpSourceRead},
 		}),
 		chatTool(Definition{
-			Name: "describe_documents",
+			Name:      "describe_documents",
+			Retention: RetainFull,
 			Description: "Return the detailed summaries of up to eight documents. Call " +
 				"after list_sources when the short descriptors are not enough " +
 				"to decide, or when the question is about what a document covers " +
@@ -391,7 +404,8 @@ func Definitions() []Definition {
 			RequiredOperations: []Operation{OpSourceRead},
 		}),
 		chatTool(Definition{
-			Name: "read_document",
+			Name:      "read_document",
+			Retention: RetainCitedPassages,
 			Description: "Read a document in order from a given chunk index. Use after " +
 				"search when a passage needs its surrounding argument, or to walk " +
 				"a short document end to end.",
@@ -404,7 +418,8 @@ func Definitions() []Definition {
 			RequiredOperations: []Operation{OpSourceRead},
 		}),
 		chatTool(Definition{
-			Name: "capture_page",
+			Name:      "capture_page",
+			Retention: RetainNone,
 			Description: "Render one source page, or a boxed region of it, and read it " +
 				"directly as an image. Use the file_id and 1-based page shown with a " +
 				"passage; only pages a shown passage cites can be captured. bbox is " +
@@ -426,7 +441,8 @@ func Definitions() []Definition {
 			RequiredOperations: []Operation{OpSourceRead},
 		}),
 		chatTool(Definition{
-			Name: "create_material",
+			Name:      "create_material",
+			Retention: RetainFull,
 			Description: "Create a study material in this workspace from content you " +
 				"already authored: a quiz, flashcard deck, mindmap, diagram or note. " +
 				"Only call this when the user asked for one. Ground the content in " +
@@ -463,7 +479,8 @@ func Definitions() []Definition {
 			RequiredOperations: []Operation{OpMaterialCreate},
 		}),
 		chatTool(Definition{
-			Name: "resolve_source_change",
+			Name:      "resolve_source_change",
+			Retention: RetainFull,
 			Description: "Describe an added or changed source image from an exact " +
 				"pending-change placeholder. Only use identifiers supplied in the " +
 				"pending-source evidence.",
@@ -476,7 +493,8 @@ func Definitions() []Definition {
 			RequiredOperations: []Operation{OpSourceRead},
 		}),
 		chatTool(Definition{
-			Name: "list_documents",
+			Name:      "list_documents",
+			Retention: RetainFull,
 			Description: "List the editable documents of this workspace: source files " +
 				"(text, Markdown, CSV, DOCX, XLSX, PPTX; PDFs are read-only) and study " +
 				"materials, with ids, kinds and whether each can be edited. Use it to " +
@@ -492,7 +510,8 @@ func Definitions() []Definition {
 			RequiredOperations: []Operation{OpSourceRead, OpMaterialRead},
 		}),
 		chatTool(Definition{
-			Name: "inspect_document",
+			Name:      "inspect_document",
+			Retention: RetainFull,
 			Description: "Read the current authoritative content of one document as " +
 				"editable targets: Plate blocks with stable block ids, text lines with " +
 				"offsets, DOCX/PPTX paragraphs or XLSX cells with stable ids. Always " +
@@ -506,7 +525,8 @@ func Definitions() []Definition {
 			RequiredOperations: []Operation{OpSourceRead, OpMaterialRead},
 		}),
 		chatTool(Definition{
-			Name: "edit_document",
+			Name:      "edit_document",
+			Retention: RetainFull,
 			Description: "Apply content edits to one inspected document. Each command names " +
 				"a stable target from inspect_document and the exact text or value it " +
 				"expects to find; the whole call is refused if any expectation is stale. " +
@@ -526,7 +546,8 @@ func Definitions() []Definition {
 			RequiredOperations: []Operation{OpDocumentEdit},
 		}),
 		chatTool(Definition{
-			Name: "trash_file",
+			Name:      "trash_file",
+			Retention: RetainFull,
 			Description: "Move a source file or study material in this workspace to the " +
 				"trash. Only call this when the user asked to delete or remove it. " +
 				"The owner can restore it from Files › Trash within 30 days.",
@@ -538,7 +559,8 @@ func Definitions() []Definition {
 			RequiredOperations: []Operation{OpResourceTrash},
 		}),
 		chatTool(Definition{
-			Name: "list_trashed_files",
+			Name:      "list_trashed_files",
+			Retention: RetainFull,
 			Description: "List the trashed source files and study materials of this " +
 				"workspace with their ids, names and expiry. Use it before restore_file " +
 				"so you never guess an id.",
@@ -547,7 +569,8 @@ func Definitions() []Definition {
 			RequiredOperations: []Operation{OpTrashRead},
 		}),
 		chatTool(Definition{
-			Name: "restore_file",
+			Name:      "restore_file",
+			Retention: RetainFull,
 			Description: "Restore a trashed source file or study material of this " +
 				"workspace. Only call this when the user asked for it; use " +
 				"list_trashed_files to find the id.",

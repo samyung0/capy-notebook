@@ -1079,6 +1079,17 @@ func (s *ReadStore) User(ctx context.Context, userID string) (UserDetail, error)
 	}
 	rows.Close()
 	rows, err = s.db.Query(ctx, `
+		WITH recent AS MATERIALIZED (
+			SELECT id, trace_id FROM usage_events
+			WHERE actor_user_id = $1
+			ORDER BY created_at DESC, id DESC LIMIT $2
+		), turn_details AS MATERIALIZED (
+			SELECT DISTINCT ON (trace_id) trace_id, tool_calls
+			FROM ops_assistant_turns
+			WHERE user_id = $1
+			  AND trace_id = ANY(ARRAY(SELECT trace_id FROM recent WHERE trace_id IS NOT NULL))
+			ORDER BY trace_id, created_at DESC, id DESC
+		)
 		SELECT COALESCE(ue.trace_id, ''), ue.kind, ue.surface,
 			ue.provider, ue.model, ue.thinking, ue.catalog_provider_slug,
 			ue.catalog_model_slug, ue.model_version, ue.input_tokens,
@@ -1095,13 +1106,14 @@ func (s *ReadStore) User(ctx context.Context, userID string) (UserDetail, error)
 			COALESCE(pc.context_total_tokens, 0),
 			COALESCE(pc.context_window_tokens, 0),
 			COALESCE(pc.context_counting_method, ''),
-			COALESCE(pc.context_counting_version, 0)
-		FROM usage_events ue
+			COALESCE(pc.context_counting_version, 0),
+			COALESCE(turn.tool_calls, '[]'::jsonb)
+		FROM recent JOIN usage_events ue ON ue.id = recent.id
 		LEFT JOIN provider_calls pc
 		  ON pc.reservation_id = ue.reservation_id AND pc.id = ue.provider_call_id
 		LEFT JOIN provider_sessions cr ON cr.id = ue.reservation_id
-		WHERE ue.actor_user_id = $1
-		ORDER BY ue.created_at DESC, ue.id DESC LIMIT $2`, userID, recentUsageLimit)
+		LEFT JOIN turn_details turn ON turn.trace_id = ue.trace_id
+		ORDER BY ue.created_at DESC, ue.id DESC`, userID, recentUsageLimit)
 	if err != nil {
 		return out, err
 	}
@@ -1120,7 +1132,7 @@ func (s *ReadStore) User(ctx context.Context, userID string) (UserDetail, error)
 			&item.CacheAnomaly, &item.ContextSystemTokens, &item.ContextToolTokens,
 			&item.ContextConversationTokens, &item.ContextTotalTokens,
 			&item.ContextWindowTokens, &item.ContextCountingMethod,
-			&item.ContextCountingVersion); err != nil {
+			&item.ContextCountingVersion, &item.ToolCalls); err != nil {
 			return out, err
 		}
 		out.RecentUsage = append(out.RecentUsage, item)

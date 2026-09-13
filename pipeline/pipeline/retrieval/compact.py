@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from .. import elitellm, registry
-from ..prompts.chat import SUMMARY_MAX_TOKENS, checkpoint_messages
+from ..prompts.chat import SUMMARY_MAX_TOKENS, checkpoint_messages, memory_message
 from ..registry import ModelConfig
 from . import accounting, models
 
@@ -265,12 +265,7 @@ async def compact_messages(
     )
     compacted = [
         *messages[:head_count],
-        {
-            "role": "user",
-            "content": "Earlier conversation:\n" + summary,
-            "_kind": "memory",
-            "_memory": summary,
-        },
+        memory_message(summary),
         *protected,
     ]
     if needs_compact(compacted, spec, schemas=schemas, extra=extra):
