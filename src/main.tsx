@@ -7,7 +7,7 @@ import { Toaster } from 'sonner';
 import { queryClient } from './api/queryClient';
 import { AppErrorBoundary } from './components/app/AppErrorBoundary';
 import { AppAuthProvider } from './components/app/AuthProvider';
-import { initErrorReporting } from './lib/observability';
+import { initErrorReporting, reportReactError } from './lib/observability';
 import { router } from './router';
 import { ThemeProvider } from './theme/ThemeProvider';
 import './styles/tailwind.css';
@@ -36,7 +36,10 @@ async function enableMocks() {
 }
 
 enableMocks().finally(() => {
-  createRoot(document.getElementById('root')!).render(
+  createRoot(document.getElementById('root')!, {
+    onCaughtError: reportReactError,
+    onUncaughtError: reportReactError,
+  }).render(
     <StrictMode>
       <ThemeProvider>
         <AppAuthProvider>

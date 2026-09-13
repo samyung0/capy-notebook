@@ -24,6 +24,7 @@ from typing import Any
 
 import requests
 
+from .. import obs
 from ..config import cfg
 from ..generated import MATERIAL_TITLE_MAX
 from . import capture, contract, pending, store
@@ -608,6 +609,7 @@ async def _post_operation(
     """
     last_exc: BaseException | None = None
     last_status = 0
+    last_event_id = None
     for attempt in range(4):
         try:
 
@@ -623,6 +625,7 @@ async def _post_operation(
             last_status = resp.status_code
             if resp.status_code < 300:
                 return _receipt_result(resp.json())
+            last_event_id = resp.headers.get(obs.ERROR_EVENT_HEADER)
             if resp.status_code in (400, 401, 403, 404, 409, 422) or not _is_transient(
                 None, resp.status_code
             ):
@@ -633,9 +636,11 @@ async def _post_operation(
                 )
         except (requests.Timeout, requests.ConnectionError) as exc:
             last_exc = exc
+            last_event_id = None
             log.warning("operation POST attempt failed: %s", exc)
         except requests.RequestException as exc:
             last_exc = exc
+            last_event_id = None
             log.warning("operation POST attempt failed: %s", exc)
         if attempt < 3:
             await asyncio.sleep(0.25 * (2**attempt))
@@ -646,7 +651,9 @@ async def _post_operation(
 
     recovered = await _recover_operation(op_id, ctx)
     if recovered is True:
-        raise TurnFailed("mutation outcome is unknown")
+        raise obs.with_event_id(
+            TurnFailed("mutation outcome is unknown"), last_event_id
+        ) from last_exc
     if recovered is None:
         return _failed(f"Could not {failure}: not found after retries.")
     return _receipt_result(recovered)

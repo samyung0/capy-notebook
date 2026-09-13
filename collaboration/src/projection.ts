@@ -1,9 +1,19 @@
-import { captureError } from './observability.js';
+import {
+  captureError,
+  ERROR_EVENT_HEADER,
+  RETRY_EVENT_HEADER,
+  withEventId,
+} from './observability.js';
 import type { YjsDocumentStore } from './persistence.js';
 
 export class ProjectionService {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
+  private readonly failures = new Map<string, string | undefined>();
+  private readonly latestResults = new Map<
+    string,
+    { version: number; succeeded: boolean }
+  >();
   private readonly store: YjsDocumentStore;
   private readonly apiUrl: string;
   private readonly secret: string;
@@ -19,6 +29,7 @@ export class ProjectionService {
     version: number,
     content: { schemaVersion: 1; value: unknown[] }
   ) {
+    const eventId = this.failures.get(materialId);
     const response = await fetch(
       `${this.apiUrl}/internal/collaboration/materials/${encodeURIComponent(materialId)}/projection`,
       {
@@ -29,6 +40,7 @@ export class ProjectionService {
         headers: {
           'content-type': 'application/json',
           'x-collaboration-secret': this.secret,
+          ...(eventId ? { [RETRY_EVENT_HEADER]: eventId } : {}),
         },
         method: 'POST',
         signal: AbortSignal.timeout(15_000),
@@ -36,8 +48,11 @@ export class ProjectionService {
     );
     if (!response.ok) {
       const body = await response.text();
-      throw new Error(
-        `projection failed (${response.status}): ${body.slice(0, 500)}`
+      throw withEventId(
+        new Error(
+          `projection failed (${response.status}): ${body.slice(0, 500)}`
+        ),
+        response.headers.get(ERROR_EVENT_HEADER)
       );
     }
   }
@@ -56,6 +71,11 @@ export class ProjectionService {
   ) {
     try {
       await this.project(materialId, version, content);
+      if (version >= (this.latestResults.get(materialId)?.version ?? 0)) {
+        this.latestResults.set(materialId, { succeeded: true, version });
+        this.failures.delete(materialId);
+        this.failures.delete(`${materialId}:record`);
+      }
     } catch (error) {
       await this.recordFailure(materialId, version, error, stage);
       throw error;
@@ -71,18 +91,45 @@ export class ProjectionService {
     const message = error instanceof Error ? error.message : String(error);
     try {
       await this.store.recordProjectionError(materialId, version, message);
+      this.failures.delete(`${materialId}:record`);
     } catch (recordError) {
-      captureError(recordError, {
-        materialId,
-        stage: `${stage}_record_error`,
-      });
+      const tags = { materialId, stage: `${stage}_record_error` };
+      if (this.recoveredPast(materialId, version))
+        captureError(recordError, tags);
+      else this.captureFailure(`${materialId}:record`, recordError, tags);
     }
-    captureError(error, { materialId, stage });
+    if (this.recoveredPast(materialId, version)) {
+      captureError(error, { materialId, stage });
+      return;
+    }
+    const latest = this.latestResults.get(materialId)?.version ?? 0;
+    this.latestResults.set(materialId, {
+      succeeded: false,
+      version: Math.max(version, latest),
+    });
+    this.captureFailure(materialId, error, { materialId, stage });
+  }
+
+  private recoveredPast(materialId: string, version: number): boolean {
+    const latest = this.latestResults.get(materialId);
+    return !!latest?.succeeded && latest.version >= version;
+  }
+
+  private captureFailure(
+    key: string,
+    error: unknown,
+    tags: Record<string, string>
+  ) {
+    if (!this.failures.has(key))
+      this.failures.set(key, captureError(error, tags));
+    withEventId(error, this.failures.get(key));
   }
 
   private runPendingRetry() {
     void this.retryPending().catch((error) => {
-      captureError(error, { stage: 'projection_pending_retry' });
+      this.captureFailure('pending_retry', error, {
+        stage: 'projection_pending_retry',
+      });
     });
   }
 
@@ -105,8 +152,11 @@ export class ProjectionService {
       let pending: Awaited<ReturnType<YjsDocumentStore['pending']>>;
       try {
         pending = await this.store.pending();
+        this.failures.delete('pending_query');
       } catch (error) {
-        captureError(error, { stage: 'projection_pending_query' });
+        this.captureFailure('pending_query', error, {
+          stage: 'projection_pending_query',
+        });
         return;
       }
       for (const row of pending) {
@@ -132,6 +182,7 @@ export class ProjectionService {
           // later row must still get its own attempt.
         });
       }
+      this.failures.delete('pending_retry');
     } finally {
       this.running = false;
     }

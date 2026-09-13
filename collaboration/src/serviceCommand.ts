@@ -12,6 +12,7 @@ import {
   isCollaborationCommand,
 } from './commands.js';
 import { readInternalCommandJson } from './internalCommandRequest.js';
+import { reportHttpError } from './observability.js';
 
 interface DirectConnection {
   disconnect(options?: { unloadImmediately?: boolean }): Promise<void>;
@@ -178,6 +179,7 @@ export async function handleServiceCommandRequest(
     const message = error instanceof Error ? error.message : String(error);
     const conflict =
       message.includes('concurrently') || message.includes('no longer exists');
+    if (!conflict) reportHttpError(response, error);
     jsonResponse(response, conflict ? 409 : 503, { message });
   }
 }

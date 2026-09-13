@@ -50,7 +50,7 @@ func (a *api) gradeQuizAnswer(ctx context.Context, in *quizGradeInput) (*quizGra
 	defer charge.release(ctx)
 
 	if a.pipe == nil {
-		return nil, huma.Error503ServiceUnavailable("AI service is unavailable")
+		return nil, &handlerError{error: huma.Error503ServiceUnavailable("AI service is unavailable"), cause: errAIUnavailable}
 	}
 	body := map[string]any{
 		"hints":          in.Body.Hints,
@@ -68,14 +68,14 @@ func (a *api) gradeQuizAnswer(ctx context.Context, in *quizGradeInput) (*quizGra
 		if mapped := pipelineLLMError(err); mapped != nil {
 			return nil, hErr(mapped)
 		}
-		return nil, huma.Error503ServiceUnavailable("AI service is unavailable")
+		return nil, &handlerError{error: huma.Error503ServiceUnavailable("AI service is unavailable"), cause: err}
 	}
 	var parsed struct {
 		Award  float64 `json:"award"`
 		Reason string  `json:"reason"`
 	}
-	if json.Unmarshal(raw, &parsed) != nil {
-		return nil, huma.Error503ServiceUnavailable("AI service is unavailable")
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return nil, &handlerError{error: huma.Error503ServiceUnavailable("AI service is unavailable"), cause: err}
 	}
 	charge.settle(ctx)
 	return &quizGradeOutput{Body: apimodel.QuizGradeResp{

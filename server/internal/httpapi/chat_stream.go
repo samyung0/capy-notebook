@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"io"
 	"log"
 	"net/http"
@@ -61,6 +62,7 @@ func chatQueryTooLong(text string) bool {
 // tool_end | citations | checkpoint | pending_sources | done | error.
 type pipeChatEvent struct {
 	Type              string                      `json:"type"`
+	SentryEventID     string                      `json:"sentryEventId,omitempty"`
 	FileIDs           []string                    `json:"fileIds,omitempty"`
 	Omitted           *bool                       `json:"omitted,omitempty"` // pointer so false survives serialization
 	Phase             string                      `json:"phase,omitempty"`
@@ -277,7 +279,7 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		}
 	})
 
-	saveCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	saveCtx, cancel := obs.Detach(ctx, 10*time.Second)
 	defer cancel()
 
 	status := "complete"
@@ -294,12 +296,13 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		tokens = int(usage.InputTokens + usage.OutputTokens)
 	}
 	if err := a.s.FinalizeAssistantMessage(saveCtx, assistant.ID, answer.String(), status, tokens, citations, genID, activity, toolEvidence); err != nil {
-		log.Printf("finalize assistant message %s: %v", assistant.ID, err)
+		obs.CaptureErr(saveCtx, err, map[string]string{"stage": "chat_finalize"})
 	}
 	charge.settle(saveCtx)
 
 	if ctx.Err() == nil {
 		if streamErr != nil {
+			obs.CaptureErr(ctx, unexpectedChatError(streamErr), map[string]string{"stage": "chat_stream"})
 			var eventErr *chatEventError
 			if code, msg, ok := llmKeyPayload(streamErr); ok {
 				send(pipeChatEvent{Type: "error", Code: code, Message: msg})
@@ -386,7 +389,7 @@ func (a *api) relayChat(
 		if mapped := pipelineLLMError(err); mapped != nil {
 			return mapped
 		}
-		return fmt.Errorf("%w: %v", errAIUnavailable, err)
+		return &aiServiceError{cause: err}
 	}
 	defer rc.Close()
 
@@ -413,9 +416,9 @@ func (a *api) relayChat(
 						}
 					}
 					if mapped := keyErrorFromEvent(ev.Code, ev.Message); mapped != nil {
-						return mapped
+						return obs.WithEventID(mapped, ev.SentryEventID)
 					}
-					return errAgentFailed
+					return obs.WithEventID(errAgentFailed, ev.SentryEventID)
 				}
 				if ev.Type == "done" {
 					sawDone = true
@@ -444,4 +447,20 @@ func titleFrom(text string) string {
 		return text
 	}
 	return fieldlimits.Clamp(text, fieldlimits.ConversationTitle-1) + "…"
+}
+
+// Validation and provider admission failures have a client action, not an incident.
+func unexpectedChatError(err error) error {
+	if _, _, ok := llmKeyPayload(err); ok {
+		return obs.ExpectedError(err)
+	}
+	var busy *providerBusyError
+	var event *chatEventError
+	if errors.As(err, &busy) {
+		return obs.ExpectedError(err)
+	}
+	if errors.As(err, &event) && event.Code != "compaction_failed" {
+		return obs.ExpectedError(err)
+	}
+	return err
 }

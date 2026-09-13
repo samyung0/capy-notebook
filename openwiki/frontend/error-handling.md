@@ -197,3 +197,11 @@ codes for HTTP responses and chat events; neither starts an automatic retry.
 Google Picker temporarily replaces the source chooser so the Radix focus trap and pointer lock cannot intercept it. The chooser returns on cancel/error or while selected files are inspected. Google multi-select and folder selection are enabled; folders are expanded by the gateway before the source details step. Existing Google connections without `drive.readonly` or `drive` are asked to reconnect. Both provider buttons stay disabled while a picker is opening or active.
 
 Picker startup failures and Google `error` callbacks produce a toast and a frontend Sentry event tagged `component=source-picker`, `provider`, and `stage`. Telemetry uses a fixed message rather than the provider payload, which can contain OAuth tokens and file names. Internal HTTP failures in Google's cross-origin iframe are only observable when Google forwards an error callback; they never reach gateway Sentry.
+
+### Sentry ownership
+
+React 19 root error callbacks report caught and uncaught render crashes. Custom
+error boundaries continue to render their existing recovery UI without another
+capture call. Sentry filters `ApiError` events, since backend responses and
+stream failures are reported by their owning service. Mutation toasts do not
+report them again.

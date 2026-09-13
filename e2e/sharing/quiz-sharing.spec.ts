@@ -2,6 +2,32 @@ import { expect, test } from '../fixtures/actors';
 import { apiEndsWith, waitForApi } from '../helpers/api';
 
 test.describe('quiz sharing', () => {
+  test('New quiz creates a blank question and opens the editor', async ({
+    ownerApi,
+    ownerPage,
+  }) => {
+    await ownerPage.goto('/quizzes');
+    const created = waitForApi(ownerPage, apiEndsWith('/api/quizzes', 'POST'));
+    await ownerPage
+      .getByRole('button', { exact: true, name: 'New quiz' })
+      .click();
+    const response = await created;
+    expect(response.status()).toBe(201);
+    const quiz = await response.json();
+    try {
+      expect(quiz.questions).toHaveLength(1);
+      expect(quiz.questions[0].prompt).toBe('');
+      await expect(ownerPage).toHaveURL(`/quizzes/${quiz.id}/edit`);
+      await expect(
+        ownerPage.getByRole('button', { exact: true, name: 'Save' })
+      ).toBeEnabled();
+    } finally {
+      expect((await ownerApi.delete(`/api/quizzes/${quiz.id}`)).status()).toBe(
+        204
+      );
+    }
+  });
+
   test('owner can open a private quiz', async ({ ownerPage, seed }) => {
     const resPromise = waitForApi(
       ownerPage,

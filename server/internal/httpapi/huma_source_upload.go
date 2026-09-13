@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -68,14 +69,18 @@ func (a *api) registerSourceUpload(api huma.API) {
 			r.Body = http.MaxBytesReader(w, r.Body, maxBytes+multipartHeadroom)
 			next(ctx)
 		}},
-	}, a.uploadSource)
+	}, func(ctx context.Context, input *uploadSourceInput) (*sourceFileOutput, error) {
+		output, err := a.uploadSource(ctx, input)
+		return output, reportHandlerError(ctx, err)
+	})
 }
 
 // writeStatusErr renders an hErr result from middleware, where the handler's
 // error return is not available.
 func writeStatusErr(api huma.API, ctx huma.Context, err error) {
-	model, ok := err.(*huma.ErrorModel)
-	if !ok {
+	err = reportHandlerError(ctx.Context(), err)
+	var model *huma.ErrorModel
+	if !errors.As(err, &model) {
 		_ = huma.WriteErr(api, ctx, http.StatusInternalServerError, err.Error())
 		return
 	}

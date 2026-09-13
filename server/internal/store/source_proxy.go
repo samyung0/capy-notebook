@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"io"
 	"net/http"
 )
@@ -22,6 +23,7 @@ func (s *Store) SourceAuthority(ctx context.Context, operation string, body json
 	if err != nil {
 		return nil, 0, err
 	}
+	obs.Inject(ctx, req)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Collaboration-Secret", s.collaborationSecret)
 	response, err := s.collaborationHTTP.Do(req)
@@ -38,6 +40,9 @@ func (s *Store) SourceAuthority(ctx context.Context, operation string, body json
 	}
 	if !json.Valid(raw) {
 		return nil, 0, ErrAuthorityUnavailable
+	}
+	if response.StatusCode >= 500 {
+		obs.RecordHTTPError(ctx, obs.WithEventID(fmt.Errorf("source authority: %s", response.Status), response.Header.Get(obs.ErrorEventHeader)))
 	}
 	return raw, response.StatusCode, nil
 }

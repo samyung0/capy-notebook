@@ -17,6 +17,12 @@ import {
   verifyTextGuards,
 } from './editCommands.js';
 import {
+  ERROR_EVENT_HEADER,
+  retryEventHeaders,
+  withEventId,
+  withRetryEvent,
+} from './observability.js';
+import {
   type NetEffect,
   type OfficeCheckpoint,
   type OfficeEntry,
@@ -213,6 +219,7 @@ export class SourceDocumentStore {
         headers: {
           'Content-Type': 'application/json',
           'X-Collaboration-Secret': this.secret,
+          ...retryEventHeaders(),
         },
         method: body === undefined ? 'GET' : 'POST',
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -220,9 +227,12 @@ export class SourceDocumentStore {
       }
     );
     if (!response.ok)
-      throw new SourceRequestError(
-        response.status,
-        `Source ${endpoint.split('?')[0]} failed (${response.status})`
+      throw withEventId(
+        new SourceRequestError(
+          response.status,
+          `Source ${endpoint.split('?')[0]} failed (${response.status})`
+        ),
+        response.headers.get(ERROR_EVENT_HEADER)
       );
     if (response.status === 204) return undefined as T;
     return (await response.json()) as T;
@@ -366,7 +376,11 @@ export class SourceDocumentStore {
     return effects;
   }
 
-  async store(room: string, snapshot: Y.Doc) {
+  store(room: string, snapshot: Y.Doc, eventId?: string) {
+    return withRetryEvent(eventId, () => this.storeSnapshot(room, snapshot));
+  }
+
+  private async storeSnapshot(room: string, snapshot: Y.Doc) {
     const { fileId, epoch } = sourceRoom(room);
     const contributors = documentContributors(snapshot);
     // A receipt for an unchanged document is still a durability receipt.

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"io"
 	"net/http"
 	"reflect"
@@ -127,6 +128,7 @@ func (s *Store) applyAuthoritativeContentCommand(
 	if err != nil {
 		return true, err
 	}
+	obs.Inject(ctx, req)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Collaboration-Secret", s.collaborationSecret)
 	response, err := s.collaborationHTTP.Do(req)
@@ -145,7 +147,7 @@ func (s *Store) applyAuthoritativeContentCommand(
 		if message == "" {
 			message = response.Status
 		}
-		return true, fmt.Errorf("%w: %s", ErrAuthorityUnavailable, message)
+		return true, obs.WithEventID(fmt.Errorf("%w: %s", ErrAuthorityUnavailable, message), response.Header.Get(obs.ErrorEventHeader))
 	}
 }
 

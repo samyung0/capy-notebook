@@ -11,6 +11,7 @@ import (
 
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/pipeline"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
@@ -288,7 +289,7 @@ func pipelineGenerateError(err error) error {
 	}
 	switch pe.Decode().Code {
 	case "generate_empty":
-		return errGenerateEmpty
+		return obs.WithEventID(errGenerateEmpty, obs.ErrorEventID(err))
 	case "scope_has_no_indexed_content":
 		return errScopeNoIndexedContent
 	case "context_too_large":
@@ -355,3 +356,10 @@ func (a *api) resolveEmbedding(ctx context.Context, workspaceID string) (resolve
 	out.Rates = rates
 	return out, nil
 }
+
+// Keep the public AI error classification and the underlying transport cause.
+type aiServiceError struct{ cause error }
+
+func (e *aiServiceError) Error() string        { return fmt.Sprintf("%s: %v", errAIUnavailable, e.cause) }
+func (e *aiServiceError) Unwrap() error        { return e.cause }
+func (e *aiServiceError) Is(target error) bool { return target == errAIUnavailable }

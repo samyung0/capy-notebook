@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"net/http"
 	"strconv"
 	"strings"
@@ -157,6 +158,7 @@ func (a *api) projectMaterialYjsDocument(
 		subtle.ConstantTimeCompare([]byte(in.Secret), []byte(a.cfg.CollaborationSecret)) != 1 {
 		return nil, huma.Error401Unauthorized("invalid collaboration service secret")
 	}
+	obs.ContinueInternalRetry(ctx)
 	raw, err := materialdoc.MarshalProjection(in.Body.Content)
 	if err != nil {
 		return nil, collaborationError(err)

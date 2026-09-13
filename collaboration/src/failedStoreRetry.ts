@@ -1,5 +1,8 @@
+import { SOURCE_ROOM_PATTERN } from './auth.js';
+import { captureError, withEventId } from './observability.js';
 export interface FailedStoreSnapshot {
   checkpointIds: readonly string[];
+  eventId?: string;
   state: Uint8Array;
 }
 
@@ -41,4 +44,19 @@ export class FailedStoreRetryRunner {
     if (this.failedStores.get(room) !== snapshot) return false;
     return this.failedStores.delete(room);
   }
+}
+
+export function reportFailedStore(
+  previous: FailedStoreSnapshot | undefined,
+  error: unknown,
+  room: string
+): string | undefined {
+  if (previous) {
+    withEventId(error, previous.eventId);
+    return previous.eventId;
+  }
+  return captureError(error, {
+    room,
+    stage: SOURCE_ROOM_PATTERN.test(room) ? 'source_store' : 'document_store',
+  });
 }

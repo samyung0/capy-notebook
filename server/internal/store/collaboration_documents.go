@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"io"
 	"net/http"
 
@@ -84,6 +85,7 @@ func (s *Store) postDocumentAuthority(ctx context.Context, path string, body any
 	if err != nil {
 		return err
 	}
+	obs.Inject(ctx, req)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Collaboration-Secret", s.collaborationSecret)
 	response, err := s.collaborationHTTP.Do(req)
@@ -114,7 +116,7 @@ func (s *Store) postDocumentAuthority(ctx context.Context, path string, body any
 		}
 		return &EditRefusal{Code: code, Message: refusal.Message}
 	}
-	return fmt.Errorf("%w: %s", ErrAuthorityUnavailable, response.Status)
+	return obs.WithEventID(fmt.Errorf("%w: %s", ErrAuthorityUnavailable, response.Status), response.Header.Get(obs.ErrorEventHeader))
 }
 
 func (s *Store) InspectMaterialDocument(ctx context.Context, actorID, materialID string) (MaterialInspection, error) {

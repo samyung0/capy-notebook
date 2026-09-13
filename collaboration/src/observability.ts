@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 /**
  * Error reporting and structured logging for the collaboration server.
  *
@@ -7,6 +8,7 @@
  * failure surfaces somewhere a human looks.
  */
 
+import type { ServerResponse } from 'node:http';
 import * as Sentry from '@sentry/node';
 
 const DSN = process.env.SENTRY_DSN ?? '';
@@ -21,6 +23,26 @@ export function initErrorReporting(): void {
     return;
   }
   Sentry.init({
+    beforeSend: (event, hint) => {
+      if (event.request) {
+        delete event.request.data;
+        delete event.request.cookies;
+        for (const name of Object.keys(event.request.headers ?? {})) {
+          if (
+            [
+              'authorization',
+              'cookie',
+              'x-pipeline-secret',
+              'x-collaboration-secret',
+            ].includes(name.toLowerCase())
+          ) {
+            delete event.request.headers?.[name];
+          }
+        }
+      }
+      const existing = errorEventId(hint.originalException);
+      return existing && existing !== event.event_id ? null : event;
+    },
     dsn: DSN,
     environment: SENTRY_ENVIRONMENT,
     release: process.env.RELEASE_SHA || undefined,
@@ -81,14 +103,69 @@ export function log(
 export function captureError(
   error: unknown,
   tags: Record<string, string> = {}
-): void {
+): string | undefined {
+  const existing = errorEventId(error);
+  if (existing) return existing;
   log('error', 'captured error', {
     ...tags,
     error: error instanceof Error ? error.message : String(error),
   });
-  if (!DSN) return;
+  if (!Sentry.getClient()?.getDsn()) return;
+  let eventId: string | undefined;
   Sentry.withScope((scope) => {
     for (const [key, value] of Object.entries(tags)) scope.setTag(key, value);
-    Sentry.captureException(error);
+    eventId = Sentry.captureException(error);
+    withEventId(error, eventId);
   });
+  return eventId;
+}
+
+export const ERROR_EVENT_HEADER = 'X-Sentry-Event-Id';
+const EVENT_ID = /^[a-f0-9]{32}$/;
+const reportedErrors = new WeakMap<object, string>();
+
+export function errorEventId(error: unknown): string | undefined {
+  const seen = new Set<object>();
+  let current = error;
+  while (current instanceof Error && !seen.has(current)) {
+    seen.add(current);
+    const eventId = reportedErrors.get(current);
+    if (eventId) return eventId;
+    current = current.cause;
+  }
+}
+
+/** Accept identities only from trusted internal responses. */
+export function withEventId<T>(
+  error: T,
+  eventId: string | null | undefined
+): T {
+  if (error instanceof Error && eventId && EVENT_ID.test(eventId)) {
+    reportedErrors.set(error, eventId);
+  }
+  return error;
+}
+
+export function reportHttpError(
+  response: ServerResponse,
+  error: unknown
+): void {
+  const eventId = captureError(error, { stage: 'http_request' });
+  if (eventId && !response.headersSent)
+    response.setHeader(ERROR_EVENT_HEADER, eventId);
+}
+
+export const RETRY_EVENT_HEADER = 'X-Sentry-Retry-Event-Id';
+const retryEvent = new AsyncLocalStorage<string | undefined>();
+
+export function withRetryEvent<T>(
+  eventId: string | undefined,
+  work: () => T
+): T {
+  return retryEvent.run(eventId, work);
+}
+
+export function retryEventHeaders(): Record<string, string> {
+  const eventId = retryEvent.getStore();
+  return eventId ? { [RETRY_EVENT_HEADER]: eventId } : {};
 }

@@ -235,6 +235,7 @@ async def test_resolved_caption_is_visible_only_after_gateway_admission(monkeypa
 
     class Response:
         def __init__(self, save):
+            self.headers = {}
             self.save = save
 
         def raise_for_status(self):

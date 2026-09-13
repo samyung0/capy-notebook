@@ -81,37 +81,57 @@ limit is bypassed.
 
 ## 3. Error reporting (Sentry)
 
-Errors that reached the client as a 5xx are captured by middleware. Errors that
-were **swallowed to keep a request alive** are the ones that need explicit
-reporting, because nothing else will ever surface them:
+The gateway and Ops response middleware capture handled 5xx errors. Huma's
+registration wrapper and raw response helpers retain the original cause before
+writing the public response. The gateway's chi recoverer surrounds Sentry so a
+panic reaches the SDK before recovery writes the 500. `http.ErrAbortHandler`
+and request cancellation are excluded, including panics after a stream starts.
 
-- a failed credit settle,
-- collaboration persistence failures — the editor stays live and the user keeps
-  typing into a document that is no longer being saved.
+Python retrieval owns unexpected exceptions, `GenerateEmpty`, and caught chat
+and editor stream failures. Its HTTP exception handlers distinguish expected
+provider-busy responses from failures. Starlette's automatic handled-status
+capture is disabled; unhandled exception capture remains enabled. A captured
+exception retains its event ID, so the SDK does not capture it again after the
+500 handler re-raises it. Logging creates breadcrumbs, not error events.
 
-Chat and generate used to invent a local answer when the retrieval service
-was unreachable. They now fail the request (`ai_unavailable`). The user sees
-that miss; do not reintroduce a placeholder to keep the stream "alive."
+Internal error responses carry `X-Sentry-Event-Id`; stream error frames carry
+`sentryEventId`. Only authenticated internal response consumers trust these
+identities, after checking the 32-character lowercase hexadecimal format.
+Inbound client headers cannot suppress reporting. Automatic collaboration retries
+use a separate `X-Sentry-Retry-Event-Id` header; the gateway accepts it only
+after validating the collaboration service secret. It reuses the original
+event while logging each failed retry. Go/Python/Node error wrappers
+retain the identity through service relays. Grouping and trace IDs are not used
+to suppress errors: an independent credit-settle, credit-release, finalization,
+or failure-recording error still gets its own event.
 
-Use `obs.CaptureErr` (Go), `obs.capture_error` (Python), `captureError` (Node).
+Use `obs.CaptureErr` (Go), `obs.capture_error` (Python), or `captureError` (Node)
+for caught failures that do not produce a 5xx. These return the event ID. A Go
+caller that captures and returns an error must preserve it with
+`obs.WithEventID`; reconciliation and ingest admission do this. Aggregated
+errors are inspected individually so an already-reported child cannot hide an
+unreported child. Node collaboration captures failed durable saves, caught
+internal HTTP errors, and projections; a failed upstream projection reuses the
+gateway's event. Automatic save/projection retries keep the first event until recovery. A later
+failure after success reports again. This state lives in the running process;
+a restart can report a still-failing operation again. Health/readiness probes
+return status without creating error events.
 
-The Ops service uses the same Go trace and Sentry middleware. It creates or
-continues the W3C request trace before installing the Sentry scope. Handled Ops
-fallbacks, including a failed `touch_operator_seen`, call `obs.CaptureErr`
-explicitly because the HTTP response remains successful.
+React 19's root `onCaughtError` and `onUncaughtError` callbacks own render-crash
+reporting, including custom error boundaries. Browser `ApiError` reports are
+filtered because backend errors are owned by the server. Mutation toasts and
+error-boundary rendering do not add another capture call.
 
-Python `log.exception` / `log.error` do **not** create Sentry events. The worker
-and retrieval service initialize Sentry with `LoggingIntegration(event_level=None)`,
-so logs are breadcrumbs and `capture_error` is the only reporting path. That is
-what stops a retryable provider 503 from opening an issue on its way to being
-requeued.
+Expected 4xx responses, interactive provider-busy responses, and client aborts
+stay quiet. Ingest retryable failures still requeue without capture; terminal
+ingest failures keep their explicit reporting. Go, Python, and collaboration exclude request
+bodies and internal authentication headers from Sentry because requests carry
+note content, prompts, and service credentials. Python stack locals are also
+excluded.
 
-Not reported: authentication rejections (expired tokens and stale tabs, high
-volume, expected) and client-side `AbortError` / network failures during
-streams, which happen every time a user navigates away mid-answer.
-
-`send_default_pii` is off everywhere. Prompts, note content, and chat history
-flow through these services.
+Chat and generate fail with `ai_unavailable` when retrieval is unreachable;
+they do not invent a local answer. Ops fallbacks that keep the response
+successful, such as a failed `touch_operator_seen`, still capture explicitly.
 
 ### Environment, projects, source maps
 

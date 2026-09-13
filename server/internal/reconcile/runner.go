@@ -92,10 +92,11 @@ func (r *Runner) RunNext(ctx context.Context) (bool, error) {
 		runErr = heartbeatErr
 	}
 	if runErr != nil {
-		obs.CaptureErr(ctx, runErr, map[string]string{
+		eventID := obs.CaptureErr(ctx, runErr, map[string]string{
 			"stage": "reconciliation",
 			"job":   run.JobType,
 		})
+		runErr = obs.WithEventID(runErr, eventID)
 		result.Status = store.ReconcileStatusFailed
 		result.ErrorCount++
 		result.Error = "reconciliation failed"
@@ -373,19 +374,20 @@ func (r *Runner) RunNextStripeCompensation(ctx context.Context) (bool, error) {
 	default:
 		runErr = errors.New("unsupported Stripe compensation action")
 	}
+	if runErr != nil && !refundPending {
+		eventID := obs.CaptureErr(ctx, runErr, map[string]string{
+			"stage":  "stripe_compensation",
+			"action": string(job.Action),
+			"userId": job.UserID,
+		})
+		runErr = obs.WithEventID(runErr, eventID)
+	}
 	if advanceRefundGeneration {
 		if finishErr := r.store.AdvanceStripeRefundGeneration(ctx, *job, runErr); finishErr != nil {
 			return true, finishErr
 		}
 	} else if finishErr := r.store.FinishStripeCompensation(ctx, *job, runErr); finishErr != nil {
 		return true, finishErr
-	}
-	if runErr != nil && !refundPending {
-		obs.CaptureErr(ctx, runErr, map[string]string{
-			"stage":  "stripe_compensation",
-			"action": string(job.Action),
-			"userId": job.UserID,
-		})
 	}
 	if refundPending {
 		return true, nil

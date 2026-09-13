@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"net/http"
 	"strings"
 
@@ -278,6 +279,7 @@ func materialOperations(kind string) []string {
 
 // failDocument maps authority refusals to the typed tool error shape.
 func (a *api) failDocument(w http.ResponseWriter, err error) {
+	obs.ResponseError(w, err)
 	var refusal *store.EditRefusal
 	if errors.As(err, &refusal) {
 		writeJSON(w, http.StatusConflict, map[string]string{"code": string(refusal.Code), "message": refusal.Message})

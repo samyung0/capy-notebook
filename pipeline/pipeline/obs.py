@@ -199,6 +199,7 @@ def init_sentry(service: str) -> None:
     try:
         import sentry_sdk
         from sentry_sdk.integrations.logging import LoggingIntegration
+        from sentry_sdk.integrations.starlette import StarletteIntegration
     except ImportError:
         log.warning("SENTRY_DSN set but sentry-sdk is not installed")
         return
@@ -211,31 +212,86 @@ def init_sentry(service: str) -> None:
         or os.getenv("APP_ENV", "development"),
         release=os.getenv("RELEASE_SHA") or None,
         traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
-        # Logs stay as breadcrumbs. capture_error is the only event path, so a
-        # retryable provider 503 does not open a Sentry issue on its way to
-        # being requeued.
-        integrations=[LoggingIntegration(event_level=None)],
+        # Handled HTTP failures are captured by our exception handlers, which
+        # can distinguish provider-busy responses and preserve the event ID.
+        integrations=[
+            LoggingIntegration(event_level=None),
+            StarletteIntegration(failed_request_status_codes=set()),
+        ],
+        before_send=_before_send,
         # Prompts and note content flow through this service.
         send_default_pii=False,
+        max_request_body_size="never",
+        include_local_variables=False,
     )
     sentry_sdk.set_tag("service", service)
     log.info("sentry enabled service=%s", service)
 
 
-def capture_error(exc: BaseException, **tags: str) -> None:
-    """Report a handled error that never reached a client as a 5xx."""
-    log.exception("captured error", exc_info=exc)
+ERROR_EVENT_HEADER = "X-Sentry-Event-Id"
+
+
+def error_event_id(exc: BaseException) -> str | None:
+    seen: set[int] = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        if event_id := getattr(exc, "_sentry_event_id", None):
+            return event_id
+        exc = exc.__cause__
+    return None
+
+
+def _before_send(event, hint):
+    request = event.get("request", {})
+    request.pop("data", None)
+    request.pop("cookies", None)
+    headers = request.get("headers", {})
+    for name in list(headers):
+        if name.lower() in {
+            "authorization",
+            "cookie",
+            "x-pipeline-secret",
+            "x-collaboration-secret",
+        }:
+            del headers[name]
+    exc = (hint.get("exc_info") or (None, None, None))[1]
+    if exc is not None:
+        if error_event_id(exc):
+            return None
+        exc._sentry_event_id = event["event_id"]
+    return event
+
+
+def capture_error(exc: BaseException, **tags: str) -> str | None:
+    """Capture a failure once and retain its identity through explicit causes."""
+    if event_id := error_event_id(exc):
+        return event_id
+    log.error("captured error", exc_info=(type(exc), exc, exc.__traceback__))
     try:
         import sentry_sdk
     except ImportError:
-        return
+        return None
     with sentry_sdk.new_scope() as scope:
         scope.set_tag("trace_id", _trace_id.get())
         if _actor_user_id.get():
             scope.set_user({"id": _actor_user_id.get()})
         for key, value in tags.items():
             scope.set_tag(key, value)
-        sentry_sdk.capture_exception(exc)
+        event_id = sentry_sdk.capture_exception(exc)
+        if event_id:
+            exc._sentry_event_id = event_id
+        return event_id
+
+
+def error_headers(exc: BaseException) -> dict[str, str]:
+    event_id = capture_error(exc)
+    return {ERROR_EVENT_HEADER: event_id} if event_id else {}
+
+
+def reported_event(event: dict, exc: BaseException) -> dict:
+    if event_id := capture_error(exc):
+        event["sentryEventId"] = event_id
+    return event
 
 
 def bind_error_context() -> None:
@@ -559,3 +615,22 @@ def record_stream_chunk(provider: str, model: str, chunk: Any) -> None:
         reasoning_tokens=parsed.reasoning_tokens,
         cache_anomaly=parsed.anomaly,
     )
+
+
+def with_event_id(exc: BaseException, event_id: str | None) -> BaseException:
+    # Only call this on responses from authenticated internal services.
+    if (
+        event_id
+        and len(event_id) == 32
+        and all(c in "0123456789abcdef" for c in event_id)
+    ):
+        exc._sentry_event_id = event_id
+    return exc
+
+
+def raise_internal_response(response) -> None:
+    try:
+        response.raise_for_status()
+    except Exception as exc:
+        with_event_id(exc, response.headers.get(ERROR_EVENT_HEADER))
+        raise

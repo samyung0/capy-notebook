@@ -145,7 +145,7 @@ func (a Authenticator) Middleware(next http.Handler) http.Handler {
 		if err := a.Operators.Touch(ctx, userID); err != nil {
 			capture := a.CaptureError
 			if capture == nil {
-				capture = obs.CaptureErr
+				capture = func(ctx context.Context, err error, tags map[string]string) { obs.CaptureErr(ctx, err, tags) }
 			}
 			capture(ctx, err, map[string]string{
 				"component": "operator_last_seen",

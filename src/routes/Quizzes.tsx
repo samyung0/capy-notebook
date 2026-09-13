@@ -22,6 +22,7 @@ import { IconButton } from '@/components/ui/IconButton';
 import { Menu } from '@/components/ui/Menu';
 import { Tabs } from '@/components/ui/Tabs';
 import { formatPoints } from '@/features/quizzes/grade';
+import { createBlankQuestion } from '@/features/quizzes/QuizForm';
 import { ShareDialog } from '@/features/workspace/ShareDialog';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -303,7 +304,7 @@ export default function Quizzes() {
 
   function newQuiz() {
     createQuiz(
-      { name: m.quiz_untitled(), questions: [] },
+      { name: m.quiz_untitled(), questions: [createBlankQuestion()] },
       {
         onSuccess: (quiz) =>
           navigate({

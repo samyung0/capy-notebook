@@ -190,8 +190,8 @@ func (s *Store) ingestJobPayload(ctx context.Context, actorUserID string, base m
 	}
 	ingest, captioning, err := s.registry.SnapshotIngest(ctx)
 	if err != nil {
-		obs.CaptureErr(ctx, err, map[string]string{"stage": "ingest_model_pin"})
-		return nil, fmt.Errorf("%w: %v", ErrIngestUnpinnable, err)
+		eventID := obs.CaptureErr(ctx, err, map[string]string{"stage": "ingest_model_pin"})
+		return nil, obs.WithEventID(fmt.Errorf("%w: %v", ErrIngestUnpinnable, err), eventID)
 	}
 	base["ingestProviderSlug"] = ingest.ProviderSlug
 	base["ingestModelSlug"] = ingest.ModelSlug
@@ -201,8 +201,8 @@ func (s *Store) ingestJobPayload(ctx context.Context, actorUserID string, base m
 	base["captioningModelVersion"] = captioning.Version
 	rates, err := s.ActiveResourceRates(ctx, ingestResourceKeys)
 	if err != nil {
-		obs.CaptureErr(ctx, err, map[string]string{"stage": "ingest_resource_rates"})
-		return nil, fmt.Errorf("%w: %v", ErrIngestUnpinnable, err)
+		eventID := obs.CaptureErr(ctx, err, map[string]string{"stage": "ingest_resource_rates"})
+		return nil, obs.WithEventID(fmt.Errorf("%w: %v", ErrIngestUnpinnable, err), eventID)
 	}
 	base["resourceRates"] = rates
 	return json.Marshal(base)

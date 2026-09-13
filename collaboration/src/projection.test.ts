@@ -5,7 +5,10 @@ const { captureError } = vi.hoisted(() => ({
   captureError: vi.fn(),
 }));
 
-vi.mock('./observability.js', () => ({ captureError }));
+vi.mock('./observability.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./observability.js')>()),
+  captureError,
+}));
 
 import { ProjectionService } from './projection.js';
 
@@ -184,6 +187,8 @@ describe('projection failure handling', () => {
   });
 
   it('does not let an older failure replace a newer successful projection', async () => {
+    captureError.mockReturnValue('a'.repeat(32));
+    let ninthHeaders: HeadersInit | undefined;
     let projectedVersion = 0;
     let projectionError: string | null = null;
     let releaseOld!: () => void;
@@ -203,6 +208,10 @@ describe('projection failure handling', () => {
       vi.fn(async (_url: string, init?: RequestInit) => {
         const body = JSON.parse(String(init?.body)) as { yjsVersion: number };
         if (body.yjsVersion === 7) return oldResponse;
+        if (body.yjsVersion === 9) {
+          ninthHeaders = init?.headers;
+          return new Response('new failure', { status: 503 });
+        }
         projectedVersion = body.yjsVersion;
         projectionError = null;
         return new Response(null, { status: 204 });
@@ -222,5 +231,11 @@ describe('projection failure handling', () => {
       7,
       expect.stringContaining('projection failed (503)')
     );
+    const capturedBefore = captureError.mock.calls.length;
+    await expect(service.projectAndRecord('mat_1', 9, content)).rejects.toThrow(
+      'new failure'
+    );
+    expect(new Headers(ninthHeaders).get('X-Sentry-Retry-Event-Id')).toBeNull();
+    expect(captureError.mock.calls.length).toBe(capturedBefore + 1);
   });
 });

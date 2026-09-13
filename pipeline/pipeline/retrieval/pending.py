@@ -11,6 +11,7 @@ from typing import Any
 
 import requests
 
+from .. import obs
 from ..config import cfg
 from . import compact, models, store
 
@@ -209,7 +210,7 @@ async def resolve(
         },
         timeout=60,
     )
-    response.raise_for_status()
+    obs.raise_internal_response(response)
     asset = response.json()
     raw = base64.b64decode(asset["bytes"], validate=True)
     digest = hashlib.sha256(raw).hexdigest()
@@ -253,6 +254,6 @@ async def resolve(
         },
         timeout=60,
     )
-    saved.raise_for_status()
+    obs.raise_internal_response(saved)
     change.update(caption=caption, imageSHA256=digest)
     return caption

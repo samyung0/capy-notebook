@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"io"
 	"net/http"
 	"strconv"
@@ -196,6 +197,11 @@ func (a *api) aiCommand(w http.ResponseWriter, r *http.Request) {
 	llm.attach(body)
 	rc, err := a.pipe.PostStream(ctx, "/plate-ai/command", body)
 	if err != nil {
+		obs.RecordHTTPError(ctx, err)
+		var busy *providerBusyError
+		if errors.As(pipelineLLMError(err), &busy) {
+			obs.RecordHTTPError(ctx, obs.ExpectedError(err))
+		}
 		if code, msg, ok := llmKeyPayload(err); ok {
 			writeAIError(w, http.StatusBadRequest, code, msg, false)
 			return
@@ -217,6 +223,7 @@ func (a *api) aiCommand(w http.ResponseWriter, r *http.Request) {
 	}
 	_, copyErr := copyAIDataStream(ctx, rc, send)
 	if copyErr != nil && ctx.Err() == nil {
+		obs.CaptureErr(ctx, copyErr, map[string]string{"stage": "editor_stream"})
 		event, _ := json.Marshal(map[string]any{
 			"type":      "error",
 			"errorText": "AI stream failed",
@@ -237,6 +244,7 @@ func (a *api) aiCommand(w http.ResponseWriter, r *http.Request) {
 // upstream cannot inject arbitrary response framing.
 func copyAIDataStream(ctx context.Context, src io.Reader, send func([]byte)) (pipeUsage, error) {
 	var usage pipeUsage
+	var reportedID string
 	scanner := bufio.NewScanner(src)
 	scanner.Buffer(make([]byte, 16<<10), maxAIStreamEvent)
 	sawDone := false
@@ -270,13 +278,26 @@ func copyAIDataStream(ctx context.Context, src io.Reader, send func([]byte)) (pi
 			}
 			continue
 		}
+		var failure struct {
+			Type    string `json:"type"`
+			EventID string `json:"sentryEventId"`
+			Data    struct {
+				Code string `json:"code"`
+			} `json:"data"`
+		}
+		if json.Unmarshal(payload, &failure) == nil && failure.Type == "error" {
+			reportedID = obs.ValidEventID(failure.EventID)
+			if reportedID == "" && (failure.Data.Code == "provider_error" || failure.Data.Code == "upstream_stream_error") {
+				reportedID = obs.CaptureErr(ctx, errors.New("editor provider stream failed"), map[string]string{"stage": "editor_stream"})
+			}
+		}
 		send(bytes.Clone(payload))
 	}
 	if err := scanner.Err(); err != nil {
-		return usage, err
+		return usage, obs.WithEventID(err, reportedID)
 	}
 	if ctx.Err() == nil && !sawDone {
-		return usage, io.ErrUnexpectedEOF
+		return usage, obs.WithEventID(io.ErrUnexpectedEOF, reportedID)
 	}
 	return usage, ctx.Err()
 }
@@ -346,6 +367,7 @@ func (a *api) aiCopilot(w http.ResponseWriter, r *http.Request) {
 	llm.attach(body)
 	raw, err := a.pipe.PostRaw(ctx, "/plate-ai/copilot", body)
 	if err != nil {
+		obs.RecordHTTPError(ctx, err)
 		if ctx.Err() != nil {
 			return
 		}
@@ -355,6 +377,7 @@ func (a *api) aiCopilot(w http.ResponseWriter, r *http.Request) {
 		}
 		var busy *providerBusyError
 		if errors.As(pipelineLLMError(err), &busy) {
+			obs.RecordHTTPError(ctx, obs.ExpectedError(err))
 			w.Header().Set("Retry-After", strconv.Itoa(busy.retryAfter()))
 			writeAIError(w, http.StatusServiceUnavailable, "provider_busy", busy.Error(), true)
 			return

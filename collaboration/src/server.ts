@@ -33,13 +33,19 @@ import {
 import {
   FailedStoreRetryRunner,
   type FailedStoreSnapshot,
+  reportFailedStore,
 } from './failedStoreRetry.js';
 import { readInternalCommandJson } from './internalCommandRequest.js';
 import {
   MATERIAL_DOCUMENT_LIMITS,
   MaterialDocumentLimitError,
 } from './limits.js';
-import { captureError, initErrorReporting, log } from './observability.js';
+import {
+  captureError,
+  initErrorReporting,
+  log,
+  reportHttpError,
+} from './observability.js';
 import { closeOfficeRuntime } from './officeRuntime.js';
 import {
   CollaborationAuthorizationError,
@@ -128,8 +134,10 @@ let storeFailures = 0;
 function jsonResponse(
   response: ServerResponse,
   status: number,
-  value: unknown
+  value: unknown,
+  error?: unknown
 ) {
+  if (status >= 500 && error !== undefined) reportHttpError(response, error);
   response.writeHead(status, { 'content-type': 'application/json' });
   response.end(JSON.stringify(value));
 }
@@ -694,8 +702,14 @@ const server = new Server<CollaborationContext>({
               !handleRejectedStore(documentName, error, document) &&
               !roomEvictions.isDiscarding(documentName)
             ) {
+              const eventId = reportFailedStore(
+                failedStores.get(documentName),
+                error,
+                documentName
+              );
               failedStores.set(documentName, {
                 checkpointIds: claimed,
+                eventId,
                 state: Y.encodeStateAsUpdate(snapshot),
               });
             }
@@ -807,7 +821,11 @@ async function persistSource(document: Document) {
       const claimed = [...(pendingCheckpoints.get(room) ?? [])];
       try {
         assertRoomAvailable(room, true);
-        const saved = await sources.store(room, snapshot);
+        const saved = await sources.store(
+          room,
+          snapshot,
+          failedStores.get(room)?.eventId
+        );
         failedStores.delete(room);
         clearDocumentContributors(document, saved.contributors);
         sourceReceipt(document, claimed, saved.checkpoint);
@@ -830,9 +848,18 @@ async function persistSource(document: Document) {
             recoverable,
           })
         );
-        if (recoverable && !roomEvictions.isDiscarding(room))
-          failedStores.set(room, { checkpointIds: claimed, state: rawState });
-        else {
+        if (recoverable && !roomEvictions.isDiscarding(room)) {
+          const eventId = reportFailedStore(
+            failedStores.get(room),
+            error,
+            room
+          );
+          failedStores.set(room, {
+            checkpointIds: claimed,
+            eventId,
+            state: rawState,
+          });
+        } else {
           failedStores.delete(room);
           rejectAuthorizationRoom(room);
         }
@@ -927,7 +954,8 @@ async function handleHttpRequest(
         {
           message:
             error instanceof Error ? error.message : 'Source operation failed',
-        }
+        },
+        error
       );
     }
     return;
@@ -994,10 +1022,16 @@ async function handleHttpRequest(
 server.httpServer.removeAllListeners('request');
 server.httpServer.on('request', (request, response) => {
   void handleHttpRequest(request, response).catch((error) => {
+    reportHttpError(response, error);
     if (!response.headersSent) {
-      jsonResponse(response, 500, {
-        message: error instanceof Error ? error.message : String(error),
-      });
+      jsonResponse(
+        response,
+        500,
+        {
+          message: error instanceof Error ? error.message : String(error),
+        },
+        error
+      );
     } else if (!response.writableEnded) {
       response.end();
     }
@@ -1152,17 +1186,27 @@ async function handleDocumentRequest(
       return;
     }
     if (error instanceof SourceRequestError) {
-      jsonResponse(response, error.status, {
-        code: error.status === 409 ? 'stale_target' : 'unavailable_target',
-        message: error.message,
-      });
+      jsonResponse(
+        response,
+        error.status,
+        {
+          code: error.status === 409 ? 'stale_target' : 'unavailable_target',
+          message: error.message,
+        },
+        error
+      );
       return;
     }
     console.error('document request failed', error);
-    jsonResponse(response, 503, {
-      code: 'outcome_unknown',
-      message: 'document edit failed',
-    });
+    jsonResponse(
+      response,
+      503,
+      {
+        code: 'outcome_unknown',
+        message: 'document edit failed',
+      },
+      error
+    );
   }
 }
 
@@ -1200,7 +1244,7 @@ const failedStoreRetries = new FailedStoreRetryRunner(
         return;
       Y.applyUpdate(document, failed.state);
       if (SOURCE_ROOM_PATTERN.test(room)) {
-        const stored = await sources.store(room, document);
+        const stored = await sources.store(room, document, failed.eventId);
         clearIfCurrent();
         const live = server.hocuspocus.documents.get(room);
         if (live) {
@@ -1241,15 +1285,20 @@ const failedStoreRetries = new FailedStoreRetryRunner(
         ) {
           clearIfCurrent();
           rejectAuthorizationRoom(room);
+        } else {
+          reportFailedStore(failed, error, room);
         }
         return;
       }
-      handleRejectedStore(
-        room,
-        error,
-        server.hocuspocus.documents.get(room),
-        clearIfCurrent
-      );
+      if (
+        !handleRejectedStore(
+          room,
+          error,
+          server.hocuspocus.documents.get(room),
+          clearIfCurrent
+        )
+      )
+        reportFailedStore(failed, error, room);
     } finally {
       document.destroy();
       finish();

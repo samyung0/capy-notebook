@@ -124,8 +124,10 @@ def _with_usage(event: dict[str, Any]) -> dict[str, Any]:
     return event
 
 
-def _client_error() -> dict[str, Any]:
-    return _with_usage(events.error(CLIENT_ERROR, CLIENT_ERROR_CODE))
+def _client_error(exc: BaseException) -> dict[str, Any]:
+    return _with_usage(
+        obs.reported_event(events.error(CLIENT_ERROR, CLIENT_ERROR_CODE), exc)
+    )
 
 
 def _busy_error(exc: elitellm.ProviderBusy) -> dict[str, Any]:
@@ -235,11 +237,14 @@ async def run_agent(
     except compact.ContextTooLarge as exc:
         yield _with_usage(events.error(str(exc), "context_too_large"))
         return
-    except compact.InvalidSummary:
+    except compact.InvalidSummary as exc:
         log.warning("checkpoint summarizer returned invalid output", exc_info=True)
         yield _with_usage(
-            events.error(
-                "The conversation could not be compacted.", "compaction_failed"
+            obs.reported_event(
+                events.error(
+                    "The conversation could not be compacted.", "compaction_failed"
+                ),
+                exc,
             )
         )
         return
@@ -410,13 +415,16 @@ async def run_agent(
                 yield _with_usage(events.error(str(exc), "context_too_large"))
             budget.stop_reason = STOP_ERROR
             return
-        except compact.InvalidSummary:
+        except compact.InvalidSummary as exc:
             log.warning("live compaction returned invalid output", exc_info=True)
             if not _client_gone(client):
                 yield _with_usage(
-                    events.error(
-                        "The conversation could not be compacted.",
-                        "compaction_failed",
+                    obs.reported_event(
+                        events.error(
+                            "The conversation could not be compacted.",
+                            "compaction_failed",
+                        ),
+                        exc,
                     )
                 )
             budget.stop_reason = STOP_ERROR
@@ -427,10 +435,11 @@ async def run_agent(
                 yield _busy_error(exc)
             budget.stop_reason = STOP_ERROR
             return
-        except Exception:
+        except Exception as exc:
             log.exception("agent step failed")
+            event = _client_error(exc)
             if not _client_gone(client):
-                yield _client_error()
+                yield event
             budget.stop_reason = STOP_ERROR
             return
 
@@ -512,8 +521,8 @@ async def run_agent(
                 yield _with_usage(events.error(str(exc), exc.code))
                 budget.stop_reason = STOP_ERROR
                 return
-            except TurnFailed:
-                yield _client_error()
+            except TurnFailed as exc:
+                yield _client_error(exc)
                 budget.stop_reason = STOP_TURN_FAILED
                 return
             if exhausted and state and state.terminal_call_allowed:

@@ -34,10 +34,13 @@ func New(base, secret string) *Client {
 
 // Error is a non-2xx pipeline response. Body is the raw JSON, if any.
 type Error struct {
-	Path   string
-	Status int
-	Body   []byte
+	Path    string
+	Status  int
+	Body    []byte
+	EventID string
 }
+
+func (e *Error) SentryEventID() string { return e.EventID }
 
 func (e *Error) Error() string {
 	if e == nil {
@@ -112,7 +115,7 @@ func (c *Client) PostStream(ctx context.Context, path string, body any) (io.Read
 	if res.StatusCode >= 300 {
 		body, _ := io.ReadAll(res.Body)
 		res.Body.Close()
-		return nil, &Error{Path: path, Status: res.StatusCode, Body: body}
+		return nil, &Error{Path: path, Status: res.StatusCode, Body: body, EventID: obs.ValidEventID(res.Header.Get(obs.ErrorEventHeader))}
 	}
 	return res.Body, nil
 }
@@ -143,7 +146,7 @@ func (c *Client) PostRaw(ctx context.Context, path string, body any) (json.RawMe
 		return nil, err
 	}
 	if res.StatusCode >= 300 {
-		return nil, &Error{Path: path, Status: res.StatusCode, Body: data}
+		return nil, &Error{Path: path, Status: res.StatusCode, Body: data, EventID: obs.ValidEventID(res.Header.Get(obs.ErrorEventHeader))}
 	}
 	return data, nil
 }

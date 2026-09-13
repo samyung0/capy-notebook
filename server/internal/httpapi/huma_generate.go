@@ -248,7 +248,7 @@ func (a *api) generateViaPipe(
 		if mapped := pipelineGenerateError(err); mapped != nil {
 			return nil, usage, mapped
 		}
-		return nil, usage, fmt.Errorf("%w: %v", errAIUnavailable, err)
+		return nil, usage, &aiServiceError{cause: err}
 	}
 	usage = usageFrom(raw)
 	var head struct {

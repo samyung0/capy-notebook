@@ -136,8 +136,8 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	// the request; access logging second so it records panics as 500s.
 	r.Use(obs.Middleware)
 	r.Use(obs.AccessLog)
-	r.Use(obs.SentryMiddleware)
 	r.Use(middleware.Recoverer)
+	r.Use(obs.SentryMiddleware)
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins: corsOrigins(cfg.AllowedOrigins),
 		AllowedMethods: []string{"GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"},
@@ -263,6 +263,7 @@ var errContextTooLarge = errors.New("source context exceeds the selected model's
 var errSourceChanged = errors.New("sources changed while this request was running; please try again")
 
 func (a *api) fail(w http.ResponseWriter, err error) {
+	obs.ResponseError(w, err)
 	if errors.Is(err, store.ErrNotFound) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"message": "not found"})
 		return
@@ -349,6 +350,7 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 	}
 	var busy *providerBusyError
 	if errors.As(err, &busy) {
+		obs.ResponseError(w, obs.ExpectedError(err))
 		w.Header().Set("Retry-After", strconv.Itoa(busy.retryAfter()))
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 			"code":              "provider_busy",

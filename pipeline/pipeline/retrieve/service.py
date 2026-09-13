@@ -19,6 +19,7 @@ from typing import Any, Literal
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
+from starlette.exceptions import HTTPException
 
 from .. import elitellm, obs, registry, use_compatible_event_loop
 from ..config import cfg
@@ -82,6 +83,30 @@ async def require_pipeline_secret(request: Request, call_next):
     return await call_next(request)
 
 
+@app.exception_handler(HTTPException)
+async def http_error_handler(_request: Request, exc: HTTPException):
+    headers = dict(exc.headers or {})
+    code = exc.detail.get("code") if isinstance(exc.detail, dict) else None
+    if exc.status_code >= 500 and code != "provider_busy":
+        headers.update(obs.error_headers(exc.__cause__ or exc))
+    return JSONResponse(
+        {"detail": exc.detail}, status_code=exc.status_code, headers=headers
+    )
+
+
+@app.exception_handler(Exception)
+async def unexpected_error_handler(request: Request, exc: Exception):
+    # ServerErrorMiddleware re-raises after this response; the same exception's
+    # identity makes the SDK's later automatic capture a no-op.
+    obs.set_trace(obs.parse_traceparent(request.headers.get(obs.TRACEPARENT_HEADER)))
+    obs.bind_error_context()
+    return JSONResponse(
+        {"message": "internal server error"},
+        status_code=500,
+        headers=obs.error_headers(exc),
+    )
+
+
 @app.exception_handler(models.UserKeyError)
 async def user_key_error_handler(_request: Request, exc: models.UserKeyError):
     return JSONResponse({"code": exc.code, "message": exc.message}, status_code=400)
@@ -106,7 +131,9 @@ async def source_changed_handler(_request: Request, exc: pending.SourceChanged):
 @app.exception_handler(workflows.GenerateEmpty)
 async def generate_empty_handler(_request: Request, exc: workflows.GenerateEmpty):
     return JSONResponse(
-        {"code": "generate_empty", "message": str(exc)}, status_code=502
+        {"code": "generate_empty", "message": str(exc)},
+        status_code=502,
+        headers=obs.error_headers(exc),
     )
 
 
@@ -375,10 +402,11 @@ async def _chat_events(req: ChatStreamReq, request: Request):
     except models.UserKeyError as exc:
         if not client.dropped:
             yield _sse(exc.as_event())
-    except Exception:
+    except Exception as exc:
         log.exception("chat stream failed")
+        event = obs.reported_event(client_error(CLIENT_ERROR, CLIENT_ERROR_CODE), exc)
         if not client.dropped:
-            yield _sse(client_error(CLIENT_ERROR, CLIENT_ERROR_CODE))
+            yield _sse(event)
     finally:
         if accounting_token is not None:
             accounting.reset(accounting_token)

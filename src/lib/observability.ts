@@ -10,6 +10,7 @@
  */
 
 import * as Sentry from '@sentry/react';
+import { isApiError } from '@/api/client';
 import {
   cloneSourceFromPath,
   identityKey,
@@ -29,6 +30,8 @@ const RELEASE = import.meta.env.VITE_RELEASE_SHA as string | undefined;
 export function initErrorReporting(): void {
   if (!SENTRY_DSN) return;
   Sentry.init({
+    beforeSend: (event, hint) =>
+      isApiError(hint.originalException) ? null : event,
     dsn: SENTRY_DSN,
     environment: APP_ENV,
     // Network failures during a stream are expected when a user navigates away
@@ -48,6 +51,9 @@ export function initErrorReporting(): void {
     tracesSampleRate: 0.1,
   });
 }
+
+// React 19 routes caught render errors here, including our own boundaries.
+export const reportReactError = Sentry.reactErrorHandler();
 
 let lastIdentityKey: string | undefined;
 let lastPageviewPath: string | undefined;

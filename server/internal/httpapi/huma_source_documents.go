@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"crypto/subtle"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -88,10 +89,11 @@ func (a *api) registerSourceDocuments(api huma.API) {
 	reg(api, http.MethodPatch, "/api/files/{id}/annotations/{annotationId}", "updatePDFAnnotation", tag, "Update an authored PDF annotation", http.StatusOK, a.updatePDFAnnotation)
 	reg(api, http.MethodDelete, "/api/files/{id}/annotations/{annotationId}", "deletePDFAnnotation", tag, "Delete an authored PDF annotation", http.StatusNoContent, a.deletePDFAnnotation)
 }
-func (a *api) checkSourceSecret(secret string) error {
+func (a *api) checkSourceSecret(ctx context.Context, secret string) error {
 	if a.cfg.CollaborationSecret == "" || subtle.ConstantTimeCompare([]byte(secret), []byte(a.cfg.CollaborationSecret)) != 1 {
 		return huma.Error401Unauthorized("invalid collaboration service secret")
 	}
+	obs.ContinueInternalRetry(ctx)
 	return nil
 }
 func (a *api) sourceSessionResponse(ctx context.Context, session store.SourceSession) (*sourceSessionOutput, error) {
@@ -123,7 +125,7 @@ func (a *api) getSourceSession(ctx context.Context, in *sourceSessionInput) (*so
 	return a.sourceSessionResponse(ctx, session)
 }
 func (a *api) bootstrapSourceDocument(ctx context.Context, in *sourceBootstrapInput) (*sourceSessionOutput, error) {
-	if err := a.checkSourceSecret(in.Secret); err != nil {
+	if err := a.checkSourceSecret(ctx, in.Secret); err != nil {
 		return nil, err
 	}
 	session, err := a.s.SourceSession(ctx, in.ActorID, in.ID)
@@ -133,7 +135,7 @@ func (a *api) bootstrapSourceDocument(ctx context.Context, in *sourceBootstrapIn
 	return a.sourceSessionResponse(ctx, session)
 }
 func (a *api) checkSourceAccess(ctx context.Context, in *sourceAccessInput) (*struct{}, error) {
-	if err := a.checkSourceSecret(in.Secret); err != nil {
+	if err := a.checkSourceSecret(ctx, in.Secret); err != nil {
 		return nil, err
 	}
 	if err := a.s.CheckSourceAccess(ctx, in.ActorID, in.ID, in.Epoch, in.Edit); err != nil {
@@ -142,7 +144,7 @@ func (a *api) checkSourceAccess(ctx context.Context, in *sourceAccessInput) (*st
 	return nil, nil
 }
 func (a *api) checkpointSourceDocument(ctx context.Context, in *sourceCheckpointInput) (*sourceSessionOutput, error) {
-	if err := a.checkSourceSecret(in.Secret); err != nil {
+	if err := a.checkSourceSecret(ctx, in.Secret); err != nil {
 		return nil, err
 	}
 	session, err := a.s.SaveSourceCheckpoint(ctx, in.ID, in.Body)
@@ -175,7 +177,7 @@ func (a *api) processSourceChanges(ctx context.Context, in *collaborationTokenIn
 	return &sourceProcessOutput{Body: out}, nil
 }
 func (a *api) requestSourceRefresh(ctx context.Context, in *sourceRefreshInput) (*sourceProcessOutput, error) {
-	if err := a.checkSourceSecret(in.Secret); err != nil {
+	if err := a.checkSourceSecret(ctx, in.Secret); err != nil {
 		return nil, err
 	}
 	out, err := a.s.RequestSourceRefresh(ctx, in.Body.ActorID, in.ID, in.Body.Automatic)
@@ -245,7 +247,7 @@ type sourceFailureInput struct {
 }
 
 func (a *api) claimSourceRefresh(ctx context.Context, in *sourceCandidateInput) (*sourceCandidateOutput, error) {
-	if err := a.checkSourceSecret(in.Secret); err != nil {
+	if err := a.checkSourceSecret(ctx, in.Secret); err != nil {
 		return nil, err
 	}
 	if a.blob == nil {
@@ -267,7 +269,7 @@ func (a *api) claimSourceRefresh(ctx context.Context, in *sourceCandidateInput) 
 	return &sourceCandidateOutput{Body: sourceCandidateResponse{SourceRefreshCandidate: candidate, UploadURL: upload.URL, UploadHeaders: upload.Headers}}, nil
 }
 func (a *api) finalizeSourceRefresh(ctx context.Context, in *sourceFinalizeInput) (*Empty, error) {
-	if err := a.checkSourceSecret(in.Secret); err != nil {
+	if err := a.checkSourceSecret(ctx, in.Secret); err != nil {
 		return nil, err
 	}
 	if a.blob == nil {
@@ -290,7 +292,7 @@ func (a *api) finalizeSourceRefresh(ctx context.Context, in *sourceFinalizeInput
 	return &Empty{}, nil
 }
 func (a *api) publishSourceRefresh(ctx context.Context, in *sourcePublishInput) (*sourceSessionOutput, error) {
-	if err := a.checkSourceSecret(in.Secret); err != nil {
+	if err := a.checkSourceSecret(ctx, in.Secret); err != nil {
 		return nil, err
 	}
 	out, err := a.s.PublishSourceRefresh(ctx, in.ID, in.Body)
@@ -300,7 +302,7 @@ func (a *api) publishSourceRefresh(ctx context.Context, in *sourcePublishInput) 
 	return a.sourceSessionResponse(ctx, out)
 }
 func (a *api) failSourceRefresh(ctx context.Context, in *sourceFailureInput) (*Empty, error) {
-	if err := a.checkSourceSecret(in.Secret); err != nil {
+	if err := a.checkSourceSecret(ctx, in.Secret); err != nil {
 		return nil, err
 	}
 	if err := a.s.FailSourceRefresh(ctx, in.ID, in.Body.JobID, in.Body.LeaseToken, in.Body.Error, in.Body.Stale); err != nil {

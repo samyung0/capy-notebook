@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/samyung0/capy-notebook/server/internal/auth"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -37,7 +38,22 @@ func userID(ctx context.Context) string { return auth.UserID(ctx) }
 
 // hErr maps store errors onto huma HTTP errors.
 // Forbidden is collapsed to 404 so private/shared resources do not leak existence.
+type handlerError struct {
+	error
+	cause error
+}
+
+func (e *handlerError) Unwrap() error  { return e.error }
+func (e *handlerError) GetStatus() int { return e.error.(huma.StatusError).GetStatus() }
+
 func hErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &handlerError{error: mapHTTPError(err), cause: err}
+}
+
+func mapHTTPError(err error) error {
 	if err == nil {
 		return nil
 	}
@@ -284,7 +300,24 @@ func regWithMaxBody[I, O any](
 		Tags:          []string{tag},
 		DefaultStatus: status,
 		MaxBodyBytes:  maxBodyBytes,
-	}, h)
+	}, func(ctx context.Context, input *I) (*O, error) {
+		output, err := h(ctx, input)
+		err = reportHandlerError(ctx, err)
+		return output, err
+	})
+}
+
+func reportHandlerError(ctx context.Context, err error) error {
+	cause := err
+	if mapped, ok := err.(*handlerError); ok {
+		cause, err = mapped.cause, mapped.error
+	}
+	var busy *providerBusyError
+	if errors.As(cause, &busy) {
+		cause = obs.ExpectedError(cause)
+	}
+	obs.RecordHTTPError(ctx, cause)
+	return err
 }
 
 // Empty is the output for endpoints that return 204 No Content.

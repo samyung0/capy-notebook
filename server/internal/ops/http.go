@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -299,6 +300,7 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, target any) error {
 }
 
 func respond(w http.ResponseWriter, value any, err error) {
+	obs.ResponseError(w, err)
 	if err == nil {
 		writeJSON(w, http.StatusOK, value)
 		return

@@ -664,13 +664,14 @@ async def command_events(req: PlateCommandReq, request: Request) -> AsyncIterato
             }
         )
     except AIAdapterError as exc:
-        yield _sse(
-            {
-                "type": "error",
-                "errorText": str(exc),
-                "data": {"code": exc.code, "retryable": exc.retryable},
-            }
-        )
+        event = {
+            "type": "error",
+            "errorText": str(exc),
+            "data": {"code": exc.code, "retryable": exc.retryable},
+        }
+        if exc.status >= 500:
+            obs.reported_event(event, exc)
+        yield _sse(event)
     except elitellm.ProviderBusy as exc:
         yield _sse(
             {
@@ -683,14 +684,17 @@ async def command_events(req: PlateCommandReq, request: Request) -> AsyncIterato
                 },
             }
         )
-    except Exception:
+    except Exception as exc:
         log.exception("Plate command failed")
         yield _sse(
-            {
-                "type": "error",
-                "errorText": "AI request failed",
-                "data": {"code": "provider_error", "retryable": True},
-            }
+            obs.reported_event(
+                {
+                    "type": "error",
+                    "errorText": "AI request failed",
+                    "data": {"code": "provider_error", "retryable": True},
+                },
+                exc,
+            )
         )
     finally:
         if token is not None:
