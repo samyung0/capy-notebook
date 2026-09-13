@@ -1572,9 +1572,12 @@ components:
           type: string
         google:
           type: boolean
+        googleDriveReadonly:
+          type: boolean
         microsoft:
           type: boolean
       required:
+        - googleDriveReadonly
         - google
         - microsoft
       type: object

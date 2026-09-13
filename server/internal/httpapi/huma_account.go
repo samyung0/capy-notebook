@@ -399,8 +399,9 @@ func (a *api) getIntegrations(ctx context.Context, _ *struct{}) (*integrationsOu
 		return nil, hErr(err)
 	}
 	return &integrationsOutput{Body: apimodel.IntegrationsStatus{
-		Google:    provs[integrations.ProviderGoogle],
-		Microsoft: provs[integrations.ProviderMicrosoft],
+		Google:              provs[integrations.ProviderGoogle],
+		GoogleDriveReadonly: provs["googleDriveReadonly"],
+		Microsoft:           provs[integrations.ProviderMicrosoft],
 	}}, nil
 }
 

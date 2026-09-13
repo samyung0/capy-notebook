@@ -9,5 +9,6 @@ export interface IntegrationsStatus {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   google: boolean;
+  googleDriveReadonly: boolean;
   microsoft: boolean;
 }

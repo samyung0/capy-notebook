@@ -167,6 +167,7 @@ function SimpleDialog({
   width,
   className,
   showCloseButton = true,
+  onCloseAutoFocus,
   onPointerDownOutside,
   onInteractOutside,
   onEscapeKeyDown,
@@ -180,6 +181,9 @@ function SimpleDialog({
   width?: number;
   className?: string;
   showCloseButton?: boolean;
+  onCloseAutoFocus?: React.ComponentProps<
+    typeof DialogPrimitive.Content
+  >['onCloseAutoFocus'];
   onPointerDownOutside?: React.ComponentProps<
     typeof DialogPrimitive.Content
   >['onPointerDownOutside'];
@@ -219,6 +223,7 @@ function SimpleDialog({
     <Dialog onOpenChange={(o) => !o && onClose()} open={open}>
       <DialogContent
         className={className}
+        onCloseAutoFocus={onCloseAutoFocus}
         onEscapeKeyDown={onEscapeKeyDown}
         onInteractOutside={onInteractOutside}
         onPointerDownOutside={onPointerDownOutside}

@@ -204,9 +204,9 @@ export async function openOneDrivePicker(opts: {
       origin: window.location.origin,
     },
     sdk: '8.0',
-    selection: { mode: 'multiple' },
+    selection: { enablePersistence: true, mode: 'multiple' },
     typesAndSources: {
-      mode: 'files',
+      mode: 'all',
       pivots: { oneDrive: true, recent: true },
     },
   };

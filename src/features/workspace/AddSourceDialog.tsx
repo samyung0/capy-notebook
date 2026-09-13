@@ -1,5 +1,7 @@
+import { captureException } from '@sentry/react';
 import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { authHeaders, USE_MSW } from '@/api/auth';
 import {
   api,
@@ -51,7 +53,12 @@ import { Tabs } from '@/components/ui/Tabs';
 import { userToast } from '@/components/ui/userToast';
 import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { googlePickerEnv } from '@/lib/googlePicker';
+import {
+  createGooglePicker,
+  type GooglePicker,
+  googlePickerEnv,
+  loadGooglePicker,
+} from '@/lib/googlePicker';
 import {
   acquirePickerToken,
   assertMsalConfigured,
@@ -115,31 +122,14 @@ import {
   withUploadRetry,
 } from './sourceUpload';
 
-interface GooglePickerBuilder {
-  addView: (view: unknown) => GooglePickerBuilder;
-  build: () => { setVisible: (visible: boolean) => void };
-  setAppId: (id: string) => GooglePickerBuilder;
-  setCallback: (
-    callback: (data: { action: string; docs?: { id: string }[] }) => void
-  ) => GooglePickerBuilder;
-  setDeveloperKey: (key: string) => GooglePickerBuilder;
-  setOAuthToken: (token: string) => GooglePickerBuilder;
-}
-
-declare global {
-  interface Window {
-    google?: {
-      picker: {
-        DocsView: new (
-          viewId: string
-        ) => {
-          setIncludeFolders: (include: boolean) => unknown;
-        };
-        PickerBuilder: new () => GooglePickerBuilder;
-        ViewId: { DOCS: string };
-      };
-    };
-  }
+function reportPickerFailure(
+  provider: Provider,
+  stage: 'open' | 'selection' | 'configuration'
+) {
+  // Provider payloads and URLs can contain OAuth tokens and private file names.
+  captureException(new Error('Cloud source picker failed'), {
+    tags: { component: 'source-picker', provider, stage },
+  });
 }
 
 type Provider = 'google' | 'microsoft';
@@ -282,6 +272,12 @@ function nameTooLong(name: string): boolean {
 
 function sourceImportFailureReason(code: string) {
   switch (code) {
+    case 'folder_too_large':
+      return m.source_import_folder_too_large();
+    case 'folder_empty':
+      return m.source_import_folder_empty();
+    case 'google_drive_scope_required':
+      return m.source_import_google_reconnect();
     case 'file_too_large':
       return m.source_import_file_too_large();
     case 'unsupported_file':
@@ -317,30 +313,6 @@ function reportRejectedImports(rejected: { code: string; fileId: string }[]) {
       variant: 'error',
     });
   }
-}
-
-function loadGooglePicker(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (window.google?.picker) {
-      resolve();
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = 'https://apis.google.com/js/api.js';
-    script.onload = () => {
-      try {
-        (
-          window as unknown as {
-            gapi: { load: (name: string, callback: () => void) => void };
-          }
-        ).gapi.load('picker', resolve);
-      } catch (error) {
-        reject(error);
-      }
-    };
-    script.onerror = () => reject(new Error('failed to load google picker'));
-    document.head.appendChild(script);
-  });
 }
 
 const NO_CHAPTER = '__none__';
@@ -529,6 +501,10 @@ function SourceChooser({
   uploadPolicy?: SourceUploadPolicy;
 }) {
   const [mode, setMode] = useState('upload');
+  const [isPicking, setIsPicking] = useState(false);
+  const [googlePickerOpen, setGooglePickerOpen] = useState(false);
+  const pickerBusy = useRef(false);
+  const googlePicker = useRef<GooglePicker | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const { data: integrations } = useIntegrations({ errorBoundary: false });
   const { mutateAsync: inspectSources, isPending: isInspecting } =
@@ -537,10 +513,23 @@ function SourceChooser({
   const microsoftLoginHint = useMicrosoftLoginHint();
 
   useEffect(() => {
-    if (!open) inspectionGuard.invalidate();
+    if (!open) {
+      inspectionGuard.invalidate();
+      googlePicker.current?.dispose();
+      googlePicker.current = null;
+      pickerBusy.current = false;
+      setIsPicking(false);
+      setGooglePickerOpen(false);
+    }
   }, [inspectionGuard, open]);
 
-  useEffect(() => () => inspectionGuard.invalidate(), [inspectionGuard]);
+  useEffect(
+    () => () => {
+      inspectionGuard.invalidate();
+      googlePicker.current?.dispose();
+    },
+    [inspectionGuard]
+  );
 
   function closeChooser() {
     inspectionGuard.invalidate();
@@ -618,10 +607,20 @@ function SourceChooser({
         rejected: inspections.flatMap((result) => result.rejected),
       };
       reportRejectedImports(inspection.rejected);
-      if (inspection.items.length === 0) return;
+      const uniqueItems = [
+        ...new Map(
+          inspection.items.map((item) => [
+            `${item.driveId ?? ''}:${item.fileId}`,
+            item,
+          ])
+        ).values(),
+      ];
+      const selected = capSourceUploads(0, uniqueItems, workspaceRoom);
+      if (selected.rejected > 0) workspaceRoomToast(workspaceRoom, filesLimit);
+      if (selected.accepted.length === 0) return;
       const headers = await authHeaders();
       if (!isCurrent()) return;
-      const rows: PendingSource[] = inspection.items.map((item) => {
+      const rows: PendingSource[] = selected.accepted.map((item) => {
         const kind = getFileKind(item.name, uploadPolicy);
         const analysisInput = remoteSourceAnalysisInput(
           item,
@@ -682,10 +681,13 @@ function SourceChooser({
   }
 
   async function openGooglePicker() {
+    if (pickerBusy.current) return;
     if (USE_MSW) {
       await inspect('google', [{ id: 'mock_drive_file' }]);
       return;
     }
+    pickerBusy.current = true;
+    setIsPicking(true);
     const isCurrent = inspectionGuard.begin();
     try {
       const { apiKey, appId } = googlePickerEnv();
@@ -694,28 +696,46 @@ function SourceChooser({
       );
       await loadGooglePicker();
       if (!isCurrent()) return;
-      const google = window.google?.picker;
-      if (!google) throw new Error('Google Picker did not finish loading.');
-      const view = new google.DocsView(google.ViewId.DOCS);
-      view.setIncludeFolders(true);
-      const picker = new google.PickerBuilder()
-        .addView(view)
-        .setDeveloperKey(apiKey)
-        .setAppId(appId)
-        .setOAuthToken(accessToken)
-        .setCallback((data) => {
-          if (!isCurrent() || data.action !== 'picked' || !data.docs?.length)
-            return;
-          void inspect(
-            'google',
-            data.docs.map((document) => ({ id: document.id })),
-            isCurrent
-          );
-        })
-        .build();
+      const picker = createGooglePicker({
+        accessToken,
+        apiKey,
+        appId,
+        onResult: (data) => {
+          if (!isCurrent()) return;
+          googlePicker.current?.dispose();
+          googlePicker.current = null;
+          setGooglePickerOpen(false);
+          pickerBusy.current = false;
+          setIsPicking(false);
+          if (data.action === 'error') {
+            reportPickerFailure('google', 'selection');
+            handlePickerError(new Error(m.source_try_again()));
+          } else if (data.action === 'picked' && data.docs?.length) {
+            void inspect(
+              'google',
+              data.docs.map(({ id }) => ({ id })),
+              isCurrent
+            );
+          }
+        },
+      });
+      googlePicker.current = picker;
+      // Remove Radix's focus trap and body pointer lock before Google opens.
+      flushSync(() => setGooglePickerOpen(true));
       picker.setVisible(true);
     } catch (error) {
       if (!isCurrent()) return;
+      googlePicker.current?.dispose();
+      googlePicker.current = null;
+      setGooglePickerOpen(false);
+      pickerBusy.current = false;
+      setIsPicking(false);
+      reportPickerFailure(
+        'google',
+        error instanceof Error && error.message === 'GOOGLE_PICKER_CONFIG'
+          ? 'configuration'
+          : 'open'
+      );
       if (error instanceof Error && error.message === 'GOOGLE_PICKER_CONFIG') {
         userToast({
           title: m.source_google_picker_missing_config(),
@@ -728,7 +748,10 @@ function SourceChooser({
   }
 
   async function onGoogleClick() {
-    if (!integrations?.google && !USE_MSW) {
+    if (
+      (!integrations?.google || integrations.googleDriveReadonly === false) &&
+      !USE_MSW
+    ) {
       await connect('google');
       return;
     }
@@ -736,11 +759,14 @@ function SourceChooser({
   }
 
   async function openMicrosoftPicker() {
+    if (pickerBusy.current) return;
     if (USE_MSW) {
       await inspect('microsoft', [{ id: 'mock_drive_file' }]);
       return;
     }
     const isCurrent = inspectionGuard.begin();
+    pickerBusy.current = true;
+    setIsPicking(true);
     let pickerWindow: Window | null = null;
     try {
       assertMsalConfigured();
@@ -768,6 +794,7 @@ function SourceChooser({
       if (pickerWindow && !pickerWindow.closed) pickerWindow.close();
       if (!isCurrent()) return;
       if (isPickerUserCancelled(error)) return;
+      reportPickerFailure('microsoft', 'open');
       if (isPickerConsentBlocked(error)) {
         userToast({
           description: m.onedrive_picker_blocked_body(),
@@ -791,13 +818,23 @@ function SourceChooser({
         return;
       }
       handlePickerError(error);
+    } finally {
+      if (isCurrent()) {
+        pickerBusy.current = false;
+        setIsPicking(false);
+      }
     }
   }
+
+  if (googlePickerOpen) return null;
 
   return (
     <SimpleDialog
       className="min-h-150 max-w-3xl"
       onClose={closeChooser}
+      onCloseAutoFocus={(event) => {
+        if (googlePicker.current) event.preventDefault();
+      }}
       open={open}
       title={m.action_add_file()}
     >
@@ -843,7 +880,7 @@ function SourceChooser({
           <div className="flex flex-col gap-3">
             <div className="grid grid-cols-2 gap-3">
               <Button
-                disabled={isInspecting || workspaceRoom <= 0}
+                disabled={isPicking || isInspecting || workspaceRoom <= 0}
                 iconLeft="files"
                 onClick={() => void onGoogleClick()}
                 variant="outline"
@@ -851,7 +888,7 @@ function SourceChooser({
                 Google Drive
               </Button>
               <Button
-                disabled={isInspecting || workspaceRoom <= 0}
+                disabled={isPicking || isInspecting || workspaceRoom <= 0}
                 iconLeft="files"
                 onClick={() => {
                   if (!integrations?.microsoft && !USE_MSW) {

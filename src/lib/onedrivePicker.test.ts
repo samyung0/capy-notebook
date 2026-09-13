@@ -1,16 +1,86 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { parseGooglePickerConfig } from './googlePicker';
 import {
   isAllowedPickerOrigin,
   isPickerConsentBlocked,
   isPickerUserCancelled,
+  openOneDrivePicker,
   parsePickedItems,
   pickerHostFromDrive,
   pickerLocale,
   pickerTokenScopes,
   toImportRequest,
 } from './onedrivePicker';
+
+afterEach(() => vi.unstubAllGlobals());
+
+it('keeps multi-selection across folders and returns all picked files and folders', async () => {
+  const events = new EventTarget();
+  const popup = {
+    close: vi.fn(),
+    closed: false,
+    location: { assign: vi.fn() },
+  };
+  vi.stubGlobal('window', {
+    addEventListener: events.addEventListener.bind(events),
+    clearInterval: vi.fn(),
+    location: { origin: 'https://uat.capynotebook.com' },
+    removeEventListener: events.removeEventListener.bind(events),
+    setInterval: vi.fn(),
+  });
+  const clearAuth = vi.fn().mockResolvedValue(undefined);
+  const selection = openOneDrivePicker({
+    acquireToken: vi.fn().mockResolvedValue('token'),
+    clearAuth,
+    drive: { driveType: 'personal', webUrl: 'https://onedrive.live.com' },
+    openWindow: () => popup as unknown as Window,
+  });
+  await vi.waitFor(() => expect(popup.location.assign).toHaveBeenCalled());
+  const url = new URL(popup.location.assign.mock.calls[0][0]);
+  const config = JSON.parse(url.searchParams.get('filePicker') ?? '{}');
+  expect(config.typesAndSources.mode).toBe('all');
+  expect(config.selection).toEqual({
+    enablePersistence: true,
+    mode: 'multiple',
+  });
+  const portEvents = new EventTarget();
+  const port = {
+    addEventListener: portEvents.addEventListener.bind(portEvents),
+    close: vi.fn(),
+    postMessage: vi.fn(),
+    start: vi.fn(),
+  };
+  const init = new Event('message');
+  Object.assign(init, {
+    data: { channelId: config.messaging.channelId, type: 'initialize' },
+    origin: 'https://onedrive.live.com',
+    ports: [port],
+    source: popup,
+  });
+  events.dispatchEvent(init);
+  const pick = new Event('message');
+  Object.assign(pick, {
+    data: {
+      data: {
+        command: 'pick',
+        items: [
+          { folder: {}, id: 'folder', parentReference: { driveId: 'drive' } },
+          { file: {}, id: 'file', parentReference: { driveId: 'drive' } },
+        ],
+      },
+      id: 'pick',
+      type: 'command',
+    },
+  });
+  portEvents.dispatchEvent(pick);
+  await expect(selection).resolves.toEqual([
+    { driveId: 'drive', id: 'folder' },
+    { driveId: 'drive', id: 'file' },
+  ]);
+  expect(popup.close).toHaveBeenCalledOnce();
+  expect(clearAuth).toHaveBeenCalledOnce();
+});
 
 describe('pickerHostFromDrive', () => {
   it('uses the consumer picker URL for personal drives', () => {
@@ -160,6 +230,12 @@ describe('google picker env', () => {
     expect(() => parseGooglePickerConfig({ apiKey: 'k' })).toThrow(
       'GOOGLE_PICKER_CONFIG'
     );
+    expect(() =>
+      parseGooglePickerConfig({
+        apiKey: 'k',
+        appId: 'gen-lang-client-0126099102',
+      })
+    ).toThrow('GOOGLE_PICKER_CONFIG');
     expect(parseGooglePickerConfig({ apiKey: ' k ', appId: ' 1 ' })).toEqual({
       apiKey: 'k',
       appId: '1',

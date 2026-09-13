@@ -1346,6 +1346,7 @@ export const UpdateFlashcardSetSharingResponse = zod.object({
 export const GetIntegrationsResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "google": zod.boolean(),
+  "googleDriveReadonly": zod.boolean(),
   "microsoft": zod.boolean()
 })
 

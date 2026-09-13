@@ -8,7 +8,7 @@
  *
  * Note: the extra scopes below must be allowed on the Clerk dashboard's
  * Google/Microsoft SSO connections (requires custom OAuth credentials).
- * Google uses drive.file so Picker setAppId can grant the picked files.
+ * Google uses drive.readonly so selected folders can be traversed recursively.
  */
 import { useUser } from '@clerk/react';
 import { USE_MSW } from '@/api/auth';
@@ -16,7 +16,7 @@ import { USE_MSW } from '@/api/auth';
 export type ConnectProvider = 'google' | 'microsoft';
 
 const SCOPES: Record<ConnectProvider, string[]> = {
-  google: ['https://www.googleapis.com/auth/drive.file'],
+  google: ['https://www.googleapis.com/auth/drive.readonly'],
   microsoft: ['Files.Read', 'offline_access'],
 };
 

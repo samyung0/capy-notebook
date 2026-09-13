@@ -22,6 +22,7 @@ var (
 	ErrImportFileUnavailable = errors.New("provider file is unavailable")
 	ErrImportFileTooLarge    = errors.New("provider file exceeds the source upload limit")
 	ErrUnsupportedImportFile = errors.New("provider file type is not supported")
+	ErrImportFolder          = fmt.Errorf("%w: folder", ErrUnsupportedImportFile)
 	errImportProviderDNS     = errors.New("provider download host lookup failed")
 	errImportProviderNetwork = errors.New("provider download connection failed")
 )
@@ -325,6 +326,7 @@ func classifyImportRequestError(ctx context.Context, err error) error {
 }
 
 type ImportFileMetadata struct {
+	DriveID     string
 	Name        string
 	MIMEType    string
 	Size        *int64
@@ -450,6 +452,9 @@ func GetGoogleFileMetadata(
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 256<<10)).Decode(&body); err != nil {
 		return ImportFileMetadata{}, classifyImportRequestError(ctx, err)
 	}
+	if body.MIMEType == "application/vnd.google-apps.folder" && strings.TrimSpace(body.Name) != "" {
+		return ImportFileMetadata{}, ErrImportFolder
+	}
 	if strings.TrimSpace(body.Name) == "" || !body.Capabilities.CanDownload {
 		return ImportFileMetadata{}, ErrImportFileUnavailable
 	}
@@ -508,7 +513,7 @@ func GetMicrosoftFileMetadata(
 	req, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodGet,
-		base+"?select=id,name,size,file,@microsoft.graph.downloadUrl",
+		base+"?select=id,name,size,file,folder,remoteItem,parentReference,@microsoft.graph.downloadUrl",
 		nil,
 	)
 	if err != nil {
@@ -529,15 +534,26 @@ func GetMicrosoftFileMetadata(
 		)
 	}
 	var body struct {
-		Name        string `json:"name"`
-		Size        *int64 `json:"size"`
-		DownloadURL string `json:"@microsoft.graph.downloadUrl"`
-		File        *struct {
+		Name            string    `json:"name"`
+		Size            *int64    `json:"size"`
+		DownloadURL     string    `json:"@microsoft.graph.downloadUrl"`
+		Folder          *struct{} `json:"folder"`
+		RemoteItem      *struct{} `json:"remoteItem"`
+		ParentReference struct {
+			DriveID string `json:"driveId"`
+		} `json:"parentReference"`
+		File *struct {
 			MIMEType string `json:"mimeType"`
 		} `json:"file"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 256<<10)).Decode(&body); err != nil {
 		return ImportFileMetadata{}, classifyImportRequestError(ctx, err)
+	}
+	if body.RemoteItem != nil {
+		return ImportFileMetadata{}, ErrUnsupportedImportFile
+	}
+	if strings.TrimSpace(body.Name) != "" && body.Folder != nil {
+		return ImportFileMetadata{DriveID: body.ParentReference.DriveID}, ErrImportFolder
 	}
 	if strings.TrimSpace(body.Name) == "" || body.File == nil ||
 		body.Size == nil || *body.Size < 0 || body.DownloadURL == "" {
@@ -548,6 +564,7 @@ func GetMicrosoftFileMetadata(
 	}
 	return ImportFileMetadata{
 		Name:        body.Name,
+		DriveID:     body.ParentReference.DriveID,
 		MIMEType:    body.File.MIMEType,
 		Size:        body.Size,
 		DownloadURL: body.DownloadURL,

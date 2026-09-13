@@ -1308,7 +1308,7 @@ Clerk's shared Google and Microsoft credentials cannot add extra scopes.
 1. Create a Google Cloud OAuth web client. Use it as Clerk's Google custom
    credentials.
 2. On the Clerk Google connection, add extra scope
-   `https://www.googleapis.com/auth/drive.file`.
+   `https://www.googleapis.com/auth/drive.readonly`.
 3. Create a Microsoft Entra web app (or reuse one) for Clerk. Add Graph
    delegated `Files.Read` and `offline_access`.
 4. On the Clerk Microsoft connection, add extra scopes `Files.Read` and
@@ -1316,7 +1316,7 @@ Clerk's shared Google and Microsoft credentials cannot add extra scopes.
 
 The Go gateway downloads with Clerk's token wallet. Same Google Cloud project
 must own the Picker API key, the Picker app id, and the Clerk Google client.
-`setAppId` is what lets `drive.file` open a file the user just picked.
+`setAppId` identifies that project when Picker opens selected files.
 
 ### Google Picker
 
@@ -1330,11 +1330,27 @@ VITE_GOOGLE_PICKER_API_KEY=...
 VITE_GOOGLE_PICKER_APP_ID=...
 ```
 
-Missing either variable shows a toast instead of a blank picker. `drive.file`
-is non-sensitive: it is the per-file scope Google recommends so that Picker
-apps skip the restricted-scope verification and security assessment. The key
-itself only needs the Picker API; Drive calls are made server-side with the
-user's OAuth token, which never uses an API key.
+Missing the API key or a non-numeric app id shows a toast and reports a
+`source-picker` error to frontend Sentry before opening the picker.
+`VITE_GOOGLE_PICKER_APP_ID` is the numeric project number, never the project
+name/id. UAT uses project number `648035563420` for `gen-lang-client-0126099102`.
+These are build-time values: changing `deploy/.env.uat` also requires syncing
+the UAT GitHub environment and rebuilding the SPA.
+
+Google folder import uses `drive.readonly`, which can read and download every
+Drive file the account can access. It is a restricted scope: configure it in
+both the Google OAuth consent screen and Clerk's Google connection, and complete
+Google's restricted-scope verification/security assessment before a public
+production rollout. Existing per-file (`drive.file`) connections must grant
+the new scope through reconnect. Keep the normal `openid`, email and profile scopes.
+
+Check each Clerk instance separately: Capy production, UAT development, and UAT
+production. Development needs custom Google credentials to add the Drive scope.
+The app id, API key and OAuth client must belong to the same Google Cloud project
+in each environment. Updating one Clerk instance does not update the others.
+The `/v1/environment` public config reports enabled providers but not allowed
+scopes; inspect scopes in the Clerk dashboard or with a Platform API token
+authorized for instance configuration.
 
 ### OneDrive File Picker v8 (MSAL)
 

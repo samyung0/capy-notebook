@@ -70,7 +70,7 @@ func (a *api) inspectSourceImports(
 	if len(refs) == 0 {
 		return nil, huma.Error400BadRequest("provider and fileIds required")
 	}
-	token, err := integrations.ClerkAccessToken(ctx, userID(ctx), in.Body.Provider)
+	token, scopes, err := integrations.ClerkAccessTokenScopes(ctx, userID(ctx), in.Body.Provider)
 	if errors.Is(err, integrations.ErrNotConnected) {
 		return nil, huma.Error400BadRequest(in.Body.Provider + " account not connected")
 	}
@@ -86,31 +86,93 @@ func (a *api) inspectSourceImports(
 		meta integrations.ImportFileMetadata
 		err  error
 	}
-	metadata := make([]metadataResult, len(refs))
-	metadataSlots := make(chan struct{}, 4)
-	var metadataWait sync.WaitGroup
-	for index, ref := range refs {
-		metadataWait.Add(1)
-		go func() {
-			defer metadataWait.Done()
-			select {
-			case metadataSlots <- struct{}{}:
-				defer func() { <-metadataSlots }()
-			case <-ctx.Done():
-				metadata[index].err = ctx.Err()
-				return
-			}
-			switch in.Body.Provider {
-			case integrations.ProviderGoogle:
-				metadata[index].meta, metadata[index].err =
-					integrations.GetGoogleFileMetadata(ctx, token, ref.ID)
-			case integrations.ProviderMicrosoft:
-				metadata[index].meta, metadata[index].err =
-					integrations.GetMicrosoftFileMetadata(ctx, token, ref.ID, ref.DriveID)
-			}
-		}()
+	loadMetadata := func(refs []integrations.ImportRef) []metadataResult {
+		metadata := make([]metadataResult, len(refs))
+		metadataSlots := make(chan struct{}, 4)
+		var metadataWait sync.WaitGroup
+		for index, ref := range refs {
+			metadataWait.Add(1)
+			go func() {
+				defer metadataWait.Done()
+				select {
+				case metadataSlots <- struct{}{}:
+					defer func() { <-metadataSlots }()
+				case <-ctx.Done():
+					metadata[index].err = ctx.Err()
+					return
+				}
+				switch in.Body.Provider {
+				case integrations.ProviderGoogle:
+					metadata[index].meta, metadata[index].err =
+						integrations.GetGoogleFileMetadata(ctx, token, ref.ID)
+				case integrations.ProviderMicrosoft:
+					metadata[index].meta, metadata[index].err =
+						integrations.GetMicrosoftFileMetadata(ctx, token, ref.ID, ref.DriveID)
+				}
+			}()
+		}
+		metadataWait.Wait()
+
+		return metadata
 	}
-	metadataWait.Wait()
+	metadata := loadMetadata(refs)
+	var folders []integrations.ImportRef
+	var files []integrations.ImportRef
+	var fileMetadata []metadataResult
+	for index, ref := range refs {
+		if in.Body.Provider == integrations.ProviderMicrosoft && metadata[index].meta.DriveID != "" {
+			ref.DriveID = metadata[index].meta.DriveID
+			refs[index] = ref
+		}
+		if errors.Is(metadata[index].err, integrations.ErrImportFolder) {
+			folders = append(folders, ref)
+		} else {
+			files = append(files, ref)
+			fileMetadata = append(fileMetadata, metadata[index])
+		}
+	}
+	if len(folders) > 0 {
+		var expanded []integrations.ImportRef
+		var expandErr error
+		if in.Body.Provider == integrations.ProviderGoogle && !integrations.HasGoogleDriveReadScope(scopes) {
+			expandErr = integrations.ErrGoogleDriveScopeRequired
+		} else {
+			workspace, err := a.s.GetWorkspace(ctx, userID(ctx), in.ID, false)
+			if err != nil {
+				return nil, hErr(err)
+			}
+			if in.Body.Provider == integrations.ProviderGoogle {
+				ids := make([]string, len(folders))
+				for i, ref := range folders {
+					ids[i] = ref.ID
+				}
+				expanded, expandErr = integrations.ExpandGoogleFolders(ctx, token, ids, workspace.FilesLimit)
+			} else {
+				expanded, expandErr = integrations.ExpandMicrosoftFolders(ctx, token, folders, workspace.FilesLimit)
+			}
+		}
+		if expandErr != nil {
+			for _, ref := range folders {
+				files = append(files, ref)
+				fileMetadata = append(fileMetadata, metadataResult{err: expandErr})
+			}
+		} else {
+			seen := map[integrations.ImportRef]bool{}
+			for _, ref := range files {
+				seen[ref] = true
+			}
+			unique := make([]integrations.ImportRef, 0, len(expanded))
+			for _, ref := range expanded {
+				if !seen[ref] {
+					unique = append(unique, ref)
+					seen[ref] = true
+				}
+			}
+			files = append(files, unique...)
+			fileMetadata = append(fileMetadata, loadMetadata(unique)...)
+		}
+		refs, metadata = files, fileMetadata
+	}
 
 	response := inspectSourceImportsResponse{
 		Items:    make([]inspectedSourceImport, 0, len(refs)),
@@ -124,13 +186,23 @@ func (a *api) inspectSourceImports(
 			}
 			if integrations.IsRetryableImportProviderError(err) ||
 				(!errors.Is(err, integrations.ErrImportFileUnavailable) &&
-					!errors.Is(err, integrations.ErrUnsupportedImportFile)) {
+					!errors.Is(err, integrations.ErrUnsupportedImportFile) &&
+					!errors.Is(err, integrations.ErrImportFolderTooLarge) &&
+					!errors.Is(err, integrations.ErrImportFolderEmpty) &&
+					!errors.Is(err, integrations.ErrGoogleDriveScopeRequired)) {
 				return nil, huma.Error503ServiceUnavailable(
 					"provider metadata is temporarily unavailable",
 				)
 			}
 			code := "provider_file_unavailable"
-			if errors.Is(err, integrations.ErrUnsupportedImportFile) {
+			switch {
+			case errors.Is(err, integrations.ErrImportFolderTooLarge):
+				code = "folder_too_large"
+			case errors.Is(err, integrations.ErrImportFolderEmpty):
+				code = "folder_empty"
+			case errors.Is(err, integrations.ErrGoogleDriveScopeRequired):
+				code = "google_drive_scope_required"
+			case errors.Is(err, integrations.ErrUnsupportedImportFile):
 				code = "unsupported_file"
 			}
 			response.Rejected = append(response.Rejected, inspectSourceImportRejected{

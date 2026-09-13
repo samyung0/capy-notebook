@@ -37,8 +37,9 @@ type BillingInfo struct {
 
 // IntegrationsStatus reflects Clerk external-account links (not local rows).
 type IntegrationsStatus struct {
-	Google    bool `json:"google"`
-	Microsoft bool `json:"microsoft"`
+	GoogleDriveReadonly bool `json:"googleDriveReadonly"`
+	Google              bool `json:"google"`
+	Microsoft           bool `json:"microsoft"`
 }
 
 /* --------------------------------------------------------------- users */
