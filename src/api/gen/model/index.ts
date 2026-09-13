@@ -12,6 +12,7 @@ export * from './accountStatus.ts';
 export * from './activityBlock.ts';
 export * from './activityBlockKind.ts';
 export * from './activityBlockOutcome.ts';
+export * from './activityCapture.ts';
 export * from './addChapterReq.ts';
 export * from './agentOperation.ts';
 export * from './assignableRole.ts';

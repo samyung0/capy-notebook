@@ -553,7 +553,6 @@ async def settle(
                 thinking,
                 spec,
                 usage,
-                state.resource_rates or {},
                 deadline=state.receipt_deadlines.get(call_id),
             )
         )
@@ -748,8 +747,9 @@ def _settle_ingest_call_sync(
     thinking: str,
     spec: ModelConfig,
     usage: NormalizedUsage,
-    resource_rates: dict[str, dict[str, Any]],
 ) -> None:
+    """LLM calls made by ingest (summaries, standalone image captions) bill
+    their tokens; the only per-unit ingest rates are pages and audio seconds."""
     from .. import registry
     from ..store import db
 
@@ -760,11 +760,6 @@ def _settle_ingest_call_sync(
         usage.output_tokens,
         usage.cached_read_tokens,
     )
-    if purpose == "image_caption":
-        rate = resource_rates.get("figure_caption_call")
-        if not isinstance(rate, dict) or "creditMicrosPerUnit" not in rate:
-            raise AccountingError("ingest caption settlement has no rate snapshot")
-        credit_micros += int(rate["creditMicrosPerUnit"])
     with db.connect() as conn:
         with conn.cursor() as cur:
             result = db.settle_ingest_provider_call(

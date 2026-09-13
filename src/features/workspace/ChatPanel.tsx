@@ -262,10 +262,18 @@ function ActivityList({
               )}
             >
               {block.outcome ? <Icon name="search" size={12} /> : <Spinner />}
-              <span>{block.name}</span>
-              {block.detail ? (
-                <span className="opacity-70">{block.detail}</span>
-              ) : null}
+              {block.capture ? (
+                <span>
+                  {m.chat_tool_capture_page({ page: block.capture.page })}
+                </span>
+              ) : (
+                <>
+                  <span>{block.name}</span>
+                  {block.detail ? (
+                    <span className="opacity-70">{block.detail}</span>
+                  ) : null}
+                </>
+              )}
             </div>
             {block.outcome && block.outcome !== 'succeeded' ? (
               <p

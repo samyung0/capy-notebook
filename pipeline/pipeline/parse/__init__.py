@@ -1,1 +1,1 @@
-"""Document parsing through the dedicated MinerU parser service."""
+"""Document parsing through the dedicated OpenDataLoader parser service."""

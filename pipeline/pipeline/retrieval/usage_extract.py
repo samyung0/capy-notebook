@@ -1,14 +1,15 @@
 """Normalize provider usage into inclusive cache-read counters.
 
 Discount only proven inclusive shapes: DeepSeek prompt_cache_hit_tokens,
-and OpenAI and DeepInfra cached_tokens nested under input/prompt token
+and OpenAI and Tencent TokenHub cached_tokens nested under input/prompt token
 details. Missing or invalid detail is recorded and charged as ordinary
 input. It does not fail the request.
 
-Routed GLM is proven under its `zai` catalog slug because the hop is a
-billing route, not a fan-out: DeepInfra serves the model on its own hardware
-and charges us directly, so the split it reports is the one the row's cached
-rate is priced against.
+GLM is proven under its `zai` catalog slug because the hop is a billing
+route, not a fan-out: Tencent TokenHub serves the model on its own hardware
+and charges us directly, so the split it reports (observed inclusive in the
+September 2026 playground runs) is the one the row's cached rate is priced
+against.
 """
 
 from __future__ import annotations

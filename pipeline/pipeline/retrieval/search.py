@@ -43,10 +43,15 @@ class Passage:
     lex_rank: int | None = None
     # In the returned set only because the exact tier raised its lexical weight.
     tier_only: bool = False
+    # Extraction confidence stored at ingest (retrieval/confidence.py); None
+    # for sources without a page model.
+    confidence: float | None = None
+    confidence_reasons: list[str] = field(default_factory=list)
 
     @classmethod
     def from_row(cls, row: dict[str, Any]) -> Passage:
         dist = row.get("vec_dist")
+        confidence = row.get("confidence")
         return cls(
             chunk_id=row["id"],
             file_id=row["file_id"],
@@ -63,6 +68,8 @@ class Passage:
             vec_rank=row.get("vec_rank"),
             vec_dist=None if dist is None else float(dist),
             lex_rank=row.get("lex_rank"),
+            confidence=None if confidence is None else float(confidence),
+            confidence_reasons=list(row.get("confidence_reasons") or []),
         )
 
     def location(self) -> str:
@@ -76,7 +83,13 @@ class Passage:
                 else f"pp.{self.page_start}–{self.page_end}"
             )
             parts.append(span)
-        return " › ".join(parts)
+        header = " › ".join(parts)
+        # Below the threshold the model is told why the text may be off, which
+        # is what the prompt's capture_page rule keys on.
+        if self.confidence is not None and self.confidence < cfg.confidence_note_below:
+            reasons = "; ".join(self.confidence_reasons) or "no issue found"
+            header += f" [extraction confidence {self.confidence:.2f}: {reasons}]"
+        return header
 
     def as_context(self, index: int) -> str:
         return f"[{index}] {self.location()}\n{self.text}"

@@ -127,7 +127,7 @@ func assertInteractiveCreditsForbidden(t *testing.T, fx billingFixture) {
 	ws := fx.workspaceID
 
 	chat := doReq(t, fx.handler, http.MethodPost, "/api/workspaces/"+ws+"/chat/stream", fx.actorID,
-		map[string]any{"text": "hello", "model": "deepseek-pro"})
+		map[string]any{"text": "hello", "model": "test-expensive-model"})
 	if chat.Code != http.StatusForbidden || errorCode(t, chat) != "llm_credits_exhausted" {
 		t.Fatalf("chat: %d %s", chat.Code, chat.Body.String())
 	}
@@ -184,7 +184,7 @@ func TestChatStreamIgnoresClientModelAndStampsTheAssistantMessage(t *testing.T) 
 
 	stream := doReq(t, fx.handler, http.MethodPost,
 		"/api/workspaces/"+fx.workspaceID+"/chat/stream", fx.actorID,
-		map[string]any{"text": "hello", "model": "deepseek-pro"})
+		map[string]any{"text": "hello", "model": "test-expensive-model"})
 	if stream.Code != http.StatusOK {
 		t.Fatalf("stream: %d %s", stream.Code, stream.Body.String())
 	}
@@ -204,7 +204,7 @@ func TestChatStreamIgnoresClientModelAndStampsTheAssistantMessage(t *testing.T) 
 	if providerSlug == "" || modelSlug == "" || version <= 0 {
 		t.Fatalf("assistant unpinned: %s/%s v%d", providerSlug, modelSlug, version)
 	}
-	if modelSlug == "deepseek-pro" {
+	if modelSlug == "test-expensive-model" {
 		t.Fatal("client-supplied model overrode the pin")
 	}
 }
@@ -249,8 +249,7 @@ func TestUploadRefusesActorCreditsAndOwnerStorageSeparately(t *testing.T) {
 	fx := openBilling(t)
 	body := map[string]any{
 		"name": "notes.pdf", "kind": "pdf", "parseMode": "fast",
-		"captionImages": false,
-		"sizeBytes":     1024, "contentType": "application/pdf",
+		"sizeBytes": 1024, "contentType": "application/pdf",
 	}
 
 	exhaustCredits(t, fx.store, fx.pool, fx.actorID)

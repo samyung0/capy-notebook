@@ -77,19 +77,6 @@ export function defaultParseMode(
   return 'none';
 }
 
-/** Whether the image-captioning switch has anything to act on for this mode. */
-export function supportsFigures(
-  mode: ParseMode,
-  kind: FileKind,
-  policy: SourceUploadPolicy
-): boolean {
-  if (mode === 'none' || isTextKind(kind, policy)) return false;
-  return (
-    policy.parseModes.find((entry) => entry.mode === mode)?.supportsFigures ??
-    false
-  );
-}
-
 export interface UploadProgressItem {
   size: number;
   uploadPct?: number;

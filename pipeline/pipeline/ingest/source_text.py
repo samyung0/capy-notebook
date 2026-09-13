@@ -1,7 +1,7 @@
 """Worker-side derived text for non-document source files.
 
 Images, audio, and delimited tables need searchable text but do not belong in
-the MinerU document parser. The worker already owns the source download,
+the document parser. The worker already owns the source download,
 so it derives that text locally and caches provider-backed results by the
 server-computed source SHA.
 """

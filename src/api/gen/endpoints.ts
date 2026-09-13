@@ -6797,9 +6797,6 @@ export const getUploadSourceUrl = (id: string,) => {
 export const uploadSource = async (id: string,
     uploadSourceBody?: UploadSourceBody, options?: RequestInit): Promise<uploadSourceResponse> => {
     const formData = new FormData();
-if(uploadSourceBody?.captionImages !== undefined) {
- formData.append(`captionImages`, uploadSourceBody.captionImages.toString())
- }
 if(uploadSourceBody?.chapterId !== undefined) {
  formData.append(`chapterId`, uploadSourceBody.chapterId instanceof Blob ? uploadSourceBody.chapterId : new Blob([uploadSourceBody.chapterId], { type: 'text/plain' }));
  }

@@ -18,13 +18,12 @@ import (
 // every JSON request. huma requires form parts by default, so every optional
 // part must carry required:"false" or real uploads 422.
 type uploadSourceForm struct {
-	File          huma.FormFile        `form:"file" contentType:"application/octet-stream" required:"true"`
-	Name          apimodel.FileName    `form:"name" required:"false"`
-	Kind          string               `form:"kind" required:"false"`
-	ChapterID     string               `form:"chapterId" required:"false"`
-	ChapterName   apimodel.ChapterName `form:"chapterName" required:"false"`
-	ParseMode     string               `form:"parseMode" required:"false"`
-	CaptionImages bool                 `form:"captionImages" required:"false"`
+	File        huma.FormFile        `form:"file" contentType:"application/octet-stream" required:"true"`
+	Name        apimodel.FileName    `form:"name" required:"false"`
+	Kind        string               `form:"kind" required:"false"`
+	ChapterID   string               `form:"chapterId" required:"false"`
+	ChapterName apimodel.ChapterName `form:"chapterName" required:"false"`
+	ParseMode   string               `form:"parseMode" required:"false"`
 	// EstimatedCreditMicros mirrors CreateSourceUploadReq for the proxied path.
 	EstimatedCreditMicros int64 `form:"estimatedCreditMicros" required:"false"`
 }
@@ -133,7 +132,6 @@ func (a *api) uploadSource(ctx context.Context, in *uploadSourceInput) (*sourceF
 	if err := sourceupload.Validate(name, kind, parseMode, form.File.Size, maxBytes); err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
-	captionImages := sourceupload.NormalizeCaptionImages(kind, parseMode, form.CaptionImages)
 	needsJob := sourceupload.NeedsIngestJob(name, kind, parseMode)
 	if needsJob {
 		if err := a.s.AssertCreditsForEstimate(ctx, userID(ctx), form.EstimatedCreditMicros); err != nil {
@@ -147,7 +145,7 @@ func (a *api) uploadSource(ctx context.Context, in *uploadSourceInput) (*sourceF
 	}
 	var res apimodel.File
 	if needsJob {
-		res, _, err = a.s.CreateSourceWithJob(ctx, wsID, userID(ctx), name, kind, chapterID, chapterName, size, blobPath, a.parser, parseMode, captionImages)
+		res, _, err = a.s.CreateSourceWithJob(ctx, wsID, userID(ctx), name, kind, chapterID, chapterName, size, blobPath, a.parser, parseMode)
 	} else {
 		res, err = a.s.CreateSourceReady(ctx, wsID, userID(ctx), name, kind, chapterID, chapterName, size, blobPath)
 	}

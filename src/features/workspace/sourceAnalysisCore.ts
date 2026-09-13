@@ -5,14 +5,14 @@ import type {
   SourceAnalysisOoxmlExtension,
   SourceAnalysisResult,
   SourcePageAnalysis,
-  SourcePageReason,
 } from './sourceAnalysis';
 
-const GOOD_TEXT_CHARS = 800;
-const SCAN_IMAGE_COVERAGE = 0.7;
+// The parser routes a page to OCR when its text layer has fewer than this many
+// characters (blank pages included); the browser estimate mirrors that rule.
+export const TEXTLESS_CHARS = 40;
 // OOXML exposes image presence cheaply, but calculating rendered area would
-// require a layout engine. Keep unknown images below the full-page scan cutoff;
-// text-light pages are still classified for OCR by the thin-text rule.
+// require a layout engine. Image coverage is recorded for the analysis result
+// only; it no longer decides OCR routing.
 const UNKNOWN_IMAGE_COVERAGE = 0.5;
 // The upload limit bounds the compressed input, not what a ZIP can expand to.
 // Keep the browser probe bounded before fflate allocates any entry buffers.
@@ -33,8 +33,6 @@ export const MAX_PDF_OPERATION_MILLISECONDS = 5000;
 const PDF_OPERATOR_ESTIMATED_BYTES = 64;
 const PDF_TEXT_CHAR_ESTIMATED_BYTES = 2;
 const PDF_IMAGE_PIXEL_ESTIMATED_BYTES = 4;
-const THIN_TEXT_CHARS = 400;
-const ALNUM_PATTERN = /[\p{Letter}\p{Number}]/u;
 const DECIMAL_ENTITY_PATTERN = /^&#(\d+);$/u;
 const DRAWING_PATTERN = /<(?:legacyDrawing|drawing)\b/iu;
 const ENTITY_PATTERN = /&(?:amp|apos|gt|lt|quot|#\d+|#x[\da-f]+);/giu;
@@ -52,44 +50,6 @@ const SHEET_PATH_PATTERN = /^xl\/worksheets\/sheet\d+\.xml$/u;
 const SLIDE_PATH_PATTERN = /^ppt\/slides\/slide\d+\.xml$/u;
 const TAG_PATTERN = /<[^>]+>/gu;
 const VALUE_PATTERN = /<v(?:\s[^>]*)?>([\s\S]*?)<\/v>/iu;
-const WORD_PATTERN = /\S+/gu;
-
-function isControlCharacter(character: string): boolean {
-  const codePoint = character.codePointAt(0) ?? -1;
-  return (
-    (codePoint >= 0 && codePoint <= 8) ||
-    codePoint === 11 ||
-    codePoint === 12 ||
-    (codePoint >= 14 && codePoint <= 31) ||
-    (codePoint >= 127 && codePoint <= 159)
-  );
-}
-
-export function damagedTextReason(text: string): SourcePageReason | null {
-  if (!text) return null;
-  const visible = Array.from(text).filter((character) => character.trim());
-  if (visible.length === 0) return null;
-  if (text.includes('\ufffd')) return 'replacement_chars';
-
-  const controls = Array.from(text).filter(isControlCharacter).length;
-  if (controls / Math.max(text.length, 1) >= 0.01) return 'control_chars';
-
-  if (visible.length >= 100) {
-    const alnum = visible.filter((character) =>
-      ALNUM_PATTERN.test(character)
-    ).length;
-    if (alnum / visible.length < 0.3) return 'low_alnum';
-  }
-
-  const words = text.match(WORD_PATTERN) ?? [];
-  if (words.length >= 24) {
-    const single = words.filter(
-      (word) => word.replace(/[.,;:!?()[\]{}]/gu, '').length === 1
-    ).length;
-    if (single / words.length >= 0.4) return 'broken_spacing';
-  }
-  return null;
-}
 
 export function classifySourcePage(
   text: string,
@@ -97,50 +57,13 @@ export function classifySourcePage(
   pageNumber: number
 ): SourcePageAnalysis {
   const chars = text.trim().length;
-  const coverage = Math.min(1, Math.max(0, imageCoverage));
-  const qualityReason = damagedTextReason(text);
-  if (qualityReason) {
-    return {
-      chars,
-      imageCoverage: coverage,
-      needsOcr: true,
-      pageNumber,
-      reason: qualityReason,
-    };
-  }
-  if (chars >= GOOD_TEXT_CHARS) {
-    return {
-      chars,
-      imageCoverage: coverage,
-      needsOcr: false,
-      pageNumber,
-      reason: 'text_layer',
-    };
-  }
-  if (coverage >= SCAN_IMAGE_COVERAGE) {
-    return {
-      chars,
-      imageCoverage: coverage,
-      needsOcr: true,
-      pageNumber,
-      reason: 'scan',
-    };
-  }
-  if (chars < THIN_TEXT_CHARS) {
-    return {
-      chars,
-      imageCoverage: coverage,
-      needsOcr: true,
-      pageNumber,
-      reason: 'thin_text',
-    };
-  }
+  const textless = chars < TEXTLESS_CHARS;
   return {
     chars,
-    imageCoverage: coverage,
-    needsOcr: false,
+    imageCoverage: Math.min(1, Math.max(0, imageCoverage)),
+    needsOcr: textless,
     pageNumber,
-    reason: 'enough_text',
+    reason: textless ? 'textless' : 'text_layer',
   };
 }
 
@@ -431,9 +354,7 @@ function analyzeDocx(archive: Archive): SourceAnalysisResult {
   ).length;
   const textPerPage = pageCount > 0 ? text.length / pageCount : 0;
   const estimatedCoverage =
-    mediaCount > 0 && textPerPage < GOOD_TEXT_CHARS
-      ? UNKNOWN_IMAGE_COVERAGE
-      : 0;
+    mediaCount > 0 && textPerPage < TEXTLESS_CHARS ? UNKNOWN_IMAGE_COVERAGE : 0;
   const pages: SourcePageAnalysis[] = [];
   for (let index = 0; index < pageCount; index += 1) {
     pages.push(

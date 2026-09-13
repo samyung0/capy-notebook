@@ -117,7 +117,7 @@ func TestRegistrySaveInsertsVersionAndDisablesOldWithoutChangingPreferences(t *t
 	}
 	request := gridRequest(snapshot)
 	request.ActorID = "ops-user"
-	current := configByRef(t, snapshot, models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-flash-vision-exp"})
+	current := configByRef(t, snapshot, models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-flash"})
 	draft := draftFromConfig("edited-flash", current)
 	draft.ModelName = "Flash edited"
 	request.Drafts = []gridDraft{draft}
@@ -235,7 +235,7 @@ func TestRegistrySavePreservesAuditFieldsOnUnchangedRows(t *testing.T) {
 	}
 	unchanged := configByRef(t, snapshot, models.Ref{
 		ProviderSlug: "deepseek",
-		ModelSlug:    "deepseek-v4-flash-vision-exp",
+		ModelSlug:    "deepseek-flash",
 	})
 	var beforeUpdatedAt time.Time
 	var beforeUpdatedBy string
@@ -278,10 +278,10 @@ func TestRegistrySaveRemapsRemovedPrefToDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := gridRequest(snapshot)
-	proRef := models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-pro"}
+	flashRef := models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-flash"}
 	filtered := request.Cells[:0]
 	for _, cell := range request.Cells {
-		if cell.Row == proRef && cell.Slot == "chat" {
+		if cell.Row == flashRef && cell.Slot == "chat" {
 			continue
 		}
 		filtered = append(filtered, cell)
@@ -291,7 +291,7 @@ func TestRegistrySaveRemapsRemovedPrefToDefault(t *testing.T) {
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO users (id, name, email, chat_model_provider_slug, chat_model_slug)
 		VALUES ($1, 'Ops Registry Test', $2, $3, $4)`,
-		userID, userID+"@example.test", proRef.ProviderSlug, proRef.ModelSlug,
+		userID, userID+"@example.test", flashRef.ProviderSlug, flashRef.ModelSlug,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -308,7 +308,8 @@ func TestRegistrySaveRemapsRemovedPrefToDefault(t *testing.T) {
 	).Scan(&preference.ProviderSlug, &preference.ModelSlug); err != nil {
 		t.Fatal(err)
 	}
-	if preference != (models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-flash-vision-exp"}) {
+	// The chat slot default is GLM (0009_default_chat_model.sql).
+	if preference != (models.Ref{ProviderSlug: "zai", ModelSlug: "glm-5.3-flash"}) {
 		t.Fatalf("preference was not remapped: %q", preference)
 	}
 	var emails int
@@ -428,10 +429,11 @@ func TestRegistrySaveRemapsEveryUserPreferenceAndDisablesRetiredRows(t *testing.
 	); err != nil {
 		t.Fatal(err)
 	}
-	for index, preference := range preferences {
-		if preference != (models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-flash-vision-exp"}) {
-			t.Fatalf("preference %d = %q, want flash", index, preference)
-		}
+	// Each slot lands on its own default: chat on GLM, the others on Flash.
+	flash := models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-flash"}
+	want := [4]models.Ref{{ProviderSlug: "zai", ModelSlug: "glm-5.3-flash"}, flash, flash, flash}
+	if preferences != want {
+		t.Fatalf("preferences = %q, want %q", preferences, want)
 	}
 	var enabled bool
 	if err := tx.QueryRow(ctx,
@@ -734,8 +736,8 @@ func TestBindEliteLLMDraftRejectsMarketplaceHop(t *testing.T) {
 
 func TestBindEliteLLMDraftRejectsNonCanonicalSlugs(t *testing.T) {
 	for _, draft := range []gridDraft{
-		{ProviderSlug: " deepseek", ModelSlug: "deepseek-v4-pro"},
-		{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-pro "},
+		{ProviderSlug: " deepseek", ModelSlug: "deepseek-flash"},
+		{ProviderSlug: "deepseek", ModelSlug: "deepseek-flash "},
 	} {
 		if err := bindEliteLLMDraft(&draft, nil); !IsValidation(err) {
 			t.Fatalf("bind %q = %v, want validation", draft.Ref(), err)
@@ -769,7 +771,7 @@ func TestBindEliteLLMDraftAllowsFirstPartyAndSeededEmbed(t *testing.T) {
 }
 
 func TestBindEliteLLMDraftAllowsOnlyPlatformRoutedGLM(t *testing.T) {
-	t.Setenv("DEEPINFRA_API_KEY", "sk-test")
+	t.Setenv("TENCENT_API_KEY", "sk-test")
 	glm := gridDraft{
 		ProviderSlug:    "zai",
 		ModelSlug:       "glm-5.3-flash",
@@ -843,7 +845,7 @@ func TestBindEliteLLMDraftRequiresSlotCapabilities(t *testing.T) {
 	t.Setenv("DEEPSEEK_API_KEY", "sk-test")
 	text := gridDraft{
 		ProviderSlug:    "deepseek",
-		ModelSlug:       "deepseek-v4-pro",
+		ModelSlug:       "deepseek-flash",
 		PlatformEnabled: true,
 		ThinkingLevels:  []string{"instant"},
 		DefaultThinking: "instant",
@@ -909,7 +911,7 @@ func TestCapacitySaveIsLiveAndIndependentOfCatalogVersion(t *testing.T) {
 		}
 	}
 	var total int
-	if err := tx.QueryRow(ctx, "SELECT concurrency_total FROM model_capacities WHERE provider='deepinfra' AND model='zai-org/GLM-5.3-Flash'").Scan(&total); err != nil || total != 200 {
+	if err := tx.QueryRow(ctx, "SELECT concurrency_total FROM model_capacities WHERE provider='tencent' AND model='glm-5.3-flash'").Scan(&total); err != nil || total != 200 {
 		t.Fatalf("routed capacity: %d, %v", total, err)
 	}
 	request = registryRequestFromSnapshot(after)
@@ -925,7 +927,7 @@ func TestCapacitySaveIsLiveAndIndependentOfCatalogVersion(t *testing.T) {
 	if err != nil || result.InsertedRows != 0 {
 		t.Fatalf("live update: %+v, %v", result, err)
 	}
-	if err := tx.QueryRow(ctx, "SELECT concurrency_total FROM model_capacities WHERE provider='deepinfra' AND model='zai-org/GLM-5.3-Flash'").Scan(&total); err != nil || total != 4 {
+	if err := tx.QueryRow(ctx, "SELECT concurrency_total FROM model_capacities WHERE provider='tencent' AND model='glm-5.3-flash'").Scan(&total); err != nil || total != 4 {
 		t.Fatalf("updated capacity: %d, %v", total, err)
 	}
 	for _, invalid := range []struct{ total, reserve *int }{

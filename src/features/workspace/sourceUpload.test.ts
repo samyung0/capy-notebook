@@ -18,7 +18,6 @@ import {
   retryAfterMs,
   shouldArmBeforeUnload,
   splitSourceWave,
-  supportsFigures,
   withUploadRetry,
 } from './sourceUpload';
 
@@ -61,12 +60,6 @@ describe('source upload policy', () => {
     expect(defaultParseMode(file('script.py'), 'txt', sourceUploadPolicy)).toBe(
       'none'
     );
-  });
-
-  it('offers image captioning only for modes that extract figures', () => {
-    expect(supportsFigures('fast', 'pdf', sourceUploadPolicy)).toBe(true);
-    expect(supportsFigures('none', 'pdf', sourceUploadPolicy)).toBe(false);
-    expect(supportsFigures('fast', 'txt', sourceUploadPolicy)).toBe(false);
   });
 });
 

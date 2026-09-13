@@ -31,7 +31,6 @@ const (
 	ResourceAudioSecond      = "audio_transcription_second"
 	ResourceDigitalParsePage = "digital_parse_page"
 	ResourceOCRParsePage     = "ocr_parse_page"
-	ResourceFigureCaption    = "figure_caption_call"
 	ResourceEmailMessage     = "email_message"
 )
 
@@ -39,7 +38,6 @@ var ingestResourceKeys = []string{
 	ResourceAudioSecond,
 	ResourceDigitalParsePage,
 	ResourceOCRParsePage,
-	ResourceFigureCaption,
 }
 
 type ResourceRate struct {

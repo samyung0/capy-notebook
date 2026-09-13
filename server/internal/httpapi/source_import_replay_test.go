@@ -61,12 +61,11 @@ func TestCompletedSourceImportReplaysBeforeMutableAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	fingerprintBody, err := json.Marshal(struct {
-		CaptionImages bool
-		ChapterID     *string
-		ChapterName   string
-		ParseMode     string
-		Provider      string
-		Refs          []integrations.ImportRef
+		ChapterID   *string
+		ChapterName string
+		ParseMode   string
+		Provider    string
+		Refs        []integrations.ImportRef
 	}{
 		ChapterID: &chapter.ID,
 		ParseMode: "none",

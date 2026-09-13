@@ -6,11 +6,13 @@
  */
 import type { ActivityBlockKind } from './activityBlockKind.ts';
 import type { ActivityBlockOutcome } from './activityBlockOutcome.ts';
+import type { ActivityCapture } from './activityCapture.ts';
 import type { ResourceEffect } from './resourceEffect.ts';
 import type { ToolError } from './toolError.ts';
 
 export interface ActivityBlock {
   callId?: string;
+  capture?: ActivityCapture;
   detail?: string;
   /** @nullable */
   effects?: ResourceEffect[] | null;

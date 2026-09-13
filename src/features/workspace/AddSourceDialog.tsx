@@ -47,7 +47,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/Select';
-import { Switch } from '@/components/ui/Switch';
 import { Tabs } from '@/components/ui/Tabs';
 import { userToast } from '@/components/ui/userToast';
 import { getLocale, m } from '@/i18n';
@@ -113,7 +112,6 @@ import {
   SOURCE_UPLOAD_CONCURRENCY,
   shouldArmBeforeUnload,
   splitSourceWave,
-  supportsFigures,
   withUploadRetry,
 } from './sourceUpload';
 
@@ -152,7 +150,6 @@ interface PendingSource {
   analysisStatus: SourceAnalysisStatus;
   audioDurationPending?: boolean;
   audioDurationSeconds?: number | null;
-  captionImages: boolean;
   chapterId: string | null;
   chapterName: string | null;
   contentType: string;
@@ -477,32 +474,6 @@ export function ParseModeSelect({
   );
 }
 
-export function CaptionImagesToggle({
-  pending,
-  policy,
-  onChange,
-  disabled = false,
-}: {
-  pending: PendingSource;
-  policy: SourceUploadPolicy;
-  onChange: (captionImages: boolean) => void;
-  disabled?: boolean;
-}) {
-  if (!supportsFigures(pending.parseMode, pending.kind, policy)) return;
-  return (
-    <div className="flex shrink-0 items-center gap-1.5">
-      <Switch
-        aria-label={m.source_describe_images_file({ name: pending.name })}
-        checked={pending.captionImages}
-        disabled={disabled}
-        onCheckedChange={onChange}
-        size="sm"
-      />
-      <span className="t-meta text-fg-muted">{m.source_describe_images()}</span>
-    </div>
-  );
-}
-
 function localRows(
   selections: ReturnType<typeof validateLocalSourceSelection>['accepted'],
   policy: SourceUploadPolicy
@@ -521,7 +492,6 @@ function localRows(
         policy
       ),
       audioDurationPending: kind === 'audio',
-      captionImages: false,
       chapterId: null,
       chapterName: null,
       contentType: file.type || 'application/octet-stream',
@@ -667,7 +637,6 @@ function SourceChooser({
             analysisInput,
             uploadPolicy
           ),
-          captionImages: false,
           chapterId: null,
           chapterName: null,
           contentType: item.contentType,
@@ -1092,7 +1061,6 @@ function SourceDetailsDialog({
       patchSource(source.key, {
         analysisProgress: undefined,
         analysisStatus: source.analysisResult ? 'ready' : 'idle',
-        captionImages: false,
         parseMode,
       });
       return;
@@ -1182,7 +1150,6 @@ function SourceDetailsDialog({
           uploadControllers.current.set(source.key, controller);
           return withUploadRetry(() =>
             uploadSource({
-              captionImages: source.captionImages,
               chapterId: source.chapterId,
               chapterName: source.chapterName,
               estimatedCreditMicros: sourceCreditEstimate(source, uploadPolicy),
@@ -1238,7 +1205,6 @@ function SourceDetailsDialog({
           source.chapterId ?? '',
           source.chapterName ?? '',
           source.parseMode,
-          source.captionImages,
         ]);
         let requestId = importRequestIds.current.get(key);
         if (!requestId) {
@@ -1255,7 +1221,6 @@ function SourceDetailsDialog({
             async () =>
               parseSourceImportAcceptedResponse(
                 await importSources({
-                  captionImages: source.captionImages,
                   chapterId: source.chapterId,
                   chapterName: source.chapterName,
                   ...(source.driveId ? { driveIds: [source.driveId] } : {}),
@@ -1501,14 +1466,6 @@ function SourceDetailsDialog({
                   <ParseModeSelect
                     disabled={isSubmitting}
                     onChange={(mode) => updateParseMode(source, mode)}
-                    pending={source}
-                    policy={uploadPolicy}
-                  />
-                  <CaptionImagesToggle
-                    disabled={isSubmitting}
-                    onChange={(captionImages) =>
-                      patchSource(source.key, { captionImages })
-                    }
                     pending={source}
                     policy={uploadPolicy}
                   />

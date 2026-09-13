@@ -36,26 +36,39 @@ def _uid(prefix: str) -> str:
 
 
 def content_hash(chunks: list[Chunk]) -> str:
-    """Hash the parsed passage text and any citation geometry it carries.
+    """Hash passage text, citation geometry and extraction confidence.
 
     Geometry is part of canonical content identity. Otherwise two documents
     with the same words but different pagination or layout would share chunks,
     and citations for one upload could point at coordinates from the other.
+    Confidence also belongs to the content: reusing higher-confidence chunks
+    for an OCR upload would remove the prompt's reason to inspect the page.
     """
     digest = hashlib.sha256()
     for chunk in chunks:
         digest.update(chunk.indexed_text().encode("utf-8"))
         digest.update(b"\x01" if chunk.reference else b"\x00")
         digest.update(b"\x00")
-        geometry = {
+        metadata = {
             "page_start": chunk.page_start,
             "page_end": chunk.page_end,
             "regions": [region.as_dict() for region in chunk.regions],
         }
-        if chunk.page_start is not None or chunk.page_end is not None or chunk.regions:
+        if chunk.confidence is not None or chunk.confidence_reasons:
+            metadata.update(
+                confidence=chunk.confidence,
+                confidence_reasons=chunk.confidence_reasons,
+            )
+        if (
+            chunk.page_start is not None
+            or chunk.page_end is not None
+            or chunk.regions
+            or chunk.confidence is not None
+            or chunk.confidence_reasons
+        ):
             digest.update(
                 json.dumps(
-                    geometry,
+                    metadata,
                     ensure_ascii=False,
                     allow_nan=False,
                     sort_keys=True,
@@ -136,6 +149,8 @@ async def index_file(
                 "lang": detect_lang(chunk.text),
                 # A reference list stays out of the lexical leg: see Chunk.reference.
                 "search_text": "" if chunk.reference else tokenize_for_search(text),
+                "confidence": chunk.confidence,
+                "confidence_reasons": list(chunk.confidence_reasons),
                 "embedding": store.vector_literal(vector),
             }
         )
@@ -199,6 +214,8 @@ async def embed_copied_chunks(
                 "search_text": ""
                 if row.get("reference")
                 else tokenize_for_search(text),
+                "confidence": row.get("confidence"),
+                "confidence_reasons": list(row.get("confidence_reasons") or []),
                 "embedding": store.vector_literal(vector),
             }
         )

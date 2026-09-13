@@ -158,9 +158,8 @@ func (s *Store) FinalizeSourceRefresh(ctx context.Context, fileID string, in Sou
 		return err
 	}
 	var format, mode, name, kind string
-	var caption bool
 	var oldSize int64
-	err = tx.QueryRow(ctx, `SELECT d.format,f.parse_mode,f.name,f.kind,f.caption_images,c.size_bytes FROM source_refresh_candidates c JOIN source_documents d ON d.file_id=c.file_id JOIN files f ON f.id=d.file_id JOIN jobs j ON j.id=c.job_id WHERE c.file_id=$1 AND c.job_id=$2 AND c.epoch=$3 AND c.checkpoint=$4 AND c.lease_token=$5 AND d.epoch=c.epoch AND d.running_job_id=j.id AND f.revision=d.base_revision AND f.trashed_at IS NULL AND j.status='running' AND j.type='source_refresh' AND j.lease_expires_at>now() FOR UPDATE OF c,d,f,j`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken).Scan(&format, &mode, &name, &kind, &caption, &oldSize)
+	err = tx.QueryRow(ctx, `SELECT d.format,f.parse_mode,f.name,f.kind,c.size_bytes FROM source_refresh_candidates c JOIN source_documents d ON d.file_id=c.file_id JOIN files f ON f.id=d.file_id JOIN jobs j ON j.id=c.job_id WHERE c.file_id=$1 AND c.job_id=$2 AND c.epoch=$3 AND c.checkpoint=$4 AND c.lease_token=$5 AND d.epoch=c.epoch AND d.running_job_id=j.id AND f.revision=d.base_revision AND f.trashed_at IS NULL AND j.status='running' AND j.type='source_refresh' AND j.lease_expires_at>now() FOR UPDATE OF c,d,f,j`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken).Scan(&format, &mode, &name, &kind, &oldSize)
 	if err != nil {
 		if isNoRows(err) {
 			err = ErrConflict
@@ -186,7 +185,7 @@ func (s *Store) FinalizeSourceRefresh(ctx context.Context, fileID string, in Sou
 	if mode == "none" {
 		mode = "fast"
 	}
-	plan, err := sourceupload.BuildProcessingPlan(name, kind, mode, caption)
+	plan, err := sourceupload.BuildProcessingPlan(name, kind, mode)
 	if err != nil {
 		return err
 	}
@@ -412,7 +411,7 @@ func (s *Store) workspaceIndexCounts(ctx context.Context, ws string, stats *Work
 		if err = rows.Scan(&name, &kind, &indexed, &pending, &format); err != nil {
 			return err
 		}
-		plan, e := sourceupload.BuildProcessingPlan(name, kind, "fast", false)
+		plan, e := sourceupload.BuildProcessingPlan(name, kind, "fast")
 		switch {
 		case indexed:
 			stats.Indexed++

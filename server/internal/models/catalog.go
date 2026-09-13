@@ -228,10 +228,15 @@ func ProviderModelID(providerSlug, modelSlug string) string {
 	return strings.TrimSpace(providerSlug) + "-" + strings.TrimSpace(modelSlug)
 }
 
+// ProviderTencent is the transport that serves the zai GLM pin: Tencent Cloud
+// TokenHub, an OpenAI-compatible route billed on TENCENT_API_KEY. It is not a
+// catalog provider; zai stays the identity users pin and Ops groups by.
+const ProviderTencent = "tencent"
+
 // TransportRef identifies the shared provider account/model capacity pool.
 func TransportRef(ref Ref) Ref {
 	if ref.ProviderSlug == "zai" && ref.ModelSlug == "glm-5.3-flash" {
-		return Ref{ProviderSlug: "deepinfra", ModelSlug: "zai-org/GLM-5.3-Flash"}
+		return Ref{ProviderSlug: ProviderTencent, ModelSlug: "glm-5.3-flash"}
 	}
 	return ref
 }

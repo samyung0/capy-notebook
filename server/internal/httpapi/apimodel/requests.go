@@ -203,14 +203,13 @@ type GenerateReq struct {
 // CreateSourceUploadReq reserves a direct-to-blob PUT. Empty kind and parseMode
 // are inferred from name, then validated. That inference is not a product default.
 type CreateSourceUploadReq struct {
-	Name          FileName    `json:"name" minLength:"1"`
-	Kind          string      `json:"kind,omitempty"`
-	ChapterID     *string     `json:"chapterId,omitempty"`
-	ChapterName   ChapterName `json:"chapterName,omitempty"`
-	ParseMode     string      `json:"parseMode,omitempty"`
-	CaptionImages bool        `json:"captionImages"`
-	SizeBytes     int64       `json:"sizeBytes"`
-	ContentType   string      `json:"contentType,omitempty"`
+	Name        FileName    `json:"name" minLength:"1"`
+	Kind        string      `json:"kind,omitempty"`
+	ChapterID   *string     `json:"chapterId,omitempty"`
+	ChapterName ChapterName `json:"chapterName,omitempty"`
+	ParseMode   string      `json:"parseMode,omitempty"`
+	SizeBytes   int64       `json:"sizeBytes"`
+	ContentType string      `json:"contentType,omitempty"`
 	// EstimatedCreditMicros is the browser's page/duration estimate at the
 	// upload policy rates. It only gates admission headroom; the parser
 	// receipt bills the measured pages.
@@ -228,14 +227,13 @@ type SourceUploadReservation struct {
 
 // ImportSourcesReq pulls files from a connected Drive/OneDrive account.
 type ImportSourcesReq struct {
-	Provider      string      `json:"provider" enum:"google,microsoft"`
-	FileIds       []string    `json:"fileIds" minItems:"1" maxItems:"20" nullable:"false"`
-	DriveIds      []string    `json:"driveIds,omitempty" nullable:"false"`
-	ChapterID     *string     `json:"chapterId,omitempty"`
-	ChapterName   ChapterName `json:"chapterName,omitempty"`
-	ParseMode     string      `json:"parseMode,omitempty" enum:"fast,none"`
-	CaptionImages bool        `json:"captionImages,omitempty"`
-	RequestID     string      `json:"requestId,omitempty" maxLength:"128"`
+	Provider    string      `json:"provider" enum:"google,microsoft"`
+	FileIds     []string    `json:"fileIds" minItems:"1" maxItems:"20" nullable:"false"`
+	DriveIds    []string    `json:"driveIds,omitempty" nullable:"false"`
+	ChapterID   *string     `json:"chapterId,omitempty"`
+	ChapterName ChapterName `json:"chapterName,omitempty"`
+	ParseMode   string      `json:"parseMode,omitempty" enum:"fast,none"`
+	RequestID   string      `json:"requestId,omitempty" maxLength:"128"`
 }
 
 type SourceImportAccepted struct {

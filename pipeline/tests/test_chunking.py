@@ -6,6 +6,7 @@ here, no amount of retrieval quality downstream can put them back.
 
 from __future__ import annotations
 
+from pipeline.retrieval import chunking
 from pipeline.retrieval.chunking import (
     BBOX_SPACE,
     chunk_content_list,
@@ -16,6 +17,65 @@ from pipeline.retrieval.chunking import (
     search_query_terms,
     tokenize_for_search,
 )
+
+
+def test_short_unique_tails_survive_section_and_oversized_block_boundaries(monkeypatch):
+    monkeypatch.setattr(chunking.cfg, "chunk_tokens", 60)
+    monkeypatch.setattr(chunking.cfg, "chunk_overlap_tokens", 10)
+    text = "A substantive source paragraph with several original words. " * 5
+    tail = "Except for sealed samples."
+    chunks = chunk_content_list(
+        [
+            _block(text, 0, bbox=[10, 10, 900, 300]),
+            _block(tail, 0, bbox=[10, 320, 900, 340]),
+        ]
+    )
+    assert tail in "\n".join(c.text for c in chunks)
+    assert sum(tail in c.text for c in chunks) == 1
+    assert all(estimate_tokens(c.text) <= 60 for c in chunks)
+    assert chunks[-1].regions[-1].bbox == [10, 320, 900, 340]
+    assert chunks[-1].page_start == 1
+
+
+def test_overlap_without_new_source_content_does_not_create_a_tail(monkeypatch):
+    monkeypatch.setattr(chunking.cfg, "chunk_tokens", 30)
+    monkeypatch.setattr(chunking.cfg, "chunk_overlap_tokens", 8)
+    first = "Opening statement."
+    oversized = "Important evidence is recorded here. " * 30
+    chunks = chunk_content_list([_block(first, 0), _block(oversized, 1)])
+    assert sum(first in c.text for c in chunks) == 1
+    assert all(estimate_tokens(c.text) <= 30 for c in chunks)
+
+
+def test_overlap_does_not_jump_across_an_oversized_source_block(monkeypatch):
+    monkeypatch.setattr(chunking.cfg, "chunk_tokens", 30)
+    monkeypatch.setattr(chunking.cfg, "chunk_overlap_tokens", 8)
+    opening = "Opening statement."
+    oversized = "Important evidence is recorded here. " * 30
+    closing = "This exception remains."
+    chunks = chunk_content_list(
+        [_block(opening, 0), _block(oversized, 1), _block(closing, 2)]
+    )
+    assert chunks[0].text == opening
+    assert chunks[-1].text == closing
+    assert chunks[-1].page_start == chunks[-1].page_end == 3
+    assert all(c.page_start == c.page_end == 2 for c in chunks[1:-1])
+    assert sum(opening in c.text for c in chunks) == 1
+
+
+def test_short_body_survives_while_explicit_and_repeated_furniture_is_filtered():
+    items = [_block("Journal banner", page) for page in range(3)]
+    items.extend(
+        [
+            {"type": "page_number", "text": "xviii", "page_idx": 0},
+            {"type": "footer", "text": "9", "page_idx": 1},
+            _block("All measurements exclude packaging.", 1),
+            _block("42", 1),
+        ]
+    )
+    assert [c.text for c in chunk_content_list(items)] == [
+        "All measurements exclude packaging.\n\n42"
+    ]
 
 
 def _block(text: str, page: int, *, level: int | None = None, bbox=None) -> dict:
@@ -258,7 +318,7 @@ def test_chart_blocks_are_indexed_like_images():
                 "type": "chart",
                 "img_path": "images/plot.jpg",
                 "chart_caption": ["Glucose uptake over time"],
-                "description": "Line chart, uptake rises then plateaus.",
+                "chart_footnote": ["Source: lab notebook"],
                 "page_idx": 2,
                 "bbox": [71, 468, 383, 836],
             }
@@ -267,7 +327,7 @@ def test_chart_blocks_are_indexed_like_images():
 
     text = "\n".join(c.text for c in chunks)
     assert "[Figure] Glucose uptake over time" in text
-    assert "uptake rises then plateaus" in text
+    assert "Source: lab notebook" in text
     assert chunks[0].regions[0].page == 3
     assert chunks[0].regions[0].bbox == [71.0, 468.0, 383.0, 836.0]
 

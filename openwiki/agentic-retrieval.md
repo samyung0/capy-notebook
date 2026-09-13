@@ -19,14 +19,14 @@ and [backend-storage-quota.md](backend-storage-quota.md).
 ## Architecture
 
 The Python services share one Postgres schema owned by Go migrations
-(`server/migrations/0001_init.sql`):
+(`server/migrations/0001_init.sql` plus the forward-only files after it):
 
 | Process | Entry | Role |
 | --- | --- | --- |
-| Parse coordinator | `python -m pipeline.ingest.parse_worker` | Supervises four isolated one-job coordinator processes. They validate and hash document sources, reuse an exact donor when possible, wait for MinerU, then atomically enqueue an immutable artifact handoff |
-| Ingest worker | `python -m pipeline.ingest.worker` | Claims only post-parse and direct-route jobs, then chunks, captions/transcribes, embeds, and writes a two-tier file summary. Each replica runs one job at a time |
+| Parse coordinator | `python -m pipeline.ingest.parse_worker` | Supervises four isolated one-job coordinator processes. They validate and hash document sources, reuse an exact donor when possible, wait for the parser, then atomically enqueue an immutable artifact handoff |
+| Ingest worker | `python -m pipeline.ingest.worker` | Claims only post-parse and direct-route jobs, then chunks (with heading retention and extraction confidence), captions standalone images / transcribes audio, embeds, and writes a two-tier file summary. Each replica runs one job at a time |
 | Retrieval service | `uvicorn pipeline.retrieve.service:app` | `/chat/stream`, `/generate`, `/quiz-grade`, `/plate-ai/*` over the same index |
-| Parser service | `uvicorn parser/app.py` | Persistent MinerU 3.4.5 pipeline service on the ingest host; independently slices large PDFs and normalizes Office through LibreOffice |
+| Parser service | `uvicorn parser/app.py` | OpenDataLoader 2.5.7 (Java) with the refined native repairs and selective RapidOCR (`parser/odl/`), one document at a time behind a depth-4 FIFO; normalizes Office through LibreOffice |
 | Host sampler | `python -m pipeline.ingest.host_sampler` | Persists compact whole-host and parser admission/resource samples without document identity |
 
 The Go gateway is the public face: it authenticates the user, proxies chat and
@@ -51,17 +51,16 @@ flowchart LR
   Route -->|PDF / modern Office| ParseJob[(parse job)]
   ParseJob --> Coordinator[Parse coordinator]
   Coordinator --> Download[One B2 download + trusted SHA]
-  Download --> Parse[Netcup MinerU pipeline]
+  Download --> Parse[Netcup OpenDataLoader + RapidOCR]
   Parse --> Artifact[Immutable local artifact]
   Artifact -. verified best-effort cache .-> ParseCache[(B2 parse bundle)]
   Artifact --> IngestJob[(ingest continuation)]
   Route -->|direct route| IngestJob
   IngestJob --> Worker[Ingest worker]
-  Worker -->|image| ImageCaption[ZAI GLM via DeepInfra]
+  Worker -->|image| ImageCaption[ZAI GLM via Tencent TokenHub]
   Worker -->|audio| AudioTranscript[Synchronous ElevenLabs Scribe v2]
   Worker -->|CSV / TSV / text| DirectText[Direct normalization]
-  Worker -->|parsed document| Caption[130×130 selection + caption / DECORATIVE]
-  Caption --> Chunk[Heading-aware chunker]
+  Worker -->|parsed document| Chunk[Heading-aware chunker + heading retention + confidence]
   ImageCaption --> Chunk
   AudioTranscript --> Chunk
   DirectText --> Chunk
@@ -69,6 +68,7 @@ flowchart LR
   Index --> Store[(rag_chunks / summaries)]
   Store --> Search[Hybrid search RRF]
   Search --> Agent[Chat agent loop]
+  Agent -->|capture_page| Capture[PyMuPDF page render from the source PDF]
   Search --> Workflows[Generate workflows]
   Agent --> Gateway[Go /api/internal/materials]
   Gateway --> Materials[(materials)]
@@ -93,7 +93,7 @@ network and no pin.
 | `editor.py` | `editor` | Plate menu prompts: generate, edit, comment, table cells |
 | `quiz.py` | `quiz` | Open-answer marking. Import-free: `bench/grading` loads it by path, and `src/features/quizzes/judge.ts` is its browser twin |
 | `ingest.py` | `ingest` | File descriptor and summary, and `SUMMARY_VERSION` |
-| `captioning.py` | `captioning` | Figure captions and whole-image captions |
+| `captioning.py` | `captioning` | Whole-image captions for standalone image uploads |
 | `retrieval.py` | `retrieval` | The Qwen3 instruct prefix for embedding queries |
 | `locale.py` | shared | The account-locale rule appended by chat, generate, and editor |
 
@@ -219,8 +219,8 @@ changed. Until a workspace model-migration job exists:
 
 | Type | Enqueued by | Does |
 | --- | --- | --- |
-| Parse | Go upload finalization for `document_parse` plans | Validate → download/hash once → exact-vector donor reuse or MinerU artifact publication → atomic ingest handoff |
-| Ingest | Go for direct routes; parse coordinator for documents | Extract a completed document artifact or normalize a direct source → chunk/caption/transcribe → embed → two-tier file summary |
+| Parse | Go upload finalization for `document_parse` plans | Validate → download/hash once → exact-vector donor reuse or parser artifact publication → atomic ingest handoff |
+| Ingest | Go for direct routes; parse coordinator for documents | Extract a completed document artifact or normalize a direct source → chunk (heading retention, extraction confidence) / caption a standalone image / transcribe → embed → two-tier file summary |
 
 Both stages get one retry (two total attempts), exponential backoff
 (`not_before`), a per-type wall-clock timeout, and a heartbeat lease so a dead
@@ -256,7 +256,8 @@ normal attempt budget; only a missing or invalid pin is terminal. See
 
 The Go gateway resolves every upload into a versioned `processingPlan` when it
 enqueues the first stage. The plan names the exact format route, parser route, caption
-mode, Office-preview requirement, ordered stages, and required capabilities.
+mode (`none`, or `standalone` for image uploads), Office-preview requirement,
+ordered stages, and required capabilities.
 The Python worker rejects unknown versions and executes this plan; it does not
 reconstruct orchestration from `kind`, `parseMode`, or the extension. Those
 legacy top-level fields may describe the saved upload choice but are not worker
@@ -267,10 +268,10 @@ silently taking a nearby route.
 
 | Source | Worker route | Searchable output | Page model |
 | --- | --- | --- | --- |
-| PDF / DOCX / XLSX / PPTX with `fast` | Persistent MinerU parser on the ingest host, OCR `auto` | `content_list.json` (+ images) | Yes — `page_idx` + `bbox` |
+| PDF / DOCX / XLSX / PPTX with `fast` | OpenDataLoader parser service on the ingest host, RapidOCR on text-less pages | `content_list.json` (+ images) | Yes — `page_idx` + `bbox` |
 | txt / md / json and other accepted text/code formats | Raw text | original text | No |
 | CSV / TSV | Delimiter/header normalization | explicit row/field text, including formulas | No |
-| supported image | Pinned ZAI GLM-5.3-Flash call through DeepInfra | faithful searchable caption | No |
+| supported image | Pinned ZAI GLM-5.3-Flash call through Tencent TokenHub | faithful searchable caption | No |
 | supported audio | Presigned B2 source URL + synchronous ElevenLabs Scribe v2 | transcript | No |
 | unknown or legacy DOC/XLS/PPT | Store-only | none | No |
 
@@ -278,72 +279,104 @@ HTML, RTF, XML, and source-code extensions have no dedicated handlers. They use
 the same raw-text chunking/indexing route as other text. CSV/TSV remain the one
 format-specific text exception.
 
-The bundle carries page-accurate citations and the images figure captioning
-needs. MinerU's pipeline backend chooses text extraction or OCR in `auto` mode;
-tables and formulas remain enabled. Each successful attempt reports total pages,
-OCR pages, elapsed time, and current parser/host resource samples. Billing uses
-the page counts, 31 credits per digital page and 52 credits per OCR page. Shared
-process CPU is diagnostic rather than attributed to one document.
+The parser is OpenDataLoader 2.5.7 (a Java jar, `--table-method cluster
+--include-header-footer`, one thread) followed by the refined native repairs
+ported from the `bench/parsers` lab into `parser/odl/`: font `ToUnicode`
+repair, table-cell styles, column reading order, hidden-OCR-layer order, heading
+and table context, footer ancestry, list geometry and text-overprint repair,
+exponents, column continuations and source-geometry table recovery. Pages whose
+text layer has fewer than 40 characters are routed to RapidOCR (PP-OCRv6 small,
+2560 px long edge, score 0.5, models baked into the image). Fresh OCR uses
+PP-DocLayoutV3 through rapid-layout 1.2.1 to order regions only when every line
+overlaps exactly one detected region by at least half its area. A page with
+unmapped or ambiguously mapped lines keeps the original row order. Lines inside each region keep that order too,
+including table cells. This preserves every OCR line and its source box.
+The model is hash-pinned in the image and loaded lazily. Partial ordering and
+table-row clustering remain rejected experiments; the 17 earlier source
+geometries are regression checks, not evidence of accuracy on unseen pages.
+Mixed-text table recovery uses repeated source row geometry, ruled header
+scope and source-character coverage. Wrapped cells require consecutive lines
+in the same PDF text block with matching font/style and aligned, adjacent boxes;
+an intervening rule or uncertain row ownership causes abstention. Its replacement area covers the body;
+captions and units expand citation bounds without consuming adjacent prose.
+Existing supported numeric/native tables are protected. Ambiguous headers,
+partial emphasis and unsupported background scope leave the original text.
+Font repair abstains for an encoding containing an unsupported glyph name. The parser identity is
+`odl-2.5.7-refined-rapidocr-v3` plus the release SHA.
+The lab corpus (`/opt/capy-odl-third-pass-20260909/refined-final-r1`) checks
+port compatibility, with reviewed bug fixes checked separately. It does not
+establish accuracy on unseen layouts or fresh selective OCR. Each successful
+attempt reports total pages, OCR pages (`_ocr_page_count`), elapsed phases and
+the parser implementation string. Billing uses the page counts, 1.0 credit per
+digital page and 1.0 credit per OCR page. The receipt still carries
+`_slice_count: 1` and zero slice health keys so Go and the ops dashboard keep
+their shape; there are no slices.
 
 ### Parse capacity
 
-The ingest host accepts at most four document jobs through the outer Redis gate.
-The parser places their independent page slices on one fair round-robin queue
-and runs at most four MinerU calls concurrently:
+The parser runs one document at a time. Requests enter a depth-4 FIFO
+(`CAPY_PARSE_QUEUE_DEPTH`: one executing, three waiting); a fifth concurrent request is answered `429` and the
+coordinator returns its job to `pending` as a capacity wait without spending an
+attempt (`YIELD_BACKOFF_S`, 2 s). There is no Redis admission gate and no page
+slicing: a 610-page textbook is one Java run plus the repairs, about 14 s of
+which is table recovery. The four coordinator children are the outer cap.
 
-| Route | Host | Slice size | Parser admission | Outer cap |
+| Route | Host | Parser admission | Per-document deadline | JVM heap |
 | --- | --- | --- | --- | --- |
-| fast | one 8-core / 16 GiB VM | 26 pages | 4 slices | 4 documents |
-
-A 610-page PDF becomes 24 slices: 23 ranges of 26 pages and one 12-page range.
-Files of 26 pages or fewer remain one slice. Slices have no overlap and no
-table/paragraph boundary repair; a structure spanning page 26/27 can be split.
-This is an accepted throughput tradeoff. Results are sorted by slice, their page
-indices are restored to the source PDF, and the existing `content_list.json`,
-Markdown, and extracted-image outputs are merged before normal chunking. No
-additional table or slice schema is stored in Postgres.
-
-One long-lived Python process owns the MinerU model cache. The first successful
-slice warms it; later slices and documents reuse the same loaded models and
-plugins instead of constructing a MinerU runtime per request.
+| fast | one 8-core / 16 GiB VM | FIFO depth 4, one worker | 600 s | `CAPY_PARSER_JVM_MAX_HEAP` (8g prod, 3g nonprod) |
 
 A new document upload lands `files.status=pending` with a pending `parse` row.
-Four coordinator children claim only parse rows. A coordinator flips the file
-to `processing` only after it holds a Redis parse slot; if every slot is taken,
-the job returns to `pending` without spending an attempt. Redis down fails
-*open*: the parser's four-document/four-slice queues remain the final brake.
-While MinerU runs, no ingest worker slot is occupied.
+Four coordinator children claim only parse rows and flip the file to
+`processing` when the parser accepts the request. While the parser runs, no
+ingest worker slot is occupied.
 
-Each slice has a 600-second deadline that starts only when a MinerU lane begins
-executing it. Fair-queue wait and the execution time of the document's other
-slices do not spend that slice's budget. If any slice crosses the deadline,
-the parser atomically writes a document quarantine marker keyed by
-source fingerprint, parse method, and exact parser version, returns
-`parse_hard_timeout` for that file, and exits so Docker replaces the whole
-parser process. This also stops the document's other queued or executing
-slices; native lane work is not independently killable. The exit is scheduled
-before response delivery, so a
-client disconnect cannot leave the failed parser running. The offending parse
-is terminal and later submissions of that exact fingerprint fail immediately
-while that parser version is live; it is not retried into the pool. Other
-in-flight jobs interrupted by the container restart follow their ordinary
-retry policy. A parser-version change creates a new fingerprint and is the
+Each document has a 600-second hard deadline (`CAPY_PARSE_DOCUMENT_TIMEOUT`)
+that starts when it leaves the queue, before LibreOffice normalisation of an
+Office source and the Java run; queue wait does not spend it. The Java
+subprocess itself runs under the same timeout. If a document crosses the
+deadline, the parser atomically writes a quarantine marker keyed by source
+fingerprint and exact parser implementation, returns `parse_hard_timeout` for
+that file, and exits so Docker replaces the whole parser process. The exit is
+scheduled before response delivery, so a client disconnect cannot leave the
+failed parser running. The offending parse is terminal and later submissions of
+that exact fingerprint fail immediately while that parser version is live. Other
+in-flight and queued jobs interrupted by the restart follow their ordinary
+retry policy. A parser-version change (`PARSER_IMPLEMENTATION` in
+`parser/app.py`, mirrored by `PARSER_IMPLEMENTATIONS` in
+`pipeline/parse/parser_client.py`) creates a new fingerprint and is the
 deliberate automatic way to retry the file after parser code changes.
 
-The whole-document parser request has a 2,400-second bound, its Redis admission
-slot expires after 2,700 seconds, and the parse job has a 3,600-second bound.
-The independent ingest continuation has a 1,200-second bound. Queue wait does
-not spend the 600-second slice execution budget. A timed-out coordinator or
-ingest process records its retry and exits; the supervisor or Docker replaces
-only that process, so a cancelled blocking thread cannot overlap a later job.
+The whole-document parser request has a 2,520-second bound (`PARSER_TIMEOUT`:
+the queue depth of four times the 600-second deadline, plus a margin, so the
+request behind three deadline-length documents still gets its artifact) and
+the parse job a 2,700-second bound (`CAPY_PARSE_JOB_TIMEOUT`); the
+independent ingest continuation has a 1,200-second bound. A timed-out
+coordinator or ingest process records its retry and exits; the supervisor or
+Docker replaces only that process, so a cancelled blocking thread cannot
+overlap a later job.
 
-The parser also watches its cgroup `oom_kill` counter. If the kernel kills a
-MinerU child while slices are active, it writes `parse_oom` quarantine markers
-for those active fingerprints, marks `/healthz` failed, and exits. A completed
-artifact takes precedence over a late marker. Files that were only queued when
-the OOM happened follow the ordinary policy of one retry. The same one-retry
-policy applies to connection errors and poisoned-pool restarts. Hard timeout
-and OOM markers are terminal without a retry.
+The API process owns the FIFO, deadline and cgroup `oom_kill` watcher. A single
+persistent spawned child owns LibreOffice, Java, repairs and lazy OCR models.
+Mode-0600 temporary files carry source and result data between them; small pipe
+messages carry only status and paths. The child has its own process group and
+sets Linux `oom_score_adj` to 1000, so memory pressure preferentially kills the
+parse work while the API can classify the failure. Deadline and shutdown stop
+the parse process group. Startup removes abandoned transfer and document files.
+Cancelling an executing caller leaves the runtime-owned future, admission slot
+and deadline active. Cancelling waiting work removes it from the queue. The
+persistent loops release the previous document and result between executions.
+
+Byte-identical extracted images share one bundle file, with every image block
+and Markdown image destination referring to that canonical file. Occurrence
+page/geometry and literal bytes are preserved; distinct images remain separate.
+The existing bundle entry and byte limits still apply after deduplication.
+
+If the cgroup records an OOM kill while a document is active, the API writes a `parse_oom` quarantine marker
+for that fingerprint, marks `/healthz` failed, and exits. A completed artifact
+takes precedence over a late marker. Files that were only queued when the OOM
+happened follow the ordinary policy of one retry. The same one-retry policy
+applies to connection errors. Hard timeout and OOM markers are terminal without
+a retry.
 
 After an artifact is published, OOM, timeout, worker death, and other
 post-processing failures never create a parser quarantine. The ingest
@@ -357,11 +390,15 @@ The parse coordinator downloads the raw B2 object once while calculating its
 trusted SHA-256, writing a job-scoped source file into the shared volume.
 The parser reads that local key and atomically writes
 `artifacts/{parse_fingerprint}.zip` to the same volume. The worker extracts that
-file directly. That local atomic ZIP is the required parser-to-ingest handoff.
-A failed B2 cache write must never fail the current parse or ingest.
+file directly. That local atomic ZIP is the required parser-to-ingest handoff
+(`capy-parser-bundle-v3`: `manifest.json` with the receipt, `content_list.json`,
+`document.md`, `refinement.json` with the frozen furniture texts, `preview.pdf`
+for Office sources, `parsed.pdf` only when font repair changed the bytes the
+parser read, and `images/`). A failed B2 cache write must never fail the
+current parse or ingest.
 
 After the coordinator verifies the local ZIP's size, checksum, archive bounds,
-manifest identity, content list, and required Office preview, it tries to copy
+manifest identity, content list, refinement, and required Office preview, it tries to copy
 the ZIP to `parse-bundles/{parse_fingerprint}.zip` in B2. The write gets exactly
 three total attempts and is best effort. Cache-row registration is best effort
 too. Only a confirmed write whose object still exists after registration stays
@@ -369,7 +406,7 @@ in `artifact_cache`; otherwise the continuation drops `durableKey` and uses the
 required local ZIP. If the local fingerprint bundle is
 absent for a later identical source, the coordinator may download that B2 copy,
 verify the same contract, and atomically install it in the shared volume. A
-missing, unavailable, or invalid B2 copy falls through to MinerU. It does not
+missing, unavailable, or invalid B2 copy falls through to the parser. It does not
 fail parsing.
 
 The worker clears the file's diagnostic local parse-bundle reference after
@@ -381,11 +418,11 @@ sweep removes abandoned sources after two hours and local fingerprint bundles
 after six hours. Durable parse-bundle reuse copies use the same last-use B2
 cache TTL and deletion outbox as derived-text artifacts. If all
 three upload attempts fail, another upload of the same source cannot reuse that
-parse once the local bundle is gone and must run MinerU again.
+parse once the local bundle is gone and must run the parser again.
 
 `files.indexed` is true only after retrieval chunks are written, or reused from
 identical canonical content. Direct image/audio/CSV/TSV routes get an ingest job
-even though they do not use MinerU. Unknown and legacy store-only uploads finish
+even though they do not use the parser. Unknown and legacy store-only uploads finish
 `ready` with `indexed=false`: the original blob stays viewable/downloadable, and
 chat/generate cannot search it. A failed ingest keeps the original blob and
 lands `failed`/unindexed; the UI shows a banner rather than replacing the
@@ -423,7 +460,7 @@ The explicit binary-replacement upload endpoint replaces the source under the sa
 `files.id`. Completion uses an expected `files.revision` compare-and-swap,
 increments the revision, removes the old `rag_file_contents` alias, clears
 source/parse artifacts, and enqueues the correct first stage with the saved
-parse and caption policy. The orphan cleanup trigger removes canonical retrieval content only
+parse policy. The orphan cleanup trigger removes canonical retrieval content only
 when no other alias uses it. Store-only replacements return ready and unindexed.
 Collaborative Office saves use the durable checkpoint path instead. Their
 refresh candidate keeps the readable source/index until atomic publication,
@@ -510,7 +547,7 @@ the required preview publication fails. This strict preview write is separate
 from the three-attempt best-effort policy for optional reuse caches.
 If full validation rejects a fingerprint-addressed local parse bundle before
 handoff, only that exact bundle is discarded; the existing second parse attempt
-then asks MinerU to rebuild it instead of failing on the same sticky cache file.
+then asks the parser to rebuild it instead of failing on the same sticky cache file.
 
 An ordinary ingest actor must remain the owner or an explicit workspace editor
 through claim, heartbeat, provider admission, handoff, and final writes. Those
@@ -552,61 +589,29 @@ rate returned by `GET /api/source-upload-policy`. An unreadable duration is
 shown as unavailable, never as zero. The worker's measured duration and the
 job's snapshotted rate remain authoritative for settlement.
 
-### Figure captioning
+### Figures are read at question time, not captioned
 
-Chosen per file at upload time and resolved into `processingPlan.captionMode`.
-`pipeline/parse/figures.py` describes each surviving figure with the
-vision model and writes it onto the image block **before chunking**, so the
-caption is embedded, summarized and cited as part of the
-passage it belongs to. That ordering is the point of the feature: a slide deck
-whose substance is in its diagrams is otherwise nearly invisible to search.
+Embedded figure captioning was removed (decision 2026-09-12, `human/agentic-retrieval.md`):
+no caption stage in the document plan, no upload toggle, no `caption_images`
+column, no `figure_caption_call` rate. Image and chart blocks index their
+parser caption and footnote text only. The chat agent reaches figures through
+`capture_page` (below), which renders the cited page for the model when the
+passage text is not enough.
 
-This applies to PDF, DOCX, PPTX, and XLSX. Office files are converted to the
-coordinate-source PDF for parsing, but embedded pictures/charts are preserved
-in the parser bundle and captioned from those extracted image blocks. Legacy
-DOC/PPT/XLS remains intentionally store-only.
-
-Every decodable image/chart block at least 130×130 is captioned unless the parser
-already described it. Exact image-byte duplicates share one call. Compressed
-size, pixel area, aspect ratio, page bbox, flatness/entropy, and cross-page
-repetition are not rejection rules because they can discard sparse diagrams,
-molecule drawings, and other useful scientific images.
-
-A `DECORATIVE` caption is cached by image digest but is not written onto the block, so that sentinel does not enter chunks or embeddings. The shared image prompt describes visible facts without supplying surrounding source text.
-
-Image captions use `parse/caption_cache.py`. The lookup identity is the exact
-image SHA, independent of prompt version, source revision and surrounding text.
-The payload contains only the caption and lives under
-`image-captions/<imageSHA>/<payloadSHA>.json`. File/editor-asset associations
-hold references to the shared payload. Private workspaces reuse within that
-workspace; private standalone materials reuse within their owner; current link
-or public containing resources permit global reuse. A hash or B2 object hit
-alone grants no access. Visibility changes affect the next lookup without
-moving payloads, and an already-authorized association retains its own reference.
-Deleted or deletion-pending resource owners cannot grant new reuse.
-
-A workspace/owner plus image-SHA advisory lock encloses lookup and generation.
-The provider receives only image bytes and the caption prompt, never a source
-name, heading, nearby paragraph or page label. Failed optional cache reads cause
-a new image-only caption. A temporary artifact reference protects an upload
-until its resource association commits, after which resource references own
-cleanup. Pending-edit captions remain unpublished. Candidate processing records
-every consumed image digest, including cache hits; successful Office publication
-promotes that set and releases retired associations. Clones copy only published
-caption associations.
-Ordinary image/figure ingestion, refresh candidates and pending-image resolution
-each bind caption attachment to their captured source or change identity.
-Lookup and post-upload attachment recheck that identity and the current job
-attempt or reader access in the same transaction as the reference write.
-A late response cannot restore a retired association after replacement or
-publication; a rejected upload keeps its temporary cleanup reference.
+Standalone image uploads (`captionMode: standalone`, route `image_caption`) are
+still described once with the pinned vision model so the file is searchable.
+That path keeps `parse/caption_cache.py`: the lookup identity is the exact
+image SHA, the payload lives under `image-captions/<imageSHA>/<payloadSHA>.json`,
+and reuse follows containing-resource privacy (private workspaces reuse within
+that workspace, private standalone materials within their owner, link or public
+resources globally). The provider receives only image bytes and the caption
+prompt, never a source name or nearby text. Those calls bill their tokens only.
 
 Caption calls never inherit a user's chat reasoning level. The pinned catalog
-identity is `zai/glm-5.3-flash`, routed by EliteLLM to DeepInfra's
-`zai-org/GLM-5.3-Flash`. Captioning always sends `reasoning_effort: low` on the
-DeepInfra wire request. The catalog default is `low` for chat, and users may
-raise it to `high` or `max`. Do not let captioning inherit a user's chat
-choice.
+identity is `zai/glm-5.3-flash`, served from Tencent TokenHub as wire model
+`glm-5.3-flash` (`TENCENT_API_KEY`). Captioning always sends
+`reasoning_effort: low`. The catalog default is `low` for chat, and users may
+raise it to `high` or `max`.
 
 ### Chunking
 
@@ -656,8 +661,66 @@ choice.
 - Builds `indexed_text` = heading breadcrumb + body, never a logical file
   name. Renaming a file must not change `content_hash` or fork canonical
   content. `text` is what the model and citations show.
-- Includes page and region geometry in `content_hash` when present. Documents
-  with the same text but different layouts cannot share citation coordinates.
+- Includes page and region geometry, extraction confidence and its reasons in
+  `content_hash` when present. Documents with identical words cannot inherit
+  another upload's citation coordinates or higher extraction confidence.
+- Indexes image and chart blocks by their parser caption and footnote only;
+  there is no model-written description.
+
+Document bundles are packed by `retrieval/packing.py`, the lab's `pack_odl`
+folded into production (`CHUNKER_VERSION` v9; `tests/test_packing.py` preserves
+198 of the 200 historical `hongkong-figures` chunks exactly, removes stale
+overlap across oversized tables from two page-45 chunks, and separately checks
+the short bilingual heading on page 13 and exclusion note on page 45):
+
+- Unique short prose survives section boundaries and final tails. A tail
+  containing only carried overlap is omitted. `CAPY_CHUNK_MIN_TOKENS` is removed.
+  Source-matched isolated decimal/Roman folios are classified as page numbers
+  only after font, location and page offset agree across at least three pages.
+
+- **Frozen furniture.** The parser decides the running headers and footers on
+  the block list *before* source-geometry table recovery and ships the texts
+  in the bundle's `refinement.json`; the packer drops exactly those and never
+  infers recurrence again on the replaced list. Otherwise a header that sat
+  inside one recovered region falls below the three-page threshold on the
+  remaining pages and is indexed as body text. The parser's copy of the rule
+  (`parser/odl/furniture.py`) is pinned equal to the chunker's by test.
+- **Native tables.** A table with explicit native column headers
+  (`_native_table_supported`) becomes its own chunk(s): the title and header
+  row repeat per row group under the token budget, merged source cells are
+  noted from `_table_spans` ("[one merged source cell, rows 1-2; columns
+  Plot]"), and the adjacent caption (`_native_table_title`) is the section
+  path. If the context consumes the chunk budget, context and annotated rows
+  pack once in source order through the ordinary bounded splitter. This keeps
+  all text but cannot repeat oversized headers on each fragment. Prose between
+  tables packs normally under the heading stack.
+  Source-proven bold and gray cell styles travel as checked row/column metadata;
+  packing adds literal `[bold in source]` / `[gray background in source]` notes
+  to those values. Captions, units and footnotes remain source text. The notes
+  describe appearance and do not infer that a highlighted value is best.
+
+Two post-passes then run in the ingest worker against the PDF the parser read
+(the bundle's `parsed.pdf` when font repair changed the bytes, otherwise the
+`preview.pdf` for Office files, otherwise the spooled upload), which is why
+they live there rather than in the parser:
+
+- **Heading retention** (`retrieval/headings.py`): a `text_level` block only
+  survives as the section path of the body after it, so a heading with no body
+  on its page (a figure title, a heading whose body starts on the next page)
+  vanished from the index. Each such heading becomes its own small chunk when
+  the page's glyphs prove it is real visible text, including short English and
+  CJK labels. Numeric-only labels, invisible text and repeated margin furniture
+  remain excluded. Existing chunks are not changed. Ported from
+  `bench/parsers/scripts/experiment_odl_heading_retention.py`.
+- **Extraction confidence** (`retrieval/confidence.py`, stored as
+  `rag_chunks.confidence` / `confidence_reasons`): agreement of the chunk's
+  tokens (words for spaced scripts, characters for CJK) with the cited pages'
+  text layer, a 0.35 floor for pages with no text layer, a penalty for
+  pipe-table rows with uneven column counts. Pages RapidOCR handled score a
+  fixed 0.5 with the reason "page text came from OCR", because an OCR text
+  layer would only agree with itself. Passage headers show the score and
+  reasons below `CAPY_CONFIDENCE_NOTE_BELOW` (0.9); the chat prompt ties
+  `capture_page` to that note. Ported from the playground's `chunk_quality.py`.
 
 Each chunk carries a language tag (`rag_chunks.lang`, one of
 `en fr de es zh ja ko und`) from `lang.detect_lang`: script counts pick the
@@ -691,11 +754,11 @@ that header is uploader-controlled, and a hash the uploader chooses would let
 anyone claim the hash of a document they do not have and be handed its chunks
 and summary. One GET per ingest is the price. It then looks for a
 **ready** `rag_contents` row with the same
-`(source_sha256, pipeline_identity)`. `pipeline_identity` covers parse method,
-route, parser version, whether embedded figures were captioned, and chunker
-version — anything that feeds chunk text. Whether captioning ran is in the key
-because it changes the parsed content list; the caption *text* is not, because
-it is cached separately under the image bytes.
+`(source_sha256, pipeline_identity)`. `pipeline_identity` is
+`plan-v{version}:{route}:{parser implementation}:{CHUNKER_VERSION}` — anything
+that feeds chunk text. The parser implementation string changed with
+OpenDataLoader, so every MinerU-era artifact stopped being a donor and existing
+sources re-parse on their next refresh.
 
 A hit copies that donor's `rag_chunks` (and, when the embedding pin matches,
 its vectors), plus its summary, into a new per-workspace
@@ -710,14 +773,13 @@ then marks the destination ready. A missing preview forces a normal parse.
 
 `pipeline_identity` covers only what feeds chunk *text*, so it is not an
 invalidation lever for model prose: changing the ingest or captioning default leaves
-existing summaries and captions in place, and a later upload of
+existing summaries and standalone image captions in place, and a later upload of
 already-seen bytes is served the older model's output. Neither slot is user
 selectable (the job snapshot exists to pin billing and to survive a hot reload
 mid-queue), so nobody's choice is being overridden — but an operator who swaps
 either model and wants the prose regenerated has only the blunt lever below.
 
-A parser/caption/chunker version bump invalidates every donor and re-parses.
-Captions surviving that bump means the re-parse pays the page rate but not vision.
+A parser or chunker version bump invalidates every donor and re-parses.
 Delete-and-re-upload with identical parse params can reuse a local bundle while
 its short TTL remains; after that it re-parses if there is no donor row.
 
@@ -915,14 +977,37 @@ and are not sent back as LLM history.
 3. Every tool-capable model response is streamed. Text that arrives with tool
    calls is a narration block. The first completed response with text and no
    tools is the persisted answer. There is no unconditional second answer
-   completion. Workload caps are 12 planning responses, 4 tools per response,
-   and 12 tools per turn. Completion, compaction, query-embedding, and cumulative
-   input counts remain telemetry. They do not stop a turn.
+   completion. Workload caps are 8 planning responses, 2 tools per response,
+   and 16 tools per turn (`retrieval/limits.py`, the playground's measured
+   caps). Completion, compaction, query-embedding, and cumulative input counts
+   remain telemetry. They do not stop a turn.
 4. Independent reads in one response run concurrently (max 4, at most 1
    `search_workspace`). Any mutating call keeps that whole response serial.
    Citation numbers are assigned after the batch, in original call order, and
-   are answer-local. A versioned `citations` event follows each batch.
-5. Rolling conversation checkpoints (`conversation_compactions`) are separate
+   are answer-local. No `citations` event follows a tool batch: retrieved but
+   unused passages never reach the browser; the list is sent with the answer.
+   `capture_page` adds no citation: its result names the numbers already
+   covering that page and the JPEG rides in a user message placed after the
+   step's tool results (an Anthropic `image` block on that route), held on the
+   turn's `ToolContext` and never persisted.
+5. The final answer is structured (`retrieval/structured.py`): the prompt asks
+   a tool-less response to be `{"answer": [{"text", "passages": [n, ...]}]}`,
+   one claim or short paragraph per item naming the shown passage numbers that
+   support it. The agent renders the prose itself and renumbers citations
+   `[1..k]` in order of first appearance, so the user never sees a gap and the
+   persisted citation list (the `final` citations event) holds only the
+   passages the answer used, in that order. Rendering is incremental
+   (`StreamRenderer`): claim text streams as it arrives and the markers follow
+   when the claim's `passages` array closes; the raw JSON never reaches the
+   browser, and the concatenated deltas equal the persisted answer. Text whose
+   shape is not yet known is held back. A tool-less call requests
+   `response_format: json_object`; with tools offered it does not, because on
+   GLM that made the model skip the search and invent an answer. A plain-prose
+   answer or completed object rejected by the strict parser gets one repair
+   call (`REPAIR_PROMPT`, JSON mode), including a scalar, null or object in
+   `passages`. An unfinished object keeps the prose already streamed. If repair also fails
+   the raw prose is the answer with no citations, and the failure is logged.
+6. Rolling conversation checkpoints (`conversation_compactions`) are separate
    from live request compaction. A checkpoint folds old cross-message history
    through the latest completed historical message and persists in Go with
    compare-and-set so a pin cannot move backwards. The summarizer receives the previous
@@ -945,7 +1030,7 @@ and are not sent back as LLM history.
    fallback. Tool output is capped at 8,192 estimated tokens with a visible
    truncation marker. If protected context still cannot fit, the turn fails with
    `context_too_large`.
-6. Python settles every provider call through
+7. Python settles every provider call through
    `POST /api/internal/provider-calls` before the agent chooses its next action.
    The turn spend session remains open, so this does not take another
    concurrency slot. `(sessionId, callId)` makes callback retries idempotent.
@@ -956,9 +1041,12 @@ and are not sent back as LLM history.
    Internal material creation does not recheck inference credits, because that
    would reject an accepted tool emitted by the call that caused exhaustion;
    editor authorization and storage quota checks still apply.
-7. OpenAI planning uses `POST /v1/responses` with `store=false` and replays
+8. OpenAI planning uses `POST /v1/responses` with `store=false` and replays
    encrypted reasoning items inside the current tool loop. DeepSeek,
-   Anthropic, and routed ZAI GLM use Chat Completions-compatible paths. The GLM
+   Anthropic, and ZAI GLM (served from Tencent TokenHub,
+   `tokenhub.tencentcloudmaas.com/v1/chat/completions`, wire model
+   `glm-5.3-flash`, `TENCENT_API_KEY`, no fallback route) use Chat
+   Completions-compatible paths. The GLM
    adapter preserves `reasoning_content` on the assistant message immediately
    before the matching tool result in the next request. Raw chain-of-thought
    is never streamed to the browser. The user's reasoning policy applies to
@@ -972,9 +1060,11 @@ and are not sent back as LLM history.
    disconnects, Python stops writing SSE but finishes the in-flight provider
    call, settles usage when it arrives, and does not start another planning
    step.
-8. SSE events: `phase` (`planning` | `running_tools` | `answering`),
+9. SSE events: `phase` (`planning` | `running_tools` | `answering`),
    `block_start` / `block_delta` / `block_end` (`narration` | `answer`),
-   `tool_start` / `tool_end`, versioned `citations`, `done` | `error`.
+   `tool_start` / `tool_end`, versioned `citations` (`final: true` on the
+   answer's own list), `done` | `error`. A `capture_page` activity block carries
+   `capture: {page, bbox, bytes}` so the frontend can show "Looked at page 4".
    Checkpoint events stay on the Python→Go hop. The browser may show
    "Planning next step" after ~400ms when waiting on the next provider
    response with no active text or tool.
@@ -997,6 +1087,7 @@ a valid scope with no indexed content.
 | `list_sources` | none | Chapters, file names, passage counts, and the short descriptor |
 | `describe_documents` | none | Detailed summaries for one to eight required file ids; atomic scope validation |
 | `read_document` | none | Sequential chunks by required file id; workspace and chat scope checked before reading |
+| `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF or Office source as a JPEG for the model; refused unless a shown passage cites that page, past 8 per turn, and for text or store-only sources (`unsupported_format`); adds no citation |
 | `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, quizzes and flashcard sets |
 | `list_documents` | none | Editable materials and source files in the workspace with an editability reason (`/api/internal/documents/list`) |
 | `inspect_document` | none | Plate blocks with stable ids, text-source lines, or Office paragraphs/cells with target ids, paged by `start`/`count` |
@@ -1008,8 +1099,25 @@ a valid scope with no indexed content.
 Read tools hit Postgres directly. Every mutation goes through the gateway with
 `X-Pipeline-Secret`, so authz, quota, and the materials model stay in one place.
 
+`capture_page` (`retrieval/capture.py`) keeps a size-bounded copy of each
+source PDF on the retrieval host, keyed by the stored object's path so a
+re-parsed Office preview is fetched afresh
+(`CAPY_CAPTURE_CACHE_DIR`, LRU by size, `CAPY_CAPTURE_CACHE_MAX_BYTES` 2 GiB):
+the PDF itself for PDF sources, the parser's `preview.pdf` for Office. One B2
+GET per object, then PyMuPDF renders the page or box at `CAPY_CAPTURE_MAX_EDGE`
+(1568 px) to JPEG q80, about 2,400 input tokens per capture on GLM, billed
+through the ordinary LLM usage path. Context telemetry and the compaction
+budget count each attached image by its 28-px patch estimate
+(`capture.patch_tokens`), not by its base64; the captures ride outside the
+compacted history, so their estimate is passed to compaction as extra weight. The model is told to capture when a
+passage header carries a low extraction-confidence note or the answer depends
+on a figure, table layout or formula, and to read the image directly. The
+render lives server-side because the pixels must be inside the provider request
+the Python agent builds mid-turn.
+
 **One contract.** `server/internal/agenttools` owns tool names, argument
-schemas, the operations table and the error codes. `cmd/openapi -agent-tools`
+schemas, the operations table and the error codes (contract version 2 added
+`capture_page`). `cmd/openapi -agent-tools`
 exports it to `pipeline/pipeline/generated/agent_tools.json`; Python validates
 every call against that JSON (`retrieval/contract.py`) and refuses unknown
 tools, while the same Go types reach TypeScript through the OpenAPI schema. Go
@@ -1123,7 +1231,7 @@ A citation is:
 Chat citation chips show `p. N` / `pp. N–M` and open the file scrolled to that
 page and centered on the first valid region. Native PDFs render their source.
 DOCX/XLSX/PPTX citations render the exact LibreOffice PDF preserved in parser
-bundle v3 because that is the coordinate surface MinerU measured. Ordinary
+bundle v3 because that is the coordinate surface the parser measured. Ordinary
 Office viewing and editing still use the native browser viewer; entering edit
 mode removes the citation overlay. Store-only and legacy Office files have no
 parser preview, so citation navigation falls back to the native viewer without
@@ -1217,16 +1325,17 @@ reduction path.
 | --- | --- | --- |
 | Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material`. The same secret is required on every inbound retrieval request except `/healthz`. |
 | User provider keys | `LLM_CREDENTIALS_KEY` | Same 32-byte hex/base64 value as Go. Retrieval decrypts `user_llm_credentials`. Platform keys use the `platformEnv` name in `elitellm_providers.json`; user keys are request-scoped and never written to process env. |
-| Parse | `PARSER_URL`, `PARSER_TOKEN`, `CAPY_PARSE_METHOD`, `CAPY_PARSE_SLOTS`, `CAPY_PARSE_COORDINATOR_CONCURRENCY`, `CAPY_PARSE_CONCURRENCY`, `CAPY_MINERU_SLICE_PAGES`, `CAPY_PARSE_JOB_TIMEOUT`, `CAPY_OFFICE_PREVIEW_MAX_BYTES`, `RELEASE_SHA` | Persistent Netcup MinerU pipeline service. Production defaults to four coordinator processes, 26 pages per slice, four admitted documents, and four active slices. Method, schema, and exact release-derived parser version participate in the artifact fingerprint. |
-| Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT`, `CAPY_CAPTION_CONCURRENCY` | Dedicated-host defaults are four isolated one-job containers, 20 minutes per attempt, and at most four concurrent embedded-figure captions per worker. Other model stages are sequential within each job. A provider busy past the in-call retry budget (four attempts, two minutes) re-pends the job without spending an attempt, at most five times per job (`jobs.provider_waits`), then fails the file as `provider_busy`; figure captions stay best effort. Ops-managed `model_capacities` caps outbound calls per transport model across catalog versions, ingest using total minus interactive reserve. Every admission reads current DB limits; missing capacity fails explicitly. |
+| Parse | `PARSER_URL`, `PARSER_TOKEN`, `PARSER_TIMEOUT`, `CAPY_PARSE_COORDINATOR_CONCURRENCY`, `CAPY_PARSE_JOB_TIMEOUT`, `CAPY_OFFICE_PREVIEW_MAX_BYTES`; parser container `CAPY_PARSE_QUEUE_DEPTH`, `CAPY_PARSE_DOCUMENT_TIMEOUT`, `CAPY_PARSER_JVM_MAX_HEAP`, `CAPY_RAPIDOCR_MODEL_DIR`, `RELEASE_SHA` | OpenDataLoader parser service on the Netcup host. Production defaults to four coordinator processes, a depth-4 parser FIFO with one worker, 600 s per document, 2,520 s per request (the queue depth times the deadline plus a margin), 2,700 s per parse job. Route, parser implementation string and artifact schema form the artifact identity; there is no parse method knob. |
+| Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT` | Dedicated-host defaults are four isolated one-job containers and 20 minutes per attempt. Model stages are sequential within each job. A provider busy past the in-call retry budget (four attempts, two minutes) re-pends the job without spending an attempt, at most five times per job (`jobs.provider_waits`), then fails the file as `provider_busy`. Ops-managed `model_capacities` caps outbound calls per transport model across catalog versions, ingest using total minus interactive reserve. Every admission reads current DB limits; missing capacity fails explicitly. |
 | Shared nonproduction capacity | `CAPY_SHARED_CAPACITY_LOCK_DIR` | Unset in production. The shared local/UAT Compose project sets one spool directory for both environments. A queue consumer takes the `parse` or `ingest` file lock before claiming a row, which leaves the other environment's job pending and caps active work at one job per role. |
 | Chunk size | `CAPY_CHUNK_*` | Estimated-token budgets (`estimate_tokens`), not a real tokenizer |
 | Embedding | `EMBEDDING_DIM` | The shipped width, matching `halfvec(N)`. The *model* is never env: it is a `model_configs` row pinned per workspace |
 | Search | `CAPY_SEARCH_CANDIDATES`, `CAPY_SEARCH_TOP_K`, `CAPY_SEARCH_PER_FILE_CAP` | |
-| Agent | `CAPY_AGENT_MAX_STEPS` | Default 12. Cap is the design, not a safety valve |
+| Agent | `CAPY_AGENT_MAX_STEPS` | Default 8 planning responses, 2 tool calls per response, 16 per turn (`retrieval/limits.py`). Cap is the design, not a safety valve |
+| Extraction confidence | `CAPY_CONFIDENCE_NOTE_BELOW` | Default 0.9. A passage whose chunk confidence is below this carries `[extraction confidence 0.72: reasons]` in its header, which the capture rule keys on |
+| capture_page | `CAPY_CAPTURE_CACHE_DIR`, `CAPY_CAPTURE_CACHE_MAX_BYTES`, `CAPY_CAPTURE_MAX_EDGE`, `CAPY_CAPTURES_PER_TURN` | Retrieval-host PDF cache (LRU by size, 2 GiB), 1568 px long edge JPEG q80, 8 captures per turn |
 | LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `CAPY_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 250k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |
-| Captions | `CAPY_CAPTION_CONCURRENCY`, `CAPY_CAPTION_MAX_EDGE` | Caption mode is resolved per file in the processing plan. The ZAI GLM-5.3-Flash catalog row routes through DeepInfra. Captions always use `reasoning_effort: low`, which is also the catalog default for chat. |
-| Caption safety valve | `CAPY_CAPTION_MAX_PER_FILE` | `0` (uncapped); the filters bound the cost |
+| Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`). The ZAI GLM-5.3-Flash catalog row is served from Tencent TokenHub. Captions always use `reasoning_effort: low`, which is also the catalog default for chat. |
 | Direct media | `CAPY_IMAGE_MAX_PIXELS`, `ELEVENLABS_API_KEY`, `ELEVENLABS_BASE_URL`, `CAPY_ELEVENLABS_CONCURRENCY_UNITS`, `CAPY_ELEVENLABS_SYNC_TIMEOUT_S`, `CAPY_AUDIO_MAX_DURATION_SECONDS`, `CAPY_TABULAR_TEXT_VERSION` | Image decoding is capped at 100M pixels. Scribe v2 is synchronous, has an absolute 12-hour request timeout, and defaults to 12 weighted Starter units, with each file consuming `min(4, ceil(duration_seconds / 480))`; audio is capped at 10 hours. |
 
 Windows note: psycopg's async driver refuses the Proactor event loop.

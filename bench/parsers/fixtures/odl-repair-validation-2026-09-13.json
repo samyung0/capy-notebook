@@ -1,0 +1,604 @@
+{
+  "schema_version": 1,
+  "id": "odl-repair-validation-2026-09-13",
+  "protocol": {
+    "purpose": "Source-family validation controls for the ODL native repair work.",
+    "claim_boundary": "This set measures source-visible reading order and retained table rows. It does not measure OCR character accuracy, end-to-end parser quality, retrieval quality, or an unseen-training generalization claim.",
+    "gold_method": "The selected pages were downloaded from publisher URLs, rendered to PNG, and inspected before any Java baseline, repaired parser output, or model output was viewed. Boxes use a 0-1000 page grid and page numbers are one-based.",
+    "source_selection": "Four public PDFs from distinct publisher/template families absent from the existing manifests listed below. Their PDFs remain in ignored local artifacts.",
+    "native_page_budget": 150,
+    "selected_page_budget": [10, 16],
+    "table_row_target": [25, 50],
+    "raster_policy": "Each raster control is a one-page PDF made by rendering its source page at max edge 2560 and placing that raster on the original page rectangle. Raster controls reuse the source page gold and are not independent examples.",
+    "negative_policy": "Negative cases are deliberate row or region permutations used to check that the scorer detects an order violation; they are not source defects."
+  },
+  "existing_manifest_paths": [
+    "bench/parsers/fixtures/java-new-documents-sources.json",
+    "bench/parsers/fixtures/odl-font-transfer-sources.json",
+    "bench/parsers/fixtures/odl-independent-sources.json",
+    "bench/rag/fixtures/local/2026-09-09-odl-agentic/sources.json",
+    "bench/rag/fixtures/samples-manifest.json"
+  ],
+  "sources": [
+    {
+      "id": "frontiers-marine",
+      "title": "The effects of variable riverine inputs and seasonal shifts in phytoplankton communities on nitrate cycling in a coastal lagoon",
+      "publisher_family": "frontiers-journal",
+      "publisher": "Frontiers in Marine Science",
+      "doi": "10.3389/fmars.2024.1497246",
+      "lang": "en",
+      "landing_url": "https://www.frontiersin.org/journals/marine-science/articles/10.3389/fmars.2024.1497246/full",
+      "pdf_url": "https://www.frontiersin.org/journals/marine-science/articles/10.3389/fmars.2024.1497246/pdf",
+      "local_pdf": "inputs/frontiers-marine.pdf",
+      "native_pages": 18,
+      "bytes": 7266223,
+      "sha256": "fd8c52e80bc7766ff25f416f127bc7ef4a2d8f6bd8acf8b314ab6979c75763e9",
+      "role": "validation",
+      "rights": "Publisher-hosted public PDF; raw source kept only in ignored local benchmark artifacts; redistribution license not asserted.",
+      "template_signals": [
+        "two-column prose",
+        "mixed text and numeric tables",
+        "units in table cells",
+        "caption and note below table",
+        "short prose adjacent to table",
+        "side-by-side table continuation"
+      ],
+      "selected_pages": [4, 8, 9],
+      "provenance": "Downloaded 2026-09-13 from the Frontiers article PDF URL above; SHA-256 and page count captured before freeze."
+    },
+    {
+      "id": "mdpi-water",
+      "title": "Effect of Heavy Rainfalls on Natural Organic Matter and Trihalomethanes in Surface Water Sources",
+      "publisher_family": "mdpi-water",
+      "publisher": "Water",
+      "doi": "10.3390/w16243654",
+      "lang": "en",
+      "landing_url": "https://www.mdpi.com/2073-4441/16/24/3654",
+      "pdf_url": "https://mdpi-res.com/d_attachment/water/water-16-03654/article_deploy/water-16-03654.pdf",
+      "local_pdf": "inputs/mdpi-water.pdf",
+      "native_pages": 20,
+      "bytes": 7924831,
+      "sha256": "f46b48a02cc6d7189aea17cce4c2598ba7fd8ab13b9d8038e07261d212b57544",
+      "role": "validation",
+      "rights": "Publisher-hosted public PDF; raw source kept only in ignored local benchmark artifacts; redistribution license not asserted.",
+      "template_signals": [
+        "single-column journal layout",
+        "mixed text and numeric table",
+        "units in table cells",
+        "captions and notes",
+        "multiple infographic panels",
+        "short prose adjacent to table"
+      ],
+      "selected_pages": [3, 4, 6],
+      "provenance": "Downloaded 2026-09-13 from the MDPI article landing page's publisher PDF asset; SHA-256 and page count captured before freeze."
+    },
+    {
+      "id": "nature-scientific",
+      "title": "Percutaneous transluminal angioplasty is safe and feasible for reinsertion of tunneled cuffed catheters in the right internal jugular vein",
+      "publisher_family": "springer-scientific-reports",
+      "publisher": "Scientific Reports",
+      "doi": "10.1038/s41598-024-73154-9",
+      "lang": "en",
+      "landing_url": "https://www.nature.com/articles/s41598-024-73154-9",
+      "pdf_url": "https://www.nature.com/articles/s41598-024-73154-9.pdf",
+      "local_pdf": "inputs/nature-scientific.pdf",
+      "native_pages": 11,
+      "bytes": 1652536,
+      "sha256": "7a12614964f4b9e7eba632b87d865d831497fa007ec890fc442d99d4786e975a",
+      "role": "validation",
+      "rights": "Publisher-hosted public PDF; raw source kept only in ignored local benchmark artifacts; redistribution license not asserted.",
+      "template_signals": [
+        "two-column prose",
+        "large multi-column clinical table",
+        "units in headers",
+        "caption and abbreviation note",
+        "short prose adjacent to table",
+        "table continuation across pages"
+      ],
+      "selected_pages": [3, 4, 7],
+      "provenance": "Downloaded 2026-09-13 from the Nature Scientific Reports article PDF URL above; SHA-256 and page count captured before freeze."
+    },
+    {
+      "id": "plos-demography",
+      "title": "Demography, commonly diagnosed disorders and mortality of guinea pigs under primary veterinary care in the UK in 2019—A VetCompass study",
+      "publisher_family": "plos-one",
+      "publisher": "PLOS ONE",
+      "doi": "10.1371/journal.pone.0299464",
+      "lang": "en",
+      "landing_url": "https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0299464",
+      "pdf_url": "https://journals.plos.org/plosone/article/file?id=10.1371%2Fjournal.pone.0299464&type=printable",
+      "local_pdf": "inputs/plos-demography.pdf",
+      "native_pages": 18,
+      "bytes": 548746,
+      "sha256": "d7cbd4ecc4702bfc3cea2aa8cbb971770bb13abe3e30db8b8fc8c9bbec97f38f",
+      "role": "validation",
+      "rights": "Publisher-hosted public PDF; raw source kept only in ignored local benchmark artifacts; redistribution license not asserted.",
+      "template_signals": [
+        "two-column prose",
+        "wide numeric table",
+        "units in table headers",
+        "caption and footnote note",
+        "short prose adjacent to table",
+        "decimal and interval values"
+      ],
+      "selected_pages": [5, 6, 7],
+      "provenance": "Downloaded 2026-09-13 from the PLOS article PDF URL above; SHA-256 and page count captured before freeze."
+    }
+  ],
+  "pages": [
+    {
+      "id": "frontiers-marine-p04",
+      "source": "frontiers-marine",
+      "native_page": 4,
+      "source_png": "source-pages/frontiers-marine-p04.png",
+      "regions": [
+        {"id": "left-prose", "bbox": [80, 85, 490, 555], "kind": "prose"},
+        {"id": "right-prose", "bbox": [510, 85, 930, 555], "kind": "prose"},
+        {"id": "table-1", "bbox": [80, 550, 930, 875], "kind": "table"},
+        {"id": "table-1-note", "bbox": [80, 870, 930, 915], "kind": "note"}
+      ],
+      "reading_order": ["left-prose", "right-prose", "table-1", "table-1-note"],
+      "anchors": [
+        {"text": "We measured a suite of water and sediment processes", "region": "left-prose"},
+        {"text": "2.2 Measurement of pelagic processes", "region": "right-prose"},
+        {"text": "TABLE 1 Summary of measured processes", "region": "table-1"},
+        {"text": "C – carbon, DIC – dissolved inorganic carbon", "region": "table-1-note"}
+      ],
+      "tables": [
+        {
+          "id": "frontiers-table-1",
+          "bbox": [80, 550, 930, 875],
+          "caption": "Summary of measured processes and targeted nitrogen (N) transformations during spring and summer periods in the Curonian Lagoon.",
+          "header": ["Process", "Targeted pathway", "Type of assessment", "Method"],
+          "source_row_count": 11,
+          "checked_rows": [],
+          "note": "The visible table has Water column and Sediment group rows plus process rows; the abbreviation note is checked separately."
+        }
+      ]
+    },
+    {
+      "id": "frontiers-marine-p08",
+      "source": "frontiers-marine",
+      "native_page": 8,
+      "source_png": "source-pages/frontiers-marine-p08.png",
+      "regions": [
+        {"id": "table-2", "bbox": [80, 75, 930, 340], "kind": "table"},
+        {"id": "left-prose", "bbox": [80, 345, 490, 930], "kind": "prose"},
+        {"id": "right-prose", "bbox": [510, 345, 930, 930], "kind": "prose"}
+      ],
+      "reading_order": ["table-2", "left-prose", "right-prose"],
+      "anchors": [
+        {"text": "TABLE 2 Environmental conditions in the Curonian Lagoon", "region": "table-2"},
+        {"text": "Data shown are the mean ± standard error based on three replicates.", "region": "table-2"},
+        {"text": "C-fixation at this site was 16.1 ± 0.3 μmol C L−1 h−1", "region": "left-prose"},
+        {"text": "Total denitrification rates", "region": "right-prose"},
+        {"text": "3.3 Benthic nitrate fluxes and dissimilatory reduction processes", "region": "left-prose"}
+      ],
+      "tables": [
+        {
+          "id": "frontiers-table-2",
+          "bbox": [80, 75, 930, 340],
+          "caption": "Environmental conditions in the Curonian Lagoon during field campaigns to measure benthic and pelagic nitrate cycling (kd: light attenuation coefficient).",
+          "header": ["Measure", "Units", "May / Northern site", "May / Central site", "August / Northern site", "August / Central site"],
+          "source_row_count": 12,
+          "checked_rows": [
+            ["kd", "[m−1]", "1.42", "1.21", "2.02", "2.39"],
+            ["Depth of euphotic zone", "[m]", "2", "3", "1.5", "1.5"],
+            ["Temperature", "[°C]", "15.0", "14.7", "20.0", "21.0"],
+            ["Salinity", "[PSU]", "0.11", "0.24", "1.03", "0.23"],
+            ["NH4+", "[μmol L−1]", "0.24 ± 0.04", "0.10 ± 0.03", "0.71 ± 0.12", "0.12 ± 0.01"],
+            ["NO3−", "[μmol L−1]", "241.6 ± 1.2", "105.4 ± 0.4", "0.38 ± 0.03", "0.37 ± 0.02"],
+            ["DIN", "[μmol L−1]", "243.4 ± 1.2", "106.4 ± 0.4", "1.15 ± 0.14", "0.55 ± 0.02"],
+            ["DON", "[μmol L−1]", "31.8 ± 2.5", "15.6 ± 1.9", "44.0 ± 2.0", "38.8 ± 0.6"],
+            ["SPM", "[mg L−1]", "10.8 ± 0.6", "12.8 ± 0.8", "16.1 ± 0.2", "19.1 ± 3.4"],
+            ["PON", "[μmol L−1]", "31.2 ± 10.5", "39.7 ± 2.9", "64.7 ± 4.7", "54.0 ± 4.5"],
+            ["C:N in seston", "[molar]", "6.8 ± 0.1", "6.6 ± 0.1", "6.8 ± 0.1", "6.4 ± 0.2"],
+            ["Chlorophyll a", "[μg L−1]", "26.6 ± 0.2", "29.6 ± 0.9", "46.3 ± 0.7", "48.8 ± 2.8"]
+          ],
+          "note": "Data shown are the mean ± standard error based on three replicates."
+        }
+      ]
+    },
+    {
+      "id": "frontiers-marine-p09",
+      "source": "frontiers-marine",
+      "native_page": 9,
+      "source_png": "source-pages/frontiers-marine-p09.png",
+      "regions": [
+        {"id": "table-3-left", "bbox": [80, 75, 490, 925], "kind": "table"},
+        {"id": "table-3-right", "bbox": [510, 75, 930, 430], "kind": "table"},
+        {"id": "right-prose", "bbox": [510, 430, 930, 690], "kind": "prose"},
+        {"id": "figure-4", "bbox": [510, 690, 930, 925], "kind": "figure"}
+      ],
+      "reading_order": ["table-3-left", "table-3-right", "right-prose", "figure-4"],
+      "anchors": [
+        {"text": "TABLE 3 ANOVA results.", "region": "table-3-left"},
+        {"text": "TABLE 3 Continued", "region": "table-3-right"},
+        {"text": "3.4 Sedimentation of particulate matter", "region": "right-prose"},
+        {"text": "FIGURE 4 Phytoplankton biomass and community composition", "region": "figure-4"}
+      ],
+      "tables": [
+        {
+          "id": "frontiers-table-3",
+          "bbox": [80, 75, 930, 925],
+          "caption": "ANOVA results.",
+          "header": ["Factor", "Df", "SS", "MS", "F", "p"],
+          "source_row_count": 45,
+          "checked_rows": [],
+          "note": "The table is visibly split into left and right continuation panels on the same page; the figure caption follows the right panel."
+        }
+      ]
+    },
+    {
+      "id": "mdpi-water-p03",
+      "source": "mdpi-water",
+      "native_page": 3,
+      "source_png": "source-pages/mdpi-water-p03.png",
+      "regions": [
+        {"id": "intro", "bbox": [250, 90, 950, 575], "kind": "prose"},
+        {"id": "table-1", "bbox": [70, 575, 950, 920], "kind": "table"}
+      ],
+      "reading_order": ["intro", "table-1"],
+      "anchors": [
+        {"text": "2. Materials and Methods", "region": "intro"},
+        {"text": "Samples of the water entering Ulutan Dam", "region": "intro"},
+        {"text": "Table 1. Storm events with hydrologic conditions.", "region": "table-1"},
+        {"text": "4th storm", "region": "table-1"}
+      ],
+      "tables": [
+        {
+          "id": "mdpi-table-1",
+          "bbox": [70, 575, 950, 920],
+          "caption": "Storm events with hydrologic conditions.",
+          "header": ["Storm", "Dates", "Number of Samples", "Period", "Peak Flow", "Hydrologic Conditions"],
+          "source_row_count": 4,
+          "checked_rows": [
+            ["1st storm", "20 September 2018 to 21 September 2018", "19", "Every 2 h", "127 CFS (3.6 m3/s) at 5:30 am on 21 September 2018", "Relatively dry period before the first storm after a flow of 135 CFS (3.82 m3/s) on 8 May 2018"],
+            ["2nd storm", "26 November 2018 to 28 November 2019", "19", "Every 2 h", "257 CFS (7.27 m3/s) at 16:00 am on 26 November 2018", "Relatively limited dry period preceded the second storm, occurring in the wake of the first storm"],
+            ["3rd storm", "11 July 2019 to 13 July 2019", "19", "Every 2 h", "70 CFS (1.98 m3/s) at 8:00 pm on 11 July 2019", "Relatively long dry period before the third storm after a flow of 158 CFS (4.47 m3/s) on 9 February 2019"]
+          ],
+          "note": "The fourth hydrologic-condition cell visibly ends with 'between August' at the bottom edge of the publisher page. It is recorded as a source-visible partial row and is not counted among checked_rows."
+        }
+      ]
+    },
+    {
+      "id": "mdpi-water-p04",
+      "source": "mdpi-water",
+      "native_page": 4,
+      "source_png": "source-pages/mdpi-water-p04.png",
+      "regions": [
+        {"id": "figure-1", "bbox": [130, 95, 865, 595], "kind": "figure"},
+        {"id": "figure-1-caption", "bbox": [245, 595, 850, 680], "kind": "caption"},
+        {"id": "figure-2", "bbox": [245, 680, 850, 900], "kind": "figure"},
+        {"id": "figure-2-caption", "bbox": [245, 900, 850, 965], "kind": "caption"}
+      ],
+      "reading_order": ["figure-1", "figure-1-caption", "figure-2", "figure-2-caption"],
+      "anchors": [
+        {"text": "(a)", "region": "figure-1"},
+        {"text": "(b)", "region": "figure-1"},
+        {"text": "(c)", "region": "figure-1"},
+        {"text": "Figure 1. Map of the study area.", "region": "figure-1-caption"},
+        {"text": "Aeration", "region": "figure-2"},
+        {"text": "Disinfection", "region": "figure-2"},
+        {"text": "Figure 2. Units of Ulutan Dam Drinking Water Treatment Plant", "region": "figure-2-caption"}
+      ],
+      "tables": []
+    },
+    {
+      "id": "mdpi-water-p06",
+      "source": "mdpi-water",
+      "native_page": 6,
+      "source_png": "source-pages/mdpi-water-p06.png",
+      "regions": [
+        {"id": "upper-methods", "bbox": [180, 85, 950, 365], "kind": "prose"},
+        {"id": "formula", "bbox": [80, 365, 950, 460], "kind": "formula"},
+        {"id": "lower-methods", "bbox": [180, 460, 950, 755], "kind": "prose"},
+        {"id": "results-heading", "bbox": [180, 755, 800, 825], "kind": "heading"},
+        {"id": "results-prose", "bbox": [180, 825, 950, 960], "kind": "prose"}
+      ],
+      "reading_order": ["upper-methods", "formula", "lower-methods", "results-heading", "results-prose"],
+      "anchors": [
+        {"text": "The chlorination experiments were conducted by Standard Methods 5710 B", "region": "upper-methods"},
+        {"text": "BIF = TTHM − Br/TTHMs", "region": "formula"},
+        {"text": "where the THM concentrations are on a molar basis.", "region": "lower-methods"},
+        {"text": "3. Results and Discussion", "region": "results-heading"},
+        {"text": "Profiles of NOM Surrogate Parameters and Chlorine Demand", "region": "results-heading"}
+      ],
+      "tables": []
+    },
+    {
+      "id": "nature-scientific-p03",
+      "source": "nature-scientific",
+      "native_page": 3,
+      "source_png": "source-pages/nature-scientific-p03.png",
+      "regions": [
+        {"id": "table-1", "bbox": [80, 45, 940, 930], "kind": "table"}
+      ],
+      "reading_order": ["table-1"],
+      "anchors": [
+        {"text": "No. Gender Age (y)", "region": "table-1"},
+        {"text": "1 M 76 DN 18", "region": "table-1"},
+        {"text": "12 M 57 CN 96", "region": "table-1"},
+        {"text": "19 M 66 DN 36", "region": "table-1"},
+        {"text": "Continued", "region": "table-1"}
+      ],
+      "tables": [
+        {
+          "id": "nature-table-1-p03",
+          "bbox": [80, 45, 940, 930],
+          "caption": "Clinical data of the patients and their corresponding treatment protocols.",
+          "header": ["No.", "Gender", "Age (y)", "Preexisting renal disease", "Dialysis duration (months)", "Reasons for hospitalization", "Site of stenotic or occlusive lesions", "Frequency of RIJV-CVC for HD (TCC/NTC)", "Access site (PTA treatments)", "PTA catheter (mm)", "Re catheterization", "Procedural complications"],
+          "source_row_count": 19,
+          "checked_rows": [
+            ["1", "M", "76", "DN", "18", "Bard Conquest 8 × 40"],
+            ["2", "M", "77", "DN", "52", "Bard Conquest 8 × 40"],
+            ["3", "F", "80", "HP", "14", "Bard Conquest 8 × 40"],
+            ["4", "M", "77", "DN", "36", "Bard Conquest 8 × 40"],
+            ["5", "F", "60", "KS", "156", "Bard Conquest 8 × 40,10 × 40"],
+            ["6", "F", "54", "CN", "108", "Bard Conquest 8 × 40"],
+            ["7", "F", "79", "DN", "60", "Bard Conquest 8 × 40"],
+            ["8", "F", "54", "LN", "3", "Bard Conquest 8 × 40"],
+            ["9", "M", "55", "DN", "24", "Bard Conquest 8 × 40"],
+            ["10", "F", "49", "CN", "72", "Bard Conquest 6 × 40,10 × 40"],
+            ["11", "F", "85", "DN", "8", "Bard Conquest 8 × 40"],
+            ["12", "M", "57", "CN", "96", "Bard Conquest 8 × 40"],
+            ["13", "F", "58", "DN", "72", "Bard Conquest 6 × 40,10 × 40"],
+            ["14", "F", "54", "CN", "156", "Bard Conquest 6 × 40,8 × 40"],
+            ["15", "F", "46", "DN", "4", "Bard Conquest 8 × 40"],
+            ["16", "F", "85", "DN", "2", "Bard Conquest 6 × 40,10 × 40"],
+            ["17", "M", "33", "GPS", "40", "Bard Conquest 6 × 40,10 × 40"],
+            ["18", "F", "70", "MN", "135", "Bard Conquest 6,10 × 40"],
+            ["19", "M", "66", "DN", "36", "Boston Scientific Gladiator 6 × 40"]
+          ],
+          "note": "The checked row projection keeps six mixed text/numeric columns so the row identity and catheter dimension remain source-verifiable."
+        }
+      ]
+    },
+    {
+      "id": "nature-scientific-p04",
+      "source": "nature-scientific",
+      "native_page": 4,
+      "source_png": "source-pages/nature-scientific-p04.png",
+      "regions": [
+        {"id": "table-1-continuation", "bbox": [80, 45, 940, 500], "kind": "table"},
+        {"id": "table-1-caption", "bbox": [200, 500, 940, 670], "kind": "caption"},
+        {"id": "methods", "bbox": [200, 670, 940, 930], "kind": "prose"}
+      ],
+      "reading_order": ["table-1-continuation", "table-1-caption", "methods"],
+      "anchors": [
+        {"text": "20 M 66 CN 192", "region": "table-1-continuation"},
+        {"text": "21 F 64 DN 72", "region": "table-1-continuation"},
+        {"text": "Table 1. Clinical data of the patients", "region": "table-1-caption"},
+        {"text": "Treatment methods", "region": "methods"},
+        {"text": "Occlusive lesions included 2 cases of RIJV occlusion", "region": "methods"}
+      ],
+      "tables": [
+        {
+          "id": "nature-table-1-p04",
+          "bbox": [80, 45, 940, 500],
+          "caption": "Clinical data of the patients and their corresponding treatment protocols.",
+          "header": ["No.", "Gender", "Age (y)", "Preexisting renal disease", "Dialysis duration (months)", "Reasons for hospitalization", "Site of stenotic or occlusive lesions", "Frequency of RIJV-CVC for HD (TCC/NTC)", "Access site (PTA treatments)", "PTA catheter (mm)", "Re catheterization", "Procedural complications"],
+          "source_row_count": 2,
+          "checked_rows": [
+            ["20", "M", "66", "CN", "192", "Boston Scientific Gladiator 6 × 40,10 × 40"],
+            ["21", "F", "64", "DN", "72", "Boston Scientific Gladiator 8 × 40"]
+          ],
+          "note": "This continuation supplies rows 20 and 21; the caption and abbreviation note precede nearby methods prose."
+        }
+      ]
+    },
+    {
+      "id": "nature-scientific-p07",
+      "source": "nature-scientific",
+      "native_page": 7,
+      "source_png": "source-pages/nature-scientific-p07.png",
+      "regions": [
+        {"id": "table-2", "bbox": [150, 45, 940, 565], "kind": "table"},
+        {"id": "table-2-caption", "bbox": [250, 565, 940, 660], "kind": "caption"},
+        {"id": "discussion", "bbox": [250, 660, 940, 940], "kind": "prose"}
+      ],
+      "reading_order": ["table-2", "table-2-caption", "discussion"],
+      "anchors": [
+        {"text": "No. Follow-up (months)", "region": "table-2"},
+        {"text": "1 7 240 220 220 Deaths", "region": "table-2"},
+        {"text": "20 9 260 260 260", "region": "table-2"},
+        {"text": "Table 2. Follow-up results.", "region": "table-2-caption"},
+        {"text": "Accurate placement of TCC and vascular complications", "region": "discussion"}
+      ],
+      "tables": [
+        {
+          "id": "nature-table-2",
+          "bbox": [150, 45, 940, 565],
+          "caption": "Follow-up results.",
+          "header": ["No.", "Follow-up (months)", "First postoperative hemodialysis blood flow (ml/min)", "Hemodialysis blood flow 3 months after surgery (ml/min)", "Hemodialysis blood flow 6 months after surgery (ml/min)", "Hemodialysis blood flow 12 months after surgery (ml/min)", "Reoccurrence of catheter dysfunction"],
+          "source_row_count": 21,
+          "checked_rows": [],
+          "note": "This is a second table with the same patient identities, retained as a table-shape and unit-header control rather than duplicate checked rows."
+        }
+      ]
+    },
+    {
+      "id": "plos-demography-p05",
+      "source": "plos-demography",
+      "native_page": 5,
+      "source_png": "source-pages/plos-demography-p05.png",
+      "regions": [
+        {"id": "table-1", "bbox": [50, 70, 950, 590], "kind": "table"},
+        {"id": "body", "bbox": [250, 590, 950, 950], "kind": "prose"}
+      ],
+      "reading_order": ["table-1", "body"],
+      "anchors": [
+        {"text": "Table 1. Count, bodyweight (kg) and age (years on 31 December 2019)", "region": "table-1"},
+        {"text": "Breed unrecorded 50,098 97.05 1.05 2.20", "region": "table-1"},
+        {"text": "Exotic 1 0.00 1.23 2.90", "region": "table-1"},
+        {"text": "Disorder prevalence", "region": "body"}
+      ],
+      "tables": [
+        {
+          "id": "plos-table-1",
+          "bbox": [50, 70, 950, 590],
+          "caption": "Count, bodyweight (kg) and age (years on 31 December 2019) of guinea pig breeds under primary veterinary care.",
+          "header": ["Breed", "No.", "%", "Median adult bodyweight kg", "Median age years"],
+          "source_row_count": 24,
+          "checked_rows": [],
+          "note": "The wide breed table ends before the nearby Disorder prevalence heading and paragraph."
+        }
+      ]
+    },
+    {
+      "id": "plos-demography-p06",
+      "source": "plos-demography",
+      "native_page": 6,
+      "source_png": "source-pages/plos-demography-p06.png",
+      "regions": [
+        {"id": "table-2", "bbox": [50, 70, 950, 660], "kind": "table"},
+        {"id": "body", "bbox": [250, 660, 950, 950], "kind": "prose"}
+      ],
+      "reading_order": ["table-2", "body"],
+      "anchors": [
+        {"text": "Table 2. Prevalence of the 30 most common disorders", "region": "table-2"},
+        {"text": "Overgrown nail(s) 1005 26.55", "region": "table-2"},
+        {"text": "Alopecia 49 1.29", "region": "table-2"},
+        {"text": "varied by disorder from dermatophytosis", "region": "body"}
+      ],
+      "tables": [
+        {
+          "id": "plos-table-2",
+          "bbox": [50, 70, 950, 660],
+          "caption": "Prevalence of the 30 most common disorders at a precise-level of diagnostic precision recorded in guinea pigs.",
+          "header": ["Precise-level disorder", "No.", "%", "95% CI", "Male: female odds ratio", "95% CI", "Median age (years)", "Median bodyweight (kg)"],
+          "source_row_count": 30,
+          "checked_rows": [
+            ["Overgrown nail(s)", "1005", "26.55", "25.15–27.99", "0.91", "0.78–1.06", "2.53", "1.10"],
+            ["Dermatophytosis", "228", "6.02", "5.29–6.83", "1.04", "0.74–1.46", "1.11", "1.00"],
+            ["Corneal ulceration", "189", "4.99", "4.32–5.74", "0.61", "0.44–0.85", "2.79", "1.08"],
+            ["Diagnosis not completed", "166", "4.39", "3.76–5.09", "0.84", "0.59–1.20", "4.52", "1.03"],
+            ["Anorexia", "153", "4.04", "3.44–4.72", "1.62", "1.12–2.33", "4.05", "1.00"]
+          ],
+          "note": "The table has decimal, interval, text, and unit-bearing columns; checked rows are the first five visible rows."
+        }
+      ]
+    },
+    {
+      "id": "plos-demography-p07",
+      "source": "plos-demography",
+      "native_page": 7,
+      "source_png": "source-pages/plos-demography-p07.png",
+      "regions": [
+        {"id": "table-3", "bbox": [50, 70, 950, 590], "kind": "table"},
+        {"id": "mortality-heading", "bbox": [250, 590, 650, 665], "kind": "heading"},
+        {"id": "mortality-body", "bbox": [250, 665, 950, 950], "kind": "prose"}
+      ],
+      "reading_order": ["table-3", "mortality-heading", "mortality-body"],
+      "anchors": [
+        {"text": "Table 3. Prevalence of the 20 most common disorders", "region": "table-3"},
+        {"text": "Claw/nail disorder 1014 26.79", "region": "table-3"},
+        {"text": "Obesity 81 2.14", "region": "table-3"},
+        {"text": "Mortality", "region": "mortality-heading"},
+        {"text": "There were 757 deaths recorded among the 3,785", "region": "mortality-body"}
+      ],
+      "tables": [
+        {
+          "id": "plos-table-3",
+          "bbox": [50, 70, 950, 590],
+          "caption": "Prevalence of the 20 most common disorders at a grouped-level of diagnostic precision recorded in guinea pigs.",
+          "header": ["Grouped-level disorder", "No.", "%", "95% CI", "Male: female odds ratio", "95% CI", "Median age (years)", "Median bodyweight (kg)"],
+          "source_row_count": 20,
+          "checked_rows": [],
+          "note": "The table is followed immediately by the Mortality heading and short prose, which supplies a boundary-order check."
+        }
+      ]
+    }
+  ],
+  "raster_controls": [
+    {
+      "id": "raster-frontiers-marine-p08",
+      "source": "frontiers-marine",
+      "source_page": 8,
+      "gold_page": "frontiers-marine-p08",
+      "local_pdf": "inputs/raster-frontiers-marine-p08.pdf",
+      "derived_from_png": "source-pages/frontiers-marine-p08.png",
+      "bytes": 543596,
+      "sha256": "3a04d8bee2dca5ba2e8ca9bc4deae2937be4cd45ac1cf3c01c18ca77f5013d65",
+      "page_count": 1,
+      "max_edge": 2560,
+      "independence": "same source page and gold; control only"
+    },
+    {
+      "id": "raster-mdpi-water-p03",
+      "source": "mdpi-water",
+      "source_page": 3,
+      "gold_page": "mdpi-water-p03",
+      "local_pdf": "inputs/raster-mdpi-water-p03.pdf",
+      "derived_from_png": "source-pages/mdpi-water-p03.png",
+      "bytes": 505933,
+      "sha256": "fb87ec5016b2d4fd78328c06c1afa1cc686def20a0054c8f3053dfef3f09f9f7",
+      "page_count": 1,
+      "max_edge": 2560,
+      "independence": "same source page and gold; control only"
+    },
+    {
+      "id": "raster-nature-scientific-p03",
+      "source": "nature-scientific",
+      "source_page": 3,
+      "gold_page": "nature-scientific-p03",
+      "local_pdf": "inputs/raster-nature-scientific-p03.pdf",
+      "derived_from_png": "source-pages/nature-scientific-p03.png",
+      "bytes": 522647,
+      "sha256": "3ab7e913be8a23d1233279749e6e047394c646de5b46991378db17521f7427ff",
+      "page_count": 1,
+      "max_edge": 2560,
+      "independence": "same source page and gold; control only"
+    },
+    {
+      "id": "raster-plos-demography-p06",
+      "source": "plos-demography",
+      "source_page": 6,
+      "gold_page": "plos-demography-p06",
+      "local_pdf": "inputs/raster-plos-demography-p06.pdf",
+      "derived_from_png": "source-pages/plos-demography-p06.png",
+      "bytes": 518348,
+      "sha256": "fcfda8f86f04a37e6dda3bc2145980e9585dc2bb599230e542f14eba2ea67329",
+      "page_count": 1,
+      "max_edge": 2560,
+      "independence": "same source page and gold; control only"
+    }
+  ],
+  "negative_cases": [
+    {
+      "id": "negative-frontiers-table-2-row-swap",
+      "base_page": "frontiers-marine-p08",
+      "table": "frontiers-table-2",
+      "operation": "swap_checked_rows",
+      "indices": [0, 1],
+      "expected_min_wrong_pairs": 1,
+      "basis": "row-order scorer"
+    },
+    {
+      "id": "negative-nature-table-1-row-swap",
+      "base_page": "nature-scientific-p03",
+      "table": "nature-table-1-p03",
+      "operation": "swap_checked_rows",
+      "indices": [0, 1],
+      "expected_min_wrong_pairs": 1,
+      "basis": "row-order scorer"
+    },
+    {
+      "id": "negative-plos-table-2-row-swap",
+      "base_page": "plos-demography-p06",
+      "table": "plos-table-2",
+      "operation": "swap_checked_rows",
+      "indices": [0, 1],
+      "expected_min_wrong_pairs": 1,
+      "basis": "row-order scorer"
+    },
+    {
+      "id": "negative-frontiers-column-swap",
+      "base_page": "frontiers-marine-p04",
+      "operation": "swap_regions",
+      "region_indices": [0, 1],
+      "expected_min_wrong_pairs": 1,
+      "basis": "reading-order scorer"
+    }
+  ]
+}

@@ -74,7 +74,7 @@ POLICIES: dict[str, JobPolicy] = {
     ),
     "ingest": JobPolicy(
         # Post-parse resource failures always receive this one retry. They never
-        # quarantine the source fingerprint because MinerU already completed.
+        # quarantine the source fingerprint because the parser already completed.
         max_attempts=2,
         backoff_base_s=30,
         timeout_s=cfg.ingest_timeout,

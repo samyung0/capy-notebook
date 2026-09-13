@@ -7,11 +7,11 @@ shared spool and hand an immutable local bundle to an ingest continuation.
 
 The parse returns a bundle — a ``content_list.json`` carrying a page index and
 bounding box per block, plus the extracted images — so citations a reader can
-jump to and figures that can be captioned come from the same shape.
+jump to and page captures come from the same shape.
 
 Live progress is published to Redis; the Go gateway fans it to the browser over
-SSE. A document stays ``pending`` until a coordinator holds a parse slot; ingest
-workers never wait on MinerU.
+SSE. A document stays ``pending`` while the parser's queue is full; ingest
+workers never wait on the parser.
 
 Run: ``python -m pipeline.ingest.worker``
 """
@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import json
 import logging
 import os
 import shutil
@@ -53,14 +54,12 @@ from ..jobs import (
     policy_for,
     provider_wait_backoff_s,
 )
-from ..parse import caption_cache, figures, parser_client, slots
+from ..parse import caption_cache, parser_client
 from ..retrieval import accounting, indexing, store
-from ..retrieval.chunking import (
-    CHUNKER_VERSION,
-    Chunk,
-    chunk_content_list,
-    chunk_markdown,
-)
+from ..retrieval.chunking import CHUNKER_VERSION, Chunk, chunk_markdown
+from ..retrieval.confidence import ocr_pages, score_chunks
+from ..retrieval.headings import retain_headings
+from ..retrieval.packing import pack_blocks
 from ..store import blobstore, db
 from . import capacity, import_stage, source_text, telemetry
 from . import plan as ingest_plan
@@ -70,13 +69,13 @@ log = logging.getLogger("capy.worker")
 _RESOURCE_AUDIO_SECOND = "audio_transcription_second"
 _RESOURCE_DIGITAL_PAGE = "digital_parse_page"
 _RESOURCE_OCR_PAGE = "ocr_parse_page"
-_RESOURCE_FIGURE_CAPTION = "figure_caption_call"
 _REQUIRED_RESOURCE_RATES = {
     _RESOURCE_AUDIO_SECOND,
     _RESOURCE_DIGITAL_PAGE,
     _RESOURCE_OCR_PAGE,
-    _RESOURCE_FIGURE_CAPTION,
 }
+# A job that found the parser or a provider full re-pends after this long.
+YIELD_BACKOFF_S = 2
 _resource_rates: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
     "ingest_resource_rates", default=None
 )
@@ -1186,8 +1185,8 @@ def _yield_for_capacity(
     source_revision: int,
     source_etag: str,
     actor_user_id: str,
-    message: str = "waiting for a parser slot",
-    backoff_s: int = slots.YIELD_BACKOFF_S,
+    message: str = "waiting for parser capacity",
+    backoff_s: int = YIELD_BACKOFF_S,
     outcome: str = "capacity_wait",
     count_provider_wait: bool = False,
 ) -> None:
@@ -1260,14 +1259,9 @@ def _pipeline_identity(
     if direct:
         return f"plan-v{processing_plan.version}:{direct}:{CHUNKER_VERSION}"
     route = _parse_route(processing_plan.parser_route)
-    # Whether figures were captioned changes the parsed content_list, so a parse
-    # done without them cannot be reused for one that needs them. The caption
-    # text itself is cached separately, by image bytes.
-    cap = "captions" if processing_plan.caption_embedded_images else "none"
     return (
-        f"plan-v{processing_plan.version}:{cfg.parse_method}:{route}:"
-        f"{parser_client.parser_version(route)}"
-        f":{cap}:{CHUNKER_VERSION}"
+        f"plan-v{processing_plan.version}:{route}:"
+        f"{parser_client.parser_version(route)}:{CHUNKER_VERSION}"
     )
 
 
@@ -1335,7 +1329,6 @@ def _record_parse_usage_tx(
             "jobId": job_id,
             "attempt": attempt,
             "outcome": outcome,
-            "parseMethod": usage.method,
             "sourceFormat": usage.source_format,
             "parseReceiptId": usage.receipt_id,
             "digitalPageRate": _rate(_RESOURCE_DIGITAL_PAGE),
@@ -1494,36 +1487,32 @@ async def _ensure_document_artifact(
         source_sha256=source_sha256,
         route=route,
     )
-    held_slot = await asyncio.to_thread(slots.try_acquire, route, job["id"])
-    if not held_slot:
-        raise CapacityWait(route)
+    await asyncio.to_thread(
+        _set_file_status,
+        file_id,
+        "processing",
+        int(payload["sourceRevision"]),
+        str(payload.get("sourceETag") or ""),
+        str(payload.get("actorUserId") or ""),
+    )
+    _publish_progress(workspace_id, file_id, "parsing", 15, status="processing")
     try:
-        await asyncio.to_thread(
-            _set_file_status,
-            file_id,
-            "processing",
-            int(payload["sourceRevision"]),
-            str(payload.get("sourceETag") or ""),
-            str(payload.get("actorUserId") or ""),
+        _set_stage("parser_call")
+        artifact = await asyncio.to_thread(
+            parser_client.ensure_artifact,
+            descriptor,
+            name,
+            job["id"],
         )
-        _publish_progress(workspace_id, file_id, "parsing", 15, status="processing")
-        try:
-            _set_stage("mineru_parse")
-            artifact = await asyncio.to_thread(
-                parser_client.ensure_artifact,
-                descriptor,
-                name,
-                job["id"],
-            )
-        except parser_client.ParserTerminalResourceError as exc:
-            raise TerminalError(
-                "this file hit a terminal parser resource limit and is "
-                "quarantined for the current parser version"
-            ) from exc
-        except parser_client.ParserCapacityError as exc:
-            raise CapacityWait(route) from exc
-    finally:
-        await asyncio.to_thread(slots.release, route, job["id"])
+    except parser_client.ParserTerminalResourceError as exc:
+        raise TerminalError(
+            "this file hit a terminal parser resource limit and is "
+            "quarantined for the current parser version"
+        ) from exc
+    except parser_client.ParserCapacityError as exc:
+        # The parser's bounded queue answered 429; the job re-pends without
+        # spending an attempt.
+        raise CapacityWait(route) from exc
 
     artifact_key = str(artifact.get("key") or "")
     fingerprint = str(artifact.get("fingerprint") or "")
@@ -1722,63 +1711,46 @@ async def _chunks_for(
             )
         if processing_plan.office_preview and not published_preview:
             raise RetryableError("required Office preview could not be published")
-        _publish_progress(
-            ws,
-            file_id,
-            "captioning" if processing_plan.caption_embedded_images else "indexing",
-            45,
-        )
-        if processing_plan.caption_embedded_images:
-            # Before chunking on purpose: a caption has to be inside the passage
-            # it belongs to before that passage is embedded and summarized, or
-            # the figure stays invisible to both.
-            _set_stage("figure_captioning")
-            counts = await figures.caption_figures(
-                file_id=file_id,
-                content_list=content_list,
-                raw_dir=raw_dir,
-                file_name=name,
-                source_sha256=source_sha256,
-                refresh_job_id=job_id if payload.get("sourceRefresh") is True else None,
-            )
-            log.info("captioned figures for %s: %s", name, counts)
-            selected = max(0, int(counts.get("selected") or 0))
-            captioned = max(0, int(counts.get("captioned") or 0))
-            cached = max(0, int(counts.get("cached") or 0))
-            telemetry.record(
-                figures_selected=selected,
-                figures_cached=cached,
-                figures_captioned=captioned,
-                figures_decorative=max(0, int(counts.get("decorative") or 0)),
-                figures_applied=max(0, int(counts.get("applied") or 0)),
-                figures_failed=max(0, selected - cached - captioned),
-            )
-            if counts.get("key"):
-                registered = await asyncio.to_thread(
-                    _touch_or_upsert_artifact,
-                    object_path=str(counts["key"]),
-                    kind="captions",
-                    source_sha256=source_sha256,
-                )
-                if registered:
-                    await asyncio.to_thread(
-                        _record_caption_blob_best_effort,
-                        file_id,
-                        str(counts["key"]),
-                        source_revision,
-                        source_etag,
-                        str(payload.get("actorUserId") or ""),
-                    )
+        _publish_progress(ws, file_id, "indexing", 45)
         _set_stage("chunking")
-        _publish_progress(ws, file_id, "indexing", 55)
-        return (
-            chunk_content_list(content_list),
-            artifact_key,
-            fingerprint,
-            artifact_version,
+        chunks = await asyncio.to_thread(
+            _page_chunks, content_list, raw_dir, Path(local_path or "")
         )
+        _publish_progress(ws, file_id, "indexing", 55)
+        return chunks, artifact_key, fingerprint, artifact_version
     finally:
         shutil.rmtree(raw_dir, ignore_errors=True)
+
+
+def _page_chunks(
+    content_list: list[dict], raw_dir: Path, source_pdf: Path
+) -> list[Chunk]:
+    """Chunk a parsed document against the PDF its blocks were measured on.
+
+    The bundle carries the parser's frozen furniture (``refinement.json``) and,
+    when font repair changed the bytes, the repaired PDF (``parsed.pdf``);
+    Office sources carry their LibreOffice preview. Otherwise the spooled
+    source is the page model. Heading retention and confidence read that PDF,
+    so they see the glyphs the parser saw.
+    """
+    refinement_path = raw_dir / "refinement.json"
+    if not refinement_path.is_file():
+        raise TerminalError("parse artifact has no refinement.json")
+    furniture = json.loads(refinement_path.read_text(encoding="utf-8")).get("furniture")
+    if not isinstance(furniture, list) or not all(
+        isinstance(t, str) for t in furniture
+    ):
+        raise TerminalError("parse artifact refinement.json has no furniture list")
+    chunks = pack_blocks(content_list, frozenset(furniture))
+    page_pdf = next(
+        (p for p in (raw_dir / "parsed.pdf", raw_dir / "preview.pdf") if p.is_file()),
+        source_pdf,
+    )
+    if not page_pdf.is_file():
+        raise RetryableError("page-model PDF for the parsed document is missing")
+    chunks = retain_headings(content_list, page_pdf, chunks)
+    score_chunks(chunks, page_pdf, ocr=ocr_pages(content_list))
+    return chunks
 
 
 # ------------------------------------------------------------------- jobs
@@ -1876,8 +1848,8 @@ async def _process_ingest_job_bound(job: dict) -> None:
             str(payload.get("actorUserId") or ""),
             "waiting for provider capacity"
             if processing_plan.route == ingest_plan.AUDIO_TRANSCRIPTION
-            else "waiting for a parser slot",
-            slots.YIELD_BACKOFF_S,
+            else "waiting for parser capacity",
+            YIELD_BACKOFF_S,
             "capacity_wait",
         )
         raise

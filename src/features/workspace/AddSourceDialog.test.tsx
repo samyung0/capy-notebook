@@ -4,7 +4,6 @@ import { describe, expect, it } from 'vitest';
 import { sourceUploadPolicy } from '@/mocks/sourceUploadPolicy';
 
 import {
-  CaptionImagesToggle,
   ChapterSelect,
   createSourceInspectionGuard,
   ParseModeSelect,
@@ -12,7 +11,6 @@ import {
 
 const pendingPdf = {
   analysisStatus: 'idle' as const,
-  captionImages: true,
   chapterId: null,
   chapterName: null,
   contentType: 'application/pdf',
@@ -41,26 +39,17 @@ describe('add-source dialog lifecycle', () => {
           pending={pendingPdf}
           policy={sourceUploadPolicy}
         />
-        <CaptionImagesToggle
-          disabled
-          onChange={() => undefined}
-          pending={pendingPdf}
-          policy={sourceUploadPolicy}
-        />
       </>
     );
 
     const selectTriggers = html.match(
       /<button(?=[^>]*data-slot="select-trigger")[^>]*>/g
     );
-    const captionToggle = html.match(/<(?=[^>]*data-slot="switch")[^>]+>/g);
 
     expect(selectTriggers).toHaveLength(2);
     expect(
       selectTriggers?.every((control) => control.includes('disabled=""'))
     ).toBe(true);
-    expect(captionToggle).toHaveLength(1);
-    expect(captionToggle?.[0]).toContain('disabled=""');
   });
 
   it('ignores an inspection result after the chooser closes', async () => {

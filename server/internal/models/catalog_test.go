@@ -77,14 +77,14 @@ func TestEliteLLMProvidersPlatformEnv(t *testing.T) {
 	if !IsFirstPartyProvider("zai") {
 		t.Fatal("zai must be treated as a first-party provider")
 	}
-	if catalog.CredentialEnv("zai") != "DEEPINFRA_API_KEY" {
+	if catalog.CredentialEnv("zai") != "TENCENT_API_KEY" {
 		t.Fatal(catalog.CredentialEnv("zai"))
 	}
 }
 
 func TestAgenticLoopCertificationIsProviderAndSlugKeyed(t *testing.T) {
-	if !AgenticLoopCertified("deepseek", "deepseek-v4-flash") ||
-		!AgenticLoopCertified("deepseek", "deepseek-v4-pro") ||
+	if !AgenticLoopCertified("deepseek", "deepseek-flash") ||
+		!AgenticLoopCertified("deepseek", "deepseek-v4-flash") ||
 		!AgenticLoopCertified("deepseek", "deepseek-v4-flash-vision-exp") {
 		t.Fatal("seeded deepseek slugs must be certified")
 	}

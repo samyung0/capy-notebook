@@ -2,7 +2,7 @@
 
 Each child claims one parse job at a time. A timed-out child exits after it has
 durably requeued its claim; the supervisor replaces only that child while the
-other coordinators continue waiting on MinerU.
+other coordinators continue waiting on the parser.
 """
 
 from __future__ import annotations

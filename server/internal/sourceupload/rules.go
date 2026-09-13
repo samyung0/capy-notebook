@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	// ParseModeFast is the live MinerU CPU pipeline with automatic OCR selection.
+	// ParseModeFast is the OpenDataLoader parser with RapidOCR on text-less pages.
 	ParseModeFast = "fast"
 	ParseModeNone = "none"
 
@@ -26,9 +26,11 @@ const (
 	RouteAudioTranscript = "audio_transcription"
 	RouteDocumentParse   = "document_parse"
 
+	// CaptionMode names whether the route captions the source itself; only a
+	// standalone image upload does. Parsed documents keep their figures for
+	// question-time page captures.
 	CaptionNone       = "none"
 	CaptionStandalone = "standalone"
-	CaptionEmbedded   = "embedded"
 )
 
 // ProcessingPlan is the server-owned, versioned contract consumed by ingest
@@ -392,7 +394,7 @@ func DefaultParseMode(name, kind string) string {
 // keys the exceptional routes by normalized format instead of broad category:
 // CSV/TSV are normalized as delimited text, while legacy Office files remain
 // store-only even though they share a category with supported OOXML files.
-func BuildProcessingPlan(name, kind, mode string, captionImages bool) (ProcessingPlan, error) {
+func BuildProcessingPlan(name, kind, mode string) (ProcessingPlan, error) {
 	ext := extensionKey(name)
 	expectedKind := KindFromName(name)
 	if kind == "" {
@@ -446,11 +448,6 @@ func BuildProcessingPlan(name, kind, mode string, captionImages bool) (Processin
 		if plan.OfficePreview {
 			plan.Resources = appendResource(plan.Resources, "object_storage_write")
 		}
-		if captionImages {
-			plan.CaptionMode = CaptionEmbedded
-			plan.Stages = append(plan.Stages, "caption_images", "persist_captions")
-			plan.Resources = appendResource(plan.Resources, "vision_model", "object_storage_write")
-		}
 		plan.Stages = append(plan.Stages, "chunk", "index", "generate_derivatives")
 	}
 	return plan, nil
@@ -484,19 +481,8 @@ func appendResource(resources []string, values ...string) []string {
 // captioned, audio is transcribed, and CSV/TSV is normalized without using the
 // document parser.
 func NeedsIngestJob(name, kind, mode string) bool {
-	plan, err := BuildProcessingPlan(name, kind, mode, false)
+	plan, err := BuildProcessingPlan(name, kind, mode)
 	return err == nil && plan.Route != RouteStoreOnly
-}
-
-// NormalizeCaptionImages clears a caption request that has nothing to act on.
-// Captions are written onto the figures a parse extracted, so an unparsed blob
-// or a plain-text source can never produce one, and letting the flag through
-// would only put a misleading value on the job.
-func NormalizeCaptionImages(kind, mode string, requested bool) bool {
-	if !requested || mode == ParseModeNone || IsTextKind(kind) {
-		return false
-	}
-	return true
 }
 
 func Validate(name, kind, mode string, size, maxBytes int64) error {

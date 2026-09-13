@@ -75,18 +75,8 @@ function mockCatalogModels() {
     {
       available: true,
       isDefault: true,
-      modelName: 'Flash Vision',
-      modelSlug: 'deepseek-v4-flash-vision-exp',
-      providerName: 'DeepSeek',
-      providerSlug: 'deepseek',
-      thinking,
-      usesUserKey: hasDeepSeek,
-    },
-    {
-      available: true,
-      isDefault: false,
-      modelName: 'Pro',
-      modelSlug: 'deepseek-v4-pro',
+      modelName: 'Flash 4.1',
+      modelSlug: 'deepseek-flash',
       providerName: 'DeepSeek',
       providerSlug: 'deepseek',
       thinking,
@@ -451,7 +441,7 @@ export const handlers = [
   http.get('/api/models', async ({ request }) => {
     const slot = new URL(request.url).searchParams.get('slot');
     const fallback = {
-      modelSlug: 'deepseek-v4-flash-vision-exp',
+      modelSlug: 'deepseek-flash',
       providerSlug: 'deepseek',
     };
     if (!slot) {
@@ -563,7 +553,7 @@ export const handlers = [
           eligible: true,
           last4: db.llmCredentials.deepseek ?? '',
           providerSlug: 'deepseek',
-          unlocks: ['DeepSeek Flash', 'DeepSeek Pro'],
+          unlocks: ['DeepSeek Flash 4.1'],
         },
       ],
     })
@@ -595,7 +585,7 @@ export const handlers = [
     ] as const) {
       if (locked.includes(modelRefValue(db.user[field]))) {
         db.user[field] = {
-          modelSlug: 'deepseek-v4-flash-vision-exp',
+          modelSlug: 'deepseek-flash',
           providerSlug: 'deepseek',
         };
       }
@@ -1832,7 +1822,7 @@ export const handlers = [
           conversationId: convId,
           messageId: assistantId,
           modelDisplayName: 'DeepSeek Flash',
-          modelSlug: 'deepseek-v4-flash-vision-exp',
+          modelSlug: 'deepseek-flash',
           modelVersion: 1,
           providerSlug: 'deepseek',
           type: 'start',
@@ -1878,7 +1868,7 @@ export const handlers = [
           createdAt: new Date().toISOString(),
           id: assistantId,
           modelDisplayName: 'DeepSeek Flash',
-          modelSlug: 'deepseek-v4-flash-vision-exp',
+          modelSlug: 'deepseek-flash',
           modelVersion: 1,
           providerSlug: 'deepseek',
           role: 'assistant',
@@ -2789,7 +2779,7 @@ export const handlers = [
           creditMicros: 120_000,
           inputTokens: 800,
           kind: 'llm',
-          modelSlug: 'deepseek-v4-flash-vision-exp',
+          modelSlug: 'deepseek-flash',
           outputTokens: 240,
           providerSlug: 'deepseek',
           surface: 'chat',
@@ -2883,7 +2873,6 @@ export const handlers = [
       const body = (await request.json()) as {
         chapterId?: string | null;
         chapterName?: string | null;
-        captionImages?: boolean;
         driveIds?: string[];
         fileIds: string[];
         parseMode?: 'fast' | 'none';

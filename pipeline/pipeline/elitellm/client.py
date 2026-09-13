@@ -20,12 +20,14 @@ ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 DEEPSEEK_CHAT_URL = "https://api.deepseek.com/chat/completions"
-DEEPINFRA_CHAT_URL = "https://api.deepinfra.com/v1/openai/chat/completions"
 DEEPINFRA_EMBED_URL = "https://api.deepinfra.com/v1/openai/embeddings"
+# Tencent Cloud TokenHub serves GLM-5.3-Flash on its own hardware through an
+# OpenAI-compatible chat route; it is the only route for the zai pin.
+TENCENT_CHAT_URL = "https://tokenhub.tencentcloudmaas.com/v1/chat/completions"
+TENCENT_PROVIDER = "tencent"
 
 DEEPINFRA_QWEN_EMBED_MODEL = "Qwen/Qwen3-Embedding-4B"
 ZAI_GLM_FLASH_MODEL = "glm-5.3-flash"
-DEEPINFRA_GLM_FLASH_MODEL = "zai-org/GLM-5.3-Flash"
 
 CONTINUITY_KEYS = (
     "thinking_blocks",
@@ -203,9 +205,7 @@ def output_budget(
 def deepseek_thinking_body(thinking: str) -> dict[str, Any]:
     if thinking in ("", "instant"):
         return {"thinking": {"type": "disabled"}}
-    effort = "high" if thinking in ("high", "max") else thinking
-    if effort == "mid":
-        effort = "medium"
+    effort = "medium" if thinking == "mid" else thinking
     return {"thinking": {"type": "enabled"}, "reasoning_effort": effort}
 
 
@@ -219,13 +219,12 @@ def zai_thinking_body(thinking: str) -> dict[str, Any]:
 
 def transport_provider_slug(spec: ModelConfig) -> str:
     if _is_routed_zai_glm(spec):
-        return "deepinfra"
+        return TENCENT_PROVIDER
     return spec.provider_slug
 
 
 def transport_model_slug(spec: ModelConfig) -> str:
-    if _is_routed_zai_glm(spec):
-        return DEEPINFRA_GLM_FLASH_MODEL
+    # TokenHub names the model by its own slug, so the wire model is the pin.
     return spec.model_slug
 
 
@@ -747,7 +746,7 @@ async def complete(
             stream=False,
             tool_choice=tool_choice,
         )
-        return _as_obj(await _post_json(DEEPINFRA_CHAT_URL, _bearer(key), body))
+        return _as_obj(await _post_json(TENCENT_CHAT_URL, _bearer(key), body))
     raise RegistryError(f"elitellm has no chat route for {spec.provider_slug}")
 
 
@@ -840,7 +839,7 @@ async def stream(
             stream=True,
             tool_choice=tool_choice,
         )
-        async for event in _stream_sse(DEEPINFRA_CHAT_URL, _bearer(key), body):
+        async for event in _stream_sse(TENCENT_CHAT_URL, _bearer(key), body):
             yield _as_obj(event)
         return
     raise RegistryError(f"elitellm has no stream route for {spec.provider_slug}")

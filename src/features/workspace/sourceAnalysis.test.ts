@@ -15,7 +15,6 @@ import {
 import {
   analyzeOoxmlBuffer,
   classifySourcePage,
-  damagedTextReason,
   estimatePdfArgumentBytes,
   MAX_DOCX_ANALYSIS_PAGES,
   MAX_OOXML_ARCHIVE_ENTRIES,
@@ -50,7 +49,7 @@ const result = (extension: 'pdf' | 'pptx' = 'pdf'): SourceAnalysisResult => ({
       imageCoverage: 1,
       needsOcr: true,
       pageNumber: 2,
-      reason: 'scan',
+      reason: 'textless',
     },
   ],
   scanEstimate: true,
@@ -92,26 +91,20 @@ function input(name: string) {
 }
 
 describe('source analysis classification', () => {
-  it('matches the parser page thresholds', () => {
-    expect(classifySourcePage('a'.repeat(800), 0.95, 1).reason).toBe(
-      'text_layer'
-    );
-    expect(classifySourcePage('short', 0.7, 1).reason).toBe('scan');
-    expect(classifySourcePage('a'.repeat(399), 0.1, 1).reason).toBe(
-      'thin_text'
-    );
-    expect(classifySourcePage('a'.repeat(500), 0.1, 1).reason).toBe(
-      'enough_text'
-    );
-  });
-
-  it('detects damaged native text layers', () => {
-    expect(damagedTextReason('usable\ufffdtext')).toBe('replacement_chars');
-    expect(damagedTextReason('a\u0000b')).toBe('control_chars');
-    expect(damagedTextReason(`${'! '.repeat(100)}`)).toBe('low_alnum');
-    expect(
-      damagedTextReason(Array.from({ length: 24 }, () => 'a').join(' '))
-    ).toBe('broken_spacing');
+  it('matches the parser rule: under 40 native characters is OCR-routed', () => {
+    expect(classifySourcePage('a'.repeat(40), 0.95, 1)).toMatchObject({
+      needsOcr: false,
+      reason: 'text_layer',
+    });
+    expect(classifySourcePage(`  ${'a'.repeat(39)}  `, 0, 1)).toMatchObject({
+      chars: 39,
+      needsOcr: true,
+      reason: 'textless',
+    });
+    expect(classifySourcePage('', 1, 2)).toMatchObject({
+      needsOcr: true,
+      reason: 'textless',
+    });
   });
 
   it('prices OCR pages instead of adding both rates', () => {

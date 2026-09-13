@@ -125,8 +125,8 @@ async def test_routed_glm_settles_transport_identity_and_keeps_catalog_pricing(
     finally:
         accounting.reset(token)
 
-    assert sent["provider"] == "deepinfra"
-    assert sent["model"] == "zai-org/GLM-5.3-Flash"
+    assert sent["provider"] == "tencent"
+    assert sent["model"] == "glm-5.3-flash"
     assert sent["thinking"] == "max"
 
 
@@ -555,7 +555,7 @@ async def test_ingest_settlement_stays_per_call_and_local(monkeypatch):
     usage = NormalizedUsage(input_tokens=13, output_tokens=5)
     token = accounting.bind_ingest(
         "cr_ingest",
-        {"figure_caption_call": {"creditMicrosPerUnit": 2_000_000}},
+        {"audio_transcription_second": {"creditMicrosPerUnit": 2_000}},
     )
     try:
         state = await accounting.settle(
@@ -582,7 +582,6 @@ async def test_ingest_settlement_stays_per_call_and_local(monkeypatch):
                 "instant",
                 _spec(),
                 usage,
-                {"figure_caption_call": {"creditMicrosPerUnit": 2_000_000}},
             ),
         )
     ]

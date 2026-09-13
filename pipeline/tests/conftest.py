@@ -51,7 +51,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # migration), not from env, so only the dimension and the provider base URLs are
 # pinned here.
 os.environ["EMBEDDING_DIM"] = os.environ.get("EMBEDDING_DIM", "2560")
-os.environ["CAPY_PARSE_METHOD"] = "auto"
 # One embedding request per file keeps the batch composition stable, which is
 # what the body matcher compares.
 os.environ["CAPY_EMBEDDING_BATCH"] = "1000"
@@ -65,6 +64,7 @@ for _k in (
     "ANTHROPIC_API_KEY",
     "OPENAI_API_KEY",
     "DEEPINFRA_API_KEY",
+    "TENCENT_API_KEY",
 ):
     os.environ.setdefault(_k, "test-dummy-key")
 

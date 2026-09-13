@@ -363,6 +363,11 @@ export const ListMessagesParams = zod.object({
 export const ListMessagesResponseItem = zod.object({
   "activity": zod.array(zod.object({
   "callId": zod.string().optional(),
+  "capture": zod.object({
+  "bbox": zod.array(zod.int()).nullable(),
+  "bytes": zod.int(),
+  "page": zod.int()
+}).optional(),
   "detail": zod.string().optional(),
   "effects": zod.array(zod.object({
   "operation": zod.enum(['created', 'edited', 'edit_undone', 'trashed', 'restored']),
@@ -2362,8 +2367,7 @@ export const GetSourceUploadPolicyResponse = zod.object({
   "extensions": zod.array(zod.string()),
   "maxBytes": zod.int(),
   "maxPages": zod.int().optional(),
-  "mode": zod.enum(['fast', 'none']),
-  "supportsFigures": zod.boolean()
+  "mode": zod.enum(['fast', 'none'])
 }))
 })
 
@@ -3365,7 +3369,6 @@ export const UploadSourceParams = zod.object({
 })
 
 export const UploadSourceBody = zod.object({
-  "captionImages": zod.boolean().optional(),
   "chapterId": zod.instanceof(File).or(zod.string()).optional(),
   "chapterName": zod.instanceof(File).or(zod.string()).optional(),
   "estimatedCreditMicros": zod.int().optional(),
@@ -3409,7 +3412,6 @@ export const importSourcesBodyRequestIdMax = 128;
 
 
 export const ImportSourcesBody = zod.object({
-  "captionImages": zod.boolean().optional(),
   "chapterId": zod.string().optional(),
   "chapterName": zod.string().max(importSourcesBodyChapterNameMax).optional(),
   "driveIds": zod.array(zod.string()).optional(),
@@ -3503,7 +3505,6 @@ export const createSourceUploadBodyNameMax = 120;
 
 
 export const CreateSourceUploadBody = zod.object({
-  "captionImages": zod.boolean(),
   "chapterId": zod.string().optional(),
   "chapterName": zod.string().max(createSourceUploadBodyChapterNameMax).optional(),
   "contentType": zod.string().optional(),

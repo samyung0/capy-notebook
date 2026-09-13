@@ -1,0 +1,1222 @@
+{
+  "protocol": "Source-image region order annotated before model inference, 2026-09-13. Coordinates use top-left page-1000 space. Every listed sequence requires all OCR lines in each region to precede all lines in its successors. Unlisted content and ambiguous figure placement are not scored. This measures ordering of recognized lines, not recognition or end-to-end parser accuracy. No case is an untouched holdout.",
+  "cases": {
+    "resnet-p01": {
+      "regions": {
+        "title": [
+          180,
+          100,
+          875,
+          175
+        ],
+        "authors": [
+          190,
+          175,
+          850,
+          270
+        ],
+        "left": [
+          70,
+          275,
+          485,
+          865
+        ],
+        "right": [
+          505,
+          450,
+          910,
+          910
+        ]
+      },
+      "sequences": [
+        [
+          "title",
+          "authors",
+          "left",
+          "right"
+        ]
+      ]
+    },
+    "bert-p02": {
+      "regions": {
+        "left": [
+          115,
+          70,
+          492,
+          920
+        ],
+        "right": [
+          507,
+          70,
+          895,
+          920
+        ]
+      },
+      "sequences": [
+        [
+          "left",
+          "right"
+        ]
+      ]
+    },
+    "rag__fr__camembert-taln-p04": {
+      "regions": {
+        "intro": [
+          60,
+          60,
+          940,
+          305
+        ],
+        "table1": [
+          65,
+          332,
+          495,
+          429
+        ],
+        "caption1": [
+          65,
+          434,
+          495,
+          476
+        ],
+        "table2": [
+          525,
+          310,
+          901,
+          450
+        ],
+        "caption2": [
+          500,
+          457,
+          944,
+          497
+        ],
+        "heading": [
+          65,
+          517,
+          940,
+          550
+        ],
+        "body": [
+          65,
+          558,
+          944,
+          880
+        ]
+      },
+      "sequences": [
+        [
+          "intro",
+          "table1",
+          "caption1",
+          "table2",
+          "caption2",
+          "heading",
+          "body"
+        ]
+      ]
+    },
+    "rag__fr__camembert-taln-p07": {
+      "regions": {
+        "intro": [
+          65,
+          60,
+          944,
+          105
+        ],
+        "table": [
+          150,
+          110,
+          850,
+          333
+        ],
+        "caption": [
+          65,
+          334,
+          945,
+          377
+        ],
+        "body": [
+          65,
+          380,
+          945,
+          899
+        ]
+      },
+      "sequences": [
+        [
+          "intro",
+          "table",
+          "caption",
+          "body"
+        ]
+      ]
+    },
+    "rag__zh__zh-CN-p07": {
+      "regions": {
+        "left": [
+          80,
+          95,
+          490,
+          685
+        ],
+        "right": [
+          510,
+          95,
+          925,
+          810
+        ],
+        "table_caption": [
+          510,
+          810,
+          930,
+          846
+        ],
+        "table": [
+          510,
+          847,
+          930,
+          945
+        ]
+      },
+      "sequences": [
+        [
+          "left",
+          "right",
+          "table_caption",
+          "table"
+        ]
+      ]
+    },
+    "rag__en__biology-ib-sample-16-pages-p05": {
+      "regions": {
+        "title": [
+          30,
+          70,
+          850,
+          140
+        ],
+        "intro": [
+          80,
+          149,
+          949,
+          270
+        ],
+        "section": [
+          380,
+          284,
+          950,
+          319
+        ],
+        "assessment": [
+          100,
+          335,
+          974,
+          508
+        ],
+        "elements": [
+          386,
+          542,
+          921,
+          729
+        ],
+        "water": [
+          386,
+          738,
+          926,
+          924
+        ]
+      },
+      "sequences": [
+        [
+          "title",
+          "intro",
+          "section",
+          "assessment",
+          "elements",
+          "water"
+        ]
+      ]
+    },
+    "rag__ja__jp_llm2-p04": {
+      "regions": {
+        "title": [
+          40,
+          15,
+          400,
+          84
+        ],
+        "step1": [
+          175,
+          209,
+          800,
+          357
+        ],
+        "step2": [
+          175,
+          440,
+          800,
+          590
+        ],
+        "step3": [
+          175,
+          652,
+          800,
+          808
+        ],
+        "footnote": [
+          162,
+          830,
+          831,
+          891
+        ]
+      },
+      "sequences": [
+        [
+          "title",
+          "step1",
+          "step2",
+          "step3",
+          "footnote"
+        ]
+      ]
+    },
+    "rag__en__newspaper_scan-p01": {
+      "regions": {
+        "title": [
+          25,
+          20,
+          976,
+          67
+        ],
+        "subtitle": [
+          25,
+          76,
+          900,
+          109
+        ],
+        "body": [
+          25,
+          110,
+          999,
+          930
+        ]
+      },
+      "sequences": [
+        [
+          "title",
+          "subtitle",
+          "body"
+        ]
+      ],
+      "note": "Synthetic single-column repeated text clipped at source right edge. Not a real newspaper or challenging column control."
+    },
+    "rag__en__newspaper_scan-p02": {
+      "regions": {
+        "title": [
+          25,
+          20,
+          976,
+          67
+        ],
+        "subtitle": [
+          25,
+          76,
+          900,
+          109
+        ],
+        "body": [
+          25,
+          110,
+          999,
+          930
+        ]
+      },
+      "sequences": [
+        [
+          "title",
+          "subtitle",
+          "body"
+        ]
+      ],
+      "note": "Synthetic single-column repeated text clipped at source right edge."
+    },
+    "nist-accelerometers-p01": {
+      "regions": {
+        "title": [
+          170,
+          133,
+          746,
+          163
+        ],
+        "authors": [
+          130,
+          164,
+          827,
+          190
+        ],
+        "abstract": [
+          110,
+          192,
+          802,
+          312
+        ],
+        "left": [
+          10,
+          320,
+          443,
+          890
+        ],
+        "right": [
+          468,
+          320,
+          897,
+          496
+        ]
+      },
+      "sequences": [
+        [
+          "title",
+          "authors",
+          "abstract",
+          "left",
+          "right"
+        ]
+      ]
+    },
+    "unit-bearing-table-p01": {
+      "regions": {
+        "title": [
+          80,
+          58.75,
+          950,
+          87.5
+        ],
+        "header": [
+          80,
+          140.0,
+          950,
+          168.75
+        ],
+        "row0": [
+          80,
+          202.5,
+          950,
+          231.25
+        ],
+        "row1": [
+          80,
+          258.75,
+          950,
+          287.5
+        ],
+        "row2": [
+          80,
+          315.0,
+          950,
+          343.75
+        ],
+        "row3": [
+          80,
+          371.25,
+          950,
+          400.0
+        ],
+        "row4": [
+          80,
+          427.5,
+          950,
+          456.25
+        ],
+        "row5": [
+          80,
+          483.75,
+          950,
+          512.5
+        ],
+        "row6": [
+          80,
+          540.0,
+          950,
+          568.75
+        ],
+        "row7": [
+          80,
+          596.25,
+          950,
+          625.0
+        ],
+        "footer": [
+          80,
+          702.5,
+          950,
+          731.25
+        ]
+      },
+      "sequences": [
+        [
+          "title",
+          "header",
+          "row0",
+          "row1",
+          "row2",
+          "row3",
+          "row4",
+          "row5",
+          "row6",
+          "row7",
+          "footer"
+        ]
+      ]
+    },
+    "alternating-outline-p01": {
+      "regions": {
+        "title": [
+          80,
+          58.75,
+          950,
+          87.5
+        ],
+        "heading0": [
+          80,
+          165.0,
+          950,
+          193.75
+        ],
+        "body0": [
+          80,
+          212.5,
+          950,
+          241.25
+        ],
+        "heading1": [
+          80,
+          315.0,
+          950,
+          343.75
+        ],
+        "body1": [
+          80,
+          362.5,
+          950,
+          391.25
+        ],
+        "heading2": [
+          80,
+          465.0,
+          950,
+          493.75
+        ],
+        "body2": [
+          80,
+          512.5,
+          950,
+          541.25
+        ],
+        "heading3": [
+          80,
+          615.0,
+          950,
+          643.75
+        ],
+        "body3": [
+          80,
+          662.5,
+          950,
+          691.25
+        ]
+      },
+      "sequences": [
+        [
+          "title",
+          "heading0",
+          "body0",
+          "heading1",
+          "body1",
+          "heading2",
+          "body2",
+          "heading3",
+          "body3"
+        ]
+      ]
+    },
+    "german-education-p09": {
+      "regions": {
+        "panel_tl": [
+          80,
+          212,
+          339,
+          438
+        ],
+        "panel_tm": [
+          353,
+          155,
+          605,
+          365
+        ],
+        "panel_tr": [
+          627,
+          155,
+          884,
+          425
+        ],
+        "panel_bl": [
+          80,
+          704,
+          340,
+          948
+        ],
+        "panel_bm": [
+          354,
+          704,
+          611,
+          936
+        ],
+        "panel_br": [
+          630,
+          704,
+          884,
+          946
+        ]
+      },
+      "sequences": [],
+      "cohesion_groups": [
+        "panel_tl",
+        "panel_tm",
+        "panel_tr",
+        "panel_bl",
+        "panel_bm",
+        "panel_br"
+      ],
+      "note": "Independent infographic panels. Score contiguous panel reading, without imposing a mutual order."
+    },
+    "japan-migration-p16": {
+      "regions": {
+        "row00": [
+          115,
+          185.2,
+          885,
+          194.2
+        ],
+        "row01": [
+          115,
+          204.939,
+          885,
+          213.939
+        ],
+        "row02": [
+          115,
+          215.486,
+          885,
+          224.486
+        ],
+        "row03": [
+          115,
+          226.032,
+          885,
+          235.032
+        ],
+        "row04": [
+          115,
+          236.578,
+          885,
+          245.578
+        ],
+        "row05": [
+          115,
+          247.053,
+          885,
+          256.053
+        ],
+        "row06": [
+          115,
+          262.873,
+          885,
+          271.873
+        ],
+        "row07": [
+          115,
+          273.419,
+          885,
+          282.419
+        ],
+        "row08": [
+          115,
+          283.894,
+          885,
+          292.894
+        ],
+        "row09": [
+          115,
+          294.44,
+          885,
+          303.44
+        ],
+        "row10": [
+          115,
+          304.986,
+          885,
+          313.986
+        ],
+        "row11": [
+          115,
+          320.735,
+          885,
+          329.735
+        ],
+        "row12": [
+          115,
+          331.281,
+          885,
+          340.281
+        ],
+        "row13": [
+          115,
+          341.471,
+          885,
+          350.471
+        ],
+        "row14": [
+          115,
+          352.017,
+          885,
+          361.017
+        ],
+        "row15": [
+          115,
+          362.563,
+          885,
+          371.563
+        ],
+        "row16": [
+          115,
+          378.312,
+          885,
+          387.312
+        ],
+        "row17": [
+          115,
+          388.858,
+          885,
+          397.858
+        ],
+        "row18": [
+          115,
+          399.404,
+          885,
+          408.404
+        ],
+        "row19": [
+          115,
+          409.951,
+          885,
+          418.951
+        ],
+        "row20": [
+          115,
+          420.426,
+          885,
+          429.426
+        ],
+        "row21": [
+          115,
+          436.245,
+          885,
+          445.245
+        ],
+        "row22": [
+          115,
+          446.791,
+          885,
+          455.791
+        ],
+        "row23": [
+          115,
+          457.267,
+          885,
+          466.267
+        ],
+        "row24": [
+          115,
+          467.813,
+          885,
+          476.813
+        ],
+        "row25": [
+          115,
+          478.359,
+          885,
+          487.359
+        ],
+        "row26": [
+          115,
+          494.107,
+          885,
+          503.107
+        ],
+        "row27": [
+          115,
+          504.654,
+          885,
+          513.654
+        ],
+        "row28": [
+          115,
+          515.2,
+          885,
+          524.2
+        ],
+        "row29": [
+          115,
+          525.746,
+          885,
+          534.746
+        ],
+        "row30": [
+          115,
+          536.221,
+          885,
+          545.221
+        ],
+        "row31": [
+          115,
+          552.041,
+          885,
+          561.041
+        ],
+        "row32": [
+          115,
+          562.587,
+          885,
+          571.587
+        ],
+        "row33": [
+          115,
+          573.062,
+          885,
+          582.062
+        ],
+        "row34": [
+          115,
+          583.608,
+          885,
+          592.608
+        ],
+        "row35": [
+          115,
+          594.155,
+          885,
+          603.155
+        ],
+        "row36": [
+          115,
+          609.974,
+          885,
+          618.974
+        ],
+        "row37": [
+          115,
+          620.449,
+          885,
+          629.449
+        ],
+        "row38": [
+          115,
+          630.995,
+          885,
+          639.995
+        ],
+        "row39": [
+          115,
+          641.542,
+          885,
+          650.542
+        ],
+        "row40": [
+          115,
+          652.088,
+          885,
+          661.088
+        ],
+        "row41": [
+          115,
+          667.836,
+          885,
+          676.836
+        ],
+        "row42": [
+          115,
+          678.383,
+          885,
+          687.383
+        ],
+        "row43": [
+          115,
+          688.929,
+          885,
+          697.929
+        ],
+        "row44": [
+          115,
+          699.404,
+          885,
+          708.404
+        ],
+        "row45": [
+          115,
+          709.95,
+          885,
+          718.95
+        ],
+        "row46": [
+          115,
+          725.77,
+          885,
+          734.77
+        ],
+        "row47": [
+          115,
+          736.245,
+          885,
+          745.245
+        ]
+      },
+      "sequences": [
+        [
+          "row00",
+          "row01",
+          "row02",
+          "row03",
+          "row04",
+          "row05",
+          "row06",
+          "row07",
+          "row08",
+          "row09",
+          "row10",
+          "row11",
+          "row12",
+          "row13",
+          "row14",
+          "row15",
+          "row16",
+          "row17",
+          "row18",
+          "row19",
+          "row20",
+          "row21",
+          "row22",
+          "row23",
+          "row24",
+          "row25",
+          "row26",
+          "row27",
+          "row28",
+          "row29",
+          "row30",
+          "row31",
+          "row32",
+          "row33",
+          "row34",
+          "row35",
+          "row36",
+          "row37",
+          "row38",
+          "row39",
+          "row40",
+          "row41",
+          "row42",
+          "row43",
+          "row44",
+          "row45",
+          "row46",
+          "row47"
+        ]
+      ],
+      "note": "Source-native y positions of visually verified nation+47 prefecture rows define narrow row strips before any OCR or layout output. Header semantics and OCR transcription are not scored."
+    },
+    "spain-figures-p08": {
+      "regions": {
+        "left_map": [
+          78,
+          134,
+          356,
+          399
+        ],
+        "indicators_title": [
+          375,
+          133,
+          943,
+          159
+        ],
+        "indicators": [
+          375,
+          162,
+          943,
+          365
+        ],
+        "heading1": [
+          375,
+          399,
+          943,
+          441
+        ],
+        "body1": [
+          375,
+          453,
+          947,
+          571
+        ],
+        "heading2": [
+          375,
+          583,
+          945,
+          621
+        ],
+        "body2": [
+          375,
+          638,
+          945,
+          719
+        ],
+        "bottom_left": [
+          80,
+          734,
+          355,
+          925
+        ],
+        "bottom_right": [
+          376,
+          734,
+          945,
+          946
+        ]
+      },
+      "sequences": [
+        [
+          "indicators_title",
+          "indicators",
+          "heading1",
+          "body1",
+          "heading2",
+          "body2",
+          "bottom_right"
+        ]
+      ],
+      "cohesion_groups": [
+        "left_map",
+        "indicators",
+        "bottom_left",
+        "bottom_right"
+      ],
+      "note": "Separate left map/photo and independent bottom charts. Only the right article sequence and panel cohesion are scored."
+    },
+    "hongkong-figures-p13": {
+      "regions": {
+        "title": [
+          70,
+          45,
+          680,
+          87
+        ],
+        "section1": [
+          72,
+          94,
+          890,
+          137
+        ],
+        "headers1": [
+          70,
+          140,
+          929,
+          184
+        ],
+        "male": [
+          72,
+          188,
+          929,
+          202
+        ],
+        "female": [
+          72,
+          203,
+          929,
+          217
+        ],
+        "overall": [
+          72,
+          218,
+          929,
+          244
+        ],
+        "notes1": [
+          70,
+          247,
+          932,
+          289
+        ],
+        "section2": [
+          70,
+          303,
+          890,
+          341
+        ],
+        "table2": [
+          70,
+          350,
+          933,
+          482
+        ],
+        "notes2": [
+          70,
+          484,
+          931,
+          522
+        ],
+        "section3": [
+          70,
+          535,
+          890,
+          572
+        ],
+        "table3": [
+          70,
+          580,
+          931,
+          654
+        ],
+        "section4": [
+          70,
+          663,
+          890,
+          704
+        ],
+        "table4": [
+          70,
+          707,
+          931,
+          780
+        ]
+      },
+      "sequences": [
+        [
+          "title",
+          "section1",
+          "headers1",
+          "male",
+          "female",
+          "overall",
+          "notes1",
+          "section2",
+          "table2",
+          "notes2",
+          "section3",
+          "table3",
+          "section4",
+          "table4"
+        ]
+      ],
+      "note": "Bilingual table order and first table male/female/overall rows. Text recognition, within-row cell order and multi-level header interpretation remain separate."
+    },
+    "attention-p06": {
+      "regions": {
+        "caption": [
+          170,
+          83,
+          829,
+          133
+        ],
+        "header": [
+          190,
+          140,
+          813,
+          175
+        ],
+        "row1": [
+          190,
+          177,
+          813,
+          190
+        ],
+        "row2": [
+          190,
+          191,
+          813,
+          204
+        ],
+        "row3": [
+          190,
+          205,
+          813,
+          218
+        ],
+        "row4": [
+          190,
+          219,
+          813,
+          232
+        ],
+        "section35": [
+          172,
+          264,
+          830,
+          285
+        ],
+        "prose35": [
+          172,
+          291,
+          831,
+          400
+        ],
+        "formula1": [
+          378,
+          423,
+          752,
+          442
+        ],
+        "formula2": [
+          378,
+          447,
+          752,
+          464
+        ],
+        "afterformula": [
+          172,
+          472,
+          831,
+          607
+        ],
+        "section4": [
+          172,
+          622,
+          831,
+          644
+        ],
+        "body4": [
+          172,
+          653,
+          832,
+          914
+        ]
+      },
+      "sequences": [
+        [
+          "caption",
+          "header",
+          "row1",
+          "row2",
+          "row3",
+          "row4",
+          "section35",
+          "prose35",
+          "formula1",
+          "formula2",
+          "afterformula",
+          "section4",
+          "body4"
+        ]
+      ],
+      "note": "Single-column control with mathematical table and equations; evaluates source row/region order only, not math recognition."
+    }
+  }
+}

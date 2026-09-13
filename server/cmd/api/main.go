@@ -173,7 +173,7 @@ func openBlobStore(appEnv string) (blob.Store, error) {
 func main() {
 	dsn := env("DATABASE_URL", "postgres://capy:capy@localhost:5432/capy?sslmode=disable")
 	addr := env("ADDR", ":8080")
-	parser := env("CAPY_PARSER", "mineru")
+	parser := env("CAPY_PARSER", "opendataloader")
 	appURL := env("APP_URL", "http://localhost:5173")
 	appEnv := env("APP_ENV", "development")
 	authDisabled := envBool("AUTH_DISABLED")

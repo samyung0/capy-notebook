@@ -31,6 +31,7 @@ function kindLabel(kind: string): string {
       return m.billing_kind_llm();
     case 'embedding':
       return m.billing_kind_embedding();
+    // Historical rows: figure captioning was retired, the ledger keeps them.
     case 'caption':
       return m.billing_kind_caption();
     case 'parse':

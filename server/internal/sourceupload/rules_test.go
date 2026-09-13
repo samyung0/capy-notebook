@@ -138,7 +138,6 @@ func TestNeedsIngestJob(t *testing.T) {
 func TestBuildProcessingPlan(t *testing.T) {
 	tests := []struct {
 		name, kind, mode string
-		caption          bool
 		wantRoute        string
 		wantCaption      string
 		wantParser       string
@@ -150,14 +149,14 @@ func TestBuildProcessingPlan(t *testing.T) {
 		{name: "data.csv", kind: "sheet", mode: ParseModeNone, wantRoute: RouteDelimitedText, wantCaption: CaptionNone, wantStages: []string{"fetch_source", "normalize_delimited", "chunk", "index", "generate_derivatives"}},
 		{name: "photo.png", kind: "image", mode: ParseModeNone, wantRoute: RouteImageCaption, wantCaption: CaptionStandalone},
 		{name: "lecture.mp3", kind: "audio", mode: ParseModeNone, wantRoute: RouteAudioTranscript, wantCaption: CaptionNone},
-		{name: "paper.pdf", kind: "pdf", mode: ParseModeFast, caption: true, wantRoute: RouteDocumentParse, wantCaption: CaptionEmbedded, wantParser: ParseModeFast, wantStages: []string{"fetch_source", "parse_document", "caption_images", "persist_captions", "chunk", "index", "generate_derivatives"}},
+		{name: "paper.pdf", kind: "pdf", mode: ParseModeFast, wantRoute: RouteDocumentParse, wantCaption: CaptionNone, wantParser: ParseModeFast, wantStages: []string{"fetch_source", "parse_document", "chunk", "index", "generate_derivatives"}},
 		{name: "book.xlsx", kind: "sheet", mode: ParseModeFast, wantRoute: RouteDocumentParse, wantCaption: CaptionNone, wantParser: ParseModeFast, wantPreview: true, wantStages: []string{"fetch_source", "parse_document", "persist_office_preview", "chunk", "index", "generate_derivatives"}},
 		{name: "legacy.xls", kind: "sheet", mode: ParseModeNone, wantRoute: RouteStoreOnly, wantCaption: CaptionNone},
 		{name: "archive.zip", kind: "unknown", mode: ParseModeNone, wantRoute: RouteStoreOnly, wantCaption: CaptionNone},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			plan, err := BuildProcessingPlan(test.name, test.kind, test.mode, test.caption)
+			plan, err := BuildProcessingPlan(test.name, test.kind, test.mode)
 			if err != nil {
 				t.Fatalf("BuildProcessingPlan returned unexpected error: %v", err)
 			}
@@ -172,10 +171,10 @@ func TestBuildProcessingPlan(t *testing.T) {
 }
 
 func TestBuildProcessingPlanRejectsInvalidContractInput(t *testing.T) {
-	if _, err := BuildProcessingPlan("paper.pdf", "txt", ParseModeFast, false); err == nil {
+	if _, err := BuildProcessingPlan("paper.pdf", "txt", ParseModeFast); err == nil {
 		t.Fatal("expected a kind mismatch error")
 	}
-	if _, err := BuildProcessingPlan("paper.pdf", "pdf", "accurate", false); err == nil {
+	if _, err := BuildProcessingPlan("paper.pdf", "pdf", "accurate"); err == nil {
 		t.Fatal("expected an unknown parse mode error")
 	}
 }
@@ -196,27 +195,6 @@ func TestParsePolicyLists(t *testing.T) {
 	}
 	if !contains(supported, ".py") || !contains(supported, ".mdc") || contains(supported, ".zip") {
 		t.Fatalf("supported policy does not mirror the frontend allowlist: %v", supported)
-	}
-}
-
-func TestNormalizeCaptionImages(t *testing.T) {
-	tests := []struct {
-		kind, mode string
-		requested  bool
-		want       bool
-	}{
-		{kind: "pdf", mode: ParseModeFast, requested: true, want: true},
-		{kind: "pdf", mode: ParseModeFast, requested: false, want: false},
-		// Nothing to caption: no parse ran, or the source has no figures.
-		{kind: "pdf", mode: ParseModeNone, requested: true, want: false},
-		{kind: "txt", mode: ParseModeFast, requested: true, want: false},
-		{kind: "md", mode: ParseModeFast, requested: true, want: false},
-	}
-	for _, test := range tests {
-		if got := NormalizeCaptionImages(test.kind, test.mode, test.requested); got != test.want {
-			t.Errorf("NormalizeCaptionImages(%q, %q, %t) = %t, want %t",
-				test.kind, test.mode, test.requested, got, test.want)
-		}
 	}
 }
 

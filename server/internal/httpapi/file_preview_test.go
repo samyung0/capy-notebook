@@ -26,7 +26,7 @@ func TestFileLinksPresignTheAuthorizedNormalizedPDF(t *testing.T) {
 	}
 	st.SetModelRegistry(registry)
 	memory := blob.NewMemory()
-	handler := httpapi.New(st, memory, nil, nil, "mineru", httpapi.Config{
+	handler := httpapi.New(st, memory, nil, nil, "opendataloader", httpapi.Config{
 		AuthDisabled:  true,
 		E2EAuth:       true,
 		E2ESecret:     "e2e-test-secret",
@@ -134,7 +134,7 @@ func TestSourceSessionViewTrimsStateToUnpublishedEdits(t *testing.T) {
 	ctx := context.Background()
 	st := openAccessTestStoreForPreview(t)
 	memory := blob.NewMemory()
-	handler := httpapi.New(st, memory, nil, nil, "mineru", httpapi.Config{
+	handler := httpapi.New(st, memory, nil, nil, "opendataloader", httpapi.Config{
 		AuthDisabled: true,
 		E2EAuth:      true,
 		E2ESecret:    "e2e-test-secret",

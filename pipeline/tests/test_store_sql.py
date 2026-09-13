@@ -1362,6 +1362,41 @@ async def test_duplicate_alias_survives_deleting_first_file(workspace):
     )
 
 
+async def test_canonical_reuse_keeps_extraction_confidence_separate(workspace):
+    from dataclasses import replace
+
+    from pipeline.retrieval.chunking import Chunk, Region
+    from pipeline.retrieval.indexing import content_hash
+
+    high = Chunk(
+        text="Identical words",
+        page_start=1,
+        page_end=1,
+        regions=[Region(1, [10, 20, 30, 40])],
+        confidence=1.0,
+    )
+    low = replace(high, confidence=0.5, confidence_reasons=["page text came from OCR"])
+    native = await store.attach_file_content(
+        workspace_id=workspace.id,
+        file_id=workspace.add_file("native.pdf"),
+        content_hash=content_hash([high]),
+    )
+    await store.mark_content_ready(native["content_id"])
+    scan = await store.attach_file_content(
+        workspace_id=workspace.id,
+        file_id=workspace.add_file("scan.pdf"),
+        content_hash=content_hash([low]),
+    )
+    assert not scan["ready"] and scan["content_id"] != native["content_id"]
+    await store.mark_content_ready(scan["content_id"])
+    duplicate = await store.attach_file_content(
+        workspace_id=workspace.id,
+        file_id=workspace.add_file("scan-copy.pdf"),
+        content_hash=content_hash([low]),
+    )
+    assert duplicate["ready"] and duplicate["content_id"] == scan["content_id"]
+
+
 async def test_deleting_a_file_takes_its_index_with_it(workspace):
     file_id = workspace.add_file("a.txt")
     await _write(workspace, file_id, ["alpha"])
@@ -1531,7 +1566,7 @@ def test_job_attempt_records_claim_metrics_and_terminal_outcome(workspace):
         """,
         (
             job_id,
-            '{"reservationId":"op-1","processingPlan":{"route":"mineru","format":"pdf"}}',
+            '{"reservationId":"op-1","processingPlan":{"route":"document_parse","format":"pdf"}}',
         ),
     )
     with workspace._connect() as conn:
@@ -1563,7 +1598,7 @@ def test_job_attempt_records_claim_metrics_and_terminal_outcome(workspace):
             outcome="succeeded",
             snapshot={
                 "stage": "parse_handoff",
-                "stage_timings": {"mineru_parse": 900},
+                "stage_timings": {"parser_call": 900},
                 "stats": {"artifact_bytes": 2048},
             },
         )
@@ -1575,14 +1610,14 @@ def test_job_attempt_records_claim_metrics_and_terminal_outcome(workspace):
             SELECT environment, route, source_format, status, stage,
                    parse_pages, parse_ocr_pages, parse_slices,
                    parser_queue_milliseconds, parser_execution_milliseconds,
-                   artifact_bytes, stage_timings->>'mineru_parse'
+                   artifact_bytes, stage_timings->>'parser_call'
             FROM ingest_job_attempts WHERE id=%s
             """,
             (attempt_id,),
         ).fetchone()
     assert row == (
         "uat",
-        "mineru",
+        "document_parse",
         "pdf",
         "succeeded",
         "parse_handoff",

@@ -10,7 +10,6 @@ import type { ImportSourcesReqProvider } from './importSourcesReqProvider.ts';
 export interface ImportSourcesReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  captionImages?: boolean;
   chapterId?: string;
   /** @maxLength 60 */
   chapterName?: string;

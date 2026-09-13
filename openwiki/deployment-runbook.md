@@ -261,7 +261,14 @@ The prod file runs `/migrate` once per deploy, starts the API with
    pending `NNNN_*.sql` files and exits 0; `server` / `worker` / `retrieval`
    wait on `service_completed_successfully`. An exited `migrate` container
    is expected. Open its logs and look for `pending 0001_init.sql` (first
-   deploy) or only `migrations applied` (later deploys).
+   deploy) or only `migrations applied` (later deploys). Applied files are
+   checksum-ledgered and never edited; schema changes after the initial
+   deploy are new forward-only files (`0006_rag_chunk_confidence.sql`,
+   `0007_drop_caption_images.sql`, `0008_parse_page_rates.sql`,
+   `0009_default_chat_model.sql` came with the OpenDataLoader release and
+   apply on the next deploy of an existing database; `0009` also moves the
+   catalog's chat slot default to `zai/glm-5.3-flash`, so the TokenHub
+   capacity row and `TENCENT_API_KEY` must be in place before that deploy).
 6. **Domains** on the resource, after the first successful deploy (Coolify
    has to parse the compose file first). Enter **`http://`** — Cloudflare
    terminates TLS. Include the container port if the UI asks for one:
@@ -442,6 +449,25 @@ its own transport provider/model limits in `model_capacities`; new databases sta
 without limits and missing capacity fails explicitly. Production uses GLM
 200 total / 120 interactive reserve and Qwen embedding 200 / 80. UAT and full local
 development must use limits appropriate to their own provider accounts.
+`deploy/model-capacities.sql` is an opt-in bootstrap after migrations. It inserts
+only missing enabled platform-model capacities using the documented DeepSeek
+and DeepInfra concurrency limits, with a smaller application limit for Tencent
+GLM because Tencent enforces account/model TPM and RPM. Its source links and
+allocation assumptions are in the SQL. Existing operator values are preserved.
+Apply to one explicitly selected database with
+`psql -v ON_ERROR_STOP=1 -f deploy/model-capacities.sql`. If environments share
+an account, divide its quota among them before applying the script.
+
+Migration `0010_deepseek_flash.sql` moves Flash Vision catalog entries and user
+preferences to `deepseek-flash`, carries over existing credit rates and capacity,
+and retains historical rows for pinned messages/jobs. Deploy the API/Ops build
+containing the new exact-slug agentic-loop certification with this migration.
+Migration `0011_retire_deepseek_pro.sql` removes V4 Pro's catalog and operational
+configuration directly. Its original seed remains in frozen `0001`; fresh
+databases replay the removal before serving traffic.
+`pnpm model:certify --provider deepseek --model deepseek-flash` records/replays
+two live tool turns; `uv run --extra test python pipeline/scripts/smoke_deepseek_flash.py`
+makes two additional small paid calls for image input and max thinking.
 
 The initial schema in `0001_init.sql` creates the capacity table. Apply the Ops
 role grants in §8, then enter each environment's limits through Ops before
@@ -760,17 +786,17 @@ committed success or terminal failure.
 The dedicated-host Compose file defaults to four `worker` containers. Each
 claims only `ingest` rows and runs exactly one direct-route or post-parse job.
 Each has a 1 CPU, 1 GiB RAM, 1.25 GiB memory-plus-swap, and 128-process hard
-ceiling. `CAPY_CAPTION_CONCURRENCY=4` caps embedded-figure fan-out inside each
-job, so four workers can make at most sixteen uncached figure-caption calls at
-once. Embedding and summary calls remain sequential inside each job;
-their host-wide concurrency is at most four. These are limits, not reserved
+ceiling. Embedding and summary calls are sequential inside each job; their
+host-wide concurrency is at most four. The worker also opens the source PDF
+(or the bundle's `preview.pdf`) with PyMuPDF for heading retention and
+extraction confidence. These are limits, not reserved
 capacity; idle containers use little CPU or memory. The legacy app-host
 debugging profile still defaults to one worker.
 
 One `parse-coordinator` container supervises four child processes, each
 claiming one `parse` row. Its container limit is 1 CPU, 512 MiB RAM, 768 MiB
 memory-plus-swap, and 128 processes. A child spends most of its lifetime
-waiting on MinerU. It has two-connection sync and async pool ceilings; each
+waiting on the parser. It has two-connection sync and async pool ceilings; each
 ingest worker retains the ordinary four/eight limits. `claim_job` filters by
 type and uses `FOR UPDATE SKIP LOCKED`, so the pools never consume one another's
 work.
@@ -873,27 +899,36 @@ those services start.
    to the import
    worker and `ELEVENLABS_API_KEY` for
    uploaded-audio transcription. The worker also needs `DEEPINFRA_API_KEY` for the seeded Qwen
-   embedding route and the exact ZAI GLM routing exception used by
-   standalone-image captions. Those calls happen on this ingest host after it
+   embedding route and `TENCENT_API_KEY` for the ZAI GLM routing exception
+   (Tencent TokenHub) used by standalone-image captions; the app host's
+   `retrieval` and `ops` containers carry the same `TENCENT_API_KEY` for chat.
+   Those calls happen on this ingest host after it
    downloads the B2 object, never in Go. The parser binds only to
    `PARSER_BIND_ADDRESS`; its bearer token remains defense in depth. The
-   measured default is MinerU pipeline with OCR `auto`. Synchronous audio calls
+   parser is OpenDataLoader 2.5.7 plus the refined repairs and RapidOCR on
+   text-less pages (`parser/odl/`), with the RapidOCR models baked into the
+   image (no `parser_models` volume). Synchronous audio calls
    use `CAPY_ELEVENLABS_SYNC_TIMEOUT_S` (12 hours by default) so the documented
    10-hour source limit is not cut off by the ordinary 20-minute ingest timeout.
    Configure its platform model capacities through Ops (§1.4) before ingest.
    `CAPY_PARSE_COORDINATOR_CONCURRENCY` is a production-only input listed in
    `.env.prod.example` and `ingest-host.env.example`; local/UAT Compose fixes it at one.
-   Initial limits are four coordinator processes, four admitted document jobs,
-   and four active 26-page slices. The default time hierarchy is a 600-second
-   per-slice execution deadline, 40-minute parser request, 45-minute Redis slot,
-   and 60-minute parse job. Its ingest continuation has a separate 20-minute
-   bound. Queue wait does not spend a slice's 600-second budget. The process
-   rejects contradictory overrides. The coordinator writes the raw source to
+   Initial limits are four coordinator processes and a depth-4 parser FIFO
+   (`CAPY_PARSE_QUEUE_DEPTH`) with one document running at a time. The default
+   time hierarchy is a 600-second per-document deadline
+   (`CAPY_PARSE_DOCUMENT_TIMEOUT`), 2,520-second parser request
+   (`PARSER_TIMEOUT`, the queue depth times the deadline plus a two-minute
+   margin, so a request behind three deadline-length documents is still served)
+   and 2,700-second parse job (`CAPY_PARSE_JOB_TIMEOUT`). Its ingest
+   continuation has a separate 20-minute bound. Queue wait does not spend the
+   600-second budget. The process rejects contradictory overrides. The parser container
+   gets 8 CPUs, 14 GiB RAM, 18 GiB memory plus swap and a JVM heap of
+   `CAPY_PARSER_JVM_MAX_HEAP` (8g). The coordinator writes the raw source to
    `parse_spool` while hashing it, the parser atomically publishes the
-   fingerprint zip there, and an ingest worker extracts it locally. Explicit
-   `txt` and `ocr` modes remain benchmark/retry options.
-5. Provision a persistent 24 GiB swapfile as emergency headroom for four-slice
-   parsing. The steady-state target is still zero swap use:
+   fingerprint zip there, and an ingest worker extracts it locally. There is no
+   parse method knob; `parseMode` is `fast` or `none`.
+5. Provision a persistent 24 GiB swapfile as emergency headroom for large
+   documents. The steady-state target is still zero swap use:
 
    ```bash
    fallocate -l 24G /swapfile
@@ -905,7 +940,7 @@ those services start.
    ```
 
    Verify with `swapon --show --bytes` and `free -h`. Do not interpret available
-   swap as permission to raise the four-slice cap.
+   swap as permission to raise the queue depth or run documents concurrently.
 
 6. On the first **Deploy ingest** run, select `bootstrap`. That workflow warms
    the candidate parser, then activates its matching coordinator, ingest worker,
@@ -914,11 +949,11 @@ those services start.
    Verify parser `/healthz` through WireGuard. It must return HTTP 200 with `ok=true`,
    `state=ready`, and a `release_sha` equal to the app's deployed revision. No
    parser port may listen on the public address.
-7. Run `bench/parsers/scripts/accuracy_report.py` across representative PDF, DOC/DOCX,
-   PPT/PPTX, and XLS/XLSX inputs in `auto`, `txt`, and `ocr` modes. Review every
-   rejected row and the rendered page comparisons. A 610-page PDF should yield
-   24 slices at the 26-page default. Record wall time, peak RAM, swap, and
-   ordering/geometry accuracy at one and four concurrent slices.
+7. Parse the lab corpus through the new service and compare block sequences
+   with the refined outputs under
+   `/opt/capy-odl-third-pass-20260909/refined-final-r1/<source>/` on the ingest
+   host; every source must match. Record wall time (the 610-page textbook is
+   about four minutes), peak RAM and swap.
 8. App deployment and ingest are separate workflows: **Deploy UAT** builds the
    site, applies GitHub config to Coolify, deploys the backend and publishes the
    Workers, and never touches the ingest host. Deploy the app first, then run
@@ -982,14 +1017,14 @@ against its own database. It reports that environment's durable queue and the
 shared parser pool, but deliberately omits physical-host CPU, RAM, disk, and
 network so the same host is not attributed to both environments. Queue consumers take role-specific
 file locks on the shared spool before claiming a row. Across local and UAT,
-only one parse job, one MinerU slice, and one ingest job can run at a time. A
+only one parse job and one ingest job can run at a time. A
 consumer that cannot take its role lock leaves the database row pending. The
 lock descriptor closes automatically if its process or container dies.
 
-Compose hard-codes parser concurrency, per-consumer coordinator concurrency,
-and Redis admission to one. It also hard-codes the shared capacity-lock path,
+Compose hard-codes per-consumer coordinator concurrency to one and the parser
+queue depth to two. It also hard-codes the shared capacity-lock path,
 so environment files cannot raise the global parse or ingest limit. The parser
-gets 2 CPUs, 6 GiB RAM, and 8 GiB total memory plus swap. Each coordinator gets
+gets 2 CPUs, 6 GiB RAM, 8 GiB total memory plus swap and a 3g JVM heap. Each coordinator gets
 0.5 CPU, 384 MiB RAM, and 512 MiB total. Each worker gets 1 CPU, 1 GiB RAM, and
 1.25 GiB total. Local and UAT each need an idle queue consumer because one
 process cannot connect to two databases, but the locks allow only one consumer
@@ -1034,55 +1069,47 @@ underlying parser version has not changed.
 
 ### 7.2 Parser capacity and failure handling
 
-The current MinerU capacity and failure-injection record is
-[`bench/parsers/reports/2026-08-31-worker-stress.md`](../bench/parsers/reports/2026-08-31-worker-stress.md).
-Keep both the Redis document admission cap and the parser slice concurrency at
-four. Eight concurrent slices completed, but filled the parser's 14 GiB memory
-cgroup, used 5.32 GiB of swap, left about 450 MiB available on the host, and
-processed fewer pages per second than four slices.
+The parser runs one document at a time behind a depth-4 FIFO (one executing,
+three waiting); a fifth concurrent request gets `429` and the coordinator
+re-pends the job as a capacity wait. The OpenDataLoader accuracy record is the September 2026 series
+under `bench/parsers/reports/` (`2026-09-09-odl-accuracy-third-pass.md` and the
+per-repair experiments it cites); the acceptance oracle is the refined corpus
+on the ingest host. Do not run documents concurrently: the Java heap
+(`CAPY_PARSER_JVM_MAX_HEAP`, 8g) plus RapidOCR and the PyMuPDF repairs are sized
+for one document inside the 14 GiB cgroup.
 
 Each of the four production ingest workers has a 1 CPU, 1 GiB RAM, 1.25 GiB
-total memory-plus-swap, and 128-process ceiling. Four-job 26-page digital,
-mixed, mostly-OCR, and all-OCR bursts measured at most 83 MB worker RSS on the
-old combined path. A separate 120 MiB content-list edge test needed about 518
-MiB and failed under a 512 MiB no-swap cgroup. The 1 GiB ceiling leaves room for
-that allowed shape while bounding the four-worker pool to 4 GiB of resident
-memory. A 48 MiB no-swap fault injection killed worker
-PID 1 with exit 137 and Docker restarted it. The lease reaper retries that
-post-parse job once from its artifact; an OOM never quarantines the file.
+total memory-plus-swap, and 128-process ceiling. A separate 120 MiB
+content-list edge test needed about 518 MiB and failed under a 512 MiB no-swap
+cgroup. The 1 GiB ceiling leaves room for that allowed shape while bounding the
+four-worker pool to 4 GiB of resident memory. A no-swap fault injection killed
+worker PID 1 with exit 137 and Docker restarted it. The lease reaper retries
+that post-parse job once from its artifact; an OOM never quarantines the file.
 
 The production parse coordinator is a separate 512 MiB/768 MiB-total container
 with four child processes and no LLM credentials. A coordinator timeout durably
 requeues its claim and exits that child; the supervisor replaces only that
 child. If the kernel kills a coordinator child, its lease expires and follows
-the same one-retry rule. This differs from a MinerU child OOM: the parser's
-cgroup OOM watcher terminates and replaces the parser container.
+the same one-retry rule. This differs from a parser OOM: the parser's cgroup
+OOM watcher writes a `parse_oom` marker for the active document, terminates
+and replaces the parser container.
 
-The four parser lanes are asyncio tasks backed by threads, not independently
-killable operating-system processes. Restart the whole parser container after
-a slice timeout, a broken MinerU process-pool error, or a dead slice worker.
-Killing one MinerU multiprocessing child is
-not a safe lane-recovery mechanism. The parser now treats a broken MinerU pool
-as fatal, changes `/healthz` to HTTP 503, fails the request, and exits so Docker
-starts a clean process.
+`restart: unless-stopped` recovers PID 1 kills, cgroup OOM kills, a Docker
+daemon restart, and a full VM reboot. Ansible installs
+`capy-ingest-watchdog@.service` for explicitly selected stacks. It restarts an
+existing parser after three unhealthy Docker health observations. The
+per-document deadline owns stuck-work detection; the watchdog does not
+independently time active work. It skips absent containers and planned release
+cutovers. A restart drops in-flight connections, but ordinary parser errors get
+one retry and the client recovers an atomically published spool artifact when
+publication completed before the disconnect.
 
-`restart: unless-stopped` recovered PID 1 kills, cgroup OOM kills, a Docker
-daemon restart, and a full VM reboot in testing. The parser health route was
-available on the first successful probe about 32 seconds after reboot was
-issued, with cold models. Ansible installs `capy-ingest-watchdog@.service` for explicitly selected stacks.
-It restarts an existing parser after three unhealthy Docker health observations. Per-slice execution deadlines own stuck-work
-detection; the watchdog does not independently time active work. It skips
-absent containers and planned release cutovers. A restart
-drops in-flight connections, but ordinary parser errors get one retry and the
-client recovers an atomically published spool artifact when publication
-completed before the disconnect.
-
-Each parser slice has a 600-second execution limit that begins after it leaves
-the fair queue. A timed-out slice quarantines the whole document and restarts
-the parser so its sibling slices stop too. Hard-timeout and OOM fingerprints
-are terminal without a retry. An OOM marker covers only documents that had an
-executing slice when the cgroup counter changed. Queued documents and all other
-retryable failures get one retry.
+Each document has a 600-second execution limit that begins when it leaves the
+queue, before LibreOffice normalisation and the Java run. A timed-out document is quarantined (`parse_hard_timeout`) and the
+parser restarts. Hard-timeout and OOM fingerprints are terminal without a
+retry. An OOM marker covers only the document that was executing when the
+cgroup counter changed. Queued documents and all other retryable failures get
+one retry.
 
 Once parsing publishes an artifact and hands off an `ingest` row, all timeout,
 OOM, provider, database, and worker-death failures use the ingest job's one

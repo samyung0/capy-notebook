@@ -11,9 +11,11 @@ after the passage they belong to has already been built.
 from __future__ import annotations
 
 import io
+import json
 from pathlib import Path
 from typing import Any
 
+import pymupdf
 import pytest
 
 from pipeline.ingest import plan as ingest_plan
@@ -167,11 +169,11 @@ def test_heartbeat_closes_a_skipped_lifecycle_claim(source, accounts, expected):
 
 @pytest.fixture
 def parse_stub(monkeypatch):
-    """Stand in for artifact extraction and captioning; record both calls."""
+    """Stand in for artifact extraction and chunking; record both calls."""
     state: dict[str, Any] = {
         "descriptor": None,
-        "captioned": 0,
         "chunked": None,
+        "page_pdf": None,
     }
     content_list = [
         {"type": "text", "text": "Photosynthesis", "page_idx": 0, "text_level": 1},
@@ -193,27 +195,18 @@ def parse_stub(monkeypatch):
             (raw_dir / "preview.pdf").write_bytes(b"%PDF-preview")
         return content_list
 
-    async def _caption(
-        *, file_id, content_list, raw_dir, file_name, source_sha256, refresh_job_id=None
-    ):
-        state["captioned"] += 1
-        content_list[1]["description"] = "A labelled chloroplast."
-        return {
-            "selected": 1,
-            "cached": 0,
-            "captioned": 1,
-            "decorative": 0,
-            "applied": 1,
-            "key": "captions/k.json",
-        }
-
-    def _chunk(items):
+    def _chunk(items, raw_dir, source_pdf):
         state["chunked"] = [dict(item) for item in items]
+        state["raw_dir"] = raw_dir
+        state["page_pdf"] = (
+            raw_dir / "preview.pdf"
+            if (raw_dir / "preview.pdf").is_file()
+            else source_pdf
+        )
         return ["chunk"]
 
     monkeypatch.setattr(worker.parser_client, "extract_artifact", _extract)
-    monkeypatch.setattr(worker.figures, "caption_figures", _caption)
-    monkeypatch.setattr(worker, "chunk_content_list", _chunk)
+    monkeypatch.setattr(worker, "_page_chunks", _chunk)
     monkeypatch.setattr(worker, "_record_parse_artifact", lambda *a, **k: None)
     monkeypatch.setattr(worker, "_record_caption_blob", lambda *a, **k: None)
     monkeypatch.setattr(worker, "_touch_or_upsert_artifact", lambda **k: None)
@@ -229,7 +222,6 @@ def parse_stub(monkeypatch):
 def _plan(
     route: str = ingest_plan.DOCUMENT_PARSE,
     *,
-    caption_images: bool = False,
     format_name: str = "pdf",
     office_preview: bool = False,
     parser_route: str | None = None,
@@ -241,25 +233,21 @@ def _plan(
         format=format_name,
         route=route,
         parser_route=parser_route,
-        caption_mode="embedded"
-        if caption_images
-        else "standalone"
-        if route == ingest_plan.IMAGE_CAPTION
-        else "none",
+        caption_mode="standalone" if route == ingest_plan.IMAGE_CAPTION else "none",
         office_preview=office_preview,
         stages=(),
         resources=(),
     )
 
 
-async def _run(*, caption_images: bool = False):
+async def _run():
     return await worker._chunks_for(
         payload={
             "blobPath": "sources/blob_1.pdf",
             "parseArtifact": _artifact(),
         },
         name="lecture.pdf",
-        processing_plan=_plan(caption_images=caption_images),
+        processing_plan=_plan(),
         local_path="/shared/sources/source-1",
         source_key="sources/source-1",
         ws="ws_1",
@@ -275,7 +263,6 @@ def _ingest_payload(**overrides):
         "blobPath": "sources/blob_1.pdf",
         "kind": "pdf",
         "parseMode": "fast",
-        "captionImages": False,
         "processingPlan": {
             "version": 1,
             "format": "pdf",
@@ -317,19 +304,14 @@ def _ingest_payload(**overrides):
                 "creditMicrosPerUnit": 250_000,
             },
             "digital_parse_page": {
-                "version": 1,
+                "version": 2,
                 "unit": "page",
-                "creditMicrosPerUnit": 31_000_000,
+                "creditMicrosPerUnit": 1_000_000,
             },
             "ocr_parse_page": {
-                "version": 1,
+                "version": 2,
                 "unit": "page",
-                "creditMicrosPerUnit": 52_000_000,
-            },
-            "figure_caption_call": {
-                "version": 1,
-                "unit": "call",
-                "creditMicrosPerUnit": 2_000_000,
+                "creditMicrosPerUnit": 1_000_000,
             },
         },
     }
@@ -777,7 +759,7 @@ async def test_text_sources_never_reach_the_parse_service(parse_stub, monkeypatc
     assert chunks == ["# Notes"]
     assert (artifact_key, fingerprint, version) == (None, None, None)
     assert parse_stub["descriptor"] is None
-    assert parse_stub["captioned"] == 0
+    assert parse_stub["chunked"] is None
 
 
 async def test_json_sources_are_ingested_as_text(parse_stub, monkeypatch):
@@ -798,27 +780,90 @@ async def test_json_sources_are_ingested_as_text(parse_stub, monkeypatch):
     assert chunks == ['{"topic": "osmosis"}']
     assert (artifact_key, fingerprint, version) == (None, None, None)
     assert parse_stub["descriptor"] is None
-    assert parse_stub["captioned"] == 0
+    assert parse_stub["chunked"] is None
 
 
-async def test_captioning_is_off_unless_the_upload_asked_for_it(parse_stub):
+async def test_pdf_chunking_reads_the_spooled_source(parse_stub):
+    """The heading and confidence passes measure the PDF the parser saw."""
     await _run()
 
-    assert parse_stub["captioned"] == 0
-    assert "description" not in parse_stub["chunked"][1]
+    assert parse_stub["chunked"][1]["img_path"] == "images/fig.png"
+    assert parse_stub["page_pdf"] == Path("/shared/sources/source-1")
 
 
-async def test_captions_reach_the_chunker(parse_stub):
-    """The ordering the feature depends on: chunking must see the description,
-    otherwise the figure is embedded as an empty block and stays unsearchable."""
-    await _run(caption_images=True)
+def _bundle_dir(
+    tmp_path: Path, *, furniture=("Running header",), **files: bytes
+) -> Path:
+    raw_dir = tmp_path / "bundle"
+    raw_dir.mkdir()
+    (raw_dir / "refinement.json").write_text(json.dumps({"furniture": list(furniture)}))
+    for name, body in files.items():
+        (raw_dir / name).write_bytes(body)
+    return raw_dir
 
-    assert parse_stub["captioned"] == 1
-    assert parse_stub["chunked"][1]["description"] == "A labelled chloroplast."
+
+def _page_pdf(tmp_path: Path, name: str, text: str) -> Path:
+    document = pymupdf.open()
+    document.new_page().insert_text((50, 50), text)
+    path = tmp_path / name
+    document.save(path)
+    return path
+
+
+def test_page_chunks_apply_the_bundle_furniture_and_prefer_the_repaired_pdf(
+    tmp_path, monkeypatch
+):
+    """The parser froze the furniture before table recovery; the worker must
+    not infer it again. When font repair changed the bytes, ``parsed.pdf`` is
+    the page model, ahead of an Office preview and the spooled source."""
+    seen: dict[str, Path] = {}
+
+    def _retain(blocks, pdf, chunks):
+        seen["headings"] = pdf
+        return chunks
+
+    def _score(chunks, pdf, *, ocr):
+        seen["confidence"] = pdf
+
+    monkeypatch.setattr(worker, "retain_headings", _retain)
+    monkeypatch.setattr(worker, "score_chunks", _score)
+    content_list = [
+        {"type": "text", "text": "Running header", "page_idx": 0},
+        {"type": "text", "text": "Body text.", "page_idx": 0},
+    ]
+    parsed = _page_pdf(tmp_path, "parsed.pdf", "Body text.")
+    raw_dir = _bundle_dir(
+        tmp_path, **{"parsed.pdf": parsed.read_bytes(), "preview.pdf": b"%PDF-preview"}
+    )
+
+    chunks = worker._page_chunks(content_list, raw_dir, Path("/shared/sources/missing"))
+
+    assert [c.text for c in chunks] == ["Body text."]
+    assert seen["headings"] == seen["confidence"] == raw_dir / "parsed.pdf"
+    # Without a repaired copy the Office preview wins, then the spooled source.
+    (raw_dir / "parsed.pdf").unlink()
+    worker._page_chunks(content_list, raw_dir, Path("/shared/sources/missing"))
+    assert seen["confidence"] == raw_dir / "preview.pdf"
+    (raw_dir / "preview.pdf").unlink()
+    source = _page_pdf(tmp_path, "source.pdf", "Body text.")
+    worker._page_chunks(content_list, raw_dir, source)
+    assert seen["confidence"] == source
+    with pytest.raises(worker.RetryableError):
+        worker._page_chunks(content_list, raw_dir, Path("/shared/sources/missing"))
+
+
+def test_page_chunks_refuse_a_bundle_without_the_frozen_furniture(tmp_path):
+    raw_dir = tmp_path / "bundle"
+    raw_dir.mkdir()
+    with pytest.raises(worker.TerminalError):
+        worker._page_chunks([], raw_dir, _page_pdf(tmp_path, "s.pdf", "x"))
+    (raw_dir / "refinement.json").write_text(json.dumps({"furniture": "not-a-list"}))
+    with pytest.raises(worker.TerminalError):
+        worker._page_chunks([], raw_dir, _page_pdf(tmp_path, "s2.pdf", "x"))
 
 
 @pytest.mark.parametrize("format_name", ["docx", "pptx", "xlsx"])
-async def test_supported_office_routes_caption_parser_image_blocks(
+async def test_office_routes_chunk_against_the_bundle_preview(
     parse_stub, format_name: str
 ):
     await worker._chunks_for(
@@ -827,11 +872,7 @@ async def test_supported_office_routes_caption_parser_image_blocks(
             "parseArtifact": _artifact(),
         },
         name=f"lesson.{format_name}",
-        processing_plan=_plan(
-            caption_images=True,
-            format_name=format_name,
-            office_preview=True,
-        ),
+        processing_plan=_plan(format_name=format_name, office_preview=True),
         local_path="/shared/sources/source-1",
         source_key="sources/source-1",
         ws="ws_1",
@@ -839,36 +880,8 @@ async def test_supported_office_routes_caption_parser_image_blocks(
         source_sha256="aa" * 32,
     )
 
-    assert parse_stub["captioned"] == 1
-    assert parse_stub["chunked"][1]["description"] == "A labelled chloroplast."
-
-
-async def test_a_successful_parse_is_recorded_before_captioning(
-    parse_stub, monkeypatch
-):
-    """A later vision failure must not leave the zip untracked for the reaper."""
-    order: list[str] = []
-
-    def _record(*_a, **_k):
-        order.append("parse")
-
-    async def _caption(**_k):
-        order.append("caption")
-        return {
-            "selected": 0,
-            "cached": 0,
-            "captioned": 0,
-            "decorative": 0,
-            "applied": 0,
-            "key": "",
-        }
-
-    monkeypatch.setattr(worker, "_record_parse_artifact", _record)
-    monkeypatch.setattr(worker.figures, "caption_figures", _caption)
-
-    await _run(caption_images=True)
-
-    assert order == ["parse", "caption"]
+    assert parse_stub["page_pdf"].name == "preview.pdf"
+    assert parse_stub["chunked"][0]["text"] == "Photosynthesis"
 
 
 def test_office_preview_is_shared_and_uploaded_as_pdf(tmp_path, monkeypatch):
@@ -1287,6 +1300,28 @@ def test_content_hash_includes_citation_geometry():
     assert worker.indexing.content_hash(first) != worker.indexing.content_hash(moved)
 
 
+def test_content_hash_includes_confidence_and_its_reasons():
+    from dataclasses import replace
+
+    from pipeline.retrieval.chunking import Chunk, Region
+
+    high = Chunk(
+        text="Identical words",
+        page_start=1,
+        page_end=1,
+        regions=[Region(1, [10, 20, 30, 40])],
+        confidence=1.0,
+    )
+    low = replace(high, confidence=0.5, confidence_reasons=["page text came from OCR"])
+    other_reason = replace(low, confidence_reasons=["page has no text layer"])
+    assert (
+        len({worker.indexing.content_hash([c]) for c in (high, low, other_reason)}) == 3
+    )
+    assert worker.indexing.content_hash([low]) == worker.indexing.content_hash(
+        [replace(low)]
+    )
+
+
 def test_the_source_is_downloaded_once_while_hashing_real_bytes(monkeypatch, tmp_path):
     """The uploader controls the checksum header, so it cannot be the cache key.
 
@@ -1367,7 +1402,8 @@ def test_persisted_local_source_is_checksum_verified_before_reuse(tmp_path):
 async def test_a_full_parse_queue_puts_the_job_back_without_burning_an_attempt(
     parse_stub, monkeypatch, tmp_path
 ):
-    """When every parser slot is taken, the file stays pending and the attempt is undone."""
+    """A parser 429 leaves the file pending and undoes the attempt; the source
+    download is kept for the next claim."""
     from pipeline.jobs import CapacityWait
 
     yielded: list[str] = []
@@ -1409,7 +1445,12 @@ async def test_a_full_parse_queue_puts_the_job_back_without_burning_an_attempt(
     monkeypatch.setattr(worker.blobstore, "_s3_client", FakeS3)
     monkeypatch.setattr(worker, "_remember_local_source", lambda *_a, **_k: None)
     monkeypatch.setattr(worker.store, "find_ready_donor", _no_donor)
-    monkeypatch.setattr(worker.slots, "try_acquire", lambda *_a, **_k: False)
+    monkeypatch.setattr(worker, "_set_file_status", lambda *_a, **_k: None)
+
+    def _full(*_a, **_k):
+        raise parser_client.ParserCapacityError("parser document queue is full")
+
+    monkeypatch.setattr(worker.parser_client, "ensure_artifact", _full)
     monkeypatch.setattr(
         worker, "_yield_for_capacity", lambda job, *_a, **_k: yielded.append(job["id"])
     )
@@ -1430,16 +1471,9 @@ async def test_a_full_parse_queue_puts_the_job_back_without_burning_an_attempt(
     worker._cleanup_payload_source(job["payload"])
 
 
-async def test_confirmed_parser_oom_is_terminal_and_releases_its_slot(monkeypatch):
+async def test_confirmed_parser_oom_is_terminal(monkeypatch):
     from pipeline.jobs import TerminalError
 
-    released: list[tuple[str, str]] = []
-    monkeypatch.setattr(worker.slots, "try_acquire", lambda *_a: True)
-    monkeypatch.setattr(
-        worker.slots,
-        "release",
-        lambda route, job_id: released.append((route, job_id)),
-    )
     monkeypatch.setattr(worker, "_set_file_status", lambda *_a: None)
     monkeypatch.setattr(worker.progress, "publish", lambda *_a, **_k: None)
     monkeypatch.setattr(
@@ -1461,32 +1495,6 @@ async def test_confirmed_parser_oom_is_terminal_and_releases_its_slot(monkeypatc
             workspace_id="ws_1",
             file_id="f_1",
         )
-
-    assert released == [(parser_client.ROUTE_FAST, "job_parse")]
-
-
-async def test_text_sources_do_not_take_a_gpu_slot(parse_stub, monkeypatch):
-    taken: list[tuple] = []
-    monkeypatch.setattr(worker, "_read_text", lambda _p: "# Notes")
-    monkeypatch.setattr(worker, "chunk_markdown", lambda text: [text])
-    monkeypatch.setattr(worker, "_set_file_status", lambda *_a, **_k: None)
-    monkeypatch.setattr(
-        worker.slots, "try_acquire", lambda *a, **k: taken.append((a, k)) or True
-    )
-
-    await worker._chunks_for(
-        payload={"blobPath": "sources/notes.md"},
-        name="notes.md",
-        processing_plan=_plan(ingest_plan.RAW_TEXT, format_name="md"),
-        local_path="/shared/sources/source-1",
-        source_key="sources/source-1",
-        ws="ws_1",
-        file_id="f_1",
-        source_sha256="aa" * 32,
-        job_id="job_1",
-    )
-
-    assert taken == []
 
 
 async def test_audio_ingest_downloads_source_before_synchronous_transcription(
@@ -1601,7 +1609,7 @@ async def test_legacy_route_hints_are_not_required(monkeypatch):
                 "payload": {
                     key: value
                     for key, value in _ingest_payload().items()
-                    if key not in {"captionImages", "parseMode"}
+                    if key != "parseMode"
                 },
             }
         )

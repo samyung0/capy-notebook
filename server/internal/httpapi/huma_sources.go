@@ -86,10 +86,9 @@ func (a *api) getSourceUploadPolicy(
 
 	parseModes := []apimodel.SourceUploadParseModePolicy{
 		{
-			Mode:            sourceupload.ParseModeFast,
-			Extensions:      sourceupload.ParseExtensions(sourceupload.ParseModeFast),
-			MaxBytes:        maxBytes,
-			SupportsFigures: true,
+			Mode:       sourceupload.ParseModeFast,
+			Extensions: sourceupload.ParseExtensions(sourceupload.ParseModeFast),
+			MaxBytes:   maxBytes,
 		},
 		{
 			Mode:       sourceupload.ParseModeNone,
@@ -194,7 +193,6 @@ func (a *api) createSourceUpload(ctx context.Context, in *createSourceUploadInpu
 	if err := sourceupload.Validate(name, body.Kind, body.ParseMode, body.SizeBytes, maxBytes); err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
-	body.CaptionImages = sourceupload.NormalizeCaptionImages(body.Kind, body.ParseMode, body.CaptionImages)
 	if sourceupload.NeedsIngestJob(name, body.Kind, body.ParseMode) {
 		if err := a.s.AssertCreditsForEstimate(ctx, userID(ctx), body.EstimatedCreditMicros); err != nil {
 			return nil, hErr(err)
@@ -230,14 +228,14 @@ func (a *api) createSourceUpload(ctx context.Context, in *createSourceUploadInpu
 		ChapterID: body.ChapterID, ChapterName: chapterName,
 		ObjectPath: incoming, FinalPath: finalPath, Name: name, Kind: body.Kind,
 		ContentType: body.ContentType, DeclaredSize: body.SizeBytes,
-		ParseMode: body.ParseMode, CaptionImages: body.CaptionImages,
+		ParseMode: body.ParseMode,
 		ExpiresAt: signed.ExpiresAt,
 	})
 	if err != nil {
 		return nil, hErr(err)
 	}
-	log.Printf("direct upload reserved upload=%s workspace=%s bytes=%d mode=%s captions=%t",
-		session.ID, wsID, session.DeclaredSize, session.ParseMode, session.CaptionImages)
+	log.Printf("direct upload reserved upload=%s workspace=%s bytes=%d mode=%s",
+		session.ID, wsID, session.DeclaredSize, session.ParseMode)
 	if signed.Headers == nil {
 		signed.Headers = map[string]string{}
 	}
@@ -373,19 +371,17 @@ func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourc
 		return nil, huma.Error400BadRequest("chapterId cannot be empty")
 	}
 	fingerprintBody, err := json.Marshal(struct {
-		CaptionImages bool
-		ChapterID     *string
-		ChapterName   string
-		ParseMode     string
-		Provider      string
-		Refs          []integrations.ImportRef
+		ChapterID   *string
+		ChapterName string
+		ParseMode   string
+		Provider    string
+		Refs        []integrations.ImportRef
 	}{
-		CaptionImages: in.Body.CaptionImages,
-		ChapterID:     in.Body.ChapterID,
-		ChapterName:   chapterName,
-		ParseMode:     in.Body.ParseMode,
-		Provider:      in.Body.Provider,
-		Refs:          refs,
+		ChapterID:   in.Body.ChapterID,
+		ChapterName: chapterName,
+		ParseMode:   in.Body.ParseMode,
+		Provider:    in.Body.Provider,
+		Refs:        refs,
 	})
 	if err != nil {
 		return nil, hErr(err)
@@ -536,11 +532,6 @@ func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourc
 		if sourceupload.NeedsIngestJob(meta.Name, kind, mode) {
 			needsCredits = true
 		}
-		captionImages := sourceupload.NormalizeCaptionImages(
-			kind,
-			mode,
-			in.Body.CaptionImages,
-		)
 
 		uploadID := randID("up")
 		jobID := randID("imp")
@@ -557,7 +548,7 @@ func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourc
 				ObjectPath: incomingObjectKey(uploadID, blobID+ext),
 				FinalPath:  sourceObjectKey(blobID + ext),
 				Name:       meta.Name, Kind: kind, ContentType: contentType,
-				DeclaredSize: reservedSize, ParseMode: mode, CaptionImages: captionImages,
+				DeclaredSize: reservedSize, ParseMode: mode,
 				// Four import attempts of CAPY_IMPORT_JOB_TIMEOUT fit inside an
 				// hour; the upload sweeper then frees a reservation whose worker
 				// died with its budget spent.

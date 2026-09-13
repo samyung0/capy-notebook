@@ -174,13 +174,13 @@ def test_fetch_available_model_slugs_rejects_unauthorized_key(status: int):
         fetch_available_model_slugs("openai", "bad-key", get=get)
 
 
-def test_fetch_available_model_slugs_names_deepinfra_key_when_zai_rejects():
+def test_fetch_available_model_slugs_names_tencent_key_when_zai_rejects():
     def get(url: str, **_kwargs):
         return httpx.Response(401, request=httpx.Request("GET", url))
 
     with pytest.raises(
         ModelListAuthError,
-        match=r"DEEPINFRA_API_KEY was rejected by zai \(401\)",
+        match=r"TENCENT_API_KEY was rejected by zai \(401\)",
     ):
         fetch_available_model_slugs("zai", "bad-key", get=get)
 
@@ -194,7 +194,7 @@ def test_fetch_available_model_slugs_rejects_provider_error():
     assert not isinstance(error.value, ModelListAuthError)
 
 
-def test_zai_model_list_maps_deepinfra_wire_slug_to_catalog_slug():
+def test_zai_model_list_is_read_from_tencent_tokenhub():
     captured = {}
 
     def get(url: str, **_kwargs):
@@ -202,11 +202,11 @@ def test_zai_model_list_maps_deepinfra_wire_slug_to_catalog_slug():
         return httpx.Response(
             200,
             request=httpx.Request("GET", url),
-            json={"data": [{"id": "zai-org/GLM-5.3-Flash"}]},
+            json={"data": [{"id": "glm-5.3-flash"}, {"id": "other-model"}]},
         )
 
     assert fetch_available_model_slugs("zai", "sk-test", get=get) == ["glm-5.3-flash"]
-    assert captured["url"] == "https://api.deepinfra.com/v1/models"
+    assert captured["url"] == "https://tokenhub.tencentcloudmaas.com/v1/models"
 
 
 def test_selectable_models_retain_certified_slugs_missing_from_provider():

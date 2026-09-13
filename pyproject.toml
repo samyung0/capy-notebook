@@ -16,6 +16,10 @@ dependencies = [
   # Backblaze B2 source-object downloads in the ingest worker.
   "boto3>=1.34",
   "Pillow>=10.0",
+  # Source-PDF text layer for heading retention and extraction confidence at
+  # ingest, and page rendering for capture_page. Pinned to the parser's version
+  # so both read the same glyphs.
+  "pymupdf==1.28.2",
   "fastapi>=0.110",
   "python-multipart>=0.0.9", # FastAPI UploadFile (/transcribe) form parsing
   "uvicorn[standard]>=0.29",
@@ -33,10 +37,13 @@ dependencies = [
 # testcontainers starts fresh Postgres/Redis containers for cassette tests.
 # pytest-asyncio drives the async ingest/retrieval entry points.
 # prompt-toolkit powers the model certification selector run through this extra.
+# pypdf is the parser's glyph table; the font-repair fixture test runs
+# parser/odl/fonts.py against a real page.
 test = [
   "pytest>=8.0",
   "pytest-asyncio>=0.24",
   "prompt-toolkit>=3.0.37",
+  "pypdf>=6.18.0",
   "testcontainers>=4.15.0",
   "vcrpy>=6.0",
 ]
@@ -56,7 +63,7 @@ include = ["pipeline*"]
 pipeline = ["elitellm/providers.json", "generated/agent_tools.json"]
 
 [tool.ruff]
-extend-exclude = ["bench"]
+extend-exclude = ["bench", "vendor"]
 force-exclude = true
 
 [tool.ruff.lint.isort]

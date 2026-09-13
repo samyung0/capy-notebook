@@ -175,9 +175,6 @@ type SourceUploadParseModePolicy struct {
 	Extensions []string `json:"extensions" nullable:"false"`
 	MaxBytes   int64    `json:"maxBytes"`
 	MaxPages   int      `json:"maxPages,omitempty"`
-	// Whether this mode extracts figures, and therefore whether offering the
-	// image-captioning switch alongside it makes sense.
-	SupportsFigures bool `json:"supportsFigures"`
 }
 
 type SourceUploadPolicy struct {

@@ -19,7 +19,9 @@ import (
 // ContractVersion changes whenever a tool definition, input schema, operation
 // name or result shape changes incompatibly. Python refuses to start on a
 // version it does not know.
-const ContractVersion = 1
+//
+// v2: capture_page added.
+const ContractVersion = 2
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -398,6 +400,28 @@ func Definitions() []Definition {
 				"start":   map[string]any{"type": "integer", "minimum": 0, "default": 0},
 				"count":   map[string]any{"type": "integer", "minimum": 1, "maximum": 12, "default": 4},
 			}, "file_id"),
+			Concurrency:        "read",
+			RequiredOperations: []Operation{OpSourceRead},
+		}),
+		chatTool(Definition{
+			Name: "capture_page",
+			Description: "Render one source page, or a boxed region of it, and read it " +
+				"directly as an image. Use the file_id and 1-based page shown with a " +
+				"passage; only pages a shown passage cites can be captured. bbox is " +
+				"optional: [x0, y0, x1, y1] on a 0-1000 grid over the page, origin " +
+				"top-left, to zoom into a table, figure or formula. Costs one tool " +
+				"call and a few seconds.",
+			InputSchema: obj(map[string]any{
+				"file_id": str(""),
+				"page":    map[string]any{"type": "integer", "minimum": 1},
+				"bbox": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "number", "minimum": 0, "maximum": 1000},
+					"minItems":    4,
+					"maxItems":    4,
+					"description": "Region to zoom into on the 0-1000 page grid, top-left origin.",
+				},
+			}, "file_id", "page"),
 			Concurrency:        "read",
 			RequiredOperations: []Operation{OpSourceRead},
 		}),

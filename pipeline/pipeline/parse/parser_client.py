@@ -3,16 +3,17 @@
 The worker downloads each source from B2 once. This client gives the parser a
 relative key in their shared local spool, and the parser publishes its bundle
 back to that volume atomically. The zip contains ``content_list.json``
-(one entry per layout block, with page index and bounding box) plus the images
-it extracted. That block list is what makes page-accurate citations and figure
-captioning possible.
+(one entry per layout block, with page index and bounding box),
+``refinement.json`` (the running-furniture texts the parser froze before
+table recovery), ``preview.pdf`` for Office sources, ``parsed.pdf`` when font
+repair changed the bytes the parser read, plus the images it extracted. That
+block list is what makes page-accurate citations and page captures possible.
 
-The live route uses MinerU's pipeline backend with ``auto``, ``txt``, or
-``ocr`` extraction. Unknown parse modes fail and each mode has a separate
-artifact fingerprint.
+The live route is OpenDataLoader with the reviewed native repairs and selective
+RapidOCR on pages without a text layer (``parser/odl``).
 
-Artifacts are addressed by a fingerprint over the source object, parse options,
-route, parser version, and artifact schema. A retry, re-upload, or workspace
+Artifacts are addressed by a fingerprint over the source object, route, parser
+version, and artifact schema. A retry, re-upload, or workspace
 clone of the same document hits the cached zip instead of parsing again.
 """
 
@@ -45,8 +46,8 @@ ROUTE_FAST = "fast"
 
 # Must match parser/app.py. The implementation generation and exact release
 # SHA form one identity, so rebuilt parser output cannot masquerade as an older
-# artifact even when the source and parse mode are unchanged.
-PARSER_IMPLEMENTATIONS = {ROUTE_FAST: "mineru-3.4.5-pipeline-sliced-v1"}
+# artifact even when the source is unchanged.
+PARSER_IMPLEMENTATIONS = {ROUTE_FAST: "odl-2.5.7-refined-rapidocr-v3"}
 OFFICE_SUFFIXES = frozenset({".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx"})
 
 
@@ -138,7 +139,7 @@ def artifact_identity(descriptor: Mapping[str, Any]) -> tuple[str, str]:
     route = _route(descriptor)
     version = parser_version(route)
     source_sha256 = str(descriptor.get("source_sha256") or "")
-    identity = f"{source_sha256}:{cfg.parse_method}:{route}:{version}:{ARTIFACT_SCHEMA}"
+    identity = f"{source_sha256}:{route}:{version}:{ARTIFACT_SCHEMA}"
     fingerprint = hashlib.sha256(identity.encode()).hexdigest()
     return f"artifacts/{fingerprint}.zip", fingerprint
 
@@ -356,7 +357,6 @@ def _request_artifact(
                 "source_sha256": str(descriptor["source_sha256"]),
                 "output_key": artifact_key,
                 "filename": upload_name,
-                "parse_method": cfg.parse_method,
                 "artifact_schema": ARTIFACT_SCHEMA,
                 "parser_version": version,
                 "source_fingerprint": fingerprint,
@@ -410,7 +410,7 @@ def _request_artifact(
         raise ParserClientError("parser returned no artifact checksum")
     artifact["fingerprint"] = fingerprint
     # Wall time remains useful for latency. Page counts, not CPU time, drive the
-    # charge; host sampling captures shared MinerU resource use.
+    # charge; host sampling captures the parser's resource use.
     parse_seconds = payload.get("_server_parse_s")
     log.info(
         "parser published %s local artifact key=%s bytes=%s parse_s=%s cpu_ms=%s pages=%s ocr_pages=%s queue_ms=%s",
@@ -441,6 +441,8 @@ def _entry_limit(info: zipfile.ZipInfo) -> int:
         return min(cfg.parse_artifact_max_entry_bytes, 64 << 10)
     if info.filename == "preview.pdf":
         return min(cfg.parse_artifact_max_entry_bytes, cfg.office_preview_max_bytes)
+    if info.filename == "refinement.json":
+        return min(cfg.parse_artifact_max_entry_bytes, 4 << 20)
     if info.filename.startswith("images/"):
         return min(cfg.parse_artifact_max_entry_bytes, cfg.parse_image_max_bytes)
     return cfg.parse_artifact_max_entry_bytes
@@ -453,9 +455,9 @@ def _validated_entries(archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
     names = [info.filename for info in infos]
     if len(names) != len(set(names)):
         raise ParserClientError("parsed artifact contains duplicate entries")
-    if "manifest.json" not in names or "content_list.json" not in names:
+    if {"manifest.json", "content_list.json", "refinement.json"} - set(names):
         raise ParserClientError(
-            "parsed artifact is missing its manifest or content list"
+            "parsed artifact is missing its manifest, content list or refinement"
         )
 
     expanded = 0
@@ -627,7 +629,7 @@ def publish_durable_artifact(
     except (ParserClientError, OSError, ValueError, zipfile.BadZipFile):
         # A fingerprint-addressed local cache entry that fails full validation
         # must not poison the job's second parse attempt. Remove only this exact
-        # bundle so the next request asks MinerU to rebuild it.
+        # bundle so the next request asks the parser to rebuild it.
         try:
             discard_artifact(artifact)
         except ParserClientError:

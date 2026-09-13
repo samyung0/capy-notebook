@@ -1,6 +1,7 @@
 # Pipeline image — parse coordinator, ingest worker, or retrieval service
-# (compose overrides `command`). CPU MinerU runs in the separate persistent parser
-# image, so this image does not include those models. Build from the repository
+# (compose overrides `command`). Document parsing runs in the separate persistent
+# parser image; this image carries PyMuPDF for heading retention, extraction
+# confidence and page captures. Build from the repository
 # root so uv can copy the lockfile.
 FROM python:3.11-slim
 COPY --from=ghcr.io/astral-sh/uv:0.8.22 /uv /uvx /bin/

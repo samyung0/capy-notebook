@@ -17,14 +17,10 @@ x-pipeline-env: &pipeline-env
   B2_APP_KEY: ${B2_APP_KEY:?set B2_APP_KEY}
   PARSER_URL: http://${PARSER_BIND_ADDRESS:?set the WireGuard bind address}:8090/file_parse
   PARSER_TOKEN: ${PARSER_TOKEN:?set PARSER_TOKEN}
-  PARSER_TIMEOUT: ${PARSER_TIMEOUT:-2400}
-  CAPY_PARSE_SLICE_TIMEOUT: ${CAPY_PARSE_SLICE_TIMEOUT:-600}
-  PARSER_SLOT_TTL: ${PARSER_SLOT_TTL:-2700}
+  PARSER_TIMEOUT: ${PARSER_TIMEOUT:-2520}
   CAPY_PARSE_SHARED_DIR: /var/lib/capy-parse
-  CAPY_PARSE_JOB_TIMEOUT: ${CAPY_PARSE_JOB_TIMEOUT:-3600}
+  CAPY_PARSE_JOB_TIMEOUT: ${CAPY_PARSE_JOB_TIMEOUT:-2700}
   CAPY_INGEST_TIMEOUT: ${CAPY_INGEST_TIMEOUT:-1200}
-  CAPY_PARSE_SLOTS: ${CAPY_PARSE_SLOTS:-4}
-  CAPY_PARSE_METHOD: ${CAPY_PARSE_METHOD:-auto}
   CAPY_OFFICE_PREVIEW_MAX_BYTES: ${CAPY_OFFICE_PREVIEW_MAX_BYTES:-134217728}
   CAPY_PARSE_ARTIFACT_MAX_BYTES: ${CAPY_PARSE_ARTIFACT_MAX_BYTES:-268435456}
   CAPY_PARSE_ARTIFACT_MAX_ENTRIES: ${CAPY_PARSE_ARTIFACT_MAX_ENTRIES:-4096}
@@ -65,9 +61,15 @@ services:
       RELEASE_SHA: ${RELEASE_SHA:?set the exact 40-character release SHA}
       PARSER_BIND_ADDRESS: ${PARSER_BIND_ADDRESS:?set the WireGuard bind address}
       PARSER_TOKEN: ${PARSER_TOKEN:?set PARSER_TOKEN}
-      CAPY_PARSE_CONCURRENCY: ${CAPY_PARSE_CONCURRENCY:-4}
-      CAPY_MINERU_SLICE_PAGES: ${CAPY_MINERU_SLICE_PAGES:-26}
-      CAPY_PARSE_SLICE_TIMEOUT: ${CAPY_PARSE_SLICE_TIMEOUT:-600}
+      # Depth counts the executing document: one executes, three wait. A fifth
+      # request is 429 and the coordinator re-pends without spending an attempt.
+      CAPY_PARSE_QUEUE_DEPTH: ${CAPY_PARSE_QUEUE_DEPTH:-4}
+      # Hard deadline per document (Java plus repairs plus OCR); a breach
+      # quarantines the fingerprint and restarts the container.
+      CAPY_PARSE_DOCUMENT_TIMEOUT: ${CAPY_PARSE_DOCUMENT_TIMEOUT:-600}
+      # JVM heap inside the container limit: the kernel, not the JVM, ends a
+      # runaway parse so the cgroup OOM watch still fires.
+      CAPY_PARSER_JVM_MAX_HEAP: ${CAPY_PARSER_JVM_MAX_HEAP:-8g}
       CAPY_PARSE_SHARED_DIR: /var/lib/capy-parse
       CAPY_OFFICE_CONVERT_TIMEOUT: ${CAPY_OFFICE_CONVERT_TIMEOUT:-180}
       CAPY_OFFICE_PREVIEW_MAX_BYTES: ${CAPY_OFFICE_PREVIEW_MAX_BYTES:-134217728}
@@ -79,9 +81,6 @@ services:
       CAPY_PARSE_CONTENT_MAX_BLOCKS: ${CAPY_PARSE_CONTENT_MAX_BLOCKS:-250000}
       CAPY_PARSE_IMAGE_MAX_BYTES: ${CAPY_PARSE_IMAGE_MAX_BYTES:-33554432}
       CAPY_PARSE_IMAGES_MAX_BYTES: ${CAPY_PARSE_IMAGES_MAX_BYTES:-268435456}
-      MINERU_PROCESSING_WINDOW_SIZE: ${CAPY_MINERU_PROCESSING_WINDOW_SIZE:-26}
-      MINERU_INTRA_OP_NUM_THREADS: ${CAPY_MINERU_INTRA_OP_NUM_THREADS:-2}
-      MINERU_INTER_OP_NUM_THREADS: ${CAPY_MINERU_INTER_OP_NUM_THREADS:-1}
     command:
       [
         "uvicorn",
@@ -96,7 +95,6 @@ services:
         "1",
       ]
     volumes:
-      - parser_models:/models
       - parse_spool:/var/lib/capy-parse
     mem_limit: 14g
     memswap_limit: 18g
@@ -113,7 +111,8 @@ services:
         ]
       interval: 15s
       timeout: 5s
-      start_period: 15m
+      # No model warm-up: the RapidOCR models load on the first text-less page.
+      start_period: 60s
       retries: 8
     depends_on:
       parse-spool-init:
@@ -196,15 +195,12 @@ services:
       SENTRY_DSN: ${SENTRY_DSN_WORKER:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPINFRA_API_KEY: ${DEEPINFRA_API_KEY:-}
+      TENCENT_API_KEY: ${TENCENT_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
       ELEVENLABS_BASE_URL: ${ELEVENLABS_BASE_URL:-https://api.elevenlabs.io}
       EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}
-      # Per-model outbound cap shared with the app host through Postgres.
-      # Caption concurrency is per worker. Four workers allow at most sixteen
-      # uncached embedded-figure caption calls at once.
-      CAPY_CAPTION_CONCURRENCY: ${CAPY_CAPTION_CONCURRENCY:-4}
       CAPY_CAPTION_MAX_EDGE: ${CAPY_CAPTION_MAX_EDGE:-1280}
       CAPY_IMAGE_MAX_PIXELS: ${CAPY_IMAGE_MAX_PIXELS:-100000000}
       CAPY_ELEVENLABS_CONCURRENCY_UNITS: ${CAPY_ELEVENLABS_CONCURRENCY_UNITS:-12}
@@ -251,7 +247,5 @@ services:
     restart: unless-stopped
 
 volumes:
-  parser_models:
-    name: ${CAPY_INGEST_PARSER_MODELS_VOLUME:-capy-ingest_parser_models}
   parse_spool:
     name: ${CAPY_INGEST_PROD_PARSE_SPOOL_VOLUME:-capy-ingest_parse_spool}

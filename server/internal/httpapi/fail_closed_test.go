@@ -136,7 +136,8 @@ func TestListModelsResolvesEmptyReasoningPrefs(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.SelectedThinking != "instant" {
-		t.Fatalf("resolved thinking = %+v, want instant", body)
+	// A fresh account is pinned to zai/glm-5.3-flash, whose floor is "low".
+	if body.SelectedThinking != "low" {
+		t.Fatalf("resolved thinking = %+v, want low", body)
 	}
 }

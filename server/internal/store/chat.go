@@ -69,6 +69,15 @@ type ActivityBlock struct {
 	Outcome agenttools.Outcome          `json:"outcome,omitempty" enum:"succeeded,refused,failed,cancelled,outcome_unknown"`
 	Error   *agenttools.ToolError       `json:"error,omitempty"`
 	Effects []agenttools.ResourceEffect `json:"effects,omitempty"`
+	Capture *ActivityCapture            `json:"capture,omitempty"`
+}
+
+// ActivityCapture is what a successful capture_page call rendered: the page,
+// the box on it (0-1000 page units) and the JPEG size. The image is not kept.
+type ActivityCapture struct {
+	Page  int   `json:"page"`
+	Bbox  []int `json:"bbox"`
+	Bytes int   `json:"bytes"`
 }
 
 // UnmarshalJSON maps the pre-contract `status` of a persisted tool block onto

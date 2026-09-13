@@ -21,6 +21,7 @@
 
 import type {
   ActivityBlockOutcome,
+  ActivityCapture,
   AttemptDetail as GenAttemptDetail,
   Citation as GenCitation,
   Comment as GenComment,
@@ -289,6 +290,7 @@ export type ActivityBlock =
   | { id: string; kind: 'narration'; text: string }
   | {
       callId: string;
+      capture?: ActivityCapture;
       detail?: string;
       effects?: ResourceEffect[];
       error?: ToolError;

@@ -24,7 +24,12 @@ from compare_opendataloader import odl_content_list
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "pipeline"))
 from pipeline.config import cfg
-from pipeline.retrieval.chunking import _TableRows, chunk_content_list, flatten_table
+from pipeline.retrieval.chunking import (
+    CHUNKER_VERSION,
+    _TableRows,
+    chunk_content_list,
+    flatten_table,
+)
 
 
 def normal(text: str) -> str:
@@ -314,7 +319,7 @@ def main() -> None:
         ).hexdigest(),
         "chunk_tokens": cfg.chunk_tokens,
         "chunk_overlap_tokens": cfg.chunk_overlap_tokens,
-        "chunk_min_tokens": cfg.chunk_min_tokens,
+        "chunker_version": CHUNKER_VERSION,
         "checks_sha256": hashlib.sha256(args.checks.read_bytes()).hexdigest(),
     }
     (args.root / "evaluation.json").write_text(

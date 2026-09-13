@@ -15,7 +15,9 @@ import (
 const testLLMParams = `{"temperature":0.3}`
 
 var (
-	flashRef = Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-flash-vision-exp"}
+	flashRef = Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-flash"}
+	// The chat slot default since 0009_default_chat_model.sql.
+	glmRef   = Ref{ProviderSlug: "zai", ModelSlug: "glm-5.3-flash"}
 	embedRef = Ref{ProviderSlug: "deepinfra", ModelSlug: "Qwen/Qwen3-Embedding-4B"}
 )
 
@@ -81,7 +83,7 @@ func TestGetLoadsPinnedVersionOnMissAndNeverFallsBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if def.Version == 9999 || def.Ref() != flashRef {
+	if def.Version == 9999 || def.Ref() != glmRef {
 		t.Fatalf("default mutated by a miss: %#v", def)
 	}
 }
@@ -93,10 +95,11 @@ func TestOldVersionStaysResolvableAfterNewerDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The chat slot default is GLM; a newer Flash version takes it over.
 	_, err = pool.Exec(ctx, `
 		UPDATE model_configs
 		   SET is_default_for = array_remove(is_default_for, 'chat')
-		 WHERE provider_slug=$1 AND model_slug=$2 AND version=1`, flashRef.ProviderSlug, flashRef.ModelSlug)
+		 WHERE provider_slug=$1 AND model_slug=$2 AND version=1`, glmRef.ProviderSlug, glmRef.ModelSlug)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +110,7 @@ func TestOldVersionStaysResolvableAfterNewerDefault(t *testing.T) {
 			thinking_levels, default_thinking, params, slots,
 			micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
 			enabled, is_default_for
-		) VALUES (2, 'DeepSeek', 'Flash v2', 'deepseek', 'deepseek-v4-flash-vision-exp',
+		) VALUES (2, 'DeepSeek', 'Flash v2', 'deepseek', 'deepseek-flash',
 			true, true, 1000000,
 			ARRAY['instant','low','mid','high','max']::text[], 'instant',
 			$1::jsonb, ARRAY['chat','generate','editor','ingest'], 250, 1000, 250, true, ARRAY['chat'])`, testLLMParams)
@@ -118,8 +121,8 @@ func TestOldVersionStaysResolvableAfterNewerDefault(t *testing.T) {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM model_configs WHERE provider_slug=$1 AND model_slug=$2 AND version=2`, flashRef.ProviderSlug, flashRef.ModelSlug)
 		_, _ = pool.Exec(context.Background(), `
 			UPDATE model_configs
-			   SET is_default_for = ARRAY['chat','generate','editor','quiz','ingest']
-			 WHERE provider_slug=$1 AND model_slug=$2 AND version=1`, flashRef.ProviderSlug, flashRef.ModelSlug)
+			   SET is_default_for = array_append(is_default_for, 'chat')
+			 WHERE provider_slug=$1 AND model_slug=$2 AND version=1`, glmRef.ProviderSlug, glmRef.ModelSlug)
 	})
 	old, err := reg.Get(ctx, flashRef, 1)
 	if err != nil {

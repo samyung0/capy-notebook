@@ -1,4 +1,9 @@
-"""Prepare matched parser artifacts with current captioning, chunking and indexing."""
+"""Prepare matched parser artifacts with current captioning, chunking and indexing.
+
+Arms: ``odl`` and ``mineru`` carry generated figure captions; ``odl_nocaption``
+indexes the same refined ODL chunks with no caption step at all (figures keep
+only their native caption and footnote text), for the capture_page experiments.
+"""
 
 from __future__ import annotations
 
@@ -15,6 +20,7 @@ from unittest.mock import patch
 ROOT = Path(os.environ.get("ODL_EVAL_ROOT", "/lab"))
 MAIN = Path("/opt/capy-odl-third-pass-20260909")
 OLD = Path("/opt/capy-odl-third-regression-20260909")
+ARMS = ("odl", "mineru", "odl_nocaption", "odl_ocr")
 
 
 def read(path):
@@ -250,6 +256,37 @@ async def captions(ids):
             print(json.dumps(record), flush=True)
 
 
+def nocaption(ids):
+    """Stage the frozen caption-free ODL chunks as the odl_nocaption arm."""
+    for entry in read(ROOT / "corpus.json"):
+        if ids and entry["id"] not in ids:
+            continue
+        target = ROOT / "captioned" / "odl_nocaption" / entry["id"]
+        if (target / "complete.json").exists():
+            continue
+        folder = Path(entry["odl"])
+        blocks = read(folder / "content_list.json")
+        assert not any(b.get("description") for b in blocks), entry["id"]
+        chunks = serialize(pack_odl(blocks, entry))
+        assert chunks == read(folder / "chunks.json"), (entry["id"], "ODL replay mismatch")
+        save(target / "content_list.json", blocks)
+        save(target / "chunks.json", chunks)
+        save(
+            target / "complete.json",
+            {
+                "id": entry["id"],
+                "arm": "odl_nocaption",
+                "selected": 0,
+                "captions": "none",
+                "chunks": len(chunks),
+                "input_sha256": sha(folder / "content_list.json"),
+                "content_sha256": sha(target / "content_list.json"),
+                "chunks_sha256": sha(target / "chunks.json"),
+            },
+        )
+        print(entry["id"], "staged", len(chunks), "chunks", flush=True)
+
+
 async def _index_failure_snapshot(workspace_id, file_id, content_id):
     from pipeline.retrieval import store
 
@@ -297,7 +334,7 @@ async def record_index_failure(entry, arm, exc=None, started=None, *, evidence=N
     from pipeline.retrieval import store
 
     guard_database()
-    if arm not in ("odl", "mineru"):
+    if arm not in ARMS:
         raise ValueError("Unknown parser arm")
     target = ROOT / "captioned" / arm / entry["id"]
     path = target / "index-failed.json"
@@ -399,7 +436,7 @@ async def record_index_failure(entry, arm, exc=None, started=None, *, evidence=N
     return record
 
 
-async def index(ids):
+async def index(ids, arms=ARMS):
     import psycopg
     from odl_agentic_runtime import install_transport, recording_context
     from pipeline.config import cfg
@@ -420,10 +457,12 @@ async def index(ids):
     )
     models._interactive = lambda: False
     client._interactive = lambda: False
+    existing = read(ROOT / "workspaces.json")["arms"] if (ROOT / "workspaces.json").exists() else {}
     manifest = {
         "arms": {
-            arm: {"workspace_id": "odl_eval_" + arm, "files": {}, "failed_sources": {}}
-            for arm in ("odl", "mineru")
+            arm: existing.get(arm)
+            or {"workspace_id": "odl_eval_" + arm, "files": {}, "failed_sources": {}}
+            for arm in ARMS
         }
     }
     with psycopg.connect(cfg.dsn) as conn:
@@ -437,6 +476,8 @@ async def index(ids):
             )
     for entry in read(ROOT / "corpus.json"):
         for arm, ws in manifest["arms"].items():
+            if arm not in arms:
+                continue
             fid, cid = (
                 f"odl_eval_{arm}_{entry['id']}",
                 f"odl_content_{arm}_{entry['id']}",
@@ -669,17 +710,22 @@ async def check_failure():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "mode", choices=("inventory", "caption", "index", "check-failure")
+        "mode", choices=("inventory", "caption", "nocaption", "index", "check-failure")
     )
     parser.add_argument("--ids", default="")
+    parser.add_argument("--arms", default=",".join(ARMS))
     args = parser.parse_args()
     ids = args.ids.split(",") if args.ids else []
     if args.mode == "check-failure":
         asyncio.run(check_failure())
     elif args.mode == "inventory":
         inventory()
+    elif args.mode == "nocaption":
+        nocaption(ids)
     else:
-        asyncio.run(captions(ids) if args.mode == "caption" else index(ids))
+        asyncio.run(
+            captions(ids) if args.mode == "caption" else index(ids, tuple(args.arms.split(",")))
+        )
 
 
 if __name__ == "__main__":

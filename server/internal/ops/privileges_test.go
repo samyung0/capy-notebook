@@ -446,7 +446,7 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 	}
 
 	readStore := newReadStoreForTest(t, readPool)
-	modelRef := models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-pro"}
+	modelRef := models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-flash"}
 	userID := "ops_role_user_" + suffix
 	if _, err := owner.Exec(ctx, `
 		INSERT INTO model_configs (
@@ -591,7 +591,7 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 	).Scan(&preference.ProviderSlug, &preference.ModelSlug); err != nil {
 		t.Fatal(err)
 	}
-	if preference != (models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-flash-vision-exp"}) {
+	if preference != (models.Ref{ProviderSlug: "zai", ModelSlug: "glm-5.3-flash"}) {
 		t.Fatalf("least-privilege remap persisted %q", preference)
 	}
 	if _, err := adminPool.Exec(ctx,

@@ -105,10 +105,10 @@ parser_ready() {
         [[ "$health" != healthy ]] || return 0
       fi
     fi
-    # A first boot downloads MinerU models into the empty parser_models volume,
-    # which the Compose healthcheck budgets 15m for. Report each check so the
-    # wait is distinguishable from a stalled deployment; the write also fails
-    # fast once the runner has gone away.
+    # The parser image carries its models, so a healthy boot takes seconds;
+    # the poll bound covers a slow image pull. Report each check so the wait
+    # is distinguishable from a stalled deployment; the write also fails fast
+    # once the runner has gone away.
     printf 'Waiting for the %s parser: %s (%d checks left).\n' "$environment" "$health" "$remaining"
     remaining=$((remaining-1)); sleep 15
   done

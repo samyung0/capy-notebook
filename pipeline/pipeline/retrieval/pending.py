@@ -143,7 +143,11 @@ def reserve(
     sources: PendingSources,
     spec: models.ModelConfig,
     schemas: list[dict[str, Any]] | None,
+    *,
+    extra: int = 0,
 ) -> tuple[dict[str, Any] | None, int, bool]:
+    """``extra`` is request weight outside ``messages`` (the turn's attached
+    page captures) that the fit check must leave room for."""
     message = sources.message()
     if message is None:
         return None, 0, False
@@ -151,7 +155,7 @@ def reserve(
     head = messages[:1] if messages and messages[0].get("role") == "system" else []
     protected = [*head, *messages[query:]]
     omitted = not compact.fits_request(
-        inject(protected, message), spec, schemas=schemas
+        inject(protected, message), spec, schemas=schemas, extra=extra
     )
     if omitted:
         message = sources.message(omitted=True)

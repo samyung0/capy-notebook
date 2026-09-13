@@ -14,6 +14,11 @@ from pipeline.elitellm import (
     uses_responses,
 )
 from pipeline.elitellm.client import (
+    ANTHROPIC_URL,
+    DEEPSEEK_CHAT_URL,
+    OPENAI_CHAT_URL,
+    OPENAI_RESPONSES_URL,
+    TENCENT_CHAT_URL,
     anthropic_request,
     deepseek_request,
     openai_responses_request,
@@ -156,6 +161,17 @@ async def _turn(
     return echoed
 
 
+# The hosts each provider's certification must have been recorded against. A
+# cassette recorded on a retired transport (the zai pin moved from DeepInfra to
+# Tencent TokenHub) is not a certification of the live route.
+LIVE_ROUTE_HOSTS = {
+    "anthropic": {ANTHROPIC_URL.split("/")[2]},
+    "deepseek": {DEEPSEEK_CHAT_URL.split("/")[2]},
+    "openai": {OPENAI_CHAT_URL.split("/")[2], OPENAI_RESPONSES_URL.split("/")[2]},
+    "zai": {TENCENT_CHAT_URL.split("/")[2]},
+}
+
+
 @pytest.mark.parametrize(
     "provider_slug,model_id",
     _certified_refs(),
@@ -166,6 +182,16 @@ def test_certified_manifest_has_two_turn_cassette(provider_slug: str, model_id: 
     cassette = _cassette_path(provider_slug, model_id)
     assert two_turn_cassette_ok(cassette), cassette
     assert entry["test"].endswith(f"[{provider_slug}/{model_id}]")
+    recorded_hosts = {
+        line.split("://", 1)[1].split("/", 1)[0]
+        for line in cassette.read_text().splitlines()
+        if line.strip().startswith("uri: ")
+    }
+    assert recorded_hosts <= LIVE_ROUTE_HOSTS[provider_slug], (
+        f"{cassette.name} was recorded against {sorted(recorded_hosts)}, not the "
+        f"live route; re-record it with `pnpm model:certify -- --provider "
+        f"{provider_slug} --model {model_id}`"
+    )
 
 
 @pytest.mark.parametrize(
@@ -219,7 +245,7 @@ def test_certified_request_shape(provider_slug: str, model_id: str):
             stream=True,
             tool_choice="auto",
         )
-        assert body["model"] == "zai-org/GLM-5.3-Flash"
+        assert body["model"] == "glm-5.3-flash"
         assert body["reasoning_effort"] == "max"
         assert "thinking" not in body
         assert body["stream"] is True

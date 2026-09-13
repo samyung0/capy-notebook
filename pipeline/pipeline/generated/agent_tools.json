@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "operations": [
     "source.read",
     "material.read",
@@ -147,6 +147,49 @@
         },
         "required": [
           "file_id"
+        ],
+        "type": "object"
+      },
+      "mutates": false,
+      "usesEmbedding": false,
+      "concurrency": "read",
+      "allowedSlots": [
+        "chat"
+      ],
+      "requiredOperations": [
+        "source.read"
+      ]
+    },
+    {
+      "name": "capture_page",
+      "version": 1,
+      "description": "Render one source page, or a boxed region of it, and read it directly as an image. Use the file_id and 1-based page shown with a passage; only pages a shown passage cites can be captured. bbox is optional: [x0, y0, x1, y1] on a 0-1000 grid over the page, origin top-left, to zoom into a table, figure or formula. Costs one tool call and a few seconds.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "bbox": {
+            "description": "Region to zoom into on the 0-1000 page grid, top-left origin.",
+            "items": {
+              "maximum": 1000,
+              "minimum": 0,
+              "type": "number"
+            },
+            "maxItems": 4,
+            "minItems": 4,
+            "type": "array"
+          },
+          "file_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "page": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "file_id",
+          "page"
         ],
         "type": "object"
       },

@@ -28,7 +28,7 @@ ROUTES = frozenset(
         DOCUMENT_PARSE,
     }
 )
-CAPTION_MODES = frozenset({"none", "standalone", "embedded"})
+CAPTION_MODES = frozenset({"none", "standalone"})
 
 _DOCUMENT_FORMATS = frozenset({"pdf", "docx", "pptx", "xlsx"})
 _OFFICE_PREVIEW_FORMATS = frozenset({"docx", "pptx", "xlsx"})
@@ -91,7 +91,7 @@ _DIRECT_RESOURCES = ("object_storage_read", "embedding_model", "ingest_model")
 
 
 def _expected_contract(
-    route: str, caption_mode: str, office_preview: bool
+    route: str, office_preview: bool
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
     if route == STORE_ONLY:
         return (), ()
@@ -141,11 +141,6 @@ def _expected_contract(
     if office_preview:
         stages.append("persist_office_preview")
         resources.append("object_storage_write")
-    if caption_mode == "embedded":
-        stages.extend(("caption_images", "persist_captions"))
-        resources.append("vision_model")
-        if "object_storage_write" not in resources:
-            resources.append("object_storage_write")
     stages.extend(("chunk", "index", "generate_derivatives"))
     return tuple(stages), tuple(resources)
 
@@ -160,10 +155,6 @@ class ProcessingPlan:
     office_preview: bool
     stages: tuple[str, ...]
     resources: tuple[str, ...]
-
-    @property
-    def caption_embedded_images(self) -> bool:
-        return self.caption_mode == "embedded"
 
 
 def require(value: Any) -> ProcessingPlan:
@@ -202,8 +193,6 @@ def require(value: Any) -> ProcessingPlan:
         raise TerminalError("direct processing plan unexpectedly selects a parser")
     if office_preview and route != DOCUMENT_PARSE:
         raise TerminalError("Office preview requires document parsing")
-    if caption_mode == "embedded" and route != DOCUMENT_PARSE:
-        raise TerminalError("embedded captioning requires document parsing")
     if route == IMAGE_CAPTION and caption_mode != "standalone":
         raise TerminalError("image processing requires standalone captioning")
     if caption_mode == "standalone" and route != IMAGE_CAPTION:
@@ -223,9 +212,7 @@ def require(value: Any) -> ProcessingPlan:
         raise TerminalError("raw-text processing plan has an unsupported format")
     if office_preview != (format_name in _OFFICE_PREVIEW_FORMATS):
         raise TerminalError("processing plan has an invalid Office preview policy")
-    expected_stages, expected_resources = _expected_contract(
-        route, caption_mode, office_preview
-    )
+    expected_stages, expected_resources = _expected_contract(route, office_preview)
     if tuple(stages_value) != expected_stages:
         raise TerminalError("processing plan stages do not match its route")
     if tuple(resources_value) != expected_resources:

@@ -133,7 +133,9 @@ worker for that row. A completed result stays cached when parsing is toggled off
 and back on. Each row owns its progress bar; there is no separate queue panel.
 
 PDF.js reports an exact PDF page count and estimates OCR routing from the text
-layer and transformed image coverage. The OOXML probe reads ZIP/XML parts:
+layer with the parser's own rule: a page with fewer than 40 text-layer
+characters goes to OCR (`TEXTLESS_CHARS` in `sourceAnalysisCore.ts`); image
+coverage is recorded but no longer decides routing. The OOXML probe reads ZIP/XML parts:
 PPTX slide count is exact, while DOCX pagination, XLSX rendered pages, and every
 Office OCR classification are explicitly estimates. XLSX estimates printed
 pages from each worksheet's used row/column extent because its eventual
@@ -148,13 +150,14 @@ payloads and unrelated package parts are never inflated by the probe. These
 estimates drive only the dialog summary. Images and audio do not enter the
 browser page/OCR analysis queue: the ingest worker captions or transcribes them,
 and those provider costs are deliberately absent from the page-based estimate.
-The
-server-owned 31-credit digital and 52-credit OCR page rates are returned by
-`source-upload-policy`; parser receipts remain authoritative for settlement.
+The server-owned page rates (1.0 credit per digital page and per OCR page) are
+returned by `source-upload-policy`; parser receipts remain authoritative for
+settlement.
 
-The same dialog submits each cloud row with its own chapter, parse mode, and
-image-caption setting. Browser analysis is advisory and does not replace ingest
-or decide whether a source is searchable.
+The same dialog submits each cloud row with its own chapter and parse mode;
+there is no caption toggle, because embedded figure captioning was retired.
+Browser analysis is advisory and does not replace ingest or decide whether a
+source is searchable.
 
 ## Citation geometry and previews
 
@@ -163,7 +166,7 @@ Parser regions use 1-based pages and normalized `[x0,y0,x1,y1]` coordinates in
 over each rendered page. The overlay is read-only and is never shown while an
 Office editor is active.
 
-Office coordinates belong to the exact LibreOffice PDF that MinerU parsed, not
+Office coordinates belong to the exact LibreOffice PDF that the parser parsed, not
 to BetterOffice's native layout. Parser bundle v3 therefore includes
 `preview.pdf` for Office inputs. Ingest stores it as a reusable
 `office_preview` artifact and advertises it as `previewUrl` on the file row once

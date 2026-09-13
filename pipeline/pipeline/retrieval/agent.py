@@ -2,7 +2,11 @@
 
 One user send is one turn. Each streamed model response is either narration
 (if it also calls tools) or the persisted answer (first completed response
-with text and no tools). There is no second answer completion.
+with text and no tools). The answer is a structured JSON list of claims that
+name their passages (``structured.py``); the agent renders the prose itself,
+renumbering citations 1..k in order of first appearance, and streams that prose
+claim by claim. One repair call rewrites a plain-prose answer as JSON; if that
+fails too, the raw text is the answer with no citations.
 """
 
 from __future__ import annotations
@@ -10,7 +14,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
@@ -18,7 +21,7 @@ from typing import Any
 from .. import elitellm, obs
 from ..config import cfg
 from ..prompts import chat as chat_prompts
-from . import accounting, compact, events, models, pending, store, tools
+from . import accounting, capture, compact, events, models, pending, store, tools
 from .chunking import estimate_tokens
 from .limits import (
     MAX_CONCURRENT,
@@ -33,6 +36,13 @@ from .limits import (
     TurnBudget,
 )
 from .stream import AssembledResponse, StreamEvent, ToolCall
+from .structured import (
+    JSON_OBJECT,
+    REPAIR_PROMPT,
+    StreamRenderer,
+    parse_structured,
+    render_structured,
+)
 from .tools import ToolContext, ToolResult, TurnFailed
 
 log = logging.getLogger("capy.retrieval.agent")
@@ -58,6 +68,13 @@ def _describe(name: str, args: dict[str, Any]) -> str:
         return ", ".join(str(i) for i in ids[:8])
     if name == "read_document":
         return str(args.get("file_id") or "")
+    if name == "capture_page":
+        page = args.get("page")
+        bbox = args.get("bbox")
+        detail = f"page {page}" if page is not None else ""
+        if isinstance(bbox, list) and len(bbox) == 4:
+            detail += " region " + ",".join(str(int(v)) for v in bbox)
+        return detail
     if name == "create_material":
         return str(args.get("kind") or "")
     if name in ("trash_file", "restore_file", "inspect_document", "edit_document"):
@@ -178,6 +195,7 @@ async def run_agent(
     citation_version = 0
     activity: list[dict[str, Any]] = []
     answer = ""
+    cited_order: list[int] = []
     block_n = 0
 
     if ctx.file_ids is not None:
@@ -254,8 +272,10 @@ async def run_agent(
                 budget.completion_calls += 1
                 budget.compaction_calls += 1
 
+            # Captures ride outside ``messages``; the budget still has to hold them.
+            image_tokens = capture.image_tokens(ctx.captures)
             pending_message, pending_reserve, omitted = pending.reserve(
-                messages, ctx.pending_sources, spec, active_schemas
+                messages, ctx.pending_sources, spec, active_schemas, extra=image_tokens
             )
             if omitted != pending_omitted:
                 pending_omitted = omitted
@@ -267,7 +287,7 @@ async def run_agent(
                 schemas=active_schemas,
                 protect_live_chain=True,
                 on_compact=_count,
-                extra=pending_reserve,
+                extra=pending_reserve + image_tokens,
                 allow_summary=not terminal_call,
             )
             state = accounting.current()
@@ -286,12 +306,16 @@ async def run_agent(
                     schemas=active_schemas,
                     protect_live_chain=True,
                     allow_summary=False,
-                    extra=pending_reserve,
+                    extra=pending_reserve + image_tokens,
                 )
             if _client_gone(client):
                 budget.stop_reason = STOP_CLIENT_GONE
                 return
-            request_messages = pending.inject(messages, pending_message)
+            request_messages = capture.inject_images(
+                pending.inject(messages, pending_message),
+                ctx.pending_images,
+                spec.provider_slug,
+            )
             budget.estimated_input_tokens += compact.request_context(
                 request_messages, spec, schemas=active_schemas
             ).total_tokens
@@ -319,6 +343,9 @@ async def run_agent(
                         if terminal_call
                         else accounting.PURPOSE_AGENT
                     ),
+                    # With tools offered, json_object made GLM skip the search
+                    # and invent an answer; the prompt rule carries the format.
+                    response_format=JSON_OBJECT if tools_off else None,
                 )
             )
 
@@ -332,17 +359,35 @@ async def run_agent(
                     q.put_nowait(None)
 
             finisher = asyncio.create_task(_finish())
+            renderer = StreamRenderer(lambda: len(ctx.citations))
+            # Text is held back until its shape is known: a JSON answer streams
+            # as rendered prose from its first brace; plain prose (narration, or
+            # an answer that ignored the format) is emitted once the response
+            # ends, so the browser never sees text the turn will replace. The
+            # [k] markers are renumbered, so the citation list follows them.
             started = False
+            sent_order = 0
             try:
                 while True:
                     ev = await pending_q.get()
                     if ev is None:
                         break
-                    if ev.kind == "text" and ev.text and not _client_gone(client):
+                    if ev.kind != "text" or not ev.text:
+                        continue
+                    prose = renderer.push(ev.text)
+                    if prose and not _client_gone(client):
                         if not started:
                             yield events.block_start(block_id)
                             started = True
-                        yield events.block_delta(block_id, ev.text)
+                        if len(renderer.order) > sent_order:
+                            sent_order = len(renderer.order)
+                            citation_version += 1
+                            yield events.citations(
+                                _ordered_citations(ctx, renderer.order),
+                                citation_version,
+                                final=True,
+                            )
+                        yield events.block_delta(block_id, prose)
                 assembled = await asyncio.shield(finisher)
             except asyncio.CancelledError:
                 assembled = await asyncio.shield(finisher)
@@ -408,14 +453,19 @@ async def run_agent(
         if terminal_call:
             calls = []
         if calls:
-            if not started and text:
-                yield events.block_start(block_id)
-                started = True
-                yield events.block_delta(block_id, assembled.text)
+            tail = renderer.finish()
+            narration = renderer.text if renderer.json_shaped else assembled.text
+            if narration.strip():
+                if not started:
+                    yield events.block_start(block_id)
+                    started = True
+                    yield events.block_delta(block_id, narration)
+                elif tail:
+                    yield events.block_delta(block_id, tail)
             if started:
                 yield events.block_end(block_id, "narration")
                 activity.append(
-                    {"id": block_id, "kind": "narration", "text": assembled.text}
+                    {"id": block_id, "kind": "narration", "text": narration}
                 )
             yield events.phase("running_tools")
             if assembled.provider_message:
@@ -460,9 +510,6 @@ async def run_agent(
                     if event.get("type") == "activity":
                         activity.append(event["block"])
                         continue
-                    if event.get("type") == "citations":
-                        citation_version += 1
-                        event = {**event, "version": citation_version}
                     yield event
             except pending.SourceChanged as exc:
                 yield _with_usage(events.error(str(exc), exc.code))
@@ -479,10 +526,45 @@ async def run_agent(
         if text:
             if not started:
                 yield events.phase("answering")
+            if not renderer.raw:
+                # No deltas reached us (a non-streaming adapter); render whole.
+                renderer.push(assembled.text)
+            tail = renderer.finish()
+            if renderer.json_shaped and renderer.text and not renderer.invalid:
+                # Streamed as rendered prose; a JSON that did not close keeps
+                # the prose shown so far rather than a second answer. A closed
+                # object with an invalid shape is repaired below.
+                if not renderer.complete:
+                    log.warning(
+                        "structured answer did not parse; keeping streamed prose"
+                    )
+                if not started:
+                    yield events.block_start(block_id)
+                    started = True
+                    yield events.block_delta(block_id, renderer.text)
+                elif tail:
+                    yield events.block_delta(block_id, tail)
+                answer, cited_order = renderer.text, list(renderer.order)
+            else:
+                if renderer.invalid:
+                    log.warning("structured answer had an invalid shape; repairing")
+                answer, cited_order = await _repair_answer(
+                    request_messages, assembled.text, ctx, spec, budget
+                )
+                sent_order = 0
+                # A repeated block_start resets whatever prose was streamed
+                # before the bad entry arrived; the repaired text replaces it.
                 yield events.block_start(block_id)
-                yield events.block_delta(block_id, assembled.text)
+                started = True
+                yield events.block_delta(block_id, answer)
             yield events.block_end(block_id, "answer")
-            answer = assembled.text
+            if not (0 < sent_order == len(cited_order)):
+                # Replace the shown list with the used one (possibly empty)
+                # unless the last streamed list already is that list.
+                citation_version += 1
+                yield events.citations(
+                    _ordered_citations(ctx, cited_order), citation_version, final=True
+                )
             budget.stop_reason = STOP_ANSWER
             break
         budget.stop_reason = budget.stop_reason or STOP_PLANNING_CAP
@@ -491,7 +573,7 @@ async def run_agent(
     if not budget.stop_reason:
         budget.stop_reason = STOP_PLANNING_CAP
 
-    await _record_searches(ctx, answer)
+    await _record_searches(ctx, cited_order)
     done: dict[str, Any] = events.done(
         None,
         0,
@@ -506,10 +588,56 @@ async def run_agent(
     yield done
 
 
-_CITATION_RE = re.compile(r"\[(\d{1,3})\]")
+def _ordered_citations(ctx: ToolContext, order: list[int]) -> list[dict[str, Any]]:
+    """The answer's citation list: used passages only, in [k] order."""
+    return [
+        ctx.citations[n - 1].as_citation()
+        for n in order
+        if 1 <= n <= len(ctx.citations)
+    ]
 
 
-async def _record_searches(ctx: ToolContext, answer: str) -> None:
+async def _repair_answer(
+    request_messages: list[dict[str, Any]],
+    raw: str,
+    ctx: ToolContext,
+    spec: models.ModelConfig,
+    budget: TurnBudget,
+) -> tuple[str, list[int]]:
+    """One tools-off JSON call that rewrites a plain-prose answer as claims.
+
+    The original prose was never streamed, so whichever text comes back here
+    is the one the browser sees. A second failure keeps the raw text with no
+    citations; the failure is logged with that text.
+    """
+    repair = [
+        *request_messages,
+        {"role": "assistant", "content": raw},
+        {"role": "user", "content": REPAIR_PROMPT},
+    ]
+    budget.completion_calls += 1
+    try:
+        assembled = await models.stream_agent_response(
+            repair, model=spec, tools=None, response_format=JSON_OBJECT
+        )
+    except Exception:
+        log.warning("structured answer repair call failed", exc_info=True)
+        return raw, []
+    budget.reported_input_tokens += assembled.usage.input_tokens
+    budget.cached_read_tokens += assembled.usage.cached_read_tokens
+    budget.cache_write_tokens += assembled.usage.cache_write_tokens
+    budget.reasoning_tokens += assembled.usage.reasoning_tokens
+    items = parse_structured(assembled.text)
+    if items is None:
+        log.warning(
+            "structured answer repair did not parse; keeping raw prose: %r",
+            assembled.text[:2000],
+        )
+        return raw, []
+    return render_structured(items, len(ctx.citations))
+
+
+async def _record_searches(ctx: ToolContext, cited_order: list[int]) -> None:
     """Write the turn's search events with the hits the answer cited.
 
     Only turns that reach ``done`` are recorded; a turn that errors out or
@@ -518,11 +646,11 @@ async def _record_searches(ctx: ToolContext, answer: str) -> None:
     """
     if not ctx.search_events:
         return
-    cited_chunks: set[str] = set()
-    for match in _CITATION_RE.finditer(answer):
-        n = int(match.group(1))
-        if 1 <= n <= len(ctx.citations):
-            cited_chunks.add(ctx.citations[n - 1].chunk_id)
+    cited_chunks = {
+        ctx.citations[n - 1].chunk_id
+        for n in cited_order
+        if 1 <= n <= len(ctx.citations)
+    }
     for event in ctx.search_events:
         event["cited"] = [chunk_id in cited_chunks for chunk_id in event["chunk_ids"]]
         event["trace_id"] = obs.trace_id()
@@ -536,7 +664,11 @@ async def _record_searches(ctx: ToolContext, answer: str) -> None:
 
 
 def _activity(
-    call: ToolCall, name: str, args: dict[str, Any], result: ToolResult
+    call: ToolCall,
+    name: str,
+    args: dict[str, Any],
+    result: ToolResult,
+    ctx: ToolContext | None = None,
 ) -> dict[str, Any]:
     block: dict[str, Any] = {
         "id": call.id,
@@ -551,6 +683,12 @@ def _activity(
         block["error"] = error
     if result.effects:
         block["effects"] = list(result.effects)
+    if ctx is not None and name == "capture_page":
+        # "Looked at page 4": the frontend row; the image itself is not kept.
+        for record in ctx.captures:
+            if record["callId"] == call.id:
+                block["capture"] = {k: record[k] for k in ("page", "bbox", "bytes")}
+                break
     return block
 
 
@@ -603,7 +741,7 @@ async def _run_tools(
         results.append((call, result))
         return [
             _tool_end(call, result),
-            {"type": "activity", "block": _activity(call, name, args, result)},
+            {"type": "activity", "block": _activity(call, name, args, result, ctx)},
         ]
 
     if work:
@@ -646,17 +784,13 @@ async def _run_tools(
         if call.id in by_id:
             ordered.append((call, by_id[call.id]))
 
-    added = False
+    # Retrieved-but-unused passages never reach the browser: the citation
+    # list is sent with the answer, renumbered, as its markers appear.
     for call, result in ordered:
         numbered = tools.assign_citations(ctx, result.passages)
-        if numbered:
-            added = True
         text = tools.limit_tool_result(tools.render_result(result, numbered))
         result.text_parts = [text]
         messages.append({"role": "tool", "tool_call_id": call.id, "content": text})
-
-    if added and ctx.citations:
-        yield events.citations([p.as_citation() for p in ctx.citations], 0)
 
 
 def _limit_for(

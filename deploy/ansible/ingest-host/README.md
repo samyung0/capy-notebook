@@ -42,7 +42,7 @@ inactive; Ansible refuses to replace a running legacy launcher.
 that Compose project's existing parser. Three unhealthy Docker observations
 trigger a restart only if its revision matches `active`, no release is pending,
 and the watchdog acquires the release operation lock. Stopped containers stay
-stopped. The parser's per-slice deadline owns stuck-work detection.
+stopped. The parser's per-document deadline owns stuck-work detection.
 
 After failed or canceled deployment, verify the exact Coolify deployment is
 terminal and identify the live backend SHA before recovery. Unknown provider

@@ -14,13 +14,12 @@ import (
 // CreateSourceWithJob inserts an uploaded file as 'pending' and enqueues its
 // first pipeline stage in the same transaction. Document routes start as parse
 // jobs; direct routes start as ingest jobs. The file stays pending until a
-// coordinator/worker actually starts (and, for documents, gets a parser slot);
-// then it becomes 'processing'. parseMode selects the CPU parser the coordinator runs:
-// 'fast' (MinerU pipeline with automatic OCR selection). Unknown names fail validation.
-// Text kinds ignore it and are inserted directly. captionImages asks the
-// worker to describe the figures that parse extracted.
-func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, kind string, chapterID *string, chapterName string, sizeBytes int64, blobPath, parser, parseMode string, captionImages bool) (File, string, error) {
-	processingPlan, err := sourceupload.BuildProcessingPlan(name, kind, parseMode, captionImages)
+// coordinator/worker actually starts (and, for documents, the parser admits
+// the request); then it becomes 'processing'. parseMode selects the document
+// parser route: 'fast' (OpenDataLoader with RapidOCR on text-less pages).
+// Unknown names fail validation. Text kinds ignore it and are inserted directly.
+func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, kind string, chapterID *string, chapterName string, sizeBytes int64, blobPath, parser, parseMode string) (File, string, error) {
+	processingPlan, err := sourceupload.BuildProcessingPlan(name, kind, parseMode)
 	if err != nil || processingPlan.Route == sourceupload.RouteStoreOnly {
 		if err == nil {
 			err = fmt.Errorf("file %q does not have an ingest route", name)
@@ -54,9 +53,9 @@ func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, 
 	fileID := uid("f")
 	now := time.Now().UTC()
 	if _, err := tx.Exec(ctx, `INSERT INTO files
-		(id, workspace_id, user_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, parser, blob_path, parse_mode, caption_images)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending',$10,$11,$12,$13)`,
-		fileID, wsID, ownerID, nullStr(createdBy), chapterID, name, kind, sizeBytes, now, parser, blobPath, parseMode, captionImages); err != nil {
+		(id, workspace_id, user_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, parser, blob_path, parse_mode)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending',$10,$11,$12)`,
+		fileID, wsID, ownerID, nullStr(createdBy), chapterID, name, kind, sizeBytes, now, parser, blobPath, parseMode); err != nil {
 		return File{}, "", err
 	}
 
@@ -64,7 +63,6 @@ func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, 
 	payload, err := s.ingestJobPayload(ctx, createdBy, map[string]any{
 		"fileId": fileID, "workspaceId": wsID, "blobPath": blobPath, "kind": kind,
 		"parser": parser, "parseMode": parseMode,
-		"captionImages":  captionImages,
 		"processingPlan": processingPlan,
 		"sourceETag":     "",
 		"sourceRevision": int64(1),

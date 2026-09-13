@@ -6,7 +6,6 @@
  */
 
 export type UploadSourceBody = {
-  captionImages?: boolean;
   chapterId?: Blob | string;
   /** @maxLength 60 */
   chapterName?: Blob | string;

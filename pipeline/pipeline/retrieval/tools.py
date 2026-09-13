@@ -17,6 +17,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -25,7 +26,7 @@ import requests
 
 from ..config import cfg
 from ..generated import MATERIAL_TITLE_MAX
-from . import contract, pending, store
+from . import capture, contract, pending, store
 from .chunking import clip_to_tokens, estimate_tokens
 from .limits import TurnBudget
 from .search import Passage, SearchStats, search
@@ -89,6 +90,10 @@ class ToolContext:
     # One entry per search_workspace call this turn, written to
     # rag_search_events when the turn ends (agent.run_agent fills `cited`).
     search_events: list[dict[str, Any]] = field(default_factory=list)
+    # capture_page records for the activity blocks, and the JPEGs (by tool
+    # call id) the next model request carries. Both live for this turn only.
+    captures: list[dict[str, Any]] = field(default_factory=list)
+    pending_images: dict[str, tuple[str, str]] = field(default_factory=dict)
     _scope_outline: dict[str, Any] | None = field(default=None, repr=False)
 
 
@@ -410,6 +415,78 @@ async def _read_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         text_parts=[f"(next start = {rows[-1]['chunk_idx'] + 1})"],
         passages=passages,
         paged=True,
+    )
+
+
+def _cites_page(passage: Passage, file_id: str, page: int) -> bool:
+    return bool(
+        passage.file_id == file_id
+        and passage.page_start
+        and passage.page_start <= page <= (passage.page_end or passage.page_start)
+    )
+
+
+async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    """Render a cited page (or a box on it) and attach it to the next request.
+
+    Only pages a shown passage cites can be captured, so the model cannot
+    browse the document by pixels, and a capture adds no citation of its own:
+    the tool result names the numbers already covering that page.
+    """
+    if len(ctx.captures) >= cfg.captures_per_turn:
+        return _refused(
+            f"This turn already used its {cfg.captures_per_turn} capture_page calls. "
+            "Answer from what you have seen.",
+            code="limit_reached",
+        )
+    file_id, page, bbox = args["file_id"], args["page"], args.get("bbox")
+    resolved = await _resolve_scope(ctx, {"file_ids": [file_id]})
+    if isinstance(resolved, ToolResult):
+        return resolved
+    existing = [
+        i + 1
+        for i, passage in enumerate(ctx.citations)
+        if _cites_page(passage, file_id, page)
+    ]
+    if not existing:
+        return _refused(
+            "Retrieve a passage that shows this page first, then capture it."
+        )
+    started = time.perf_counter()
+    try:
+        pdf = await capture.pdf_path(ctx.workspace_id, file_id)
+        jpeg, box, size = await asyncio.to_thread(
+            capture.render, pdf, page, bbox, cfg.capture_max_edge
+        )
+    except capture.CaptureUnavailable as exc:
+        return _refused(f"capture_page: {exc}", code=exc.code)
+    except ValueError as exc:
+        return _refused(f"capture_page: {exc}")
+    call_id = str(args.get("_tool_call_id") or "")
+    n = len(ctx.captures) + 1
+    label = f"{resolved.file_names[0]} page {page}" + (
+        f" region {[int(v) for v in box]}" if bbox else ""
+    )
+    ctx.captures.append(
+        capture.record(
+            call_id=call_id,
+            file_id=file_id,
+            page=page,
+            box=box,
+            jpeg=jpeg,
+            size=size,
+            started=started,
+        )
+    )
+    ctx.pending_images[call_id] = (
+        f"capture_page result {n}: {label}",
+        capture.data_url(jpeg),
+    )
+    numbers = "".join(f"[{i}]" for i in existing)
+    return _result(
+        f"Captured {label}. The rendered image is attached to the next message; "
+        "read it directly. This page is already in the evidence as "
+        f"{numbers}; cite those numbers for what the capture shows."
     )
 
 
@@ -937,6 +1014,7 @@ _register("search_workspace", _search_workspace)
 _register("list_sources", _list_sources)
 _register("describe_documents", _describe_documents)
 _register("read_document", _read_document)
+_register("capture_page", _capture_page)
 _register("create_material", _create_material)
 _register("resolve_source_change", _resolve_source_change)
 _register("list_documents", _list_documents)

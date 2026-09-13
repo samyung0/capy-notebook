@@ -10,15 +10,9 @@ export type SourceAnalysisPhase =
   | 'analyzing'
   | 'complete';
 
-export type SourcePageReason =
-  | 'text_layer'
-  | 'scan'
-  | 'thin_text'
-  | 'enough_text'
-  | 'replacement_chars'
-  | 'control_chars'
-  | 'low_alnum'
-  | 'broken_spacing';
+/** Why a page is or is not estimated as OCR-routed: the parser reads pages
+ * with fewer than 40 native characters through RapidOCR. */
+export type SourcePageReason = 'text_layer' | 'textless';
 
 export interface SourcePageAnalysis {
   chars: number;

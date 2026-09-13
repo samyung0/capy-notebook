@@ -10,9 +10,9 @@ import pytest
 from pipeline.config import cfg
 from pipeline.elitellm.client import (
     ANTHROPIC_URL,
-    DEEPINFRA_CHAT_URL,
     DEEPINFRA_EMBED_URL,
-    DEEPINFRA_GLM_FLASH_MODEL,
+    TENCENT_CHAT_URL,
+    TENCENT_PROVIDER,
     _as_obj,
     _thinking_for_call,
     anthropic_endpoint,
@@ -129,7 +129,7 @@ def test_no_reasoning_uses_provider_off_or_lowest_setting():
     assert _thinking_for_call(zai_vision, None) == "max"
 
 
-def test_zai_caption_request_uses_deepinfra_low_reasoning():
+def test_zai_request_keeps_the_pin_slug_and_low_reasoning():
     spec = _spec(
         provider_slug="zai",
         model_slug="glm-5.3-flash",
@@ -161,7 +161,7 @@ def test_zai_caption_request_uses_deepinfra_low_reasoning():
         tool_choice=None,
     )
 
-    assert body["model"] == DEEPINFRA_GLM_FLASH_MODEL
+    assert body["model"] == "glm-5.3-flash"
     assert body["messages"] == messages
     assert "thinking" not in body
     assert body["reasoning_effort"] == "low"
@@ -170,7 +170,7 @@ def test_zai_caption_request_uses_deepinfra_low_reasoning():
 
 
 @pytest.mark.asyncio
-async def test_zai_complete_uses_exact_deepinfra_exception(
+async def test_zai_complete_uses_tencent_tokenhub(
     monkeypatch: pytest.MonkeyPatch,
 ):
     spec = _spec(
@@ -190,7 +190,7 @@ async def test_zai_complete_uses_exact_deepinfra_exception(
         }
 
     bind_request_llm(paid_by="platform")
-    monkeypatch.setenv("DEEPINFRA_API_KEY", "sk-deepinfra")
+    monkeypatch.setenv("TENCENT_API_KEY", "sk-tencent")
     monkeypatch.setattr("pipeline.elitellm.client._post_json", post_json)
 
     response = await elitellm_complete(
@@ -199,20 +199,20 @@ async def test_zai_complete_uses_exact_deepinfra_exception(
         reasoning=False,
     )
 
-    assert seen["url"] == DEEPINFRA_CHAT_URL
+    assert seen["url"] == TENCENT_CHAT_URL
     assert seen["headers"] == {
-        "authorization": "Bearer sk-deepinfra",
+        "authorization": "Bearer sk-tencent",
         "content-type": "application/json",
     }
-    assert seen["body"]["model"] == DEEPINFRA_GLM_FLASH_MODEL
+    assert seen["body"]["model"] == "glm-5.3-flash"
     assert seen["body"]["reasoning_effort"] == "low"
-    assert transport_provider_slug(spec) == "deepinfra"
-    assert transport_model_slug(spec) == DEEPINFRA_GLM_FLASH_MODEL
+    assert transport_provider_slug(spec) == TENCENT_PROVIDER
+    assert transport_model_slug(spec) == "glm-5.3-flash"
     assert response.choices[0].message.content == "caption"
 
 
 @pytest.mark.asyncio
-async def test_zai_stream_uses_deepinfra_and_max_by_default(
+async def test_zai_stream_uses_tencent_tokenhub_and_max_by_default(
     monkeypatch: pytest.MonkeyPatch,
 ):
     spec = _spec(
@@ -230,7 +230,7 @@ async def test_zai_stream_uses_deepinfra_and_max_by_default(
         yield {"choices": [{"delta": {"content": "ok"}}]}
 
     bind_request_llm(paid_by="platform")
-    monkeypatch.setenv("DEEPINFRA_API_KEY", "sk-deepinfra")
+    monkeypatch.setenv("TENCENT_API_KEY", "sk-tencent")
     monkeypatch.setattr("pipeline.elitellm.client._stream_sse", stream_sse)
 
     chunks = [
@@ -239,8 +239,8 @@ async def test_zai_stream_uses_deepinfra_and_max_by_default(
     ]
 
     assert len(chunks) == 1
-    assert seen["url"] == DEEPINFRA_CHAT_URL
-    assert seen["body"]["model"] == DEEPINFRA_GLM_FLASH_MODEL
+    assert seen["url"] == TENCENT_CHAT_URL
+    assert seen["body"]["model"] == "glm-5.3-flash"
     assert seen["body"]["reasoning_effort"] == "max"
     assert seen["body"]["stream"] is True
 
@@ -339,6 +339,10 @@ def test_deepseek_sends_thinking_and_effort():
     assert on == {"thinking": {"type": "enabled"}, "reasoning_effort": "medium"}
     off = deepseek_thinking_body("instant")
     assert off == {"thinking": {"type": "disabled"}}
+    assert deepseek_thinking_body("max") == {
+        "thinking": {"type": "enabled"},
+        "reasoning_effort": "max",
+    }
     body = deepseek_request(
         spec,
         [{"role": "user", "content": "q"}],
@@ -355,7 +359,7 @@ def test_deepseek_sends_thinking_and_effort():
     assert body["reasoning_effort"] == "high"
 
 
-def test_deepseek_vision_exp_matches_flash_request_shape():
+def test_deepseek_flash_41_accepts_the_legacy_vision_request_shape():
     messages = [
         {
             "role": "user",
@@ -375,10 +379,8 @@ def test_deepseek_vision_exp_matches_flash_request_shape():
         "tool_choice": None,
     }
     flash = deepseek_request(_spec(), messages, **common)
-    vision = deepseek_request(
-        _spec(model_slug="deepseek-v4-flash-vision-exp"), messages, **common
-    )
-    assert vision["model"] == "deepseek-v4-flash-vision-exp"
+    vision = deepseek_request(_spec(model_slug="deepseek-flash"), messages, **common)
+    assert vision["model"] == "deepseek-flash"
     assert vision["messages"] == flash["messages"] == messages
     assert {key: value for key, value in vision.items() if key != "model"} == {
         key: value for key, value in flash.items() if key != "model"
@@ -393,7 +395,7 @@ def test_anthropic_max_is_adaptive():
 def test_anthropic_platform_env_is_first_party():
     assert platform_env_name("anthropic") == "ANTHROPIC_API_KEY"
     assert platform_env_name("openai") == "OPENAI_API_KEY"
-    assert platform_env_name("zai") == "DEEPINFRA_API_KEY"
+    assert platform_env_name("zai") == "TENCENT_API_KEY"
 
 
 def test_platform_key_for_anthropic_reads_anthropic_env(monkeypatch):

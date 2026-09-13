@@ -498,16 +498,16 @@ type workspaceCloneChapter struct {
 }
 
 type workspaceCloneFile struct {
-	id, name, kind, status             string
-	chapterID, parser, blobPath        *string
-	previewBlobPath                    *string
-	parsedFingerprint                  *string
-	parsedParserVersion, sourceETag    *string
-	contentHash, sourceSHA256          *string
-	sizeBytes                          int64
-	position                           int64
-	indexed, captionImages, everParsed bool
-	parseMode                          string
+	id, name, kind, status          string
+	chapterID, parser, blobPath     *string
+	previewBlobPath                 *string
+	parsedFingerprint               *string
+	parsedParserVersion, sourceETag *string
+	contentHash, sourceSHA256       *string
+	sizeBytes                       int64
+	position                        int64
+	indexed, everParsed             bool
+	parseMode                       string
 }
 
 type workspaceCloneAsset struct {
@@ -666,7 +666,7 @@ func (s *Store) snapshotWorkspaceForClone(
 			)),
 			parser, blob_path, preview_blob_path,
 			parsed_fingerprint, parsed_parser_version, source_etag,
-			content_hash, source_sha256, parse_mode, caption_images, ever_parsed_successfully
+			content_hash, source_sha256, parse_mode, ever_parsed_successfully
 		 FROM files
 		 WHERE workspace_id=$1 AND status='ready' AND trashed_at IS NULL
 		 ORDER BY added_at`,
@@ -695,7 +695,6 @@ func (s *Store) snapshotWorkspaceForClone(
 			&file.contentHash,
 			&file.sourceSHA256,
 			&file.parseMode,
-			&file.captionImages,
 			&file.everParsed,
 		); err != nil {
 			rows.Close()
@@ -965,10 +964,10 @@ func (s *Store) cloneWorkspaceOnce(
 			}
 			if _, err := tx.Exec(ctx, `INSERT INTO files
 				(id, workspace_id, user_id, created_by, chapter_id, position, name, kind, size_bytes, added_at, status, indexed, parser, blob_path, preview_blob_path,
-				 parsed_fingerprint, parsed_parser_version, source_etag, content_hash, source_sha256, parse_mode, caption_images, ever_parsed_successfully)
-				VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
+				 parsed_fingerprint, parsed_parser_version, source_etag, content_hash, source_sha256, parse_mode, ever_parsed_successfully)
+				VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
 				nid, newID, userID, chapterID, f.position, f.name, f.kind, f.sizeBytes, time.Now().UTC(), f.status, f.indexed, f.parser, f.blobPath, f.previewBlobPath,
-				f.parsedFingerprint, f.parsedParserVersion, f.sourceETag, f.contentHash, f.sourceSHA256, f.parseMode, f.captionImages, f.everParsed); err != nil {
+				f.parsedFingerprint, f.parsedParserVersion, f.sourceETag, f.contentHash, f.sourceSHA256, f.parseMode, f.everParsed); err != nil {
 				return Workspace{}, err
 			}
 		}
@@ -1121,10 +1120,12 @@ func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, newID string, pi
 			WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
 			INSERT INTO rag_chunks
 				(id, workspace_id, content_id, chunk_idx, section_path, text, indexed_text,
-				 token_count, page_start, page_end, regions, lang, search)
+				 token_count, page_start, page_end, regions, lang, search,
+				 confidence, confidence_reasons)
 			SELECT `+newChunkID+`,
 			       $3, m.new_id, c.chunk_idx, c.section_path, c.text, c.indexed_text,
-			       c.token_count, c.page_start, c.page_end, c.regions, c.lang, c.search
+			       c.token_count, c.page_start, c.page_end, c.regions, c.lang, c.search,
+			       c.confidence, c.confidence_reasons
 			FROM rag_chunks c JOIN cmap m ON m.old_id = c.content_id`,
 				oldContents, newContents, newID); err != nil {
 				return err

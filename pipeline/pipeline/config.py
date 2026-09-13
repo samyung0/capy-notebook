@@ -114,27 +114,19 @@ class Config:
     # In production the ingest worker and parser both run on the Netcup ingest host.
     parser_url: str = _env("PARSER_URL", "")
     parser_token: str = _env("PARSER_TOKEN", "")
-    # Includes the entire document request, including time its slices spend in
-    # the parser's fair queue.
-    parser_timeout: int = int(_env("PARSER_TIMEOUT", "2400"))
-    # Starts independently for each slice when a MinerU lane begins execution.
-    # Queue wait and the execution time of other slices do not spend this budget.
-    parse_slice_timeout: int = int(_env("CAPY_PARSE_SLICE_TIMEOUT", "600"))
+    # One document request end to end, including its wait in the parser's
+    # FIFO. The parser's own per-document deadline (CAPY_PARSE_DOCUMENT_TIMEOUT,
+    # 600 s) is the hard stop that quarantines a fingerprint; the request can
+    # wait behind CAPY_PARSE_QUEUE_DEPTH - 1 such documents before its own run
+    # starts, so this bound is the depth (4) times the deadline plus a margin.
+    parser_timeout: int = int(_env("PARSER_TIMEOUT", "2520"))
     # The parser and ingest worker mount this directory on the Netcup ingest host.
     # Sources are job-scoped; parse bundles are fingerprint-addressed caches.
     parse_shared_dir: str = _env("CAPY_PARSE_SHARED_DIR", "/tmp/capy-parse-spool")
-    # These are deliberately separate deadlines. A parser call must finish
-    # before its Redis admission lease and parse-job bound. The continuation has
-    # its own smaller budget for captions, embeddings, and final bookkeeping.
-    parser_slot_ttl: int = int(_env("PARSER_SLOT_TTL", str(parser_timeout + 300)))
-    parse_job_timeout: int = int(_env("CAPY_PARSE_JOB_TIMEOUT", "3600"))
+    # The parse job must outlive one parser call; the continuation has its own
+    # smaller budget for embeddings and final bookkeeping.
+    parse_job_timeout: int = int(_env("CAPY_PARSE_JOB_TIMEOUT", "2700"))
     ingest_timeout: int = int(_env("CAPY_INGEST_TIMEOUT", "1200"))
-    # Match the parser's hard cap: at most four document jobs can enqueue
-    # independently sliced MinerU work at once.
-    parse_fast_slots: int = int(_env("CAPY_PARSE_SLOTS", "4"))
-    # MinerU pipeline chooses text extraction or OCR for each slice in auto mode.
-    # The method remains part of the artifact fingerprint.
-    parse_method: str = _env("CAPY_PARSE_METHOD", "auto")
     # LibreOffice output can be much larger than the compressed Office source.
     # Bound both the worker allocation and the platform preview object.
     office_preview_max_bytes: int = int(
@@ -173,7 +165,6 @@ class Config:
     # chunk carried ~4x the tokens and five hits filled the tool-output cap.
     chunk_tokens: int = int(_env("CAPY_CHUNK_TOKENS", "400"))
     chunk_overlap_tokens: int = int(_env("CAPY_CHUNK_OVERLAP_TOKENS", "50"))
-    chunk_min_tokens: int = int(_env("CAPY_CHUNK_MIN_TOKENS", "40"))
 
     # Width the seeded qwen-embed row emits. Fixtures use this for synthetic
     # vectors. A new model is a new rag_chunk_vectors_* table, not an env edit.
@@ -192,27 +183,33 @@ class Config:
     # Tool-calling rounds per chat turn. The loop is capped rather than
     # open-ended: the cost of a wrong plan is bounded. Each round re-sends the
     # whole transcript, so this is the main lever on chat spend.
-    agent_max_steps: int = int(_env("CAPY_AGENT_MAX_STEPS", "12"))
+    agent_max_steps: int = int(_env("CAPY_AGENT_MAX_STEPS", "8"))
     # Pre-model gathering budget when no catalog model has been selected yet.
     # Provider calls use the selected catalog row's required context window.
     llm_input_budget_tokens: int = int(_env("CAPY_LLM_INPUT_BUDGET_TOKENS", "50000"))
 
-    # Every surviving figure is captioned — the filters in parse/figures.py, not
-    # a count, are what bound the cost. This is a safety valve for a pathological
-    # document, not a quality knob; 0 disables it.
-    caption_max_per_file: int = int(_env("CAPY_CAPTION_MAX_PER_FILE", "0"))
-    # Wall clock, not price, is the binding constraint: a slide deck can have
-    # hundreds of figures and each call is ~1-2s.
-    caption_concurrency: int = int(_env("CAPY_CAPTION_CONCURRENCY", "8"))
-    # Longest edge sent to the vision model. Figures are re-encoded to JPEG at
-    # this size, which is well past the resolution a caption needs and keeps the
-    # image-token count (and the upload) small.
+    # Longest edge of a standalone image upload sent to the vision model. The
+    # upload is re-encoded to JPEG at this size, which is well past the
+    # resolution a caption needs and keeps the image-token count small.
     caption_max_edge: int = int(_env("CAPY_CAPTION_MAX_EDGE", "1280"))
-    # Standalone image uploads use the same vision pin and caption definition
-    # as parsed figures, but get a source-level artifact rather than a block
-    # caption map. Decoded pixels are bounded independently of compressed
-    # upload bytes.
+    # Decoded pixels of a standalone image upload are bounded independently of
+    # its compressed bytes.
     image_max_pixels: int = int(_env("CAPY_IMAGE_MAX_PIXELS", "100000000"))
+
+    # ---- extraction confidence and page captures -------------------------
+    # A passage header carries its extraction confidence and reasons when the
+    # chunk's score is below this; the chat prompt ties capture_page to it.
+    confidence_note_below: float = float(_env("CAPY_CONFIDENCE_NOTE_BELOW", "0.9"))
+    # capture_page renders from a retrieval-host copy of the source PDF, kept
+    # by source SHA and evicted by size.
+    capture_cache_dir: str = _env("CAPY_CAPTURE_CACHE_DIR", "/tmp/capy-capture-cache")
+    capture_cache_max_bytes: int = int(
+        _env("CAPY_CAPTURE_CACHE_MAX_BYTES", str(2 << 30))
+    )
+    # Longest edge of a rendered page or box. GLM prices images on a 28-pixel
+    # patch grid, so this and the model's bbox decide the image-token cost.
+    capture_max_edge: int = int(_env("CAPY_CAPTURE_MAX_EDGE", "1568"))
+    captures_per_turn: int = int(_env("CAPY_CAPTURES_PER_TURN", "8"))
 
     # Uploaded audio awaits ElevenLabs Scribe v2 in the ingest attempt. Starter
     # admits 12 weighted units; a call costs min(4, ceil(duration / 480 seconds)).
@@ -255,7 +252,7 @@ if cfg.image_max_pixels <= 0:
     raise ValueError("CAPY_IMAGE_MAX_PIXELS must be positive")
 
 for key, value in (
-    ("CAPY_PARSE_SLICE_TIMEOUT", cfg.parse_slice_timeout),
+    ("PARSER_TIMEOUT", cfg.parser_timeout),
     ("CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S", cfg.interactive_provider_timeout_s),
     ("CAPY_INTERACTIVE_STREAM_MAX_S", cfg.interactive_stream_max_s),
     ("CAPY_INGEST_PROVIDER_TIMEOUT_S", cfg.ingest_provider_timeout_s),
@@ -283,14 +280,17 @@ if not cfg.parse_shared_dir.strip():
 if cfg.shared_capacity_lock_dir and not os.path.isabs(cfg.shared_capacity_lock_dir):
     raise ValueError("CAPY_SHARED_CAPACITY_LOCK_DIR must be an absolute path")
 
-if not (
-    cfg.parse_slice_timeout < cfg.parser_timeout
-    and cfg.parser_timeout < cfg.parser_slot_ttl
-    and cfg.parser_slot_ttl < cfg.parse_job_timeout
-):
-    raise ValueError(
-        "parse time budgets must satisfy slice timeout < parser timeout < slot TTL < parse job timeout"
-    )
+if not cfg.parser_timeout < cfg.parse_job_timeout:
+    raise ValueError("PARSER_TIMEOUT must be below CAPY_PARSE_JOB_TIMEOUT")
+
+if not 0 < cfg.confidence_note_below <= 1:
+    raise ValueError("CAPY_CONFIDENCE_NOTE_BELOW must be in (0, 1]")
+
+if cfg.capture_cache_max_bytes <= 0 or cfg.capture_max_edge <= 0:
+    raise ValueError("capture cache size and edge must be positive")
+
+if cfg.captures_per_turn <= 0:
+    raise ValueError("CAPY_CAPTURES_PER_TURN must be positive")
 
 if cfg.ingest_timeout <= 0:
     raise ValueError("CAPY_INGEST_TIMEOUT must be positive")

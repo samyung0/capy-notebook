@@ -13,6 +13,7 @@ invisible and the user is silently not charged for it.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 import math
 import random
@@ -25,7 +26,7 @@ from .. import elitellm, obs, registry
 from ..config import cfg
 from ..prompts.retrieval import qwen3_query
 from ..registry import ModelConfig
-from . import accounting
+from . import accounting, capture
 from .stream import (
     AssembledResponse,
     ChatCompletionsAssembler,
@@ -551,9 +552,12 @@ def measure_request_context(
     response_format: dict[str, Any] | None = None,
     reasoning: bool | None = None,
 ) -> accounting.ContextComposition:
-    """Measure the same provider-shaped fields the outbound call will use."""
+    """Measure the same provider-shaped fields the outbound call will use.
+
+    Attached page captures are counted by pixel size, not by their base64.
+    """
     spec = _as_spec(model)
-    submitted = provider_messages(messages)
+    submitted, image_tokens = capture.split_images(provider_messages(messages))
     input_items = (
         messages_to_responses_input(submitted)
         if elitellm.uses_responses(spec, tools=bool(tools), reasoning=reasoning)
@@ -567,11 +571,14 @@ def measure_request_context(
         reasoning=reasoning,
         input_items=input_items,
     )
-    return accounting.measure_components(
+    measured = accounting.measure_components(
         system,
         conversation,
         schemas,
         window_tokens=spec.context_window_tokens,
+    )
+    return dataclasses.replace(
+        measured, conversation_tokens=measured.conversation_tokens + image_tokens
     )
 
 
@@ -614,8 +621,25 @@ def messages_to_responses_input(messages: list[dict[str, Any]]) -> list[dict[str
                 )
             continue
         if role in ("system", "user", "assistant"):
-            items.append({"role": role, "content": message.get("content") or ""})
+            items.append({"role": role, "content": _responses_content(message)})
     return items
+
+
+def _responses_content(message: dict[str, Any]) -> Any:
+    """Chat-completions content parts in the Responses API's input shape."""
+    content = message.get("content")
+    if not isinstance(content, list):
+        return content or ""
+    parts: list[dict[str, Any]] = []
+    for part in content:
+        if not isinstance(part, dict):
+            continue
+        if part.get("type") == "image_url":
+            url = (part.get("image_url") or {}).get("url", "")
+            parts.append({"type": "input_image", "image_url": url, "detail": "auto"})
+        elif part.get("type") == "text":
+            parts.append({"type": "input_text", "text": str(part.get("text") or "")})
+    return parts
 
 
 async def stream_agent_response(
@@ -626,6 +650,7 @@ async def stream_agent_response(
     temperature: float | None = None,
     on_event: Any | None = None,
     call_purpose: str = accounting.PURPOSE_AGENT,
+    response_format: dict[str, Any] | None = None,
 ) -> AssembledResponse:
     """Stream one tool-capable model response into a normalized assembly.
 
@@ -642,6 +667,7 @@ async def stream_agent_response(
         messages,
         model=spec,
         tools=tools,
+        response_format=response_format,
     )
     policy = retry_policy()
     deadline = time.monotonic() + policy.budget_s
@@ -663,6 +689,7 @@ async def stream_agent_response(
                     temperature,
                     on_event,
                     on_provider_byte=received.mark,
+                    response_format=response_format,
                 )
                 obs.record_normalized(
                     spec.provider_slug,

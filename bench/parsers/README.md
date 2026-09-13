@@ -12,6 +12,32 @@ The production decision records are:
   versionable raw results, machine specifications, artifact inventory, and
   supplemental measurements for the August 31 run.
 
+## Local ODL repair verification
+
+`verify_odl_runtime.py` exercises an explicitly supplied loopback parser and
+shared spool. `--mode queue` fills the depth reported by health with distinct
+copies, checks one further capacity refusal, and records FIFO waits, health
+samples and cgroup memory. `--mode single` measures a complete PDF. `--mode
+timeout` expects quarantine from a disposable parser with a short deadline;
+`--mode oom` expects quarantine after an intentionally constrained memory run.
+The script never starts services or connects to the ingest host. Each run needs
+a new `--output` directory under `reports/local/`.
+
+```sh
+uv run --extra test python bench/parsers/scripts/verify_odl_runtime.py \
+  --url http://127.0.0.1:51133 --spool /private/tmp/odl-container-20260913 \
+  --container capy-odl-verify-20260913 --mode queue \
+  --pdf bench/parsers/fixtures/docs/newspaper_scan.pdf \
+  --output bench/parsers/reports/local/2026-09-13-odl-implementation/queue-r1
+```
+
+The opt-in `pipeline/tests/test_odl_local_integration.py` joins real parser HTTP,
+bundle validation, worker chunking/confidence, disposable SQL index/retrieval,
+source capture and structured citations. Set `CAPY_ODL_LOCAL_URL`,
+`CAPY_ODL_LOCAL_SPOOL`, and `CAPY_ODL_LOCAL_RELEASE`, then use `pnpm test:pipeline`
+with that test path. Embeddings, summaries and object downloads are local
+substitutes; it does not measure model answers or drive the job supervisor.
+
 ## Office fixtures
 
 `build_office_fixtures.py` creates deterministic DOCX, PPTX, and XLSX canaries
@@ -395,6 +421,24 @@ uv run --with pymupdf==1.28.2 python -X utf8 bench/parsers/scripts/score_odl_fon
 uv run --with pymupdf==1.28.2 python -X utf8 bench/parsers/scripts/score_odl_native_pipeline.py bench/parsers/reports/local /path/to/new-verification.json
 ```
 
+## ODL repair activation and OCR layout experiments
+
+The [September 13 native repair report](reports/2026-09-13-odl-native-improvements.md)
+traces previously inactive repairs through fresh Java parsing, extraction,
+replacement admission and actual chunks. `experiment_odl_native_improvements.py`
+provides `freeze`, `parse`, `improve` and `audit` commands. It preserves rejected
+table candidates and compares admission-only, richer source-grid and model-region
+arms. These are development experiments, with separate unchanged-source controls.
+
+The [OCR layout report](reports/2026-09-13-odl-layout-ocr.md) compares real
+PP-OCRv6 lines ordered by production row bands or PP-DocLayoutV3 regions on 17 page
+images. `experiment_odl_layout_ocr.py run INPUTS NEW_OUTPUT MODELS` records model
+outputs, permutations and actual chunks; `score RUN` checks the run's frozen
+source-region rubric without models. `prepare-controls INPUTS` adds source-defined
+unit-bearing table and outline controls before inference. `table-rows RUN NEW_OUTPUT`
+replays a rejected development arm. Both reports distinguish activated coverage,
+source correctness and known-corpus limitations. Production code is unchanged.
+
 ## Endpoint load checks
 
 `bench_parse.py` measures one request and concurrent bursts against a running
@@ -492,6 +536,11 @@ PDF's embedded text (`--cjk` for character-level); `probe` applies the frozen
 page probes from `opendataloader-checks.json`. The key comes from
 `ALIBABA_API_KEY` only. The endpoint takes images and PDF, not Office files,
 and direct PDF upload is capped at 50 pages.
+
+The [scan follow-up](reports/2026-09-12-qwen35-ocr-scans.md) runs the same
+script on the two synthetic scan fixtures and the two OCR'd NIST papers from the
+agentic corpus; `document_parsing` drops the summary cells of a ruled table and
+the chat route loops on scanned pages.
 
 Run the corpus check with the recorded PDF dependencies:
 

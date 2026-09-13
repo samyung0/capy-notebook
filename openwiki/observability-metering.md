@@ -255,26 +255,29 @@ Every inference path is actor-billed.
 `provider_slug` + `model_slug` from the closed EliteLLM list
 (`elitellm_providers.json`). Ops rejects leading or trailing whitespace on
 either slug before it constructs or persists that identity. Most rows call the
-named provider directly. Two exact DeepInfra exceptions are allowed:
+named provider directly. Two exact routing exceptions are allowed:
 
 - `deepinfra/Qwen/Qwen3-Embedding-4B` uses the same identity on DeepInfra's
-  OpenAI-compatible embedding endpoint.
+  OpenAI-compatible embedding endpoint (`DEEPINFRA_API_KEY`).
 - `zai/glm-5.3-flash` remains a ZAI catalog row but EliteLLM sends it to
-  DeepInfra as `zai-org/GLM-5.3-Flash`. The identity stays with ZAI because
-  ZAI is the model's maker; the hop exists because ZAI's own API needs a
-  monthly plan while DeepInfra bills the same model pay-as-you-go. DeepInfra
-  runs the model on its own GPUs rather than forwarding to ZAI, so usage it
-  reports — including the prompt-cache split — describes the call we pay for.
+  Tencent Cloud TokenHub
+  (`https://tokenhub.tencentcloudmaas.com/v1/chat/completions`,
+  OpenAI-compatible, wire model `glm-5.3-flash`, transport provider `tencent`,
+  platform-only `TENCENT_API_KEY`). The identity stays with ZAI because ZAI is
+  the model's maker; the hop exists because ZAI's own API needs a monthly plan.
+  There is no fallback route: the DeepInfra path for this pin was removed
+  (decision 2026-09-12, `human/agentic-retrieval.md`). Thinking cannot be
+  disabled on this route; `low` is the floor and the catalog default.
 
 Neither exception opens a general router path. Other DeepInfra embedding slugs
-and other ZAI slugs fail registry validation. Both use the platform-only
-`DEEPINFRA_API_KEY`; a ZAI user key cannot authenticate the routed GLM call.
+and other ZAI slugs fail registry validation. A ZAI user key cannot
+authenticate the routed GLM call.
 A **slot** is a named place the product calls a model. Every slot holds one
 default pin; chat, generate, editor and quiz also hold a per-user preference.
 The slots are `chat`, `generate`, `editor`, `quiz`, `ingest`, `retrieval`
 (the workspace embedding model, used by ingest indexing and by chat/generate
-query embedding) and `captioning` (the vision model used for ingest figure
-captions and standalone image uploads). Retrieval and captioning are separate
+query embedding) and `captioning` (the vision model used for standalone image
+uploads; embedded figure captioning was retired). Retrieval and captioning are separate
 slots because the row that fills them is a different model from the text
 model.
 
@@ -291,8 +294,15 @@ codes are `capability_missing` and `agentic_loop_not_certified`. The
 `elitellm_providers.json` list no longer carries per-provider modes.
 Certification requires a current two-turn streaming replay for the exact
 `(provider_slug, model_slug)` identity. `zai/glm-5.3-flash` holds one, so the
-clean seed offers it for chat as well as captioning; DeepSeek Flash stays the
-chat default.
+clean seed offers it for chat as well as captioning. Migration `0009` makes
+GLM the chat default. Migration `0010` replaces Flash Vision with
+`deepseek/deepseek-flash` (V4.1 Flash, text and vision), preserving versioned
+credit rates and other model choices. Existing Flash Vision preferences move
+to Flash 4.1; historical message/job pins retain their old catalog rows.
+Migration `0011` deletes DeepSeek V4 Pro's catalog, capacity and reasoning
+preference rows. Pro had no shipped slot default; its optional chat/generate/quiz
+entries, agentic-loop certification and UI choices are removed. There is no
+compatibility remap for old Pro selections because no production data depends on it.
 `pnpm test:pipeline:replay` only replays the checked-in certification tapes and
 never records. `pnpm model:certify` makes the paid live calls needed to certify
 a new exact model slug or replace an existing certification, then regenerates
@@ -359,10 +369,12 @@ unproven cache details charge all reported input at the input rate and do not
 fail the request. Cache writes are ordinary input under the three-rate design.
 DeepSeek, OpenAI, and routed GLM under its `zai` slug report a cache
 split proven inclusive of their own reported input; Anthropic's disjoint
-counters are folded into input separately. Routed GLM counts because DeepInfra
-serves the model on its own hardware and bills us directly, so its split is
-the one the row's cached rate is priced against. A split larger than reported
-input is still refused as `cached_gt_input` and charged in full.
+counters are folded into input separately. Routed GLM counts because TokenHub
+serves the model and bills us directly, so its split is the one the row's
+cached rate is priced against (the playground runs in `bench/rag/playground`
+recorded `prompt_tokens_details.cached_tokens` ≤ `prompt_tokens` on every
+TokenHub call). A split larger than reported input is still refused as
+`cached_gt_input` and charged in full.
 Credit micros may be 0 only on BYOK-only rows (`platform_enabled=false`).
 (`model_configs_credit_rates_check`). Platform chat/generate/editor/quiz/
 ingest/vision rows need input, cached-read, and output all > 0. Embedding needs
@@ -376,8 +388,8 @@ input > 0; cached-read and output may be 0.
 | `user_credits` | the counter the gate locks; monthly period resets lazily on first read |
 | `provider_sessions` | request or ingest sessions; owns the concurrency lease, per-session credit reservation, and pinned provider configuration, swept on expiry |
 | `provider_calls` | one row inserted before each provider attempt; records lifecycle, measured usage, numeric-only context composition, and optional ingest attempt/stage linkage |
-| `ingest_job_attempts` | one durable row per actual parse/ingest queue claim, including stage timings, retry/error classification, page/OCR/slice/caption/chunk counts, and no source name or content |
-| `ingest_host_samples` / `ingest_host_sample_rollups` | shared MinerU-pool, queue, spool, and physical-host samples; raw rows retain 30 days and one-minute rollups retain one year |
+| `ingest_job_attempts` | one durable row per actual parse/ingest queue claim, including stage timings, retry/error classification, page/OCR/chunk counts (the slice and caption columns stay at their zero defaults since the OpenDataLoader parser), and no source name or content |
+| `ingest_host_samples` / `ingest_host_sample_rollups` | shared parser-process, queue, spool, and physical-host samples; raw rows retain 30 days and one-minute rollups retain one year |
 | `ingest_worker_samples` / `ingest_worker_sample_rollups` | per-container parse/ingest worker cgroup samples; raw rows retain 30 days and one-minute rollups retain one year |
 
 Shape mirrors `backend-storage-quota.md` on purpose: hot-path ledger, counter
@@ -546,11 +558,8 @@ chat and Plate commands). A request cancelled while its admission is in flight
 is undone by a detached task that abandons the never-sent call row and frees
 its lease, without delaying the cancellation. A `Retry-After`
 longer than what is left of the budget ends the call at once. Ingest embedding,
-summary and caption calls get four attempts inside two minutes (captions retry
-any failure, not only busy answers, since one dropped caption is one figure
-gone from the index); past that a
-figure caption is dropped, while an embedding, summary or standalone image
-caption raises `ProviderBusy` so the job re-pends without spending an attempt
+summary and standalone image caption calls get four attempts inside two
+minutes; past that the call raises `ProviderBusy` so the job re-pends without spending an attempt
 (`jobs.provider_waits`, at most 5, `not_before` from the provider's own
 `Retry-After` else 30 s doubling; the synthesized client hint never feeds the
 job backoff), after which the file fails as `provider_busy`. Waiting at a capped
@@ -664,7 +673,7 @@ the bundle without charging again, while a later job that really re-parses the
 same bytes (after the caches were swept) is billed on its own row. Concurrent waiters receive the artifact but not
 the creator's receipt. Legacy responses without a receipt retain
 `parse:{job id}:{attempt}` as their compatibility key. Cache and donor hits do
-not create parse events because they did not run MinerU.
+not create parse events because they did not run the parser.
 
 The charge is per page, not per container time. Every page gets exactly one of
 two active database rates: the digital-page rate or the OCR-page rate. The
@@ -678,18 +687,23 @@ write. PDF page count is exact but OCR routing remains estimated; OOXML counts
 can also be estimated. Only the parser receipt creates `usage_events` and
 settles the actual charge.
 
-The seeded 31/52-credit page rates remain provisional during the ingest-host benchmark.
-Operators can create a new active version without deploying. Enqueue snapshots
-the applicable versions and microcredit amounts into the job, so an edit never
-reprices work already waiting in the queue.
+Both page rates are 1.0 credit (1,000,000 micros) since the OpenDataLoader
+parser: version 2 of `digital_parse_page` and `ocr_parse_page` are the active
+rows (`0008_parse_page_rates.sql`), version 1 and `figure_caption_call` are
+inactive (decision 2026-09-12, `human/observability-metering.md`). An OCR page
+is one the parser routed to RapidOCR (fewer than 40 text-layer characters),
+which is also the browser estimator's rule. Operators can create a new active
+version without deploying. Enqueue snapshots the applicable versions and
+microcredit amounts into the job, so an edit never reprices work already
+waiting in the queue. Standalone image captions bill their tokens only.
 
 The persistent parser returns wall time, queue time, shared-spool
 source-read/bundle-write time, and current process/cgroup RSS/PSS and I/O. The
 historical database column names still say parse download/upload, but those
-values no longer measure B2 transfers. Four concurrent MinerU slices share one
-process, so per-document CPU is not attributed; whole-host sampling captures
-CPU and memory. These fields are operational telemetry only. Page counts
-determine the charge.
+values no longer measure B2 transfers. The parser runs one document at a time
+(Java plus the Python repairs in one container), so the receipt also carries
+per-phase timings; whole-host sampling captures CPU and memory. These fields
+are operational telemetry only. Page counts determine the charge.
 
 Host saturation is separate. `pipeline.ingest.host_sampler` reads host `/proc`,
 polls parser admission counts, reads the durable parse/ingest queues and spool,
@@ -698,8 +712,7 @@ queued and every sixty seconds while idle. Each one-job coordinator/worker also
 writes its own cgroup CPU, memory, I/O, PID, and OOM counters at the same adaptive
 cadence. The recursive spool size/count is cached for sixty seconds so an active
 parser does not rescan the volume every five seconds. Raw rows retain 30 days; each writer refreshes the current one-minute
-rollup, retained for one year. Shared MinerU CPU cannot be assigned honestly to
-one concurrent document, so the dashboard keeps MinerU pool memory and
+rollup, retained for one year. The dashboard keeps parser-process memory and
 whole-host CPU/memory separate from per-worker cgroups and page billing.
 
 Every queue claim opens `ingest_job_attempts` in the same transaction as the
@@ -710,8 +723,9 @@ reservation and source-fenced file state in that transaction. Capacity waits
 may decrement the visible
 `jobs.attempts` value, so the generated attempt id—not `(job_id, attempt)`—is
 the durable identity. Provider calls opened by ingest carry that id and the
-current job stage, which lets Ops connect figure captions and other LLM calls
-to a file operation without storing prompts, paths, file names, or content.
+current job stage, which lets Ops connect summaries, standalone image captions
+and other LLM calls to a file operation without storing prompts, paths, file
+names, or content.
 
 Production, UAT, and local samples carry an explicit environment label. The
 local/UAT samplers write queue and shared-parser activity to their separate
@@ -722,8 +736,9 @@ primary database and can add optional column-limited read DSNs for UAT/local.
 ### Pricing is policy
 
 Token work is priced from the resolved `model_configs` row. Non-token policy
-(`audio_transcription_second`, digital/OCR pages, the figure-caption floor, and
-email) is versioned in `resource_credit_rates`. The Ops usage page edits these
+(`audio_transcription_second`, digital/OCR pages, and email) is versioned in
+`resource_credit_rates`; `figure_caption_call` rows remain for history but none
+is active. The Ops usage page edits these
 rates by inserting a new active version and recording an operator audit event.
 There are no numeric non-token rate fallbacks in Go or Python.
 
@@ -845,8 +860,10 @@ concurrency is the separate cap of 20 above, not this one.
 transport provider/model, independently of versioned `model_configs`. Ops exposes
 both required fields in the model form, including for existing embedding models;
 capacity-only edits do not create a catalog version. Routed GLM shares
-`deepinfra:zai-org/GLM-5.3-Flash` across all its versions. Each environment's database
-holds its own limits; no capacity values are seeded across environments.
+`tencent:glm-5.3-flash` across all its versions (the pre-TokenHub
+`deepinfra:zai-org/GLM-5.3-Flash` row is history). Each environment's database
+holds its own limits; no capacity values are seeded across environments, so
+the TokenHub capacity row must be created in Ops before GLM traffic.
 
 Interactive callers may use the whole total, ingest callers total minus the
 reserve. Require total > 0 and 0 <= reserve < total. Every admission attempt reads
@@ -864,7 +881,20 @@ released when the call ends.
 
 Before enabling traffic, configure the environment's limits in Ops. The approved
 production values are GLM 200/120 and Qwen embedding 200/80; UAT uses its own account
-and limits. Health shows attempts abandoned on a provider 429, 503 or 529
+and limits. The opt-in `deploy/model-capacities.sql` fills only missing rows:
+DeepSeek Flash 2500/1500, Tencent GLM 30/24, Qwen embedding 200/80
+(total/interactive reserve). Existing settings, including GLM 200/120, remain.
+DeepSeek and DeepInfra totals follow their published account/model concurrency
+limits; the reserves are application policy. The user confirmed Tencent's quota
+as 1,000,000 TPM and 60 RPM per model on 2026-09-13 and selected 30 concurrent
+calls with 24 reserved for interactive use, leaving at most 6 ingest calls.
+At an assumed 30 seconds and 10k tokens per call, this implies about 60 RPM and
+600k TPM, reaching the RPM limit. Bursts or
+different request sizes/durations can exceed the quota; a concurrency gate does
+not enforce per-minute limits. See the script for assumptions and
+official sources; split capacities when environments share a provider account.
+Migration `0010` copies any configured Flash Vision capacity to its new identity.
+Health shows attempts abandoned on a provider 429, 503 or 529
 answer per provider and model over the last hour, and the usage explorer's
 provider-attempts table shows every attempt (applied, abandoned, busy, open) by
 transport provider and model for the selected range; the pre-call row carries
@@ -942,8 +972,7 @@ year and longer custom ranges use monthly buckets. Each response carries one
 Provider/model grouping uses the catalog provider, model slug, and version as
 the primary billing identity; the transport-observed provider/model is shown as
 secondary diagnostic data. Routed GLM rows therefore group under
-`zai/glm-5.3-flash` while the observed pair is
-`deepinfra/zai-org/GLM-5.3-Flash`.
+`zai/glm-5.3-flash` while the observed pair is `tencent/glm-5.3-flash`.
 
 The header's refresh button refetches all active Ops GET queries. It never
 calls an LLM provider, the parser, or Stripe and it never starts reconciliation.
@@ -982,8 +1011,12 @@ Worth knowing before trusting a dashboard:
   crash or hard timeout before publication can still consume CPU without a
   page receipt because no trustworthy completed page count exists.
 - **Provider-side retries.** A provider that retries internally bills once and
-  reports once; a client-side retry in `caption_image` bills twice and reports
-  twice, correctly.
+  reports once; a client-side retry of a standalone image caption bills twice
+  and reports twice, correctly.
+- **Page captures in context telemetry.** `provider_calls.context_*` and the
+  turn's `estimatedInputTokens` count an attached `capture_page` JPEG by its
+  28-px patch estimate (about 2,240 for a 1568×1120 render), not by its base64
+  text; the provider's reported input is the billed figure.
 - **Cached input tokens.** Ops shows cached-read and cache-write tokens when the
   provider proves them. Missing or anomalous cache detail is charged as normal
   input, so the safe failure direction is an overcharge relative to cache cost.

@@ -29,7 +29,7 @@ func TestRenderWorkspaceInvite(t *testing.T) {
 
 func TestRenderModelDeprecated(t *testing.T) {
 	subject, html, text, err := Render("model-deprecated", "en", map[string]string{
-		"FromName":       "DeepSeek Pro",
+		"FromName":       "Previous model",
 		"ToName":         "DeepSeek Flash",
 		"OpenURL":        "https://example.test/settings?tab=llm",
 		"UnsubscribeURL": "https://example.test/unsubscribe",
@@ -37,14 +37,14 @@ func TestRenderModelDeprecated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(subject, "DeepSeek Pro") {
+	if !strings.Contains(subject, "Previous model") {
 		t.Fatalf("subject = %q", subject)
 	}
 	for _, content := range []string{html, text} {
 		if strings.Contains(content, "{{.") {
 			t.Fatalf("unrendered placeholder in %q", content)
 		}
-		if !strings.Contains(content, "DeepSeek Pro") || !strings.Contains(content, "DeepSeek Flash") {
+		if !strings.Contains(content, "Previous model") || !strings.Contains(content, "DeepSeek Flash") {
 			t.Fatalf("model names missing from %q", content)
 		}
 	}

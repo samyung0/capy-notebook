@@ -86,7 +86,7 @@ export const emailTemplateDefinitions = [
     id: 'model-deprecated',
     label: 'Model deprecated',
     variables: [
-      variable('FromName', 'DeepSeek Pro'),
+      variable('FromName', 'Previous model'),
       variable('OpenURL', 'https://example.test/settings?tab=llm'),
       variable('ToName', 'DeepSeek Flash'),
       variable('UnsubscribeURL', 'https://example.test/settings'),

@@ -12,8 +12,8 @@ import (
 )
 
 var (
-	flashModelRef = models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-flash-vision-exp"}
-	proModelRef   = models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-pro"}
+	flashModelRef = models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-flash"}
+	glmModelRef   = models.Ref{ProviderSlug: "zai", ModelSlug: "glm-5.3-flash"}
 	embedModelRef = models.Ref{ProviderSlug: "deepinfra", ModelSlug: "Qwen/Qwen3-Embedding-4B"}
 )
 
@@ -411,7 +411,7 @@ func TestSetModelPrefsRevalidatesAfterWaitingForUserLock(t *testing.T) {
 		       micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
 		       true, ARRAY[]::text[]
 		  FROM model_configs
-		 WHERE provider_slug=$3 AND model_slug=$4 AND version=1`, ref.ProviderSlug, ref.ModelSlug, proModelRef.ProviderSlug, proModelRef.ModelSlug); err != nil {
+		 WHERE provider_slug=$3 AND model_slug=$4 AND version=1`, ref.ProviderSlug, ref.ModelSlug, flashModelRef.ProviderSlug, flashModelRef.ModelSlug); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
@@ -536,6 +536,10 @@ func TestSetModelPrefsThinkingIsPerModel(t *testing.T) {
 	high := models.ThinkingHigh
 	medium := "medium"
 
+	// New accounts start on GLM; the per-model thinking under test is flash's.
+	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{ChatModel: &flashModelRef}); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{
 		ChatThinking: &high,
 	}); err != nil {
@@ -546,7 +550,7 @@ func TestSetModelPrefsThinkingIsPerModel(t *testing.T) {
 	}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("invented thinking on deepseek: %v", err)
 	}
-	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{ChatModel: &proModelRef}); err != nil {
+	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{ChatModel: &glmModelRef}); err != nil {
 		t.Fatal(err)
 	}
 	prefs, err := s.UserLLMPrefs(ctx, userID)
@@ -554,7 +558,7 @@ func TestSetModelPrefsThinkingIsPerModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := prefs.Thinking(models.SlotChat); got != "" {
-		t.Fatalf("pro inherited flash prefs: %s", got)
+		t.Fatalf("GLM inherited flash prefs: %s", got)
 	}
 	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{
 		ChatThinking: &high,

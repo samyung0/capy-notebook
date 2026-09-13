@@ -51,8 +51,19 @@ def tool_end(
     return event
 
 
-def citations(items: list[dict[str, Any]], version: int) -> dict[str, Any]:
-    return {"type": "citations", "citations": items, "version": version}
+def citations(
+    items: list[dict[str, Any]], version: int, *, final: bool = False
+) -> dict[str, Any]:
+    """``final`` marks the answer's own list: only the passages it used, in
+    first-appearance order, which is what Go persists."""
+    event: dict[str, Any] = {
+        "type": "citations",
+        "citations": items,
+        "version": version,
+    }
+    if final:
+        event["final"] = True
+    return event
 
 
 def checkpoint(payload: dict[str, Any]) -> dict[str, Any]:

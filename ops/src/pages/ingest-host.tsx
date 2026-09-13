@@ -228,7 +228,7 @@ export function IngestHostPage() {
           value={formatCount(attempts.failed)}
         />
         <MetricCard
-          detail={`${formatCount(attempts.ocrPages)} OCR · ${formatCount(attempts.slices)} slices`}
+          detail={`${formatCount(attempts.ocrPages)} OCR pages`}
           label="Parsed pages, 24h"
           value={formatCount(attempts.pages)}
         />
@@ -239,8 +239,8 @@ export function IngestHostPage() {
           <CardHeader>
             <CardTitle>Parser pool and host</CardTitle>
             <CardDescription>
-              MinerU is a shared pool, so its memory is deliberately not
-              attributed to a lane. Local and UAT omit physical-host metrics.
+              The parser container runs one document at a time, so its memory is
+              shown as one pool. Local and UAT omit physical-host metrics.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -294,7 +294,7 @@ export function IngestHostPage() {
                     <Line
                       dataKey="parserMemoryGiB"
                       dot={false}
-                      name="MinerU pool"
+                      name="Parser"
                       stroke="var(--chart-2)"
                       yAxisId="memory"
                     />
@@ -629,9 +629,8 @@ export function IngestHostPage() {
                       </TableCell>
                       <TableCell>{attempt.stage}</TableCell>
                       <TableCell className="text-xs">
-                        {attempt.pages} pages · {attempt.slices} slices
+                        {attempt.pages} pages · {attempt.ocrPages} OCR
                         <br />
-                        {attempt.figuresCaptioned} captions ·{' '}
                         {attempt.providerCalls} calls
                         {slowestStage(attempt.stageTimings) ? (
                           <>

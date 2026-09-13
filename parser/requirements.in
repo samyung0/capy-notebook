@@ -1,9 +1,12 @@
 fastapi[standard]>=0.110,<1
-mineru[pipeline]==3.4.5
+numpy==2.5.2
+onnxruntime==1.29.0
+opendataloader-pdf==2.5.7
+pillow==12.3.0
 psutil>=6,<8
+pymupdf==1.28.2
+pypdf[crypto]==6.18.0
 python-multipart>=0.0.9,<1
-requests>=2.31,<3
-six==1.17.0
-torch @ https://download.pytorch.org/whl/cpu/torch-2.13.0%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl
-torchvision @ https://download.pytorch.org/whl/cpu/torchvision-0.28.0%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl
+rapidocr==3.9.2
+rapid-layout==1.2.1
 uvicorn[standard]>=0.29,<1

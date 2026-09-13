@@ -91,7 +91,7 @@ func editableSourceFormat(name, kind string) string {
 	case ".pptx":
 		return "pptx"
 	}
-	plan, err := sourceupload.BuildProcessingPlan(name, kind, "fast", false)
+	plan, err := sourceupload.BuildProcessingPlan(name, kind, "fast")
 	if err == nil && (plan.Route == sourceupload.RouteRawText || plan.Route == sourceupload.RouteDelimitedText) {
 		return "text"
 	}
@@ -392,10 +392,10 @@ func (s *Store) RequestSourceRefresh(ctx context.Context, actor, fileID string, 
 		return SourceProcessResult{}, err
 	}
 	var name, kind, mode string
-	var captions, ever, autoParse, autoIndex, manual bool
+	var ever, autoParse, autoIndex, manual bool
 	var edited, lastRequested time.Time
 	var running, refreshError *string
-	err = tx.QueryRow(ctx, `SELECT f.name,f.kind,f.parse_mode,f.caption_images,f.ever_parsed_successfully,w.auto_reparse,w.auto_reindex,d.last_edited_at,d.last_refresh_requested_at,d.running_job_id,d.desired_manual,d.refresh_error FROM files f JOIN workspaces w ON w.id=f.workspace_id JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1 AND f.trashed_at IS NULL FOR UPDATE OF f,d`, fileID).Scan(&name, &kind, &mode, &captions, &ever, &autoParse, &autoIndex, &edited, &lastRequested, &running, &manual, &refreshError)
+	err = tx.QueryRow(ctx, `SELECT f.name,f.kind,f.parse_mode,f.ever_parsed_successfully,w.auto_reparse,w.auto_reindex,d.last_edited_at,d.last_refresh_requested_at,d.running_job_id,d.desired_manual,d.refresh_error FROM files f JOIN workspaces w ON w.id=f.workspace_id JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1 AND f.trashed_at IS NULL FOR UPDATE OF f,d`, fileID).Scan(&name, &kind, &mode, &ever, &autoParse, &autoIndex, &edited, &lastRequested, &running, &manual, &refreshError)
 	if err != nil {
 		return SourceProcessResult{}, err
 	}
@@ -440,7 +440,7 @@ func (s *Store) RequestSourceRefresh(ctx context.Context, actor, fileID string, 
 	if mode == "none" {
 		mode = "fast"
 	}
-	plan, err := sourceupload.BuildProcessingPlan(name, kind, mode, captions)
+	plan, err := sourceupload.BuildProcessingPlan(name, kind, mode)
 	if err != nil {
 		return result, err
 	}
@@ -449,7 +449,7 @@ func (s *Store) RequestSourceRefresh(ctx context.Context, actor, fileID string, 
 	}
 	jobID := uid("job")
 	lease := uid("srclease")
-	payload, err := s.ingestJobPayload(ctx, payer, map[string]any{"fileId": fileID, "workspaceId": ws, "sourceRefresh": true, "sourceEpoch": doc.Epoch, "sourceCheckpoint": doc.Checkpoint, "sourceLeaseToken": lease, "sourceRevision": doc.BaseRevision, "sourceETag": "", "blobPath": doc.BaseBlobPath, "kind": kind, "format": doc.Format, "parseMode": mode, "captionImages": captions, "processingPlan": plan, "reservationId": reservation, "requestedBy": actor, "automatic": automatic})
+	payload, err := s.ingestJobPayload(ctx, payer, map[string]any{"fileId": fileID, "workspaceId": ws, "sourceRefresh": true, "sourceEpoch": doc.Epoch, "sourceCheckpoint": doc.Checkpoint, "sourceLeaseToken": lease, "sourceRevision": doc.BaseRevision, "sourceETag": "", "blobPath": doc.BaseBlobPath, "kind": kind, "format": doc.Format, "parseMode": mode, "processingPlan": plan, "reservationId": reservation, "requestedBy": actor, "automatic": automatic})
 	if err != nil {
 		return result, err
 	}

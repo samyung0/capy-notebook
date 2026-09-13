@@ -147,17 +147,17 @@ function dateAt(dayOffset: number, hour: number, minute = 0): string {
 
 export const user: User = {
   chatModel: {
-    modelSlug: 'deepseek-v4-flash-vision-exp',
+    modelSlug: 'deepseek-flash',
     providerSlug: 'deepseek',
   },
   classLabel: 'Grade 11 · Science',
   editorModel: {
-    modelSlug: 'deepseek-v4-flash-vision-exp',
+    modelSlug: 'deepseek-flash',
     providerSlug: 'deepseek',
   },
   email: 'kate@capynotebook.app',
   generateModel: {
-    modelSlug: 'deepseek-v4-flash-vision-exp',
+    modelSlug: 'deepseek-flash',
     providerSlug: 'deepseek',
   },
   id: 'u_1',
@@ -165,7 +165,7 @@ export const user: User = {
   name: 'Kate Malone',
   planTier: 'pro',
   quizModel: {
-    modelSlug: 'deepseek-v4-flash-vision-exp',
+    modelSlug: 'deepseek-flash',
     providerSlug: 'deepseek',
   },
   streak: 0,
@@ -1324,7 +1324,7 @@ export const chatMessages: WireMessage[] = [
     createdAt: days(1),
     id: 'm_seed2',
     modelDisplayName: 'DeepSeek Flash',
-    modelSlug: 'deepseek-v4-flash-vision-exp',
+    modelSlug: 'deepseek-flash',
     modelVersion: 1,
     providerSlug: 'deepseek',
     role: 'assistant',

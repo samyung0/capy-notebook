@@ -174,7 +174,6 @@ const (
 	KindLLM       = "llm"
 	KindEmbedding = "embedding"
 	KindAudio     = "audio"
-	KindCaption   = "caption"
 	KindParse     = "parse"
 	KindEmail     = "email"
 )

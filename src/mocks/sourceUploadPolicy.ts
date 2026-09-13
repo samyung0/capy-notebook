@@ -95,26 +95,24 @@ export const sourceUploadPolicy: SourceUploadPolicy = {
   allowNoExtension: true,
   audioMaxDurationSeconds: 36_000,
   audioSecondCreditMicros: 250_000,
-  digitalParsePageCreditMicros: 31_000_000,
+  digitalParsePageCreditMicros: 1_000_000,
   kinds: kindOrder.map((kind) => ({
     extensions: extensionsFor(kind),
     kind,
     text: kind === 'txt' || kind === 'md' || kind === 'json',
   })),
   maxBytes: PLAN_LIMITS.free.sourceFileMaxBytes,
-  ocrParsePageCreditMicros: 52_000_000,
+  ocrParsePageCreditMicros: 1_000_000,
   parseModes: [
     {
       extensions: parseExtensions,
       maxBytes: PLAN_LIMITS.free.sourceFileMaxBytes,
       mode: 'fast',
-      supportsFigures: true,
     },
     {
       extensions: [],
       maxBytes: PLAN_LIMITS.free.sourceFileMaxBytes,
       mode: 'none',
-      supportsFigures: false,
     },
   ],
 };

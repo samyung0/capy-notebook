@@ -9,9 +9,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-PLANNING_RESPONSES = 12
-TOOLS_PER_RESPONSE = 4
-TOOLS_PER_TURN = 12
+# Planning responses and the per-response cap are the binding limits; the
+# per-turn cap is their product on purpose, so a turn that uses every call
+# ends on the tools-off last response rather than on a limit_reached refusal.
+PLANNING_RESPONSES = 8
+TOOLS_PER_RESPONSE = 2
+TOOLS_PER_TURN = PLANNING_RESPONSES * TOOLS_PER_RESPONSE
 MAX_CONCURRENT = 4
 
 STOP_ANSWER = "answer"

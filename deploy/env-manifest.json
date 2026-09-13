@@ -50,11 +50,11 @@
       "targets": ["coolify", "ingest-production", "ingest-queue"],
       "required_for": ["coolify", "ingest-production", "ingest-queue"]
     },
-    "B2_PRESIGN_TTL": {
+    "B2_LINK_TTL": {
       "kind": "variable",
       "targets": ["coolify"]
     },
-    "B2_LINK_TTL": {
+    "B2_PRESIGN_TTL": {
       "kind": "variable",
       "targets": ["coolify"]
     },
@@ -70,10 +70,6 @@
     "CAPY_CAPTION_CACHE_TTL_DAYS": {
       "kind": "variable",
       "targets": ["coolify", "ingest-production", "ingest-shared"]
-    },
-    "CAPY_CAPTION_CONCURRENCY": {
-      "kind": "variable",
-      "targets": ["ingest-production", "ingest-shared"]
     },
     "CAPY_CAPTION_MAX_EDGE": {
       "kind": "variable",
@@ -191,10 +187,6 @@
       "kind": "variable",
       "targets": ["ingest-shared"]
     },
-    "CAPY_INGEST_PARSER_MODELS_VOLUME": {
-      "kind": "variable",
-      "targets": ["ingest-production", "ingest-shared"]
-    },
     "CAPY_INGEST_PROD_PARSE_SPOOL_VOLUME": {
       "kind": "variable",
       "targets": ["ingest-production"]
@@ -231,22 +223,6 @@
       "kind": "variable",
       "targets": ["coolify"]
     },
-    "CAPY_MINERU_INTER_OP_NUM_THREADS": {
-      "kind": "variable",
-      "targets": ["ingest-production", "ingest-shared"]
-    },
-    "CAPY_MINERU_INTRA_OP_NUM_THREADS": {
-      "kind": "variable",
-      "targets": ["ingest-production", "ingest-shared"]
-    },
-    "CAPY_MINERU_PROCESSING_WINDOW_SIZE": {
-      "kind": "variable",
-      "targets": ["ingest-production", "ingest-shared"]
-    },
-    "CAPY_MINERU_SLICE_PAGES": {
-      "kind": "variable",
-      "targets": ["ingest-production", "ingest-shared"]
-    },
     "CAPY_OFFICE_CONVERT_TIMEOUT": {
       "kind": "variable",
       "targets": ["ingest-production", "ingest-shared"]
@@ -258,6 +234,10 @@
     "CAPY_PARSER": {
       "kind": "variable",
       "targets": ["coolify"]
+    },
+    "CAPY_PARSER_JVM_MAX_HEAP": {
+      "kind": "variable",
+      "targets": ["ingest-production", "ingest-shared"]
     },
     "CAPY_PARSE_ARTIFACT_MAX_BYTES": {
       "kind": "variable",
@@ -274,10 +254,6 @@
     "CAPY_PARSE_ARTIFACT_MAX_EXPANDED_BYTES": {
       "kind": "variable",
       "targets": ["ingest-production", "ingest-shared"]
-    },
-    "CAPY_PARSE_CONCURRENCY": {
-      "kind": "variable",
-      "targets": ["ingest-production"]
     },
     "CAPY_PARSE_CONTENT_MAX_BLOCKS": {
       "kind": "variable",
@@ -307,6 +283,10 @@
       "kind": "variable",
       "targets": ["ingest-production"]
     },
+    "CAPY_PARSE_DOCUMENT_TIMEOUT": {
+      "kind": "variable",
+      "targets": ["ingest-production", "ingest-shared"]
+    },
     "CAPY_PARSE_IMAGES_MAX_BYTES": {
       "kind": "variable",
       "targets": ["ingest-production", "ingest-shared"]
@@ -319,21 +299,13 @@
       "kind": "variable",
       "targets": ["ingest-production", "ingest-shared"]
     },
-    "CAPY_PARSE_METHOD": {
+    "CAPY_PARSE_QUEUE_DEPTH": {
       "kind": "variable",
-      "targets": ["ingest-production", "ingest-shared"]
+      "targets": ["ingest-production"]
     },
     "CAPY_PARSE_SHARED_DIR": {
       "kind": "variable",
       "targets": ["local"]
-    },
-    "CAPY_PARSE_SLICE_TIMEOUT": {
-      "kind": "variable",
-      "targets": ["ingest-production", "ingest-shared"]
-    },
-    "CAPY_PARSE_SLOTS": {
-      "kind": "variable",
-      "targets": ["ingest-production"]
     },
     "CAPY_PARSE_SOURCE_TTL_HOURS": {
       "kind": "variable",
@@ -364,6 +336,10 @@
       "kind": "secret",
       "targets": ["coolify", "ops"],
       "required_for": ["coolify", "ops"]
+    },
+    "CLERK_WEBHOOK_HOST": {
+      "kind": "variable",
+      "targets": ["local"]
     },
     "CLERK_WEBHOOK_SECRET": {
       "kind": "secret",
@@ -400,11 +376,19 @@
       "targets": ["coolify"],
       "required_for": ["coolify"]
     },
+    "COMPOSE_PROFILES": {
+      "kind": "variable",
+      "targets": ["coolify"]
+    },
     "COOLIFY_API_TOKEN": {
       "kind": "secret",
       "targets": ["workflow"]
     },
     "COOLIFY_API_URL": {
+      "kind": "variable",
+      "targets": ["workflow"]
+    },
+    "COOLIFY_OPS_RESOURCE_UUID": {
       "kind": "variable",
       "targets": ["workflow"]
     },
@@ -531,6 +515,10 @@
       "kind": "secret",
       "targets": ["coolify", "ingest-production", "ingest-queue", "ops"]
     },
+    "OPENROUTER_API_KEY": {
+      "kind": "secret",
+      "targets": ["local"]
+    },
     "OPS_ACCESS_DISABLED": {
       "kind": "variable",
       "targets": ["local"]
@@ -593,10 +581,6 @@
       "kind": "variable",
       "targets": ["ingest-shared"]
     },
-    "PARSER_SLOT_TTL": {
-      "kind": "variable",
-      "targets": ["ingest-production", "ingest-shared"]
-    },
     "PARSER_TIMEOUT": {
       "kind": "variable",
       "targets": ["ingest-production", "ingest-shared"]
@@ -630,6 +614,10 @@
     },
     "REDIS_URL": {
       "kind": "secret",
+      "targets": ["local"]
+    },
+    "RELEASE_SHA": {
+      "kind": "variable",
       "targets": ["local"]
     },
     "RESEND_API_KEY": {
@@ -684,6 +672,10 @@
       "kind": "variable",
       "targets": ["workflow", "build"]
     },
+    "SOURCE_COMMIT": {
+      "kind": "variable",
+      "targets": ["local"]
+    },
     "STRIPE_PRICE_PRO": {
       "kind": "variable",
       "targets": ["coolify"]
@@ -707,6 +699,10 @@
     "STRIX_UAT_AUTH_INSTRUCTIONS": {
       "kind": "variable",
       "targets": ["local"]
+    },
+    "TENCENT_API_KEY": {
+      "kind": "secret",
+      "targets": ["coolify", "ingest-production", "ingest-queue", "ops"]
     },
     "UAT_ALLOWED_HOSTS": {
       "kind": "variable",
@@ -743,11 +739,6 @@
       "targets": ["quality"],
       "environments": ["uat"]
     },
-    "UAT_OTHER_EMAIL": {
-      "kind": "variable",
-      "targets": ["quality"],
-      "environments": ["uat"]
-    },
     "UAT_OPS_ACCESS_CLIENT_ID": {
       "kind": "secret",
       "targets": ["quality"],
@@ -755,6 +746,11 @@
     },
     "UAT_OPS_ACCESS_CLIENT_SECRET": {
       "kind": "secret",
+      "targets": ["quality"],
+      "environments": ["uat"]
+    },
+    "UAT_OTHER_EMAIL": {
+      "kind": "variable",
       "targets": ["quality"],
       "environments": ["uat"]
     },
@@ -787,7 +783,7 @@
       "kind": "variable",
       "targets": ["local"]
     },
-    "CLERK_WEBHOOK_HOST": {
+    "VITE_APP_ENV": {
       "kind": "variable",
       "targets": ["local"]
     },
@@ -802,6 +798,10 @@
     "VITE_DIRECT_B2_UPLOAD": {
       "kind": "variable",
       "targets": ["workflow", "build"]
+    },
+    "VITE_E2E_EDITOR_SEED": {
+      "kind": "variable",
+      "targets": ["local"]
     },
     "VITE_FEATURE_EDITOR_AI": {
       "kind": "variable",
@@ -863,6 +863,10 @@
       "kind": "variable",
       "targets": ["workflow", "build"]
     },
+    "VITE_RELEASE_SHA": {
+      "kind": "variable",
+      "targets": ["local"]
+    },
     "VITE_SENTRY_DSN": {
       "kind": "variable",
       "targets": ["workflow", "build"]
@@ -878,38 +882,6 @@
     "WORKER_REPLICAS": {
       "kind": "variable",
       "targets": ["ingest-production"]
-    },
-    "COOLIFY_OPS_RESOURCE_UUID": {
-      "kind": "variable",
-      "targets": ["workflow"]
-    },
-    "COMPOSE_PROFILES": {
-      "kind": "variable",
-      "targets": ["coolify"]
-    },
-    "RELEASE_SHA": {
-      "kind": "variable",
-      "targets": ["local"]
-    },
-    "SOURCE_COMMIT": {
-      "kind": "variable",
-      "targets": ["local"]
-    },
-    "VITE_RELEASE_SHA": {
-      "kind": "variable",
-      "targets": ["local"]
-    },
-    "VITE_E2E_EDITOR_SEED": {
-      "kind": "variable",
-      "targets": ["local"]
-    },
-    "VITE_APP_ENV": {
-      "kind": "variable",
-      "targets": ["local"]
-    },
-    "OPENROUTER_API_KEY": {
-      "kind": "secret",
-      "targets": ["local"]
     }
   }
 }

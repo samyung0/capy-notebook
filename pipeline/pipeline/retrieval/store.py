@@ -612,12 +612,12 @@ async def copy_content_from_donor(
             INSERT INTO rag_chunks (
                 id, workspace_id, content_id, chunk_idx, section_path, text,
                 indexed_text, token_count, page_start, page_end, regions, lang,
-                search
+                search, confidence, confidence_reasons
             )
             SELECT {_NEW_CHUNK_ID_SQL},
                    %s, %s, c.chunk_idx, c.section_path, c.text, c.indexed_text,
                    c.token_count, c.page_start, c.page_end, c.regions, c.lang,
-                   c.search
+                   c.search, c.confidence, c.confidence_reasons
             FROM rag_chunks c
             WHERE c.content_id = %s
             """,
@@ -689,8 +689,8 @@ async def load_content_chunks(content_id: str) -> list[dict[str, Any]]:
         cur = await conn.execute(
             """
             SELECT id, chunk_idx, section_path, text, indexed_text, token_count,
-                   page_start, page_end, regions, lang,
-                   search = ''::tsvector AS reference
+                   page_start, page_end, regions, lang, confidence,
+                   confidence_reasons, search = ''::tsvector AS reference
             FROM rag_chunks WHERE content_id = %s
             ORDER BY chunk_idx
             """,
@@ -743,12 +743,13 @@ async def replace_content_chunks(
                     INSERT INTO rag_chunks (
                         id, workspace_id, content_id, chunk_idx, section_path, text,
                         indexed_text, token_count, page_start, page_end, regions,
-                        lang, search
+                        lang, search, confidence, confidence_reasons
                     ) VALUES (
                         %(id)s, %(workspace_id)s, %(content_id)s, %(chunk_idx)s,
                         %(section_path)s, %(text)s, %(indexed_text)s, %(token_count)s,
                         %(page_start)s, %(page_end)s, %(regions)s, %(lang)s,
-                        to_tsvector(%(ts_config)s::regconfig, %(search_text)s)
+                        to_tsvector(%(ts_config)s::regconfig, %(search_text)s),
+                        %(confidence)s, %(confidence_reasons)s
                     )
                     """,
                 {
@@ -757,6 +758,8 @@ async def replace_content_chunks(
                     "workspace_id": workspace_id,
                     "content_id": content_id,
                     "regions": Jsonb(row["regions"]),
+                    "confidence": row.get("confidence"),
+                    "confidence_reasons": list(row.get("confidence_reasons") or []),
                 },
             )
             # A vector of the wrong width is rejected by the column type, which
@@ -937,7 +940,8 @@ fused AS (
     ) parts GROUP BY id
 )
 SELECT c.id, sf.file_id, c.chunk_idx, c.section_path, c.text, c.page_start,
-       c.page_end, c.regions, c.lang, sf.file_name, fused.score, fused.flat_score,
+       c.page_end, c.regions, c.lang, c.confidence, c.confidence_reasons,
+       sf.file_name, fused.score, fused.flat_score,
        vec.rank AS vec_rank, vec.dist AS vec_dist, lex.rank AS lex_rank
 FROM fused
 JOIN rag_chunks c ON c.id = fused.id
@@ -1100,6 +1104,26 @@ async def workspace_outline(workspace_id: str) -> dict[str, Any]:
     return {"chapters": chapters, "files": files}
 
 
+async def file_page_source(workspace_id: str, file_id: str) -> dict[str, Any] | None:
+    """The PDF a file's page geometry refers to, for capture_page.
+
+    Office sources were parsed against their LibreOffice preview, so that is the
+    coordinate space the chunk regions use; a PDF renders from its own bytes.
+    """
+    db = await pool()
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT f.kind, f.parse_mode, f.blob_path, f.preview_blob_path, f.size_bytes
+            FROM files f
+            WHERE f.workspace_id = %s AND f.id = %s AND f.trashed_at IS NULL
+            """,
+            (workspace_id, file_id),
+        )
+        row = await cur.fetchone()
+    return dict(row) if row else None
+
+
 async def file_summaries(
     workspace_id: str, file_ids: list[str]
 ) -> list[dict[str, Any]]:
@@ -1143,7 +1167,8 @@ async def read_file_range(
         cur = await conn.execute(
             """
             SELECT c.id, fc.file_id, c.chunk_idx, c.section_path, c.text, c.page_start,
-                   c.page_end, c.regions, f.name AS file_name
+                   c.page_end, c.regions, c.confidence, c.confidence_reasons,
+                   f.name AS file_name
             FROM rag_file_contents fc
             JOIN files f ON f.id = fc.file_id
             JOIN rag_chunks c ON c.content_id = fc.content_id

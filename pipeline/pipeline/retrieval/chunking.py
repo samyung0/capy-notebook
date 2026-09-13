@@ -5,9 +5,8 @@ Two entry points, one output shape:
 - :func:`chunk_content_list` consumes the parser service's ``content_list.json``,
   which carries a heading level and a page plus bounding box per block. That
   structure is the whole reason citations can name a page.
-- :func:`chunk_markdown` consumes plain markdown (txt/md uploads and the
-  'normal' parse route, whose cloud API returns markdown only). Headings still
-  give section paths; there is no page model, so pages stay null.
+- :func:`chunk_markdown` consumes plain markdown (txt/md uploads). Headings
+  still give section paths; there is no page model, so pages stay null.
 
 Both split on structure first and only fall back to length, so a chunk is a
 section or a run of consecutive blocks rather than an arbitrary window. Chunks
@@ -43,13 +42,19 @@ log = logging.getLogger("capy.retrieval.chunking")
 #     affiliation/footnote superscripts dropped instead of glued to the word.
 # v5: reference lists flagged and left out of the lexical index (chunk
 #     boundaries unchanged, so eval indices carry over).
-CHUNKER_VERSION = "v5"
+# v6: OpenDataLoader block dialect; source-confirmed headings the packer
+#     dropped are retained as their own chunks (retrieval/headings.py).
+# v7: the lab packer (retrieval/packing.py): furniture frozen by the parser
+#     before table recovery, native tables as their own header-repeating
+#     chunks with merged-cell notes and the adjacent caption as section path.
+# v8: bounded oversized table context, short visible orphan headings, and
+#     extraction confidence in canonical content identity.
+CHUNKER_VERSION = "v9"
 
 # Picture blocks arrive under two labels: ``image`` for photos and diagrams,
 # ``chart`` for plots the layout model recognises as data graphics. Same shape,
-# different caption key, and both are captionable figures. Kept in step with
-# ``parse/figures.py``, which must select exactly this set or a block gets
-# described and then dropped (or dropped and never described).
+# different caption key. Only their native caption and footnote text is
+# indexed; the figure itself is reached at question time through capture_page.
 _IMAGE_TYPES = frozenset({"image", "chart"})
 
 # Text-bearing blocks that are not headings. Indexed as ordinary body text.
@@ -130,6 +135,10 @@ class Chunk:
     # Chinese paper an English question lexically matched the English-tagged
     # bibliography ahead of the Chinese body that answers it.
     reference: bool = False
+    # Extraction confidence (retrieval/confidence.py): agreement with the
+    # source text layer, None for sources without a page model.
+    confidence: float | None = None
+    confidence_reasons: list[str] = field(default_factory=list)
 
     def indexed_text(self) -> str:
         if self.section_path:
@@ -318,10 +327,15 @@ def _pack(blocks: list[_Block], section_path: str) -> list[Chunk]:
     chunks: list[Chunk] = []
     current: list[_Block] = []
     size = 0
+    fresh = False
 
     def flush() -> None:
-        nonlocal size
+        nonlocal size, fresh
         if not current:
+            return
+        if not fresh:
+            current.clear()
+            size = 0
             return
         chunks.append(_build(current, section_path))
         # Overlap by trailing blocks rather than characters: a partial sentence
@@ -337,6 +351,7 @@ def _pack(blocks: list[_Block], section_path: str) -> list[Chunk]:
         if carried < cfg.chunk_tokens // 2:
             current.extend(carry)
         size = sum(estimate_tokens(b.text) for b in current)
+        fresh = False
 
     for block in blocks:
         text = block.text.strip()
@@ -352,19 +367,22 @@ def _pack(blocks: list[_Block], section_path: str) -> list[Chunk]:
                         section_path,
                     )
                 )
+            # The split block now separates this text from any earlier overlap.
+            current.clear()
+            size = 0
+            fresh = False
             continue
         if size + tokens > cfg.chunk_tokens and current:
             flush()
         current.append(block)
         size += tokens
+        fresh = True
 
-    if current:
+    if current and fresh:
         chunks.append(_build(current, section_path))
-    return [
-        c
-        for c in chunks
-        if estimate_tokens(c.text) >= cfg.chunk_min_tokens or len(chunks) == 1
-    ]
+    # A small tail can contain the only copy of source prose. Furniture is
+    # filtered before packing; only overlap without new source content is omitted.
+    return chunks
 
 
 def _split_long(text: str) -> list[str]:
@@ -483,15 +501,20 @@ def _build(blocks: list[_Block], section_path: str) -> Chunk:
 # ------------------------------------------------------------------ entrypoints
 
 
-def chunk_content_list(content_list: list[dict[str, Any]]) -> list[Chunk]:
+def chunk_content_list(
+    content_list: list[dict[str, Any]], *, furniture: frozenset[str] | None = None
+) -> list[Chunk]:
     """Chunk the parser's block list, keeping page and bbox per block.
+
+    ``furniture`` is the running header/footer text to drop; by default it is
+    inferred from this list (:func:`_repeated_across_pages`). The document
+    packer (``packing.py``) passes the parser's frozen decision instead.
 
     Block types follow the parser bundle schema: ``text`` with ``text_level`` on
     headings), ``table``, ``equation``, the picture types in
     :data:`_IMAGE_TYPES`, the prose types in :data:`_BODY_TEXT_TYPES`, and
-    :data:`_LIST_TYPES`. Pictures contribute their caption or generated
-    description; a bare one with neither adds nothing to retrieval and is
-    skipped, as is the page furniture in :data:`_FURNITURE_TYPES`.
+    :data:`_LIST_TYPES`. Pictures contribute their caption and footnote
+    text; a bare one adds nothing to retrieval and is skipped, as is the page furniture in :data:`_FURNITURE_TYPES`.
 
     Anything else is counted and logged rather than silently discarded. Parsers
     add block types between versions, and a type this function does not know
@@ -501,7 +524,8 @@ def chunk_content_list(content_list: list[dict[str, Any]]) -> list[Chunk]:
     pending: list[_Block] = []
     chunks: list[Chunk] = []
     unknown: dict[str, int] = {}
-    furniture = _repeated_across_pages(content_list)
+    if furniture is None:
+        furniture = _repeated_across_pages(content_list)
 
     def flush_section() -> None:
         if pending:
@@ -563,8 +587,7 @@ def chunk_content_list(content_list: list[dict[str, Any]]) -> list[Chunk]:
                 _as_list(item.get("image_footnote"))
                 + _as_list(item.get("chart_footnote"))
             )
-            described = str(item.get("description") or "").strip()
-            text = "\n".join(p for p in (caption, described, footnote) if p)
+            text = "\n".join(p for p in (caption, footnote) if p)
             if text:
                 pending.append(_Block(f"[Figure] {text}", None, page_no, bbox))
         elif kind not in _FURNITURE_TYPES:

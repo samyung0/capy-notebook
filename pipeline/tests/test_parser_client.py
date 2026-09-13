@@ -32,6 +32,7 @@ def _artifact_zip(
     fingerprint: str,
     content_list=None,
     extra: dict[str, str | bytes] | None = None,
+    omit: set[str] = frozenset(),
     parser_version: str | None = None,
     schema: str | None = None,
     receipt_request_id: str = "",
@@ -68,6 +69,8 @@ def _artifact_zip(
                 else [{"type": "text", "text": "Hello", "page_idx": 0}]
             ),
         )
+        if "refinement.json" not in (extra or {}) and "refinement.json" not in omit:
+            archive.writestr("refinement.json", json.dumps({"furniture": []}))
         for name, body in (extra or {}).items():
             archive.writestr(name, body)
     return path.read_bytes()
@@ -82,19 +85,17 @@ def test_artifact_key_is_stable_and_fingerprint_addressed():
     assert key1 == f"artifacts/{fingerprint1}.zip"
 
 
-def test_source_method_schema_and_release_all_participate_in_identity(monkeypatch):
+def test_source_schema_and_release_all_participate_in_identity(monkeypatch):
     _, original = parser_client.artifact_identity(_descriptor())
     _, other_source = parser_client.artifact_identity(
         _descriptor(source_sha256="bb" * 32)
     )
-    monkeypatch.setattr(parser_client.cfg, "parse_method", "ocr")
-    _, other_method = parser_client.artifact_identity(_descriptor())
     monkeypatch.setattr(parser_client, "ARTIFACT_SCHEMA", "capy-parser-bundle-v4")
     _, other_schema = parser_client.artifact_identity(_descriptor())
     monkeypatch.setattr(parser_client.cfg, "release_sha", "b" * 40)
     _, other_release = parser_client.artifact_identity(_descriptor())
 
-    assert len({original, other_source, other_method, other_schema, other_release}) == 5
+    assert len({original, other_source, other_schema, other_release}) == 4
 
 
 def test_unknown_or_missing_route_is_rejected():
@@ -650,6 +651,77 @@ def test_office_bundle_requires_a_valid_preview(tmp_path: Path, monkeypatch):
     )
     parser_client._extract(artifact, raw, FAST_VERSION, require_office_preview=True)
     assert (raw / "preview.pdf").read_bytes() == b"%PDF-exact"
+
+
+def test_extract_requires_the_frozen_furniture_entry(tmp_path: Path, monkeypatch):
+    """``refinement.json`` is part of the bundle contract: the chunk stage
+    cannot pack without the parser's furniture decision."""
+    artifact = _install_artifact(monkeypatch, tmp_path, omit={"refinement.json"})
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    with pytest.raises(
+        parser_client.ParserClientError,
+        match="missing its manifest, content list or refinement",
+    ):
+        parser_client._extract(artifact, raw, FAST_VERSION)
+    assert not (raw / "content_list.json").exists()
+
+
+def test_extract_bounds_the_refinement_entry(tmp_path: Path, monkeypatch):
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    big = json.dumps({"furniture": ["x" * (4 << 20)]})
+    artifact = _install_artifact(
+        monkeypatch, tmp_path, fingerprint="fp-big", extra={"refinement.json": big}
+    )
+    with pytest.raises(parser_client.ParserClientError, match="entry exceeds"):
+        parser_client._extract(artifact, raw, FAST_VERSION)
+    fits = json.dumps({"furniture": ["x" * ((4 << 20) - 64)]})
+    artifact = _install_artifact(
+        monkeypatch, tmp_path, fingerprint="fp-fits", extra={"refinement.json": fits}
+    )
+    parser_client._extract(artifact, raw, FAST_VERSION)
+    assert json.loads((raw / "refinement.json").read_text())["furniture"][0].startswith(
+        "x"
+    )
+
+
+def test_a_durable_bundle_without_refinement_is_reparsed(
+    tmp_path: Path, monkeypatch, parser_url
+):
+    """A B2 copy from before the entry existed fails validation and falls back
+    to a parse rather than being served."""
+    monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
+    monkeypatch.setattr(parser_client.cfg, "b2_bucket", "cache")
+    key, fingerprint = parser_client.artifact_identity(_descriptor())
+    source = tmp_path / "durable-source.zip"
+    blob = _artifact_zip(source, fingerprint=fingerprint, omit={"refinement.json"})
+    source.unlink()
+
+    def _download(_key: str, destination: str, _limit: int):
+        Path(destination).write_bytes(blob)
+        return len(blob), hashlib.sha256(blob).hexdigest()
+
+    monkeypatch.setattr(parser_client.blobstore, "download_file", _download)
+    calls = _stub_request(
+        monkeypatch,
+        _Resp(
+            200,
+            {
+                "artifact": {
+                    "key": key,
+                    "size": 9,
+                    "sha256": hashlib.sha256(b"local zip").hexdigest(),
+                }
+            },
+        ),
+    )
+
+    artifact = parser_client._request_artifact(_descriptor(), "doc.pdf", "job-2")
+
+    assert len(calls) == 1, "the parser must run when the cached bundle is unusable"
+    assert artifact["key"] == key and "durableKey" not in artifact
+    assert not parser_client._shared_path(key).exists()
 
 
 def test_extract_rejects_path_traversal(tmp_path: Path, monkeypatch):

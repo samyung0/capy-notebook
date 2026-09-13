@@ -611,7 +611,6 @@ export function useImportSources(
   return useMutation({
     meta: mutationMeta(options),
     mutationFn: (body: {
-      captionImages?: boolean;
       chapterId?: string | null;
       chapterName?: string | null;
       driveIds?: string[];
@@ -1184,7 +1183,6 @@ export function useUploadSource(wsId: string) {
       chapterId,
       chapterName,
       parseMode,
-      captionImages,
       estimatedCreditMicros,
       onUploadProgress,
       signal,
@@ -1193,12 +1191,10 @@ export function useUploadSource(wsId: string) {
       kind: SourceFile['kind'];
       chapterId?: string | null;
       chapterName?: string | null;
-      /** fast = MinerU, with OCR on scanned pages; none = store-only for
-       * non-text kinds (no parse, not indexed). Text kinds (txt/md/json)
-       * still index under none — there is no GPU parse route to pick. */
+      /** fast = OpenDataLoader, with OCR on text-less pages; none = store-only
+       * for non-text kinds (no parse, not indexed). Text kinds (txt/md/json)
+       * still index under none — there is no parse route to pick. */
       parseMode?: 'fast' | 'none';
-      /** Caption the figures found while parsing so they become searchable. */
-      captionImages?: boolean;
       /** Browser-side cost estimate at the upload policy rates. The gateway
        * refuses a reservation that would land past its credit headroom; the
        * parser receipt still bills the measured pages. */
@@ -1214,7 +1210,6 @@ export function useUploadSource(wsId: string) {
         if (chapterId) form.append('chapterId', chapterId);
         if (chapterName) form.append('chapterName', chapterName);
         if (parseMode) form.append('parseMode', parseMode);
-        if (captionImages) form.append('captionImages', 'true');
         if (estimatedCreditMicros) {
           form.append('estimatedCreditMicros', String(estimatedCreditMicros));
         }
@@ -1233,7 +1228,6 @@ export function useUploadSource(wsId: string) {
           headers: Record<string, string>;
           expiresAt: string;
         }>(`/workspaces/${wsId}/sources/uploads`, {
-          captionImages: captionImages ?? false,
           chapterId: chapterId ?? null,
           chapterName: chapterName ?? null,
           contentType: file.type || 'application/octet-stream',
