@@ -2691,10 +2691,6 @@ components:
           $ref: "#/components/schemas/Ref"
         generateThinking:
           type: string
-        quizModel:
-          $ref: "#/components/schemas/Ref"
-        quizThinking:
-          type: string
       type: object
     ShareRole:
       enum:
@@ -4016,8 +4012,6 @@ components:
           type: string
         planTier:
           $ref: "#/components/schemas/PlanTier"
-        quizModel:
-          $ref: "#/components/schemas/Ref"
         streak:
           format: int64
           type: integer
@@ -4032,7 +4026,6 @@ components:
         - chatModel
         - generateModel
         - editorModel
-        - quizModel
         - planTier
         - subscriptionStatus
       type: object
@@ -4051,7 +4044,6 @@ components:
         - chat
         - generate
         - editor
-        - quiz
       type: string
     Workspace:
       additionalProperties: false
@@ -6056,7 +6048,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Set chat, generate, editor and quiz model preferences
+      summary: Set chat, generate and editor model preferences
       tags:
         - Account
   /api/mistakes:

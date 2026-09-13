@@ -1,6 +1,4 @@
-import type { ModelRef, Question } from '@/api/types';
-import { browserLlmHost } from './browserLlm';
-import { isBrowserQuizModel } from './browserModels';
+import type { Question } from '@/api/types';
 import { gradeOpenViaCloud } from './cloudGrade';
 import {
   type Answer,
@@ -9,12 +7,11 @@ import {
   scoreQuestion,
   sumScores,
 } from './grade';
-import { gradeOpenAnswer } from './judge';
 
 export async function gradeAttemptQuestions(
   questions: Question[],
   answers: Record<string, Answer>,
-  opts: { model: ModelRef; workspaceId?: string }
+  opts: { workspaceId?: string }
 ): Promise<{ questions: Question[]; awarded: number; max: number }> {
   const next: Question[] = [];
   for (const question of questions) {
@@ -38,16 +35,7 @@ export async function gradeAttemptQuestions(
       rubrics: question.rubrics.map((r) => r.value),
       userAnswer,
     };
-    const browserModel =
-      opts.model.providerSlug === 'browser'
-        ? `browser:${opts.model.modelSlug}`
-        : '';
-    // Browser models stay in the tab. They never hit /quiz-grade or usage_events.
-    const result = isBrowserQuizModel(browserModel)
-      ? await gradeOpenAnswer(input, (prompt) =>
-          browserLlmHost().complete(browserModel, prompt)
-        )
-      : await gradeOpenViaCloud(input, opts.workspaceId);
+    const result = await gradeOpenViaCloud(input, opts.workspaceId);
     next.push(applyOpenAward(question, result.award, result.reason));
   }
   const total = sumScores(next.map((q) => scoreQuestion(q, answers[q.id])));

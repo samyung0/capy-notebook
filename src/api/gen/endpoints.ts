@@ -3750,7 +3750,7 @@ export const getSetModelPrefsUrl = () => {
 }
 
 /**
- * @summary Set chat, generate, editor and quiz model preferences
+ * @summary Set chat, generate and editor model preferences
  */
 export const setModelPrefs = async (setModelPrefsReq: NonReadonly<SetModelPrefsReq>, options?: RequestInit): Promise<setModelPrefsResponse> => {
 

@@ -21,7 +21,6 @@ export interface User {
   locale: string;
   name: string;
   planTier: PlanTier;
-  quizModel: Ref;
   streak: number;
   subscriptionStatus: SubscriptionStatus;
 }

@@ -43,7 +43,6 @@ var userPreferenceColumns = map[string]preferenceColumns{
 	models.SlotChat:     {"chat_model_provider_slug", "chat_model_slug"},
 	models.SlotGenerate: {"generate_model_provider_slug", "generate_model_slug"},
 	models.SlotEditor:   {"editor_model_provider_slug", "editor_model_slug"},
-	models.SlotQuiz:     {"quiz_model_provider_slug", "quiz_model_slug"},
 }
 
 type Session struct {

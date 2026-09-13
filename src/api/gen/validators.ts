@@ -1740,10 +1740,6 @@ export const GetMeResponse = zod.object({
   "locale": zod.string(),
   "name": zod.string(),
   "planTier": zod.enum(['free', 'pro']),
-  "quizModel": zod.object({
-  "modelSlug": zod.string(),
-  "providerSlug": zod.string()
-}),
   "streak": zod.int(),
   "subscriptionStatus": zod.enum(['none', 'active', 'past_due', 'canceled', 'trialing'])
 })
@@ -1781,10 +1777,6 @@ export const UpdateMeResponse = zod.object({
   "locale": zod.string(),
   "name": zod.string(),
   "planTier": zod.enum(['free', 'pro']),
-  "quizModel": zod.object({
-  "modelSlug": zod.string(),
-  "providerSlug": zod.string()
-}),
   "streak": zod.int(),
   "subscriptionStatus": zod.enum(['none', 'active', 'past_due', 'canceled', 'trialing'])
 })
@@ -1852,7 +1844,7 @@ export const SetLocaleResponse = zod.void()
 
 
 /**
- * @summary Set chat, generate, editor and quiz model preferences
+ * @summary Set chat, generate and editor model preferences
  */
 export const SetModelPrefsBody = zod.object({
   "chatModel": zod.object({
@@ -1868,12 +1860,7 @@ export const SetModelPrefsBody = zod.object({
   "modelSlug": zod.string(),
   "providerSlug": zod.string()
 }).optional(),
-  "generateThinking": zod.string().optional(),
-  "quizModel": zod.object({
-  "modelSlug": zod.string(),
-  "providerSlug": zod.string()
-}).optional(),
-  "quizThinking": zod.string().optional()
+  "generateThinking": zod.string().optional()
 })
 
 export const SetModelPrefsResponse = zod.void()
@@ -1911,7 +1898,7 @@ export const ListModelSlotsResponse = zod.object({
  * @summary Enabled models for a slot
  */
 export const ListModelsQueryParams = zod.object({
-  "slot": zod.enum(['chat', 'generate', 'editor', 'quiz']).optional()
+  "slot": zod.enum(['chat', 'generate', 'editor']).optional()
 })
 
 export const ListModelsResponse = zod.object({

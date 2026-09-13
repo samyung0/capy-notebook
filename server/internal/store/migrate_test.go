@@ -208,7 +208,7 @@ func TestDefaultChatModelMigrationRefusesWithoutAnEnabledGLMRow(t *testing.T) {
 		`UPDATE model_configs SET is_default_for = array_remove(is_default_for, 'chat')
 		   WHERE provider_slug='zai' AND model_slug='glm-5.3-flash'`,
 		`UPDATE model_configs SET is_default_for = array_append(is_default_for, 'chat')
-		   WHERE provider_slug='deepseek' AND model_slug='deepseek-v4-flash-vision-exp' AND version=1`,
+		   WHERE provider_slug='deepseek' AND model_slug='deepseek-flash' AND version=1`,
 		`UPDATE model_configs SET enabled=false WHERE provider_slug='zai' AND model_slug='glm-5.3-flash'`,
 	} {
 		if _, err := outer.Exec(ctx, stmt); err != nil {
@@ -230,7 +230,7 @@ func TestDefaultChatModelMigrationRefusesWithoutAnEnabledGLMRow(t *testing.T) {
 	).Scan(&provider, &model); err != nil {
 		t.Fatalf("exactly one chat slot default expected after the refusal: %v", err)
 	}
-	if provider != "deepseek" || model != "deepseek-v4-flash-vision-exp" {
+	if provider != "deepseek" || model != "deepseek-flash" {
 		t.Fatalf("chat slot default = %s/%s, want it untouched on Flash", provider, model)
 	}
 }

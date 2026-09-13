@@ -14,6 +14,4 @@ export interface SetModelPrefsReq {
   editorModel?: Ref;
   generateModel?: Ref;
   generateThinking?: string;
-  quizModel?: Ref;
-  quizThinking?: string;
 }

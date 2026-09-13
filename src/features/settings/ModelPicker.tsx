@@ -50,15 +50,13 @@ export function ModelOptionLabel({ option }: { option: ModelOption }) {
   );
 }
 
-type CloudSlot = Exclude<ModelSlot, 'quiz'>;
-
-const SLOT_LABEL: Record<CloudSlot, () => string> = {
+const SLOT_LABEL: Record<ModelSlot, () => string> = {
   chat: () => m.settings_llm_chat(),
   editor: () => m.settings_llm_editor(),
   generate: () => m.settings_llm_generate(),
 };
 
-const PREF_FIELD: Record<CloudSlot, keyof SetModelPrefsReq> = {
+const PREF_FIELD: Record<ModelSlot, keyof SetModelPrefsReq> = {
   chat: 'chatModel',
   editor: 'editorModel',
   generate: 'generateModel',
@@ -72,7 +70,7 @@ export function ModelPicker({
   slot,
 }: {
   className?: string;
-  slot: CloudSlot;
+  slot: ModelSlot;
 }) {
   const { data } = useModels(slot, { errorBoundary: false });
   const { isPending, mutate } = useSetModelPrefs();

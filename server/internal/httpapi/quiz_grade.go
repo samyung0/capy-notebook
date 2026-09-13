@@ -28,13 +28,6 @@ func (a *api) registerQuizGrade(api huma.API) {
 
 func (a *api) gradeQuizAnswer(ctx context.Context, in *quizGradeInput) (*quizGradeOutput, error) {
 	actor := userID(ctx)
-	me, err := a.s.Me(ctx, actor)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	if store.IsBrowserQuizModel(me.QuizModel) {
-		return nil, huma.Error400BadRequest("cloud quiz model required")
-	}
 	if strings.TrimSpace(in.Body.UserAnswer) == "" {
 		return &quizGradeOutput{Body: apimodel.QuizGradeResp{}}, nil
 	}

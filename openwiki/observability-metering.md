@@ -273,7 +273,7 @@ Neither exception opens a general router path. Other DeepInfra embedding slugs
 and other ZAI slugs fail registry validation. A ZAI user key cannot
 authenticate the routed GLM call.
 A **slot** is a named place the product calls a model. Every slot holds one
-default pin; chat, generate, editor and quiz also hold a per-user preference.
+default pin; chat, generate and editor also hold a per-user preference.
 The slots are `chat`, `generate`, `editor`, `quiz`, `ingest`, `retrieval`
 (the workspace embedding model, used by ingest indexing and by chat/generate
 query embedding) and `captioning` (the vision model used for standalone image
@@ -298,7 +298,9 @@ clean seed offers it for chat as well as captioning. Migration `0009` makes
 GLM the chat default. Migration `0010` replaces Flash Vision with
 `deepseek/deepseek-flash` (V4.1 Flash, text and vision), preserving versioned
 credit rates and other model choices. Existing Flash Vision preferences move
-to Flash 4.1; historical message/job pins retain their old catalog rows.
+to Flash 4.1. Migration `0012` deletes the retained Flash Vision rows and the
+OpenAI GPT-5.6 Sol/Terra/Luna catalog, capacity and reasoning preference rows,
+since no production data depends on them. OpenAI provider code remains available.
 Migration `0011` deletes DeepSeek V4 Pro's catalog, capacity and reasoning
 preference rows. Pro had no shipped slot default; its optional chat/generate/quiz
 entries, agentic-loop certification and UI choices are removed. There is no
@@ -330,7 +332,7 @@ is written onto the **assistant message**. Settings changes apply to the next
 message in an existing thread. Generate resolves the
 `users.generate_model_provider_slug` / `users.generate_model_slug` pair
 the same way per request. The browser cannot choose a model per message.
-Chat, generate, editor and quiz preferences are edited in **Settings → LLM**
+Chat, generate and editor preferences are edited in **Settings → LLM**
 (`GET /api/models`, `PATCH /api/me/models`). Empty preference writes are
 rejected, and a `PATCH` only touches the slots it names. Editor AI
 (`/ai/command`, `/ai/copilot`) resolves
@@ -338,13 +340,12 @@ the `users.editor_model_provider_slug` / `users.editor_model_slug` pair the same
 way chat does. It is the highest-call-volume
 slot per user, so it is the one where an expensive choice shows up first in
 credit burn. Editor thinking is forced to Instant on the Python call.
-Settings show Instant as a disabled control for this slot. Quiz marking (`POST /api/quiz-grade`) resolves
-the `users.quiz_model_provider_slug` / `users.quiz_model_slug` pair the same way. A
-`browser:` prefix is a client-only in-tab GGUF: it is stored on the user row,
-skipped by registry lookup, and never metered. Those grades never call
-`POST /api/quiz-grade`, write no `usage_events`, and do not appear on
-Billing. Attempt points stay on the quiz snapshot for the taker. They are
-not a billed or trusted score.
+Settings show Instant as a disabled control for this slot. Quiz marking
+(`POST /api/quiz-grade`) resolves the registry's quiz slot default per request,
+using platform credentials and the grading pipeline's existing non-thinking
+policy. Users cannot choose its model or thinking level. Migration `0013` removes stored quiz preferences;
+Settings and quiz attempts no longer offer browser grading. Attempt points stay
+on the quiz snapshot for the taker and are not a trusted score.
 
 Ingest and captioning are pinned onto the job at enqueue (`ingestJobPayload`),
 because their defaults are hot-reloadable and a queued job may outlive one.

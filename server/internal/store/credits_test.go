@@ -105,7 +105,7 @@ func TestProviderSessionSettlesEachCallOnceAndReportsTerminalState(t *testing.T)
 		VALUES ($1, $2)`, userID, limit-1); err != nil {
 		t.Fatal(err)
 	}
-	llmCfg, err := reg.Get(ctx, models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-flash-vision-exp"}, 1)
+	llmCfg, err := reg.Get(ctx, models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-flash"}, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -314,7 +314,7 @@ func TestClosedProviderSessionAcceptsLateReceiptWithoutContinuation(t *testing.T
 		VALUES ($1, $2)`, userID, limit-1); err != nil {
 		t.Fatal(err)
 	}
-	llmCfg, err := reg.Get(ctx, models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-flash-vision-exp"}, 1)
+	llmCfg, err := reg.Get(ctx, models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-flash"}, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -474,7 +474,7 @@ func TestSweepThenLateProviderCallChargesOnce(t *testing.T) {
 	}
 	s.SetModelRegistry(reg)
 	userID := newCreditsTestUser(t, s)
-	llmCfg, err := reg.Get(ctx, models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-flash-vision-exp"}, 1)
+	llmCfg, err := reg.Get(ctx, models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-flash"}, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -754,7 +754,7 @@ func TestUserUsageReportScopesToActorAndGroupsCurrentPeriod(t *testing.T) {
 	other := newCreditsTestUser(t, s)
 
 	if err := s.RecordUsage(ctx,
-		UsageEvent{ActorUserID: userID, Kind: KindLLM, Surface: SurfaceChat, CatalogModel: models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-flash-vision-exp"}, CreditMicros: 1_000_000, InputTokens: 10, OutputTokens: 4},
+		UsageEvent{ActorUserID: userID, Kind: KindLLM, Surface: SurfaceChat, CatalogModel: models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-flash"}, CreditMicros: 1_000_000, InputTokens: 10, OutputTokens: 4},
 		UsageEvent{ActorUserID: userID, Kind: KindEmbedding, Surface: SurfaceIngest, CreditMicros: 200_000},
 		UsageEvent{ActorUserID: other, Kind: KindLLM, Surface: SurfaceChat, CreditMicros: 9_000_000},
 	); err != nil {

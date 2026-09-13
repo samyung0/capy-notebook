@@ -14,14 +14,6 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/models"
 )
 
-const BrowserProviderSlug = "browser"
-
-// IsBrowserQuizModel is a client-only in-tab GGUF identity. These refs never appear
-// in model_configs; the browser loads the weights itself.
-func IsBrowserQuizModel(ref models.Ref) bool {
-	return ref.ProviderSlug == BrowserProviderSlug && ref.ModelSlug != ""
-}
-
 type BillingInfo struct {
 	PlanTier           PlanTier           `json:"planTier"`
 	SubscriptionStatus SubscriptionStatus `json:"subscriptionStatus"`
@@ -58,7 +50,6 @@ func (s *Store) Me(ctx context.Context, userID string) (User, error) {
 		chat_model_provider_slug, chat_model_slug,
 		generate_model_provider_slug, generate_model_slug,
 		editor_model_provider_slug, editor_model_slug,
-		quiz_model_provider_slug, quiz_model_slug,
 		plan_tier, subscription_status
 		FROM users WHERE id=$1`, userID)
 	err := row.Scan(&u.ID, &u.Name, &u.Email, &u.AvatarURL, &u.ClassLabel, &u.Streak,
@@ -66,7 +57,6 @@ func (s *Store) Me(ctx context.Context, userID string) (User, error) {
 		&u.ChatModel.ProviderSlug, &u.ChatModel.ModelSlug,
 		&u.GenerateModel.ProviderSlug, &u.GenerateModel.ModelSlug,
 		&u.EditorModel.ProviderSlug, &u.EditorModel.ModelSlug,
-		&u.QuizModel.ProviderSlug, &u.QuizModel.ModelSlug,
 		&u.PlanTier, &u.SubscriptionStatus)
 	if isNoRows(err) {
 		return u, ErrNotFound
@@ -121,20 +111,17 @@ type ModelPrefsPatch struct {
 	ChatModel        *models.Ref
 	GenerateModel    *models.Ref
 	EditorModel      *models.Ref
-	QuizModel        *models.Ref
 	ChatThinking     *string
 	GenerateThinking *string
-	QuizThinking     *string
 }
 
-// SetModelPrefs stores the user's chat/generate/editor/quiz preference. Omitted
+// SetModelPrefs stores the user's chat/generate/editor preference. Omitted
 // fields are left unchanged so a picker on one slot cannot wipe another.
 // Thinking is stored per (user, model, slot): switching models must
 // not reuse another model's level. Empty model refs are rejected: every
 // account always has a concrete provider/model pair, populated from the registry
 // default at insert. Model refs are validated against enabled configs that
-// advertise the slot. BYOK-only rows also need a credential. Quiz
-// also accepts the browser provider for in-tab GGUFs.
+// advertise the slot. BYOK-only rows also need a credential.
 func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPrefsPatch) error {
 	prefs := []struct {
 		ref  *models.Ref
@@ -143,7 +130,6 @@ func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPre
 		{patch.ChatModel, models.SlotChat},
 		{patch.GenerateModel, models.SlotGenerate},
 		{patch.EditorModel, models.SlotEditor},
-		{patch.QuizModel, models.SlotQuiz},
 	}
 	for _, pref := range prefs {
 		if pref.ref == nil {
@@ -151,12 +137,6 @@ func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPre
 		}
 		if pref.ref.Zero() {
 			return ErrModelRefRequired
-		}
-		if IsBrowserQuizModel(*pref.ref) {
-			if pref.slot != models.SlotQuiz {
-				return ErrNotFound
-			}
-			continue
 		}
 	}
 	tx, err := s.pool.Begin(ctx)
@@ -172,13 +152,11 @@ func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPre
 	if err := tx.QueryRow(ctx, `
 		SELECT chat_model_provider_slug, chat_model_slug,
 		       generate_model_provider_slug, generate_model_slug,
-		       editor_model_provider_slug, editor_model_slug,
-		       quiz_model_provider_slug, quiz_model_slug
+		       editor_model_provider_slug, editor_model_slug
 		  FROM users WHERE id=$1 FOR UPDATE`, userID).Scan(
 		&current.ChatModel.ProviderSlug, &current.ChatModel.ModelSlug,
 		&current.GenerateModel.ProviderSlug, &current.GenerateModel.ModelSlug,
 		&current.EditorModel.ProviderSlug, &current.EditorModel.ModelSlug,
-		&current.QuizModel.ProviderSlug, &current.QuizModel.ModelSlug,
 	); err != nil {
 		if isNoRows(err) {
 			return ErrNotFound
@@ -186,7 +164,7 @@ func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPre
 		return err
 	}
 	for _, pref := range prefs {
-		if pref.ref == nil || IsBrowserQuizModel(*pref.ref) {
+		if pref.ref == nil {
 			continue
 		}
 		if err := s.assertModelRef(ctx, tx, userID, *pref.ref, pref.slot); err != nil {
@@ -206,14 +184,11 @@ func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPre
 		generate_model_slug = CASE WHEN $5 THEN $7 ELSE generate_model_slug END,
 		editor_model_provider_slug = CASE WHEN $8 THEN $9 ELSE editor_model_provider_slug END,
 		editor_model_slug = CASE WHEN $8 THEN $10 ELSE editor_model_slug END,
-		quiz_model_provider_slug = CASE WHEN $11 THEN $12 ELSE quiz_model_provider_slug END,
-		quiz_model_slug = CASE WHEN $11 THEN $13 ELSE quiz_model_slug END,
 		updated_at = now()
 		WHERE id=$1`, userID,
 		patch.ChatModel != nil, deref(patch.ChatModel).ProviderSlug, deref(patch.ChatModel).ModelSlug,
 		patch.GenerateModel != nil, deref(patch.GenerateModel).ProviderSlug, deref(patch.GenerateModel).ModelSlug,
-		patch.EditorModel != nil, deref(patch.EditorModel).ProviderSlug, deref(patch.EditorModel).ModelSlug,
-		patch.QuizModel != nil, deref(patch.QuizModel).ProviderSlug, deref(patch.QuizModel).ModelSlug); err != nil {
+		patch.EditorModel != nil, deref(patch.EditorModel).ProviderSlug, deref(patch.EditorModel).ModelSlug); err != nil {
 		return err
 	}
 	chatModel := current.ChatModel
@@ -224,17 +199,10 @@ func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPre
 	if patch.GenerateModel != nil {
 		generateModel = *patch.GenerateModel
 	}
-	quizModel := current.QuizModel
-	if patch.QuizModel != nil {
-		quizModel = *patch.QuizModel
-	}
 	if err := upsertModelThinking(ctx, tx, userID, chatModel, models.SlotChat, patch.ChatThinking); err != nil {
 		return err
 	}
 	if err := upsertModelThinking(ctx, tx, userID, generateModel, models.SlotGenerate, patch.GenerateThinking); err != nil {
-		return err
-	}
-	if err := upsertModelThinking(ctx, tx, userID, quizModel, models.SlotQuiz, patch.QuizThinking); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -246,9 +214,6 @@ func upsertModelThinking(ctx context.Context, tx pgx.Tx, userID string, ref mode
 	}
 	if err := validateThinkingPatch(*thinking); err != nil {
 		return err
-	}
-	if IsBrowserQuizModel(ref) {
-		return ErrNotFound
 	}
 	if *thinking != "" {
 		if err := assertCatalogThinking(ctx, tx, ref, slot, *thinking); err != nil {
@@ -320,7 +285,6 @@ type UserLLMPrefs struct {
 	ChatModel     models.Ref
 	GenerateModel models.Ref
 	EditorModel   models.Ref
-	QuizModel     models.Ref
 	thinking      map[modelThinkingRef]string
 }
 
@@ -334,13 +298,11 @@ func (s *Store) UserLLMPrefs(ctx context.Context, userID string) (UserLLMPrefs, 
 	err := s.pool.QueryRow(ctx, `
 		SELECT chat_model_provider_slug, chat_model_slug,
 		       generate_model_provider_slug, generate_model_slug,
-		       editor_model_provider_slug, editor_model_slug,
-		       quiz_model_provider_slug, quiz_model_slug
+		       editor_model_provider_slug, editor_model_slug
 		  FROM users WHERE id=$1`, userID).Scan(
 		&p.ChatModel.ProviderSlug, &p.ChatModel.ModelSlug,
 		&p.GenerateModel.ProviderSlug, &p.GenerateModel.ModelSlug,
 		&p.EditorModel.ProviderSlug, &p.EditorModel.ModelSlug,
-		&p.QuizModel.ProviderSlug, &p.QuizModel.ModelSlug,
 	)
 	if isNoRows(err) {
 		return p, ErrNotFound
@@ -375,8 +337,6 @@ func (p UserLLMPrefs) Model(slot string) models.Ref {
 		return p.GenerateModel
 	case models.SlotEditor:
 		return p.EditorModel
-	case models.SlotQuiz:
-		return p.QuizModel
 	}
 	return models.Ref{}
 }
@@ -391,22 +351,22 @@ func (p UserLLMPrefs) Thinking(slot string) string {
 
 // accountModelPrefs is the set written onto a brand-new user row. The registry
 // slot default is the only source of truth.
-func (s *Store) accountModelPrefs(ctx context.Context) (chat, generate, editor, quiz models.Ref, err error) {
+func (s *Store) accountModelPrefs(ctx context.Context) (chat, generate, editor models.Ref, err error) {
 	if s.registry == nil {
-		return models.Ref{}, models.Ref{}, models.Ref{}, models.Ref{}, ErrModelUnavailable
+		return models.Ref{}, models.Ref{}, models.Ref{}, ErrModelUnavailable
 	}
-	refs := make([]models.Ref, 0, 4)
-	for _, slot := range []string{models.SlotChat, models.SlotGenerate, models.SlotEditor, models.SlotQuiz} {
+	refs := make([]models.Ref, 0, 3)
+	for _, slot := range []string{models.SlotChat, models.SlotGenerate, models.SlotEditor} {
 		pin, err := s.registry.DefaultPin(slot)
 		if err != nil {
-			return models.Ref{}, models.Ref{}, models.Ref{}, models.Ref{}, err
+			return models.Ref{}, models.Ref{}, models.Ref{}, err
 		}
 		if pin.Ref.Zero() {
-			return models.Ref{}, models.Ref{}, models.Ref{}, models.Ref{}, ErrModelUnavailable
+			return models.Ref{}, models.Ref{}, models.Ref{}, ErrModelUnavailable
 		}
 		refs = append(refs, pin.Ref)
 	}
-	return refs[0], refs[1], refs[2], refs[3], nil
+	return refs[0], refs[1], refs[2], nil
 }
 
 // UpsertUserFromClerk inserts or refreshes a user. The Clerk name seeds the
@@ -466,7 +426,7 @@ func (s *Store) UpsertUserFromClerk(ctx context.Context, id, name, email, avatar
 		return false, nil
 	}
 
-	chatModel, genModel, editorModel, quizModel, err := s.accountModelPrefs(ctx)
+	chatModel, genModel, editorModel, err := s.accountModelPrefs(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -474,9 +434,8 @@ func (s *Store) UpsertUserFromClerk(ctx context.Context, id, name, email, avatar
 			(id, name, email, avatar_url,
 			 chat_model_provider_slug, chat_model_slug,
 			 generate_model_provider_slug, generate_model_slug,
-			 editor_model_provider_slug, editor_model_slug,
-			 quiz_model_provider_slug, quiz_model_slug)
-			VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),$5,$6,$7,$8,$9,$10,$11,$12)
+			 editor_model_provider_slug, editor_model_slug)
+			VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),$5,$6,$7,$8,$9,$10)
 		ON CONFLICT (id) DO UPDATE SET
 			email=COALESCE(EXCLUDED.email, users.email),
 			avatar_url=COALESCE(NULLIF(EXCLUDED.avatar_url,''), users.avatar_url),
@@ -488,8 +447,7 @@ func (s *Store) UpsertUserFromClerk(ctx context.Context, id, name, email, avatar
 		id, name, email, avatarURL,
 		chatModel.ProviderSlug, chatModel.ModelSlug,
 		genModel.ProviderSlug, genModel.ModelSlug,
-		editorModel.ProviderSlug, editorModel.ModelSlug,
-		quizModel.ProviderSlug, quizModel.ModelSlug).Scan(&needsDefaultWorkspace)
+		editorModel.ProviderSlug, editorModel.ModelSlug).Scan(&needsDefaultWorkspace)
 	// The WHERE clause suppresses the RETURNING row for a tombstone, which is
 	// not an error: the account exists and stays scrubbed.
 	if isNoRows(err) {

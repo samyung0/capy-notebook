@@ -246,8 +246,7 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 			id, email, locale,
 			chat_model_provider_slug, chat_model_slug,
 			generate_model_provider_slug, generate_model_slug,
-			editor_model_provider_slug, editor_model_slug,
-			quiz_model_provider_slug, quiz_model_slug
+			editor_model_provider_slug, editor_model_slug
 		) ON users TO %s;
 		GRANT SELECT (
 			user_id, email_workspace_invite, email_membership, email_billing
@@ -271,7 +270,6 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 			chat_model_provider_slug, chat_model_slug,
 			generate_model_provider_slug, generate_model_slug,
 			editor_model_provider_slug, editor_model_slug,
-			quiz_model_provider_slug, quiz_model_slug,
 			updated_at
 		) ON users TO %s;
 		GRANT INSERT (

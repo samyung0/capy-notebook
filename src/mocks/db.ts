@@ -164,10 +164,6 @@ export const user: User = {
   locale: 'en',
   name: 'Kate Malone',
   planTier: 'pro',
-  quizModel: {
-    modelSlug: 'deepseek-flash',
-    providerSlug: 'deepseek',
-  },
   streak: 0,
   subscriptionStatus: 'active',
 };

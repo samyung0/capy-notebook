@@ -36,7 +36,6 @@ var userModelSlots = []UserModelSlot{
 	SlotChat,
 	SlotGenerate,
 	SlotEditor,
-	SlotQuiz,
 }
 
 // llmSlots are the slots served by a text model: they need a context window

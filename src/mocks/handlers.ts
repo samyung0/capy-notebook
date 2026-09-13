@@ -456,7 +456,6 @@ export const handlers = [
       chat: db.user.chatModel,
       editor: db.user.editorModel,
       generate: db.user.generateModel,
-      quiz: db.user.quizModel,
     };
     const selected = prefs[slot] ?? fallback;
     const models = mockCatalogModels();
@@ -488,15 +487,8 @@ export const handlers = [
       editorModel?: ModelRef;
       generateModel?: ModelRef;
       generateThinking?: string;
-      quizModel?: ModelRef;
-      quizThinking?: string;
     };
-    const fields = [
-      'chatModel',
-      'editorModel',
-      'generateModel',
-      'quizModel',
-    ] as const;
+    const fields = ['chatModel', 'editorModel', 'generateModel'] as const;
     for (const field of fields) {
       const value = body[field];
       if (value === undefined) continue;
@@ -520,7 +512,6 @@ export const handlers = [
     const thinking = [
       ['chat', db.user.chatModel, body.chatThinking],
       ['generate', db.user.generateModel, body.generateThinking],
-      ['quiz', db.user.quizModel, body.quizThinking],
     ] as const;
     for (const [slot, model, value] of thinking) {
       if (value === undefined) continue;
@@ -581,7 +572,6 @@ export const handlers = [
       'chatModel',
       'generateModel',
       'editorModel',
-      'quizModel',
     ] as const) {
       if (locked.includes(modelRefValue(db.user[field]))) {
         db.user[field] = {

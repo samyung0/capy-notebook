@@ -27,7 +27,6 @@ import { Tabs } from '@/components/ui/Tabs';
 import { userToast } from '@/components/ui/userToast';
 import { KeysSection } from '@/features/settings/KeysSection';
 import { ModelPicker } from '@/features/settings/ModelPicker';
-import { QuizModelPicker } from '@/features/settings/QuizModelPicker';
 import { SubscriptionTab } from '@/features/settings/SubscriptionTab';
 import {
   type SettingsTab,
@@ -376,13 +375,6 @@ function LlmTab() {
           <ModelPicker className="mt-3" slot="editor" />
         </div>
       )}
-      <div className="mt-4 rounded-card border border-line bg-surface px-5 py-4">
-        <p className="t-subtitle">{m.settings_llm_quiz()}</p>
-        <p className="mt-1 text-fg-secondary text-sm">
-          {m.settings_llm_quiz_hint()}
-        </p>
-        <QuizModelPicker className="mt-3" />
-      </div>
     </>
   );
 }

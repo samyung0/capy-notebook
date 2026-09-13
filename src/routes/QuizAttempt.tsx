@@ -1,13 +1,7 @@
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { isApiError } from '@/api/client';
-import {
-  useCloneQuiz,
-  useMe,
-  useModels,
-  useQuiz,
-  useSubmitAttempt,
-} from '@/api/hooks';
+import { useCloneQuiz, useQuiz, useSubmitAttempt } from '@/api/hooks';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
@@ -50,8 +44,6 @@ export default function QuizAttempt() {
   });
   const navigate = useNavigate();
 
-  const { data: me } = useMe({ errorBoundary: false });
-  const { data: quizModels } = useModels('quiz', { errorBoundary: false });
   const [idx, setIdx] = useState(0);
   const [answers, setAnswers] = useState<Record<string, Answer>>({});
   const [done, setDone] = useState(false);
@@ -128,11 +120,6 @@ export default function QuizAttempt() {
     setGrading(true);
     try {
       const result = await gradeAttemptQuestions(quiz.questions, answers, {
-        model: me?.quizModel ??
-          quizModels?.selectedModel ?? {
-            modelSlug: 'deepseek-v4-flash-vision-exp',
-            providerSlug: 'deepseek',
-          },
         workspaceId: quiz.workspaceId,
       });
       setGraded(result);

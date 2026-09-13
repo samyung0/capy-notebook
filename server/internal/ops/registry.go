@@ -1092,14 +1092,9 @@ func remapPrefsToDefaults(ctx context.Context, tx pgx.Tx) (int64, error) {
 			}
 			return remapped, err
 		}
-		browserGuard := ""
-		if slot == models.SlotQuiz {
-			browserGuard = fmt.Sprintf("AND u.%s <> 'browser'", columns.Provider)
-		}
 		tag, err := tx.Exec(ctx, fmt.Sprintf(`
 			UPDATE users u SET %s = $1, %s = $2, updated_at = now()
 			 WHERE (u.%s, u.%s) IS DISTINCT FROM ($1, $2)
-			   %s
 			   AND NOT EXISTS (
 			     SELECT 1 FROM model_configs c
 			      WHERE c.provider_slug = u.%s
@@ -1118,7 +1113,7 @@ func remapPrefsToDefaults(ctx context.Context, tx pgx.Tx) (int64, error) {
 			          )
 			        )
 			   )`, columns.Provider, columns.Model,
-			columns.Provider, columns.Model, browserGuard,
+			columns.Provider, columns.Model,
 			columns.Provider, columns.Model),
 			defaultRef.ProviderSlug, defaultRef.ModelSlug, slot)
 		if err != nil {

@@ -12,5 +12,4 @@ export const UserModelSlot = {
   chat: 'chat',
   generate: 'generate',
   editor: 'editor',
-  quiz: 'quiz',
 } as const;

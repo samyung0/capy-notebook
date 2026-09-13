@@ -130,16 +130,15 @@ func TestRegistrySaveInsertsVersionAndDisablesOldWithoutChangingPreferences(t *t
 			}
 		}
 	}
-	var beforePreferences [8]string
+	var beforePreferences [6]string
 	if err := tx.QueryRow(ctx,
 		`SELECT chat_model_provider_slug, chat_model_slug,
 			generate_model_provider_slug, generate_model_slug,
-			editor_model_provider_slug, editor_model_slug,
-			quiz_model_provider_slug, quiz_model_slug
+			editor_model_provider_slug, editor_model_slug
 		 FROM users WHERE id='u_1'`,
 	).Scan(
 		&beforePreferences[0], &beforePreferences[1], &beforePreferences[2], &beforePreferences[3],
-		&beforePreferences[4], &beforePreferences[5], &beforePreferences[6], &beforePreferences[7],
+		&beforePreferences[4], &beforePreferences[5],
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -205,16 +204,15 @@ func TestRegistrySaveInsertsVersionAndDisablesOldWithoutChangingPreferences(t *t
 			t.Fatalf("slot %s has %d defaults after Save", slot, defaults)
 		}
 	}
-	var afterPreferences [8]string
+	var afterPreferences [6]string
 	if err := tx.QueryRow(ctx,
 		`SELECT chat_model_provider_slug, chat_model_slug,
 			generate_model_provider_slug, generate_model_slug,
-			editor_model_provider_slug, editor_model_slug,
-			quiz_model_provider_slug, quiz_model_slug
+			editor_model_provider_slug, editor_model_slug
 		 FROM users WHERE id='u_1'`,
 	).Scan(
 		&afterPreferences[0], &afterPreferences[1], &afterPreferences[2], &afterPreferences[3],
-		&afterPreferences[4], &afterPreferences[5], &afterPreferences[6], &afterPreferences[7],
+		&afterPreferences[4], &afterPreferences[5],
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -387,9 +385,8 @@ func TestRegistrySaveRemapsEveryUserPreferenceAndDisablesRetiredRows(t *testing.
 			id, name, email,
 			chat_model_provider_slug, chat_model_slug,
 			generate_model_provider_slug, generate_model_slug,
-			editor_model_provider_slug, editor_model_slug,
-			quiz_model_provider_slug, quiz_model_slug
-		) VALUES ($1, 'All Prefs', $2, $3, $4, $3, $4, $3, $4, $3, $4)`,
+			editor_model_provider_slug, editor_model_slug
+		) VALUES ($1, 'All Prefs', $2, $3, $4, $3, $4, $3, $4)`,
 		userID, userID+"@example.test", retiredRef.ProviderSlug, retiredRef.ModelSlug,
 	); err != nil {
 		t.Fatal(err)
@@ -411,27 +408,25 @@ func TestRegistrySaveRemapsEveryUserPreferenceAndDisablesRetiredRows(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.RemappedUsers != 4 || result.DisabledRows < 1 {
+	if result.RemappedUsers != 3 || result.DisabledRows < 1 {
 		t.Fatalf("unexpected all-slot remap result: %+v", result)
 	}
-	var preferences [4]models.Ref
+	var preferences [3]models.Ref
 	if err := tx.QueryRow(ctx, `
 		SELECT chat_model_provider_slug, chat_model_slug,
 			generate_model_provider_slug, generate_model_slug,
-			editor_model_provider_slug, editor_model_slug,
-			quiz_model_provider_slug, quiz_model_slug
+			editor_model_provider_slug, editor_model_slug
 		FROM users WHERE id=$1`, userID,
 	).Scan(
 		&preferences[0].ProviderSlug, &preferences[0].ModelSlug,
 		&preferences[1].ProviderSlug, &preferences[1].ModelSlug,
 		&preferences[2].ProviderSlug, &preferences[2].ModelSlug,
-		&preferences[3].ProviderSlug, &preferences[3].ModelSlug,
 	); err != nil {
 		t.Fatal(err)
 	}
 	// Each slot lands on its own default: chat on GLM, the others on Flash.
 	flash := models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-flash"}
-	want := [4]models.Ref{{ProviderSlug: "zai", ModelSlug: "glm-5.3-flash"}, flash, flash, flash}
+	want := [3]models.Ref{{ProviderSlug: "zai", ModelSlug: "glm-5.3-flash"}, flash, flash}
 	if preferences != want {
 		t.Fatalf("preferences = %q, want %q", preferences, want)
 	}

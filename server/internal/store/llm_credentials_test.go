@@ -57,7 +57,7 @@ func TestPurgeUserDeletesLLMCredentials(t *testing.T) {
 	ctx := context.Background()
 	s.SetLLMCredentialKey(bytes.Repeat([]byte{7}, 32))
 	userID := newCreditsTestUser(t, s)
-	if err := s.UpsertLLMCredential(ctx, userID, LLMProviderOpenAI, "sk-test-openai"); err != nil {
+	if err := s.UpsertLLMCredential(ctx, userID, LLMProviderDeepSeek, "sk-test-deepseek"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.RequestAccountDeletion(ctx, userID, true); err != nil {
@@ -87,7 +87,7 @@ func TestSuspendedUserCannotUpsertLLMCredential(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := s.UpsertLLMCredential(
-		ctx, userID, LLMProviderOpenAI, "sk-test-openai",
+		ctx, userID, LLMProviderDeepSeek, "sk-test-deepseek",
 	); err == nil {
 		t.Fatal("suspended user stored a credential")
 	}
@@ -106,18 +106,18 @@ func TestDeleteLLMCredentialRequiresCatalogDefaultsBeforeMutation(t *testing.T) 
 	ctx := context.Background()
 	s.SetLLMCredentialKey(bytes.Repeat([]byte{7}, 32))
 	userID := newCreditsTestUser(t, s)
-	if err := s.UpsertLLMCredential(ctx, userID, LLMProviderOpenAI, "sk-test-openai"); err != nil {
+	if err := s.UpsertLLMCredential(ctx, userID, LLMProviderDeepSeek, "sk-test-deepseek"); err != nil {
 		t.Fatal(err)
 	}
 
-	err := s.DeleteLLMCredential(ctx, userID, LLMProviderOpenAI)
+	err := s.DeleteLLMCredential(ctx, userID, LLMProviderDeepSeek)
 	if !errors.Is(err, ErrModelUnavailable) {
 		t.Fatalf("delete without registry = %v, want ErrModelUnavailable", err)
 	}
 	var count int
 	if err := s.pool.QueryRow(ctx, `
 		SELECT count(*) FROM user_llm_credentials
-		WHERE user_id=$1 AND provider_slug=$2`, userID, LLMProviderOpenAI).Scan(&count); err != nil {
+		WHERE user_id=$1 AND provider_slug=$2`, userID, LLMProviderDeepSeek).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	if count != 1 {

@@ -24,7 +24,6 @@ type User struct {
 	ChatModel          models.Ref         `json:"chatModel"`
 	GenerateModel      models.Ref         `json:"generateModel"`
 	EditorModel        models.Ref         `json:"editorModel"`
-	QuizModel          models.Ref         `json:"quizModel"`
 	PlanTier           PlanTier           `json:"planTier"`
 	SubscriptionStatus SubscriptionStatus `json:"subscriptionStatus"`
 }

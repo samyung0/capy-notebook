@@ -117,10 +117,8 @@ type SetModelPrefsReq struct {
 	ChatModel        *models.Ref `json:"chatModel,omitempty"`
 	GenerateModel    *models.Ref `json:"generateModel,omitempty"`
 	EditorModel      *models.Ref `json:"editorModel,omitempty"`
-	QuizModel        *models.Ref `json:"quizModel,omitempty"`
 	ChatThinking     *string     `json:"chatThinking,omitempty"`
 	GenerateThinking *string     `json:"generateThinking,omitempty"`
-	QuizThinking     *string     `json:"quizThinking,omitempty"`
 }
 
 type LLMCredential struct {

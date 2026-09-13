@@ -241,8 +241,8 @@ func (s *Store) modelPreferenceDefaults() (map[string]models.Ref, error) {
 	if s.registry == nil {
 		return nil, fmt.Errorf("%w: registry not configured", ErrModelUnavailable)
 	}
-	defaults := make(map[string]models.Ref, 4)
-	for _, slot := range []string{models.SlotChat, models.SlotGenerate, models.SlotEditor, models.SlotQuiz} {
+	defaults := make(map[string]models.Ref, 3)
+	for _, slot := range []string{models.SlotChat, models.SlotGenerate, models.SlotEditor} {
 		pin, err := s.registry.DefaultPin(slot)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %s default: %v", ErrModelUnavailable, slot, err)
@@ -259,7 +259,6 @@ func remapUserKeyPrefs(ctx context.Context, tx pgx.Tx, userID, providerSlug stri
 	chat := defaults[models.SlotChat]
 	generate := defaults[models.SlotGenerate]
 	editor := defaults[models.SlotEditor]
-	quiz := defaults[models.SlotQuiz]
 	_, err := tx.Exec(ctx, `
 		UPDATE users SET
 			chat_model_provider_slug = CASE
@@ -292,22 +291,11 @@ func remapUserKeyPrefs(ctx context.Context, tx pgx.Tx, userID, providerSlug stri
 					SELECT provider_slug, model_slug FROM model_configs
 					 WHERE provider_slug=$2 AND byok_enabled AND NOT platform_enabled AND enabled
 				) THEN $8 ELSE editor_model_slug END,
-			quiz_model_provider_slug = CASE
-				WHEN (quiz_model_provider_slug, quiz_model_slug) IN (
-					SELECT provider_slug, model_slug FROM model_configs
-					 WHERE provider_slug=$2 AND byok_enabled AND NOT platform_enabled AND enabled
-				) THEN $9 ELSE quiz_model_provider_slug END,
-			quiz_model_slug = CASE
-				WHEN (quiz_model_provider_slug, quiz_model_slug) IN (
-					SELECT provider_slug, model_slug FROM model_configs
-					 WHERE provider_slug=$2 AND byok_enabled AND NOT platform_enabled AND enabled
-				) THEN $10 ELSE quiz_model_slug END,
 			updated_at = now()
 		WHERE id=$1`, userID, providerSlug,
 		chat.ProviderSlug, chat.ModelSlug,
 		generate.ProviderSlug, generate.ModelSlug,
-		editor.ProviderSlug, editor.ModelSlug,
-		quiz.ProviderSlug, quiz.ModelSlug)
+		editor.ProviderSlug, editor.ModelSlug)
 	return err
 }
 

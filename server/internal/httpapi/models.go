@@ -37,7 +37,7 @@ func (a *api) registerModels(api huma.API) {
 	const tag = "Account"
 	reg(api, http.MethodGet, "/api/model-slots", "listModelSlots", tag, "Known model slots", http.StatusOK, a.listModelSlots)
 	reg(api, http.MethodGet, "/api/models", "listModels", tag, "Enabled models for a slot", http.StatusOK, a.listModels)
-	reg(api, http.MethodPatch, "/api/me/models", "setModelPrefs", tag, "Set chat, generate, editor and quiz model preferences", http.StatusNoContent, a.setModelPrefs)
+	reg(api, http.MethodPatch, "/api/me/models", "setModelPrefs", tag, "Set chat, generate and editor model preferences", http.StatusNoContent, a.setModelPrefs)
 	reg(api, http.MethodGet, "/api/me/llm-credentials", "listLLMCredentials", tag, "Saved provider keys", http.StatusOK, a.listLLMCredentials)
 	reg(api, http.MethodPut, "/api/me/llm-credentials", "upsertLLMCredential", tag, "Save a provider key", http.StatusNoContent, a.upsertLLMCredential)
 	reg(api, http.MethodDelete, "/api/me/llm-credentials/{provider}", "deleteLLMCredential", tag, "Remove a provider key", http.StatusNoContent, a.deleteLLMCredential)
@@ -148,10 +148,8 @@ func (a *api) setModelPrefs(ctx context.Context, in *setModelsInput) (*Empty, er
 		ChatModel:        in.Body.ChatModel,
 		GenerateModel:    in.Body.GenerateModel,
 		EditorModel:      in.Body.EditorModel,
-		QuizModel:        in.Body.QuizModel,
 		ChatThinking:     in.Body.ChatThinking,
 		GenerateThinking: in.Body.GenerateThinking,
-		QuizThinking:     in.Body.QuizThinking,
 	}); err != nil {
 		return nil, hErr(err)
 	}
@@ -187,7 +185,7 @@ func (a *api) resolveLLM(ctx context.Context, userID, slot string) (resolvedLLM,
 		return out, fmt.Errorf("%w: registry not configured", store.ErrModelUnavailable)
 	}
 	switch slot {
-	case models.SlotChat, models.SlotGenerate, models.SlotEditor, models.SlotQuiz:
+	case models.SlotChat, models.SlotGenerate, models.SlotEditor:
 		if userID == "" {
 			return out, fmt.Errorf("%w: missing user for %s", store.ErrModelUnavailable, slot)
 		}
@@ -198,9 +196,6 @@ func (a *api) resolveLLM(ctx context.Context, userID, slot string) (resolvedLLM,
 		pref := prefs.Model(slot)
 		if pref.Zero() {
 			return out, fmt.Errorf("%w: empty %s preference", store.ErrModelUnavailable, slot)
-		}
-		if store.IsBrowserQuizModel(pref) {
-			return out, fmt.Errorf("%w: browser quiz model", store.ErrModelUnavailable)
 		}
 		cfg, err := a.modelReg.ResolveUser(ctx, pref, slot)
 		if err != nil {
@@ -238,6 +233,7 @@ func (a *api) resolveLLM(ctx context.Context, userID, slot string) (resolvedLLM,
 		out.Cfg = cfg
 		out.Rates = store.RatesFromConfig(cfg)
 		out.PaidBy = models.PaidByPlatform
+		out.Thinking = cfg.DefaultThinking
 		return out, nil
 	}
 }

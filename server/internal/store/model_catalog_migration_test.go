@@ -17,8 +17,17 @@ func TestDeepSeekFlashMigrationPreservesPinsRatesAndCapacity(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `ALTER TABLE users
+		ADD COLUMN quiz_model_provider_slug text NOT NULL DEFAULT 'deepseek',
+		ADD COLUMN quiz_model_slug text NOT NULL DEFAULT 'deepseek-flash'`); err != nil {
+		t.Fatal(err)
+	}
 	// Reconstruct an operator-edited pre-0010 catalog inside this transaction.
 	_, err = tx.Exec(ctx, `
+		INSERT INTO model_configs
+		SELECT (jsonb_populate_record(NULL::model_configs, to_jsonb(c) ||
+		  '{"model_slug":"deepseek-v4-flash-vision-exp","enabled":false,"is_default_for":[]}'::jsonb)).*
+		FROM model_configs c WHERE provider_slug='deepseek' AND model_slug='deepseek-flash';
 		DELETE FROM model_configs WHERE provider_slug='deepseek' AND model_slug='deepseek-flash';
 		UPDATE model_configs SET enabled=true, is_default_for=ARRAY['generate','editor','quiz','ingest'],
 		  micros_per_input_token=177, micros_per_output_token=888, micros_per_cached_input_token=17
@@ -80,7 +89,16 @@ func TestDeepSeekFlashMigrationRefusesConflictingCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx, `UPDATE model_configs SET enabled=true
+	if _, err := tx.Exec(ctx, `ALTER TABLE users
+		ADD COLUMN quiz_model_provider_slug text NOT NULL DEFAULT 'deepseek',
+		ADD COLUMN quiz_model_slug text NOT NULL DEFAULT 'deepseek-flash'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO model_configs
+		SELECT (jsonb_populate_record(NULL::model_configs, to_jsonb(c) ||
+		  '{"model_slug":"deepseek-v4-flash-vision-exp","enabled":false,"is_default_for":[]}'::jsonb)).*
+		FROM model_configs c WHERE provider_slug='deepseek' AND model_slug='deepseek-flash';
+		UPDATE model_configs SET enabled=true
 	  WHERE provider_slug='deepseek' AND model_slug='deepseek-v4-flash-vision-exp'`); err != nil {
 		t.Fatal(err)
 	}
