@@ -38,6 +38,15 @@ func TestSourceCheckpointAcceptsOrdinarySavePayload(t *testing.T) {
 	}
 }
 
+func TestSourcePublishAcceptsOfficeAndReceiptPayload(t *testing.T) {
+	// Office uses the durable candidate baseline; receipt replay needs no baseline.
+	body := `{"jobId":"job_1","epoch":1,"checkpoint":1,"leaseToken":"lease_1","sourceETag":"etag","contentId":"content_1","contentHash":"hash","previewBlobPath":"preview","attemptId":1,"expectedLatestCheckpoint":1,"netTokens":0,"pendingEffects":[]}`
+	rec := jsonRequest(validationRouter(), http.MethodPost, "/internal/collaboration/files/file_1/publish", body)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want handler authentication, body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestRequestBodyValidation(t *testing.T) {
 	router := validationRouter()
 

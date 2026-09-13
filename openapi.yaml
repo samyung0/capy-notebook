@@ -2791,6 +2791,9 @@ components:
           format: int64
           minimum: 0
           type: integer
+        indexedBaseline:
+          format: base64
+          type: string
         initialize:
           type: boolean
         netTokens:
@@ -2992,6 +2995,9 @@ components:
           format: uri
           readOnly: true
           type: string
+        baseline:
+          format: base64
+          type: string
         checkpoint:
           format: int64
           type: integer
@@ -3021,6 +3027,7 @@ components:
         - sizeBytes
         - sourceETag
         - seed
+        - baseline
       type: object
     SourceRefreshInputBody:
       additionalProperties: false
@@ -3065,6 +3072,9 @@ components:
         expectedLatestCheckpoint:
           format: int64
           type: integer
+        indexedBaseline:
+          format: base64
+          type: string
         jobId:
           type: string
         leaseToken:
@@ -3074,9 +3084,6 @@ components:
           type: integer
         pendingEffects: {}
         previewBlobPath:
-          type: string
-        seed:
-          format: base64
           type: string
         sourceETag:
           type: string
@@ -3090,7 +3097,6 @@ components:
         - contentId
         - contentHash
         - previewBlobPath
-        - seed
         - pendingEffects
         - netTokens
         - expectedLatestCheckpoint
@@ -3129,12 +3135,12 @@ components:
             - pptx
             - text
           type: string
+        indexedBaseline:
+          format: base64
+          type: string
         indexedCheckpoint:
           format: int64
           type: integer
-        indexedState:
-          format: base64
-          type: string
         netTokens:
           format: int64
           type: integer
@@ -3165,7 +3171,7 @@ components:
         - baseSourceSHA256
         - sourceURL
         - state
-        - indexedState
+        - indexedBaseline
         - pendingEffects
         - netTokens
         - access
@@ -5196,12 +5202,12 @@ paths:
           required: true
           schema:
             type: string
-        - description: "Viewer read: read access only, omits indexedState and pendingEffects, and state unless checkpoint is ahead of indexedCheckpoint"
+        - description: "Viewer read: read access only, omits indexedBaseline and pendingEffects, and state unless checkpoint is ahead of indexedCheckpoint"
           explode: false
           in: query
           name: view
           schema:
-            description: "Viewer read: read access only, omits indexedState and pendingEffects, and state unless checkpoint is ahead of indexedCheckpoint"
+            description: "Viewer read: read access only, omits indexedBaseline and pendingEffects, and state unless checkpoint is ahead of indexedCheckpoint"
             type: boolean
       responses:
         "200":

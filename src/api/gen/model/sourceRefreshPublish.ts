@@ -15,11 +15,11 @@ export interface SourceRefreshPublish {
   contentId: string;
   epoch: number;
   expectedLatestCheckpoint: number;
+  indexedBaseline?: string;
   jobId: string;
   leaseToken: string;
   netTokens: number;
   pendingEffects: unknown;
   previewBlobPath: string;
-  seed: string;
   sourceETag: string;
 }

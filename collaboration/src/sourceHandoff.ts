@@ -4,6 +4,7 @@ import type { Redis } from 'ioredis';
 import type { Pool } from 'pg';
 import {
   effectTokens,
+  encodeBaseline,
   type SourceDocumentStore,
   SourceRequestError,
   type SourceSession,
@@ -266,18 +267,22 @@ export class SourceHandoff {
         throw new SourceRequestError(409, 'Source candidate changed');
       // Text retains its Y.Text lineage. Later edits remain a residual against
       // the just-indexed checkpoint, even while users keep typing.
+      const baseline = await this.sources.baseline(
+        session,
+        candidate.rows[0].state
+      );
       for (let attempt = 0; attempt < 4; attempt++) {
         const latest = attempt ? await this.current(input.fileId) : session;
         const effects = await this.sources.effects(
           latest,
           Buffer.from(latest.state, 'base64'),
-          candidate.rows[0].state.toString('base64')
+          baseline
         );
         try {
           return await this.sources.request(input.fileId, 'publish', {
             ...input,
             expectedLatestCheckpoint: latest.checkpoint,
-            indexedState: candidate.rows[0].state.toString('base64'),
+            indexedBaseline: encodeBaseline(baseline),
             netTokens: effectTokens(effects),
             pendingEffects: effects,
           });

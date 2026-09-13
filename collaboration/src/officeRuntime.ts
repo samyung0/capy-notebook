@@ -34,6 +34,11 @@ export interface OfficeEntry {
   position: string;
   value: string;
 }
+export interface OfficeBaselineEntry extends OfficeEntry {
+  assetRef?: OfficeObjectRef;
+  imageSHA256?: string;
+  kind: NetEffect['kind'];
+}
 /** Yrs location of an edited target; Capy derives item-run guards from it. */
 export interface OfficeTarget {
   id: string;
@@ -56,11 +61,6 @@ interface Runtime {
     checkpoint: OfficeCheckpoint,
     commands: unknown[]
   ): Promise<OfficeCommandResult>;
-  compare(
-    bytes: Uint8Array,
-    from: OfficeCheckpoint,
-    to: OfficeCheckpoint
-  ): Promise<NetEffect[]>;
   exportOffice(
     bytes: Uint8Array,
     checkpoint: OfficeCheckpoint,
@@ -77,6 +77,10 @@ interface Runtime {
     checkpoint: OfficeCheckpoint,
     ids: string[]
   ): Promise<OfficeTarget[]>;
+  officeBaseline(
+    bytes: Uint8Array,
+    checkpoint: OfficeCheckpoint
+  ): Promise<OfficeBaselineEntry[]>;
   resolveAsset(
     bytes: Uint8Array,
     checkpoint: OfficeCheckpoint,

@@ -2,7 +2,13 @@ import type { Document, Hocuspocus } from '@hocuspocus/server';
 import type { Redis } from 'ioredis';
 import type { Pool } from 'pg';
 import { afterEach, expect, test, vi } from 'vitest';
-import { SourceDocumentStore, type SourceSession } from './sourceDocuments.js';
+import * as Y from 'yjs';
+import {
+  decodeBaseline,
+  encodeBaseline,
+  SourceDocumentStore,
+  type SourceSession,
+} from './sourceDocuments.js';
 import { SourceHandoff } from './sourceHandoff.js';
 
 afterEach(() => {
@@ -19,8 +25,8 @@ function setup() {
     epoch: 1,
     fileId: 'f',
     format: 'docx',
+    indexedBaseline: '',
     indexedCheckpoint: 0,
-    indexedState: '',
     netTokens: 0,
     pendingEffects: [],
     room: 'source:f:epoch:1',
@@ -181,4 +187,61 @@ test('publication retry uses the durable fenced receipt before checking the new 
     expect.objectContaining(input)
   );
   expect(f.redis.publish).not.toHaveBeenCalled();
+});
+
+test('text publication advances the semantic baseline while retaining newer edits', async () => {
+  const f = setup();
+  const state = (text: string) => {
+    const doc = new Y.Doc();
+    doc.getText('source').insert(0, text);
+    const bytes = Buffer.from(Y.encodeStateAsUpdate(doc));
+    doc.destroy();
+    return bytes;
+  };
+  f.session.format = 'text';
+  f.session.checkpoint = 8;
+  f.session.state = state('Exam Tuesday').toString('base64');
+  f.session.indexedBaseline = encodeBaseline({
+    format: 'text',
+    text: 'Exam Friday',
+    version: 1,
+  });
+  f.pool.query.mockImplementation(async (sql: string) => ({
+    rows: sql.includes('FROM files')
+      ? [{ user_id: 'u' }]
+      : sql.includes('source_refresh_candidates')
+        ? [{ state: state('Exam Monday') }]
+        : [{ published: false }],
+  }));
+  let published:
+    | {
+        indexedBaseline: string;
+        pendingEffects: unknown;
+        expectedLatestCheckpoint: number;
+      }
+    | undefined;
+  vi.spyOn(f.sources, 'request').mockImplementation(
+    async (_file, _endpoint, body) => {
+      published = body as typeof published;
+      return f.session;
+    }
+  );
+  await f.handoff.publish({
+    attemptId: 1,
+    checkpoint: 7,
+    epoch: 1,
+    fileId: 'f',
+    jobId: 'job',
+    leaseToken: 'lease',
+  });
+  expect(decodeBaseline(published!.indexedBaseline, 'text')).toEqual({
+    format: 'text',
+    text: 'Exam Monday',
+    version: 1,
+  });
+  expect(published!.pendingEffects).toMatchObject([
+    { after: 'Tues', before: 'Mon', operation: 'replace' },
+  ]);
+  expect(published!.expectedLatestCheckpoint).toBe(8);
+  expect(f.host.closeConnections).not.toHaveBeenCalled();
 });

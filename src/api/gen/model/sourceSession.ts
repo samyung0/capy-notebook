@@ -18,8 +18,8 @@ export interface SourceSession {
   epoch: number;
   fileId: string;
   format: SourceSessionFormat;
+  indexedBaseline: string;
   indexedCheckpoint: number;
-  indexedState: string;
   netTokens: number;
   operation?: AgentOperation;
   pendingEffects: unknown;

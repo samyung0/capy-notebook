@@ -56,7 +56,7 @@ def _pending_source(workspace):
     }
     with workspace._connect() as conn:
         conn.execute(
-            "INSERT INTO source_documents(file_id,format,base_revision,base_blob_path,state,indexed_state,pending_effects) VALUES(%s,'docx',1,'source/base-a','old','old',%s::jsonb)",
+            "INSERT INTO source_documents(file_id,format,base_revision,base_blob_path,state,indexed_baseline,pending_effects) VALUES(%s,'docx',1,'source/base-a','old','old',%s::jsonb)",
             (file_id, json.dumps([effect])),
         )
     return file_id, caption_cache.SourceChange(
@@ -110,7 +110,7 @@ async def test_replaced_source_cannot_attach_a_late_private_caption(
                 (file_id,),
             )
             conn.execute(
-                "UPDATE source_documents SET epoch=2,base_revision=2,base_blob_path='source/base-b',state='without-image',indexed_state='without-image',pending_effects='[]',running_job_id=NULL WHERE file_id=%s",
+                "UPDATE source_documents SET epoch=2,base_revision=2,base_blob_path='source/base-b',state='without-image',indexed_baseline='without-image',pending_effects='[]',running_job_id=NULL WHERE file_id=%s",
                 (file_id,),
             )
             conn.execute(

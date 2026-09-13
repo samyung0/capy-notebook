@@ -183,10 +183,10 @@ Expiry marks the session expired and releases the reservation in the same
 transaction before best-effort blob cleanup (cleanup details in the
 authorization doc).
 
-Collaborative source saves account `source_documents` state, indexed state and
-serialized pending JSON through generated `storage_bytes` and the same storage
+Collaborative source saves account `source_documents` state, compact indexed
+semantic baseline and serialized pending JSON through generated `storage_bytes` and the same storage
 delta ledger. `source_refresh_candidates` accounts its captured state, new
-source bytes and fresh seed while processing. Owner changes transfer those
+source bytes, fresh seed and its semantic baseline while processing. Owner changes transfer those
 charges with the file. Admission, checkpoint growth and publication run under
 source/workspace/account locks. Publication accounts the net size after
 replacing the old base and removing candidate storage, including any larger

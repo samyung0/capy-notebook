@@ -40,7 +40,7 @@ func testRefreshFinalize(t *testing.T, s *Store, doc SourceSession, job SourcePr
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = s.FinalizeSourceRefresh(ctx, doc.FileID, SourceRefreshFinalize{JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 120, SourceETag: "etag-b", Seed: []byte("fresh-seed")})
+	err = s.FinalizeSourceRefresh(ctx, doc.FileID, SourceRefreshFinalize{JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 120, SourceETag: "etag-b", Seed: []byte("fresh-seed"), Baseline: sourceTestBaseline(doc.Format, "B")})
 	if err != nil {
 		t.Fatal(err)
 	}

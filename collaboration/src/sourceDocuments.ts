@@ -24,6 +24,7 @@ import {
 } from './observability.js';
 import {
   type NetEffect,
+  type OfficeBaselineEntry,
   type OfficeCheckpoint,
   type OfficeEntry,
   runOffice,
@@ -47,8 +48,8 @@ export interface SourceSession {
   epoch: number;
   fileId: string;
   format: SourceFormat;
+  indexedBaseline: string;
   indexedCheckpoint: number;
-  indexedState: string;
   netTokens: number;
   pendingEffects: NetEffect[];
   room: string;
@@ -56,6 +57,36 @@ export interface SourceSession {
   state: string;
   workspaceId: string;
 }
+export type SourceBaseline =
+  | { version: 1; format: 'text'; text: string }
+  | {
+      version: 1;
+      format: Exclude<SourceFormat, 'text'>;
+      entries: OfficeBaselineEntry[];
+    };
+
+export function encodeBaseline(baseline: SourceBaseline) {
+  return Buffer.from(JSON.stringify(baseline)).toString('base64');
+}
+
+export function decodeBaseline(
+  encoded: string,
+  format: SourceFormat
+): SourceBaseline {
+  const baseline: SourceBaseline = JSON.parse(
+    Buffer.from(encoded, 'base64').toString('utf8')
+  );
+  if (
+    baseline.version !== 1 ||
+    baseline.format !== format ||
+    (baseline.format === 'text'
+      ? typeof baseline.text !== 'string'
+      : !Array.isArray(baseline.entries))
+  )
+    throw new Error('Invalid source comparison baseline');
+  return baseline;
+}
+
 export interface RefreshCandidate {
   baseRevision: number;
   baseSourceSHA256: string;
@@ -320,6 +351,9 @@ export class SourceDocumentStore {
             baseSourceSHA256: sha,
             epoch: session.epoch,
             expectedCheckpoint: 0,
+            indexedBaseline: encodeBaseline(
+              await this.baseline(session, state, bytes)
+            ),
             initialize: true,
             netTokens: 0,
             pendingEffects: [],
@@ -338,28 +372,43 @@ export class SourceDocumentStore {
     return session;
   }
 
-  async effects(
-    session: SourceSession,
+  async baseline(
+    session: Pick<SourceSession, 'format' | 'sourceURL' | 'baseSourceSHA256'>,
     state: Uint8Array,
-    fromState = session.indexedState
-  ) {
+    sourceBytes?: Uint8Array
+  ): Promise<SourceBaseline> {
     if (session.format === 'text')
-      return textEffects(
-        textState(Buffer.from(fromState, 'base64')),
-        textState(state)
-      );
-    const bytes = await this.base(session.sourceURL, session.baseSourceSHA256);
-    const checkpoint: OfficeCheckpoint = {
-      baseSha256: session.baseSourceSHA256,
+      return { format: 'text', text: textState(state), version: 1 };
+    const bytes =
+      sourceBytes ??
+      (await this.base(session.sourceURL, session.baseSourceSHA256));
+    const entries = await runOffice('officeBaseline', bytes, {
+      baseSha256: createHash('sha256').update(bytes).digest('hex'),
       format: session.format,
       schemaVersion: 1,
       state,
-    };
+    });
+    return { entries, format: session.format, version: 1 };
+  }
+
+  async effects(
+    session: SourceSession,
+    state: Uint8Array,
+    from = decodeBaseline(session.indexedBaseline, session.format)
+  ) {
+    const current = await this.baseline(session, state);
+    if (from.format === 'text' && current.format === 'text')
+      return textEffects(from.text, current.text);
+    if (
+      from.format === 'text' ||
+      current.format === 'text' ||
+      from.format !== current.format
+    )
+      throw new Error('Source baseline format changed');
     const effects = await runOffice(
-      'compare',
-      bytes,
-      { ...checkpoint, state: Buffer.from(fromState, 'base64') },
-      checkpoint
+      'compareBaselines',
+      from.entries,
+      current.entries
     );
     for (const effect of effects) {
       const cached = session.pendingEffects.find(
@@ -683,6 +732,13 @@ export class SourceDocumentStore {
       if (!uploaded.ok)
         throw new Error(`Source candidate upload failed (${uploaded.status})`);
       await this.request(fileId, 'refresh-candidate', {
+        baseline: encodeBaseline(
+          await this.baseline(
+            { baseSourceSHA256: '', format: candidate.format, sourceURL: '' },
+            seed,
+            bytes
+          )
+        ),
         checkpoint: candidate.checkpoint,
         epoch: candidate.epoch,
         jobId,

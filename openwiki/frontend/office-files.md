@@ -75,7 +75,7 @@ mode reads `GET /api/files/{id}/source-session?view=true`, a lock-free read
 (read authorization only, no `source_documents` row is created, no account
 lock, so a suspended owner's shared files keep rendering) that returns the
 presigned base URL and checkpoint numbers and carries `state` only when the
-saved checkpoint is ahead of the indexed one (`indexedState` and
+saved checkpoint is ahead of the indexed one (`indexedBaseline` and
 `pendingEffects` are omitted). The host passes that state as `checkpoint` on
 the `load` message; the runtime applies it over the base with the editor
 engines in a disposable `exportCheckpoint` worker (the same composition as the
@@ -96,6 +96,15 @@ The parent owns the Hocuspocus provider and Y.Doc. The isolated iframe exchanges
 raw Yrs updates with that parent through a versioned message protocol, and waits
 for provider sync before restoring its replica. The iframe receives base bytes
 and shared state, never an authentication token or protected source URL.
+
+PowerPoint deck schema v3 stores embedded media as native Yrs byte buffers in
+`pptx:meta.media`; parsed non-media metadata remains in `packageJson`. Opening
+v1/v2 states migrates the decimal-array JSON bytes and Yrs garbage collection
+removes the replaced payload from subsequent checkpoints. Late edits still
+merge, including a concurrent legacy schema migration. Source fingerprints,
+edited roots and exact media bytes are preserved; exporting still requires the
+matching source file. Older editor engines reject v3, so an engine rollout
+requires those editors to reload before receiving migrated updates.
 
 The iframe sandbox allows scripts and its own origin, but the runtime origin is
 cross-origin from the app, cookie-less, and restricted to the app by CSP
@@ -195,10 +204,10 @@ allocation or preview object.
 ## Edit and save lifecycle
 
 DOCX, XLSX and PPTX edits share an authenticated `source:<fileId>:epoch:<n>`
-room. `source_documents` stores the current state, indexed state, exact net
+room. `source_documents` stores the current state, compact indexed semantic baseline, exact net
 effects and durable checkpoint. The Go API rechecks current source access,
 epoch and account state through a small access-only endpoint for each incoming
-edit. Full current/indexed state is fetched for bootstrap and persistence;
+edit. Current state and semantic baseline are fetched for bootstrap and persistence;
 checkpoint writes also check storage growth. Saved means the server has
 acknowledged the requested checkpoint; Ctrl/Cmd+S flushes that same path.
 Credits gate parsing and AI work, independently of durable saving.
@@ -260,3 +269,10 @@ undo, private PDF geometry, pending counts/settings, Go lifecycle and quota
 fences, candidate processing and scoped caption reuse. The fork's tests cover
 Office CRDT convergence, structural operations, comments, headless restore and
 OOXML export. See [the test catalog](../test-catalog.md) for entry points.
+
+The source comparison baseline is separate from the editable Yjs state. It stores
+text and stable positions, image hashes/references, and hashes of visual metadata;
+media bytes remain in the current editor state. Office handoff publishes the new
+seed and its matching baseline together, then remounts the editor. Schema migration
+`0015_source_semantic_baseline.sql` targets the cleared first-UAT dataset and refuses
+existing saved source states/candidates instead of discarding or reinterpreting them.

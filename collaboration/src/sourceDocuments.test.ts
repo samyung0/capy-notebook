@@ -5,6 +5,7 @@ import * as Y from 'yjs';
 import { signCollaborationToken, verifyCollaborationToken } from './auth.js';
 import * as officeRuntime from './officeRuntime.js';
 import {
+  encodeBaseline,
   SourceDocumentStore,
   SourceRequestError,
   type SourceSession,
@@ -92,8 +93,12 @@ test('a delayed source store merges a newer durable replica before saving', asyn
     epoch: 1,
     fileId: 'f_1',
     format: 'text',
+    indexedBaseline: encodeBaseline({
+      format: 'text',
+      text: 'base',
+      version: 1,
+    }),
     indexedCheckpoint: 0,
-    indexedState: Buffer.from(seed).toString('base64'),
     netTokens: 0,
     pendingEffects: [],
     room: 'source:f_1:epoch:1',
@@ -196,12 +201,18 @@ test('an image replacement keeps a caption only for the same actual bytes', asyn
   const unchanged = { ...old, caption: undefined };
   const replacement = { ...old, caption: undefined, imageSHA256: 'new-bytes' };
   vi.spyOn(officeRuntime, 'runOffice')
+    .mockResolvedValueOnce([])
     .mockResolvedValueOnce([unchanged])
+    .mockResolvedValueOnce([])
     .mockResolvedValueOnce([replacement]);
   const session = {
     baseSourceSHA256: createHash('sha256').update(bytes).digest('hex'),
     format: 'docx',
-    indexedState: 'AA==',
+    indexedBaseline: encodeBaseline({
+      entries: [],
+      format: 'docx',
+      version: 1,
+    }),
     pendingEffects: [old],
     sourceURL: 'http://base',
   } as SourceSession;

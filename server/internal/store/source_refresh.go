@@ -35,6 +35,7 @@ type SourceRefreshFinalize struct {
 	SizeBytes    int64  `json:"sizeBytes"`
 	SourceETag   string `json:"sourceETag"`
 	Seed         []byte `json:"seed"`
+	Baseline     []byte `json:"baseline"`
 }
 
 type SourceRefreshPublish struct {
@@ -47,9 +48,9 @@ type SourceRefreshPublish struct {
 	ContentID                string          `json:"contentId"`
 	ContentHash              string          `json:"contentHash"`
 	PreviewBlobPath          string          `json:"previewBlobPath"`
-	Seed                     []byte          `json:"seed"`
 	PendingEffects           json.RawMessage `json:"pendingEffects"`
 	NetTokens                int64           `json:"netTokens"`
+	IndexedBaseline          []byte          `json:"indexedBaseline,omitempty"`
 	ExpectedLatestCheckpoint int64           `json:"expectedLatestCheckpoint"`
 }
 
@@ -173,7 +174,10 @@ func (s *Store) FinalizeSourceRefresh(ctx context.Context, fileID string, in Sou
 	if in.SizeBytes > maxBytes {
 		return ErrConflict
 	}
-	growth := in.SizeBytes - oldSize + int64(len(in.Seed))
+	if !validSourceBaseline(in.Baseline, format) {
+		return ErrConflict
+	}
+	growth := in.SizeBytes - oldSize + int64(len(in.Seed)+len(in.Baseline))
 	if growth > 0 {
 		if err = s.gateStorageTx(ctx, tx, owner, growth); err != nil {
 			return err
@@ -189,7 +193,7 @@ func (s *Store) FinalizeSourceRefresh(ctx context.Context, fileID string, in Sou
 	if err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, `UPDATE source_refresh_candidates SET source_sha256=$6,size_bytes=$7,seed=$8 WHERE file_id=$1 AND job_id=$2 AND epoch=$3 AND checkpoint=$4 AND lease_token=$5`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken, in.SourceSHA256, in.SizeBytes, in.Seed); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE source_refresh_candidates SET source_sha256=$6,size_bytes=$7,seed=$8,baseline=$9 WHERE file_id=$1 AND job_id=$2 AND epoch=$3 AND checkpoint=$4 AND lease_token=$5`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken, in.SourceSHA256, in.SizeBytes, in.Seed, in.Baseline); err != nil {
 		return err
 	}
 	planBytes, err := json.Marshal(plan)
@@ -246,8 +250,8 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	var source, sha string
 	var parseKey, parseFingerprint, parseVersion *string
 	var size int64
-	var candidateState, seed []byte
-	err = tx.QueryRow(ctx, `SELECT c.source_blob_path,c.source_sha256,c.size_bytes,c.state,c.seed,c.parse_artifact_key,c.parse_artifact_fingerprint,c.parse_artifact_version FROM source_refresh_candidates c JOIN jobs j ON j.id=c.job_id JOIN files f ON f.id=c.file_id WHERE c.file_id=$1 AND c.job_id=$2 AND c.epoch=$3 AND c.checkpoint=$4 AND c.lease_token=$5 AND f.revision=$6 AND f.trashed_at IS NULL AND j.status='running' AND j.lease_expires_at>now() AND j.payload->>'sourceETag'=$7 AND c.content_id=$9 AND c.content_hash=$10 AND COALESCE(c.preview_blob_path,'')=$11 AND EXISTS(SELECT 1 FROM ingest_job_attempts a WHERE a.id=$8 AND a.job_id=j.id AND a.status='running' AND a.attempt=j.attempts AND a.id=(SELECT max(latest.id) FROM ingest_job_attempts latest WHERE latest.job_id=j.id)) FOR UPDATE OF c,j,f`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken, doc.BaseRevision, in.SourceETag, in.AttemptID, in.ContentID, in.ContentHash, in.PreviewBlobPath).Scan(&source, &sha, &size, &candidateState, &seed, &parseKey, &parseFingerprint, &parseVersion)
+	var seed, baseline []byte
+	err = tx.QueryRow(ctx, `SELECT c.source_blob_path,c.source_sha256,c.size_bytes,c.seed,c.baseline,c.parse_artifact_key,c.parse_artifact_fingerprint,c.parse_artifact_version FROM source_refresh_candidates c JOIN jobs j ON j.id=c.job_id JOIN files f ON f.id=c.file_id WHERE c.file_id=$1 AND c.job_id=$2 AND c.epoch=$3 AND c.checkpoint=$4 AND c.lease_token=$5 AND f.revision=$6 AND f.trashed_at IS NULL AND j.status='running' AND j.lease_expires_at>now() AND j.payload->>'sourceETag'=$7 AND c.content_id=$9 AND c.content_hash=$10 AND COALESCE(c.preview_blob_path,'')=$11 AND EXISTS(SELECT 1 FROM ingest_job_attempts a WHERE a.id=$8 AND a.job_id=j.id AND a.status='running' AND a.attempt=j.attempts AND a.id=(SELECT max(latest.id) FROM ingest_job_attempts latest WHERE latest.job_id=j.id)) FOR UPDATE OF c,j,f`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken, doc.BaseRevision, in.SourceETag, in.AttemptID, in.ContentID, in.ContentHash, in.PreviewBlobPath).Scan(&source, &sha, &size, &seed, &baseline, &parseKey, &parseFingerprint, &parseVersion)
 	if err != nil {
 		if isNoRows(err) {
 			err = ErrConflict
@@ -259,6 +263,12 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	}
 	effects := in.PendingEffects
 	netTokens := in.NetTokens
+	if doc.Format == "text" {
+		baseline = in.IndexedBaseline
+	}
+	if !validSourceBaseline(baseline, doc.Format) {
+		return doc, ErrConflict
+	}
 	if doc.Format != "text" {
 		if doc.Checkpoint != in.Checkpoint || len(seed) == 0 {
 			return doc, ErrConflict
@@ -286,7 +296,7 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 		return doc, ErrConflict
 	}
 	var growth int64
-	if err = tx.QueryRow(ctx, `SELECT ($2::bigint-f.size_bytes) + CASE WHEN d.format='text' THEN octet_length(d.state)::bigint+octet_length(c.state)+octet_length($3::jsonb::text) ELSE 2*octet_length(c.seed)::bigint+2 END-d.storage_bytes-c.storage_bytes FROM files f JOIN source_documents d ON d.file_id=f.id JOIN source_refresh_candidates c ON c.file_id=f.id WHERE f.id=$1`, fileID, size, effects).Scan(&growth); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT ($2::bigint-f.size_bytes) + CASE WHEN d.format='text' THEN octet_length(d.state)::bigint+octet_length($4::bytea)+octet_length($3::jsonb::text) ELSE octet_length(c.seed)::bigint+octet_length($4::bytea)+2 END-d.storage_bytes-c.storage_bytes FROM files f JOIN source_documents d ON d.file_id=f.id JOIN source_refresh_candidates c ON c.file_id=f.id WHERE f.id=$1`, fileID, size, effects, baseline).Scan(&growth); err != nil {
 		return doc, err
 	}
 	if growth > 0 {
@@ -315,9 +325,9 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 		}
 	}
 	if doc.Format == "text" {
-		_, err = tx.Exec(ctx, `UPDATE source_documents SET indexed_checkpoint=$2,indexed_state=$3,base_revision=base_revision+1,base_blob_path=$4,base_source_sha256=$5,pending_effects=$6,net_tokens=$7,desired_manual=desired_manual AND $6::jsonb<>'[]'::jsonb,desired_checkpoint=CASE WHEN $6::jsonb='[]'::jsonb THEN NULL ELSE desired_checkpoint END,running_job_id=NULL,refresh_error=NULL,updated_at=now() WHERE file_id=$1`, fileID, in.Checkpoint, candidateState, source, sha, effects, netTokens)
+		_, err = tx.Exec(ctx, `UPDATE source_documents SET indexed_checkpoint=$2,indexed_baseline=$3,base_revision=base_revision+1,base_blob_path=$4,base_source_sha256=$5,pending_effects=$6,net_tokens=$7,desired_manual=desired_manual AND $6::jsonb<>'[]'::jsonb,desired_checkpoint=CASE WHEN $6::jsonb='[]'::jsonb THEN NULL ELSE desired_checkpoint END,running_job_id=NULL,refresh_error=NULL,updated_at=now() WHERE file_id=$1`, fileID, in.Checkpoint, baseline, source, sha, effects, netTokens)
 	} else {
-		_, err = tx.Exec(ctx, `UPDATE source_documents SET epoch=epoch+1,indexed_checkpoint=$2,checkpoint=$2,indexed_state=$3,state=$3,base_revision=base_revision+1,base_blob_path=$4,base_source_sha256=$5,pending_effects='[]',net_tokens=0,running_job_id=NULL,desired_checkpoint=NULL,desired_manual=false,refresh_error=NULL,updated_at=now() WHERE file_id=$1`, fileID, in.Checkpoint, seed, source, sha)
+		_, err = tx.Exec(ctx, `UPDATE source_documents SET epoch=epoch+1,indexed_checkpoint=$2,checkpoint=$2,indexed_baseline=$6,state=$3,base_revision=base_revision+1,base_blob_path=$4,base_source_sha256=$5,pending_effects='[]',net_tokens=0,running_job_id=NULL,desired_checkpoint=NULL,desired_manual=false,refresh_error=NULL,updated_at=now() WHERE file_id=$1`, fileID, in.Checkpoint, seed, source, sha, baseline)
 		if err == nil {
 			// The fresh seed has new native identities: AI edit guards cannot be
 			// validated against it, so their Undo is released with the old base.

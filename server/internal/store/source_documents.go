@@ -26,7 +26,7 @@ type SourceSession struct {
 	BaseSourceSHA256  string          `json:"baseSourceSHA256"`
 	SourceURL         string          `json:"sourceURL"`
 	State             []byte          `json:"state"`
-	IndexedState      []byte          `json:"indexedState"`
+	IndexedBaseline   []byte          `json:"indexedBaseline"`
 	PendingEffects    json.RawMessage `json:"pendingEffects"`
 	NetTokens         int64           `json:"netTokens"`
 	BaseBlobPath      string          `json:"-"`
@@ -45,6 +45,7 @@ type SourceCheckpoint struct {
 	// Only a trusted initial seed may bind the SHA computed from source bytes.
 	BaseSourceSHA256 string `json:"baseSourceSHA256,omitempty"`
 	Initialize       bool   `json:"initialize,omitempty"`
+	IndexedBaseline  []byte `json:"indexedBaseline,omitempty"`
 	// A direct AI edit or its Undo commits its receipt (and inverse) with the
 	// checkpoint so the saved state and the durable effect cannot diverge.
 	Operation *SourceCheckpointOperation `json:"operation,omitempty"`
@@ -234,7 +235,7 @@ func (s *Store) CheckSourceAccess(ctx context.Context, actor, fileID string, epo
 
 func readSourceSession(ctx context.Context, tx pgx.Tx, fileID, ws string) (SourceSession, error) {
 	out := SourceSession{FileID: fileID, WorkspaceID: ws, Access: "read"}
-	err := tx.QueryRow(ctx, `SELECT format,epoch,checkpoint,indexed_checkpoint,base_revision,base_blob_path,base_source_sha256,state,indexed_state,pending_effects,net_tokens FROM source_documents WHERE file_id=$1`, fileID).Scan(&out.Format, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State, &out.IndexedState, &out.PendingEffects, &out.NetTokens)
+	err := tx.QueryRow(ctx, `SELECT format,epoch,checkpoint,indexed_checkpoint,base_revision,base_blob_path,base_source_sha256,state,indexed_baseline,pending_effects,net_tokens FROM source_documents WHERE file_id=$1`, fileID).Scan(&out.Format, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State, &out.IndexedBaseline, &out.PendingEffects, &out.NetTokens)
 	out.Room = fmt.Sprintf("source:%s:epoch:%d", fileID, out.Epoch)
 	out.SourceIdentity = fmt.Sprintf("revision:%d", out.BaseRevision)
 	return out, err
@@ -294,7 +295,10 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 		growth += int64(len(in.Operation.Inverse) + len(in.Operation.Guards))
 	}
 	if in.Initialize {
-		growth += int64(len(in.State))
+		if !validSourceBaseline(in.IndexedBaseline, old.Format) {
+			return old, ErrConflict
+		}
+		growth += int64(len(in.IndexedBaseline) - len(old.IndexedBaseline))
 	}
 	if growth > 0 {
 		if err = s.gateStorageTx(ctx, tx, owner, growth); err != nil {
@@ -305,7 +309,7 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 		if _, err = tx.Exec(ctx, `UPDATE files SET source_sha256=$2 WHERE id=$1 AND source_sha256 IS NULL`, fileID, in.BaseSourceSHA256); err != nil {
 			return old, err
 		}
-		_, err = tx.Exec(ctx, `UPDATE source_documents SET state=$2,indexed_state=$2,base_source_sha256=$3,updated_at=now() WHERE file_id=$1`, fileID, in.State, in.BaseSourceSHA256)
+		_, err = tx.Exec(ctx, `UPDATE source_documents SET state=$2,indexed_baseline=$4,base_source_sha256=$3,updated_at=now() WHERE file_id=$1`, fileID, in.State, in.BaseSourceSHA256, in.IndexedBaseline)
 	} else {
 		_, err = tx.Exec(ctx, `UPDATE source_documents SET state=$2,pending_effects=$3,net_tokens=$4,checkpoint=checkpoint+1,last_edited_at=now(),updated_at=now(),desired_checkpoint=CASE WHEN desired_manual THEN checkpoint+1 ELSE NULL END,refresh_error=NULL WHERE file_id=$1`, fileID, in.State, in.PendingEffects, in.NetTokens)
 	}
@@ -464,4 +468,21 @@ func (s *Store) RequestSourceRefresh(ctx context.Context, actor, fileID string, 
 	}
 	result.JobID = jobID
 	return result, tx.Commit(ctx)
+}
+
+// The collaboration runtime owns projection; reject missing or mismatched baselines.
+func validSourceBaseline(raw []byte, format string) bool {
+	var baseline struct {
+		Version int                `json:"version"`
+		Format  string             `json:"format"`
+		Text    *string            `json:"text"`
+		Entries *[]json.RawMessage `json:"entries"`
+	}
+	if len(raw) > 100<<20 || json.Unmarshal(raw, &baseline) != nil || baseline.Version != 1 || baseline.Format != format {
+		return false
+	}
+	if format == "text" {
+		return baseline.Text != nil && baseline.Entries == nil
+	}
+	return baseline.Entries != nil && baseline.Text == nil
 }

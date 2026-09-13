@@ -964,7 +964,7 @@ export const GetSourceSessionParams = zod.object({
 })
 
 export const GetSourceSessionQueryParams = zod.object({
-  "view": zod.boolean().optional().describe('Viewer read: read access only, omits indexedState and pendingEffects, and state unless checkpoint is ahead of indexedCheckpoint')
+  "view": zod.boolean().optional().describe('Viewer read: read access only, omits indexedBaseline and pendingEffects, and state unless checkpoint is ahead of indexedCheckpoint')
 })
 
 export const GetSourceSessionResponse = zod.object({
@@ -976,8 +976,8 @@ export const GetSourceSessionResponse = zod.object({
   "epoch": zod.int(),
   "fileId": zod.string(),
   "format": zod.enum(['docx', 'xlsx', 'pptx', 'text']),
+  "indexedBaseline": zod.string(),
   "indexedCheckpoint": zod.int(),
-  "indexedState": zod.string(),
   "netTokens": zod.int(),
   "operation": zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
@@ -3658,8 +3658,8 @@ export const BootstrapSourceDocumentResponse = zod.object({
   "epoch": zod.int(),
   "fileId": zod.string(),
   "format": zod.enum(['docx', 'xlsx', 'pptx', 'text']),
+  "indexedBaseline": zod.string(),
   "indexedCheckpoint": zod.int(),
-  "indexedState": zod.string(),
   "netTokens": zod.int(),
   "operation": zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
@@ -3726,6 +3726,7 @@ export const CheckpointSourceDocumentBody = zod.object({
   "baseSourceSHA256": zod.string().optional(),
   "epoch": zod.int().min(1),
   "expectedCheckpoint": zod.int().min(checkpointSourceDocumentBodyExpectedCheckpointMin),
+  "indexedBaseline": zod.string().optional(),
   "initialize": zod.boolean().optional(),
   "netTokens": zod.int().min(checkpointSourceDocumentBodyNetTokensMin),
   "operation": zod.object({
@@ -3755,8 +3756,8 @@ export const CheckpointSourceDocumentResponse = zod.object({
   "epoch": zod.int(),
   "fileId": zod.string(),
   "format": zod.enum(['docx', 'xlsx', 'pptx', 'text']),
+  "indexedBaseline": zod.string(),
   "indexedCheckpoint": zod.int(),
-  "indexedState": zod.string(),
   "netTokens": zod.int(),
   "operation": zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
@@ -3820,12 +3821,12 @@ export const PublishSourceRefreshBody = zod.object({
   "contentId": zod.string(),
   "epoch": zod.int(),
   "expectedLatestCheckpoint": zod.int(),
+  "indexedBaseline": zod.string().optional(),
   "jobId": zod.string(),
   "leaseToken": zod.string(),
   "netTokens": zod.int(),
   "pendingEffects": zod.unknown(),
   "previewBlobPath": zod.string(),
-  "seed": zod.string(),
   "sourceETag": zod.string()
 })
 
@@ -3838,8 +3839,8 @@ export const PublishSourceRefreshResponse = zod.object({
   "epoch": zod.int(),
   "fileId": zod.string(),
   "format": zod.enum(['docx', 'xlsx', 'pptx', 'text']),
+  "indexedBaseline": zod.string(),
   "indexedCheckpoint": zod.int(),
-  "indexedState": zod.string(),
   "netTokens": zod.int(),
   "operation": zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
@@ -3952,6 +3953,7 @@ export const FinalizeSourceRefreshHeader = zod.object({
 })
 
 export const FinalizeSourceRefreshBody = zod.object({
+  "baseline": zod.string(),
   "checkpoint": zod.int(),
   "epoch": zod.int(),
   "jobId": zod.string(),

@@ -1302,7 +1302,17 @@ receipt. The delete then cascades; the old `rag_teardown` job and pipeline
 ## Editable source refresh and pending evidence
 
 `source_documents` separates the live durable editing checkpoint from the
-published source/index checkpoint. The internal checkpoint request uses
+published source/index checkpoint. `indexed_baseline` stores versioned semantic
+comparison JSON as bytes: exact plain text, or Office entry IDs, text, positions,
+image hashes/references and visual fingerprints. It contains neither a second
+Yjs document nor media bytes. The collaboration server projects the merged
+current state and compares it to this baseline on each durable save; net-zero
+changes and Undo cancel by equality. Initialization writes the baseline with the
+first state, and successful publication advances it with the published source.
+Office publication uses the fresh seed's baseline, so its IDs match the remounted
+editor. Text publication compares the captured candidate with the latest state
+and retains later edits. The transient candidate still fixes one export while
+editing continues. The internal checkpoint request uses
 `initialize` and `baseSourceSHA256` only for the initial seed; ordinary saves
 omit them. Seed hashes remain validated by the store when `initialize` is true. The collaboration service captures a fixed
 candidate and exports full source bytes to B2. `source_refresh_candidates`

@@ -64,7 +64,7 @@ type sourceSessionInput struct {
 	// View is the lock-free viewer read: read authorization only, no row
 	// insert, no indexed state or pending effects, and state only when a saved
 	// checkpoint is ahead of the indexed one.
-	View bool `query:"view" doc:"Viewer read: read access only, omits indexedState and pendingEffects, and state unless checkpoint is ahead of indexedCheckpoint"`
+	View bool `query:"view" doc:"Viewer read: read access only, omits indexedBaseline and pendingEffects, and state unless checkpoint is ahead of indexedCheckpoint"`
 }
 type annotationIDInput struct {
 	ID           string `path:"id"`

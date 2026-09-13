@@ -8,6 +8,7 @@
 export interface SourceRefreshFinalize {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  baseline: string;
   checkpoint: number;
   epoch: number;
   jobId: string;

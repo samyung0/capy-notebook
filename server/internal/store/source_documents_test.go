@@ -23,6 +23,13 @@ func sourceTestFile(t *testing.T, s *Store, owner, name, kind string) (Workspace
 	}
 	return ws, file
 }
+func sourceTestBaseline(format, text string) []byte {
+	if format == "text" {
+		encoded, _ := json.Marshal(text)
+		return []byte(`{"version":1,"format":"text","text":` + string(encoded) + `}`)
+	}
+	return []byte(`{"version":1,"format":"` + format + `","entries":[]}`)
+}
 func sourceTestSeed(t *testing.T, s *Store, actor, file string) SourceSession {
 	t.Helper()
 	ctx := context.Background()
@@ -30,7 +37,7 @@ func sourceTestSeed(t *testing.T, s *Store, actor, file string) SourceSession {
 	if err != nil {
 		t.Fatal(err)
 	}
-	doc, err = s.SaveSourceCheckpoint(ctx, file, SourceCheckpoint{ActorIDs: []string{actor}, Epoch: doc.Epoch, Initialize: true, State: []byte("initial-state"), PendingEffects: json.RawMessage(`[]`), BaseSourceSHA256: strings.Repeat("a", 64)})
+	doc, err = s.SaveSourceCheckpoint(ctx, file, SourceCheckpoint{ActorIDs: []string{actor}, Epoch: doc.Epoch, Initialize: true, IndexedBaseline: sourceTestBaseline(doc.Format, "A"), State: []byte("initial-state"), PendingEffects: json.RawMessage(`[]`), BaseSourceSHA256: strings.Repeat("a", 64)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +62,7 @@ func TestSourceCheckpointAuthorizationAndCreditIndependence(t *testing.T) {
 	}
 	// A viewer opening first may initialize the trusted seed, but cannot author.
 	doc := sourceTestSeed(t, s, viewer, file.ID)
-	if len(doc.IndexedState) == 0 || doc.Checkpoint != 0 {
+	if len(doc.IndexedBaseline) == 0 || doc.Checkpoint != 0 {
 		t.Fatalf("bad seed: %+v", doc)
 	}
 	if err := s.CheckSourceAccess(ctx, viewer, file.ID, doc.Epoch, false); err != nil {
@@ -129,7 +136,7 @@ func TestSourceRefreshClaimPublicationAndStaleOffice(t *testing.T) {
 	if _, err = s.ClaimSourceRefresh(ctx, file.ID, job.JobID); !errors.Is(err, ErrConflict) {
 		t.Fatalf("duplicate export claim: %v", err)
 	}
-	finalize := SourceRefreshFinalize{JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 120, SourceETag: "etag-b", Seed: []byte("fresh-seed")}
+	finalize := SourceRefreshFinalize{JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 120, SourceETag: "etag-b", Seed: []byte("fresh-seed"), Baseline: sourceTestBaseline(doc.Format, "B")}
 	if err = s.FinalizeSourceRefresh(ctx, file.ID, finalize); err != nil {
 		t.Fatal(err)
 	}
@@ -289,7 +296,7 @@ func TestSourceTextPublishesCapturedStateWithExactRemainingEffects(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = s.FinalizeSourceRefresh(ctx, file.ID, SourceRefreshFinalize{JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 120, SourceETag: "etag-text"}); err != nil {
+	if err = s.FinalizeSourceRefresh(ctx, file.ID, SourceRefreshFinalize{JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 120, SourceETag: "etag-text", Baseline: sourceTestBaseline("text", "B")}); err != nil {
 		t.Fatal(err)
 	}
 	latest := sourceTestEdit(t, s, owner, doc, "state-a-again")
@@ -304,11 +311,11 @@ func TestSourceTextPublishesCapturedStateWithExactRemainingEffects(t *testing.T)
 	if _, err = s.pool.Exec(ctx, `UPDATE source_refresh_candidates SET content_id=$2,content_hash='text-b' WHERE file_id=$1`, file.ID, contentID); err != nil {
 		t.Fatal(err)
 	}
-	published, err := s.PublishSourceRefresh(ctx, file.ID, SourceRefreshPublish{AttemptID: sourceTestAttempt(t, s, job.JobID), JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceETag: "etag-text", ContentID: contentID, ContentHash: "text-b", PendingEffects: residual, NetTokens: 2, ExpectedLatestCheckpoint: latest.Checkpoint})
+	published, err := s.PublishSourceRefresh(ctx, file.ID, SourceRefreshPublish{AttemptID: sourceTestAttempt(t, s, job.JobID), JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceETag: "etag-text", ContentID: contentID, ContentHash: "text-b", IndexedBaseline: sourceTestBaseline("text", "B"), PendingEffects: residual, NetTokens: 2, ExpectedLatestCheckpoint: latest.Checkpoint})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if published.Epoch != 1 || published.Checkpoint != 2 || published.IndexedCheckpoint != 1 || string(published.State) != "state-a-again" || string(published.IndexedState) != "state-b" || published.NetTokens != 2 {
+	if published.Epoch != 1 || published.Checkpoint != 2 || published.IndexedCheckpoint != 1 || string(published.State) != "state-a-again" || string(published.IndexedBaseline) != string(sourceTestBaseline("text", "B")) || published.NetTokens != 2 {
 		t.Fatalf("text residual or lineage lost: %+v", published)
 	}
 }
@@ -429,5 +436,41 @@ func TestSourceExportLeaseExhaustionPreservesEdits(t *testing.T) {
 	}
 	if retry, err := s.RequestSourceRefresh(ctx, owner, doc.FileID, false); err != nil || retry.JobID == job.JobID {
 		t.Fatalf("manual retry: %+v %v", retry, err)
+	}
+}
+
+func TestSourceSeedQuotaChargesCompactBaseline(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "source_baseline_quota")
+	_, file := sourceTestFile(t, s, owner, "lesson.pptx", "presentation")
+	state := []byte(strings.Repeat("s", 4096))
+	baseline := sourceTestBaseline("pptx", "")
+	usage, err := s.StorageUsage(ctx, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Fill the account so exactly one state plus the compact baseline can fit.
+	remaining := int64(len(state) + len(baseline) + 2)
+	if _, err = s.pool.Exec(ctx, `UPDATE files SET size_bytes=$2 WHERE id=$1`, file.ID, usage.LimitBytes-remaining); err != nil {
+		t.Fatal(err)
+	}
+	session, err := s.SourceSession(ctx, owner, file.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := s.SaveSourceCheckpoint(ctx, file.ID, SourceCheckpoint{
+		ActorIDs: []string{owner}, Epoch: session.Epoch, Initialize: true,
+		State: state, IndexedBaseline: baseline, PendingEffects: json.RawMessage(`[]`), BaseSourceSHA256: strings.Repeat("a", 64),
+	})
+	if err != nil {
+		t.Fatalf("compact baseline should fit exact quota: %v", err)
+	}
+	usage, err = s.StorageUsage(ctx, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if usage.UsedBytes != usage.LimitBytes || string(saved.IndexedBaseline) != string(baseline) {
+		t.Fatalf("wrong baseline charge: %+v baseline=%q", usage, saved.IndexedBaseline)
 	}
 }

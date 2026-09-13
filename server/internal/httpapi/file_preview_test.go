@@ -156,7 +156,7 @@ func TestSourceSessionViewTrimsStateToUnpublishedEdits(t *testing.T) {
 	current := doReq(t, handler, http.MethodGet, "/api/files/"+file.ID+"/source-session?view=true", "u_owner", nil)
 	if current.Code != http.StatusOK ||
 		!bytes.Contains(current.Body.Bytes(), []byte(`"state":null`)) ||
-		!bytes.Contains(current.Body.Bytes(), []byte(`"indexedState":null`)) ||
+		!bytes.Contains(current.Body.Bytes(), []byte(`"indexedBaseline":null`)) ||
 		!bytes.Contains(current.Body.Bytes(), []byte(`"sourceURL":"memory://sources/book.xlsx"`)) {
 		t.Fatalf("current view session = %d body=%s", current.Code, current.Body.String())
 	}
@@ -178,7 +178,7 @@ func TestSourceSessionViewTrimsStateToUnpublishedEdits(t *testing.T) {
 	edited := doReq(t, handler, http.MethodGet, "/api/files/"+file.ID+"/source-session?view=true", "u_owner", nil)
 	if edited.Code != http.StatusOK ||
 		!bytes.Contains(edited.Body.Bytes(), []byte(`"state":"AQ=="`)) ||
-		!bytes.Contains(edited.Body.Bytes(), []byte(`"indexedState":null`)) ||
+		!bytes.Contains(edited.Body.Bytes(), []byte(`"indexedBaseline":null`)) ||
 		!bytes.Contains(edited.Body.Bytes(), []byte(`"pendingEffects":null`)) {
 		t.Fatalf("edited view session = %d body=%s", edited.Code, edited.Body.String())
 	}
