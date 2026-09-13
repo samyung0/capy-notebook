@@ -14,12 +14,12 @@ export interface SourceCheckpoint {
      * @nullable
      */
   actorIds: string[] | null;
-  baseSourceSHA256: string;
+  baseSourceSHA256?: string;
   /** @minimum 1 */
   epoch: number;
   /** @minimum 0 */
   expectedCheckpoint: number;
-  initialize: boolean;
+  initialize?: boolean;
   /** @minimum 0 */
   netTokens: number;
   operation?: SourceCheckpointOperation;

@@ -1267,7 +1267,9 @@ receipt. The delete then cascades; the old `rag_teardown` job and pipeline
 ## Editable source refresh and pending evidence
 
 `source_documents` separates the live durable editing checkpoint from the
-published source/index checkpoint. The collaboration service captures a fixed
+published source/index checkpoint. The internal checkpoint request uses
+`initialize` and `baseSourceSHA256` only for the initial seed; ordinary saves
+omit them. Seed hashes remain validated by the store when `initialize` is true. The collaboration service captures a fixed
 candidate and exports full source bytes to B2. `source_refresh_candidates`
 holds its source, seed, parse artifacts, preview, canonical index and consumed
 caption digests until publication. Existing parser/ingest workers process that

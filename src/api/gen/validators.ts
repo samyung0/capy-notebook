@@ -3722,10 +3722,10 @@ export const checkpointSourceDocumentBodyNetTokensMin = 0;
 
 export const CheckpointSourceDocumentBody = zod.object({
   "actorIds": zod.array(zod.string()).min(1).nullable(),
-  "baseSourceSHA256": zod.string(),
+  "baseSourceSHA256": zod.string().optional(),
   "epoch": zod.int().min(1),
   "expectedCheckpoint": zod.int().min(checkpointSourceDocumentBodyExpectedCheckpointMin),
-  "initialize": zod.boolean(),
+  "initialize": zod.boolean().optional(),
   "netTokens": zod.int().min(checkpointSourceDocumentBodyNetTokensMin),
   "operation": zod.object({
   "guards": zod.unknown().optional(),

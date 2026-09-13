@@ -43,8 +43,8 @@ type SourceCheckpoint struct {
 	PendingEffects     json.RawMessage `json:"pendingEffects"`
 	NetTokens          int64           `json:"netTokens" minimum:"0"`
 	// Only a trusted initial seed may bind the SHA computed from source bytes.
-	BaseSourceSHA256 string `json:"baseSourceSHA256"`
-	Initialize       bool   `json:"initialize"`
+	BaseSourceSHA256 string `json:"baseSourceSHA256,omitempty"`
+	Initialize       bool   `json:"initialize,omitempty"`
 	// A direct AI edit or its Undo commits its receipt (and inverse) with the
 	// checkpoint so the saved state and the durable effect cannot diverge.
 	Operation *SourceCheckpointOperation `json:"operation,omitempty"`

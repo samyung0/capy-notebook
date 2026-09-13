@@ -27,6 +27,17 @@ func jsonRequest(router http.Handler, method, path, body string) *httptest.Respo
 	return rec
 }
 
+func TestSourceCheckpointAcceptsOrdinarySavePayload(t *testing.T) {
+	// Match SourceDocuments.store: seed-only fields are absent on an edit.
+	body := `{"actorIds":["user_1"],"epoch":1,"expectedCheckpoint":0,"state":"AQ==","pendingEffects":[],"netTokens":0}`
+	rec := jsonRequest(validationRouter(), http.MethodPost,
+		"/internal/collaboration/files/file_1/checkpoint", body)
+	// Reaching the handler's secret check proves request validation passed.
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusUnauthorized, rec.Body.String())
+	}
+}
+
 func TestRequestBodyValidation(t *testing.T) {
 	router := validationRouter()
 
