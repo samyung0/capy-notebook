@@ -231,10 +231,13 @@ Office automatic refresh starts only after a prior successful parse, at least
 5,000 estimated net-change tokens, and 60 seconds without a server-observed
 edit. Every edit resets that idle interval; there is no maximum wait. Manual
 processing bypasses the threshold. Editing continues during processing. A newer
-checkpoint prevents the candidate from replacing the base, and the next fresh
-idle checkpoint can be processed. Successful publication briefly flushes and
-pauses connected writers, then atomically replaces the source, preview, index
-and fresh shared seed. All editors clear Undo/Redo only after that publication.
+saved checkpoint is rebound to the candidate's exported source. Successful
+publication briefly flushes connected writers, then atomically publishes the
+source, preview, index, rebased current state and matching indexed baseline.
+The current checkpoint can remain ahead of the indexed checkpoint, with later
+edits retained as pending effects. A concurrent save retries only the local
+rebase against the same parsed candidate. All editors remount in the new epoch
+and clear Undo/Redo after publication.
 
 Text, JSON, Markdown, CSV and TSV use a raw UTF-8 Y.Text editor with local undo,
 selection tracking and IME composition support. Newlines and BOM are retained;
@@ -272,7 +275,14 @@ OOXML export. See [the test catalog](../test-catalog.md) for entry points.
 
 The source comparison baseline is separate from the editable Yjs state. It stores
 text and stable positions, image hashes/references, and hashes of visual metadata;
-media bytes remain in the current editor state. Office handoff publishes the new
-seed and its matching baseline together, then remounts the editor. Schema migration
+media bytes remain in the current editor state. Office handoff publishes the rebased
+saved state and a baseline mapped into its identities, then remounts the editor.
+PPTX rebase states use schema 4 and binary changed package parts; ordinary binary
+media states remain schema 3. XLSX rebase states require the `xlsx:rebase` root,
+which older strict schema-7 readers reject. XLSX permits the server-owned
+`__capy_pending_contributors` map alongside strict workbook roots and preserves
+its deletion history during sync. Both reconstruct the current source
+from the published base plus changed parts; no full old source remains in state.
+Schema migration
 `0015_source_semantic_baseline.sql` targets the cleared first-UAT dataset and refuses
 existing saved source states/candidates instead of discarding or reinterpreting them.

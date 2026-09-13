@@ -425,6 +425,86 @@ export class SourceDocumentStore {
     return effects;
   }
 
+  async rebasePublication(
+    session: SourceSession,
+    input: {
+      jobId: string;
+      leaseToken: string;
+      epoch: number;
+      checkpoint: number;
+    }
+  ) {
+    if (session.format === 'text')
+      throw new Error('Office rebase requires an Office source');
+    const result = await this.pool.query<{
+      state: Buffer;
+      seed: Buffer;
+      baseline: Buffer;
+      source_sha256: string;
+    }>(
+      'SELECT state,seed,baseline,source_sha256 FROM source_refresh_candidates WHERE file_id=$1 AND job_id=$2 AND lease_token=$3 AND epoch=$4 AND checkpoint=$5',
+      [
+        session.fileId,
+        input.jobId,
+        input.leaseToken,
+        input.epoch,
+        input.checkpoint,
+      ]
+    );
+    const candidate = result.rows[0];
+    if (!candidate)
+      throw new SourceRequestError(409, 'Source candidate changed');
+    if (session.checkpoint === input.checkpoint) {
+      if (!candidate.seed.length)
+        throw new Error('Source candidate seed is missing');
+      const baseline = candidate.baseline.toString('base64');
+      decodeBaseline(baseline, session.format);
+      return {
+        indexedBaseline: baseline,
+        netTokens: 0,
+        pendingEffects: [],
+        rebasedState: candidate.seed.toString('base64'),
+      };
+    }
+    const link = await this.request<{ sourceURL: string }>(
+      session.fileId,
+      `refresh-source?jobId=${encodeURIComponent(input.jobId)}&leaseToken=${encodeURIComponent(input.leaseToken)}`
+    );
+    const [oldSource, exported] = await Promise.all([
+      this.base(session.sourceURL, session.baseSourceSHA256),
+      this.base(link.sourceURL, candidate.source_sha256),
+    ]);
+    const checkpoint = {
+      baseSha256: session.baseSourceSHA256,
+      format: session.format,
+      schemaVersion: 1 as const,
+    };
+    const rebased = await runOffice(
+      'rebaseOffice',
+      oldSource,
+      { ...checkpoint, state: candidate.state },
+      { ...checkpoint, state: Buffer.from(session.state, 'base64') },
+      exported
+    );
+    for (const effect of rebased.effects) {
+      if (!effect.imageSHA256) continue;
+      const prior = session.pendingEffects.find(
+        (item) => item.imageSHA256 === effect.imageSHA256 && item.caption
+      );
+      if (prior?.caption) effect.caption = prior.caption;
+    }
+    return {
+      indexedBaseline: encodeBaseline({
+        entries: rebased.baseline,
+        format: session.format,
+        version: 1,
+      }),
+      netTokens: effectTokens(rebased.effects),
+      pendingEffects: rebased.effects,
+      rebasedState: Buffer.from(rebased.state).toString('base64'),
+    };
+  }
+
   store(room: string, snapshot: Y.Doc, eventId?: string) {
     return withRetryEvent(eventId, () => this.storeSnapshot(room, snapshot));
   }

@@ -84,6 +84,7 @@ import type {
   Quiz,
   QuizGradeReq,
   QuizGradeResp,
+  ReadSourceRefreshParams,
   ReorderChaptersReq,
   ReorderContentReq,
   RequestAccountDeletionReq,
@@ -91,6 +92,7 @@ import type {
   SearchParams,
   SearchResult,
   SetModelPrefsReq,
+  SourceCandidateReadOutputBody,
   SourceCandidateResponse,
   SourceCheckpoint,
   SourceCollaborationToken,
@@ -7623,6 +7625,65 @@ export const failSourceRefresh = async (id: string,
 
   const data: failSourceRefreshResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as failSourceRefreshResponse
+}
+
+
+
+export type readSourceRefreshResponse200 = {
+  data: SourceCandidateReadOutputBody
+  status: 200
+}
+
+export type readSourceRefreshResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type readSourceRefreshResponseSuccess = (readSourceRefreshResponse200) & {
+  headers: Headers;
+};
+export type readSourceRefreshResponseError = (readSourceRefreshResponseDefault) & {
+  headers: Headers;
+};
+
+export type readSourceRefreshResponse = (readSourceRefreshResponseSuccess | readSourceRefreshResponseError)
+
+export const getReadSourceRefreshUrl = (id: string,
+    params?: ReadSourceRefreshParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/collaboration/files/${id}/refresh-source?${stringifiedParams}` : `/internal/collaboration/files/${id}/refresh-source`
+}
+
+/**
+ * @summary Read a leased source export
+ */
+export const readSourceRefresh = async (id: string,
+    params?: ReadSourceRefreshParams, options?: RequestInit): Promise<readSourceRefreshResponse> => {
+
+  const res = await fetch(getReadSourceRefreshUrl(id,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: readSourceRefreshResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as readSourceRefreshResponse
 }
 
 

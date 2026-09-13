@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { afterAll, expect, test } from 'vitest';
+import * as Y from 'yjs';
 import {
   EditError,
   officeError,
@@ -108,3 +109,103 @@ test('DOCX agent edits round-trip through the packaged runtime with Capy guards'
     })
   ).rejects.toMatchObject({ code: 'stale_target' });
 }, 60_000);
+
+test.each([
+  ['docx', 'apps/demo/public/betteroffice-demo.docx'],
+  ['xlsx', 'apps/demo/public/sample.xlsx'],
+  ['pptx', 'apps/demo/public/betteroffice-demo.pptx'],
+] as const)(
+  '%s publishes checkpoint 10 while keeping saved 11 and a usable compact baseline',
+  async (format, path) => {
+    const bytes = await readFile(
+      new URL(`../../vendor/betteroffice/${path}`, import.meta.url)
+    );
+    const seed = await runOffice('seedOffice', format, bytes);
+    // Source saves retain causal history after the server clears contributor entries.
+    const saved = new Y.Doc();
+    Y.applyUpdate(saved, seed.state);
+    saved
+      .getMap('__capy_pending_contributors')
+      .set('actor', { access: 'write', nonce: 'n', userId: 'u' });
+    saved.getMap('__capy_pending_contributors').delete('actor');
+    seed.state = Y.encodeStateAsUpdate(saved);
+    saved.destroy();
+    const entries = await runOffice('inspectOffice', bytes, seed);
+    const target = entries.find((entry) => entry.value.length > 0);
+    if (!target) throw new Error('fixture has no editable text');
+    const command = (expected: string, value: string) =>
+      format === 'xlsx'
+        ? {
+            cell: target.label.slice(target.label.lastIndexOf('!') + 1),
+            expectedValue: expected,
+            sheet: target.label.slice(0, target.label.lastIndexOf('!')),
+            type: 'set_cell' as const,
+            value,
+          }
+        : {
+            expectedText: expected,
+            targetId: target.id,
+            text: value,
+            type: 'replace_text' as const,
+          };
+    const ten = {
+      ...seed,
+      state: (
+        await runOffice('applyOfficeCommands', bytes, seed, [
+          command(target.value, 'Saved at checkpoint 10'),
+        ])
+      ).state,
+    };
+    const eleven = {
+      ...seed,
+      state: (
+        await runOffice('applyOfficeCommands', bytes, ten, [
+          command('Saved at checkpoint 10', 'Saved at checkpoint 11'),
+        ])
+      ).state,
+    };
+    const parsed = await runOffice('exportOffice', bytes, ten, {
+      now: '2000-01-01T00:00:00.000Z',
+      seed: 'a'.repeat(64),
+    });
+    const same = await runOffice('rebaseOffice', bytes, ten, ten, parsed);
+    expect(same.effects).toEqual([]);
+    const result = await runOffice('rebaseOffice', bytes, ten, eleven, parsed);
+    const rebased = {
+      ...seed,
+      baseSha256: createHash('sha256').update(parsed).digest('hex'),
+      state: result.state,
+    };
+    expect(
+      (await runOffice('inspectOffice', parsed, rebased)).some(
+        (entry) => entry.value === 'Saved at checkpoint 11'
+      )
+    ).toBe(true);
+    const effects = await runOffice(
+      'compareBaselines',
+      result.baseline,
+      await runOffice('officeBaseline', parsed, rebased)
+    );
+    expect(effects).toEqual(result.effects);
+    const value = (text: string) =>
+      format === 'xlsx' ? JSON.stringify({ kind: 'text', value: text }) : text;
+    expect(effects.filter((effect) => effect.kind === 'text')).toMatchObject([
+      {
+        after: value('Saved at checkpoint 11'),
+        before: value('Saved at checkpoint 10'),
+        operation: 'replace',
+      },
+    ]);
+    const exported = await runOffice('exportOffice', parsed, rebased, {
+      now: '2000-01-01T00:00:00.000Z',
+      seed: 'b'.repeat(64),
+    });
+    const final = await runOffice('seedOffice', format, exported);
+    expect(
+      (await runOffice('inspectOffice', exported, final)).some(
+        (entry) => entry.value === 'Saved at checkpoint 11'
+      )
+    ).toBe(true);
+  },
+  60_000
+);

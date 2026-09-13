@@ -2710,6 +2710,20 @@ components:
         - retrieval
         - captioning
       type: string
+    SourceCandidateReadOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/SourceCandidateReadOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        sourceURL:
+          type: string
+      required:
+        - sourceURL
+      type: object
     SourceCandidateResponse:
       additionalProperties: false
       properties:
@@ -3084,6 +3098,9 @@ components:
           type: integer
         pendingEffects: {}
         previewBlobPath:
+          type: string
+        rebasedState:
+          format: base64
           type: string
         sourceETag:
           type: string
@@ -8181,6 +8198,45 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Discard an unsuccessful candidate
+      tags:
+        - Source collaboration
+  /internal/collaboration/files/{id}/refresh-source:
+    get:
+      operationId: readSourceRefresh
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Collaboration-Secret
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: jobId
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: leaseToken
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceCandidateReadOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Read a leased source export
       tags:
         - Source collaboration
   /internal/collaboration/materials/{id}/projection:

@@ -296,13 +296,11 @@ export class SourceHandoff {
         }
       }
     }
-    if (session.checkpoint !== input.checkpoint)
-      throw new SourceRequestError(409, 'Source changed during processing');
     const id = randomUUID();
     const room = session.room;
     const lock = `capy:collaboration:evicting:${room}`;
     if ((await this.redis.set(lock, id, 'PX', 120_000, 'NX')) !== 'OK')
-      throw new SourceRequestError(409, 'Source handoff already running');
+      throw new SourceRequestError(503, 'Source handoff already running');
     let completed = false;
     try {
       const instances = await this.activeInstances();
@@ -324,7 +322,7 @@ export class SourceHandoff {
         );
         if (Object.values(acknowledgments).includes('failed'))
           throw new SourceRequestError(
-            409,
+            503,
             'An editor has uncommitted changes'
           );
         if (
@@ -334,17 +332,42 @@ export class SourceHandoff {
         )
           break;
         if (Date.now() >= deadline)
-          throw new SourceRequestError(409, 'Source handoff timed out');
+          throw new SourceRequestError(503, 'Source handoff timed out');
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
-      if ((await this.redis.get(lock)) !== id)
-        throw new SourceRequestError(409, 'Source handoff lease expired');
-      const result = await this.sources.request(input.fileId, 'publish', {
-        ...input,
-        expectedLatestCheckpoint: input.checkpoint,
-        netTokens: 0,
-        pendingEffects: [],
-      });
+      let result: unknown;
+      let published = false;
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const latest = await this.current(input.fileId);
+        if (latest.epoch !== input.epoch)
+          throw new SourceRequestError(409, 'Source epoch changed');
+        const rebased = await this.sources.rebasePublication(latest, input);
+        if ((await this.redis.get(lock)) !== id)
+          throw new SourceRequestError(503, 'Source handoff lease expired');
+        try {
+          result = await this.sources.request(input.fileId, 'publish', {
+            ...input,
+            ...rebased,
+            expectedLatestCheckpoint: latest.checkpoint,
+          });
+          published = true;
+          break;
+        } catch (error) {
+          if (!(error instanceof SourceRequestError) || error.status !== 409)
+            throw error;
+          const current = await this.current(input.fileId);
+          if (
+            current.epoch !== latest.epoch ||
+            current.checkpoint === latest.checkpoint
+          )
+            throw error;
+        }
+      }
+      if (!published)
+        throw new SourceRequestError(
+          503,
+          'Source saves advanced during publication'
+        );
       completed = true;
       await this.redis.publish(
         SOURCE_HANDOFF_CHANNEL,

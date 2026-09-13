@@ -307,3 +307,111 @@ test('inspecting a never-opened source keeps the bootstrap access after seeding'
   expect(inspection.access).toBe('write');
   expect(inspection.text).toBe('seed');
 });
+
+test('Office rebase uses the captured state and latest saved state, retaining captions by media hash', async () => {
+  const oldSource = Buffer.from('old package'),
+    newSource = Buffer.from('parsed package');
+  const digest = (bytes: Uint8Array) =>
+    createHash('sha256').update(bytes).digest('hex');
+  const imageSHA256 = 'a'.repeat(64);
+  const session: SourceSession = {
+    access: 'write',
+    baseRevision: 1,
+    baseSourceSHA256: digest(oldSource),
+    checkpoint: 11,
+    epoch: 1,
+    fileId: 'f',
+    format: 'pptx',
+    indexedBaseline: '',
+    indexedCheckpoint: 0,
+    netTokens: 0,
+    pendingEffects: [
+      {
+        caption: 'A saved caption',
+        id: 'old-id',
+        imageSHA256,
+        kind: 'image',
+        label: 'Picture',
+        operation: 'add',
+      },
+    ],
+    room: 'source:f:epoch:1',
+    sourceURL: 'http://old-source',
+    state: Buffer.from('saved11').toString('base64'),
+    workspaceId: 'ws',
+  };
+  const pool = {
+    query: vi.fn(async () => ({
+      rows: [
+        {
+          baseline: Buffer.from(
+            encodeBaseline({ entries: [], format: 'pptx', version: 1 }),
+            'base64'
+          ),
+          seed: Buffer.from('seed10'),
+          source_sha256: digest(newSource),
+          state: Buffer.from('captured10'),
+        },
+      ],
+    })),
+  };
+  const sources = new SourceDocumentStore(
+    pool as unknown as Pool,
+    'http://api',
+    'secret'
+  );
+  const request = vi
+    .spyOn(sources, 'request')
+    .mockResolvedValue({ sourceURL: 'http://new-source' });
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async (url: string) =>
+        new Response(url === session.sourceURL ? oldSource : newSource)
+    )
+  );
+  const runtime = vi.spyOn(officeRuntime, 'runOffice').mockResolvedValue({
+    baseline: [],
+    effects: [
+      {
+        id: 'new-id',
+        imageSHA256,
+        kind: 'image',
+        label: 'Picture',
+        operation: 'add',
+      },
+    ],
+    state: Buffer.from('rebased11'),
+  });
+  const result = await sources.rebasePublication(session, {
+    checkpoint: 10,
+    epoch: 1,
+    jobId: 'job',
+    leaseToken: 'lease',
+  });
+  expect(request).toHaveBeenCalledWith(
+    'f',
+    'refresh-source?jobId=job&leaseToken=lease'
+  );
+  expect(runtime).toHaveBeenCalledWith(
+    'rebaseOffice',
+    oldSource,
+    expect.objectContaining({ state: Buffer.from('captured10') }),
+    expect.objectContaining({ state: Buffer.from('saved11') }),
+    newSource
+  );
+  expect(result.rebasedState).toBe(Buffer.from('rebased11').toString('base64'));
+  expect(result.pendingEffects).toMatchObject([
+    { caption: 'A saved caption', id: 'new-id' },
+  ]);
+  runtime.mockClear();
+  request.mockClear();
+  const same = await sources.rebasePublication(
+    { ...session, checkpoint: 10 },
+    { checkpoint: 10, epoch: 1, jobId: 'job', leaseToken: 'lease' }
+  );
+  expect(same.rebasedState).toBe(Buffer.from('seed10').toString('base64'));
+  expect(same.pendingEffects).toEqual([]);
+  expect(runtime).not.toHaveBeenCalled();
+  expect(request).not.toHaveBeenCalled();
+});

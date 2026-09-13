@@ -7,6 +7,7 @@ import {
   decodeBaseline,
   encodeBaseline,
   SourceDocumentStore,
+  SourceRequestError,
   type SourceSession,
 } from './sourceDocuments.js';
 import { SourceHandoff } from './sourceHandoff.js';
@@ -244,4 +245,93 @@ test('text publication advances the semantic baseline while retaining newer edit
   ]);
   expect(published!.expectedLatestCheckpoint).toBe(8);
   expect(f.host.closeConnections).not.toHaveBeenCalled();
+});
+
+// No connected editors: publication still has to fence saves from other processes.
+test('Office publication rebases a later save and retries only rebase when another save wins CAS', async () => {
+  const f = setup();
+  let lockId = '';
+  Object.assign(f.redis, {
+    del: vi.fn(),
+    eval: vi.fn(),
+    get: vi.fn(async () => lockId),
+    hgetall: vi.fn(async () => ({ instance: 'ready' })),
+    set: vi.fn(async (_key: string, id: string) => {
+      lockId = id;
+      return 'OK';
+    }),
+  });
+  f.session.checkpoint = 8;
+  vi.mocked(f.sources.session).mockImplementation(async () => ({
+    ...f.session,
+  }));
+  const rebase = vi
+    .spyOn(f.sources, 'rebasePublication')
+    .mockImplementation(async (session) => ({
+      indexedBaseline: 'baseline7',
+      netTokens: 0,
+      pendingEffects: [],
+      rebasedState: `state${session.checkpoint}`,
+    }));
+  const publish = vi
+    .spyOn(f.sources, 'request')
+    .mockImplementation(async (_file, _endpoint, body) => {
+      if (
+        (body as { expectedLatestCheckpoint: number })
+          .expectedLatestCheckpoint === 8
+      ) {
+        f.session.checkpoint = 9;
+        throw new SourceRequestError(409, 'Source checkpoint changed');
+      }
+      return { epoch: 2 };
+    });
+  const input = {
+    attemptId: 1,
+    checkpoint: 7,
+    epoch: 1,
+    fileId: 'f',
+    jobId: 'job',
+    leaseToken: 'lease',
+  };
+  await expect(f.handoff.publish(input)).resolves.toEqual({ epoch: 2 });
+  expect(rebase).toHaveBeenCalledTimes(2);
+  expect(publish.mock.calls.map((call) => call[2])).toEqual([
+    {
+      ...input,
+      expectedLatestCheckpoint: 8,
+      indexedBaseline: 'baseline7',
+      netTokens: 0,
+      pendingEffects: [],
+      rebasedState: 'state8',
+    },
+    {
+      ...input,
+      expectedLatestCheckpoint: 9,
+      indexedBaseline: 'baseline7',
+      netTokens: 0,
+      pendingEffects: [],
+      rebasedState: 'state9',
+    },
+  ]);
+  expect(f.redis.publish).toHaveBeenLastCalledWith(
+    expect.any(String),
+    expect.stringContaining('"type":"complete"')
+  );
+});
+
+test('a busy Office handoff is retryable without discarding its parsed candidate', async () => {
+  const f = setup();
+  Object.assign(f.redis, { set: vi.fn(async () => null) });
+  const rebase = vi.spyOn(f.sources, 'rebasePublication');
+  await expect(
+    f.handoff.publish({
+      attemptId: 1,
+      checkpoint: 7,
+      epoch: 1,
+      fileId: 'f',
+      jobId: 'job',
+      leaseToken: 'lease',
+    })
+  ).rejects.toMatchObject({ status: 503 });
+  expect(rebase).not.toHaveBeenCalled();
 });

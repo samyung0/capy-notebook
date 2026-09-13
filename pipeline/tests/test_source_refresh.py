@@ -14,7 +14,7 @@ pytestmark = pytest.mark.integration
 
 
 def candidate(workspace, *, format="docx"):
-    file_id = workspace.add_file("source.docx" if format == "docx" else "source.txt")
+    file_id = workspace.add_file("source." + ("txt" if format == "text" else format))
     job_id = "job_" + secrets.token_hex(6)
     payload = {
         "sourceRefresh": True,
@@ -116,8 +116,8 @@ async def test_candidate_stages_preview_and_index_without_replacing_published(
         db.reset_source_refresh(token)
 
 
-@pytest.mark.parametrize("format,stale", [("docx", True), ("text", False)])
-def test_candidate_checkpoint_fence_and_attempt_lease(workspace, format, stale):
+@pytest.mark.parametrize("format", ["docx", "xlsx", "pptx", "text"])
+def test_candidate_survives_newer_saves_but_requires_current_attempt(workspace, format):
     job = candidate(workspace, format=format)
     file_id = job["payload"]["fileId"]
     with workspace._connect() as conn:
@@ -127,11 +127,7 @@ def test_candidate_checkpoint_fence_and_attempt_lease(workspace, format, stale):
     token = db.bind_source_refresh(job)
     try:
         with workspace._connect() as conn, conn.transaction(), conn.cursor() as cur:
-            if stale:
-                with pytest.raises(db.SourceSupersededError):
-                    db.require_current_file_source(cur, file_id, 1, "etag-b")
-            else:
-                db.require_current_file_source(cur, file_id, 1, "etag-b")
+            db.require_current_file_source(cur, file_id, 1, "etag-b")
         with workspace._connect() as conn:
             conn.execute("UPDATE jobs SET attempts=2 WHERE id=%s", (job["id"],))
         with (
@@ -320,5 +316,61 @@ async def test_ready_donor_keeps_caption_ownership(workspace, monkeypatch, scena
                 ).fetchone()[0]
                 == digest
             )
+    finally:
+        db.reset_source_refresh(token)
+
+
+@pytest.mark.asyncio
+async def test_publication_retry_requires_completed_candidate_and_keeps_parsed_work(
+    workspace, monkeypatch
+):
+    from pipeline.ingest import worker
+
+    job = candidate(workspace)
+    file_id = job["payload"]["fileId"]
+    token = db.bind_source_refresh(job)
+    publications = []
+    monkeypatch.setattr(
+        worker,
+        "_finish_source_refresh",
+        lambda *args: publications.append(args) or True,
+    )
+    monkeypatch.setattr(worker, "_set_stage", lambda *args: None)
+    try:
+        content = await store.attach_file_content(
+            workspace_id=workspace.id,
+            file_id=file_id,
+            content_hash="completed-hash",
+            claim_job_id=job["id"],
+        )
+        with workspace._connect() as conn:
+            conn.execute(
+                "UPDATE rag_contents SET status='ready' WHERE id=%s",
+                (content["content_id"],),
+            )
+            conn.execute(
+                "UPDATE source_documents SET checkpoint=2 WHERE file_id=%s", (file_id,)
+            )
+        assert worker._resume_source_publication(job) is False
+        with workspace._connect() as conn:
+            conn.execute(
+                "UPDATE jobs SET payload=payload||'{\"sourcePublicationReady\":true}'::jsonb WHERE id=%s",
+                (job["id"],),
+            )
+            conn.execute(
+                "UPDATE source_refresh_candidates SET parse_artifact_key='parse/b',parse_artifact_fingerprint='fingerprint-b',parse_artifact_version='parser-v1' WHERE file_id=%s",
+                (file_id,),
+            )
+        assert worker._resume_source_publication(job) is True
+        assert publications == [
+            (
+                file_id,
+                job["id"],
+                "completed-hash",
+                "parse/b",
+                "fingerprint-b",
+                "parser-v1",
+            )
+        ]
     finally:
         db.reset_source_refresh(token)

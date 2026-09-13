@@ -61,6 +61,15 @@ interface Runtime {
     checkpoint: OfficeCheckpoint,
     commands: unknown[]
   ): Promise<OfficeCommandResult>;
+  compare(
+    bytes: Uint8Array,
+    from: OfficeCheckpoint,
+    to: OfficeCheckpoint
+  ): Promise<NetEffect[]>;
+  compareBaselines(
+    from: OfficeBaselineEntry[],
+    to: OfficeBaselineEntry[]
+  ): Promise<NetEffect[]>;
   exportOffice(
     bytes: Uint8Array,
     checkpoint: OfficeCheckpoint,
@@ -81,6 +90,16 @@ interface Runtime {
     bytes: Uint8Array,
     checkpoint: OfficeCheckpoint
   ): Promise<OfficeBaselineEntry[]>;
+  rebaseOffice(
+    bytes: Uint8Array,
+    captured: OfficeCheckpoint,
+    latest: OfficeCheckpoint,
+    exported: Uint8Array
+  ): Promise<{
+    state: Uint8Array;
+    baseline: OfficeBaselineEntry[];
+    effects: NetEffect[];
+  }>;
   resolveAsset(
     bytes: Uint8Array,
     checkpoint: OfficeCheckpoint,

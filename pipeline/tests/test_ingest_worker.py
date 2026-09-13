@@ -1924,3 +1924,21 @@ async def test_provider_busy_repends_until_the_cap_then_fails_the_file(monkeypat
     assert len(yields) == 1 and requeued == []
     ((_fid, _ws, _job_id, _message, _attempts, _payload, category, code),) = terminal
     assert (category, code) == ("provider", "provider_busy")
+
+
+@pytest.mark.asyncio
+async def test_completed_source_publication_retry_skips_providers_and_processing(
+    monkeypatch,
+):
+    payload = _ingest_payload(sourceRefresh=True)
+    job = {"id": "job_1", "type": "ingest", "payload": payload}
+    monkeypatch.setattr(
+        worker, "_resume_source_publication", lambda received: received is job
+    )
+
+    async def no_processing(*args, **kwargs):
+        pytest.fail("publication retry must not resolve providers or repeat ingest")
+
+    monkeypatch.setattr(worker, "_workspace_embedding_spec", no_processing)
+    monkeypatch.setattr(worker, "_process_ingest_job", no_processing)
+    await worker._process_ingest_job_bound(job)

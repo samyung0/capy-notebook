@@ -1309,8 +1309,9 @@ Yjs document nor media bytes. The collaboration server projects the merged
 current state and compares it to this baseline on each durable save; net-zero
 changes and Undo cancel by equality. Initialization writes the baseline with the
 first state, and successful publication advances it with the published source.
-Office publication uses the fresh seed's baseline, so its IDs match the remounted
-editor. Text publication compares the captured candidate with the latest state
+Office publication rebinds the latest saved native state to the exported package
+and maps the captured indexed projection into that state's identities. Only the
+compact baseline persists. Text publication compares the captured candidate with the latest state
 and retains later edits. The transient candidate still fixes one export while
 editing continues. The internal checkpoint request uses
 `initialize` and `baseSourceSHA256` only for the initial seed; ordinary saves
@@ -1329,10 +1330,18 @@ new automatic admission; current leased work can finish. Failed processing
 leaves authored state intact and exposes manual processing.
 
 Publication rechecks source epoch/base, current attempt/lease and candidate
-identity under the source lock. Office requires the exact current checkpoint,
-coordinates connected clients, publishes a fresh seed and clears Undo/Redo.
-Text can publish the captured older checkpoint while retaining exact residual
-changes and its Y.Text lineage. Durable job publication receipts survive lost
+identity under the source lock. Office coordinates connected clients, rebases the
+latest saved state onto the captured export, and compares-and-swaps that saved
+checkpoint. A newer save retries local rebase with the same completed parse.
+Publication advances the indexed checkpoint, retains the current checkpoint and
+residual changes, increments the editing epoch and clears Undo/Redo. XLSX/PPTX
+retain only binary package differences needed by current edits; DOCX preserves
+source-bound native embeds and relationships. The old full base is released.
+Text retains exact residual changes and its Y.Text lineage. Once all processing
+finishes, `sourcePublicationReady` marks the job for publication-only retries;
+a ready shared content row alone cannot skip preview/caption/derivative work.
+Temporary handoff failures return 503 and keep the completed candidate.
+Durable job publication receipts survive lost
 HTTP acknowledgments and allow credit settlement after a crash. Stale or failed
 candidates release their own references; delayed source deletion covers a still
 valid candidate PUT URL. Clones use the last published snapshot.

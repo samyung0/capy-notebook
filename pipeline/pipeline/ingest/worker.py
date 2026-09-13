@@ -364,6 +364,12 @@ def _finish_source_refresh(
         candidate = cur.fetchone()
         if candidate is None or not candidate[0] or candidate[1] != content_hash:
             raise db.SourceSupersededError("source candidate index is missing")
+        # Only this point certifies that preview, captions and derivatives are complete.
+        # A shared ready RAG content row alone can exist before those steps finish.
+        cur.execute(
+            "UPDATE jobs SET payload=payload||'{\"sourcePublicationReady\":true}'::jsonb WHERE id=%s",
+            (job_id,),
+        )
         conn.commit()
     if not cfg.gateway_url or not cfg.pipeline_secret:
         raise TerminalError(
@@ -406,6 +412,37 @@ def _finish_source_refresh(
                 f"source publication gateway returned {response.status_code}"
             )
     _settle_published_source_refresh(job_id, payload)
+    return True
+
+
+def _resume_source_publication(job: dict) -> bool:
+    payload = job.get("payload") or {}
+    if payload.get("sourceRefresh") is not True:
+        return False
+    if _source_refresh_published(job["id"], payload):
+        _settle_published_source_refresh(job["id"], payload)
+        return True
+    with db.connect() as conn, conn.cursor() as cur:
+        db.require_current_file_source(
+            cur,
+            payload["fileId"],
+            int(payload["sourceRevision"]),
+            payload["sourceETag"],
+        )
+        cur.execute(
+            """SELECT c.content_hash,c.parse_artifact_key,c.parse_artifact_fingerprint,c.parse_artifact_version
+            FROM source_refresh_candidates c JOIN rag_contents r ON r.id=c.content_id
+            JOIN jobs j ON j.id=c.job_id
+            WHERE c.file_id=%s AND c.job_id=%s AND c.lease_token=%s
+              AND j.payload->>'sourcePublicationReady'='true'
+              AND r.status='ready' AND r.content_hash=c.content_hash""",
+            (payload["fileId"], job["id"], payload["sourceLeaseToken"]),
+        )
+        ready = cur.fetchone()
+    if ready is None:
+        return False
+    _set_stage("publishing")
+    _finish_source_refresh(payload["fileId"], job["id"], *ready)
     return True
 
 
@@ -1814,6 +1851,9 @@ async def _process_ingest_job_bound(job: dict) -> None:
     rates = payload.get("resourceRates")
     if not isinstance(rates, dict) or not _REQUIRED_RESOURCE_RATES.issubset(rates):
         raise TerminalError("ingest payload is missing resource rate snapshots")
+
+    if await asyncio.to_thread(_resume_source_publication, job):
+        return
 
     try:
         pins = registry.pins_from_payload(

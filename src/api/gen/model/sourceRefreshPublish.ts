@@ -21,5 +21,6 @@ export interface SourceRefreshPublish {
   netTokens: number;
   pendingEffects: unknown;
   previewBlobPath: string;
+  rebasedState?: string;
   sourceETag: string;
 }

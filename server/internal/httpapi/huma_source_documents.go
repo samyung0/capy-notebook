@@ -74,6 +74,7 @@ type annotationIDInput struct {
 func (a *api) registerSourceDocuments(api huma.API) {
 	const tag = "Source collaboration"
 	reg(api, http.MethodGet, "/internal/collaboration/files/{id}/refresh-candidate", "claimSourceRefresh", tag, "Claim a fixed source export", http.StatusOK, a.claimSourceRefresh)
+	reg(api, http.MethodGet, "/internal/collaboration/files/{id}/refresh-source", "readSourceRefresh", tag, "Read a leased source export", http.StatusOK, a.readSourceRefresh)
 	regWithMaxBody(api, http.MethodPost, "/internal/collaboration/files/{id}/refresh-candidate", "finalizeSourceRefresh", tag, "Enqueue an uploaded candidate", http.StatusNoContent, 150<<20, a.finalizeSourceRefresh)
 	regWithMaxBody(api, http.MethodPost, "/internal/collaboration/files/{id}/publish", "publishSourceRefresh", tag, "Publish a processed source checkpoint", http.StatusOK, 150<<20, a.publishSourceRefresh)
 	reg(api, http.MethodPost, "/internal/collaboration/files/{id}/refresh-failure", "failSourceRefresh", tag, "Discard an unsuccessful candidate", http.StatusNoContent, a.failSourceRefresh)
@@ -225,6 +226,38 @@ type sourceCandidateResponse struct {
 	UploadHeaders map[string]string `json:"uploadHeaders"`
 }
 type sourceCandidateOutput struct{ Body sourceCandidateResponse }
+type sourceCandidateReadInput struct {
+	ID         string `path:"id"`
+	Secret     string `header:"X-Collaboration-Secret"`
+	JobID      string `query:"jobId"`
+	LeaseToken string `query:"leaseToken"`
+}
+type sourceCandidateReadOutput struct {
+	Body struct {
+		SourceURL string `json:"sourceURL"`
+	}
+}
+
+func (a *api) readSourceRefresh(ctx context.Context, in *sourceCandidateReadInput) (*sourceCandidateReadOutput, error) {
+	if err := a.checkSourceSecret(ctx, in.Secret); err != nil {
+		return nil, err
+	}
+	if a.blob == nil {
+		return nil, huma.Error503ServiceUnavailable("blob store not configured")
+	}
+	path, err := a.s.SourceCandidateBlob(ctx, in.ID, in.JobID, in.LeaseToken)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	url, err := a.blob.PresignGet(ctx, path)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	out := &sourceCandidateReadOutput{}
+	out.Body.SourceURL = url
+	return out, nil
+}
+
 type sourceFinalizeInput struct {
 	ID     string `path:"id"`
 	Secret string `header:"X-Collaboration-Secret"`

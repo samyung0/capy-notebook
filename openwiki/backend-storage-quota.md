@@ -190,10 +190,13 @@ source bytes, fresh seed and its semantic baseline while processing. Owner chang
 charges with the file. Admission, checkpoint growth and publication run under
 source/workspace/account locks. Publication accounts the net size after
 replacing the old base and removing candidate storage, including any larger
-fresh Office seed. Negative changes remain negative ledger deltas.
+rebased Office state and residual effects. Negative changes remain negative ledger deltas.
 
-A candidate retains both old A and new B temporarily. Only a successful current
-Office handoff replaces A, clears Undo/Redo and releases old references. Text
+A candidate retains old A and exported B temporarily. Successful Office handoff
+rebinds the latest saved state to B, clears Undo/Redo and releases A. XLSX/PPTX
+state can retain binary package parts needed by later edits but absent or different
+in B; it does not retain another full source archive. DOCX binds native embeds and
+relationships to B, whose exporter already preserves inherited package parts. Text
 retains its existing editing lineage. Shared caption payloads are platform
 artifacts referenced by containing resources; published clones attach their
 own references and exclude pending captions. A failed candidate cannot remove

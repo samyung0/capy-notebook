@@ -749,7 +749,7 @@ def _pipeline_source_cancellation(
             WHERE c.file_id=%s AND c.epoch=%s AND c.checkpoint=%s AND c.lease_token=%s
               AND d.epoch=c.epoch AND d.base_revision=%s AND d.running_job_id=c.job_id
               AND j.payload->>'sourceETag'=%s
-              AND (d.format='text' OR d.checkpoint=c.checkpoint)
+              AND d.checkpoint>=c.checkpoint AND d.indexed_checkpoint<=c.checkpoint
             FOR UPDATE OF c,d""",
             (
                 file_id,

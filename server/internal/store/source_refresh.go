@@ -51,6 +51,7 @@ type SourceRefreshPublish struct {
 	PendingEffects           json.RawMessage `json:"pendingEffects"`
 	NetTokens                int64           `json:"netTokens"`
 	IndexedBaseline          []byte          `json:"indexedBaseline,omitempty"`
+	RebasedState             []byte          `json:"rebasedState,omitempty"`
 	ExpectedLatestCheckpoint int64           `json:"expectedLatestCheckpoint"`
 }
 
@@ -250,8 +251,7 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	var source, sha string
 	var parseKey, parseFingerprint, parseVersion *string
 	var size int64
-	var seed, baseline []byte
-	err = tx.QueryRow(ctx, `SELECT c.source_blob_path,c.source_sha256,c.size_bytes,c.seed,c.baseline,c.parse_artifact_key,c.parse_artifact_fingerprint,c.parse_artifact_version FROM source_refresh_candidates c JOIN jobs j ON j.id=c.job_id JOIN files f ON f.id=c.file_id WHERE c.file_id=$1 AND c.job_id=$2 AND c.epoch=$3 AND c.checkpoint=$4 AND c.lease_token=$5 AND f.revision=$6 AND f.trashed_at IS NULL AND j.status='running' AND j.lease_expires_at>now() AND j.payload->>'sourceETag'=$7 AND c.content_id=$9 AND c.content_hash=$10 AND COALESCE(c.preview_blob_path,'')=$11 AND EXISTS(SELECT 1 FROM ingest_job_attempts a WHERE a.id=$8 AND a.job_id=j.id AND a.status='running' AND a.attempt=j.attempts AND a.id=(SELECT max(latest.id) FROM ingest_job_attempts latest WHERE latest.job_id=j.id)) FOR UPDATE OF c,j,f`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken, doc.BaseRevision, in.SourceETag, in.AttemptID, in.ContentID, in.ContentHash, in.PreviewBlobPath).Scan(&source, &sha, &size, &seed, &baseline, &parseKey, &parseFingerprint, &parseVersion)
+	err = tx.QueryRow(ctx, `SELECT c.source_blob_path,c.source_sha256,c.size_bytes,c.parse_artifact_key,c.parse_artifact_fingerprint,c.parse_artifact_version FROM source_refresh_candidates c JOIN jobs j ON j.id=c.job_id JOIN files f ON f.id=c.file_id WHERE c.file_id=$1 AND c.job_id=$2 AND c.epoch=$3 AND c.checkpoint=$4 AND c.lease_token=$5 AND f.revision=$6 AND f.trashed_at IS NULL AND j.status='running' AND j.lease_expires_at>now() AND j.payload->>'sourceETag'=$7 AND c.content_id=$9 AND c.content_hash=$10 AND COALESCE(c.preview_blob_path,'')=$11 AND EXISTS(SELECT 1 FROM ingest_job_attempts a WHERE a.id=$8 AND a.job_id=j.id AND a.status='running' AND a.attempt=j.attempts AND a.id=(SELECT max(latest.id) FROM ingest_job_attempts latest WHERE latest.job_id=j.id)) FOR UPDATE OF c,j,f`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken, doc.BaseRevision, in.SourceETag, in.AttemptID, in.ContentID, in.ContentHash, in.PreviewBlobPath).Scan(&source, &sha, &size, &parseKey, &parseFingerprint, &parseVersion)
 	if err != nil {
 		if isNoRows(err) {
 			err = ErrConflict
@@ -263,23 +263,18 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	}
 	effects := in.PendingEffects
 	netTokens := in.NetTokens
-	if doc.Format == "text" {
-		baseline = in.IndexedBaseline
-	}
+	baseline := in.IndexedBaseline
 	if !validSourceBaseline(baseline, doc.Format) {
 		return doc, ErrConflict
 	}
 	if doc.Format != "text" {
-		if doc.Checkpoint != in.Checkpoint || len(seed) == 0 {
+		if len(in.RebasedState) == 0 || len(in.RebasedState) > 100<<20 {
 			return doc, ErrConflict
 		}
-		effects = json.RawMessage(`[]`)
-		netTokens = 0
-	} else {
-		var parsed []json.RawMessage
-		if json.Unmarshal(effects, &parsed) != nil || parsed == nil || netTokens < 0 {
-			return doc, ErrConflict
-		}
+	}
+	var parsed []json.RawMessage
+	if json.Unmarshal(effects, &parsed) != nil || parsed == nil || netTokens < 0 {
+		return doc, ErrConflict
 	}
 	var contentHash string
 	err = tx.QueryRow(ctx, `SELECT content_hash FROM rag_contents WHERE id=$1 AND workspace_id=$2 AND status='ready'`, in.ContentID, ws).Scan(&contentHash)
@@ -296,7 +291,7 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 		return doc, ErrConflict
 	}
 	var growth int64
-	if err = tx.QueryRow(ctx, `SELECT ($2::bigint-f.size_bytes) + CASE WHEN d.format='text' THEN octet_length(d.state)::bigint+octet_length($4::bytea)+octet_length($3::jsonb::text) ELSE octet_length(c.seed)::bigint+octet_length($4::bytea)+2 END-d.storage_bytes-c.storage_bytes FROM files f JOIN source_documents d ON d.file_id=f.id JOIN source_refresh_candidates c ON c.file_id=f.id WHERE f.id=$1`, fileID, size, effects, baseline).Scan(&growth); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT ($2::bigint-f.size_bytes) + CASE WHEN d.format='text' THEN octet_length(d.state)::bigint ELSE octet_length($5::bytea)::bigint END+octet_length($4::bytea)+octet_length($3::jsonb::text)-d.storage_bytes-c.storage_bytes FROM files f JOIN source_documents d ON d.file_id=f.id JOIN source_refresh_candidates c ON c.file_id=f.id WHERE f.id=$1`, fileID, size, effects, baseline, in.RebasedState).Scan(&growth); err != nil {
 		return doc, err
 	}
 	if growth > 0 {
@@ -320,17 +315,17 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 		if _, err = tx.Exec(ctx, `UPDATE image_caption_associations a SET published=(a.image_sha256=ANY(c.image_sha256s)) FROM source_refresh_candidates c WHERE c.file_id=$1 AND a.file_id=c.file_id`, fileID); err != nil {
 			return doc, err
 		}
-		if _, err = tx.Exec(ctx, `DELETE FROM image_caption_associations WHERE file_id=$1 AND NOT published`, fileID); err != nil {
+		if _, err = tx.Exec(ctx, `DELETE FROM image_caption_associations a WHERE file_id=$1 AND NOT published AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements($2::jsonb) e WHERE e->>'imageSHA256'=a.image_sha256 AND e->>'operation'<>'remove')`, fileID, effects); err != nil {
 			return doc, err
 		}
 	}
 	if doc.Format == "text" {
 		_, err = tx.Exec(ctx, `UPDATE source_documents SET indexed_checkpoint=$2,indexed_baseline=$3,base_revision=base_revision+1,base_blob_path=$4,base_source_sha256=$5,pending_effects=$6,net_tokens=$7,desired_manual=desired_manual AND $6::jsonb<>'[]'::jsonb,desired_checkpoint=CASE WHEN $6::jsonb='[]'::jsonb THEN NULL ELSE desired_checkpoint END,running_job_id=NULL,refresh_error=NULL,updated_at=now() WHERE file_id=$1`, fileID, in.Checkpoint, baseline, source, sha, effects, netTokens)
 	} else {
-		_, err = tx.Exec(ctx, `UPDATE source_documents SET epoch=epoch+1,indexed_checkpoint=$2,checkpoint=$2,indexed_baseline=$6,state=$3,base_revision=base_revision+1,base_blob_path=$4,base_source_sha256=$5,pending_effects='[]',net_tokens=0,running_job_id=NULL,desired_checkpoint=NULL,desired_manual=false,refresh_error=NULL,updated_at=now() WHERE file_id=$1`, fileID, in.Checkpoint, seed, source, sha, baseline)
+		_, err = tx.Exec(ctx, `UPDATE source_documents SET epoch=epoch+1,indexed_checkpoint=$2,indexed_baseline=$6,state=$3,base_revision=base_revision+1,base_blob_path=$4,base_source_sha256=$5,pending_effects=$7,net_tokens=$8,running_job_id=NULL,desired_checkpoint=CASE WHEN $7::jsonb='[]'::jsonb THEN NULL ELSE checkpoint END,desired_manual=desired_manual AND $7::jsonb<>'[]'::jsonb,refresh_error=NULL,updated_at=now() WHERE file_id=$1`, fileID, in.Checkpoint, in.RebasedState, source, sha, baseline, effects, netTokens)
 		if err == nil {
-			// The fresh seed has new native identities: AI edit guards cannot be
-			// validated against it, so their Undo is released with the old base.
+			// Rebase can change native identities. Release AI edit guards and
+			// their Undo with the old editing epoch.
 			err = invalidateEditInversesTx(ctx, tx, agenttools.KindSourceFile, fileID, "source_rebased")
 		}
 	}

@@ -3827,6 +3827,7 @@ export const PublishSourceRefreshBody = zod.object({
   "netTokens": zod.int(),
   "pendingEffects": zod.unknown(),
   "previewBlobPath": zod.string(),
+  "rebasedState": zod.string().optional(),
   "sourceETag": zod.string()
 })
 
@@ -3986,6 +3987,28 @@ export const FailSourceRefreshBody = zod.object({
 })
 
 export const FailSourceRefreshResponse = zod.void()
+
+
+/**
+ * @summary Read a leased source export
+ */
+export const ReadSourceRefreshParams = zod.object({
+  "id": zod.string()
+})
+
+export const ReadSourceRefreshQueryParams = zod.object({
+  "jobId": zod.string().optional(),
+  "leaseToken": zod.string().optional()
+})
+
+export const ReadSourceRefreshHeader = zod.object({
+  "X-Collaboration-Secret": zod.string().optional()
+})
+
+export const ReadSourceRefreshResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "sourceURL": zod.string()
+})
 
 
 /**

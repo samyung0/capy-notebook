@@ -114,7 +114,7 @@ func TestSourceRefreshManualIsOwnerOnly(t *testing.T) {
 	}
 }
 
-func TestSourceRefreshClaimPublicationAndStaleOffice(t *testing.T) {
+func TestSourceRefreshRebasesNewerSavedOfficeState(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "source_refresh_owner")
@@ -136,7 +136,8 @@ func TestSourceRefreshClaimPublicationAndStaleOffice(t *testing.T) {
 	if _, err = s.ClaimSourceRefresh(ctx, file.ID, job.JobID); !errors.Is(err, ErrConflict) {
 		t.Fatalf("duplicate export claim: %v", err)
 	}
-	finalize := SourceRefreshFinalize{JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 120, SourceETag: "etag-b", Seed: []byte("fresh-seed"), Baseline: sourceTestBaseline(doc.Format, "B")}
+	baseline := sourceTestBaseline(doc.Format, "B")
+	finalize := SourceRefreshFinalize{JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 120, SourceETag: "etag-b", Seed: []byte("fresh-seed"), Baseline: baseline}
 	if err = s.FinalizeSourceRefresh(ctx, file.ID, finalize); err != nil {
 		t.Fatal(err)
 	}
@@ -148,81 +149,53 @@ func TestSourceRefreshClaimPublicationAndStaleOffice(t *testing.T) {
 	if _, err = s.pool.Exec(ctx, `INSERT INTO rag_contents(id,workspace_id,content_hash,status) VALUES($1,$2,'hash-b','ready')`, contentID, ws.ID); err != nil {
 		t.Fatal(err)
 	}
-	publish := SourceRefreshPublish{AttemptID: sourceTestAttempt(t, s, job.JobID), JobID: job.JobID, Epoch: 1, Checkpoint: 1, LeaseToken: candidate.LeaseToken, SourceETag: "etag-b", ContentID: contentID, ContentHash: "hash-b", PreviewBlobPath: "previews/b", ExpectedLatestCheckpoint: doc.Checkpoint}
-	if _, err = s.pool.Exec(ctx, `UPDATE source_refresh_candidates SET content_id=$2,content_hash=$3,preview_blob_path=$4 WHERE file_id=$1`, file.ID, publish.ContentID, publish.ContentHash, publish.PreviewBlobPath); err != nil {
+	indexedImage, pendingImage := strings.Repeat("c", 64), strings.Repeat("d", 64)
+	if _, err = s.pool.Exec(ctx, `UPDATE source_refresh_candidates SET content_id=$2,content_hash='hash-b',preview_blob_path='previews/b',image_sha256s=ARRAY[$3::text] WHERE file_id=$1`, file.ID, contentID, indexedImage); err != nil {
 		t.Fatal(err)
 	}
+	for _, digest := range []string{indexedImage, pendingImage, strings.Repeat("e", 64)} {
+		if _, err = s.pool.Exec(ctx, `INSERT INTO image_caption_associations(id,file_id,image_sha256,caption_blob_path,size_bytes,published) VALUES($1,$2,$3,$4,10,false)`, uid("ica"), file.ID, digest, "caption/"+digest); err != nil {
+			t.Fatal(err)
+		}
+	}
+	residual := json.RawMessage(`[{"id":"image-new","kind":"image","operation":"add","imageSHA256":"` + pendingImage + `","after":"new image"}]`)
+	publish := SourceRefreshPublish{AttemptID: sourceTestAttempt(t, s, job.JobID), JobID: job.JobID, Epoch: 1, Checkpoint: 1, LeaseToken: candidate.LeaseToken, SourceETag: "etag-b", ContentID: contentID, ContentHash: "hash-b", PreviewBlobPath: "previews/b", ExpectedLatestCheckpoint: doc.Checkpoint, IndexedBaseline: baseline, RebasedState: []byte("rebased-newer-state"), PendingEffects: residual, NetTokens: 3}
+	// Another save wins while the native rebase is being calculated.
+	doc = sourceTestEdit(t, s, owner, doc, "newest-state")
 	if _, err = s.PublishSourceRefresh(ctx, file.ID, publish); !errors.Is(err, ErrConflict) {
-		t.Fatalf("stale office published: %v", err)
-	}
-	old, err := s.GetFile(ctx, file.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if old.Revision != 1 {
-		t.Fatal("stale result changed source")
-	}
-	if _, err = s.pool.Exec(ctx, `SELECT cancel_pipeline_jobs(ARRAY[$1::text],'superseded','superseded','source_superseded','superseded')`, job.JobID); err != nil {
-		t.Fatal(err)
-	}
-	var refreshError *string
-	if err = s.pool.QueryRow(ctx, `SELECT refresh_error FROM source_documents WHERE file_id=$1`, file.ID).Scan(&refreshError); err != nil || refreshError != nil {
-		t.Fatalf("stale candidate became terminal: %v %v", refreshError, err)
+		t.Fatalf("stale rebase published: %v", err)
 	}
 	retained, err := s.SourceSession(ctx, owner, file.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(retained.State) != "newer-state" || retained.Checkpoint != doc.Checkpoint || retained.Epoch != 1 || retained.NetTokens != 6000 {
-		t.Fatalf("stale candidate lost history: %+v", retained)
+	if string(retained.State) != "newest-state" || retained.Checkpoint != doc.Checkpoint || retained.Epoch != 1 {
+		t.Fatalf("stale rebase lost saved edits: %+v", retained)
 	}
-	// A fresh candidate at the current checkpoint can replace the base.
-	job, err = s.RequestSourceRefresh(ctx, owner, file.ID, false)
-	if err != nil {
-		t.Fatal(err)
+	old, err := s.GetFile(ctx, file.ID)
+	if err != nil || old.Revision != 1 {
+		t.Fatalf("stale result changed source: %+v %v", old, err)
 	}
-	candidate, err = s.ClaimSourceRefresh(ctx, file.ID, job.JobID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	finalize.JobID = job.JobID
-	finalize.Checkpoint = doc.Checkpoint
-	finalize.LeaseToken = candidate.LeaseToken
-	if err = s.FinalizeSourceRefresh(ctx, file.ID, finalize); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = s.pool.Exec(ctx, `UPDATE jobs SET status='running',attempts=1,lease_expires_at=now()+interval '5 minutes' WHERE id=$1`, job.JobID); err != nil {
-		t.Fatal(err)
-	}
-	publish.AttemptID = sourceTestAttempt(t, s, job.JobID)
-	publish.JobID = job.JobID
-	publish.Checkpoint = doc.Checkpoint
-	publish.LeaseToken = candidate.LeaseToken
-	publish.ContentID = uid("rc")
-	if _, err = s.pool.Exec(ctx, `INSERT INTO rag_contents(id,workspace_id,content_hash,status) VALUES($1,$2,'hash-b','ready')`, publish.ContentID, ws.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = s.pool.Exec(ctx, `UPDATE source_refresh_candidates SET content_id=$2,content_hash=$3,preview_blob_path=$4,image_sha256s=ARRAY[$5::text] WHERE file_id=$1`, file.ID, publish.ContentID, publish.ContentHash, publish.PreviewBlobPath, strings.Repeat("c", 64)); err != nil {
-		t.Fatal(err)
-	}
-	for _, digest := range []string{strings.Repeat("c", 64), strings.Repeat("d", 64)} {
-		if _, err = s.pool.Exec(ctx, `INSERT INTO image_caption_associations(id,file_id,image_sha256,caption_blob_path,size_bytes,published) VALUES($1,$2,$3,$4,10,false)`, uid("ica"), file.ID, digest, "caption/"+digest); err != nil {
-			t.Fatal(err)
-		}
-	}
+	// Retry only rebasing against the latest save; the same parsed candidate publishes.
+	publish.ExpectedLatestCheckpoint = doc.Checkpoint
+	publish.RebasedState = []byte("rebased-newest-state")
 	published, err := s.PublishSourceRefresh(ctx, file.ID, publish)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var captions, receipt int
-	if err = s.pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM image_caption_associations WHERE file_id=$1 AND published),(SELECT (payload->>'sourcePublishedCheckpoint')::int FROM jobs WHERE id=$2)`, file.ID, job.JobID).Scan(&captions, &receipt); err != nil {
+	var normalizedResidual []byte
+	if err = s.pool.QueryRow(ctx, `SELECT $1::jsonb`, residual).Scan(&normalizedResidual); err != nil {
 		t.Fatal(err)
 	}
-	if captions != 1 || receipt != int(doc.Checkpoint) {
-		t.Fatalf("caption publication/receipt: %d %d", captions, receipt)
-	}
-	if published.Epoch != 2 || published.NetTokens != 0 || string(published.State) != "fresh-seed" || published.BaseRevision != 2 {
+	if published.Epoch != 2 || published.Checkpoint != doc.Checkpoint || published.IndexedCheckpoint != 1 || published.NetTokens != 3 || string(published.State) != "rebased-newest-state" || published.BaseRevision != 2 || string(published.IndexedBaseline) != string(baseline) || string(published.PendingEffects) != string(normalizedResidual) {
 		t.Fatalf("bad base promotion: %+v", published)
+	}
+	var publishedCaptions, totalCaptions, candidates, receipt int
+	if err = s.pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM image_caption_associations WHERE file_id=$1 AND published),(SELECT count(*) FROM image_caption_associations WHERE file_id=$1),(SELECT count(*) FROM source_refresh_candidates WHERE file_id=$1),(SELECT (payload->>'sourcePublishedCheckpoint')::int FROM jobs WHERE id=$2)`, file.ID, job.JobID).Scan(&publishedCaptions, &totalCaptions, &candidates, &receipt); err != nil {
+		t.Fatal(err)
+	}
+	if publishedCaptions != 1 || totalCaptions != 2 || candidates != 0 || receipt != 1 {
+		t.Fatalf("candidate/caption publication: %d %d %d %d", publishedCaptions, totalCaptions, candidates, receipt)
 	}
 	if repeat, err := s.PublishSourceRefresh(ctx, file.ID, publish); err != nil || repeat.BaseRevision != 2 {
 		t.Fatalf("idempotent publication: %+v %v", repeat, err)
