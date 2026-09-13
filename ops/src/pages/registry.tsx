@@ -21,6 +21,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from '@/components/ui/dialog';
 import { DraftFields } from '@/draft-fields';
 import { formatCount } from '@/format';
@@ -430,13 +431,40 @@ function RegistryEditor({ registry }: { registry: Registry }) {
                       <div className="min-w-0">
                         <p className="truncate font-mono font-semibold text-xs">
                           {missing.length > 0 ? (
-                            <span title={`Missing ${missing.join(', ')}`}>
-                              <TriangleAlert
-                                aria-label={`Missing ${missing.join(', ')}`}
-                                className="mr-1 inline size-3.5 text-destructive"
-                                role="img"
-                              />
-                            </span>
+                            <Dialog>
+                              <DialogTrigger asChild>
+                                <Button
+                                  aria-label={`Show missing configuration for ${model ? modelRefLabel(model) : rowId}`}
+                                  className="mr-1 size-6 align-middle text-destructive hover:text-destructive"
+                                  size="icon"
+                                  type="button"
+                                  variant="ghost"
+                                >
+                                  <TriangleAlert aria-hidden="true" />
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>
+                                    Missing configuration
+                                  </DialogTitle>
+                                  <DialogDescription>
+                                    {model ? modelRefLabel(model) : rowId} needs
+                                    the following configuration to serve
+                                    platform requests.
+                                  </DialogDescription>
+                                </DialogHeader>
+                                <ul className="list-disc space-y-2 pl-5 text-sm">
+                                  {missing.map((item) => (
+                                    <li key={item}>
+                                      {item === 'capacity'
+                                        ? 'Model capacity limits'
+                                        : item}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </DialogContent>
+                            </Dialog>
                           ) : null}
                           {model ? modelRefLabel(model) : rowId}
                         </p>

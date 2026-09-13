@@ -865,6 +865,9 @@ capacity-only edits do not create a catalog version. Routed GLM shares
 `deepinfra:zai-org/GLM-5.3-Flash` row is history). Each environment's database
 holds its own limits; no capacity values are seeded across environments, so
 the TokenHub capacity row must be created in Ops before GLM traffic.
+An enabled platform model missing capacity or a provider credential has a
+clickable warning icon in the registry. It opens a dialog listing the missing
+configuration for that model.
 
 Interactive callers may use the whole total, ingest callers total minus the
 reserve. Require total > 0 and 0 <= reserve < total. Every admission attempt reads
