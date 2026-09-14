@@ -41,9 +41,16 @@ if args[0]=='inspect':
  else:print('true')
  sys.exit(0)
 if args[0]=='compose':
+ env_file=pathlib.Path(args[args.index('--env-file')+1])
+ if data['head'] != os.environ['RELEASE_SHA']:
+  print('Compose checkout and release differ',file=sys.stderr);sys.exit(1)
+ if data['head']=='b'*40 and 'PARSER_BIND_ADDRESS=10.77.0.2' not in env_file.read_text():
+  print('required variable PARSER_BIND_ADDRESS is missing',file=sys.stderr);sys.exit(1)
  if 'build' in args and os.environ.get('CAPY_FAIL_BUILD'):sys.exit(1)
+ if 'stop' in args and os.environ.get('CAPY_FAIL_STOP'):sys.exit(1)
  if 'exec' in args:sys.exit(0)
  if 'ps' in args:
+  if os.environ.get('CAPY_FAIL_COMPOSE_PS') and data['head']=='b'*40:sys.exit(1)
   service=args[-1]
   if service in data['running']:print(service)
  elif 'stop' in args:
@@ -109,7 +116,7 @@ class ReleaseTest(unittest.TestCase):
             Path(staging).mkdir(mode=0o700)
             Path(
                 staging, "nonprod.env" if self.environment == "uat" else "prod.env"
-            ).write_text("PARSER_TOKEN=candidate\n")
+            ).write_text("PARSER_TOKEN=candidate\nPARSER_BIND_ADDRESS=10.77.0.2\n")
             Path(staging, self.environment + ".queue.env").write_text(
                 "DATABASE_URL=candidate\n"
             )
@@ -130,6 +137,7 @@ class ReleaseTest(unittest.TestCase):
                 capture_output=True,
                 check=False,
                 text=True,
+                timeout=15,
             )
             self.assertEqual(
                 result.returncode == 0, success, result.stderr + result.stdout
@@ -190,6 +198,36 @@ class ReleaseTest(unittest.TestCase):
         self.assertIn("Parser restarted 3 times", result.stderr)
         self.assertIn("exit code 1", result.stderr)
         self.assertTrue((self.state / "pending").exists())
+
+    def test_compose_query_failure_exits_without_polling(self):
+        self.env["CAPY_FAIL_COMPOSE_PS"] = "1"
+        result = self.run_phase("prepare", success=False)
+        self.assertIn("Could not query the parser through Compose", result.stderr)
+        self.assertNotIn("Waiting for", result.stdout)
+        self.assertTrue((self.state / "pending").exists())
+
+    def test_reclaim_resumes_before_old_consumers_were_stopped(self):
+        self.env["CAPY_FAIL_STOP"] = "1"
+        self.run_phase("prepare", success=False)
+        self.assertEqual(
+            self.state_data()["running"],
+            {service: PREVIOUS for service in ["parser", *self.consumers]},
+        )
+        self.assertNotIn(
+            "PARSER_BIND_ADDRESS", (self.state / "current/nonprod.env").read_text()
+        )
+        del self.env["CAPY_FAIL_STOP"]
+        self.run_phase("reclaim", "run-2", backend=CANDIDATE)
+        self.assertEqual(
+            self.state_data()["running"],
+            {service: CANDIDATE for service in ["parser", *self.consumers]},
+        )
+        self.assertEqual((self.state / "active").read_text().strip(), CANDIDATE)
+        self.assertFalse((self.state / "pending").exists())
+        self.assertNotIn(
+            "PARSER_BIND_ADDRESS",
+            (self.state / "previous-config/nonprod.env").read_text(),
+        )
 
     def test_failed_build_restores_checkout_before_pending_exists(self):
         self.env["CAPY_FAIL_BUILD"] = "1"

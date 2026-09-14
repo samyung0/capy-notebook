@@ -1081,13 +1081,19 @@ live backend revision before invoking recovery with the original run owner.
 Cancelling a run does not signal the remote script (no tty), but its next
 parser poll write fails and exits through cleanup, so `operation.lock` is free
 within about 15 seconds. `pending` keeps the original owner, so the next run
-stops at `another release is pending`. Re-dispatch Deploy UAT with
+stops at `another release is pending`. Re-dispatch Deploy ingest with
 `reclaim_pending` ticked: every workflow that reaches the host shares one
 concurrency group, so that owner is a finished run, and the host applies the
 usual recovery rules under it before preparing. A backend at the candidate
-activates it; a bootstrap, or a backend at the previous revision, rolls back;
-anything else stops. A parser that restarts three times fails the wait
-immediately; read its logs on the host.
+resumes preparation using the candidate configuration: stop consumers, start
+the parser, wait for health, then activate consumers. This also covers a failure
+before the previous consumers stopped or `current` switched snapshots. Every
+candidate Compose command, including `stop`, uses the candidate env snapshot
+because Compose interpolates the checked-out file before executing commands.
+A bootstrap without a matching backend, or a backend at the previous revision,
+rolls back; anything else stops. Compose query errors fail immediately rather
+than being reported as a pending parser. A parser that restarts three times
+also fails the wait immediately; read its logs on the host.
 Do not delete pending state or blindly roll back only ingest. After committed
 activation, promote the previous compatible revision through the whole app
 workflow; this does not reverse database migrations automatically.

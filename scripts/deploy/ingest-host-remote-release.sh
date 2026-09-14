@@ -75,7 +75,8 @@ dc() {
 }
 verify() {
   local sha="$1" service="$2" ids id actual running
-  ids="$(dc "$sha" ps -q "$service")"; [[ -n "$ids" ]] || return 1
+  ids="$(dc "$sha" ps -q "$service")" || die 'could not query Compose services'
+  [[ -n "$ids" ]] || return 1
   while IFS= read -r id; do
     actual="$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$id")"
     running="$(docker inspect --format '{{.State.Running}}' "$id")"
@@ -85,7 +86,7 @@ verify() {
 parser_ready() {
   local sha="$1" remaining=100 container health restarts
   while ((remaining > 0)); do
-    container="$(dc "$sha" ps -q parser)"
+    container="$(dc "$sha" ps -q parser)" || { printf 'Could not query the parser through Compose.\n' >&2; return 1; }
     health=pending
     if [[ -n "$container" ]]; then
       # The restart policy would retry a crashing parser for the whole wait;
@@ -117,6 +118,26 @@ parser_ready() {
 
 check_owner() {
   [[ "$(cat "$pending/owner")" == "$owner" && "$(read_sha "$pending/candidate")" == "$revision" ]] || die 'pending release belongs to another workflow; refusing mutation'
+}
+check_local_consumers() {
+  if [[ "$environment" == uat ]]; then
+    for service in worker-local parse-coordinator-local import-worker-local host-sampler-local; do
+      [[ -z "$(docker ps -q --filter label=com.docker.compose.project=capy-ingest-nonprod --filter "label=com.docker.compose.service=$service")" ]] || die 'stop local-profile consumers before changing the shared nonprod parser; local data is preserved'
+    done
+  fi
+}
+start_candidate_parser() {
+  check_local_consumers
+  # The checkout is already the candidate. Even stop parses its Compose file,
+  # so every command must use the candidate's configuration, including recovery.
+  config="$pending/candidate-config"
+  dc "$revision" config --quiet 2>/dev/null || die 'invalid candidate Compose configuration (details redacted)'
+  dc "$revision" stop "${consumers[@]}"
+  set_current "$(cd "$config" && pwd -P)"
+  if [[ "$(cat "$pending/previous")" == none ]]; then
+    dc "$revision" run --rm --no-deps parse-spool-init
+  fi
+  dc "$revision" up -d --no-build --no-deps parser
 }
 rollback() {
   [[ -d "$pending" ]] || { printf 'No pending ingest release.\n'; return; }
@@ -160,7 +181,7 @@ if [[ "$mode" == recover ]]; then
   check_owner
   pending_previous="$(cat "$pending/previous")"
   if [[ "$backend_revision" == "$revision" ]]; then
-    mode=activate
+    mode=resume
   elif [[ "$pending_previous" == none ]]; then
     # A bootstrap has nothing to restore, so stopping the candidate is safe
     # even when the backend cannot be reached yet.
@@ -185,11 +206,7 @@ if [[ "$mode" == prepare || "$mode" == bootstrap-prepare ]]; then
     previous="$(read_sha "$active")"
     [[ -d "$config" && -f "$config/$shared" ]] || die 'current config snapshot is missing; restore it before deploying'
   fi
-  if [[ "$environment" == uat ]]; then
-    for service in worker-local parse-coordinator-local import-worker-local host-sampler-local; do
-      [[ -z "$(docker ps -q --filter label=com.docker.compose.project=capy-ingest-nonprod --filter "label=com.docker.compose.service=$service")" ]] || die 'stop local-profile consumers before changing the shared nonprod parser; local data is preserved'
-    done
-  fi
+  check_local_consumers
   if [[ "$previous" != none ]]; then
     verify "$previous" parser || die 'active parser SHA mismatch'
     for service in "${consumers[@]}"; do verify "$previous" "$service" || die "active $service SHA mismatch"; done
@@ -216,13 +233,7 @@ if [[ "$mode" == prepare || "$mode" == bootstrap-prepare ]]; then
   ln -s "$local_snapshot" "$pending_work/candidate-config"
   mv "$pending_work" "$pending"
   pending_work=""
-  config="$state/current"
-  if [[ "$previous" != none ]]; then dc "$previous" stop "${consumers[@]}"; fi
-  set_current "$local_snapshot"
-  if [[ "$previous" == none ]]; then
-    dc "$revision" run --rm --no-deps parse-spool-init
-  fi
-  dc "$revision" up -d --no-build --no-deps parser
+  start_candidate_parser
   parser_ready "$revision" || die 'candidate parser failed; run rollback with this release owner'
   printf 'Prepared %s parser %s; consumers remain stopped.\n' "$environment" "$revision"
   exit
@@ -230,6 +241,8 @@ fi
 [[ -d "$pending" ]] || die 'no pending release'
 check_owner
 [[ "$(git rev-parse HEAD)" == "$revision" ]] || die 'checkout revision mismatch'
+config="$pending/candidate-config"
+if [[ "$mode" == resume ]]; then start_candidate_parser; fi
 parser_ready "$revision" || die 'candidate parser is not healthy at this revision; pending state retained'
 dc "$revision" up -d --no-build --no-deps "${consumers[@]}"
 for service in "${consumers[@]}"; do verify "$revision" "$service" || die "$service revision mismatch"; done
