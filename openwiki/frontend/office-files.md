@@ -241,6 +241,10 @@ edits retained as pending effects. A concurrent save retries only the local
 rebase against the same parsed candidate. All editors remount in the new epoch
 and clear Undo/Redo after publication.
 
+Export finalization compares the B2 object's size and unquoted ETag with the
+gateway's HEAD result. Rejected exports send a complete failure receipt so the
+job closes without waiting for its lease to expire.
+
 Text, JSON, Markdown, CSV and TSV use a raw UTF-8 Y.Text editor with local undo,
 selection tracking and IME composition support. Newlines and BOM are retained;
 invalid UTF-8 fails explicitly. Text refresh batches every 15 seconds even

@@ -825,7 +825,7 @@ export class SourceDocumentStore {
         leaseToken: candidate.leaseToken,
         seed: Buffer.from(seed).toString('base64'),
         sizeBytes: bytes.byteLength,
-        sourceETag: uploaded.headers.get('etag') ?? '',
+        sourceETag: uploaded.headers.get('etag')?.replace(/^"|"$/g, '') ?? '',
         sourceSHA256: createHash('sha256').update(bytes).digest('hex'),
       });
     } catch (error) {
@@ -833,6 +833,7 @@ export class SourceDocumentStore {
         error: error instanceof Error ? error.message : String(error),
         jobId,
         leaseToken: candidate.leaseToken,
+        stale: false,
       });
       throw error;
     }

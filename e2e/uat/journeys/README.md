@@ -30,6 +30,8 @@ run in the local `pnpm e2e:quality` suite and are excluded from the UAT gate.
 Each test registers a disposable primary account. Collaborators use real Clerk
 accounts and short-lived sign-in tickets. No test writes the database, bypasses
 app authorization, fabricates signed webhooks, or changes shared parser settings.
+Authenticated API actions wait for Clerk to restore the actor's browser session
+after navigation before reading its token.
 Browser setup follows [Clerk's Playwright testing helper](https://github.com/clerk/javascript/blob/main/packages/testing/src/playwright/setupClerkTestingToken.ts):
 it sends an instance testing token and overrides only the Clerk client CAPTCHA
 flag. The token alone does not prevent the browser from waiting for a challenge.
@@ -65,7 +67,10 @@ Ingest deployment remains a separate manual operation. The suite verifies
 app/Office release metadata, gateway/collaboration release headers, migration
 0016, actual ingest image revisions and job attempt environment/revision.
 Office uses native state and parser bundle v4; no retained PDF preview is
-expected. Optional B2 parse caches are inspected when present.
+expected. Parse identity comes from the completed ingest job's receipt for the
+current source hash, since successful ingestion clears the file's diagnostic
+parse reference. Optional B2 parse caches are inspected when present, including
+their bytes against that receipt.
 
 Configure these GitHub **uat environment** values. Full mappings are in
 `deploy/env-manifest.json`; never paste secret values into run artifacts.

@@ -112,8 +112,7 @@ export async function fixture(name: string, marker: string) {
 export async function fileRow(run: UatRun, fileId: string) {
   const rows = await run.query(
     `SELECT id,workspace_id,user_id,name,kind,status,indexed,
-    blob_path,source_sha256,size_bytes,revision,parsed_fingerprint,parsed_parser_version,
-    trashed_at,trash_episode_id FROM files WHERE id=%s`,
+    blob_path,source_sha256,size_bytes,revision,trashed_at,trash_episode_id FROM files WHERE id=%s`,
     [fileId]
   );
   assert.equal(rows.length, 1, `missing file ${fileId}`);
@@ -322,8 +321,25 @@ export async function settledSpend(
 
 export async function officeBundle(run: UatRun, fileId: string) {
   const row = await fileRow(run, fileId);
-  assert(string(row.parsed_fingerprint).length > 0);
-  assert(string(row.parsed_parser_version).length > 0);
+  // Successful ingest clears the file's diagnostic local-bundle reference.
+  // The completed continuation retains the receipt for this exact source.
+  const receipts = await run.query(
+    `SELECT payload->'parseArtifact' AS artifact FROM jobs
+    WHERE payload->>'fileId'=%s AND type='ingest' AND status='done'
+      AND payload->'localSource'->>'sha256'=%s
+    ORDER BY updated_at DESC LIMIT 1`,
+    [fileId, row.source_sha256]
+  );
+  assert.equal(
+    receipts.length,
+    1,
+    'current Office source has no parse receipt'
+  );
+  const receipt = object(receipts[0].artifact);
+  const fingerprint = string(receipt.fingerprint);
+  const version = string(receipt.version);
+  assert.match(fingerprint, /^[a-f0-9]{64}$/);
+  assert(version.length > 0);
   const format = string(row.name).split('.').at(-1);
   const attempts = await run.query(
     `SELECT a.source_format,a.release_sha,a.environment,a.parse_pages,a.donor_reused,
@@ -356,8 +372,7 @@ export async function officeBundle(run: UatRun, fileId: string) {
   if (!bundle) {
     await run.attach(`${fileId}-bundle`, {
       attempts,
-      parsedFingerprint: row.parsed_fingerprint,
-      parsedParserVersion: row.parsed_parser_version,
+      receipt,
       status: 'optional cache unavailable',
     });
     return;
@@ -368,15 +383,17 @@ export async function officeBundle(run: UatRun, fileId: string) {
     fileId,
     sourceSha256: row.source_sha256,
   });
-  const parts = unzipSync(
-    Buffer.from((await run.blob(key)).bodyBase64, 'base64')
-  );
+  const stored = await run.blob(key);
+  assert.equal(stored.sha256, receipt.sha256);
+  assert.equal(stored.size, receipt.size);
+  const parts = unzipSync(Buffer.from(stored.bodyBase64, 'base64'));
   assert(
     Object.keys(parts).every((name) => !name.toLowerCase().endsWith('.pdf'))
   );
   const manifest = object(JSON.parse(strFromU8(parts['manifest.json'])));
   assert.equal(manifest.schema, 'capy-parser-bundle-v4');
-  assert.equal(manifest.source_fingerprint, row.parsed_fingerprint);
+  assert.equal(manifest.source_fingerprint, fingerprint);
+  assert.equal(manifest.parser_version, version);
   const blocks: unknown = JSON.parse(strFromU8(parts['content_list.json']));
   assert(Array.isArray(blocks));
   const refinement = object(JSON.parse(strFromU8(parts['refinement.json'])));
@@ -392,6 +409,7 @@ export async function officeBundle(run: UatRun, fileId: string) {
     entries: Object.keys(parts),
     manifest,
     pageCount: evidence.page_texts.length,
+    receipt,
   });
 }
 

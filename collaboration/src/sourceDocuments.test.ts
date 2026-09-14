@@ -130,58 +130,82 @@ test('a delayed source store merges a newer durable replica before saving', asyn
   right.destroy();
 });
 
-test('source export accepts the gateway empty finalize response without discarding queued work', async () => {
-  const doc = new Y.Doc();
-  doc.getText('source').insert(0, '\uFEFFa\r\nb');
-  const state = Buffer.from(Y.encodeStateAsUpdate(doc)).toString('base64');
-  doc.destroy();
-  const calls: string[] = [];
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async (url: string, init?: RequestInit) => {
-      calls.push(url);
-      if (url.includes('refresh-candidate?'))
-        return Response.json({
-          baseRevision: 1,
-          baseSourceSHA256: 'sha',
-          baseSourceURL: 'http://base',
+test.each([204, 409])(
+  'source export normalizes the ETag and handles finalize status %i',
+  async (status) => {
+    const doc = new Y.Doc();
+    doc.getText('source').insert(0, '\uFEFFa\r\nb');
+    const state = Buffer.from(Y.encodeStateAsUpdate(doc)).toString('base64');
+    doc.destroy();
+    const calls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        calls.push(url);
+        if (url.includes('refresh-candidate?'))
+          return Response.json({
+            baseRevision: 1,
+            baseSourceSHA256: 'sha',
+            baseSourceURL: 'http://base',
+            checkpoint: 2,
+            epoch: 1,
+            fileId: 'f_1',
+            format: 'text',
+            jobId: 'job_1',
+            leaseToken: 'lease',
+            sourceBlobPath: 'candidate',
+            state,
+            uploadHeaders: {},
+            uploadURL: 'http://upload',
+          });
+        if (url === 'http://upload') {
+          expect(Buffer.from(init!.body as Uint8Array).toString('utf8')).toBe(
+            '\uFEFFa\r\nb'
+          );
+          return new Response(null, {
+            headers: { etag: '"candidate-etag"' },
+            status: 200,
+          });
+        }
+        const body = JSON.parse(String(init!.body));
+        if (url.endsWith('/refresh-failure')) {
+          expect(body).toEqual({
+            error: 'Source refresh-candidate failed (409)',
+            jobId: 'job_1',
+            leaseToken: 'lease',
+            stale: false,
+          });
+          return new Response(null, { status: 204 });
+        }
+        expect(url).toMatch(REFRESH_CANDIDATE_PATH);
+        expect(body).toMatchObject({
           checkpoint: 2,
           epoch: 1,
-          fileId: 'f_1',
-          format: 'text',
-          jobId: 'job_1',
           leaseToken: 'lease',
-          sourceBlobPath: 'candidate',
-          state,
-          uploadHeaders: {},
-          uploadURL: 'http://upload',
+          seed: state,
+          sourceETag: 'candidate-etag',
         });
-      if (url === 'http://upload') {
-        expect(Buffer.from(init!.body as Uint8Array).toString('utf8')).toBe(
-          '\uFEFFa\r\nb'
-        );
-        return new Response(null, {
-          headers: { etag: '"candidate-etag"' },
-          status: 200,
-        });
-      }
-      expect(url).toMatch(REFRESH_CANDIDATE_PATH);
-      const body = JSON.parse(String(init!.body));
-      expect(body).toMatchObject({
-        checkpoint: 2,
-        epoch: 1,
-        leaseToken: 'lease',
-        seed: state,
-        sourceETag: '"candidate-etag"',
-      });
-      expect(body.sourceSHA256).toMatch(SHA256);
-      return new Response(null, { status: 204 });
-    })
-  );
-  const store = new SourceDocumentStore({} as Pool, 'http://gateway', 'secret');
-  await expect(store.exportCandidate('f_1', 'job_1')).resolves.toBeUndefined();
-  expect(calls).toHaveLength(3);
-});
+        expect(body.sourceSHA256).toMatch(SHA256);
+        return new Response(null, { status });
+      })
+    );
+    const store = new SourceDocumentStore(
+      {} as Pool,
+      'http://gateway',
+      'secret'
+    );
+    const exported = store.exportCandidate('f_1', 'job_1');
+    if (status === 204) {
+      await expect(exported).resolves.toBeUndefined();
+      expect(calls).toHaveLength(3);
+    } else {
+      await expect(exported).rejects.toThrow(
+        'Source refresh-candidate failed (409)'
+      );
+      expect(calls).toHaveLength(4);
+    }
+  }
+);
 
 test('an image replacement keeps a caption only for the same actual bytes', async () => {
   const bytes = Buffer.from('base');

@@ -130,6 +130,8 @@ function actorFor(
     async request(path, method = 'GET', body?: unknown) {
       if (!path.startsWith('/api/'))
         throw new Error('UAT actor request must use an application API path');
+      // Navigation can finish before Clerk restores this actor's session.
+      await sessionReady(page, id);
       const token = await page.evaluate(async () => {
         const clerk = (window as unknown as { Clerk?: BrowserClerk }).Clerk;
         return (await clerk?.session?.getToken()) ?? null;
