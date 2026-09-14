@@ -91,6 +91,15 @@ async function actorContext(env: UatEnvironment, browser: Browser) {
   return context;
 }
 
+export async function closeActorContext(context: BrowserContext) {
+  try {
+    // Finish Clerk handlers before closing their request context.
+    await context.unrouteAll({ behavior: 'wait' });
+  } finally {
+    await context.close();
+  }
+}
+
 async function sessionReady(page: Page, userId?: string) {
   await page.waitForFunction(
     (expected) => {
@@ -237,7 +246,7 @@ export async function createPrimaryActor(
     await waitForApplicationUser(run, actor);
     return actor;
   } catch (error) {
-    await context.close();
+    await closeActorContext(context);
     throw setupFailure(error, stage);
   }
 }
@@ -307,7 +316,7 @@ export async function createSecondaryActor(
     await waitForApplicationUser(run, actor);
     return actor;
   } catch (error) {
-    await context.close();
+    await closeActorContext(context);
     throw setupFailure(error, 'Secondary actor sign-in');
   }
 }

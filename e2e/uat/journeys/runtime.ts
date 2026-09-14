@@ -1,6 +1,10 @@
 import type { Browser, BrowserContext, Page, TestInfo } from '@playwright/test';
 import { test as base } from '@playwright/test';
-import { createPrimaryActor, createSecondaryActor } from './accounts';
+import {
+  closeActorContext,
+  createPrimaryActor,
+  createSecondaryActor,
+} from './accounts';
 import { loadEnvironment, type UatEnvironment } from './environment';
 import {
   poll,
@@ -102,7 +106,9 @@ export class UatRun {
   }
 
   async close() {
-    await Promise.all(this.actors.map((actor) => actor.context.close()));
+    await Promise.all(
+      this.actors.map((actor) => closeActorContext(actor.context))
+    );
   }
 }
 
