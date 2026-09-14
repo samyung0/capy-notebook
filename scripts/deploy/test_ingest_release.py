@@ -407,5 +407,117 @@ class WrapperTest(unittest.TestCase):
             self.assertEqual(phase[6], PREVIOUS, "backend revision must stay in slot 7")
 
 
+class WorkflowTest(unittest.TestCase):
+    def test_release_tools_use_dispatch_revision_while_app_stays_pinned(self):
+        steps = json.loads(
+            subprocess.check_output(
+                [
+                    "node",
+                    "--input-type=module",
+                    "-e",
+                    (
+                        "import fs from 'node:fs'; import YAML from 'yaml'; "
+                        "console.log(JSON.stringify(YAML.parse(fs.readFileSync("
+                        "'.github/workflows/deploy-ingest.yml', 'utf8')).jobs.ingest.steps));"
+                    ),
+                ],
+                cwd=SCRIPT.parents[2],
+                text=True,
+            )
+        )
+        load = next(
+            s
+            for s in steps
+            if s.get("name") == "Load release scripts from the workflow revision"
+        )
+        release = next(s for s in steps if s.get("name") == "Release the ingest stack")
+        with tempfile.TemporaryDirectory(prefix="capy-workflow-test-") as temp:
+            root = Path(temp)
+
+            def git(*args):
+                return subprocess.check_output(
+                    [
+                        "git",
+                        "-c",
+                        "user.name=Test",
+                        "-c",
+                        "user.email=test@example.com",
+                        "-c",
+                        "commit.gpgsign=false",
+                        "-c",
+                        "core.hooksPath=/dev/null",
+                        *args,
+                    ],
+                    cwd=root,
+                    text=True,
+                    stderr=subprocess.PIPE,
+                ).strip()
+
+            git("init", "-q")
+            source = root / "scripts/deploy"
+            source.mkdir(parents=True)
+            wrapper = source / "ingest-host-release.sh"
+            remote = source / "ingest-host-remote-release.sh"
+            for path in (wrapper, remote):
+                path.write_text("#!/usr/bin/env bash\nexit 99\n")
+            git("add", ".")
+            git("commit", "-qm", "old application release")
+            app_sha = git("rev-parse", "HEAD")
+            wrapper.write_text(
+                '#!/usr/bin/env bash\nbash "$(dirname "$0")/ingest-host-remote-release.sh" "$@"\n'
+            )
+            remote.write_text(
+                '#!/usr/bin/env bash\nprintf "%s %s\\n" "$1" "$DEPLOY_REVISION" >> "$CAPY_TEST_RECORD"\n'
+            )
+            git("add", ".")
+            git("commit", "-qm", "fixed release tools")
+            dispatch_sha = git("rev-parse", "HEAD")
+            git("checkout", "--detach", app_sha)
+            binaries = root / "bin"
+            binaries.mkdir()
+            python = binaries / "python3"
+            python.write_text(
+                '#!/usr/bin/env bash\nprintf "%s\\n" "$DEPLOY_REVISION"\n'
+            )
+            python.chmod(0o700)
+            record = root / "phases"
+            env = {
+                **os.environ,
+                "PATH": str(binaries) + ":" + os.environ["PATH"],
+                "GITHUB_SHA": dispatch_sha,
+                "DEPLOY_REVISION": app_sha,
+                "RUNNER_TEMP": str(root / "runner"),
+                "RECLAIM_PENDING": "true",
+                "CAPY_TEST_RECORD": str(record),
+            }
+            env["CAPY_RELEASE_SCRIPT"] = release["env"]["CAPY_RELEASE_SCRIPT"].replace(
+                "${{ runner.temp }}", env["RUNNER_TEMP"]
+            )
+            subprocess.run(
+                ["bash", "-euo", "pipefail", "-c", load["run"]],
+                cwd=root,
+                env=env,
+                check=True,
+            )
+            for bootstrap in ("false", "true"):
+                with self.subTest(bootstrap=bootstrap):
+                    record.write_text("")
+                    subprocess.run(
+                        ["bash", "-euo", "pipefail", "-c", release["run"]],
+                        cwd=root,
+                        env={**env, "BOOTSTRAP": bootstrap},
+                        check=True,
+                    )
+                    prepare = "bootstrap-prepare" if bootstrap == "true" else "prepare"
+                    self.assertEqual(
+                        record.read_text().splitlines(),
+                        [
+                            f"{phase} {app_sha}"
+                            for phase in ("reclaim", prepare, "activate", "recover")
+                        ],
+                    )
+                    self.assertEqual(git("rev-parse", "HEAD"), app_sha)
+
+
 if __name__ == "__main__":
     unittest.main()

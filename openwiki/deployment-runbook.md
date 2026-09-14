@@ -1057,6 +1057,15 @@ those services start.
    from the live backend SHA. A run killed before that trap leaves pending
    behind for `reclaim_pending` to adopt.
 
+The ingest checkout, Compose files, and config renderer stay pinned to the
+backend revision. The SSH release wrapper and remote release script come from
+the immutable commit that dispatched the workflow, so recovery fixes can run
+against an older application release. After pushing a release-script fix,
+start a new **Deploy ingest** run from `main`; rerunning an old Actions run
+keeps its old workflow commit. To recover an existing pending release, keep
+the backend on that release's candidate or previous SHA and select
+`reclaim_pending`.
+
 Each stack has its own checkout and durable release state:
 
 | Target | Checkout | State |

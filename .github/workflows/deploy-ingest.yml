@@ -83,6 +83,16 @@ jobs:
           [[ "$DEPLOY_REVISION" =~ ^[0-9a-f]{40}$ ]]
           [[ "$(git rev-parse HEAD)" == "$DEPLOY_REVISION" ]]
           git merge-base --is-ancestor "$DEPLOY_REVISION" origin/main
+      - name: Load release scripts from the workflow revision
+        run: |
+          # Recovery fixes must work even while the backend serves an older SHA.
+          # Keep application/config sources at DEPLOY_REVISION and pin these two
+          # orchestration scripts to the immutable commit that started this run.
+          mkdir -p "$RUNNER_TEMP/capy-release-tools"
+          for script in ingest-host-release.sh ingest-host-remote-release.sh; do
+            git show "$GITHUB_SHA:scripts/deploy/$script" > "$RUNNER_TEMP/capy-release-tools/$script"
+            chmod 700 "$RUNNER_TEMP/capy-release-tools/$script"
+          done
       - name: Verify the deployment matches the running backend
         env:
           DEPLOYMENT_API_URL: ${{ vars.DEPLOYMENT_API_URL }}
@@ -113,6 +123,7 @@ jobs:
           CAPY_INGEST_REPOSITORY_URL: https://github.com/${{ github.repository }}.git
           CAPY_RELEASE_OWNER: ${{ github.run_id }}-${{ github.run_attempt }}
           CAPY_CONFIG_DIR: ${{ runner.temp }}/capy-config
+          CAPY_RELEASE_SCRIPT: ${{ runner.temp }}/capy-release-tools/ingest-host-release.sh
           INGEST_HOST: ${{ vars.INGEST_HOST }}
           INGEST_HOST_USER: ${{ vars.INGEST_HOST_USER }}
           INGEST_HOST_SSH_PORT: ${{ vars.INGEST_HOST_SSH_PORT }}
@@ -122,7 +133,7 @@ jobs:
           recover() {
             CAPY_BACKEND_REVISION="$(python3 scripts/deploy/verify-backend.py --print)" || return 1
             export CAPY_BACKEND_REVISION
-            scripts/deploy/ingest-host-release.sh recover
+            "$CAPY_RELEASE_SCRIPT" recover
           }
           # A run killed before its trap leaves pending behind; reclaim adopts it.
           # The host decides what that pending release permits; a bootstrap needs
@@ -130,15 +141,15 @@ jobs:
           if [[ "$RECLAIM_PENDING" == true ]]; then
             CAPY_BACKEND_REVISION="$(python3 scripts/deploy/verify-backend.py --print)" || CAPY_BACKEND_REVISION=""
             export CAPY_BACKEND_REVISION
-            scripts/deploy/ingest-host-release.sh reclaim
+            "$CAPY_RELEASE_SCRIPT" reclaim
           fi
           trap recover EXIT
           if [[ "$BOOTSTRAP" == true ]]; then
-            scripts/deploy/ingest-host-release.sh bootstrap-prepare
+            "$CAPY_RELEASE_SCRIPT" bootstrap-prepare
           else
-            scripts/deploy/ingest-host-release.sh prepare
+            "$CAPY_RELEASE_SCRIPT" prepare
           fi
-          scripts/deploy/ingest-host-release.sh activate
+          "$CAPY_RELEASE_SCRIPT" activate
       - name: Remove runner configuration and SSH key
         if: always()
         run: rm -rf "$RUNNER_TEMP/capy-config" "$HOME/.ssh/id_ed25519"
