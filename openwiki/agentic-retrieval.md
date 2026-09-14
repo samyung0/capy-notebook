@@ -1331,7 +1331,9 @@ new automatic admission; current leased work can finish. Failed processing
 leaves authored state intact and exposes manual processing.
 
 Publication rechecks source epoch/base, current attempt/lease and candidate
-identity under the source lock. Office coordinates connected clients, rebases the
+identity under the source lock. Collaboration passes the file ID in the gateway
+publication URL and omits it from the strict JSON body for Office, text and
+already-published receipt recovery. Office coordinates connected clients, rebases the
 latest saved state onto the captured export, and compares-and-swaps that saved
 checkpoint. A newer save retries local rebase with the same completed parse.
 Publication advances the indexed checkpoint, retains the current checkpoint and

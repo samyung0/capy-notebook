@@ -1,7 +1,10 @@
+/* biome-ignore-all lint/suspicious/noMisplacedAssertion: The publication contract helper runs only inside these tests. */
+import { readFileSync } from 'node:fs';
 import type { Document, Hocuspocus } from '@hocuspocus/server';
 import type { Redis } from 'ioredis';
 import type { Pool } from 'pg';
 import { afterEach, expect, test, vi } from 'vitest';
+import { parse } from 'yaml';
 import * as Y from 'yjs';
 import {
   decodeBaseline,
@@ -11,6 +14,26 @@ import {
   type SourceSession,
 } from './sourceDocuments.js';
 import { SourceHandoff } from './sourceHandoff.js';
+
+const publicationSchema = parse(
+  readFileSync(new URL('../../openapi.yaml', import.meta.url), 'utf8')
+).components.schemas.SourceRefreshPublish as {
+  additionalProperties: boolean;
+  properties: Record<string, unknown>;
+  required: string[];
+};
+
+function assertPublicationFields(body: unknown) {
+  expect(body).toBeTypeOf('object');
+  const fields = Object.keys(body as Record<string, unknown>);
+  expect(publicationSchema.additionalProperties).toBe(false);
+  expect(fields).toEqual(expect.arrayContaining(publicationSchema.required));
+  expect(
+    fields.filter(
+      (field) => !Object.hasOwn(publicationSchema.properties, field)
+    )
+  ).toEqual([]);
+}
 
 afterEach(() => {
   vi.useRealTimers();
@@ -172,21 +195,34 @@ test('publication retry uses the durable fenced receipt before checking the new 
       ? [{ user_id: 'u' }]
       : [{ published: true }],
   }));
-  vi.spyOn(f.sources, 'request').mockResolvedValue({ epoch: 2 });
+  const request = vi
+    .spyOn(globalThis, 'fetch')
+    .mockImplementation(async (url, init) => {
+      expect(url).toBe('http://unused/internal/collaboration/files/f/publish');
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      assertPublicationFields(body);
+      expect(body).toMatchObject({
+        attemptId: 3,
+        checkpoint: 7,
+        epoch: 1,
+        jobId: 'job',
+        leaseToken: 'lease',
+      });
+      return Response.json({ epoch: 2 });
+    });
   const input = {
     attemptId: 3,
     checkpoint: 7,
+    contentHash: 'hash',
+    contentId: 'content',
     epoch: 1,
     fileId: 'f',
     jobId: 'job',
     leaseToken: 'lease',
+    sourceETag: 'etag',
   };
   await expect(f.handoff.publish(input)).resolves.toEqual({ epoch: 2 });
-  expect(f.sources.request).toHaveBeenCalledWith(
-    'f',
-    'publish',
-    expect.objectContaining(input)
-  );
+  expect(request).toHaveBeenCalledOnce();
   expect(f.redis.publish).not.toHaveBeenCalled();
 });
 
@@ -223,6 +259,7 @@ test('text publication advances the semantic baseline while retaining newer edit
     | undefined;
   vi.spyOn(f.sources, 'request').mockImplementation(
     async (_file, _endpoint, body) => {
+      assertPublicationFields(body);
       published = body as typeof published;
       return f.session;
     }
@@ -230,10 +267,13 @@ test('text publication advances the semantic baseline while retaining newer edit
   await f.handoff.publish({
     attemptId: 1,
     checkpoint: 7,
+    contentHash: 'hash',
+    contentId: 'content',
     epoch: 1,
     fileId: 'f',
     jobId: 'job',
     leaseToken: 'lease',
+    sourceETag: 'etag',
   });
   expect(decodeBaseline(published!.indexedBaseline, 'text')).toEqual({
     format: 'text',
@@ -276,6 +316,7 @@ test('Office publication rebases a later save and retries only rebase when anoth
   const publish = vi
     .spyOn(f.sources, 'request')
     .mockImplementation(async (_file, _endpoint, body) => {
+      assertPublicationFields(body);
       if (
         (body as { expectedLatestCheckpoint: number })
           .expectedLatestCheckpoint === 8
@@ -288,16 +329,20 @@ test('Office publication rebases a later save and retries only rebase when anoth
   const input = {
     attemptId: 1,
     checkpoint: 7,
+    contentHash: 'hash',
+    contentId: 'content',
     epoch: 1,
     fileId: 'f',
     jobId: 'job',
     leaseToken: 'lease',
+    sourceETag: 'etag',
   };
   await expect(f.handoff.publish(input)).resolves.toEqual({ epoch: 2 });
   expect(rebase).toHaveBeenCalledTimes(2);
+  const { fileId: _fileId, ...receipt } = input;
   expect(publish.mock.calls.map((call) => call[2])).toEqual([
     {
-      ...input,
+      ...receipt,
       expectedLatestCheckpoint: 8,
       indexedBaseline: 'baseline7',
       netTokens: 0,
@@ -305,7 +350,7 @@ test('Office publication rebases a later save and retries only rebase when anoth
       rebasedState: 'state8',
     },
     {
-      ...input,
+      ...receipt,
       expectedLatestCheckpoint: 9,
       indexedBaseline: 'baseline7',
       netTokens: 0,

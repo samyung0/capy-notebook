@@ -234,7 +234,9 @@ export class SourceHandoff {
   }
 
   async publish(input: SourcePublish) {
-    const session = await this.current(input.fileId);
+    // The gateway takes fileId in the route, not in its strict request body.
+    const { fileId, ...publication } = input;
+    const session = await this.current(fileId);
     const receipt = await this.pool.query<{ published: boolean }>(
       `SELECT EXISTS(SELECT 1 FROM jobs WHERE id=$1 AND payload->>'fileId'=$2
        AND payload->>'sourceEpoch'=$3 AND payload->>'sourceCheckpoint'=$4
@@ -250,8 +252,8 @@ export class SourceHandoff {
       ]
     );
     if (receipt.rows[0]?.published)
-      return this.sources.request(input.fileId, 'publish', {
-        ...input,
+      return this.sources.request(fileId, 'publish', {
+        ...publication,
         expectedLatestCheckpoint: session.checkpoint,
         netTokens: 0,
         pendingEffects: [],
@@ -279,8 +281,8 @@ export class SourceHandoff {
           baseline
         );
         try {
-          return await this.sources.request(input.fileId, 'publish', {
-            ...input,
+          return await this.sources.request(fileId, 'publish', {
+            ...publication,
             expectedLatestCheckpoint: latest.checkpoint,
             indexedBaseline: encodeBaseline(baseline),
             netTokens: effectTokens(effects),
@@ -345,8 +347,8 @@ export class SourceHandoff {
         if ((await this.redis.get(lock)) !== id)
           throw new SourceRequestError(503, 'Source handoff lease expired');
         try {
-          result = await this.sources.request(input.fileId, 'publish', {
-            ...input,
+          result = await this.sources.request(fileId, 'publish', {
+            ...publication,
             ...rebased,
             expectedLatestCheckpoint: latest.checkpoint,
           });
