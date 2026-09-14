@@ -9,6 +9,33 @@ verification pass.
 Hostnames are the ones recorded in `deploy/.env.uat`. Never print secrets from
 that file.
 
+## App hostname cutover
+
+After the [hostname setup](deployment-runbook.md#102-app-hostname-transition),
+verify these before redirecting old browser pages:
+
+- TLS and the SPA work at `https://app.uat.capynotebook.com`. Both app hosts
+  retain tunnel-backed DNS, their site route and their scriptless `/api/*` route.
+  Anonymous API requests return the expected 401, signed-in requests return JSON,
+  and an SSE connection delivers a heartbeat. API responses stay uncached with
+  `no-store`/`nosniff`, and API requests do not invoke the site Worker.
+- Sign-in/up/out, password reset, OAuth, invitations and post-login destinations
+  reach the new app. Clerk still uses the existing UAT instance. Test an old
+  bookmark with `redirect_url` before enabling page redirects.
+- Direct B2 upload/read, collaboration, Office view/edit/save, Google import and
+  OneDrive import work on the new app. Office accepts both app origins and
+  `local.uat` during overlap and carries no app credentials. Test local UAT too.
+- New checkout/portal returns and product links use the new app. Existing email
+  unsubscribe GET/POST requests still reach the old-host API without redirection.
+- `/w/{workspaceId}` HTML and canonical/Open Graph URLs use the new app while
+  summary visibility/cache behavior is unchanged. Both UAT hosts are excluded
+  from indexing. Help and credits still work inside every sidebar layout.
+- App, Office, gateway and collaboration release markers match the candidate,
+  and browser errors retain the UAT environment and readable source maps.
+- Old source drafts are saved or exported before page redirects. Confirm `/api`
+  and `/api/*` are excluded, pages preserve path/query, and the first redirect is
+  temporary. Preserve old API routes and origins for the remaining transition.
+
 ## 1. The stack is actually up
 
 ```bash
@@ -63,7 +90,7 @@ the updated ignored `.env.uat` through `env:push`, then redeploy.
 
 Verify with a real signup, not with the dashboard's test button alone:
 
-1. Sign up a synthetic account on `uat.capynotebook.com`.
+1. Sign up a synthetic account on `app.uat.capynotebook.com`.
 2. Clerk's delivery log shows `200` for the `user.created` delivery.
 3. `select type, processed_at, error from webhook_events order by created_at desc limit 5;` shows the event processed with no error.
 
@@ -135,7 +162,7 @@ a different Clerk instance than the gateway's secret key.
   Coolify variables against `deploy/.env.uat`.
 - `user_storage` moves after an upload and after a delete. Quota accounting is
   described in [`backend-storage-quota.md`](backend-storage-quota.md).
-- `APP_URL` is `https://uat.capynotebook.com`. Stripe returns and product email
+- `APP_URL` is `https://app.uat.capynotebook.com`. Stripe returns and product email
   links follow it, so they will point at the deployed SPA even when the person
   clicking is on a dev hostname. That is expected.
 - Provider keys are UAT keys with their own budget. Inference and parse metering

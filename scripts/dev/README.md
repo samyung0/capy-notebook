@@ -3,7 +3,7 @@
 Open `https://local.uat.capynotebook.com`. Your hosts file maps it to your own
 machine. Caddy serves local HTTPS on port 443 and proxies to Vite on loopback
 port 5173, including hot reload. Vite proxies `/api` to UAT. The deployed UAT
-site remains available at `https://uat.capynotebook.com`.
+site remains available at `https://app.uat.capynotebook.com`.
 
 Use these values in `deploy/.env`:
 

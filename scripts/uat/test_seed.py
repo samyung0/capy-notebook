@@ -37,7 +37,10 @@ class SeedTest(unittest.TestCase):
             "CLERK_SECRET_KEY": "sk_test_synthetic",
         }
         seed.validate_config(values)
+        self.assertEqual(seed.APP_URL, "https://app.uat.capynotebook.com")
         for changed in (
+            {"DEPLOYMENT_APP_URL": "https://uat.capynotebook.com"},
+            {"DEPLOYMENT_APP_URL": "https://app.capynotebook.com"},
             {"DEPLOYMENT_APP_URL": "https://capynotebook.com"},
             {"DEPLOYMENT_API_URL": "https://api.capynotebook.com"},
         ):
@@ -57,6 +60,7 @@ class SeedTest(unittest.TestCase):
         for domains in (
             [],
             [{**primary, "is_satellite": True}],
+            [{**primary, "name": "app.uat.capynotebook.com"}],
             [{**primary, "name": "capynotebook.com"}],
             [{**primary, "frontend_api_url": "https://clerk.capynotebook.com"}],
             [primary, {**primary, "name": "other.example.com"}],

@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import { request } from '@playwright/test';
 import { savedTokenStatus } from './accounts';
 import { cleanupRun, validateCleanupTarget } from './cleanup';
-import type { UatEnvironment } from './environment';
+import { loadEnvironment, type UatEnvironment } from './environment';
 import {
   type Manifest,
   readManifest,
@@ -21,7 +21,7 @@ test('cleanup requires the original target and exact run-owned registration inte
   const id = randomUUID();
   const email = `uat-${id.replaceAll('-', '').slice(0, 20)}-owner-12345678+clerk_test@example.test`;
   const manifest: Manifest = {
-    appUrl: 'https://uat.capynotebook.com',
+    appUrl: 'https://app.uat.capynotebook.com',
     bucket: 'capy-uat',
     id,
     resources: [
@@ -176,7 +176,7 @@ let input='';process.stdin.on('data',chunk=>input+=chunk);process.stdin.on('end'
     STRIPE_SECRET_KEY: 'sk_test_fixture',
     UAT_ACTOR_EMAIL_DOMAIN: 'example.test',
     UAT_API_URL: 'https://uat-api.capynotebook.com',
-    UAT_APP_URL: 'https://uat.capynotebook.com',
+    UAT_APP_URL: 'https://app.uat.capynotebook.com',
     UAT_CLERK_TEST_MODE: 'true',
     UAT_COLLAB_URL: 'wss://uat-collab.capynotebook.com',
     UAT_DATABASE_NAME: 'capy',
@@ -219,7 +219,7 @@ let input='';process.stdin.on('data',chunk=>input+=chunk);process.stdin.on('end'
         { headers: { 'X-Capy-Release': revision } }
       );
     if (
-      url.hostname === 'uat.capynotebook.com' ||
+      url.hostname === 'app.uat.capynotebook.com' ||
       url.hostname === 'uat-office.capynotebook.com'
     )
       return new Response(`<meta name="capy-release" content="${revision}">`);
@@ -227,6 +227,16 @@ let input='';process.stdin.on('data',chunk=>input+=chunk);process.stdin.on('end'
   };
   try {
     Object.assign(process.env, environment);
+    assert.equal(loadEnvironment().appUrl, 'https://app.uat.capynotebook.com');
+    for (const appUrl of [
+      'https://uat.capynotebook.com',
+      'https://app.capynotebook.com',
+      'https://app.uat.capynotebook.com/another-path',
+    ]) {
+      process.env.UAT_APP_URL = appUrl;
+      assert.throws(() => loadEnvironment(), /UAT_APP_URL must select/);
+    }
+    process.env.UAT_APP_URL = environment.UAT_APP_URL;
     writeManifest({
       appUrl: environment.UAT_APP_URL,
       bucket: environment.B2_BUCKET,

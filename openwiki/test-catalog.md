@@ -444,7 +444,7 @@ reports are retained for 30 days.
 | `e2e/uat/journeys/accounts.spec.ts` | Browser registration with fixed Clerk codes, processed creation/deletion webhooks, profile persistence, deletion grace, revoked session and actual Resend delivery. |
 | `e2e/uat/journeys/billing.spec.ts` | App-created sandbox Checkout; paid subscription, test-clock renewal, deletion blocker and cancellation through actual Stripe webhooks. |
 | `e2e/uat/journeys/files.spec.ts` | DOCX/XLSX/PPTX browser upload/edit/collaboration/fresh-client export/reprocessing/purge; UTF-8 text automatic publication; digital PDF private annotations; terminal CSV ingest failure and settled spend. |
-| `e2e/uat/journeys/runtime.test.ts` | Offline run/target/actor cleanup boundaries, durable sanitized evidence, malformed manifest/path refusal, saved-token transport redaction, and failed-inventory cleanup resumption. Included in `pnpm test:uat:verifier`. |
+| `e2e/uat/journeys/runtime.test.ts` | Offline canonical `app.uat` target guard with unchanged UAT Clerk identity, run/actor cleanup boundaries, durable sanitized evidence, malformed manifest/path refusal, saved-token transport redaction, and failed-inventory cleanup resumption. Included in `pnpm test:uat:verifier`. |
 | `e2e/uat/journeys/test_verify.py` | Read-only database identity gating and exact-key paginated B2 version filtering. Run `uv run --frozen python e2e/uat/journeys/test_verify.py`. |
 | `scripts/uat/test_journey_workflows.py` | Offline promotion/cleanup wiring, pinned DB tunnel validation and actual ingest image mismatch rejection. Included in `pnpm test:deployment`. |
 
@@ -535,7 +535,7 @@ and asset checks, and a Worker tail proving `/api/*` bypasses execution.
 | `scripts/deploy/test_ingest_release.py` | Bootstrap, ownership/lock exclusion, UAT/local/production isolation, failed preparation, crash-looping parser, activation interruption, coordinated recovery, reclaiming a finished run's pending release, and the wrapper's remote argument positions. Run `pnpm test:deployment`. |
 
 | `workers/office/office.test.ts` | Exact parent origin validation, isolated runtime paths, credential and inherited-header removal, embedded blob fonts, HTTP method handling, and isolated asset staging with direct bundle routing and dedicated security/cache headers. Run `pnpm test:office` with one worker. |
-| `scripts/uat/test_seed.py` | UAT target and Clerk primary-domain binding, existing actor reuse, passwordless creation, lifecycle checks and safe SSH/JSON argument handling. Run `pnpm test:uat-seed`. |
+| `scripts/uat/test_seed.py` | Exact `app.uat` target with existing `uat` Clerk primary-domain binding, existing actor reuse, passwordless creation, lifecycle checks and safe SSH/JSON argument handling. Run `pnpm test:uat-seed`. |
 
 | `server/internal/store/migration_plan_test.go` | Fresh/existing baseline selection, covered/ignored status, immutable checksums, duplicate/malformed versions, history gaps and older-binary behavior. Part of `pnpm test:go`. |
 | `server/internal/store/migration_baseline_test.go` | Real-schema and future-baseline equivalence using PostgreSQL dumps, catalog rows and sequence state; existing-row upgrades, idempotency, drift refusals, transactional failure, extension-safe emptiness checks and contained dump settings. Uses separate databases inside the harness's single container. |

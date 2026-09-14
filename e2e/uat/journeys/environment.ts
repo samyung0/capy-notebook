@@ -105,7 +105,7 @@ export function loadEnvironment() {
   return {
     actorEmailDomain,
     apiUrl: exactURL('UAT_API_URL', 'https://uat-api.capynotebook.com'),
-    appUrl: exactURL('UAT_APP_URL', 'https://uat.capynotebook.com'),
+    appUrl: exactURL('UAT_APP_URL', 'https://app.uat.capynotebook.com'),
     b2Bucket,
     clerkPublishableKey: required('CLERK_PUBLISHABLE_KEY'),
     clerkSecretKey: required('CLERK_SECRET_KEY'),

@@ -69,7 +69,7 @@ Configure these GitHub **uat environment** values. Full mappings are in
 | Variables | Setup |
 | --- | --- |
 | `UAT_TARGET_AUTHORIZED` | Exactly `true`. |
-| `UAT_APP_URL`, `UAT_API_URL`, `UAT_COLLAB_URL` | Exactly `https://uat.capynotebook.com`, `https://uat-api.capynotebook.com`, `wss://uat-collab.capynotebook.com`. Office is `https://uat-office.capynotebook.com`. |
+| `UAT_APP_URL`, `UAT_API_URL`, `UAT_COLLAB_URL` | Exactly `https://app.uat.capynotebook.com`, `https://uat-api.capynotebook.com`, `wss://uat-collab.capynotebook.com`. Office is `https://uat-office.capynotebook.com`. |
 | `UAT_CLERK_TEST_MODE` | Exactly `true`, after enabling Clerk test emails/fixed code `424242` on the isolated UAT instance. Keys must resolve to its primary domain and `clerk.uat.capynotebook.com`. |
 | `CLERK_PUBLISHABLE_KEY`, `UAT_ACTOR_EMAIL_DOMAIN` | UAT frontend key and a controlled domain accepting generated `uat-…+clerk_test` mailboxes. Clerk auth uses fixed codes; app Resend mail must actually deliver. |
 | `UAT_DATABASE_NAME` | Actual dedicated UAT database. Apply `scripts/uat/verifier-role.sql` manually as its owner, with the explicit psql variables described in that file; then set the role password interactively. This is operational setup, not an app migration. |

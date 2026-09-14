@@ -41,6 +41,12 @@
       "name": "capy-notebook-office-production",
       "workers_dev": false,
       "preview_urls": false,
+      "routes": [
+        {
+          "pattern": "office.capynotebook.com",
+          "custom_domain": true
+        }
+      ],
       "vars": {
         "PARENT_ORIGINS": ""
       },

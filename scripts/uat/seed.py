@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "env"))
 from config import parse_dotenv
 
 ROLES = ("owner", "editor", "viewer", "other")
-APP_URL = "https://uat.capynotebook.com"
+APP_URL = "https://app.uat.capynotebook.com"
 API_URL = "https://uat-api.capynotebook.com"
 
 

@@ -60,17 +60,19 @@ can be tested.
 
 One Cloudflare Worker serves the static SPA and live `/w/{workspaceId}` summaries. The Go gateway, the Hocuspocus sidecar, the Python
 retrieval service, the ingest worker, and the operator dashboard are separate
-processes. Three services have public hostnames. Cloudflare Access protects the
+processes. The table gives intended production hostnames; production services
+still need provisioning. Cloudflare Access protects the
 operator hostname before traffic reaches its origin.
 
 | Hostname           | Serves                                             | Public DNS | Proxied              |
 | ------------------ | -------------------------------------------------- | ---------- | -------------------- |
-| `abcd.com`         | SPA and workspace SSR (Cloudflare Worker)                    | yes        | yes                  |
-| `llm.abcd.com`     | optional; only if `VITE_LLM_RUNTIME_ORIGIN` is set | optional   | yes                  |
-| `office.abcd.com`  | isolated Office file runtime                       | yes        | yes                  |
-| `www.abcd.com`     | redirect to apex                                   | yes        | yes                  |
-| `api.abcd.com`     | Go gateway (`server`, :8080)                       | yes        | yes                  |
-| `collab.abcd.com`  | Hocuspocus WebSocket (`collaboration`, :1234)      | yes        | yes                  |
+| `app.capynotebook.com`     | SPA and workspace SSR (Cloudflare Worker)                    | yes        | yes                  |
+| `llm.capynotebook.com`     | optional; only if `VITE_LLM_RUNTIME_ORIGIN` is set | optional   | yes                  |
+| `office.capynotebook.com`  | isolated Office file runtime                       | yes        | yes                  |
+| `capynotebook.com`         | future separate Next.js public site                | yes        | yes                  |
+| `www.capynotebook.com`     | future redirect to apex                                   | yes        | yes                  |
+| `api.capynotebook.com`     | Go gateway (`server`, :8080)                       | yes        | yes                  |
+| `collab.capynotebook.com`  | Hocuspocus WebSocket (`collaboration`, :1234)      | yes        | yes                  |
 | `ops.capynotebook.com` | Go ops API + static dashboard (`ops`, :8082)       | yes        | yes, Access required |
 | retrieval :8001    | Python chat/generate                               | **no**     | —                    |
 | ingest host        | parser + ingest worker + embed                     | **no**     | —                    |
@@ -79,7 +81,7 @@ operator hostname before traffic reaches its origin.
 The browser talks to the gateway at same-origin `/api` (`src/api/client.ts`
 hard-codes `API_BASE = '/api'`; `VITE_API_URL` is only the Vite **dev** proxy).
 So the site hostname must route `/api/*` to the Go process, **and**
-`api.abcd.com` must still exist as its own hostname for Clerk/Stripe webhooks
+`api.capynotebook.com` must still exist as its own hostname for Clerk/Stripe webhooks
 (`POST /webhooks/clerk`, `POST /webhooks/stripe`). Retrieval is reached only
 from the gateway over the docker network (`PIPELINE_URL=http://retrieval:8001`).
 
@@ -88,12 +90,14 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
 1. **Site.** Deploy `wrangler.jsonc` with `--env uat` or `--env production`.
    The Worker serves `dist/`, renders `/w/{workspaceId}` from the live Go summary
    endpoint. The UAT zone routes `/api/*` directly through the tunnel as described
-   in §1.0.1; other environments retain the Worker's proxy to `API_ORIGIN`. `APP_ORIGIN`
+   in §1.0.1; production must provision the same tunnel and scriptless route
+   before its first deployment. `APP_ORIGIN`
    is the canonical browser origin. CI supplies both from the GitHub deployment
-   URLs. UAT uses the Worker Route in `wrangler.jsonc`, with DNS pointing at the
-   tunnel. Do not reattach `uat.capynotebook.com` as a Worker Custom Domain:
-   that would replace the tunnel destination. Production custom domains remain
-   a separate setup until the same routing is explicitly adopted there.
+   URLs. Both app environments use exact Worker Routes in `wrangler.jsonc`,
+   with DNS pointing at their tunnel. Do not attach either app as a Worker
+   Custom Domain; that would replace the tunnel destination. The apex and
+   `www` remain reserved for the future public site, whose implementation is
+   deferred. Help and credits stay in the app until public pages exist.
    Coolify serves the backend, not the site. Rendered summaries are
    `public, s-maxage=300, max-age=0, must-revalidate` and are held in the
    Worker's Cache API keyed by workspace id and resolved locale; failure pages
@@ -115,21 +119,22 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    Chrome 137+ isolates that iframe and gives it SharedArrayBuffer / extra
    CPU threads even when the parent is not isolated. COOP/COEP alone
    cannot. Safari and Firefox stay single-thread. A second hostname
-   (`llm.abcd.com`, `VITE_LLM_RUNTIME_ORIGIN`) is optional. If you use one,
+   (`llm.capynotebook.com`, `VITE_LLM_RUNTIME_ORIGIN`) is optional. If you use one,
    stage its headers with the SPA's `APP_ORIGIN` and set `VITE_APP_URL`. Do not
    set `Cross-Origin-Resource-Policy: same-origin` on the runtime document
    or the parent cannot embed it.
    The Office viewer/editor is different: production requires a separate
-   cookie-less hostname such as `office.abcd.com`. Serve only the built
+   cookie-less hostname such as `office.capynotebook.com`. Serve only the built
    `office-runtime.html` and its `/assets/*` there (404 other routes), set
-   `VITE_OFFICE_RUNTIME_ORIGIN=https://office.abcd.com` when building the SPA,
+   `VITE_OFFICE_RUNTIME_ORIGIN=https://office.capynotebook.com` when building the SPA,
    and set `OFFICE_ALLOWED_PARENT_ORIGINS` to the exact comma-separated HTTPS
    parent origins in GitHub. `workers/office` stages the runtime HTML and assets
    from the same build as the SPA, replaces inherited headers, and publishes
    before the SPA. UAT uses `uat-office.capynotebook.com` and allows
-   `https://uat.capynotebook.com,https://local.uat.capynotebook.com` for the deployed
-   and locally served UI. Production requires its own Office custom
-   domain configured in `wrangler.office.jsonc` before first rollout. The Worker
+   `https://app.uat.capynotebook.com,https://uat.capynotebook.com,https://local.uat.capynotebook.com`
+   during the hostname transition. Remove the old app parent only after §1.0.2.
+   Production uses the `office.capynotebook.com` custom domain configured in
+   `wrangler.office.jsonc` and permits only `https://app.capynotebook.com`. The Worker
    handles runtime HTML with `no-store`, supplies the matching `frame-ancestors`
    policy, allows embedded blob fonts, and rejects other routes. Existing
    `/assets/*` bundles bypass the Worker and use
@@ -149,8 +154,8 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    optimizer configuration. The current checksum covers Linux x86_64; on ARM
    hosts, use `DOCKER_DEFAULT_PLATFORM=linux/amd64` for Compose or
    `docker build --platform=linux/amd64`.
-3. **Same-origin API.** UAT bypasses the Worker for `/api/*` using §1.0.1.
-   In other environments, the site Worker forwards `/api/*` only to its explicit
+3. **Same-origin API.** Deployed app hosts bypass the Worker for `/api/*`
+   using §1.0.1. The retained fallback forwards `/api/*` only to its explicit
    `API_ORIGIN` and streams request/response bodies. It passes Go's file redirects
    back to the browser without following them with credentials. `/webhooks/*`
    stays on the API hostname. Do not attach the cookie-less Office hostname to
@@ -160,21 +165,21 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    depends on how the origin is reached — see the option you picked.
 
 > **Both the SPA and the API must be proxied.** Proxying only the SPA leaves
-> `api.abcd.com` publicly resolvable, which is where the rate limiting, the WAF,
+> `api.capynotebook.com` publicly resolvable, which is where the rate limiting, the WAF,
 > and the origin's anonymity actually matter.
 
 ### 1.0.1 UAT API routing without Workers
 
-The browser keeps `https://uat.capynotebook.com/api/*`; the edge sends these
+The browser uses `https://app.uat.capynotebook.com/api/*`; the edge sends these
 requests directly to `capy-uat`, then Traefik and Go. Static assets and workspace
 summary renders keep using the existing `capy-notebook-uat` deployment.
 
 | Setting | UAT value |
 | --- | --- |
-| Proxied `uat` CNAME | `3abcfdb8-68f3-4b11-b475-7b0379a1affe.cfargotunnel.com` |
-| Worker Route | `uat.capynotebook.com/*` → `capy-notebook-uat` |
-| More-specific zone route | `uat.capynotebook.com/api/*` → **None**, no script |
-| Tunnel ingress | Host `uat.capynotebook.com`, path `^/api/`, service `http://localhost:80` |
+| Proxied `app.uat` CNAME | `3abcfdb8-68f3-4b11-b475-7b0379a1affe.cfargotunnel.com` |
+| Worker Route | `app.uat.capynotebook.com/*` → `capy-notebook-uat` |
+| More-specific zone route | `app.uat.capynotebook.com/api/*` → **None**, no script |
+| Tunnel ingress | Host `app.uat.capynotebook.com`, path `^/api/`, service `http://localhost:80` |
 | Ingress HTTP Host Header | `uat-api.capynotebook.com` |
 
 The ingress uses `originRequest.httpHostHeader` so Traefik selects the existing
@@ -192,23 +197,23 @@ bypasses that asset/script routing altogether. Removing it from that list alone
 would serve the SPA fallback, not the API.
 
 Two zone rules preserve the API behavior previously supplied by the Worker.
-Both match only:
+During the hostname transition both match:
 
 ```text
-(http.host eq "uat.capynotebook.com" and starts_with(http.request.uri.path, "/api/"))
+(http.host in {"app.uat.capynotebook.com" "uat.capynotebook.com"} and starts_with(http.request.uri.path, "/api/"))
 ```
 
 - **Cache Rule:** bypass cache (`cache: false`).
 - **Response Header Transform Rule:** set `Cache-Control: no-store` and
   `X-Content-Type-Options: nosniff`.
 
-For the initial cutover, save the current DNS, Worker domain/routes, tunnel
-configuration and these rules. Add the tunnel ingress and zone rules, then the
-site Worker Route. Detach the old Worker Custom Domain and create the proxied
-`uat` CNAME to the tunnel. Verify the site still responds before adding the
-scriptless API route. No Worker code, assets or backend deployment is needed.
-To undo only the bypass, delete the scriptless route: the existing Worker proxy
-handles `/api/*` again while the tunnel-backed DNS and site route remain valid.
+Save the current DNS, Worker routes, tunnel configuration and these rules
+before editing. Add the new host's ingress and extend the zone rules, then add
+its proxied CNAME, site Worker Route and scriptless API route. Preserve the old
+host's equivalent entries during §1.0.2. On the canonical host only, removing
+the scriptless route restores the Worker's existing API proxy. The fallback
+checks the request against `APP_ORIGIN`, so it cannot serve the old host once
+that binding points at the new app.
 
 Verify the SPA and a static asset, workspace summary HTML and legacy redirect,
 anonymous API 401, authenticated API JSON, and an authenticated SSE connection
@@ -218,7 +223,7 @@ must appear, and requests to `/api/*` must not. Read back both Worker routes and
 the tunnel configuration. Local `pnpm dev:uat` still sends `/api` directly to
 `uat-api`; its HTTPS hostname, Clerk instance, and summary renderer are unchanged.
 
-Verified on 2026-09-10: authenticated `/api/me` returned 200 through the UAT site,
+Verified on the old `uat.capynotebook.com` host on 2026-09-10: authenticated `/api/me` returned 200 through the UAT site,
 direct API hostname, and local Vite. Notification SSE delivered its connection
 frame and 25-second heartbeat through both the site and Vite. Marked summary
 requests appeared in the site Worker tail; marked API requests did not. The
@@ -226,6 +231,83 @@ private summary fixture returned HTML 404 and its legacy link redirected with
 301; the SPA and a built asset returned 200. `wrangler triggers deploy --env uat`
 preserved the scriptless route. This check used local Vite directly; local Caddy
 and a browser sign-in were not started.
+
+### 1.0.2 App hostname transition
+
+The approved UAT app is `https://app.uat.capynotebook.com`. Production is prepared
+for `https://app.capynotebook.com`, with `capynotebook.com` and `www` reserved for
+a separate public Next.js deployment. Building that public site is deferred.
+Keep `/support`, `/help-and-legal`, credits, and existing auth links in the app
+until real public destinations and approved documents exist. `/w/{workspaceId}`
+and its legacy `/share/workspaces/{id}` alias stay on the app Worker.
+
+1. Save the current public environment values, Clerk application/return URLs,
+   DNS, routes, tunnel ingress and edge rules for rollback. Finish existing UAT
+   journey cleanup before changing targets; saved run manifests bind to their
+   original app URL and must not be rewritten to bypass cleanup checks.
+2. Confirm active TLS coverage for `app.uat` under `*.uat.capynotebook.com`.
+   Preserve this advanced certificate's renewal. Add the new DNS, ingress,
+   Worker route, scriptless API exclusion and edge rules from §1.0.1 while
+   retaining the old host. Exclude both UAT hosts from search indexing at the
+   edge; production's public summaries retain their existing visibility rules.
+3. Before sending users to the new app, add its origin to CORS, collaboration
+   and Office parents. During overlap, configure the following values in the
+   ignored `deploy/.env.uat` and sync the approved GitHub `uat` variables through
+   §12.7. Preserve all unrelated entries and credentials.
+
+   | Setting | Transition value |
+   | --- | --- |
+   | `APP_URL`, `DEPLOYMENT_APP_URL`, `UAT_APP_URL` | `https://app.uat.capynotebook.com` |
+   | `UAT_ALLOWED_HOSTS` | `app.uat.capynotebook.com,uat-api.capynotebook.com,uat-collab.capynotebook.com,uat-ops.capynotebook.com` |
+   | `CORS_ALLOWED_ORIGINS` | `https://app.uat.capynotebook.com,https://uat.capynotebook.com` |
+   | `COLLABORATION_ALLOWED_ORIGINS`, `OFFICE_ALLOWED_PARENT_ORIGINS` | `https://app.uat.capynotebook.com,https://uat.capynotebook.com,https://local.uat.capynotebook.com` |
+
+   `VITE_APP_URL` and Worker `APP_ORIGIN` derive from `DEPLOYMENT_APP_URL`; rebuild
+   rather than editing generated assets. UAT B2 already permits `https://*.uat.capynotebook.com`.
+   Its checked-in CORS file explicitly includes both app origins during overlap.
+   Production B2, CORS, collaboration and Office parents use only the production
+   app origin. The future public site has no app API or blob permissions.
+4. Keep UAT Clerk's primary domain, FAPI, account portal, keys and issuer. Update
+   its application home and return destinations to the new app. Preserve custom
+   `/sign-in`, `/sign-up`, `/forgot-password` and `/sso-callback` paths; if Clerk's
+   optional subdomain allowlist is enabled, include the app and existing local
+   origin. Google and Microsoft sign-in callbacks remain on
+   `https://clerk.uat.capynotebook.com/v1/oauth_callback`; retain the existing
+   development callbacks too. The separate OneDrive FilePicker SPA registration
+   needs `https://app.uat.capynotebook.com/msal-redirect.html` before UAT cutover
+   and the production app equivalent before launch, keeping old entries during
+   overlap. Add `local.uat` separately if local OneDrive use is wanted.
+5. Deploy backend/collaboration configuration and rebuild the SPA and Office
+   from one reviewed revision. The same deployment regenerates the LLM runtime
+   framing headers. API, collaboration, Office and local-development hostnames
+   remain unchanged. `APP_URL` changes new invitation/email links and Stripe
+   Checkout/portal returns; existing issued links retain their original URLs.
+   Clerk/Stripe webhooks remain on `uat-api`, and Resend mail still uses `uat`.
+   This hostname change requires no database or ingest migration.
+6. Run the [activation checks](uat-activation-checklist.md#app-hostname-cutover).
+   Keep old browser pages accessible until pending source drafts reach Saved or
+   are exported. IndexedDB is origin-specific; a redirect cannot move browser
+   drafts, language or theme preferences. Do not clear the old host's storage.
+7. Once old browser-only work is recovered and the new host passes checks,
+   temporarily redirect old page navigations to the new app with path and query
+   preserved. Exclude `/api` and `/api/*` from the redirect so old tabs and email
+   unsubscribe GET/POST requests keep using the original backend route. Check
+   bookmarks containing `redirect_url`: relative destinations survive, while an
+   absolute old-host value is rejected by the app's same-origin auth guard and
+   returns to `/`. Resolve those destinations before making redirects permanent.
+   Keep old API DNS, ingress and scriptless routing until old tabs/links no longer
+   need them. Remove the temporary old app origins only when that support ends.
+
+Rollback restores the saved canonical app values, Clerk return paths and page
+routing together, then rebuilds/redeploys so generated origins agree. DNS alone
+cannot restore billing/email URLs, summaries, iframe policies or the Worker's
+API-origin check. Keep both origins and API routes available during rollback.
+
+Production route names in `wrangler.jsonc`, `wrangler.office.jsonc` and the env
+example are preparation only. Provision its backend/tunnel, DNS, scriptless
+`app.capynotebook.com/api/*` route, API edge rules, bucket, identity/provider
+settings and GitHub environment before first deployment. The public site remains
+a separate future deployment; no app wildcard route may capture its apex or `www`.
 
 ### 1.1 Coolify + Cloudflare Tunnel (recommended for this stack)
 
@@ -275,8 +357,8 @@ The prod file runs `/migrate` once per deploy, starts the API with
 
    | Service                                         | Domain field                   |
    | ----------------------------------------------- | ------------------------------ |
-   | `server`                                        | `http://api.abcd.com:8080`     |
-   | `collaboration`                                 | `http://collab.abcd.com:1234`  |
+   | `server`                                        | `http://api.capynotebook.com:8080`     |
+   | `collaboration`                                 | `http://collab.capynotebook.com:1234`  |
    | `ops` (separate application, after step 8)       | `http://ops.capynotebook.com:8082` |
    | `db`, `redis`, `migrate`, `worker`, `retrieval` | no domain                      |
 
@@ -360,8 +442,8 @@ or Caddy on the host; the tunnel should hit that proxy and let it route by
 
 | Hostname                     | Tunnel service                                                                                                | Coolify domain field                            |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| `api.abcd.com`               | `http://localhost:80` (or `http://coolify-proxy:80` if `cloudflared` is a container on the `coolify` network) | `http://api.abcd.com` on the **server** service |
-| `collab.abcd.com`            | same `:80`                                                                                                    | `http://collab.abcd.com` on **collaboration**   |
+| `api.capynotebook.com`               | `http://localhost:80` (or `http://coolify-proxy:80` if `cloudflared` is a container on the `coolify` network) | `http://api.capynotebook.com` on the **server** service |
+| `collab.capynotebook.com`            | same `:80`                                                                                                    | `http://collab.capynotebook.com` on **collaboration**   |
 | `ops.capynotebook.com`           | same `:80`                                                                                                    | `http://ops.capynotebook.com` on **ops**            |
 | retrieval, worker, db, redis | none                                                                                                          | no domain                                       |
 
@@ -384,7 +466,7 @@ Details that are easy to get wrong:
   tunnel is the public path; `8080` is published only on the WireGuard address
   for the ingest host's import worker (§2.2), and `:8001` must stay private.
 - Chat SSE and collab WebSockets both pass through Traefik. If streams die at
-  ~60–100s, raise the proxy read timeout on `api.abcd.com`. Cloudflare Tunnel
+  ~60–100s, raise the proxy read timeout on `api.capynotebook.com`. Cloudflare Tunnel
   itself is not subject to the 100s orange-cloud proxy timeout; Traefik still
   is.
 - Coolify parses every `${VAR:?message}` in the compose file and stores
@@ -418,8 +500,8 @@ On a host running `deploy/docker-compose.yml` without Coolify's proxy,
 records; do **not** also point A records at the VPS IP.
 
 ```
-api.abcd.com     → http://localhost:8080  (the `server` container)
-collab.abcd.com  → http://localhost:1234  (the `collaboration` container)
+api.capynotebook.com     → http://localhost:8080  (the `server` container)
+collab.capynotebook.com  → http://localhost:1234  (the `collaboration` container)
 ops.capynotebook.com → http://localhost:8082  (the `ops` container)
 ```
 
@@ -430,7 +512,7 @@ This is the origin lockdown in §3.
 
 ### 1.3 A/AAAA instead of a tunnel
 
-`A`/`AAAA` for `api.abcd.com` and `collab.abcd.com` to the VPS, **orange cloud
+`A`/`AAAA` for `api.capynotebook.com` and `collab.capynotebook.com` to the VPS, **orange cloud
 on**, then firewall :80/:443 to Cloudflare IPs and enable Authenticated Origin
 Pulls. Grey-cloud (DNS only) publishes the origin and makes `CF-Connecting-IP`
 forgeable. SSL/TLS **Full (strict)**. "Flexible" terminates TLS at Cloudflare
@@ -489,10 +571,10 @@ immediately erased. Do not process PHI without an enterprise agreement.
 Gateway env once those hostnames exist:
 
 ```
-APP_URL=https://abcd.com
-CORS_ALLOWED_ORIGINS=https://abcd.com,https://www.abcd.com
-COLLABORATION_URL=wss://collab.abcd.com
-COLLABORATION_ALLOWED_ORIGINS=https://abcd.com
+APP_URL=https://app.capynotebook.com
+CORS_ALLOWED_ORIGINS=https://app.capynotebook.com
+COLLABORATION_URL=wss://collab.capynotebook.com
+COLLABORATION_ALLOWED_ORIGINS=https://app.capynotebook.com
 ```
 
 Ops uses one read/auth role and one shared admin-actions role. The admin pool
@@ -555,11 +637,11 @@ service through **Deploy Ops**. Local development still uses the compose
 build arguments.
 
 In Clerk, add `https://ops.capynotebook.com` to the production instance's allowed
-origins and redirect URLs. Keep `https://abcd.com` and `https://www.abcd.com`
-if the product uses both. Do not create a second Clerk instance: the Clerk
+origins and redirect URLs alongside `https://app.capynotebook.com`. The future
+public site needs neither app API access nor a separate Clerk application. Do not create a second Clerk instance: the Clerk
 subject must continue to match `users.id` and `operators.user_id`. The Clerk
-webhook remains `https://api.abcd.com/webhooks/clerk`; ops does not accept
-webhooks. Stripe remains `https://api.abcd.com/webhooks/stripe`. B2 CORS
+webhook remains `https://api.capynotebook.com/webhooks/clerk`; ops does not accept
+webhooks. Stripe remains `https://api.capynotebook.com/webhooks/stripe`. B2 CORS
 `allowedOrigins` is the SPA origin, not `api.` or `ops.`.
 
 ---
@@ -571,8 +653,8 @@ layer only handles volumetric floods — semantic limits are in the gateway.
 
 ```
 Rule:  (
-         (http.host eq "api.abcd.com")
-         or (http.host eq "abcd.com" and starts_with(http.request.uri.path, "/api"))
+         (http.host eq "api.capynotebook.com")
+         or (http.host eq "app.capynotebook.com" and starts_with(http.request.uri.path, "/api"))
        )
        and not starts_with(http.request.uri.path, "/webhooks/")
 Rate:  100 requests per 10 seconds per IP
@@ -596,7 +678,7 @@ Skip all security rules for:
 **Do not enable Bot Fight Mode.** It cannot be skipped per-path, so it
 challenges webhook deliveries, which cannot solve a JavaScript challenge.
 
-**Cache rules:** bypass cache for `api.abcd.com`, `collab.abcd.com`, and
+**Cache rules:** bypass cache for `api.capynotebook.com`, `collab.capynotebook.com`, and
 `ops.capynotebook.com` entirely. A cached SSE or WebSocket response breaks
 streaming. Cached operator responses can disclose one operator's data to
 another.
@@ -666,7 +748,7 @@ covers 1 and 2 with the service token):
 **Timeouts:** the default 100 s orange-cloud proxy read timeout will cut long
 chat streams. Parser traffic stays on WireGuard and does not cross Cloudflare.
 Coolify's Traefik/Caddy in front of the tunnel still has its own read timeout —
-raise that on `api.abcd.com` if streams die around a minute.
+raise that on `api.capynotebook.com` if streams die around a minute.
 
 ### 2.2 Drive import worker
 
@@ -853,7 +935,7 @@ at production launch.
 1. Create a project on the **EU** host. A region move afterwards is a support
    ticket on a paid tier.
 2. Set `VITE_POSTHOG_KEY` and `VITE_POSTHOG_HOST`.
-3. Under project settings, **enable "Authorized URLs"** for `https://abcd.com`
+3. Under project settings, **enable "Authorized URLs"** for `https://app.capynotebook.com`
    only, or anyone can post events into your project with the public key.
 4. Do **not** enable autocapture or session replay defaults in the UI; both are
    configured in code and the UI settings will override intent silently.
@@ -1270,7 +1352,7 @@ Embedding rows are the ones the database will actually reject a delete of.
 
 | Check                                                                        | Expected                                         |
 | ---------------------------------------------------------------------------- | ------------------------------------------------ |
-| `curl -sI https://api.abcd.com/healthz`                                      | `x-request-id` header present                    |
+| `curl -sI https://api.capynotebook.com/healthz`                                      | `x-request-id` header present                    |
 | Send a chat turn, then `SELECT * FROM usage_events ORDER BY id DESC LIMIT 5` | rows with non-zero `output_tokens`               |
 | Same `trace_id` searched in Sentry and in gateway logs                       | both return the request                          |
 | `SELECT * FROM provider_sessions WHERE status='open' AND expires_at < now()` | empty after a minute (sweeper is running)        |
@@ -1386,8 +1468,9 @@ web app.
 
 1. Authentication. Platform **Single-page application**. Redirect URIs are
    `{SPA origin}/msal-redirect.html`, for example
-   `http://localhost:5173/msal-redirect.html` and
-   `https://abcd.com/msal-redirect.html`. Leave **Implicit grant and hybrid
+   `http://localhost:5173/msal-redirect.html`,
+   `https://app.uat.capynotebook.com/msal-redirect.html`, and
+   `https://app.capynotebook.com/msal-redirect.html`. Leave **Implicit grant and hybrid
    flows** unchecked: `@azure/msal-browser` v5 uses auth code + PKCE, and the
    SPA platform already enables the CORS-enabled token endpoint.
 2. Supported account types. Choose personal, work and school, or both. The
@@ -1486,15 +1569,14 @@ authentication strategy.
 3. Create a separate private B2 bucket and bucket-scoped key. Apply
    `deploy/b2-cors.uat.json` and `deploy/b2-lifecycle.uat.json` (§4). Do not
    point UAT at the production bucket.
-4. Choose explicit hostnames one level below the zone, for example
-   `uat.example.com`, `uat-api.example.com`, `uat-collab.example.com`, and
-   optionally `uat-ops.example.com`. Cloudflare's free Universal certificate
-   covers only `example.com` and `*.example.com`; a name like
-   `api.uat.example.com` fails the TLS handshake at the edge unless the zone
-   pays for Advanced Certificate Manager. Configure DNS, Cloudflare, tunnel
-   routing, origin lockdown, cache bypass, WebSocket support, and `/api`
-   reverse proxy using §§1–3. Do not use wildcard host authorization for
-   review tooling.
+4. Use `app.uat.capynotebook.com` for the app, keeping `uat-api`, `uat-collab`,
+   `uat-office`, `uat-ops` and `uat-coolify` unchanged. The advanced certificate
+   covering `*.uat.capynotebook.com` is required for `app.uat`; Universal SSL's
+   `*.capynotebook.com` alone does not cover it. Verify certificate coverage and
+   managed renewal before routing traffic. Configure DNS, tunnel routing,
+   origin lockdown, cache bypass, WebSocket support, and `/api` using §§1–3.
+   Review tooling uses exact hosts, never a wildcard. Existing deployments
+   follow the transition steps in §1.0.2.
 5. Copy `deploy/.env.uat.example` to ignored `deploy/.env.uat`, fill only UAT
    values and upload them to the GitHub `uat` environment using §12.7. Set `APP_ENV=production`; UAT must exercise production safety
    checks. Set `SENTRY_ENVIRONMENT=uat`, which is the only thing keeping UAT
@@ -1505,7 +1587,7 @@ authentication strategy.
    and browser build variables.
 6. The deployment publishes Worker `capy-notebook-uat` with the built assets and
    live summary handler. Attach only the UAT site domain after verifying it,
-   following the Pages cutover order in §1. No summary storage service is needed.
+   following the route and hostname transition order in §1. No summary storage service is needed.
 7. Deploy once, inspect the `migrate` container, and verify all public routes
    resolve through Cloudflare. This initial deployment may use a unique random
    temporary Clerk webhook secret until the public UAT webhook URL exists.
@@ -1534,15 +1616,17 @@ required by §1.4.
 
 In the Clerk dashboard:
 
-1. Activate the UAT application's Production instance and configure the UAT
-   application domain. Complete any required Clerk DNS records.
+1. Activate the UAT application's Production instance with primary domain
+   `uat.capynotebook.com`. The browser app runs at `app.uat.capynotebook.com`;
+   keep FAPI `clerk.uat.capynotebook.com`, account portal
+   `accounts.uat.capynotebook.com`, and their existing keys and DNS records.
 2. Enable the same sign-in methods, session lifetime, organization settings,
    and restrictions intended for production. If Google or Microsoft OAuth is
    enabled, create separate UAT OAuth credentials and UAT redirect URLs.
 3. Add the UAT SPA and ops origins to the instance's allowed origins and
    redirect URLs. Do not add production origins unless the provider explicitly
    requires them.
-4. Create `https://uat-api.example.com/webhooks/clerk`, selecting the same
+4. Create `https://uat-api.capynotebook.com/webhooks/clerk`, selecting the same
    events as production. Copy its signing secret into UAT
    `CLERK_WEBHOOK_SECRET` and redeploy.
 5. Put the UAT publishable key in the SPA build as
