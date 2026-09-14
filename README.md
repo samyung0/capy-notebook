@@ -89,17 +89,17 @@ Everything local, on the Clerk development instance (UAT).
  - `pnpm dev`
  - Open `https://localhost:5173`
 
- - **Clerk Webhook Events**:
+ **Clerk Webhook Events**:
 
   - Set `CLERK_WEBHOOK_HOST=dev-<yourname>.uat.capynotebook.com`
   - Give `dev-<yourname>.uat.capynotebook.com/webhooks/clerk` to Epo, ask the big bro to add a webhook in clerk uat development instance with that url. Subscribed to `user.created`, `user.deleted`, `user.updated`.
   - update `CLERK_WEBHOOK_SECRET` with the webhook secret
 
- - **Email**:
+ **Email**:
 
   Email only logs when running stack locally. We don't support sending Dev Email right now.
 
- - **Stripe**
+ **Stripe**
 
   Local uses the *Stable Studio Dev* sandbox. UAT uses the *Stable Studio UAT* sandbox.
 

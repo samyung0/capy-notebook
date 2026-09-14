@@ -21,6 +21,12 @@ Configured and checked on 2026-09-14. The full journey suite has not run.
 - Verified the SSH tunnel through existing `capy-ingest@159.195.61.195` to
   `10.77.0.3:5432`, using the existing pinned host key and deploy credential.
   The runner connects at `127.0.0.1:15432`. The verification tunnel was closed.
+- Added native Office capture settings to the private UAT env file and GitHub:
+  `PARSER_URL=http://10.77.0.2:8091/file_parse` and
+  `PARSER_BIND_ADDRESS=10.77.0.2`. Verified the ingest host's WireGuard address,
+  all required GitHub deployment keys and complete configuration rendering.
+  This fixes the deployment's missing `PARSER_URL` error. The matching ingest
+  deployment applies the private parser bind; the old parser binds loopback.
 - Verified the private `capy-notebook-uat` bucket, required browser CORS,
   one-day hidden-version and unfinished-upload cleanup, and staging-prefix
   expiry. They already matched the repository policy, so no bucket settings
