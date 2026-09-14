@@ -107,7 +107,11 @@ supports it.
 ## Running and cleanup
 
 The workflow uses one Chromium worker, no whole-test retries, a 45-minute
-suite budget and a separate 10-minute cleanup step inside a 120-minute job. Office preparation has a separate 30-minute cap.
+suite budget and a separate 10-minute cleanup step inside a 120-minute job.
+Browser actions time out after 30 seconds and navigation after 60 seconds;
+parse/index polling retains its explicit longer limits. Uploads use the actual
+file-picker button, which waits for the workspace upload policy before accepting
+files. Office preparation has a separate 30-minute cap.
 These initial budgets have not been calibrated against a full live run.
 Missing configuration or failed required checks fail the gate.
 

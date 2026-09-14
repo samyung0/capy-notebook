@@ -140,7 +140,12 @@ export async function upload(
   const page = run.owner.page;
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
   await page.getByRole('button', { exact: true, name: 'Add file' }).click();
-  await page.locator('input[type="file"]').setInputFiles({
+  // The picker stays disabled until the workspace upload policy is ready.
+  const [chooser] = await Promise.all([
+    page.waitForEvent('filechooser'),
+    page.getByRole('button', { name: /^Upload from your computer/ }).click(),
+  ]);
+  await chooser.setFiles({
     buffer: bytes,
     mimeType: 'application/octet-stream',
     name,
@@ -173,7 +178,6 @@ export async function upload(
   );
   // Consume both response promises even when submission fails.
   const clicked = page
-    .getByRole('dialog')
     .getByRole('button', { exact: true, name: 'Upload' })
     .click();
   const [uploadId, completed] = await Promise.all([

@@ -81,7 +81,11 @@ async function sourceResponses(
 async function chooseSources(page: Page, workspaceId: string, names: string[]) {
   await page.goto('/workspaces/' + workspaceId);
   await page.getByRole('button', { exact: true, name: 'Add file' }).click();
-  await page.locator('input[type="file"]').setInputFiles(
+  const [chooser] = await Promise.all([
+    page.waitForEvent('filechooser'),
+    page.getByRole('button', { name: /^Upload from your computer/ }).click(),
+  ]);
+  await chooser.setFiles(
     names.map((name) => ({
       buffer: Buffer.from('Study facts for ' + name + '.\n'),
       mimeType: 'text/plain',

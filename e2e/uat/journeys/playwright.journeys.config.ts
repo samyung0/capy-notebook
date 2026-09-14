@@ -26,7 +26,9 @@ export default defineConfig({
   testMatch: '**/*.spec.ts',
   timeout: 15 * 60_000,
   use: {
+    actionTimeout: 30_000,
     baseURL: process.env.UAT_APP_URL,
+    navigationTimeout: 60_000,
     screenshot: 'off',
     trace: 'off',
     video: 'off',
