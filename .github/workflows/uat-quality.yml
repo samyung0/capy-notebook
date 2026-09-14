@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       revision:
-        description: Full deployed SHA; blank verifies the selected revision
+        description: Full deployed SHA; blank uses whatever the UAT backend already serves
         required: false
         type: string
       browser_suite:
@@ -47,10 +47,32 @@ jobs:
     runs-on: ubuntu-24.04
     environment: uat
     timeout-minutes: 10
+    outputs:
+      revision: ${{ steps.resolve.outputs.revision }}
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.revision || github.sha }}
+          ref: ${{ github.sha }}
+      - name: Resolve the deployed UAT revision
+        id: resolve
+        env:
+          DEPLOYMENT_API_URL: ${{ vars.DEPLOYMENT_API_URL || vars.UAT_API_URL }}
+          REQUESTED_REVISION: ${{ inputs.revision }}
+        run: |
+          if [[ -n "$REQUESTED_REVISION" ]]; then
+            revision="$REQUESTED_REVISION"
+          else
+            revision="$(python3 scripts/deploy/verify-backend.py --print)"
+          fi
+          [[ "$revision" =~ ^[0-9a-fA-F]{40}$ ]] || {
+            echo "Could not determine a full Git SHA for UAT quality checks." >&2
+            exit 1
+          }
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+      - name: Check out the deployed revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.resolve.outputs.revision }}
       - name: Probe authorized UAT services
         env:
           UAT_ALLOWED_HOSTS: ${{ vars.UAT_ALLOWED_HOSTS }}
@@ -58,7 +80,7 @@ jobs:
           UAT_APP_URL: ${{ vars.DEPLOYMENT_APP_URL || vars.UAT_APP_URL }}
           UAT_COLLAB_URL: ${{ vars.DEPLOYMENT_COLLAB_URL || vars.UAT_COLLAB_URL }}
           UAT_TARGET_AUTHORIZED: ${{ vars.UAT_TARGET_AUTHORIZED }}
-          EXPECTED_REVISION: ${{ inputs.revision || github.sha }}
+          EXPECTED_REVISION: ${{ steps.resolve.outputs.revision }}
         run: scripts/review/remote-smoke.sh
 
   # A deploy only has to prove the services answer. The functional and UI checks
@@ -72,7 +94,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.revision || github.sha }}
+          ref: ${{ needs.smoke.outputs.revision }}
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with:
@@ -115,7 +137,7 @@ jobs:
     timeout-minutes: 120
     env:
       UAT_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
-      EXPECTED_REVISION: ${{ inputs.revision || github.sha }}
+      EXPECTED_REVISION: ${{ needs.smoke.outputs.revision }}
       UAT_TARGET_AUTHORIZED: ${{ vars.UAT_TARGET_AUTHORIZED }}
       UAT_APP_URL: ${{ vars.UAT_APP_URL }}
       UAT_API_URL: ${{ vars.UAT_API_URL }}
@@ -156,7 +178,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.revision || github.sha }}
+          ref: ${{ needs.smoke.outputs.revision }}
           submodules: recursive
       - uses: oven-sh/setup-bun@v2
         with:

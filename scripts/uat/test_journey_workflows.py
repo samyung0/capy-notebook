@@ -16,6 +16,70 @@ REVISION = "a" * 40
 
 
 class JourneyWorkflowsTest(unittest.TestCase):
+    def test_quality_resolves_running_revision_once_for_all_jobs(self):
+        result = subprocess.run(
+            ["node", "--input-type=module", "-"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+            input=r"""
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import YAML from 'yaml';
+const quality = YAML.parse(fs.readFileSync('.github/workflows/uat-quality.yml', 'utf8'));
+const smoke = quality.jobs.smoke;
+const resolve = smoke.steps.find(s => s.id === 'resolve');
+const probe = smoke.steps.find(s => s.run === 'scripts/review/remote-smoke.sh');
+assert.equal(resolve.env.REQUESTED_REVISION, '${{ inputs.revision }}');
+assert.equal(resolve.env.DEPLOYMENT_API_URL, probe.env.UAT_API_URL);
+assert.equal(smoke.steps.filter(s => s.uses?.startsWith('actions/checkout')).at(-1).with.ref,
+  '${{ steps.resolve.outputs.revision }}');
+assert.equal(probe.env.EXPECTED_REVISION, '${{ steps.resolve.outputs.revision }}');
+assert.equal(smoke.outputs.revision, '${{ steps.resolve.outputs.revision }}');
+for (const name of ['authenticated_browser', 'critical_paths']) {
+  const job = quality.jobs[name];
+  assert.equal(job.needs, 'smoke');
+  assert.equal(job.steps.find(s => s.uses?.startsWith('actions/checkout')).with.ref,
+    '${{ needs.smoke.outputs.revision }}');
+}
+assert.equal(quality.jobs.critical_paths.env.EXPECTED_REVISION, '${{ needs.smoke.outputs.revision }}');
+assert.equal(quality.on.workflow_call.inputs.revision.required, true);
+
+const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'capy-quality-revision-'));
+try {
+  const python = path.join(temp, 'python3');
+  fs.writeFileSync(python,
+    '#!/usr/bin/env bash\nprintf "%s\\n" "$CAPY_TEST_SHA"\nexit "$CAPY_TEST_STATUS"\n',
+    { mode: 0o700 });
+  const output = path.join(temp, 'output');
+  const deployed = 'a'.repeat(40), requested = 'b'.repeat(40);
+  for (const [input, backend, backendStatus, expected] of [
+    ['', deployed, '0', deployed],
+    [requested, deployed, '1', requested], // Explicit targets do not query the backend.
+    ['', deployed, '1', null], // A failed lookup must not fall back to github.sha.
+    ['', 'invalid', '0', null],
+    ['invalid', deployed, '0', null],
+  ]) {
+    fs.writeFileSync(output, '');
+    const run = spawnSync('bash', ['-euo', 'pipefail', '-c', resolve.run], {
+      encoding: 'utf8', env: { ...process.env, PATH: `${temp}:${process.env.PATH}`,
+        REQUESTED_REVISION: input, GITHUB_OUTPUT: output, GITHUB_SHA: 'c'.repeat(40),
+        CAPY_TEST_SHA: backend, CAPY_TEST_STATUS: backendStatus },
+    });
+    assert.equal(run.status === 0, expected !== null, run.stderr);
+    assert.equal(fs.readFileSync(output, 'utf8'), expected ? `revision=${expected}\n` : '');
+  }
+} finally {
+  fs.rmSync(temp, { recursive: true, force: true });
+}
+""",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_promotion_requires_journeys_and_cleanup_with_scoped_credentials(self):
         result = subprocess.run(
             ["node", "--input-type=module", "-"],

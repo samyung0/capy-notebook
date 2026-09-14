@@ -448,7 +448,7 @@ reports are retained for 30 days.
 | `e2e/uat/journeys/files.spec.ts` | DOCX/XLSX/PPTX browser upload/edit/collaboration/fresh-client export/reprocessing/purge; UTF-8 text automatic publication; digital PDF private annotations; terminal CSV ingest failure and settled spend. |
 | `e2e/uat/journeys/runtime.test.ts` | Offline canonical `app.uat` target guard with unchanged UAT Clerk identity, run/actor cleanup boundaries, durable sanitized evidence, malformed manifest/path refusal, saved-token transport redaction, and failed-inventory cleanup resumption. Included in `pnpm test:uat:verifier`. |
 | `e2e/uat/journeys/test_verify.py` | Read-only database identity gating and exact-key paginated B2 version filtering. Run `uv run --frozen python e2e/uat/journeys/test_verify.py`. |
-| `scripts/uat/test_journey_workflows.py` | Offline promotion/cleanup wiring, pinned DB tunnel validation and actual ingest image mismatch rejection. Included in `pnpm test:deployment`. |
+| `scripts/uat/test_journey_workflows.py` | Offline promotion/cleanup wiring, blank quality SHA resolution from the live backend with explicit-target and lookup-failure checks, shared revision across quality jobs, pinned DB tunnel validation and actual ingest image mismatch rejection. Included in `pnpm test:deployment`. |
 
 Supporting helper (not a test): [`e2e/uat/support.ts`](../e2e/uat/support.ts)
 creates short-lived synthetic Clerk sessions and authenticated API calls shared

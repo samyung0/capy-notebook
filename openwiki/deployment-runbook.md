@@ -2035,7 +2035,11 @@ first. Roll back compatible Ops changes by selecting a previous passing SHA.
    gateway and collaboration health and verifies the released SHA. For the
    authenticated authorization and accessibility evidence, dispatch
    **Deterministic UAT quality** yourself with `browser_suite`, which promotion
-   also requires.
+   also requires. Leave `revision` blank to resolve the running UAT backend's
+   SHA once, matching the Ops and ingest defaults. The smoke, browser, and
+   lifecycle jobs all check out that revision, and release checks expect it.
+   An explicit SHA, including one passed by Deploy UAT or promotion, remains
+   the required target. A failed backend lookup stops the run.
 2. Repair the fixture and tune only documented budgets or exclusions. Do not
    weaken authorization assertions or allow-host guards to make a run green.
 3. Dispatch **Editor perf** once so later runs have a baseline to diff. No
