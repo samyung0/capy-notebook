@@ -1759,8 +1759,14 @@ Three lanes, none of them shared:
 
 **UAT sandbox.** `Capy Notebook Pro` (`prod_VBvlTdsu2tTdkK`) with a monthly
 USD 8.00 price, `price_1UBXuV2ZZopeANOehrbUr1Qx`. The endpoint is
-`we_1UBtgI2ZZopeANOeoftHsYMT` at
-`https://uat-api.capynotebook.com/webhooks/stripe`. Put the sandbox
+`we_1UFazI2ZZopeANOeYbwCk8PA` at
+`https://uat-api.capynotebook.com/webhooks/stripe`. Pin its payload API version to
+`2025-08-27.basil`, matching `stripe-go/v82` in `server/go.mod`. The account
+default may be newer; `ConstructEvent` rejects incompatible release families
+before recording the event, and the gateway returns HTTP 400. Revisit this pin
+when upgrading the SDK. [Stripe endpoint creation](https://docs.stripe.com/api/webhook_endpoints/create)
+accepts `api_version`; changing request headers in the test runner does not
+change the webhook payload version. Put the sandbox
 `sk_test_…`, that endpoint's signing secret, and the price ID into the UAT
 Coolify resource as `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and
 `STRIPE_PRICE_PRO`. There is no publishable-key setting: checkout is a

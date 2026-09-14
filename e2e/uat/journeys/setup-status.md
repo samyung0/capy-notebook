@@ -1,6 +1,7 @@
 # UAT journey setup status
 
-Configured and checked on 2026-09-14. The full journey suite has not run.
+Configured and checked on 2026-09-14. Live runs have passed account and Checkout
+journeys; the full suite has not passed yet.
 
 ## Applied
 
@@ -33,7 +34,15 @@ Configured and checked on 2026-09-14. The full journey suite has not run.
   were changed. The configured application key passed bucket and version reads.
 - Verified Stripe sandbox `acct_1U8Djl2ZZopeANOe`, active monthly USD 8 Pro price
   `price_1UBXuV2ZZopeANOehrbUr1Qx`, and the enabled UAT webhook endpoint with
-  the events handled by the gateway. No Stripe objects were created.
+  the events handled by the gateway during initial setup.
+- Run `34855166757` exposed HTTP 400 responses to subscription webhooks: the
+  unpinned endpoint inherited `2026-07-29.dahlia`, incompatible with the deployed
+  `stripe-go/v82` SDK. Created replacement `we_1UFazI2ZZopeANOeYbwCk8PA`, pinned
+  to `2025-08-27.basil`, with the same UAT URL and five handled events. Its
+  signing secret is synchronized to private `.env.uat` and GitHub `uat`.
+  Redeploy UAT before disabling old endpoint `we_1UBtgI2ZZopeANOeoftHsYMT` and
+  rerunning the billing journey. Keep the disabled endpoint's delivery history
+  for diagnosis; the failed run's account and provider cleanup succeeded.
 - Configured `stablestudio.org` as the generated account email domain and
   `capy-web,capy-backend` as the Sentry projects. The existing Clerk webhook
   ledger has successful `user.updated` deliveries; signup/deletion delivery

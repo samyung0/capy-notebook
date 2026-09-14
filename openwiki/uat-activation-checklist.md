@@ -131,6 +131,11 @@ verify both providers with a test account that has not previously granted file a
 `STRIPE_WEBHOOK_SECRET` and `sk_test_…` in `STRIPE_SECRET_KEY`. UAT price IDs
 are not interchangeable with live ones.
 
+The endpoint payload API version must be `2025-08-27.basil`, matching the
+deployed `stripe-go/v82` SDK. Confirm a real subscription event receives HTTP
+200 and appears processed in `webhook_events`; an enabled endpoint alone does
+not establish delivery compatibility.
+
 Confirm the edge does not rate-limit or challenge `/webhooks/`. Both providers
 burst on retry and will trip a WAF rule written for browser traffic.
 
