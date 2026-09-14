@@ -1,11 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { lazy, type ReactNode, Suspense, useState } from 'react';
-import {
-  fileLinksQuery,
-  useFileLinks,
-  useOfficePreviewLinks,
-  useWorkspace,
-} from '@/api/hooks';
+import { fileLinksQuery, useFileLinks, useWorkspace } from '@/api/hooks';
 import type {
   Region,
   SourceFile,
@@ -19,6 +14,7 @@ import { ImageViewer } from '@/features/files/ImageViewer';
 import { m } from '@/i18n';
 import { FileEmpty, FileError, FileLoading } from './FileStates';
 import { fileExt, IMAGE_MIN_ZOOM, isImageFile } from './fileUtils';
+import type { OfficeCitation } from './officeProtocol';
 import { SourceTextView } from './SourceTextView';
 import { officeRuntimeKey } from './useOfficeRuntime';
 
@@ -45,66 +41,8 @@ const AUDIO_EXTS = new Set([
 const SHEET_EXTS = new Set(['csv', 'tsv', 'xlsx']);
 const SLIDE_EXTS = new Set(['pptx']);
 const TEXT_EXTS = new Set(['txt', 'md', 'markdown', 'mdx', 'mdc', 'json']);
-const OFFICE_PREVIEW_EXTS = new Set(['docx', 'pptx', 'xlsx']);
-
-/** Whether a citation on this Office file opens the parser-derived PDF. The
- * row's `previewUrl` is a presence marker; the preview resolves its own link. */
-export function hasOfficeCitationPreview(
-  file: Pick<SourceFile, 'name' | 'previewUrl'>,
-  page?: number,
-  regions?: readonly Region[]
-): boolean {
-  const citationRequested = page != null || Boolean(regions?.length);
-  if (!citationRequested || !OFFICE_PREVIEW_EXTS.has(fileExt(file.name))) {
-    return false;
-  }
-  // Store-only and legacy Office files have no parser-derived PDF. Keep them
-  // on the native viewer instead of guessing an endpoint that will return 404.
-  return Boolean(file.previewUrl);
-}
-
 function lazyView(node: ReactNode) {
   return <Suspense fallback={<FileLoading />}>{node}</Suspense>;
-}
-
-/** Resolves its own presigned pair when it opens, so the preview PDF is
- * fetched with a fresh link however long the file itself has been open. */
-function OfficeCitationPreview({
-  canEdit,
-  fileId,
-  page,
-  regions,
-  renderOffice,
-}: {
-  canEdit: boolean;
-  fileId: string;
-  page?: number;
-  regions: Region[];
-  renderOffice: (startEditing: boolean) => ReactNode;
-}) {
-  const [editing, setEditing] = useState(false);
-  const {
-    data: links,
-    isPending,
-    refetch,
-  } = useOfficePreviewLinks(editing ? '' : fileId, { errorBoundary: false });
-  if (editing) return renderOffice(true);
-  if (isPending) return <FileLoading />;
-  if (!links?.previewUrl) return <FileError onRetry={() => void refetch()} />;
-  return (
-    <div className="flex h-full min-h-[60vh] flex-col">
-      {canEdit && (
-        <div className="flex min-h-10 shrink-0 justify-end border-line border-b px-2 py-1">
-          <Button onClick={() => setEditing(true)} size="sm">
-            {m.action_edit()}
-          </Button>
-        </div>
-      )}
-      <div className="relative min-h-0 flex-1 overflow-auto">
-        <PdfView page={page} regions={regions} url={links.previewUrl} />
-      </div>
-    </div>
-  );
 }
 
 /** Seeking past the buffered range re-reads the URL, which may have expired by
@@ -167,6 +105,7 @@ function UnsupportedPreview({ file }: { file: ViewableFile }) {
 }
 
 interface FileViewerProps {
+  citation?: OfficeCitation;
   file: SourceFile | null;
   imageZoom?: number;
   onDirtyChange?: (dirty: boolean) => void;
@@ -192,6 +131,7 @@ function FileViewerContent({
   onDirtyChange,
   page,
   regions,
+  citation,
 }: FileViewerProps) {
   const { data: workspace } = useWorkspace(file?.workspaceId ?? '', {
     errorBoundary: false,
@@ -222,6 +162,7 @@ function FileViewerContent({
   }
   return (
     <ResolvedFileView
+      citation={citation}
       file={{ ...file, url: links.url }}
       imageZoom={imageZoom}
       onDirtyChange={onDirtyChange}
@@ -242,6 +183,7 @@ function ResolvedFileView({
   onRetryLinks,
   page,
   regions,
+  citation,
   workspaceRole,
 }: Omit<FileViewerProps, 'file' | 'imageZoom'> & {
   file: ViewableFile;
@@ -252,7 +194,6 @@ function ResolvedFileView({
   const canEdit = workspaceRole === 'owner' || workspaceRole === 'editor';
   const ext = fileExt(file.name);
   const officeRuntimeIdentity = officeRuntimeKey(file, file.revision);
-  const citationPreview = hasOfficeCitationPreview(file, page, regions);
 
   if (file.kind === 'pdf' || ext === 'pdf') {
     return lazyView(
@@ -292,29 +233,10 @@ function ResolvedFileView({
         />
       );
     if (ext !== 'xlsx') return <UnsupportedPreview file={file} />;
-    if (citationPreview) {
-      return lazyView(
-        <OfficeCitationPreview
-          canEdit={canEdit}
-          fileId={file.id}
-          key={file.id}
-          page={page}
-          regions={regions ?? []}
-          renderOffice={(startEditing) => (
-            <SheetView
-              canEdit={canEdit}
-              file={file}
-              key={officeRuntimeIdentity}
-              onDirtyChange={onDirtyChange}
-              startEditing={startEditing}
-            />
-          )}
-        />
-      );
-    }
     return lazyView(
       <SheetView
         canEdit={canEdit}
+        citation={citation}
         file={file}
         key={officeRuntimeIdentity}
         onDirtyChange={onDirtyChange}
@@ -324,29 +246,10 @@ function ResolvedFileView({
 
   // DOCX uses the same read-first Office runtime; legacy binary .doc stays downloadable.
   if (ext === 'docx') {
-    if (citationPreview) {
-      return lazyView(
-        <OfficeCitationPreview
-          canEdit={canEdit}
-          fileId={file.id}
-          key={file.id}
-          page={page}
-          regions={regions ?? []}
-          renderOffice={(startEditing) => (
-            <DocxView
-              canEdit={canEdit}
-              file={file}
-              key={officeRuntimeIdentity}
-              onDirtyChange={onDirtyChange}
-              startEditing={startEditing}
-            />
-          )}
-        />
-      );
-    }
     return lazyView(
       <DocxView
         canEdit={canEdit}
+        citation={citation}
         file={file}
         key={officeRuntimeIdentity}
         onDirtyChange={onDirtyChange}
@@ -356,29 +259,10 @@ function ResolvedFileView({
 
   if (file.kind === 'slides' || SLIDE_EXTS.has(ext)) {
     if (ext !== 'pptx') return <UnsupportedPreview file={file} />;
-    if (citationPreview) {
-      return lazyView(
-        <OfficeCitationPreview
-          canEdit={canEdit}
-          fileId={file.id}
-          key={file.id}
-          page={page}
-          regions={regions ?? []}
-          renderOffice={(startEditing) => (
-            <PptxView
-              canEdit={canEdit}
-              file={file}
-              key={officeRuntimeIdentity}
-              onDirtyChange={onDirtyChange}
-              startEditing={startEditing}
-            />
-          )}
-        />
-      );
-    }
     return lazyView(
       <PptxView
         canEdit={canEdit}
+        citation={citation}
         file={file}
         key={officeRuntimeIdentity}
         onDirtyChange={onDirtyChange}

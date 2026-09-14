@@ -46,7 +46,7 @@ see [the authorization contract](authorization-permissions-lifecycles.md#anonymo
 
 ```mermaid
 flowchart LR
-  Upload[Upload / move file] --> Plan[Go format policy builds processingPlan v1]
+  Upload[Upload / move file] --> Plan[Go format policy builds processingPlan v2]
   Plan --> Route{Contract route}
   Route -->|PDF / modern Office| ParseJob[(parse job)]
   ParseJob --> Coordinator[Parse coordinator]
@@ -256,13 +256,13 @@ normal attempt budget; only a missing or invalid pin is terminal. See
 
 The Go gateway resolves every upload into a versioned `processingPlan` when it
 enqueues the first stage. The plan names the exact format route, parser route, caption
-mode (`none`, or `standalone` for image uploads), Office-preview requirement,
+mode (`none`, or `standalone` for image uploads), Office format flag,
 ordered stages, and required capabilities.
 The Python worker rejects unknown versions and executes this plan; it does not
 reconstruct orchestration from `kind`, `parseMode`, or the extension. Those
 legacy top-level fields may describe the saved upload choice but are not worker
-route selectors. Validation is exact: format/route, Office preview, caption
-mode, stage order, and resource list must agree with the version-1 contract.
+route selectors. Validation is exact: format/route, Office format, caption
+mode, stage order, and resource list must agree with the version-2 contract.
 A malformed or manually fabricated combination fails terminally rather than
 silently taking a nearby route.
 
@@ -391,14 +391,15 @@ trusted SHA-256, writing a job-scoped source file into the shared volume.
 The parser reads that local key and atomically writes
 `artifacts/{parse_fingerprint}.zip` to the same volume. The worker extracts that
 file directly. That local atomic ZIP is the required parser-to-ingest handoff
-(`capy-parser-bundle-v3`: `manifest.json` with the receipt, `content_list.json`,
-`document.md`, `refinement.json` with the frozen furniture texts, `preview.pdf`
-for Office sources, `parsed.pdf` only when font repair changed the bytes the
-parser read, and `images/`). A failed B2 cache write must never fail the
+(`capy-parser-bundle-v4`: `manifest.json` with the receipt, `content_list.json`,
+`document.md`, `refinement.json` with frozen furniture and Office page evidence,
+`parsed.pdf` only for repaired native PDF sources, and `images/`). Office bundles
+contain no PDF. The parser freezes page text and visible-heading proofs before
+discarding the temporary conversion, preserving downstream confidence/heading checks. A failed B2 cache write must never fail the
 current parse or ingest.
 
 After the coordinator verifies the local ZIP's size, checksum, archive bounds,
-manifest identity, content list, refinement, and required Office preview, it tries to copy
+manifest identity, content list, refinement, and Office evidence, it tries to copy
 the ZIP to `parse-bundles/{parse_fingerprint}.zip` in B2. The write gets exactly
 three total attempts and is best effort. Cache-row registration is best effort
 too. Only a confirmed write whose object still exists after registration stays
@@ -429,6 +430,15 @@ lands `failed`/unindexed; the UI shows a banner rather than replacing the
 viewer.
 
 ### Provider source imports
+
+Login/signup uses Clerk's baseline identity scopes. Explicit cloud-import
+connection actions request Google `drive.readonly` or Microsoft `Files.Read`
+and `offline_access` through Clerk per-user `additionalScopes`. The integration
+status reports linked accounts separately from `googleDriveReadonly` and
+`microsoftFilesRead`; each picker checks its file grant and requests consent
+when missing, including for accounts originally linked through login. OAuth
+returns to the current page, where the user can reopen the importer. OneDrive's
+separate MSAL picker authorization remains scoped to opening the picker.
 
 Google Picker and OneDrive Picker accept multiple files and folders. OneDrive preserves selection across folders. Inspection recursively expands provider folders into a flat list of files, including subfolders, with pagination and deduplication; shortcuts are not followed. The workspace file limit bounds each folder selection's file count and total list requests. Empty, over-limit, unreadable or incompletely listed folder selections fail explicitly. The chooser deduplicates overlapping selections across inspection batches and applies the remaining workspace room before showing source details. Folder names do not create chapters. The subsequent import still submits file ids in batches of 20 through the existing quota/reservation gates. OneDrive expansion retains drive ids, deduplicates by drive and item id, and only follows pagination URLs on the same Graph children endpoint. Remote-item shortcuts are rejected. Its existing delegated `Files.Read` permission covers folders in the user's OneDrive. Google folder expansion requires an actual `drive.readonly` or `drive` token grant; per-file grants are asked to reconnect.
 
@@ -473,7 +483,7 @@ The ingest payload carries the exact source revision and ETag that created it.
 Every source-derived file mutation and retrieval attachment locks and verifies
 that pair in the same transaction. Replacement also terminally supersedes older
 pending/running parse or ingest rows and releases their credit reservations, so
-an old parse cannot publish content, geometry, previews, status, or citations for the
+an old parse cannot publish content, geometry, status, or citations for the
 new blob. A stale worker that merely lost its lease exits without closing the
 shared reservation used by its successor attempt. Provider-call admission also
 uses the durable ingest-attempt id to lock and verify the current source plus
@@ -540,13 +550,9 @@ document parse ZIP follows the same best-effort B2 reuse rule after verification
 but its required parser-to-ingest handoff remains the atomic local file.
 Derived-cache reads and donor `HEAD` checks are optional too: a B2 read failure
 is a cache miss and the worker runs the transformation from the required source
-instead. Source-object downloads and required Office previews remain strict.
-For DOCX, PPTX, and XLSX, the worker reads an existing deterministic preview
-object and verifies its bounded length, `application/pdf` content type, PDF
-header, and equality with the parser bundle's validated `preview.pdf`. It
-replaces a bad object from that local preview. The file cannot become ready if
-the required preview publication fails. This strict preview write is separate
-from the three-attempt best-effort policy for optional reuse caches.
+instead. Source-object downloads remain strict. Office ingest and donor reuse
+require no preview publication. The PDF-free structured bundle keeps its existing
+best-effort durable-cache behavior.
 If full validation rejects a fingerprint-addressed local parse bundle before
 handoff, only that exact bundle is discarded; the existing second parse attempt
 then asks the parser to rebuild it instead of failing on the same sticky cache file.
@@ -557,9 +563,7 @@ checks lock workspace, ordered account rows, membership, file, job, then the
 exact attempt when one exists. Go file, workspace, ownership, and membership
 mutations take the same prefix. Claim transitions lock job before attempt.
 Revocation, provider admission, and lease reclamation therefore serialize
-without a job-to-workspace, file-to-user, or job-to-attempt deadlock. Cleanup
-of a donor-installed Office preview uses the same exact job-attempt fence, so
-an expired worker cannot clear a successor's preview for an unchanged source.
+without a job-to-workspace, file-to-user, or job-to-attempt deadlock. Cleanup uses the same job-attempt fence.
 
 Audio has no special provider-state machine. There is no transcription row,
 polling loop, webhook route, provider transcript id, or provider DELETE worker.
@@ -701,10 +705,10 @@ the short bilingual heading on page 13 and exclusion note on page 45):
   to those values. Captions, units and footnotes remain source text. The notes
   describe appearance and do not infer that a highlighted value is best.
 
-Two post-passes then run in the ingest worker against the PDF the parser read
-(the bundle's `parsed.pdf` when font repair changed the bytes, otherwise the
-`preview.pdf` for Office files, otherwise the spooled upload), which is why
-they live there rather than in the parser:
+Two post-passes then run in the ingest worker. Native PDF sources use the repaired
+`parsed.pdf` when present, otherwise the spooled upload. Office sources use the
+page text and visible-heading proofs frozen in `refinement.json`, so cache hits
+need no PDF or repeated conversion:
 
 - **Heading retention** (`retrieval/headings.py`): a `text_level` block only
   survives as the section path of the body after it, so a heading with no body
@@ -768,10 +772,9 @@ its vectors), plus its summary, into a new per-workspace
 not billed for user A's original ingest. If the pins differ, chunk text is
 copied and re-embedded into the target workspace's space.
 
-Office donor reuse also requires an exact cached PDF preview from a file alias
-whose `source_sha256` matches the donor content. The worker verifies that object
-in blob storage, copies or re-embeds the donor, attaches the preview, and only
-then marks the destination ready. A missing preview forces a normal parse.
+Office donor reuse copies or re-embeds canonical content without a preview
+lookup. Caption associations and derivative work retain their existing ownership
+and publication checks.
 
 `pipeline_identity` covers only what feeds chunk *text*, so it is not an
 invalidation lever for model prose: changing the ingest or captioning default leaves
@@ -1133,13 +1136,14 @@ a valid scope with no indexed content.
 Read tools hit Postgres directly. Every mutation goes through the gateway with
 `X-Pipeline-Secret`, so authz, quota, and the materials model stay in one place.
 
-`capture_page` (`retrieval/capture.py`) keeps a size-bounded copy of each
-source PDF on the retrieval host, keyed by the stored object's path so a
-re-parsed Office preview is fetched afresh
-(`CAPY_CAPTURE_CACHE_DIR`, LRU by size, `CAPY_CAPTURE_CACHE_MAX_BYTES` 2 GiB):
-the PDF itself for PDF sources, the parser's `preview.pdf` for Office. One B2
-GET per object, then PyMuPDF renders the page or box at `CAPY_CAPTURE_MAX_EDGE`
-(1568 px) to JPEG q80, about 2,400 input tokens per capture on GLM, billed
+`capture_page` (`retrieval/capture.py`) keeps a size-bounded copy of native PDF
+sources on the retrieval host (`CAPY_CAPTURE_CACHE_DIR`, LRU by size,
+`CAPY_CAPTURE_CACHE_MAX_BYTES` 2 GiB). Office captures download the exact published
+source, verify its size/hash, then send it to the parser's authenticated
+`/capture_page` route. That route shares the bounded parser FIFO and hard deadline,
+converts temporarily with LibreOffice and returns only JPEG. It runs no ODL parse
+and creates no parse receipt. Temporary Office bytes are removed after the request.
+Both routes render `CAPY_CAPTURE_MAX_EDGE` (1568 px), JPEG q80. Images are billed
 through the ordinary LLM usage path. Context telemetry and the compaction
 budget count each attached image by its 28-px patch estimate
 (`capture.patch_tokens`), not by its base64; the captures ride outside the
@@ -1263,14 +1267,12 @@ A citation is:
 - `regions` are stored, shipped, validated at the viewer boundary, and drawn as
   a read-only overlay in `page-1000-topleft` coordinates.
 
-Chat citation chips show `p. N` / `pp. N–M` and open the file scrolled to that
-page and centered on the first valid region. Native PDFs render their source.
-DOCX/XLSX/PPTX citations render the exact LibreOffice PDF preserved in parser
-bundle v3 because that is the coordinate surface the parser measured. Ordinary
-Office viewing and editing still use the native browser viewer; entering edit
-mode removes the citation overlay. Store-only and legacy Office files have no
-parser preview, so citation navigation falls back to the native viewer without
-an overlay instead of requesting a nonexistent derived PDF.
+Chat citation chips retain parser page references. Native PDFs scroll to and
+highlight those regions. Office citations send the quoted passage to the current
+saved native viewer, match a complete unique text anchor and highlight current
+paragraph/line/cell geometry. Ambiguous, short or unsupported matches open without
+a highlight. Editing hides the overlay. See
+[Office citation geometry](frontend/office-files.md#citation-geometry).
 
 ## Clone and teardown
 
@@ -1317,7 +1319,7 @@ editing continues. The internal checkpoint request uses
 `initialize` and `baseSourceSHA256` only for the initial seed; ordinary saves
 omit them. Seed hashes remain validated by the store when `initialize` is true. The collaboration service captures a fixed
 candidate and exports full source bytes to B2. `source_refresh_candidates`
-holds its source, seed, parse artifacts, preview, canonical index and consumed
+holds its source, seed, parse artifacts, canonical index and consumed
 caption digests until publication. Existing parser/ingest workers process that
 candidate without changing the readable `files` row or `rag_file_contents` alias.
 
@@ -1339,7 +1341,7 @@ retain only binary package differences needed by current edits; DOCX preserves
 source-bound native embeds and relationships. The old full base is released.
 Text retains exact residual changes and its Y.Text lineage. Once all processing
 finishes, `sourcePublicationReady` marks the job for publication-only retries;
-a ready shared content row alone cannot skip preview/caption/derivative work.
+a ready shared content row alone cannot skip caption/derivative work.
 Temporary handoff failures return 503 and keep the completed candidate.
 Durable job publication receipts survive lost
 HTTP acknowledgments and allow credit settlement after a crash. Stale or failed

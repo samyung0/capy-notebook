@@ -312,6 +312,14 @@ services:
       SENTRY_DSN: ${SENTRY_DSN_RETRIEVAL:-}
       # Tools with side effects call back into the gateway rather than writing
       # materials directly, so the agent inherits Go's authz and quota checks.
+      PARSER_URL: ${PARSER_URL:-}
+      PARSER_TOKEN: ${PARSER_TOKEN:-}
+      PARSER_TIMEOUT: ${PARSER_TIMEOUT:-2520}
+      B2_ENDPOINT: ${B2_ENDPOINT:-}
+      B2_REGION: ${B2_REGION:-}
+      B2_BUCKET: ${B2_BUCKET:-}
+      B2_KEY_ID: ${B2_KEY_ID:-}
+      B2_APP_KEY: ${B2_APP_KEY:-}
       GATEWAY_URL: http://server:8080
       PIPELINE_SECRET: ${PIPELINE_SECRET:-dev-pipeline-secret}
       LLM_CREDENTIALS_KEY: ${LLM_CREDENTIALS_KEY:-}

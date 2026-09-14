@@ -499,7 +499,7 @@ func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourc
 		reservedSize := int64(0)
 		if meta.Size != nil {
 			reservedSize = *meta.Size
-		} else if meta.ExportPDF {
+		} else if meta.ExportMIME != "" {
 			reservedSize = min(maxBytes, integrations.GoogleExportMaxBytes())
 		}
 		if reservedSize < 0 || reservedSize > maxBytes {

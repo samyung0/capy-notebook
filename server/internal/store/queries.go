@@ -928,13 +928,13 @@ func (s *Store) DeleteChapter(ctx context.Context, actorID, id string) error {
 // previewUrl is a presence marker shaped like the historical route; the
 // fetchable URL comes from the links endpoint.
 const fileCols = `id, workspace_id, chapter_id, position, name, kind, size_bytes, added_at, status, indexed, COALESCE(blob_path, '') <> '',
-	CASE WHEN status='ready' AND ((kind='pdf' AND blob_path IS NOT NULL) OR preview_blob_path IS NOT NULL)
+	CASE WHEN status='ready' AND (kind='pdf' AND blob_path IS NOT NULL)
 		THEN '/api/files/' || id || '/preview' END,
 	revision`
 
 // fileListCols is fileCols qualified for joins.
 const fileListCols = `f.id, f.workspace_id, f.chapter_id, f.position, f.name, f.kind, f.size_bytes, f.added_at, f.status, f.indexed, COALESCE(f.blob_path, '') <> '',
-	CASE WHEN f.status='ready' AND ((f.kind='pdf' AND f.blob_path IS NOT NULL) OR f.preview_blob_path IS NOT NULL)
+	CASE WHEN f.status='ready' AND (f.kind='pdf' AND f.blob_path IS NOT NULL)
 		THEN '/api/files/' || f.id || '/preview' END,
 	f.revision`
 

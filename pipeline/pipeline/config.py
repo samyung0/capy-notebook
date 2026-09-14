@@ -127,13 +127,8 @@ class Config:
     # smaller budget for embeddings and final bookkeeping.
     parse_job_timeout: int = int(_env("CAPY_PARSE_JOB_TIMEOUT", "2700"))
     ingest_timeout: int = int(_env("CAPY_INGEST_TIMEOUT", "1200"))
-    # LibreOffice output can be much larger than the compressed Office source.
-    # Bound both the worker allocation and the platform preview object.
-    office_preview_max_bytes: int = int(
-        _env("CAPY_OFFICE_PREVIEW_MAX_BYTES", str(128 << 20))
-    )
     # Parser artifacts cross a container boundary and may contain highly
-    # compressed text/images in addition to an Office preview. Keep both the
+    # compressed text and images. Keep both the
     # local zip and its extracted form bounded independently of source bytes.
     parse_artifact_max_bytes: int = int(
         _env("CAPY_PARSE_ARTIFACT_MAX_BYTES", str(256 << 20))
@@ -232,8 +227,6 @@ class Config:
 
 cfg = Config()
 
-if cfg.office_preview_max_bytes <= 0:
-    raise ValueError("CAPY_OFFICE_PREVIEW_MAX_BYTES must be positive")
 
 for key, value in (
     ("CAPY_PARSE_ARTIFACT_MAX_BYTES", cfg.parse_artifact_max_bytes),

@@ -20,7 +20,6 @@ export interface SourceRefreshPublish {
   leaseToken: string;
   netTokens: number;
   pendingEffects: unknown;
-  previewBlobPath: string;
   rebasedState?: string;
   sourceETag: string;
 }

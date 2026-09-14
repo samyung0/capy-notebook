@@ -30,7 +30,7 @@ x-worker-env: &worker-env
   RELEASE_SHA: ${RELEASE_SHA:?set the exact 40-character release SHA}
   CAPY_INGEST_HOST_ID: ${CAPY_INGEST_HOST_ID:-netcup-ingest-nonprod}
   LOG_FORMAT: json
-  PARSER_URL: http://127.0.0.1:${PARSER_PORT:-8091}/file_parse
+  PARSER_URL: http://${PARSER_BIND_ADDRESS:?set the private WireGuard bind address}:${PARSER_PORT:-8091}/file_parse
   PARSER_TOKEN: ${PARSER_TOKEN:?set the shared non-production parser token}
   PARSER_TIMEOUT: ${PARSER_TIMEOUT:-2520}
   CAPY_PARSE_SHARED_DIR: /var/lib/capy-parse
@@ -107,7 +107,7 @@ services:
       <<: *parser-env
       APP_ENV: production
       RELEASE_SHA: ${RELEASE_SHA:?set the exact 40-character release SHA}
-      PARSER_BIND_ADDRESS: 127.0.0.1
+      PARSER_BIND_ADDRESS: ${PARSER_BIND_ADDRESS:?set the private WireGuard bind address}
       PARSER_TOKEN: ${PARSER_TOKEN:?set the shared non-production parser token}
     command:
       [
@@ -116,7 +116,7 @@ services:
         "--app-dir",
         "/app/parser",
         "--host",
-        "127.0.0.1",
+        "${PARSER_BIND_ADDRESS:?set the private WireGuard bind address}",
         "--port",
         "${PARSER_PORT:-8091}",
         "--workers",
@@ -135,7 +135,7 @@ services:
           "curl",
           "--fail",
           "--silent",
-          "http://127.0.0.1:${PARSER_PORT:-8091}/healthz",
+          "http://${PARSER_BIND_ADDRESS:?set the private WireGuard bind address}:${PARSER_PORT:-8091}/healthz",
         ]
       interval: 15s
       timeout: 5s
@@ -265,7 +265,7 @@ services:
       SENTRY_ENVIRONMENT: local
       CAPY_HOST_PROC: /host/proc
       CAPY_HOST_METRICS_ENABLED: "false"
-      PARSER_HEALTH_URL: http://127.0.0.1:${PARSER_PORT:-8091}/healthz
+      PARSER_HEALTH_URL: http://${PARSER_BIND_ADDRESS:?set the private WireGuard bind address}:${PARSER_PORT:-8091}/healthz
       CAPY_HOST_SAMPLE_ACTIVE_SECONDS: ${CAPY_HOST_SAMPLE_ACTIVE_SECONDS:-5}
       CAPY_HOST_SAMPLE_IDLE_SECONDS: ${CAPY_HOST_SAMPLE_IDLE_SECONDS:-60}
     command: ["python", "-m", "pipeline.ingest.host_sampler"]
@@ -289,7 +289,7 @@ services:
       SENTRY_ENVIRONMENT: uat
       CAPY_HOST_PROC: /host/proc
       CAPY_HOST_METRICS_ENABLED: "false"
-      PARSER_HEALTH_URL: http://127.0.0.1:${PARSER_PORT:-8091}/healthz
+      PARSER_HEALTH_URL: http://${PARSER_BIND_ADDRESS:?set the private WireGuard bind address}:${PARSER_PORT:-8091}/healthz
       CAPY_HOST_SAMPLE_ACTIVE_SECONDS: ${CAPY_HOST_SAMPLE_ACTIVE_SECONDS:-5}
       CAPY_HOST_SAMPLE_IDLE_SECONDS: ${CAPY_HOST_SAMPLE_IDLE_SECONDS:-60}
     command: ["python", "-m", "pipeline.ingest.host_sampler"]

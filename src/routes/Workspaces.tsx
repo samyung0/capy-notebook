@@ -20,6 +20,7 @@ import { WorkspaceFormCreateDialog } from '@/features/workspace/WorkspaceFormCre
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { track } from '@/lib/observability';
+import { useLoadingReveal } from '@/lib/useLoadingReveal';
 import { type USER_COLORS, USER_COLORS_DISPLAY } from '@/lib/userColor';
 
 const SORTS = [
@@ -47,6 +48,7 @@ export default function Workspaces() {
     sort,
     tag: tagFilters,
   });
+  const revealRef = useLoadingReveal(isLoading);
   const { data: tags = [] } = useTags('workspace', { errorBoundary: false });
   const { mutateAsync: createWorkspace } = useCreateWorkspace();
 
@@ -194,7 +196,10 @@ export default function Workspaces() {
         ) : isLoading ? (
           <SkeletonCardGrid count={9} />
         ) : (
-          <div className="grid w-full auto-rows-fr grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
+          <div
+            className="grid w-full auto-rows-fr grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4"
+            ref={revealRef}
+          >
             {data?.map((w) => (
               <WorkspaceCard key={w.id} workspace={w} />
             ))}
@@ -216,17 +221,15 @@ export default function Workspaces() {
           </div>
         )}
       </div>
-      {createOpen && (
-        <WorkspaceFormCreateDialog
-          onSubmit={async (v) => {
-            await createWorkspace(v);
-            track('workspace_created', { source: 'sidebar' });
-          }}
-          open
-          setOpen={setCreateOpen}
-          workspace={{ color: 'graphite', name: '', tags: [] }}
-        />
-      )}
+      <WorkspaceFormCreateDialog
+        onSubmit={async (v) => {
+          await createWorkspace(v);
+          track('workspace_created', { source: 'sidebar' });
+        }}
+        open={createOpen}
+        setOpen={setCreateOpen}
+        workspace={{ color: 'graphite', name: '', tags: [] }}
+      />
     </PanelWithInvertedRadius>
   );
 }

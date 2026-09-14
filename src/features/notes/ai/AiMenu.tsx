@@ -30,6 +30,7 @@ import {
 } from 'platejs/react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/Button';
+import { PopupMotion } from '@/components/ui/PopupMotion';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { llmKeyUserMessage } from '@/lib/errors';
@@ -119,6 +120,7 @@ export function AiMenu() {
   const streaming = usePluginOption(AIChatPlugin, 'streaming');
   const preview = useAiPreview(editor);
   const [input, setInput] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const lastCommand = useRef<{
     mode?: AiAction['mode'];
@@ -133,6 +135,7 @@ export function AiMenu() {
     if (!open) return;
 
     editor.getApi(BlockMenuPlugin).blockMenu.hide();
+    inputRef.current?.focus();
     const close = () =>
       editor.getApi(AIChatPlugin).aiChat.hide({ focus: false });
     window.addEventListener('pointerdown', close);
@@ -174,8 +177,6 @@ export function AiMenu() {
   useEffect(() => {
     floating.update?.();
   }, [floating.update, open]);
-
-  if (!open) return null;
 
   const submit = (
     prompt: string,
@@ -223,18 +224,19 @@ export function AiMenu() {
 
   return (
     <FloatingPortal>
-      <div
+      <PopupMotion
         aria-label={m.editor_ai_commands()}
-        className="z-50 w-[min(360px,calc(100vw-32px))] overflow-hidden rounded-button border border-line bg-surface shadow-pop"
+        className="w-[min(360px,calc(100vw-32px))] overflow-hidden rounded-button border border-line bg-surface shadow-pop"
         onPointerDown={(event) => event.stopPropagation()}
-        ref={floating.refs.setFloating}
+        open={open}
+        positionClassName="z-50"
+        positionRef={floating.refs.setFloating}
         role="dialog"
         style={floating.style}
       >
         <div className="flex items-center border-divider border-b px-2">
           <Sparkles className="size-4 text-action-accent" />
           <input
-            autoFocus
             className="h-10 min-w-0 flex-1 bg-transparent px-2 text-fg text-sm outline-none placeholder:text-placeholder"
             data-plate-focus="true"
             disabled={loading}
@@ -248,6 +250,7 @@ export function AiMenu() {
                 editor.getApi(AIChatPlugin).aiChat.hide();
             }}
             placeholder={m.editor_ai_placeholder()}
+            ref={inputRef}
             value={input}
           />
           <button
@@ -378,7 +381,7 @@ export function AiMenu() {
             )}
           </div>
         )}
-      </div>
+      </PopupMotion>
     </FloatingPortal>
   );
 }

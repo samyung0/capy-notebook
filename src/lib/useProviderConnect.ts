@@ -6,8 +6,8 @@
  * user to the provider's consent screen via Clerk, and the Go backend later
  * pulls fresh access tokens from Clerk's OAuth token wallet.
  *
- * Note: the extra scopes below must be allowed on the Clerk dashboard's
- * Google/Microsoft SSO connections (requires custom OAuth credentials).
+ * Custom OAuth credentials are required. Keep Clerk's global connection
+ * scopes at the login baseline; request file access only through this action.
  * Google uses drive.readonly so selected folders can be traversed recursively.
  */
 import { useUser } from '@clerk/react';

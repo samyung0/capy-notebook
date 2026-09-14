@@ -1,6 +1,8 @@
-export const OFFICE_PROTOCOL_VERSION = 3 as const;
+export const OFFICE_PROTOCOL_VERSION = 4 as const;
 
 export type OfficeFormat = 'docx' | 'xlsx' | 'pptx';
+export type OfficeCitation = { quote: string; page?: number };
+
 export type OfficeMode = 'view' | 'edit';
 
 export type OfficeAnalysis =
@@ -26,6 +28,11 @@ export type OfficeAnalysis =
 export type OfficeHostMessage =
   | {
       version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'set-citation';
+      citation: OfficeCitation | null;
+    }
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
       type: 'load';
       format: OfficeFormat;
       fileName: string;
@@ -36,6 +43,7 @@ export type OfficeHostMessage =
       collaboration?: { epoch: number; initialUpdate: ArrayBuffer };
       /** View mode only: saved Yrs state to export over `bytes` before opening. */
       checkpoint?: ArrayBuffer;
+      citation?: OfficeCitation | null;
     }
   | {
       version: typeof OFFICE_PROTOCOL_VERSION;
@@ -125,6 +133,8 @@ export function isOfficeHostMessage(
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Record<string, unknown>;
   if (candidate.version !== OFFICE_PROTOCOL_VERSION) return false;
+  if (candidate.type === 'set-citation')
+    return isOfficeCitation(candidate.citation);
   if (candidate.type === 'update')
     return isCount(candidate.epoch) && candidate.bytes instanceof ArrayBuffer;
   if (candidate.type === 'flush')
@@ -133,6 +143,8 @@ export function isOfficeHostMessage(
   return (
     candidate.version === OFFICE_PROTOCOL_VERSION &&
     ((candidate.type === 'load' &&
+      (candidate.citation === undefined ||
+        isOfficeCitation(candidate.citation)) &&
       ['docx', 'pptx', 'xlsx'].includes(
         String((candidate as { format?: unknown }).format)
       ) &&
@@ -240,5 +252,20 @@ function isCollaboration(value: unknown): boolean {
   const candidate = value as Record<string, unknown>;
   return (
     isCount(candidate.epoch) && candidate.initialUpdate instanceof ArrayBuffer
+  );
+}
+
+function isOfficeCitation(value: unknown): value is OfficeCitation | null {
+  if (value === null) return true;
+  if (!value || typeof value !== 'object') return false;
+  const item = value as Record<string, unknown>;
+  return (
+    typeof item.quote === 'string' &&
+    item.quote.length > 0 &&
+    item.quote.length <= 4000 &&
+    (item.page === undefined ||
+      (typeof item.page === 'number' &&
+        Number.isInteger(item.page) &&
+        item.page > 0))
   );
 }

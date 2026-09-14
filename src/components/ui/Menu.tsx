@@ -1,12 +1,16 @@
 import { cva, type VariantProps } from 'class-variance-authority';
-import { type ReactElement, type ReactNode, useState } from 'react';
+import type { ReactNode } from 'react';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { BASE_BUTTON_STYLE } from './Button';
-import { Card } from './Card';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from './DropdownMenu';
 import { Icon, type IconName } from './Icon';
 import { IconButton } from './IconButton';
-import { Popover, PopoverContent, PopoverTrigger } from './Popover';
 
 const menuVariants = cva('w-auto min-w-36 p-0', {
   defaultVariants: {
@@ -30,27 +34,20 @@ const menuItemVariants = cva(
     },
     variants: {
       danger: {
-        false: 'text-fg hover:bg-surface-hover-bg',
-        true: 'text-tint-error-fg hover:bg-tint-error',
+        false:
+          'text-fg hover:bg-surface-hover-bg data-[highlighted]:bg-surface-hover-bg',
+        true: 'text-tint-error-fg hover:bg-tint-error data-[highlighted]:bg-tint-error',
       },
     },
   }
 );
 
-interface MenuItemBase {
+export interface MenuItem {
   danger?: boolean;
   disabled?: boolean;
   icon?: IconName;
   label: string;
   onClick?: () => void;
-}
-
-export interface MenuItem extends MenuItemBase {
-  baseUIRender?: (
-    props: MenuItemBase,
-    menuDefaultRenderItem: ReactElement,
-    key: number | string
-  ) => ReactNode;
 }
 
 export interface MenuProps extends VariantProps<typeof menuVariants> {
@@ -63,7 +60,7 @@ export interface MenuProps extends VariantProps<typeof menuVariants> {
   trigger?: ReactNode;
 }
 
-/** Unified action menu — Popover-backed, thick-stroke vertical three-dot used app-wide. */
+/** Convenience action list with the shared menu's keyboard and focus behavior. */
 export function Menu({
   items,
   trigger,
@@ -73,11 +70,9 @@ export function Menu({
   alignWidthToTrigger,
   className,
 }: MenuProps) {
-  const [open, setOpen] = useState(false);
-
   return (
-    <Popover onOpenChange={setOpen} open={open}>
-      <PopoverTrigger asChild>
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger asChild>
         {trigger ?? (
           <IconButton
             className={cn('p-2', iconContainerClassName)}
@@ -87,46 +82,31 @@ export function Menu({
             variant="ghost-hover"
           />
         )}
-      </PopoverTrigger>
-      <PopoverContent
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
         align={align}
-        alignWidthToTrigger={alignWidthToTrigger}
-        className={cn(menuVariants({ variant }), className)}
+        className={cn(
+          menuVariants({ variant }),
+          'p-1 py-1.5',
+          alignWidthToTrigger && 'w-(--radix-dropdown-menu-trigger-width)',
+          className
+        )}
         data-slot="menu"
         data-variant={variant}
+        onClick={(e) => e.stopPropagation()}
       >
-        <Card
-          border="solid"
-          className="block min-w-[140px] p-1 py-1.5"
-          radius="card"
-        >
-          {items.map((it, i) => {
-            const defaultRenderItem = (
-              <button
-                className={menuItemVariants({ danger: it.danger })}
-                disabled={it.disabled}
-                key={i}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setOpen(false);
-                  it.onClick?.();
-                }}
-                role="menuitem"
-                type="button"
-              >
-                {it.icon && <Icon className="-translate-y-px" name={it.icon} />}
-                <span className="translate-y-px">{it.label}</span>
-              </button>
-            );
-
-            if (it.baseUIRender) {
-              return it.baseUIRender(it, defaultRenderItem, i);
-            }
-
-            return defaultRenderItem;
-          })}
-        </Card>
-      </PopoverContent>
-    </Popover>
+        {items.map((it, i) => (
+          <DropdownMenuItem
+            className={menuItemVariants({ danger: it.danger })}
+            disabled={it.disabled}
+            key={i}
+            onSelect={() => it.onClick?.()}
+          >
+            {it.icon && <Icon className="-translate-y-px" name={it.icon} />}
+            <span className="translate-y-px">{it.label}</span>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

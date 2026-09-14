@@ -1576,10 +1576,13 @@ components:
           type: boolean
         microsoft:
           type: boolean
+        microsoftFilesRead:
+          type: boolean
       required:
         - googleDriveReadonly
         - google
         - microsoft
+        - microsoftFilesRead
       type: object
     LLMCredential:
       additionalProperties: false
@@ -3097,8 +3100,6 @@ components:
           format: int64
           type: integer
         pendingEffects: {}
-        previewBlobPath:
-          type: string
         rebasedState:
           format: base64
           type: string
@@ -3113,7 +3114,6 @@ components:
         - sourceETag
         - contentId
         - contentHash
-        - previewBlobPath
         - pendingEffects
         - netTokens
         - expectedLatestCheckpoint

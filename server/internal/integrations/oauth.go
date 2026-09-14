@@ -331,7 +331,7 @@ type ImportFileMetadata struct {
 	MIMEType    string
 	Size        *int64
 	DownloadURL string
-	ExportPDF   bool
+	ExportMIME  string
 }
 
 // DownloadImportFile retrieves one provider object for browser-side analysis.
@@ -364,7 +364,7 @@ func DownloadImportFile(
 
 	downloadURL := meta.DownloadURL
 	if provider == ProviderGoogle {
-		downloadURL = GoogleDownloadURL(ref.ID, meta.ExportPDF)
+		downloadURL = GoogleDownloadURL(ref.ID, meta.ExportMIME)
 	}
 	if err := validateImportDownloadURL(ctx, downloadURL); err != nil {
 		return nil, "", err
@@ -464,29 +464,33 @@ func GetGoogleFileMetadata(
 		Size:     body.Size,
 	}
 	if strings.HasPrefix(body.MIMEType, "application/vnd.google-apps.") {
+		var extension string
 		switch body.MIMEType {
-		case "application/vnd.google-apps.document",
-			"application/vnd.google-apps.spreadsheet",
-			"application/vnd.google-apps.presentation",
-			"application/vnd.google-apps.drawing":
-			meta.ExportPDF = true
-			meta.MIMEType = "application/pdf"
-			meta.Size = nil
-			if !strings.EqualFold(path.Ext(meta.Name), ".pdf") {
-				meta.Name += ".pdf"
-			}
+		case "application/vnd.google-apps.document":
+			meta.ExportMIME, extension = "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".docx"
+		case "application/vnd.google-apps.spreadsheet":
+			meta.ExportMIME, extension = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".xlsx"
+		case "application/vnd.google-apps.presentation":
+			meta.ExportMIME, extension = "application/vnd.openxmlformats-officedocument.presentationml.presentation", ".pptx"
+		case "application/vnd.google-apps.drawing":
+			meta.ExportMIME, extension = "application/pdf", ".pdf"
 		default:
 			return ImportFileMetadata{}, ErrUnsupportedImportFile
+		}
+		meta.MIMEType = meta.ExportMIME
+		meta.Size = nil
+		if !strings.EqualFold(path.Ext(meta.Name), extension) {
+			meta.Name += extension
 		}
 	}
 	return meta, nil
 }
 
-func GoogleDownloadURL(fileID string, exportPDF bool) string {
+func GoogleDownloadURL(fileID string, exportMIME string) string {
 	escaped := url.PathEscape(fileID)
-	if exportPDF {
+	if exportMIME != "" {
 		return "https://www.googleapis.com/drive/v3/files/" + escaped +
-			"/export?mimeType=application/pdf"
+			"/export?mimeType=" + url.QueryEscape(exportMIME)
 	}
 	return "https://www.googleapis.com/drive/v3/files/" + escaped + "?alt=media"
 }
@@ -577,44 +581,6 @@ const (
 	ProviderGoogle    = "google"
 	ProviderMicrosoft = "microsoft"
 )
-
-func DownloadGoogleFile(accessToken, fileID string) ([]byte, string, error) {
-	metaReq, _ := http.NewRequest("GET", "https://www.googleapis.com/drive/v3/files/"+fileID+"?fields=name,mimeType", nil)
-	metaReq.Header.Set("Authorization", "Bearer "+accessToken)
-	metaResp, err := http.DefaultClient.Do(metaReq)
-	if err != nil {
-		return nil, "", err
-	}
-	defer metaResp.Body.Close()
-	var meta struct {
-		Name     string `json:"name"`
-		MimeType string `json:"mimeType"`
-	}
-	_ = json.NewDecoder(metaResp.Body).Decode(&meta)
-
-	dlURL := "https://www.googleapis.com/drive/v3/files/" + fileID + "?alt=media"
-	if strings.HasPrefix(meta.MimeType, "application/vnd.google-apps.") {
-		dlURL = "https://www.googleapis.com/drive/v3/files/" + fileID + "/export?mimeType=application/pdf"
-		if meta.MimeType == "application/vnd.google-apps.document" {
-			meta.Name = strings.TrimSuffix(meta.Name, ".gdoc") + ".pdf"
-		}
-	}
-	req, _ := http.NewRequest("GET", dlURL, nil)
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, "", err
-	}
-	defer resp.Body.Close()
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, "", err
-	}
-	if resp.StatusCode >= 400 {
-		return nil, "", fmt.Errorf("drive download: %s", string(data))
-	}
-	return data, meta.Name, nil
-}
 
 // MicrosoftDrive is the Graph /me/drive payload the picker host needs.
 type MicrosoftDrive struct {

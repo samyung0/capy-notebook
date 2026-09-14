@@ -81,6 +81,22 @@ tunnel (`https://dev-<name>.uat.capynotebook.com/webhooks/clerk`) rather than
 at `uat-api`. The two instances never share a signing secret, and a gateway
 verifies with exactly one.
 
+### Cloud import consent
+
+After the [picker setup](deployment-runbook.md#11-google-drive-and-onedrive-pickers),
+verify both providers with a test account that has not previously granted file access:
+
+- Login/signup asks for baseline identity permissions, with no Drive or Graph
+  file permission request.
+- In a workspace, choose Add source → Import → Google Drive or OneDrive.
+  File consent appears even if that provider was used to sign in.
+- After granting consent, reopen the importer and select files or a folder.
+  Inspection and import succeed. OneDrive may also request its separate picker consent.
+- Declining import consent leaves the Capy account usable. A later import
+  click can request consent again.
+- Sign out and back in, then import again. Missing file grants trigger consent
+  at import time rather than during login.
+
 ## 3. Stripe webhook
 
 `https://uat-api.capynotebook.com/webhooks/stripe`, sandbox account
@@ -167,3 +183,8 @@ Clerk development instance. Point a local gateway at the UAT database only with
   Coolify job leaves recovery pending rather than resuming incompatible workers.
 - Local UI plus UAT still renders the same summary through Vite. Full-local
   Compose uses `deploy/.env` with the renamed `CAPY_*` keys.
+
+
+## Manual critical-path gate
+
+After app and nonproduction ingest are on the same candidate SHA, run **Deterministic UAT quality** with `critical_paths: true`. Verify all nine journeys and both cleanup/release checks passed. Review the retained-resource report, including delayed B2 deletions and provider history. Production promotion reruns this gate. Prerequisites and cleanup retry commands are in the [journey guide](../e2e/uat/journeys/README.md); this has not been validated by a live run during implementation.

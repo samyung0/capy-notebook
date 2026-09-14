@@ -26,6 +26,7 @@ import { createBlankQuestion } from '@/features/quizzes/QuizForm';
 import { ShareDialog } from '@/features/workspace/ShareDialog';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
 function scoreTone(pct: number): 'success' | 'warning' | 'error' {
   return pct >= 70 ? 'success' : pct >= 55 ? 'warning' : 'error';
@@ -63,6 +64,7 @@ function ReviewMistakesCard() {
 
 function AllQuizzes() {
   const { data, fetchStatus, isLoading } = useQuizzes();
+  const revealRef = useLoadingReveal(isLoading);
   const navigate = useNavigate();
   const { mutate: deleteQuiz } = useDeleteQuiz();
   const { mutate: cloneQuiz } = useCloneQuiz();
@@ -77,7 +79,10 @@ function AllQuizzes() {
 
   return (
     <>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div
+        className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
+        ref={revealRef}
+      >
         <ReviewMistakesCard />
         {data?.map((q) => (
           <Card
@@ -241,6 +246,7 @@ function AllQuizzes() {
 
 function PastAttempts() {
   const { data, fetchStatus, isLoading } = useAttempts();
+  const revealRef = useLoadingReveal(isLoading);
   const navigate = useNavigate();
   if (fetchStatus === 'paused') return <QueryPausedState />;
   if (isLoading) return <SkeletonList count={6} rowHeight={52} />;
@@ -250,7 +256,10 @@ function PastAttempts() {
     );
 
   return (
-    <div className="overflow-hidden rounded-card border border-line">
+    <div
+      className="overflow-hidden rounded-card border border-line"
+      ref={revealRef}
+    >
       {/* desktop header */}
       <div className="hidden bg-surface-hover-bg px-4 py-3 font-bold text-fg-muted text-xs uppercase tracking-wide md:flex">
         <div className="flex-[2.2]">{m.quiz_col_quiz()}</div>

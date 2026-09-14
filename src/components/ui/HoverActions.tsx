@@ -25,7 +25,7 @@ export function HoverActions({
   return (
     <div
       className={cn(
-        'opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100',
+        'opacity-0 transition-opacity ease-(--motion-ease-smooth-out) focus-within:opacity-100 group-hover:opacity-100',
         // keep the trigger visible while its popover/menu is open
         'has-data-[state=open]:opacity-100',
         radialBackground &&

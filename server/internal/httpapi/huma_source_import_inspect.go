@@ -224,7 +224,7 @@ func (a *api) inspectSourceImports(
 		sizeEstimate := false
 		if meta.Size != nil {
 			sizeBytes = *meta.Size
-		} else if meta.ExportPDF {
+		} else if meta.ExportMIME != "" {
 			sizeBytes = min(maxBytes, integrations.GoogleExportMaxBytes())
 			sizeEstimate = true
 		}

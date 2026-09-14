@@ -220,13 +220,13 @@ func (a *api) internalAcquireSourceImport(w http.ResponseWriter, r *http.Request
 			a.importProviderFailure(w, r, job, err)
 			return
 		}
+		if meta.MIMEType != job.ContentType {
+			a.importProviderFailure(w, r, job, integrations.ErrUnsupportedImportFile)
+			return
+		}
 		download = map[string]any{
-			"kind": "bearer",
-			"url": integrations.GoogleDownloadURL(
-				job.ProviderFileID,
-				meta.ExportPDF,
-			),
-			"token": token,
+			"kind": "bearer", "token": token,
+			"url": integrations.GoogleDownloadURL(job.ProviderFileID, meta.ExportMIME),
 		}
 	case integrations.ProviderMicrosoft:
 		meta, err := integrations.GetMicrosoftFileMetadata(

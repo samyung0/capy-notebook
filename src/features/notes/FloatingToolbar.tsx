@@ -23,6 +23,7 @@ import {
   useEventEditorValue,
   usePluginOption,
 } from 'platejs/react';
+import { PopupMotion } from '@/components/ui/PopupMotion';
 import { ButtonTooltip } from '@/components/ui/Tooltip';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -80,8 +81,6 @@ function FloatingToolbarChrome({
   });
   const { clickOutsideRef, hidden, props, ref } = useFloatingToolbar(state);
 
-  if (hidden) return null;
-
   const mark = (key: string) => {
     editor.tf.focus();
     editor.tf.toggleMark(key);
@@ -89,11 +88,13 @@ function FloatingToolbarChrome({
 
   return (
     <div ref={clickOutsideRef}>
-      <div
+      <PopupMotion
         {...props}
         aria-label={m.editor_selection_actions()}
-        className="absolute z-50 flex max-w-[90vw] items-center gap-0.5 overflow-x-auto rounded-card border border-line bg-surface p-1 shadow-pop"
-        ref={ref}
+        className="flex max-w-[90vw] items-center gap-0.5 overflow-x-auto rounded-card border border-line bg-surface p-1 shadow-pop"
+        open={!hidden}
+        positionClassName="absolute z-50"
+        positionRef={ref}
         role="toolbar"
       >
         {showAi && (
@@ -173,7 +174,7 @@ function FloatingToolbarChrome({
             </FloatingButton>
           </>
         )}
-      </div>
+      </PopupMotion>
     </div>
   );
 }

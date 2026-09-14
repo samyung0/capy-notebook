@@ -31,7 +31,7 @@ export function Skeleton({
   return (
     <div
       className={cn(
-        'animate-pulse rounded-button bg-surface-hover-bg',
+        'animate-pulse rounded-button bg-surface-hover-bg [animation-timing-function:var(--motion-ease-linear)]',
         className
       )}
       style={style}

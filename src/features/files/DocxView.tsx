@@ -3,21 +3,25 @@ import type { ViewableFile } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { m } from '@/i18n';
+import type { OfficeCitation } from './officeProtocol';
 import { useOfficeRuntime } from './useOfficeRuntime';
 
 export default function DocxView({
   canEdit,
+  citation,
   file,
   onDirtyChange,
   startEditing = false,
 }: {
   canEdit: boolean;
+  citation?: OfficeCitation;
   file: ViewableFile;
   onDirtyChange?: (dirty: boolean) => void;
   startEditing?: boolean;
 }) {
   const runtime = useOfficeRuntime({
     canEdit,
+    citation,
     file,
     format: 'docx',
     initialMode: startEditing ? 'edit' : 'view',

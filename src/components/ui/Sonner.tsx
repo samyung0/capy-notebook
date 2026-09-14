@@ -4,6 +4,7 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { Button } from './Button';
 import { Card } from './Card';
+import { ContentSwap } from './ContentSwap';
 import { Icon } from './Icon';
 import { IconButton } from './IconButton';
 
@@ -64,19 +65,22 @@ function Toast(props: ToastProps) {
         {variant === 'success' && (
           <Icon className="size-5" name="check" strokeWidth={2} />
         )}
-        <div className="w-full">
-          <p
+        <ContentSwap
+          className="w-full"
+          contentKey={JSON.stringify([title, description])}
+        >
+          <span
             className={cn(
               'flex items-start font-semibold',
               (variant === 'warning' || variant === 'error') && 'font-bold'
             )}
           >
             <span>{title}</span>
-          </p>
-          <p className="mt-1 font-medium text-fg-muted text-sm">
+          </span>
+          <span className="mt-1 block font-medium text-fg-muted text-sm">
             {description}
-          </p>
-        </div>
+          </span>
+        </ContentSwap>
       </div>
       {button && (
         <div className="ml-5 shrink-0">

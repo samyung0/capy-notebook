@@ -9,16 +9,20 @@ import {
   sizeCanvasForSlide,
 } from '@betteroffice/pptx/viewer';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { OfficeCitation } from '@/features/files/officeProtocol';
 import { m } from '@/i18n';
+import { CITATION_FILL, slideCitationItems, uniqueCitation } from './citations';
 import { loadPptxFonts } from './pptxFonts';
 import { PptxImageCache } from './pptxImageCache';
 
 export function PptxViewer({
   bytes,
+  citation,
   onAnalysis,
   onError,
 }: {
   bytes: Uint8Array;
+  citation: OfficeCitation | null;
   onAnalysis: (analysis: PresentationAnalysis) => void;
   onError: (error: Error) => void;
 }) {
@@ -81,6 +85,33 @@ export function PptxViewer({
     return () => observer.disconnect();
   }, []);
 
+  const [highlight, setHighlight] = useState<{
+    slide: number;
+    rects: ReturnType<typeof slideCitationItems>[number]['rects'];
+  } | null>(null);
+  useEffect(() => {
+    setHighlight(null);
+    const handle = handleRef.current;
+    if (!handle || !citation || slideCount === 0) return;
+    // ponytail: bounded scan of native text boxes; large decks open unhighlighted.
+    if (slideCount > 200) return;
+    try {
+      const items = Array.from({ length: slideCount }, (_, slide) =>
+        slideCitationItems(handle.layoutSlide(slide)).map((item) => ({
+          ...item,
+          slide,
+        }))
+      ).flat();
+      const match = uniqueCitation(items, citation.quote);
+      if (!match?.rects.length) return;
+      setHighlight(match);
+      setSlideIndex(match.slide);
+      setFrame(handle.layoutSlide(match.slide));
+    } catch {
+      /* Best-effort navigation must not fail the viewer. */
+    }
+  }, [citation, slideCount, bytes]);
+
   const resolveImage = useCallback((assetId: string) => {
     const cached = imagesRef.current.get(assetId);
     if (cached) return cached;
@@ -112,6 +143,14 @@ export function PptxViewer({
         if (generation !== paintGenerationRef.current) return;
         const visibleCanvas = canvasRef.current;
         if (!visibleCanvas) return;
+        if (highlight?.slide === slideIndex) {
+          context.save();
+          context.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
+          context.fillStyle = CITATION_FILL;
+          for (const rect of highlight.rects)
+            context.fillRect(rect.x, rect.y, rect.w, rect.h);
+          context.restore();
+        }
         sizeCanvasForSlide(visibleCanvas, frame, dpr, scale);
         const visibleContext = visibleCanvas.getContext('2d');
         if (visibleContext) visibleContext.drawImage(renderCanvas, 0, 0);
@@ -123,7 +162,7 @@ export function PptxViewer({
     return () => {
       paintGenerationRef.current += 1;
     };
-  }, [frame, onError, resolveImage, stageSize]);
+  }, [frame, onError, resolveImage, stageSize, highlight, slideIndex]);
 
   const selectSlide = (next: number) => {
     const handle = handleRef.current;

@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import {
   CreateWorkspaceBody,
@@ -35,11 +35,18 @@ export function WorkspaceFormCreateDialog({
     formState: { isDirty, isValid, isSubmitting },
     handleSubmit: formSubmit,
     control,
+    reset,
   } = useForm<CreateWorkspaceReq>({
     defaultValues: workspace,
     mode: 'onChange',
     resolver: zodResolver(CreateWorkspaceBody),
   });
+
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (open && !wasOpen.current) reset(workspace);
+    wasOpen.current = open;
+  }, [open, reset, workspace]);
 
   const submitDisabled = !isDirty || !isValid || isSubmitting;
 

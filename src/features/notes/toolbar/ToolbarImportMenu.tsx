@@ -1,13 +1,15 @@
 import { ArrowUpFromLine, ChevronDown } from 'lucide-react';
 import { useRef, useState } from 'react';
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/Popover';
+  DropdownMenu,
+  DropdownMenuTrigger,
+} from '@/components/ui/DropdownMenu';
 import { userToast } from '@/components/ui/userToast';
 import { ToolbarButton } from '@/features/notes/toolbar/ToolbarButton';
-import { MenuRow } from '@/features/notes/toolbar/ToolbarMenuRow';
+import {
+  MenuRow,
+  ToolbarMenuContent,
+} from '@/features/notes/toolbar/ToolbarMenuRow';
 import { m } from '@/i18n';
 
 export type ImportKind = 'markdown' | 'docx' | 'json';
@@ -110,33 +112,31 @@ export function ImportMenu({
           type="file"
         />
       ))}
-      <Popover onOpenChange={setOpen} open={open}>
-        <PopoverTrigger asChild>
-          <span className="inline-flex">
-            <ToolbarButton className="w-fit" label={m.editor_import()}>
-              <ArrowUpFromLine />
-              <ChevronDown className="size-3! text-fg-secondary" />
-            </ToolbarButton>
-          </span>
-        </PopoverTrigger>
-        <PopoverContent
+      <DropdownMenu modal={false} onOpenChange={setOpen} open={open}>
+        <DropdownMenuTrigger asChild>
+          <ToolbarButton className="w-fit" label={m.editor_import()}>
+            <ArrowUpFromLine />
+            <ChevronDown className="size-3! text-fg-secondary" />
+          </ToolbarButton>
+        </DropdownMenuTrigger>
+        <ToolbarMenuContent
           align="start"
           className="w-52 gap-0.5 border border-line bg-surface p-1 shadow-pop"
         >
           <MenuRow
             label={m.editor_import_md()}
-            onClick={() => chooseFile('markdown')}
+            onSelect={() => chooseFile('markdown')}
           />
           <MenuRow
             label={m.editor_import_docx()}
-            onClick={() => chooseFile('docx')}
+            onSelect={() => chooseFile('docx')}
           />
           <MenuRow
             label={m.editor_import_json()}
-            onClick={() => chooseFile('json')}
+            onSelect={() => chooseFile('json')}
           />
-        </PopoverContent>
-      </Popover>
+        </ToolbarMenuContent>
+      </DropdownMenu>
     </>
   );
 }

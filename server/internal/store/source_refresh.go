@@ -47,7 +47,6 @@ type SourceRefreshPublish struct {
 	SourceETag               string          `json:"sourceETag"`
 	ContentID                string          `json:"contentId"`
 	ContentHash              string          `json:"contentHash"`
-	PreviewBlobPath          string          `json:"previewBlobPath"`
 	PendingEffects           json.RawMessage `json:"pendingEffects"`
 	NetTokens                int64           `json:"netTokens"`
 	IndexedBaseline          []byte          `json:"indexedBaseline,omitempty"`
@@ -251,7 +250,7 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	var source, sha string
 	var parseKey, parseFingerprint, parseVersion *string
 	var size int64
-	err = tx.QueryRow(ctx, `SELECT c.source_blob_path,c.source_sha256,c.size_bytes,c.parse_artifact_key,c.parse_artifact_fingerprint,c.parse_artifact_version FROM source_refresh_candidates c JOIN jobs j ON j.id=c.job_id JOIN files f ON f.id=c.file_id WHERE c.file_id=$1 AND c.job_id=$2 AND c.epoch=$3 AND c.checkpoint=$4 AND c.lease_token=$5 AND f.revision=$6 AND f.trashed_at IS NULL AND j.status='running' AND j.lease_expires_at>now() AND j.payload->>'sourceETag'=$7 AND c.content_id=$9 AND c.content_hash=$10 AND COALESCE(c.preview_blob_path,'')=$11 AND EXISTS(SELECT 1 FROM ingest_job_attempts a WHERE a.id=$8 AND a.job_id=j.id AND a.status='running' AND a.attempt=j.attempts AND a.id=(SELECT max(latest.id) FROM ingest_job_attempts latest WHERE latest.job_id=j.id)) FOR UPDATE OF c,j,f`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken, doc.BaseRevision, in.SourceETag, in.AttemptID, in.ContentID, in.ContentHash, in.PreviewBlobPath).Scan(&source, &sha, &size, &parseKey, &parseFingerprint, &parseVersion)
+	err = tx.QueryRow(ctx, `SELECT c.source_blob_path,c.source_sha256,c.size_bytes,c.parse_artifact_key,c.parse_artifact_fingerprint,c.parse_artifact_version FROM source_refresh_candidates c JOIN jobs j ON j.id=c.job_id JOIN files f ON f.id=c.file_id WHERE c.file_id=$1 AND c.job_id=$2 AND c.epoch=$3 AND c.checkpoint=$4 AND c.lease_token=$5 AND f.revision=$6 AND f.trashed_at IS NULL AND j.status='running' AND j.lease_expires_at>now() AND j.payload->>'sourceETag'=$7 AND c.content_id=$9 AND c.content_hash=$10 AND EXISTS(SELECT 1 FROM ingest_job_attempts a WHERE a.id=$8 AND a.job_id=j.id AND a.status='running' AND a.attempt=j.attempts AND a.id=(SELECT max(latest.id) FROM ingest_job_attempts latest WHERE latest.job_id=j.id)) FOR UPDATE OF c,j,f`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken, doc.BaseRevision, in.SourceETag, in.AttemptID, in.ContentID, in.ContentHash).Scan(&source, &sha, &size, &parseKey, &parseFingerprint, &parseVersion)
 	if err != nil {
 		if isNoRows(err) {
 			err = ErrConflict
@@ -287,9 +286,6 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	if contentHash != in.ContentHash {
 		return doc, ErrConflict
 	}
-	if doc.Format != "text" && in.PreviewBlobPath == "" {
-		return doc, ErrConflict
-	}
 	var growth int64
 	if err = tx.QueryRow(ctx, `SELECT ($2::bigint-f.size_bytes) + CASE WHEN d.format='text' THEN octet_length(d.state)::bigint ELSE octet_length($5::bytea)::bigint END+octet_length($4::bytea)+octet_length($3::jsonb::text)-d.storage_bytes-c.storage_bytes FROM files f JOIN source_documents d ON d.file_id=f.id JOIN source_refresh_candidates c ON c.file_id=f.id WHERE f.id=$1`, fileID, size, effects, baseline, in.RebasedState).Scan(&growth); err != nil {
 		return doc, err
@@ -302,7 +298,7 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	if _, err = tx.Exec(ctx, `INSERT INTO rag_file_contents(file_id,workspace_id,content_id) VALUES($1,$2,$3) ON CONFLICT(file_id) DO UPDATE SET content_id=EXCLUDED.content_id`, fileID, ws, in.ContentID); err != nil {
 		return doc, err
 	}
-	publishedRow, err := tx.Exec(ctx, `UPDATE files SET blob_path=$2,source_sha256=$3,size_bytes=$4,source_etag=$5,preview_blob_path=NULLIF($6,''),content_hash=$7,indexed=true,status='ready',revision=revision+1,ever_parsed_successfully=ever_parsed_successfully OR $8,parsed_blob_path=$9,parsed_fingerprint=$10,parsed_parser_version=$11,caption_blob_path=NULL WHERE id=$1 AND trashed_at IS NULL`, fileID, source, sha, size, in.SourceETag, in.PreviewBlobPath, in.ContentHash, doc.Format != "text", parseKey, parseFingerprint, parseVersion)
+	publishedRow, err := tx.Exec(ctx, `UPDATE files SET blob_path=$2,source_sha256=$3,size_bytes=$4,source_etag=$5,content_hash=$6,indexed=true,status='ready',revision=revision+1,ever_parsed_successfully=ever_parsed_successfully OR $7,parsed_blob_path=$8,parsed_fingerprint=$9,parsed_parser_version=$10,caption_blob_path=NULL WHERE id=$1 AND trashed_at IS NULL`, fileID, source, sha, size, in.SourceETag, in.ContentHash, doc.Format != "text", parseKey, parseFingerprint, parseVersion)
 	if err != nil {
 		return doc, err
 	}

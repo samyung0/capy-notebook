@@ -125,6 +125,10 @@
   },
   "overrides": [
     {
+      "includes": ["src/styles/tokens/motion.css"],
+      "css": { "parser": { "tailwindDirectives": true } }
+    },
+    {
       "includes": ["ops/src/components/ui/**"],
       "linter": {
         "rules": {

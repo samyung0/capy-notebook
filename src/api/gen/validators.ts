@@ -1347,7 +1347,8 @@ export const GetIntegrationsResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "google": zod.boolean(),
   "googleDriveReadonly": zod.boolean(),
-  "microsoft": zod.boolean()
+  "microsoft": zod.boolean(),
+  "microsoftFilesRead": zod.boolean()
 })
 
 
@@ -3826,7 +3827,6 @@ export const PublishSourceRefreshBody = zod.object({
   "leaseToken": zod.string(),
   "netTokens": zod.int(),
   "pendingEffects": zod.unknown(),
-  "previewBlobPath": zod.string(),
   "rebasedState": zod.string().optional(),
   "sourceETag": zod.string()
 })

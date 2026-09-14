@@ -2,8 +2,7 @@
 
 The pixels have to be inside the provider request the agent builds mid-turn,
 so the retrieval host keeps a size-bounded copy of each source PDF (keyed by
-the stored object's path) and renders with PyMuPDF. Office sources render from the
-LibreOffice preview the parser measured; text and store-only sources have no
+the stored object's path) and renders with PyMuPDF. Office sources convert temporarily through the parser queue; text and store-only sources have no
 page model and refuse. The JPEG rides in a user message placed after the tool
 results of its step, because chat-completions tool messages carry text only.
 Images live on the turn's ``ToolContext`` and are never persisted.
@@ -15,12 +14,17 @@ import asyncio
 import base64
 import hashlib
 import io
+import json
 import logging
+import math
 import os
 import tempfile
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
+
+import requests
 
 from ..config import cfg
 from ..store import blobstore
@@ -88,9 +92,7 @@ def _download(blob_path: str, target: Path, max_bytes: int) -> None:
 
 def cache_name(blob_path: str) -> str:
     """Cache file for one stored object. Keyed by the blob path, not the source
-    SHA: an Office preview is published per parser version
-    (``previews/{sha}/{parser_version}/{fingerprint}.pdf``), so a parser bump
-    must not keep serving the old render under the new chunk regions."""
+    SHA, so a replaced source cannot reuse a stale rendering."""
     return hashlib.sha256(blob_path.encode("utf-8")).hexdigest() + ".pdf"
 
 
@@ -99,22 +101,124 @@ async def pdf_path(workspace_id: str, file_id: str) -> Path:
     row = await store.file_page_source(workspace_id, file_id)
     if row is None:
         raise CaptureUnavailable("the file is not available", "unavailable_target")
-    blob = row.get("preview_blob_path") or ""
-    if not blob:
-        if row.get("kind") != "pdf" or row.get("parse_mode") == "none":
-            raise CaptureUnavailable(
-                "capture_page works on parsed PDF and Office sources only"
-            )
-        blob = str(row.get("blob_path") or "")
+    if row.get("kind") != "pdf" or row.get("parse_mode") == "none":
+        raise CaptureUnavailable("this source has no retained PDF")
+    blob = str(row.get("blob_path") or "")
     if not blob:
         raise CaptureUnavailable("the source has no stored bytes", "unavailable_target")
     target = _cache_dir() / cache_name(blob)
     if target.is_file():
         os.utime(target)
         return target
-    max_bytes = max(int(row.get("size_bytes") or 0) * 4, cfg.office_preview_max_bytes)
+    max_bytes = int(row.get("size_bytes") or 0)
     await asyncio.to_thread(_download, blob, target, max_bytes)
     return target
+
+
+def _office_capture(
+    row: dict, page: int, bbox: list[float] | None, max_edge: int
+) -> tuple[bytes, list[float], tuple[int, int]]:
+    if not cfg.parser_url:
+        raise CaptureUnavailable(
+            "the Office converter is unavailable", "unavailable_target"
+        )
+    endpoint = urlsplit(cfg.parser_url)
+    url = urlunsplit((endpoint.scheme, endpoint.netloc, "/capture_page", "", ""))
+    headers = (
+        {"Authorization": f"Bearer {cfg.parser_token}"} if cfg.parser_token else {}
+    )
+    try:
+        with tempfile.TemporaryDirectory(prefix="capy-office-capture-") as directory:
+            source = Path(directory) / "source"
+            downloaded = blobstore.download_file(
+                str(row["blob_path"]), str(source), int(row["size_bytes"])
+            )
+            if (
+                downloaded is None
+                or downloaded[0] != int(row["size_bytes"])
+                or (row.get("source_sha256") and downloaded[1] != row["source_sha256"])
+            ):
+                raise CaptureUnavailable(
+                    "the source bytes are unavailable", "unavailable_target"
+                )
+            with (
+                source.open("rb") as handle,
+                requests.post(
+                    url,
+                    headers=headers,
+                    files={
+                        "file": (str(row["name"]), handle, "application/octet-stream")
+                    },
+                    data={
+                        "filename": row["name"],
+                        "page": str(page),
+                        "bbox": json.dumps(bbox),
+                        "max_edge": str(max_edge),
+                    },
+                    timeout=cfg.parser_timeout,
+                    stream=True,
+                ) as response,
+            ):
+                response.raise_for_status()
+                body = bytearray()
+                for chunk in response.iter_content(64 << 10):
+                    body.extend(chunk)
+                    if len(body) > 8 << 20:
+                        raise CaptureUnavailable("the capture exceeds its byte limit")
+                result = json.loads(body)
+        jpeg = base64.b64decode(result["jpeg"], validate=True)
+        box, size = result["box"], result["size"]
+        if (
+            not jpeg.startswith(b"\xff\xd8")
+            or not isinstance(box, list)
+            or len(box) != 4
+            or any(
+                type(v) not in (int, float)
+                or not math.isfinite(v)
+                or not 0 <= v <= 1000
+                for v in box
+            )
+            or box[0] >= box[2]
+            or box[1] >= box[3]
+            or not isinstance(size, list)
+            or len(size) != 2
+            or not all(type(v) is int and 0 < v <= max_edge + 1 for v in size)
+        ):
+            raise ValueError("invalid capture dimensions")
+        return jpeg, box, (size[0], size[1])
+    except (requests.RequestException, OSError, ValueError, KeyError, TypeError) as exc:
+        raise CaptureUnavailable(
+            "the temporary Office capture could not be rendered", "unavailable_target"
+        ) from exc
+
+
+async def render_file(
+    workspace_id: str, file_id: str, page: int, bbox: list[float] | None, max_edge: int
+) -> tuple[bytes, list[float], tuple[int, int]]:
+    row = await store.file_page_source(workspace_id, file_id)
+    if row is None:
+        raise CaptureUnavailable("the file is not available", "unavailable_target")
+    office_format = {"doc": "docx", "sheet": "xlsx", "slides": "pptx"}.get(
+        row.get("kind")
+    )
+    if (
+        office_format
+        and row.get("ever_parsed_successfully")
+        and row.get("parse_mode") != "none"
+    ):
+        if not row.get("blob_path"):
+            raise CaptureUnavailable(
+                "the source has no stored bytes", "unavailable_target"
+            )
+        return await asyncio.to_thread(
+            _office_capture,
+            {**row, "name": f"source.{office_format}"},
+            page,
+            bbox,
+            max_edge,
+        )
+    pdf = await pdf_path(workspace_id, file_id)
+    return await asyncio.to_thread(render, pdf, page, bbox, max_edge)
 
 
 # --------------------------------------------------------------------- render

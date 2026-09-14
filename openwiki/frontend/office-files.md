@@ -168,38 +168,40 @@ there is no caption toggle, because embedded figure captioning was retired.
 Browser analysis is advisory and does not replace ingest or decide whether a
 source is searchable.
 
-## Citation geometry and previews
+## Citation geometry
 
-Parser regions use 1-based pages and normalized `[x0,y0,x1,y1]` coordinates in
-`page-1000-topleft` space. PDF highlights are a percentage-positioned overlay
-over each rendered page. The overlay is read-only and is never shown while an
-Office editor is active.
+PDF regions use 1-based pages and normalized `[x0,y0,x1,y1]` coordinates in
+`page-1000-topleft` space. PDF sources retain their normal read-only overlay.
+Office PDF coordinates do not map directly to the native editor layout.
 
-Office coordinates belong to the exact LibreOffice PDF that the parser parsed, not
-to BetterOffice's native layout. Parser bundle v3 therefore includes
-`preview.pdf` for Office inputs. Ingest stores it as a reusable
-`office_preview` artifact and advertises it as `previewUrl` on the file row once
-the file is ready (a presence marker, not a fetchable URL, like `hasBytes`). The viewer fetches `GET /api/files/{id}/links` through the
-authenticated API, which returns short-lived presigned B2 URLs for the source
-and that preview; B2 cannot check a bearer token and the gateway never proxies
-bytes. Each consumer fetches its pair when it mounts and reads it at fetch
-time: the client ignores `expiresAt`, never refetches on expiry, focus,
-reconnect or file-row change, and drops the pair on unmount so a reopen signs
-afresh; a mounted view therefore never sees a changed URL. The citation
-preview resolves its own pair when it opens, and the unsupported-file download
-signs on click. Only lazily read media can meet an expired URL: audio seeking
-shows the retryable file error, whose retry signs a fresh pair. Read links use
-`B2_LINK_TTL` (300 s); upload PUTs keep `B2_PRESIGN_TTL` (900 s) because it
-doubles as the reservation deadline. An Office citation opens that PDF and highlights its regions; ordinary
-file browsing opens the native viewer, and Edit swaps from the citation preview
-to BetterOffice. A store-only or legacy Office file with no exact preview stays
-on its native viewer without an overlay; the client never invents a preview URL.
-Native PDFs use their source blob as the preview.
+Office citation clicks pass the quoted passage through protocol v4 to the existing
+native viewer. DOCX searches current paragraph text and overlays its current run
+geometry. PPTX searches native text boxes and draws their current line rectangles.
+XLSX enumerates defined cell addresses in the current OOXML package, matches the
+viewer's displayed cell text, and uses its current viewport geometry. Matching
+requires a complete unique quote of at least 12 non-whitespace characters; short,
+ambiguous, unsupported and off-page matches open without a highlight. Workbooks
+are bounded to 20 MiB of relevant XML and 20,000 cells; decks to 200 slides.
+No editing engine is loaded just for citation matching. Highlights are transient,
+read-only, and absent in edit mode. Reopening resolves against the saved state.
 
-LibreOffice output is checked against `CAPY_OFFICE_PREVIEW_MAX_BYTES` before the
-parser reads it. Bundle creation, ingest caching, and donor reuse enforce the
-same limit, so a compressed Office source cannot turn into an unbounded Python
-allocation or preview object.
+Google Docs, Sheets and Slides imports export DOCX, XLSX and PPTX respectively;
+Drawings still export PDF. Acquire rejects a source whose current export format
+differs from the reserved content type. Source bytes count
+toward the owner's quota, so switching export formats can increase or decrease
+storage. Export-size checks still enforce the provider and owner upload limits.
+
+The parser converts Office sources to a temporary PDF for OpenDataLoader. Bundle
+v4 retains structured blocks, images, furniture and compact page-text/heading
+evidence, with no Office PDF. `CAPY_OFFICE_PREVIEW_MAX_BYTES` still bounds the
+temporary LibreOffice output. Native PDFs alone may include a repaired `parsed.pdf`.
+Migration 0016 removes the obsolete preview schema. No legacy data migration is
+needed: production has no data and UAT data was cleared.
+
+`GET /api/files/{id}/links` signs source downloads and PDF preview links. Each
+consumer reads its link on mount; links are dropped on unmount. Unsupported-file
+download signs on click, and audio retry signs a fresh link. Read links use
+`B2_LINK_TTL` and upload PUTs use `B2_PRESIGN_TTL`.
 
 ## Edit and save lifecycle
 
@@ -233,7 +235,7 @@ edit. Every edit resets that idle interval; there is no maximum wait. Manual
 processing bypasses the threshold. Editing continues during processing. A newer
 saved checkpoint is rebound to the candidate's exported source. Successful
 publication briefly flushes connected writers, then atomically publishes the
-source, preview, index, rebased current state and matching indexed baseline.
+source, index, rebased current state and matching indexed baseline.
 The current checkpoint can remain ahead of the indexed checkpoint, with later
 edits retained as pending effects. A concurrent save retries only the local
 rebase against the same parsed candidate. All editors remount in the new epoch

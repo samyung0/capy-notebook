@@ -12,6 +12,11 @@ on:
         required: false
         default: true
         type: boolean
+      critical_paths:
+        description: Also run disposable lifecycle journeys with provider verification
+        required: false
+        default: true
+        type: boolean
   workflow_call:
     inputs:
       revision:
@@ -23,12 +28,18 @@ on:
         required: false
         default: false
         type: boolean
+      critical_paths:
+        description: Also run disposable lifecycle journeys with provider verification
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
 
 concurrency:
-  group: deterministic-uat-quality
+  # Reusable calls run under the caller's lock; never wait on that same lock.
+  group: ${{ github.workflow == 'Deterministic UAT quality' && 'uat-promotion-flow' || format('uat-quality-{0}-{1}', github.workflow, github.run_id) }}
   cancel-in-progress: false
 
 jobs:
@@ -94,4 +105,106 @@ jobs:
           path: |
             e2e/uat/report/
             e2e/uat/test-results/
+          retention-days: 30
+
+  critical_paths:
+    if: inputs.critical_paths
+    needs: smoke
+    runs-on: ubuntu-24.04
+    environment: uat
+    timeout-minutes: 120
+    env:
+      UAT_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+      EXPECTED_REVISION: ${{ inputs.revision || github.sha }}
+      UAT_TARGET_AUTHORIZED: ${{ vars.UAT_TARGET_AUTHORIZED }}
+      UAT_APP_URL: ${{ vars.UAT_APP_URL }}
+      UAT_API_URL: ${{ vars.UAT_API_URL }}
+      UAT_COLLAB_URL: ${{ vars.UAT_COLLAB_URL }}
+      UAT_CLERK_TEST_MODE: ${{ vars.UAT_CLERK_TEST_MODE }}
+      UAT_ACTOR_EMAIL_DOMAIN: ${{ vars.UAT_ACTOR_EMAIL_DOMAIN }}
+      CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
+      CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+      UAT_DATABASE_URL: ${{ secrets.UAT_DATABASE_URL }}
+      UAT_DATABASE_NAME: ${{ vars.UAT_DATABASE_NAME }}
+      B2_BUCKET: ${{ vars.B2_BUCKET }}
+      B2_ENDPOINT: ${{ vars.B2_ENDPOINT }}
+      B2_REGION: ${{ vars.B2_REGION }}
+      B2_KEY_ID: ${{ secrets.B2_KEY_ID }}
+      B2_APP_KEY: ${{ secrets.B2_APP_KEY }}
+      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+      STRIPE_PRICE_PRO: ${{ vars.STRIPE_PRICE_PRO }}
+      UAT_STRIPE_ACCOUNT_ID: ${{ vars.UAT_STRIPE_ACCOUNT_ID }}
+      UAT_RESEND_READ_KEY: ${{ secrets.UAT_RESEND_READ_KEY }}
+      UAT_RESEND_FROM: ${{ vars.UAT_RESEND_FROM }}
+      UAT_SENTRY_TOKEN: ${{ secrets.UAT_SENTRY_TOKEN }}
+      UAT_SENTRY_URL: ${{ vars.UAT_SENTRY_URL }}
+      UAT_SENTRY_ORG: ${{ vars.UAT_SENTRY_ORG }}
+      UAT_SENTRY_PROJECTS: ${{ vars.UAT_SENTRY_PROJECTS }}
+      UAT_DB_SSH_HOST: ${{ vars.UAT_DB_SSH_HOST }}
+      UAT_DB_SSH_USER: ${{ vars.UAT_DB_SSH_USER }}
+      UAT_DB_SSH_PORT: ${{ vars.UAT_DB_SSH_PORT }}
+      UAT_DB_SSH_PRIVATE_KEY: ${{ secrets.UAT_DB_SSH_PRIVATE_KEY }}
+      UAT_DB_SSH_KNOWN_HOSTS: ${{ vars.UAT_DB_SSH_KNOWN_HOSTS }}
+      UAT_DB_FORWARD_HOST: ${{ vars.UAT_DB_FORWARD_HOST }}
+      UAT_DB_FORWARD_PORT: ${{ vars.UAT_DB_FORWARD_PORT }}
+      UAT_DB_LOCAL_PORT: ${{ vars.UAT_DB_LOCAL_PORT }}
+      INGEST_HOST: ${{ vars.INGEST_HOST }}
+      INGEST_HOST_USER: ${{ vars.INGEST_HOST_USER }}
+      INGEST_HOST_SSH_PORT: ${{ vars.INGEST_HOST_SSH_PORT }}
+      INGEST_HOST_SSH_PRIVATE_KEY: ${{ secrets.INGEST_HOST_SSH_PRIVATE_KEY }}
+      INGEST_HOST_KNOWN_HOSTS: ${{ secrets.INGEST_HOST_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.revision || github.sha }}
+          submodules: recursive
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: ./vendor/betteroffice/.github/actions/wasm-toolchain
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack@0.15.0
+      - uses: ./.github/actions/cache-betteroffice
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          cache: pnpm
+          node-version: 22
+      - uses: astral-sh/setup-uv@v6
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm office:prepare
+        timeout-minutes: 30
+      - run: uv sync --frozen
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Connect the read-only UAT database verifier
+        run: scripts/uat/journey-tunnel.sh start
+      - name: Verify the separately deployed ingest candidate
+        id: ingest_release
+        timeout-minutes: 3
+        run: scripts/uat/verify-journey-releases.sh before
+      - name: Run critical-path journeys
+        timeout-minutes: 50
+        run: pnpm e2e:uat:journeys
+      - name: Clean up this run's disposable resources
+        if: always()
+        timeout-minutes: 10
+        run: pnpm e2e:uat:cleanup --run-id "$UAT_RUN_ID"
+      - name: Recheck the ingest candidate after cleanup
+        if: always() && steps.ingest_release.outcome == 'success'
+        timeout-minutes: 3
+        run: scripts/uat/verify-journey-releases.sh after
+      - name: Close the database tunnel
+        if: always()
+        run: scripts/uat/journey-tunnel.sh stop
+      - name: Upload sanitized journey evidence and cleanup report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          if-no-files-found: ignore
+          name: uat-journeys-${{ github.run_id }}-${{ github.run_attempt }}
+          path: e2e/uat/journey-runs/${{ env.UAT_RUN_ID }}/
           retention-days: 30

@@ -372,8 +372,7 @@ func (s *Store) SweepArtifactCache(ctx context.Context, captionTTLDays int) (int
 		WHERE (
 		        (a.kind = 'captions'
 		         AND a.last_used_at < now() - make_interval(days => $1))
-		     OR (a.kind = 'office_preview'
-		         AND a.last_used_at < now() - make_interval(days => $1))
+
 		     OR (a.kind = 'derived_text'
 		         AND a.last_used_at < now() - make_interval(days => $1))
 		     OR (a.kind = 'parse_bundle'

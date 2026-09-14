@@ -1,4 +1,5 @@
 import type { Region } from '@/api/types';
+import type { OfficeCitation } from '@/features/files/officeProtocol';
 import type { MaterialMode } from './modePolicy';
 
 /** What the center content pane is currently showing. A source file or a
@@ -10,7 +11,13 @@ import type { MaterialMode } from './modePolicy';
  * regular file navigation and reloads clear the citation highlight. `mode` is
  * an optional initial material mode (dashboard links force view). */
 export type OpenItem =
-  | { kind: 'file'; id: string; page?: number; regions?: Region[] }
+  | {
+      kind: 'file';
+      id: string;
+      page?: number;
+      regions?: Region[];
+      citation?: OfficeCitation;
+    }
   | { kind: 'material'; id: string };
 
 /** URL search params for the open item — mutually exclusive `file` | `material`. */

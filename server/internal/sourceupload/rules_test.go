@@ -150,7 +150,7 @@ func TestBuildProcessingPlan(t *testing.T) {
 		{name: "photo.png", kind: "image", mode: ParseModeNone, wantRoute: RouteImageCaption, wantCaption: CaptionStandalone},
 		{name: "lecture.mp3", kind: "audio", mode: ParseModeNone, wantRoute: RouteAudioTranscript, wantCaption: CaptionNone},
 		{name: "paper.pdf", kind: "pdf", mode: ParseModeFast, wantRoute: RouteDocumentParse, wantCaption: CaptionNone, wantParser: ParseModeFast, wantStages: []string{"fetch_source", "parse_document", "chunk", "index", "generate_derivatives"}},
-		{name: "book.xlsx", kind: "sheet", mode: ParseModeFast, wantRoute: RouteDocumentParse, wantCaption: CaptionNone, wantParser: ParseModeFast, wantPreview: true, wantStages: []string{"fetch_source", "parse_document", "persist_office_preview", "chunk", "index", "generate_derivatives"}},
+		{name: "book.xlsx", kind: "sheet", mode: ParseModeFast, wantRoute: RouteDocumentParse, wantCaption: CaptionNone, wantParser: ParseModeFast, wantPreview: true, wantStages: []string{"fetch_source", "parse_document", "chunk", "index", "generate_derivatives"}},
 		{name: "legacy.xls", kind: "sheet", mode: ParseModeNone, wantRoute: RouteStoreOnly, wantCaption: CaptionNone},
 		{name: "archive.zip", kind: "unknown", mode: ParseModeNone, wantRoute: RouteStoreOnly, wantCaption: CaptionNone},
 	}
@@ -160,7 +160,7 @@ func TestBuildProcessingPlan(t *testing.T) {
 			if err != nil {
 				t.Fatalf("BuildProcessingPlan returned unexpected error: %v", err)
 			}
-			if plan.Version != ProcessingPlanVersion || plan.Format != extensionKey(test.name) || plan.Route != test.wantRoute || plan.CaptionMode != test.wantCaption || plan.ParserRoute != test.wantParser || plan.OfficePreview != test.wantPreview {
+			if plan.Version != ProcessingPlanVersion || plan.Format != extensionKey(test.name) || plan.Route != test.wantRoute || plan.CaptionMode != test.wantCaption || plan.ParserRoute != test.wantParser || plan.Office != test.wantPreview {
 				t.Fatalf("BuildProcessingPlan(%q) = %#v", test.name, plan)
 			}
 			if test.wantStages != nil && !reflect.DeepEqual(plan.Stages, test.wantStages) {

@@ -778,14 +778,6 @@ export const fileLinksQuery = (
   });
 export const useFileLinks = (fileId: string, options?: QueryUiOptions) =>
   useQuery({ ...fileLinksQuery(fileId), meta: queryMeta(options) });
-/** The citation preview's own entry: sharing the viewer's pair would paint
- * the old link first and then swap in the mount refetch's new one. */
-export const useOfficePreviewLinks = (
-  fileId: string,
-  options?: QueryUiOptions
-) =>
-  useQuery({ ...fileLinksQuery(fileId, 'preview'), meta: queryMeta(options) });
-
 export const sourceUploadPolicyQuery = (wsId?: string) =>
   queryOptions({
     queryFn: () =>
@@ -1292,7 +1284,7 @@ function applyIngestEvent(qc: QueryClient, wsId: string, value: IngestEvent) {
     trackIngestTerminal(qc, wsId, fileId, status, value.stage);
     qc.invalidateQueries({ queryKey: qk.files(wsId) });
     qc.invalidateQueries({ queryKey: qk.file(fileId) });
-    // A ready file gains its citation preview; refresh the pending pair.
+    // A ready file has downloadable source bytes; refresh pending links.
     qc.invalidateQueries({
       queryKey: qk.fileLinks(fileId),
       refetchType: 'active',

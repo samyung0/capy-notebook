@@ -133,15 +133,13 @@ func (s *Store) CreateSourceReady(ctx context.Context, wsID, createdBy, name, ki
 	return file, nil
 }
 
-// FileBlobPaths returns the source object and, once the file is ready, the
-// preview object whose page coordinates match citation regions. Native PDFs
-// preview from their source object; Office files use the exact PDF emitted by
-// LibreOffice before parsing. Either path is empty when there are no bytes.
+// FileBlobPaths returns the source and the same object as a preview for PDFs.
+// Office sources have no retained PDF. Either path is empty without stored bytes.
 func (s *Store) FileBlobPaths(ctx context.Context, id string) (source, preview string, err error) {
 	var sourcePath, previewPath *string
 	err = s.pool.QueryRow(ctx, `SELECT blob_path,
 		CASE WHEN status='ready' THEN
-			CASE WHEN kind='pdf' THEN blob_path ELSE preview_blob_path END
+			CASE WHEN kind='pdf' THEN blob_path END
 		END
 	FROM files WHERE id=$1 AND trashed_at IS NULL`, id).Scan(&sourcePath, &previewPath)
 	if isNoRows(err) {

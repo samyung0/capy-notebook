@@ -1,12 +1,17 @@
 package integrations
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/netip"
+	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
@@ -83,36 +88,77 @@ func TestZipImportDriveIDs(t *testing.T) {
 	}
 }
 
-func TestGoogleNativeMetadataExportsEverySupportedTypeToPDF(t *testing.T) {
+func TestGoogleNativeMetadataExportsEditableSources(t *testing.T) {
 	previous := providerHTTP
 	t.Cleanup(func() { providerHTTP = previous })
-	providerHTTP = &http.Client{Transport: roundTripFunc(
-		func(req *http.Request) (*http.Response, error) {
-			if req.Header.Get("Authorization") != "Bearer token" {
-				t.Fatalf("authorization = %q", req.Header.Get("Authorization"))
+	for _, item := range []struct{ native, extension, mime string }{
+		{"document", ".docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
+		{"spreadsheet", ".xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
+		{"presentation", ".pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"},
+		{"drawing", ".pdf", "application/pdf"},
+	} {
+		t.Run(item.native, func(t *testing.T) {
+			providerHTTP = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				if req.Header.Get("Authorization") != "Bearer token" {
+					t.Fatal("missing authorization")
+				}
+				return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"name":"Example","mimeType":"application/vnd.google-apps.` + item.native + `","capabilities":{"canDownload":true}}`))}, nil
+			})}
+			meta, err := GetGoogleFileMetadata(context.Background(), "token", "file_1")
+			if err != nil {
+				t.Fatal(err)
 			}
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Header:     make(http.Header),
-				Body: io.NopCloser(strings.NewReader(
-					`{"name":"Budget","mimeType":"application/vnd.google-apps.spreadsheet","capabilities":{"canDownload":true}}`,
-				)),
-			}, nil
-		},
-	)}
+			if meta.Name != "Example"+item.extension || meta.MIMEType != item.mime || meta.Size != nil || meta.ExportMIME != item.mime {
+				t.Fatalf("metadata = %+v", meta)
+			}
+			parsed, err := url.Parse(GoogleDownloadURL("file_1", meta.ExportMIME))
+			if err != nil || parsed.Query().Get("mimeType") != item.mime || !strings.HasSuffix(parsed.Path, "/export") {
+				t.Fatalf("export URL = %v, %v", parsed, err)
+			}
+		})
+	}
+}
 
-	meta, err := GetGoogleFileMetadata(context.Background(), "token", "file_1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if meta.Name != "Budget.pdf" || meta.MIMEType != "application/pdf" ||
-		meta.Size != nil || !meta.ExportPDF {
-		t.Fatalf("metadata = %+v", meta)
-	}
-	if got := GoogleDownloadURL("file_1", true); !strings.Contains(
-		got, "/export?mimeType=application/pdf",
-	) {
-		t.Fatalf("export URL = %q", got)
+func TestDownloadGoogleNativeFixtureBytes(t *testing.T) {
+	previous := providerHTTP
+	t.Cleanup(func() { providerHTTP = previous })
+	usePublicImportHostResolver(t)
+	for _, item := range []struct{ native, filename, mime string }{
+		{"document", "lesson.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
+		{"spreadsheet", "grades.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
+		{"presentation", "lesson.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"},
+		{"drawing", "digital.pdf", "application/pdf"},
+	} {
+		t.Run(item.native, func(t *testing.T) {
+			fixture, err := os.ReadFile(filepath.Join("..", "..", "..", "e2e", "fixtures", "files", "basic", item.filename))
+			if err != nil {
+				t.Fatal(err)
+			}
+			calls := 0
+			providerHTTP = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				calls++
+				if req.URL.Hostname() != "www.googleapis.com" || req.Header.Get("Authorization") != "Bearer fixture-token" {
+					t.Fatalf("unexpected provider request: %s", req.URL.Redacted())
+				}
+				if calls == 1 {
+					if req.URL.Path != "/drive/v3/files/file_1" {
+						t.Fatalf("metadata URL = %s", req.URL.Redacted())
+					}
+					return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"name":"Example","mimeType":"application/vnd.google-apps.` + item.native + `","capabilities":{"canDownload":true}}`))}, nil
+				}
+				if calls != 2 || req.URL.Path != "/drive/v3/files/file_1/export" || req.URL.Query().Get("mimeType") != item.mime {
+					t.Fatalf("export URL = %s", req.URL.Redacted())
+				}
+				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{item.mime}}, Body: io.NopCloser(bytes.NewReader(fixture))}, nil
+			})}
+			actual, mime, err := DownloadImportFile(context.Background(), ProviderGoogle, "fixture-token", ImportRef{ID: "file_1"}, int64(len(fixture)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if calls != 2 || mime != item.mime || !bytes.Equal(actual, fixture) {
+				t.Fatalf("export bytes/MIME changed: calls=%d mime=%s bytes=%d", calls, mime, len(actual))
+			}
+		})
 	}
 }
 
@@ -223,6 +269,10 @@ func TestDownloadImportFileBoundsGoogleExport(t *testing.T) {
 }
 
 func TestDownloadImportFileUsesMicrosoftPreauthenticatedURL(t *testing.T) {
+	fixture, err := os.ReadFile(filepath.Join("..", "..", "..", "e2e", "fixtures", "files", "basic", "lesson.pptx"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	previous := providerHTTP
 	t.Cleanup(func() { providerHTTP = previous })
 	usePublicImportHostResolver(t)
@@ -238,7 +288,7 @@ func TestDownloadImportFileUsesMicrosoftPreauthenticatedURL(t *testing.T) {
 					StatusCode: http.StatusOK,
 					Header:     make(http.Header),
 					Body: io.NopCloser(strings.NewReader(
-						`{"name":"deck.pptx","size":4,"file":{"mimeType":"application/vnd.openxmlformats-officedocument.presentationml.presentation"},"@microsoft.graph.downloadUrl":"https://download.example/deck"}`,
+						fmt.Sprintf(`{"name":"deck.pptx","size":%d,"file":{"mimeType":"application/vnd.openxmlformats-officedocument.presentationml.presentation"},"@microsoft.graph.downloadUrl":"https://download.example/deck"}`, len(fixture)),
 					)),
 				}, nil
 			}
@@ -251,7 +301,7 @@ func TestDownloadImportFileUsesMicrosoftPreauthenticatedURL(t *testing.T) {
 			return &http.Response{
 				StatusCode: http.StatusOK,
 				Header:     make(http.Header),
-				Body:       io.NopCloser(strings.NewReader("pptx")),
+				Body:       io.NopCloser(bytes.NewReader(fixture)),
 			}, nil
 		},
 	)}
@@ -261,13 +311,13 @@ func TestDownloadImportFileUsesMicrosoftPreauthenticatedURL(t *testing.T) {
 		ProviderMicrosoft,
 		"token",
 		ImportRef{ID: "item", DriveID: "drive"},
-		4,
+		int64(len(fixture)),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(data) != "pptx" || !strings.Contains(contentType, "presentationml") {
-		t.Fatalf("data=%q contentType=%q", data, contentType)
+	if !bytes.Equal(data, fixture) || contentType != "application/vnd.openxmlformats-officedocument.presentationml.presentation" {
+		t.Fatalf("downloaded %d bytes with contentType=%q", len(data), contentType)
 	}
 }
 

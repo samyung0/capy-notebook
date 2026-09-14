@@ -987,6 +987,7 @@ async function handleHttpRequest(
     return;
   }
   if (request.url === '/healthz' || request.url === '/readyz') {
+    response.setHeader('X-Capy-Release', process.env.RELEASE_SHA ?? '');
     try {
       await Promise.all([pool.query('SELECT 1'), redis.ping()]);
       jsonResponse(response, 200, { status: 'ok' });

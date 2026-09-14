@@ -2,8 +2,10 @@ import { useState } from 'react';
 import type { Privacy, WorkspaceRole } from '@/api/types';
 import { WarningBanner } from '@/components/banners/WarningBanner';
 import { Button } from '@/components/ui/Button';
+import { ContentSwap } from '@/components/ui/ContentSwap';
 import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
 import type { IconName } from '@/components/ui/Icon';
+import { Icon } from '@/components/ui/Icon';
 import {
   Select,
   SelectContent,
@@ -313,13 +315,13 @@ export function ShareDialog({
               value={absoluteLink}
               wrapperClassName="has-disabled:pointer-events-auto has-disabled:cursor-auto flex-1"
             />
-            <Button
-              className="rounded-input"
-              iconLeft={copied ? 'check' : 'link'}
-              onClick={copy}
-              variant="outline"
-            >
-              {copied ? m.action_copied() : m.action_copy()}
+            <Button className="rounded-input" onClick={copy} variant="outline">
+              <ContentSwap contentKey={String(copied)} kind="icon">
+                <Icon name={copied ? 'check' : 'link'} />
+              </ContentSwap>
+              <ContentSwap contentKey={String(copied)}>
+                {copied ? m.action_copied() : m.action_copy()}
+              </ContentSwap>
             </Button>
           </div>
         )}

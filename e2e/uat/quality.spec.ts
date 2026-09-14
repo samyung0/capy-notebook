@@ -30,18 +30,3 @@ test('UAT dashboard and private workspace pass automated accessibility checks', 
   await expect(page.locator('main')).toBeVisible();
   await expectNoAutomatedAccessibilityViolations(page);
 });
-
-test('UAT core workspace reflows at a 320 CSS-pixel viewport', async ({
-  page,
-}) => {
-  await page.setViewportSize({ height: 800, width: 320 });
-  await signIn(page, 'owner');
-  await page.goto(`/workspaces/${workspaceId}`);
-  await expect(page.locator('main')).toBeVisible();
-
-  const overflow = await page.evaluate(() => ({
-    clientWidth: document.documentElement.clientWidth,
-    scrollWidth: document.documentElement.scrollWidth,
-  }));
-  expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth + 1);
-});

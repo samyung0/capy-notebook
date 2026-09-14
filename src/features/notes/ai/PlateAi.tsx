@@ -50,7 +50,7 @@ export function AiLoadingBar() {
       className="h-0.5 w-full overflow-hidden bg-tint-accent-1"
       role="progressbar"
     >
-      <div className="h-full w-1/3 animate-pulse bg-action-accent" />
+      <div className="h-full w-1/3 animate-pulse bg-action-accent [animation-timing-function:var(--motion-ease-linear)]" />
     </div>
   );
 }

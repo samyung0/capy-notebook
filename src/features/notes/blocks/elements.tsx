@@ -14,8 +14,9 @@ import {
   useEditorSelector,
   useReadOnly,
 } from 'platejs/react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/Button';
+import { PopupMotion } from '@/components/ui/PopupMotion';
 import { ButtonTooltip } from '@/components/ui/Tooltip';
 import {
   type FlashcardElement as FlashcardNode,
@@ -94,6 +95,9 @@ function StudyBlockRoot({
     [props.element]
   );
 
+  const [toolbarMounted, setToolbarMounted] = useState(active);
+  if (active && !toolbarMounted) setToolbarMounted(true);
+
   const runBlockAction = (action: 'duplicate' | 'delete') => {
     const at = editor.api.findPath(props.element);
     if (!at) return;
@@ -143,11 +147,13 @@ function StudyBlockRoot({
       {...props}
       className={cn(STUDY_BLOCK_LIST_CLASS, 'relative', className)}
     >
-      {!readOnly && active && (
+      {!readOnly && toolbarMounted && (
         <StudyBlockToolbar
           onDelete={() => runBlockAction('delete')}
           onDuplicate={() => runBlockAction('duplicate')}
           onEdit={onEdit}
+          onExited={() => setToolbarMounted(false)}
+          open={active}
         />
       )}
       {children}
@@ -157,10 +163,14 @@ function StudyBlockRoot({
 }
 
 function StudyBlockToolbar({
+  open,
+  onExited,
   onEdit,
   onDuplicate,
   onDelete,
 }: {
+  open: boolean;
+  onExited: () => void;
   onEdit?: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
@@ -183,7 +193,7 @@ function StudyBlockToolbar({
       }),
       shift({ padding: 12 }),
     ],
-    open: true,
+    open,
     placement: 'bottom',
     strategy: 'fixed',
   });
@@ -196,14 +206,17 @@ function StudyBlockToolbar({
 
   return (
     <FloatingPortal>
-      <div
+      <PopupMotion
         aria-label={m.editor_study_actions()}
-        className="z-50 flex items-center gap-0.5 rounded-lg border border-line bg-surface p-1 shadow-pop"
+        className="flex items-center gap-0.5 rounded-lg border border-line bg-surface p-1 shadow-pop"
         contentEditable={false}
         data-plate-prevent-deselect
         data-study-block-toolbar
+        onExited={onExited}
         onMouseDown={(event) => event.preventDefault()}
-        ref={floating.refs.setFloating}
+        open={open}
+        positionClassName="z-50"
+        positionRef={floating.refs.setFloating}
         role="toolbar"
         style={floating.style}
       >
@@ -221,7 +234,7 @@ function StudyBlockToolbar({
         <StudyBlockAction danger label={m.action_delete()} onClick={onDelete}>
           <Trash2 />
         </StudyBlockAction>
-      </div>
+      </PopupMotion>
     </FloatingPortal>
   );
 }

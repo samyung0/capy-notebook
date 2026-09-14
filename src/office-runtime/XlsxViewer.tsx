@@ -2,6 +2,7 @@ import {
   type A11yGrid,
   analyzeOpenWorkbook,
   buildA11yGrid,
+  cellRect,
   type DisplayList,
   initWasm,
   openWorkbook,
@@ -17,17 +18,23 @@ import {
   useRef,
   useState,
 } from 'react';
+import type { OfficeCitation } from '@/features/files/officeProtocol';
 import { m } from '@/i18n';
+import { CITATION_FILL } from './citations';
+import { type CellCitation, xlsxCitation } from './xlsxCitation';
 
 export function XlsxViewer({
   bytes,
+  citation,
   onAnalysis,
   onError,
 }: {
   bytes: Uint8Array;
+  citation: OfficeCitation | null;
   onAnalysis: (analysis: WorkbookAnalysis) => void;
   onError: (error: Error) => void;
 }) {
+  const highlightRef = useRef<CellCitation | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const handleRef = useRef<WorkbookViewerHandle | null>(null);
@@ -75,7 +82,21 @@ export function XlsxViewer({
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
       const context = canvas.getContext('2d');
-      if (context) paintDisplayList(context, frame, dpr);
+      if (context) {
+        paintDisplayList(context, frame, dpr);
+        const target = highlightRef.current;
+        const rect =
+          target?.sheet === activeSheetRef.current
+            ? cellRect(frame.grid, target.row, target.col)
+            : null;
+        if (rect) {
+          context.save();
+          context.setTransform(dpr, 0, 0, dpr, 0, 0);
+          context.fillStyle = CITATION_FILL;
+          context.fillRect(rect.x, rect.y, rect.w, rect.h);
+          context.restore();
+        }
+      }
     } catch (value) {
       onError(toError(value));
     }
@@ -150,6 +171,31 @@ export function XlsxViewer({
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     };
   }, [paint]);
+
+  useEffect(() => {
+    highlightRef.current = null;
+    const handle = handleRef.current;
+    if (!handle) return;
+    const match = citation ? xlsxCitation(bytes, handle, citation.quote) : null;
+    highlightRef.current = match;
+    if (match) {
+      handle.setActiveSheet(match.sheet);
+      const info = handle.sheetInfo();
+      activeSheetRef.current = match.sheet;
+      a11yWindowKeyRef.current = '';
+      setActiveSheet(match.sheet);
+      setExtent({ height: info.contentHeight, width: info.contentWidth });
+    }
+    const raf = requestAnimationFrame(() => {
+      if (match && scrollRef.current) {
+        const position = handle.cellPosition(match.sheet, match.row, match.col);
+        scrollRef.current.scrollLeft = Math.max(0, position.x - 100);
+        scrollRef.current.scrollTop = Math.max(0, position.y - 100);
+      }
+      paint();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [bytes, citation, sheetNames, paint]);
 
   const selectSheet = (index: number) => {
     const handle = handleRef.current;

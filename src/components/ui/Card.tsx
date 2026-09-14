@@ -62,7 +62,7 @@ export function Card({
         cardVariants({ border, radius, theme }),
         raised && 'shadow-card',
         interactive &&
-          'cursor-pointer transition-all duration-100 hover:-translate-y-0.5 hover:shadow-card active:scale-[0.98]',
+          'cursor-pointer transition-all duration-100 ease-(--motion-ease-smooth-out) hover:-translate-y-0.5 hover:shadow-card active:scale-[0.98]',
         (!hoverBackgroundColorChange || !interactive) && 'hover:bg-unset', //todo
         className
       )}

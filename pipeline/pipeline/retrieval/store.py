@@ -372,19 +372,8 @@ async def find_ready_donor(
             """
             SELECT rc.id, rc.workspace_id, rc.content_hash,
                    rc.embedding_provider_slug, rc.embedding_model_slug,
-                   rc.embedding_model_version, rc.embedding_dim,
-                   preview.preview_blob_path
+                   rc.embedding_model_version, rc.embedding_dim
             FROM rag_contents rc
-            LEFT JOIN LATERAL (
-                SELECT f.preview_blob_path
-                FROM rag_file_contents rfc
-                JOIN files f ON f.id = rfc.file_id
-                WHERE rfc.content_id = rc.id
-                  AND f.preview_blob_path IS NOT NULL
-                  AND f.source_sha256 = rc.source_sha256
-                ORDER BY f.added_at DESC, f.id
-                LIMIT 1
-            ) preview ON true
             WHERE rc.source_sha256 = %s
               AND rc.pipeline_identity = %s
               AND rc.status = 'ready'
@@ -1105,16 +1094,12 @@ async def workspace_outline(workspace_id: str) -> dict[str, Any]:
 
 
 async def file_page_source(workspace_id: str, file_id: str) -> dict[str, Any] | None:
-    """The PDF a file's page geometry refers to, for capture_page.
-
-    Office sources were parsed against their LibreOffice preview, so that is the
-    coordinate space the chunk regions use; a PDF renders from its own bytes.
-    """
+    """Published source identity for page capture; names may change independently."""
     db = await pool()
     async with db.connection() as conn:
         cur = await conn.execute(
             """
-            SELECT f.kind, f.parse_mode, f.blob_path, f.preview_blob_path, f.size_bytes
+            SELECT f.kind, f.name, f.parse_mode, f.ever_parsed_successfully, f.blob_path, f.source_sha256, f.size_bytes
             FROM files f
             WHERE f.workspace_id = %s AND f.id = %s AND f.trashed_at IS NULL
             """,

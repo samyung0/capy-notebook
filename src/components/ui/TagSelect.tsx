@@ -6,6 +6,7 @@ import { cn } from '@/lib/cn';
 import { Badge } from './Badge';
 import { Icon } from './Icon';
 import { IconButton } from './IconButton';
+import { PopupMotion } from './PopupMotion';
 
 type Option =
   | { type: 'create'; value: string }
@@ -71,7 +72,6 @@ export function TagSelect({
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selected = value ?? [];
   const atMax = max != null && selected.length >= max;
@@ -149,7 +149,7 @@ export function TagSelect({
     <div className="relative">
       <div
         className={cn(
-          'flex flex-wrap items-center gap-1.5 rounded-input border border-line bg-surface px-1.5 py-1.5 transition-[colors,border] duration-150 focus-within:border-line-strong',
+          'flex flex-wrap items-center gap-1.5 rounded-input border border-line bg-surface px-1.5 py-1.5 transition-colors duration-150 focus-within:border-line-strong',
           invalid && 'border-[1.5px] border-solid-error'
         )}
         onClick={() => inputRef.current?.focus()}
@@ -176,9 +176,7 @@ export function TagSelect({
             aria-invalid={invalid}
             autoComplete="off"
             className="t-body min-w-32 flex-1 border-none bg-transparent px-2 py-1.5 outline-none placeholder:text-placeholder"
-            onBlur={() => {
-              blurTimer.current = setTimeout(() => setOpen(false), 120);
-            }}
+            onBlur={() => setOpen(false)}
             onChange={(e) => {
               setQuery(e.target.value);
               setOpen(true);
@@ -195,13 +193,15 @@ export function TagSelect({
         )}
       </div>
 
-      {showList && (
+      <PopupMotion
+        className="max-h-56 overflow-auto rounded-lg border border-line bg-surface p-1 shadow-lg"
+        open={showList}
+        positionClassName="absolute z-50 mt-1.5 w-full"
+      >
         <ul
-          className="absolute z-50 mt-1.5 max-h-56 w-full overflow-auto rounded-lg border border-line bg-surface p-1 shadow-lg"
           // Keep focus in the input so a click commits before blur closes the list.
           onMouseDown={(e) => {
             e.preventDefault();
-            if (blurTimer.current) clearTimeout(blurTimer.current);
           }}
         >
           {options.map((opt, i) => {
@@ -242,7 +242,7 @@ export function TagSelect({
             );
           })}
         </ul>
-      )}
+      </PopupMotion>
     </div>
   );
 }

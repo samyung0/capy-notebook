@@ -402,6 +402,7 @@ func (a *api) getIntegrations(ctx context.Context, _ *struct{}) (*integrationsOu
 		Google:              provs[integrations.ProviderGoogle],
 		GoogleDriveReadonly: provs["googleDriveReadonly"],
 		Microsoft:           provs[integrations.ProviderMicrosoft],
+		MicrosoftFilesRead:  provs["microsoftFilesRead"],
 	}}, nil
 }
 

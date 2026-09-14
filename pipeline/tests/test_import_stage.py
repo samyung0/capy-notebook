@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from urllib.parse import urlencode
+
 import pytest
 
 from pipeline.ingest import import_stage
@@ -206,39 +209,149 @@ def test_complete_without_finalized_status_retries(monkeypatch):
         )
 
 
-def test_run_uploads_before_completing_and_reports_actual_size(monkeypatch):
-    calls: list[tuple[str, dict]] = []
-    writes: list[tuple[str, int, str]] = []
+@pytest.mark.parametrize(
+    ("filename", "content_type"),
+    [
+        (
+            "lesson.docx",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ),
+        (
+            "grades.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ),
+        (
+            "lesson.pptx",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        ),
+        ("digital.pdf", "application/pdf"),
+    ],
+)
+@pytest.mark.parametrize("provider", ["google", "microsoft"])
+def test_run_preserves_provider_fixture_bytes_before_completing(
+    monkeypatch, filename, content_type, provider
+):
+    data = (
+        Path(__file__).parents[2] / "e2e/fixtures/files/basic" / filename
+    ).read_bytes()
+    url = "https://www.googleapis.com/drive/v3/files/file_1/export?" + urlencode(
+        {"mimeType": content_type}
+    )
+    grant = {"kind": "bearer", "url": url, "token": "fixture-token"}
+    headers_expected = {"Authorization": "Bearer fixture-token"}
+    if provider == "microsoft":
+        url = "https://download.example/" + filename + "?fixture-grant=true"
+        grant = {"kind": "url", "url": url}
+        headers_expected = {}
+    events = []
+    download = _Download(_Body(200, chunks=[data[:17], data[17:]]))
+
+    def open_download(actual_url, *, headers, **_kwargs):
+        assert actual_url == url
+        assert headers == headers_expected
+        events.append("download")
+        return download
 
     def gateway(path, body):
-        calls.append((path, body))
+        events.append(path.rsplit("/", 1)[-1])
         if path.endswith("/acquire"):
             return 200, {
                 "status": "acquired",
                 "attemptToken": "tok",
-                "attemptObjectPath": "incoming/up/file.pdf.attempt-1",
-                "contentType": "application/pdf",
-                "maxBytes": 100,
-                "download": {"kind": "url", "url": "https://x.sharepoint.com/f"},
+                "attemptObjectPath": "incoming/up/" + filename,
+                "contentType": content_type,
+                "maxBytes": len(data),
+                "download": grant,
             }
+        assert body == {
+            "jobId": "imp_1",
+            "attemptToken": "tok",
+            "actualSize": len(data),
+        }
         return 200, {"fileId": "f_1", "status": "succeeded"}
 
+    def write(path, actual, mime):
+        assert download.closed
+        assert (path, bytes(actual), mime) == (
+            "incoming/up/" + filename,
+            data,
+            content_type,
+        )
+        events.append("upload")
+
     monkeypatch.setattr(import_stage, "_gateway", gateway)
-    monkeypatch.setattr(import_stage, "_download", lambda _grant, _max: b"hello")
-    monkeypatch.setattr(
-        import_stage.blobstore,
-        "write_bytes",
-        lambda path, data, ct: writes.append((path, len(data), ct)),
-    )
+    monkeypatch.setattr(import_stage.pinned_http, "open_download", open_download)
+    monkeypatch.setattr(import_stage.blobstore, "write_bytes", write)
     job = {"id": "imp_1", "attempts": 1, "payload": {"importJobId": "imp_1"}}
     import_stage._run(job)
-    assert writes == [("incoming/up/file.pdf.attempt-1", 5, "application/pdf")]
-    assert [path for path, _ in calls] == [
-        "/api/internal/import/acquire",
-        "/api/internal/import/complete",
-    ]
-    assert calls[1][1] == {"jobId": "imp_1", "attemptToken": "tok", "actualSize": 5}
+    assert events == ["acquire", "download", "upload", "complete"]
     assert import_stage._TOKEN_KEY not in job
+
+
+@pytest.mark.parametrize("failed_stage", ["download", "upload"])
+def test_interrupted_import_never_completes_and_keeps_lease_for_failure_report(
+    monkeypatch, failed_stage
+):
+    data = (
+        Path(__file__).parents[2] / "e2e/fixtures/files/basic/lesson.docx"
+    ).read_bytes()
+    events = []
+    reports = []
+
+    class Body(_Body):
+        def stream(self, _size):
+            yield data[:17]
+            if failed_stage == "download":
+                raise OSError("provider connection closed mid-file")
+            yield data[17:]
+
+    download = _open(monkeypatch, Body(200))
+
+    def gateway(path, body):
+        events.append(path.rsplit("/", 1)[-1])
+        if path.endswith("/acquire"):
+            return 200, {
+                "status": "acquired",
+                "attemptToken": "tok",
+                "attemptObjectPath": "incoming/up/lesson.docx",
+                "maxBytes": len(data),
+                "download": {"kind": "url", "url": "https://www.googleapis.com/export"},
+            }
+        assert path.endswith("/fail"), "incomplete bytes must never be finalized"
+        reports.append(body)
+        return 204, {}
+
+    def write(_path, actual, _mime):
+        assert failed_stage == "upload", "partial provider bytes reached B2"
+        assert bytes(actual) == data
+        events.append("upload")
+        raise OSError("B2 unavailable")
+
+    monkeypatch.setattr(import_stage, "_gateway", gateway)
+    monkeypatch.setattr(import_stage.blobstore, "write_bytes", write)
+    job = {"id": "imp_1", "attempts": 1, "payload": {"importJobId": "imp_1"}}
+    expected_code = (
+        "provider_network" if failed_stage == "download" else "b2_upload_failed"
+    )
+    with pytest.raises(import_stage.ImportRetry) as failure:
+        import_stage._run(job)
+    assert failure.value.code == expected_code
+    assert download.closed
+    assert job[import_stage._TOKEN_KEY] == "tok"
+    import_stage.report(job, failure.value, retryable=True)
+    assert reports == [
+        {
+            "jobId": "imp_1",
+            "attemptToken": "tok",
+            "code": expected_code,
+            "retryable": True,
+        }
+    ]
+    assert events == (
+        ["acquire", "fail"]
+        if failed_stage == "download"
+        else ["acquire", "upload", "fail"]
+    )
 
 
 def test_report_skips_retry_without_token_and_sends_terminal(monkeypatch):

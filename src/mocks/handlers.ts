@@ -2803,7 +2803,12 @@ export const handlers = [
 
   /* ---------------- integrations ---------------- */
   http.get('/api/integrations', async () =>
-    HttpResponse.json({ google: false, microsoft: false })
+    HttpResponse.json({
+      google: false,
+      googleDriveReadonly: false,
+      microsoft: false,
+      microsoftFilesRead: false,
+    })
   ),
   http.get('/api/integrations/google/picker-token', async () =>
     HttpResponse.json({ accessToken: 'mock-google-token' })

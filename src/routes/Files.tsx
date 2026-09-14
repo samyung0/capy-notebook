@@ -25,6 +25,7 @@ import { FileViewer } from '@/features/files/FileViewer';
 import { formatFileSize } from '@/features/files/fileUtils';
 import { useOfficeEditGuard } from '@/features/files/useOfficeEditGuard';
 import { getLocale, m } from '@/i18n';
+import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
 type FilesTab = 'files' | 'trash';
 
@@ -51,6 +52,7 @@ export default function Files() {
 
 function ActiveFiles() {
   const { data, fetchStatus, isLoading } = useAllFiles();
+  const revealRef = useLoadingReveal(isLoading);
   const [openFileId, setOpenFileId] = useState<string | null>(null);
   const [officeEditDirty, setOfficeEditDirty] = useState(false);
   const confirmViewerReplacement = useOfficeEditGuard(officeEditDirty);
@@ -80,7 +82,10 @@ function ActiveFiles() {
   if (isLoading) return <SkeletonCardGrid cardHeight={72} count={6} />;
   return (
     <>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div
+        className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
+        ref={revealRef}
+      >
         {data?.map((f) => (
           <Card
             className="flex items-center gap-3 p-5.5"

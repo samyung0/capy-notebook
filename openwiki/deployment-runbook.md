@@ -787,9 +787,9 @@ The dedicated-host Compose file defaults to four `worker` containers. Each
 claims only `ingest` rows and runs exactly one direct-route or post-parse job.
 Each has a 1 CPU, 1 GiB RAM, 1.25 GiB memory-plus-swap, and 128-process hard
 ceiling. Embedding and summary calls are sequential inside each job; their
-host-wide concurrency is at most four. The worker also opens the source PDF
-(or the bundle's `preview.pdf`) with PyMuPDF for heading retention and
-extraction confidence. These are limits, not reserved
+host-wide concurrency is at most four. PDF jobs open the source or repaired PDF
+with PyMuPDF for heading retention and extraction confidence. Office jobs use
+the page evidence frozen in the PDF-free v4 bundle. These are limits, not reserved
 capacity; idle containers use little CPU or memory. The legacy app-host
 debugging profile still defaults to one worker.
 
@@ -1307,12 +1307,34 @@ Clerk's shared Google and Microsoft credentials cannot add extra scopes.
 
 1. Create a Google Cloud OAuth web client. Use it as Clerk's Google custom
    credentials.
-2. On the Clerk Google connection, add extra scope
-   `https://www.googleapis.com/auth/drive.readonly`.
+2. On the Clerk Google connection, keep the baseline login scopes. Remove
+   `https://www.googleapis.com/auth/drive.readonly` from global extra scopes
+   if previously added; configure it on the Google OAuth consent screen.
 3. Create a Microsoft Entra web app (or reuse one) for Clerk. Add Graph
    delegated `Files.Read` and `offline_access`.
-4. On the Clerk Microsoft connection, add extra scopes `Files.Read` and
-   `offline_access`.
+4. On the Clerk Microsoft connection, keep the baseline login scopes. Remove
+   `Files.Read` and any `offline_access` manually added for imports from global
+   extra scopes; leave Clerk's built-in defaults intact.
+
+Clerk's global extra scopes apply during login/signup. Import permissions are
+requested only when a signed-in user explicitly connects for cloud import:
+`useProviderConnect` passes Google `drive.readonly` or Microsoft `Files.Read`
+and `offline_access` as `additionalScopes` to `createExternalAccount` or
+`reauthorize`. These per-user scopes do not need to be global Clerk scopes.
+See [Clerk's per-user scope guide](https://clerk.com/blog/implement-per-user-oauth-with-clerk).
+
+Keep the existing Google/Microsoft OAuth apps, credentials, redirect URIs and
+provider-side permission declarations. Declaring a permission in the provider
+console does not request it on every login; the authorization request's scopes
+control when consent is requested.
+
+The importer checks `googleDriveReadonly` / `microsoftFilesRead` in
+`GET /api/integrations` before opening a picker. A linked login account alone
+does not prove file access. Check on each import entry, including after another
+login, because Clerk's token grant can change. Consent returns to the current
+page; the user reopens the importer. Declining file access does not remove the
+Capy login session. Microsoft's separate MSAL picker consent still occurs when
+the OneDrive picker opens.
 
 The Go gateway downloads with Clerk's token wallet. Same Google Cloud project
 must own the Picker API key, the Picker app id, and the Clerk Google client.
@@ -1339,17 +1361,22 @@ the UAT GitHub environment and rebuilding the SPA.
 
 Google folder import uses `drive.readonly`, which can read and download every
 Drive file the account can access. It is a restricted scope: configure it in
-both the Google OAuth consent screen and Clerk's Google connection, and complete
+the Google OAuth consent screen, request it at import time, and complete
 Google's restricted-scope verification/security assessment before a public
 production rollout. Existing per-file (`drive.file`) connections must grant
 the new scope through reconnect. Keep the normal `openid`, email and profile scopes.
+
+Google's OAuth app can remain in Testing for UAT. Add accounts that will import
+Drive files to Test users. Drive authorizations and refresh tokens expire after
+seven days in this mode; baseline identity-only login is exempt. See
+[Google's app audience rules](https://support.google.com/cloud/answer/15549945).
 
 Check each Clerk instance separately: Capy production, UAT development, and UAT
 production. Development needs custom Google credentials to add the Drive scope.
 The app id, API key and OAuth client must belong to the same Google Cloud project
 in each environment. Updating one Clerk instance does not update the others.
-The `/v1/environment` public config reports enabled providers but not allowed
-scopes; inspect scopes in the Clerk dashboard or with a Platform API token
+The `/v1/environment` public config reports enabled providers but not global
+scopes; inspect baseline scopes in the Clerk dashboard or with a Platform API token
 authorized for instance configuration.
 
 ### OneDrive File Picker v8 (MSAL)
@@ -1400,6 +1427,8 @@ for OneDrive, optional `driveIds` of the same length. Download uses
 ---
 
 ## 12. UAT review environment and external-service sandboxes
+
+The manual heavy lifecycle gate is configured in the [UAT journey guide](../e2e/uat/journeys/README.md). It documents verifier-role setup, provider read credentials, fixed-code Clerk signup, same-revision ingest checks, committed fixtures and resumable cleanup. Apply the dedicated verifier SQL only to UAT after migrations.
 
 This section is the manual counterpart to the repository's review automation.
 There is no deployed UAT system yet, so complete it only when rapid local
@@ -1896,9 +1925,9 @@ first. Roll back compatible Ops changes by selecting a previous passing SHA.
 1. Manually dispatch **Deploy UAT** from `main`. It deploys the selected SHA and
    automatically calls **Deterministic UAT quality**, which probes the SPA,
    gateway and collaboration health and verifies the released SHA. For the
-   authenticated functional and UI evidence — authorization, accessibility and
-   the 320 CSS-pixel reflow — dispatch **Deterministic UAT quality** yourself
-   with `browser_suite`, which promotion also requires.
+   authenticated authorization and accessibility evidence, dispatch
+   **Deterministic UAT quality** yourself with `browser_suite`, which promotion
+   also requires.
 2. Repair the fixture and tune only documented budgets or exclusions. Do not
    weaken authorization assertions or allow-host guards to make a run green.
 3. Dispatch **Editor perf** once so later runs have a baseline to diff. No
@@ -2032,3 +2061,22 @@ retire historical upgrade paths; that would require a separate minimum-supported
 version decision. An older binary without the database's recorded baseline
 refuses migration, even if later numbered files could otherwise be ignored for
 an application rollback. Schema changes remain forward-only.
+
+### Native Office citation deployment
+
+There is no production deployment or production data, and UAT data was cleared.
+Use the normal app-first deployment followed by **Deploy ingest** at the matching
+revision. This release needs no maintenance window or legacy data conversion.
+Migration 0016 only removes the obsolete preview columns and updates their
+triggers, cache-kind constraint and account-deletion function. The retained
+numbered migrations still create the earlier schema before applying this change.
+
+Parser bundle v4 and processing plan v2 are the current contracts. Office bundles
+contain parsed text and metadata without PDF bytes. Google Docs, Sheets and
+Slides import as DOCX, XLSX and PPTX; Drawings export PDF.
+
+Set `PARSER_URL` and `PARSER_TOKEN` on retrieval for temporary Office captures.
+The shared non-production parser binds `PARSER_BIND_ADDRESS` on WireGuard
+instead of loopback; configure its private address and port 8091, with production
+on port 8090 when provisioned. Local development needs a private route or an SSH
+forward. The environment manifest includes these app-host values.

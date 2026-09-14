@@ -12,6 +12,7 @@ import {
   isOfficeHostMessage,
   OFFICE_PROTOCOL_VERSION,
   type OfficeAnalysis,
+  type OfficeCitation,
   type OfficeFormat,
   type OfficeHostMessage,
   type OfficeMode,
@@ -67,6 +68,7 @@ interface LoadedFile {
 
 function OfficeRuntime() {
   const [file, setFile] = useState<LoadedFile | null>(null);
+  const [citation, setCitation] = useState<OfficeCitation | null>(null);
   const [mode, setMode] = useState<OfficeMode>('view');
   const [error, setError] = useState<string | null>(null);
   const revisionRef = useRef<number | null>(null);
@@ -183,6 +185,7 @@ function OfficeRuntime() {
         setCanEdit(message.canEdit);
         setError(null);
         setMode(nextMode);
+        setCitation(nextMode === 'view' ? (message.citation ?? null) : null);
         const bytes =
           nextMode === 'view' && message.checkpoint
             ? await exportCheckpoint(
@@ -202,6 +205,10 @@ function OfficeRuntime() {
           revision: message.revision,
         });
         post({ mode: nextMode, revision: message.revision, type: 'mode' });
+        return;
+      }
+      if (message.type === 'set-citation') {
+        setCitation(message.citation);
         return;
       }
       if (message.type === 'set-capabilities') {
@@ -405,18 +412,21 @@ function OfficeRuntime() {
         ) : file.format === 'docx' ? (
           <DocxViewer
             bytes={file.bytes}
+            citation={citation}
             onAnalysis={reportAnalysis}
             onError={reportError}
           />
         ) : file.format === 'xlsx' ? (
           <XlsxViewer
             bytes={file.bytes}
+            citation={citation}
             onAnalysis={reportAnalysis}
             onError={reportError}
           />
         ) : (
           <PptxViewer
             bytes={file.bytes}
+            citation={citation}
             onAnalysis={reportAnalysis}
             onError={reportError}
           />

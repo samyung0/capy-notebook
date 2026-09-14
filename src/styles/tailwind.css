@@ -4,6 +4,7 @@
 @import "./tokens/themes/classroom.css";
 @import "./tokens/themes/notion.css";
 @import "tw-animate-css";
+@import "./tokens/motion.css";
 
 @custom-variant dark (&:is(.dark *));
 

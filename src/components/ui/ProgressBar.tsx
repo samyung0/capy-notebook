@@ -42,7 +42,7 @@ export function ProgressBar({
         ) : (
           <div
             className={cn(
-              'h-full rounded-full transition-[width] duration-400 ease-[cubic-bezier(.2,.7,.2,1)]'
+              'h-full rounded-full transition-[width] duration-400 ease-(--motion-ease-smooth-out)'
             )}
             style={{
               backgroundColor:

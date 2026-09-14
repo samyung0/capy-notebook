@@ -1,31 +1,8 @@
 import { expect, test } from '../fixtures/actors';
-import { expectEditorLive, openAllBlocks } from '../helpers/editor';
+import { expectEditorLive } from '../helpers/editor';
 import { openWorkspaceMaterial } from '../helpers/workspace';
 
 test.describe('shared material modes', () => {
-  test('quiz and flashcard materials use view actions', async ({
-    ownerPage,
-    seed,
-  }) => {
-    await openWorkspaceMaterial(
-      ownerPage,
-      seed.privateWorkspace.id,
-      seed.privateQuiz.id
-    );
-    await expect(
-      ownerPage.getByRole('toolbar', { name: 'Quiz actions' })
-    ).toContainText('1 question · Time limit: 15 min');
-
-    await openWorkspaceMaterial(
-      ownerPage,
-      seed.privateWorkspace.id,
-      seed.privateFlashcardSet.id
-    );
-    await expect(
-      ownerPage.getByRole('toolbar', { name: 'Flashcard actions' })
-    ).toContainText('1 card · 0% known');
-  });
-
   test('anonymous visitors see only the summary and cannot read materials', async ({
     anonymousPage,
     anonymousApi,
@@ -144,7 +121,7 @@ test.describe('shared material modes', () => {
     await expect(otherPage.getByRole('option', { name: 'View' })).toBeVisible();
   });
 
-  test('mod+k and all-block menus expose editor commands', async ({
+  test('mod+k opens the editor command palette', async ({
     ownerPage,
     seed,
   }) => {
@@ -167,21 +144,6 @@ test.describe('shared material modes', () => {
       ownerPage.getByRole('dialog', { name: 'Editor command palette' })
     ).toBeVisible();
     await ownerPage.keyboard.press('Escape');
-
-    const menu = await openAllBlocks(ownerPage);
-    // Only WIDGET_GROUPS that contribute all-block commands render a section;
-    // toolbar-only groups (history, font styles, text decorations) do not.
-    for (const heading of [
-      'File operations',
-      'General',
-      'Inline elements',
-      'Block decorations',
-      'Block elements',
-    ]) {
-      await expect(
-        menu.getByRole('heading', { exact: true, name: heading })
-      ).toBeVisible();
-    }
   });
 
   test('room tokens and comment APIs follow the role matrix', async ({

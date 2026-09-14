@@ -1,4 +1,5 @@
 import { type PointerEvent, useEffect, useRef, useState } from 'react';
+import { cn } from '@/lib/cn';
 import { clampImageZoom, IMAGE_MIN_ZOOM } from './fileUtils';
 
 /** Clamp pan so the scaled image can't be dragged past the viewport edges. */
@@ -303,7 +304,11 @@ export function ImageViewer({
       >
         <img
           alt={alt}
-          className="max-h-full max-w-full select-none rounded-md object-contain transition-all duration-150 ease-out will-change-transform [-webkit-user-drag:none]"
+          className={cn(
+            'max-h-full max-w-full select-none rounded-md object-contain [-webkit-user-drag:none]',
+            !dragging &&
+              'transition-transform duration-150 ease-(--motion-ease-smooth-out)'
+          )}
           draggable={false}
           onDragStart={(e) => e.preventDefault()}
           onLoad={() => updateOffset(offsetRef.current.x, offsetRef.current.y)}

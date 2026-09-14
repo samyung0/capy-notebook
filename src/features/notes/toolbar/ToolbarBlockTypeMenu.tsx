@@ -14,12 +14,14 @@ import { KEYS } from 'platejs';
 import { useEditorSelector } from 'platejs/react';
 import { useState } from 'react';
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/Popover';
+  DropdownMenu,
+  DropdownMenuTrigger,
+} from '@/components/ui/DropdownMenu';
 import { ToolbarButton } from '@/features/notes/toolbar/ToolbarButton';
-import { MenuRow } from '@/features/notes/toolbar/ToolbarMenuRow';
+import {
+  MenuRow,
+  ToolbarMenuContent,
+} from '@/features/notes/toolbar/ToolbarMenuRow';
 import { m } from '@/i18n';
 
 export function BlockTypeMenu({
@@ -54,16 +56,14 @@ export function BlockTypeMenu({
   }, []);
 
   return (
-    <Popover onOpenChange={setOpen} open={open}>
-      <PopoverTrigger asChild>
-        <span className="inline-flex">
-          <ToolbarButton className="w-23" label={m.editor_block_type()}>
-            <span className="translate-y-px">{blockTypeLabel}</span>
-            <ChevronDown className="size-3! text-fg-secondary" />
-          </ToolbarButton>
-        </span>
-      </PopoverTrigger>
-      <PopoverContent
+    <DropdownMenu modal={false} onOpenChange={setOpen} open={open}>
+      <DropdownMenuTrigger asChild>
+        <ToolbarButton className="w-23" label={m.editor_block_type()}>
+          <span className="translate-y-px">{blockTypeLabel}</span>
+          <ChevronDown className="size-3! text-fg-secondary" />
+        </ToolbarButton>
+      </DropdownMenuTrigger>
+      <ToolbarMenuContent
         align="start"
         className="w-42 gap-0.5 bg-surface p-1 shadow-pop"
       >
@@ -112,7 +112,7 @@ export function BlockTypeMenu({
           label={m.editor_code_block()}
           onClick={() => onBlock(KEYS.codeBlock)}
         />
-      </PopoverContent>
-    </Popover>
+      </ToolbarMenuContent>
+    </DropdownMenu>
   );
 }

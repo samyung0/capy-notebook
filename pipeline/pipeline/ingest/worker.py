@@ -358,13 +358,13 @@ def _finish_source_refresh(
                 cur, file_id, artifact_key, fingerprint or "", version or ""
             )
         cur.execute(
-            "SELECT content_id,content_hash,COALESCE(preview_blob_path,'') FROM source_refresh_candidates WHERE file_id=%s AND job_id=%s AND lease_token=%s",
+            "SELECT content_id,content_hash FROM source_refresh_candidates WHERE file_id=%s AND job_id=%s AND lease_token=%s",
             (file_id, job_id, payload["sourceLeaseToken"]),
         )
         candidate = cur.fetchone()
         if candidate is None or not candidate[0] or candidate[1] != content_hash:
             raise db.SourceSupersededError("source candidate index is missing")
-        # Only this point certifies that preview, captions and derivatives are complete.
+        # Only this point certifies that captions and derivatives are complete.
         # A shared ready RAG content row alone can exist before those steps finish.
         cur.execute(
             "UPDATE jobs SET payload=payload||'{\"sourcePublicationReady\":true}'::jsonb WHERE id=%s",
@@ -384,7 +384,6 @@ def _finish_source_refresh(
         "sourceETag": payload["sourceETag"],
         "contentId": candidate[0],
         "contentHash": candidate[1],
-        "previewBlobPath": candidate[2],
         "attemptId": telemetry.current_attempt_id(),
     }
     try:
@@ -591,7 +590,6 @@ def _finish_fail(
                     )
                 db.set_file_status(cur, file_id, "failed")
                 db.set_file_indexed(cur, file_id, False)
-                db.set_file_preview_blob(cur, file_id, None)
             db.set_job(cur, job_id, "failed", error[:500])
             db.close_credit_reservation(cur, reservation_id)
             if file_id:
@@ -864,58 +862,6 @@ def _record_caption_blob_best_effort(
         )
 
 
-def _record_preview_blob(
-    file_id: str,
-    key: str,
-    source_revision: int,
-    source_etag: str,
-    actor_user_id: str,
-) -> None:
-    with db.connect() as conn, conn.cursor() as cur:
-        if not db.ingest_accounts_active(cur, file_id, actor_user_id):
-            raise TerminalError(
-                "ingest stopped because an account is suspended or deleting"
-            )
-        db.require_current_file_source(cur, file_id, source_revision, source_etag)
-        db.set_file_preview_blob(cur, file_id, key)
-        conn.commit()
-
-
-def _clear_preview_blob(
-    file_id: str,
-    source_revision: int,
-    source_etag: str,
-    actor_user_id: str,
-    *,
-    job_id: str,
-    attempt: int,
-    workspace_id: str,
-    reservation_id: str,
-) -> bool:
-    """Clear a preview only while the installing attempt still owns the job."""
-    payload = {
-        "actorUserId": actor_user_id,
-        "fileId": file_id,
-        "reservationId": reservation_id,
-        "sourceETag": source_etag,
-        "sourceRevision": source_revision,
-        "workspaceId": workspace_id,
-    }
-    with db.connect() as conn, conn.cursor() as cur:
-        boundary = db.lock_pipeline_claim_boundary(
-            cur,
-            job_id=job_id,
-            attempt=attempt,
-            payload=payload,
-        )
-        if boundary != "current":
-            conn.commit()
-            return False
-        db.set_file_preview_blob(cur, file_id, None)
-        conn.commit()
-    return True
-
-
 def _record_source_sha(
     file_id: str,
     source_sha256: str,
@@ -1065,136 +1011,6 @@ def _clear_parse_artifact_reference(
                 )
             db.clear_file_parse_artifact(cur, file_id)
         conn.commit()
-
-
-def _office_preview_key(
-    source_sha256: str, parser_version: str, fingerprint: str
-) -> str:
-    return f"previews/{source_sha256}/{parser_version}/{fingerprint}.pdf"
-
-
-def _office_preview_size(info: dict | None) -> int | None:
-    if info is None:
-        return None
-    size_bytes = int(info.get("size") or 0)
-    if not 0 < size_bytes <= cfg.office_preview_max_bytes:
-        return None
-    return size_bytes
-
-
-def _existing_office_preview_bytes(key: str, info: dict | None) -> bytes | None:
-    """Return a bounded, validated PDF object instead of trusting HEAD size."""
-    size_bytes = _office_preview_size(info)
-    if size_bytes is None:
-        return None
-    content_type = str((info or {}).get("content_type") or "").split(";", 1)[0]
-    if content_type.strip().lower() != "application/pdf":
-        return None
-    data = blobstore.read_bytes(key, cfg.office_preview_max_bytes)
-    if data is None or len(data) != size_bytes or not data.startswith(b"%PDF-"):
-        return None
-    return data
-
-
-def _cache_office_preview(
-    *,
-    raw_dir: Path,
-    file_id: str,
-    source_sha256: str,
-    parser_version: str,
-    fingerprint: str,
-    source_revision: int,
-    source_etag: str,
-    actor_user_id: str,
-) -> str | None:
-    preview = raw_dir / "preview.pdf"
-    if not preview.is_file():
-        return None
-    local_size = preview.stat().st_size
-    if not 0 < local_size <= cfg.office_preview_max_bytes:
-        log.warning(
-            "refusing Office preview for %s: %s bytes exceeds the %s-byte limit",
-            file_id,
-            local_size,
-            cfg.office_preview_max_bytes,
-        )
-        return None
-    with preview.open("rb") as handle:
-        data = handle.read(cfg.office_preview_max_bytes + 1)
-    if (
-        len(data) != local_size
-        or len(data) > cfg.office_preview_max_bytes
-        or not data.startswith(b"%PDF-")
-    ):
-        log.warning("refusing invalid Office preview for %s", file_id)
-        return None
-    key = _office_preview_key(source_sha256, parser_version, fingerprint)
-    info = blobstore.object_info(key)
-    existing = _existing_office_preview_bytes(key, info) if info is not None else None
-    if existing != data:
-        if info is not None:
-            log.warning("replacing invalid cached Office preview %s", key)
-        blobstore.write_bytes(key, data, "application/pdf")
-    size_bytes = len(data)
-    _touch_or_upsert_artifact(
-        object_path=key,
-        kind="office_preview",
-        source_sha256=source_sha256,
-        size_bytes=size_bytes,
-        strict=True,
-    )
-    _record_preview_blob(file_id, key, source_revision, source_etag, actor_user_id)
-    return key
-
-
-def _reuse_office_preview(
-    *,
-    file_id: str,
-    source_sha256: str,
-    preview_blob_path: str,
-    source_revision: int,
-    source_etag: str,
-    actor_user_id: str,
-) -> bool:
-    if not preview_blob_path:
-        return False
-    try:
-        info = blobstore.object_info(preview_blob_path)
-        data = _existing_office_preview_bytes(preview_blob_path, info)
-    except Exception:
-        log.warning("could not validate donor Office preview", exc_info=True)
-        return False
-    if data is None:
-        return False
-    _touch_or_upsert_artifact(
-        object_path=preview_blob_path,
-        kind="office_preview",
-        source_sha256=source_sha256,
-        size_bytes=len(data),
-        strict=True,
-    )
-    _record_preview_blob(
-        file_id, preview_blob_path, source_revision, source_etag, actor_user_id
-    )
-    return True
-
-
-def _donor_office_preview(name: str, donor: dict) -> str | None:
-    """Return an existing exact preview, or refuse Office donor reuse."""
-    if Path(name).suffix.lower() not in parser_client.OFFICE_SUFFIXES:
-        return ""
-    preview_blob_path = str(donor.get("preview_blob_path") or "")
-    if not preview_blob_path:
-        return None
-    try:
-        info = blobstore.object_info(preview_blob_path)
-        data = _existing_office_preview_bytes(preview_blob_path, info)
-    except Exception:
-        log.warning("could not validate donor Office preview", exc_info=True)
-        return None
-    if data is None:
-        return None
-    return preview_blob_path
 
 
 def _set_file_status(
@@ -1560,7 +1376,7 @@ async def _ensure_document_artifact(
         parser_client.publish_durable_artifact,
         artifact,
         route=route,
-        require_office_preview=processing_plan.office_preview,
+        office=processing_plan.office,
     )
     if durable_key:
         artifact["durableKey"] = durable_key
@@ -1716,7 +1532,7 @@ async def _chunks_for(
             artifact,
             raw_dir,
             route=route,
-            require_office_preview=processing_plan.office_preview,
+            office=processing_plan.office,
         )
         artifact_key = str(artifact.get("key") or "")
         fingerprint = str(artifact.get("fingerprint") or "")
@@ -1732,22 +1548,6 @@ async def _chunks_for(
                 source_etag,
                 str(payload.get("actorUserId") or ""),
             )
-        preview_path = raw_dir / "preview.pdf"
-        published_preview = None
-        if preview_path.is_file():
-            published_preview = await asyncio.to_thread(
-                _cache_office_preview,
-                raw_dir=raw_dir,
-                file_id=file_id,
-                source_sha256=source_sha256,
-                parser_version=artifact_version,
-                fingerprint=fingerprint,
-                source_revision=source_revision,
-                source_etag=source_etag,
-                actor_user_id=str(payload.get("actorUserId") or ""),
-            )
-        if processing_plan.office_preview and not published_preview:
-            raise RetryableError("required Office preview could not be published")
         _publish_progress(ws, file_id, "indexing", 45)
         _set_stage("chunking")
         chunks = await asyncio.to_thread(
@@ -1762,27 +1562,31 @@ async def _chunks_for(
 def _page_chunks(
     content_list: list[dict], raw_dir: Path, source_pdf: Path
 ) -> list[Chunk]:
-    """Chunk a parsed document against the PDF its blocks were measured on.
-
-    The bundle carries the parser's frozen furniture (``refinement.json``) and,
-    when font repair changed the bytes, the repaired PDF (``parsed.pdf``);
-    Office sources carry their LibreOffice preview. Otherwise the spooled
-    source is the page model. Heading retention and confidence read that PDF,
-    so they see the glyphs the parser saw.
-    """
+    """Pack blocks using frozen Office page evidence or the exact source PDF."""
     refinement_path = raw_dir / "refinement.json"
     if not refinement_path.is_file():
         raise TerminalError("parse artifact has no refinement.json")
-    furniture = json.loads(refinement_path.read_text(encoding="utf-8")).get("furniture")
+    refinement = json.loads(refinement_path.read_text(encoding="utf-8"))
+    furniture = refinement.get("furniture")
     if not isinstance(furniture, list) or not all(
         isinstance(t, str) for t in furniture
     ):
         raise TerminalError("parse artifact refinement.json has no furniture list")
     chunks = pack_blocks(content_list, frozenset(furniture))
-    page_pdf = next(
-        (p for p in (raw_dir / "parsed.pdf", raw_dir / "preview.pdf") if p.is_file()),
-        source_pdf,
-    )
+    evidence = refinement.get("page_evidence")
+    if evidence is not None:
+        chunks = retain_headings(
+            content_list, source_pdf, chunks, verified=set(evidence["visible_headings"])
+        )
+        score_chunks(
+            chunks,
+            source_pdf,
+            ocr=ocr_pages(content_list),
+            page_texts=evidence["page_texts"],
+        )
+        return chunks
+    repaired = raw_dir / "parsed.pdf"
+    page_pdf = repaired if repaired.is_file() else source_pdf
     if not page_pdf.is_file():
         raise RetryableError("page-model PDF for the parsed document is missing")
     chunks = retain_headings(content_list, page_pdf, chunks)
@@ -1980,7 +1784,6 @@ async def _reuse_donor(
     donor: dict,
     identity: str,
     source_sha256: str,
-    preview_blob_path: str = "",
 ) -> bool:
     """Copy a ready donor into this workspace. Returns False on a vanished donor."""
     pin = await store.workspace_embedding_pin(ws)
@@ -2064,16 +1867,6 @@ async def _reuse_donor(
             donor_id=donor["id"], dest_workspace_id=ws, dest_file_id=file_id
         ):
             return False
-        if preview_blob_path and not await asyncio.to_thread(
-            _reuse_office_preview,
-            file_id=file_id,
-            source_sha256=source_sha256,
-            preview_blob_path=preview_blob_path,
-            source_revision=source_revision,
-            source_etag=source_etag,
-            actor_user_id=str(payload.get("actorUserId") or ""),
-        ):
-            return False
         note = f"{name}: identical content already indexed; reusing its index."
         committed = await asyncio.to_thread(
             _finish_ok,
@@ -2130,43 +1923,10 @@ async def _reuse_donor(
             )
         if isinstance(result.get("chunks"), int):
             telemetry.record(chunks_created=max(0, int(result["chunks"])))
-        if preview_blob_path and not await asyncio.to_thread(
-            _reuse_office_preview,
-            file_id=file_id,
-            source_sha256=source_sha256,
-            preview_blob_path=preview_blob_path,
-            source_revision=source_revision,
-            source_etag=source_etag,
-            actor_user_id=str(payload.get("actorUserId") or ""),
-        ):
-            await store.abandon_content(association["content_id"])
-            await store.attach_file_content(
-                workspace_id=ws,
-                file_id=file_id,
-                content_hash=donor["content_hash"],
-                source_sha256=source_sha256,
-                pipeline_identity=identity,
-                claim_job_id=job["id"],
-                source_revision=source_revision,
-                source_etag=source_etag,
-            )
-            return False
         await store.mark_content_ready(
             association["content_id"], claim_job_id=job["id"]
         )
     except BaseException:
-        if preview_blob_path:
-            await asyncio.to_thread(
-                _clear_preview_blob,
-                file_id,
-                source_revision,
-                source_etag,
-                str(payload.get("actorUserId") or ""),
-                job_id=str(job["id"]),
-                attempt=attempt,
-                workspace_id=ws,
-                reservation_id=_reservation_id(payload),
-            )
         await store.abandon_content(association["content_id"])
         raise
     committed = await asyncio.to_thread(
@@ -2325,26 +2085,23 @@ async def _process_ingest_job(
         if not exact_vector_space:
             donor = None
     if donor:
-        preview_blob_path = await asyncio.to_thread(_donor_office_preview, name, donor)
-        if preview_blob_path is not None:
-            _set_stage("donor_reuse")
-            telemetry.record(donor_reused=True)
-            reused = await _reuse_donor(
-                job=job,
-                payload=payload,
-                file_id=file_id,
-                ws=ws,
-                name=name,
-                kind=kind,
-                route=processing_plan.route,
-                donor=donor,
-                identity=identity,
-                source_sha256=source_sha256,
-                preview_blob_path=preview_blob_path,
-            )
-            if reused:
-                await asyncio.to_thread(cleanup_source)
-                return
+        _set_stage("donor_reuse")
+        telemetry.record(donor_reused=True)
+        reused = await _reuse_donor(
+            job=job,
+            payload=payload,
+            file_id=file_id,
+            ws=ws,
+            name=name,
+            kind=kind,
+            route=processing_plan.route,
+            donor=donor,
+            identity=identity,
+            source_sha256=source_sha256,
+        )
+        if reused:
+            await asyncio.to_thread(cleanup_source)
+            return
 
     if job_type == "parse":
         if not await asyncio.to_thread(_account_allows_ingest, file_id, payload, False):

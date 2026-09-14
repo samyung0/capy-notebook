@@ -1,12 +1,22 @@
 import { ChevronRight } from 'lucide-react';
 import { ContextMenu as ContextMenuPrimitive } from 'radix-ui';
-import type * as React from 'react';
+import * as React from 'react';
 import { cn } from '@/lib/cn';
+import {
+  focusReopenedSubmenu,
+  MenuOpenContext,
+  useMenuOpenState,
+} from './menuOpenState';
 
 function ContextMenu(
   props: React.ComponentProps<typeof ContextMenuPrimitive.Root>
 ) {
-  return <ContextMenuPrimitive.Root {...props} />;
+  const [open, onOpenChange] = useMenuOpenState(props);
+  return (
+    <MenuOpenContext.Provider value={open}>
+      <ContextMenuPrimitive.Root {...props} onOpenChange={onOpenChange} />
+    </MenuOpenContext.Provider>
+  );
 }
 
 function ContextMenuTrigger(
@@ -21,15 +31,18 @@ function ContextMenuContent({
   className,
   ...props
 }: React.ComponentProps<typeof ContextMenuPrimitive.Content>) {
+  const open = React.useContext(MenuOpenContext);
   return (
     <ContextMenuPrimitive.Portal>
       <ContextMenuPrimitive.Content
+        aria-hidden={!open || undefined}
         className={cn(
           'z-50 min-w-40 overflow-hidden rounded-card border border-line bg-surface p-1 text-fg shadow-pop outline-none',
-          'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=open]:animate-in',
+          'motion-fade',
           className
         )}
         data-slot="context-menu-content"
+        inert={!open}
         {...props}
       />
     </ContextMenuPrimitive.Portal>
@@ -83,13 +96,20 @@ function ContextMenuSeparator({
 function ContextMenuSub(
   props: React.ComponentProps<typeof ContextMenuPrimitive.Sub>
 ) {
-  return <ContextMenuPrimitive.Sub {...props} />;
+  const parentOpen = React.useContext(MenuOpenContext);
+  const [open, onOpenChange] = useMenuOpenState(props);
+  return (
+    <MenuOpenContext.Provider value={parentOpen && open}>
+      <ContextMenuPrimitive.Sub {...props} onOpenChange={onOpenChange} />
+    </MenuOpenContext.Provider>
+  );
 }
 
 function ContextMenuSubTrigger({
   children,
   className,
   inset,
+  onKeyDown,
   ...props
 }: React.ComponentProps<typeof ContextMenuPrimitive.SubTrigger> & {
   inset?: boolean;
@@ -105,6 +125,10 @@ function ContextMenuSubTrigger({
       )}
       data-inset={inset || undefined}
       data-slot="context-menu-sub-trigger"
+      onKeyDown={(event) => {
+        onKeyDown?.(event);
+        focusReopenedSubmenu(event);
+      }}
       {...props}
     >
       {children}
@@ -117,14 +141,17 @@ function ContextMenuSubContent({
   className,
   ...props
 }: React.ComponentProps<typeof ContextMenuPrimitive.SubContent>) {
+  const open = React.useContext(MenuOpenContext);
   return (
     <ContextMenuPrimitive.Portal>
       <ContextMenuPrimitive.SubContent
+        aria-hidden={!open || undefined}
         className={cn(
-          'z-50 min-w-40 overflow-hidden rounded-card border border-line bg-surface p-1 text-fg shadow-pop outline-none',
+          'motion-popup motion-blur-in z-50 min-w-40 overflow-hidden rounded-card border border-line bg-surface p-1 text-fg shadow-pop outline-none',
           className
         )}
         data-slot="context-menu-sub-content"
+        inert={!open}
         {...props}
       />
     </ContextMenuPrimitive.Portal>

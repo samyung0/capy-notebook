@@ -30,7 +30,7 @@ const ThemeChooser = ({
           aria-label={c}
           aria-pressed={isSelected}
           className={cn(
-            'flex h-8 w-8 items-center justify-center rounded-full transition-transform hover:scale-105',
+            'flex h-8 w-8 items-center justify-center rounded-full transition-transform ease-(--motion-ease-smooth-out) hover:scale-105',
             isSelected && 'ring-2 ring-action ring-offset-2 ring-offset-surface'
           )}
           key={c}

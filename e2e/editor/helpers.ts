@@ -17,11 +17,6 @@ export async function openEditorNote(
   return editor;
 }
 
-/** The block-selection overlay divs rendered inside selected blocks. */
-export function blockSelectionOverlays(page: Page): Locator {
-  return page.locator('[data-slot="block-selection"]');
-}
-
 /** Hover a block and return its (gutter) drag handle button. */
 export async function hoverBlockHandle(
   page: Page,

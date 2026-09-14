@@ -1,7 +1,9 @@
 import { MessageSquarePlus, Search, X } from 'lucide-react';
 import { useEditorRef } from 'platejs/react';
-import { useEffect, useMemo, useState } from 'react';
+import { Dialog as DialogPrimitive } from 'radix-ui';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/Button';
+import { Dialog, DialogOverlay, DialogPortal } from '@/components/ui/Dialog';
 import { m } from '@/i18n';
 import { useOptionalNoteBlockDialogs } from './blocks/dialogContext';
 import { useCollaborationActions } from './Collaboration';
@@ -22,17 +24,20 @@ export function EditorCommandPalette() {
   const { canEdit, mode } = useEditorRuntime();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    if (open) inputRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
-        setOpen((value) => !value);
+        setOpen(!open);
+        if (open) editor.tf.focus();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [editor, open]);
 
   const commands = useMemo(() => {
     const comment: EditorCommand | null =
@@ -62,78 +67,92 @@ export function EditorCommandPalette() {
     );
   }, [canEdit, collaboration, enabled, mode, query]);
 
-  if (!open) return null;
   return (
-    <div
-      aria-label={m.editor_command_palette()}
-      className="fixed inset-0 z-60 flex items-start justify-center bg-black/10 px-4 pt-[15dvh] backdrop-blur-xs"
-      onMouseDown={() => setOpen(false)}
-      role="dialog"
+    <Dialog
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) editor.tf.focus();
+      }}
+      open={open}
     >
-      <div
-        className="w-full max-w-lg overflow-hidden rounded-card border border-line bg-surface shadow-pop"
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <div className="flex items-center gap-2 border-divider border-b px-3">
-          <Search className="size-4 text-fg-muted" />
-          <input
-            autoFocus
-            className="h-11 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-placeholder"
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') setOpen(false);
-            }}
-            placeholder={m.editor_search_commands()}
-            value={query}
-          />
-          <Button
-            aria-label={m.editor_close_palette()}
-            onClick={() => setOpen(false)}
-            size="sm"
-            variant="ghost"
-          >
-            <X className="size-4" />
-          </Button>
-        </div>
-        <div className="max-h-80 overflow-auto p-1">
-          {commands.length ? (
-            commands.map((command) => {
-              const Icon = command.icon;
-              return (
-                <button
-                  className="flex w-full items-center gap-3 rounded-button px-2 py-2 text-left hover:bg-surface-hover-bg"
-                  key={command.id}
-                  onClick={() => {
-                    setOpen(false);
-                    if (command.focusEditor !== false) editor.tf.focus();
-                    command.run(editor, dialogs);
-                  }}
-                  type="button"
-                >
-                  <Icon className="size-4 text-fg-muted" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block font-medium text-sm">
-                      {command.label}
+      <DialogPortal>
+        <DialogOverlay className="z-60" />
+        <DialogPrimitive.Content
+          aria-describedby={undefined}
+          aria-label={m.editor_command_palette()}
+          className="motion-modal motion-blur-in fixed top-[15dvh] left-1/2 z-60 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 overflow-hidden rounded-card border border-line bg-surface shadow-pop"
+          onCloseAutoFocus={(event) => event.preventDefault()}
+        >
+          <DialogPrimitive.Title className="sr-only">
+            {m.editor_command_palette()}
+          </DialogPrimitive.Title>
+          <div className="flex items-center gap-2 border-divider border-b px-3">
+            <Search className="size-4 text-fg-muted" />
+            <input
+              className="h-11 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-placeholder"
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  setOpen(false);
+                  editor.tf.focus();
+                }
+              }}
+              placeholder={m.editor_search_commands()}
+              ref={inputRef}
+              value={query}
+            />
+            <Button
+              aria-label={m.editor_close_palette()}
+              onClick={() => {
+                setOpen(false);
+                editor.tf.focus();
+              }}
+              size="sm"
+              variant="ghost"
+            >
+              <X className="size-4" />
+            </Button>
+          </div>
+          <div className="max-h-80 overflow-auto p-1">
+            {commands.length ? (
+              commands.map((command) => {
+                const Icon = command.icon;
+                return (
+                  <button
+                    className="flex w-full items-center gap-3 rounded-button px-2 py-2 text-left hover:bg-surface-hover-bg"
+                    key={command.id}
+                    onClick={() => {
+                      setOpen(false);
+                      if (command.focusEditor !== false) editor.tf.focus();
+                      command.run(editor, dialogs);
+                    }}
+                    type="button"
+                  >
+                    <Icon className="size-4 text-fg-muted" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-medium text-sm">
+                        {command.label}
+                      </span>
+                      <span className="block truncate text-fg-muted text-xs">
+                        {command.description}
+                      </span>
                     </span>
-                    <span className="block truncate text-fg-muted text-xs">
-                      {command.description}
-                    </span>
-                  </span>
-                  {command.shortcut && (
-                    <span className="text-fg-muted text-xs">
-                      {command.shortcut}
-                    </span>
-                  )}
-                </button>
-              );
-            })
-          ) : (
-            <p className="px-2 py-5 text-center text-fg-muted text-sm">
-              {m.editor_commands_none()}
-            </p>
-          )}
-        </div>
-      </div>
-    </div>
+                    {command.shortcut && (
+                      <span className="text-fg-muted text-xs">
+                        {command.shortcut}
+                      </span>
+                    )}
+                  </button>
+                );
+              })
+            ) : (
+              <p className="px-2 py-5 text-center text-fg-muted text-sm">
+                {m.editor_commands_none()}
+              </p>
+            )}
+          </div>
+        </DialogPrimitive.Content>
+      </DialogPortal>
+    </Dialog>
   );
 }

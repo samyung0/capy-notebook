@@ -170,9 +170,12 @@ services:
       context: .
       dockerfile: pipeline/Dockerfile
     environment:
-      <<: *observability
+      <<: [*observability, *b2]
       DATABASE_URL: *database-url
       SENTRY_DSN: ${SENTRY_DSN_RETRIEVAL:-}
+      PARSER_URL: ${PARSER_URL:?set the private parser URL for Office captures}
+      PARSER_TOKEN: ${PARSER_TOKEN:?set PARSER_TOKEN}
+      PARSER_TIMEOUT: ${PARSER_TIMEOUT:-2520}
       GATEWAY_URL: http://server:8080
       PIPELINE_SECRET: ${PIPELINE_SECRET:?set PIPELINE_SECRET}
       LLM_CREDENTIALS_KEY: ${LLM_CREDENTIALS_KEY:?set LLM_CREDENTIALS_KEY}

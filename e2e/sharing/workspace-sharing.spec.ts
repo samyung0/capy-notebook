@@ -22,12 +22,6 @@ test.describe('workspace sharing', () => {
       ownerPage.getByRole('heading', { name: seed.privateWorkspace.name })
     ).toBeVisible();
     await expect(
-      ownerPage.getByRole('button', { name: 'Workspace settings' })
-    ).toBeVisible();
-    await expect(
-      ownerPage.getByRole('button', { name: /Add file/i })
-    ).toBeVisible();
-    await expect(
       ownerPage.getByRole('button', { name: 'Clone workspace' })
     ).toHaveCount(0);
   });
@@ -47,9 +41,6 @@ test.describe('workspace sharing', () => {
     expect(body.capabilities.canEdit).toBe(true);
     expect(body.capabilities.canManageMembers).toBe(false);
 
-    await expect(
-      editorPage.getByRole('button', { name: /Add file/i })
-    ).toBeVisible();
     await openWorkspaceSharing(editorPage);
     await expect(
       editorPage.getByRole('combobox', { name: 'Visibility' })

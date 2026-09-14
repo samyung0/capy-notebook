@@ -53,8 +53,8 @@ func ClerkAccessTokenScopes(ctx context.Context, userID, provider string) (strin
 	return "", nil, ErrNotConnected
 }
 
-// ClerkConnectedProviders reports which providers have a verified external
-// account linked on the Clerk user (keys: "google", "microsoft").
+// ClerkConnectedProviders reports external-account links and import grants
+// separately: signing in with a provider does not grant access to its files.
 func ClerkConnectedProviders(ctx context.Context, userID string) (map[string]bool, error) {
 	u, err := clerkuser.Get(ctx, userID)
 	if err != nil {
@@ -72,6 +72,9 @@ func ClerkConnectedProviders(ctx context.Context, userID string) (map[string]boo
 		out[provider] = true
 		if provider == ProviderGoogle {
 			out["googleDriveReadonly"] = HasGoogleDriveReadScope(strings.Fields(acc.ApprovedScopes))
+		}
+		if provider == ProviderMicrosoft {
+			out["microsoftFilesRead"] = slices.Contains(strings.Fields(acc.ApprovedScopes), "Files.Read")
 		}
 	}
 	return out, nil

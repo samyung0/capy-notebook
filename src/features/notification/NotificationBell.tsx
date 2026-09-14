@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import {
   useMarkNotificationRead,
   useMarkNotificationsRead,
@@ -29,6 +29,37 @@ export function NotificationsBell() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const notifications = data?.pages.flatMap((page) => page.items) ?? [];
+  const previous = useRef({
+    ids: new Set<string>(),
+    newest: Number.NEGATIVE_INFINITY,
+    open: false,
+    ready: false,
+  });
+  const newIds = new Set(
+    open && previous.current.open && previous.current.ready
+      ? notifications
+          .filter(
+            (n) =>
+              !previous.current.ids.has(n.id) &&
+              Date.parse(n.at) >= previous.current.newest
+          )
+          .map((n) => n.id)
+      : []
+  );
+  useLayoutEffect(() => {
+    previous.current = {
+      ids: new Set([
+        ...(open ? previous.current.ids : []),
+        ...notifications.map((n) => n.id),
+      ]),
+      newest: notifications.reduce(
+        (latest, n) => Math.max(latest, Date.parse(n.at)),
+        Number.NEGATIVE_INFINITY
+      ),
+      open,
+      ready: data != null,
+    };
+  });
   const unreadCountValue =
     unreadCount?.count ?? notifications.filter((n) => !n.readAt).length;
   const unread = unreadCountValue > 0;
@@ -101,7 +132,7 @@ export function NotificationsBell() {
                 type="button"
                 variant="ghost"
               >
-                <NotificationItem notification={n} />
+                <NotificationItem notification={n} reveal={newIds.has(n.id)} />
               </Button>
             ))}
             {hasNextPage && (

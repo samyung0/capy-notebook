@@ -1,31 +1,38 @@
+import { useEditorRef } from 'platejs/react';
+import {
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/DropdownMenu';
 import { cn } from '@/lib/cn';
 
 export function MenuRow({
   label,
-  onClick,
+  onSelect,
   icon,
   shortcut,
   className,
-  onMouseDown,
   ...rest
-}: React.ComponentProps<'button'> & {
+}: React.ComponentProps<typeof DropdownMenuItem> & {
   label: string;
   icon?: React.ReactNode;
   shortcut?: string;
   className?: string;
 }) {
+  const editor = useEditorRef();
   return (
-    <button
+    <DropdownMenuItem
       className={cn(
         'flex w-full items-center gap-2 rounded-button px-2 py-1.5 text-left text-fg text-sm hover:bg-surface-hover-bg [&_svg]:size-4',
         className
       )}
-      onClick={onClick}
-      onMouseDown={(event) => {
-        event.preventDefault();
-        onMouseDown?.(event);
+      onSelect={(event) => {
+        onSelect?.(event);
+        if (
+          !event.defaultPrevented &&
+          document.activeElement?.closest('[role="menu"]')
+        )
+          editor.tf.focus();
       }}
-      type="button"
       {...rest}
     >
       {icon && (
@@ -39,6 +46,20 @@ export function MenuRow({
           {shortcut}
         </kbd>
       )}
-    </button>
+    </DropdownMenuItem>
+  );
+}
+
+/** Commands may focus a new editor input or dialog; closing must not take focus back. */
+export function ToolbarMenuContent(
+  props: React.ComponentProps<typeof DropdownMenuContent>
+) {
+  const editor = useEditorRef();
+  return (
+    <DropdownMenuContent
+      onCloseAutoFocus={(event) => event.preventDefault()}
+      onEscapeKeyDown={() => editor.tf.focus()}
+      {...props}
+    />
   );
 }

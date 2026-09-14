@@ -1,7 +1,11 @@
 import type { DisplayList } from '@betteroffice/docx/layout/render';
 import { DocxDisplayListViewer } from '@betteroffice/docx-react';
-import { useEffect, useState } from 'react';
-import type { OfficeAnalysis } from '@/features/files/officeProtocol';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type {
+  OfficeAnalysis,
+  OfficeCitation,
+} from '@/features/files/officeProtocol';
+import { CITATION_FILL, docxCitation } from './citations';
 
 type WorkerResponse =
   | {
@@ -14,13 +18,16 @@ type WorkerResponse =
 
 export function DocxViewer({
   bytes,
+  citation,
   onAnalysis,
   onError,
 }: {
   bytes: Uint8Array;
+  citation: OfficeCitation | null;
   onAnalysis: (analysis: OfficeAnalysis) => void;
   onError: (error: Error) => void;
 }) {
+  const hostRef = useRef<HTMLDivElement>(null);
   const [displayList, setDisplayList] = useState<DisplayList | null>(null);
 
   useEffect(() => {
@@ -59,8 +66,44 @@ export function DocxViewer({
     return stopWorker;
   }, [bytes, onAnalysis, onError]);
 
+  useLayoutEffect(() => {
+    if (!displayList) return;
+    const match = docxCitation(displayList, citation);
+    const overlays: HTMLDivElement[] = [];
+    for (const rect of match?.rects ?? []) {
+      const canvas = hostRef.current?.querySelector<HTMLCanvasElement>(
+        `canvas[data-page-index="${rect.page}"]`
+      );
+      const host = canvas?.parentElement;
+      if (!canvas || !host) continue;
+      const page = displayList.pages.find(
+        (page) => page.pageIndex === rect.page
+      );
+      if (!page) continue;
+      const scale = canvas.getBoundingClientRect().width / page.width;
+      const overlay = document.createElement('div');
+      overlay.dataset.citationHighlight = 'true';
+      overlay.setAttribute('aria-hidden', 'true');
+      Object.assign(overlay.style, {
+        background: CITATION_FILL,
+        height: `${rect.h * scale}px`,
+        left: `${rect.x * scale}px`,
+        pointerEvents: 'none',
+        position: 'absolute',
+        top: `${rect.y * scale}px`,
+        width: `${rect.w * scale}px`,
+      });
+      host.append(overlay);
+      overlays.push(overlay);
+    }
+    overlays[0]?.scrollIntoView({ block: 'center' });
+    return () => {
+      for (const overlay of overlays) overlay.remove();
+    };
+  }, [displayList, citation]);
+
   return displayList ? (
-    <div className="docx-runtime-viewer">
+    <div className="docx-runtime-viewer" ref={hostRef}>
       <DocxDisplayListViewer displayList={displayList} />
     </div>
   ) : null;

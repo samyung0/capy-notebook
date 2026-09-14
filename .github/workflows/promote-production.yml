@@ -69,6 +69,7 @@ jobs:
     with:
       revision: ${{ needs.validate_candidate.outputs.revision }}
       browser_suite: true
+      critical_paths: true
     secrets: inherit
 
   editor_perf:

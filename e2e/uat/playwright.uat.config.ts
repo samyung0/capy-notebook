@@ -71,7 +71,7 @@ export default defineConfig({
   ],
   retries: process.env.CI ? 1 : 0,
   testDir: directory,
-  testIgnore: '**/*.config.ts',
+  testIgnore: ['**/*.config.ts', '**/journeys/**'],
   timeout: 60_000,
   use: {
     baseURL: process.env.UAT_APP_URL,

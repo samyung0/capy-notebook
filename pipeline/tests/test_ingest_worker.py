@@ -185,14 +185,12 @@ def parse_stub(monkeypatch):
         raw_dir: Path,
         *,
         route: str,
-        require_office_preview: bool,
+        office: bool,
     ):
         state["descriptor"] = artifact
         state["route"] = route
-        state["require_office_preview"] = require_office_preview
+        state["office"] = office
         raw_dir.mkdir(parents=True, exist_ok=True)
-        if require_office_preview:
-            (raw_dir / "preview.pdf").write_bytes(b"%PDF-preview")
         return content_list
 
     def _chunk(items, raw_dir, source_pdf):
@@ -210,11 +208,6 @@ def parse_stub(monkeypatch):
     monkeypatch.setattr(worker, "_record_parse_artifact", lambda *a, **k: None)
     monkeypatch.setattr(worker, "_record_caption_blob", lambda *a, **k: None)
     monkeypatch.setattr(worker, "_touch_or_upsert_artifact", lambda **k: None)
-    monkeypatch.setattr(
-        worker,
-        "_cache_office_preview",
-        lambda **_kwargs: "previews/test.pdf",
-    )
     monkeypatch.setattr(worker.progress, "publish", lambda *_a, **_k: None)
     return state
 
@@ -223,18 +216,18 @@ def _plan(
     route: str = ingest_plan.DOCUMENT_PARSE,
     *,
     format_name: str = "pdf",
-    office_preview: bool = False,
+    office: bool = False,
     parser_route: str | None = None,
 ) -> ingest_plan.ProcessingPlan:
     if parser_route is None:
         parser_route = "fast" if route == ingest_plan.DOCUMENT_PARSE else ""
     return ingest_plan.ProcessingPlan(
-        version=1,
+        version=2,
         format=format_name,
         route=route,
         parser_route=parser_route,
         caption_mode="standalone" if route == ingest_plan.IMAGE_CAPTION else "none",
-        office_preview=office_preview,
+        office=office,
         stages=(),
         resources=(),
     )
@@ -264,12 +257,12 @@ def _ingest_payload(**overrides):
         "kind": "pdf",
         "parseMode": "fast",
         "processingPlan": {
-            "version": 1,
+            "version": 2,
             "format": "pdf",
             "route": "document_parse",
             "parserRoute": "fast",
             "captionMode": "none",
-            "officePreview": False,
+            "office": False,
             "stages": [
                 "fetch_source",
                 "parse_document",
@@ -832,19 +825,13 @@ def test_page_chunks_apply_the_bundle_furniture_and_prefer_the_repaired_pdf(
         {"type": "text", "text": "Body text.", "page_idx": 0},
     ]
     parsed = _page_pdf(tmp_path, "parsed.pdf", "Body text.")
-    raw_dir = _bundle_dir(
-        tmp_path, **{"parsed.pdf": parsed.read_bytes(), "preview.pdf": b"%PDF-preview"}
-    )
+    raw_dir = _bundle_dir(tmp_path, **{"parsed.pdf": parsed.read_bytes()})
 
     chunks = worker._page_chunks(content_list, raw_dir, Path("/shared/sources/missing"))
 
     assert [c.text for c in chunks] == ["Body text."]
     assert seen["headings"] == seen["confidence"] == raw_dir / "parsed.pdf"
-    # Without a repaired copy the Office preview wins, then the spooled source.
     (raw_dir / "parsed.pdf").unlink()
-    worker._page_chunks(content_list, raw_dir, Path("/shared/sources/missing"))
-    assert seen["confidence"] == raw_dir / "preview.pdf"
-    (raw_dir / "preview.pdf").unlink()
     source = _page_pdf(tmp_path, "source.pdf", "Body text.")
     worker._page_chunks(content_list, raw_dir, source)
     assert seen["confidence"] == source
@@ -863,16 +850,14 @@ def test_page_chunks_refuse_a_bundle_without_the_frozen_furniture(tmp_path):
 
 
 @pytest.mark.parametrize("format_name", ["docx", "pptx", "xlsx"])
-async def test_office_routes_chunk_against_the_bundle_preview(
-    parse_stub, format_name: str
-):
+async def test_office_routes_use_the_structured_bundle(parse_stub, format_name: str):
     await worker._chunks_for(
         payload={
             "blobPath": f"sources/lesson.{format_name}",
             "parseArtifact": _artifact(),
         },
         name=f"lesson.{format_name}",
-        processing_plan=_plan(format_name=format_name, office_preview=True),
+        processing_plan=_plan(format_name=format_name, office=True),
         local_path="/shared/sources/source-1",
         source_key="sources/source-1",
         ws="ws_1",
@@ -880,322 +865,11 @@ async def test_office_routes_chunk_against_the_bundle_preview(
         source_sha256="aa" * 32,
     )
 
-    assert parse_stub["page_pdf"].name == "preview.pdf"
+    assert parse_stub["office"] is True
     assert parse_stub["chunked"][0]["text"] == "Photosynthesis"
 
 
-def test_office_preview_is_shared_and_uploaded_as_pdf(tmp_path, monkeypatch):
-    preview = tmp_path / "preview.pdf"
-    preview.write_bytes(b"%PDF-coordinate-source")
-    writes: list[tuple[str, bytes, str]] = []
-    cache_rows: list[dict] = []
-    file_rows: list[tuple[str, str]] = []
-    monkeypatch.setattr(worker.blobstore, "object_info", lambda _key: None)
-    monkeypatch.setattr(
-        worker.blobstore,
-        "write_bytes",
-        lambda key, data, content_type: writes.append((key, data, content_type)),
-    )
-    monkeypatch.setattr(
-        worker, "_touch_or_upsert_artifact", lambda **values: cache_rows.append(values)
-    )
-    monkeypatch.setattr(
-        worker,
-        "_record_preview_blob",
-        lambda file_id, key, *_source: file_rows.append((file_id, key)),
-    )
-
-    key = worker._cache_office_preview(
-        raw_dir=tmp_path,
-        file_id="f_1",
-        source_sha256="aa" * 32,
-        parser_version="marker-v1",
-        fingerprint="fp-1",
-        source_revision=1,
-        source_etag="etag-a",
-        actor_user_id="u_actor",
-    )
-
-    assert key == f"previews/{'aa' * 32}/marker-v1/fp-1.pdf"
-    assert writes == [(key, b"%PDF-coordinate-source", "application/pdf")]
-    assert cache_rows[0]["kind"] == "office_preview"
-    assert file_rows == [("f_1", key)]
-
-
-def test_oversized_office_preview_is_not_read_uploaded_or_recorded(
-    tmp_path, monkeypatch
-):
-    preview = tmp_path / "preview.pdf"
-    preview.write_bytes(b"%PDF-too-large")
-    events: list[str] = []
-    monkeypatch.setattr(
-        worker.cfg, "office_preview_max_bytes", preview.stat().st_size - 1
-    )
-    monkeypatch.setattr(
-        worker.Path,
-        "read_bytes",
-        lambda _path: events.append("read") or b"",
-    )
-    monkeypatch.setattr(
-        worker.blobstore,
-        "object_info",
-        lambda _key: events.append("inspect") or None,
-    )
-    monkeypatch.setattr(
-        worker.blobstore,
-        "write_bytes",
-        lambda *_args: events.append("write"),
-    )
-    monkeypatch.setattr(
-        worker, "_touch_or_upsert_artifact", lambda **_values: events.append("touch")
-    )
-    monkeypatch.setattr(
-        worker, "_record_preview_blob", lambda *_args: events.append("record")
-    )
-
-    key = worker._cache_office_preview(
-        raw_dir=tmp_path,
-        file_id="f_1",
-        source_sha256="aa" * 32,
-        parser_version="marker-v1",
-        fingerprint="fp-1",
-        source_revision=1,
-        source_etag="etag-a",
-        actor_user_id="u_actor",
-    )
-
-    assert key is None
-    assert events == []
-
-
-def test_office_preview_growth_during_read_is_not_uploaded_or_recorded(
-    tmp_path, monkeypatch
-):
-    preview = tmp_path / "preview.pdf"
-    original = b"%PDF-safe"
-    preview.write_bytes(original)
-    reads: list[int] = []
-    events: list[str] = []
-
-    class ChangedPreview(io.BytesIO):
-        def read(self, size=-1):
-            reads.append(size)
-            return super().read(size)
-
-    monkeypatch.setattr(worker.cfg, "office_preview_max_bytes", len(original))
-    monkeypatch.setattr(
-        worker.Path,
-        "open",
-        lambda *_args, **_kwargs: ChangedPreview(original + b"-grown"),
-    )
-    monkeypatch.setattr(worker.blobstore, "object_info", lambda _key: None)
-    monkeypatch.setattr(
-        worker.blobstore,
-        "write_bytes",
-        lambda *_args: events.append("write"),
-    )
-    monkeypatch.setattr(
-        worker, "_touch_or_upsert_artifact", lambda **_values: events.append("touch")
-    )
-    monkeypatch.setattr(
-        worker, "_record_preview_blob", lambda *_args: events.append("record")
-    )
-
-    key = worker._cache_office_preview(
-        raw_dir=tmp_path,
-        file_id="f_1",
-        source_sha256="aa" * 32,
-        parser_version="marker-v1",
-        fingerprint="fp-1",
-        source_revision=1,
-        source_etag="etag-a",
-        actor_user_id="u_actor",
-    )
-
-    assert key is None
-    assert reads == [len(original) + 1]
-    assert events == []
-
-
-@pytest.mark.parametrize(
-    ("cached", "info"),
-    [
-        (b"not-a-pdf-object", {"size": 16, "content_type": "application/pdf"}),
-        (b"", {"size": 0, "content_type": "application/pdf"}),
-        (b"%PDF-old", {"size": 8, "content_type": "application/octet-stream"}),
-    ],
-    ids=["wrong-bytes", "empty", "wrong-content-type"],
-)
-def test_invalid_existing_office_preview_is_replaced_from_validated_bundle(
-    tmp_path, monkeypatch, cached: bytes, info: dict
-):
-    preview = tmp_path / "preview.pdf"
-    local = b"%PDF-current-preview"
-    preview.write_bytes(local)
-    writes: list[tuple[str, bytes, str]] = []
-    monkeypatch.setattr(worker.blobstore, "object_info", lambda _key: info)
-    monkeypatch.setattr(worker.blobstore, "read_bytes", lambda _key, _limit: cached)
-    monkeypatch.setattr(
-        worker.blobstore,
-        "write_bytes",
-        lambda key, data, content_type: writes.append((key, data, content_type)),
-    )
-    monkeypatch.setattr(worker, "_touch_or_upsert_artifact", lambda **_values: None)
-    monkeypatch.setattr(worker, "_record_preview_blob", lambda *_values: None)
-
-    key = worker._cache_office_preview(
-        raw_dir=tmp_path,
-        file_id="f_1",
-        source_sha256="aa" * 32,
-        parser_version="marker-v1",
-        fingerprint="fp-1",
-        source_revision=1,
-        source_etag="etag-a",
-        actor_user_id="u_actor",
-    )
-
-    assert key is not None
-    assert writes == [(key, local, "application/pdf")]
-
-
-async def test_required_office_preview_failure_stops_ingest_ready_path(
-    parse_stub, monkeypatch
-):
-    monkeypatch.setattr(worker, "_cache_office_preview", lambda **_kwargs: None)
-
-    with pytest.raises(worker.RetryableError, match="required Office preview"):
-        await worker._chunks_for(
-            payload={
-                "actorUserId": "u_actor",
-                "blobPath": "sources/lesson.docx",
-                "parseArtifact": _artifact(),
-                "sourceETag": "etag-a",
-                "sourceRevision": 1,
-            },
-            name="lesson.docx",
-            processing_plan=_plan(format_name="docx", office_preview=True),
-            local_path="/shared/sources/source-1",
-            source_key="sources/source-1",
-            ws="ws_1",
-            file_id="f_1",
-            source_sha256="aa" * 32,
-        )
-
-
-def test_office_donor_requires_an_existing_exact_preview(monkeypatch):
-    donor = {"preview_blob_path": "previews/source/marker/fingerprint.pdf"}
-
-    monkeypatch.setattr(worker.blobstore, "object_info", lambda _key: None)
-    assert worker._donor_office_preview("lesson.docx", donor) is None
-
-    preview = b"%PDF-" + b"x" * 2043
-    monkeypatch.setattr(
-        worker.blobstore,
-        "object_info",
-        lambda _key: {"size": len(preview), "content_type": "application/pdf"},
-    )
-    monkeypatch.setattr(worker.blobstore, "read_bytes", lambda _key, _limit: preview)
-    assert (
-        worker._donor_office_preview("lesson.docx", donor) == donor["preview_blob_path"]
-    )
-    assert worker._donor_office_preview("lesson.pdf", {}) == ""
-
-    monkeypatch.setattr(
-        worker.blobstore,
-        "object_info",
-        lambda _key: (_ for _ in ()).throw(OSError("B2 unavailable")),
-    )
-    assert worker._donor_office_preview("lesson.docx", donor) is None
-
-
-def test_reused_preview_is_attached_only_when_the_object_exists(monkeypatch):
-    touched: list[dict] = []
-    attached: list[tuple[str, str]] = []
-    monkeypatch.setattr(worker.blobstore, "object_info", lambda _key: None)
-    monkeypatch.setattr(
-        worker, "_touch_or_upsert_artifact", lambda **values: touched.append(values)
-    )
-    monkeypatch.setattr(
-        worker,
-        "_record_preview_blob",
-        lambda file_id, key, *_source: attached.append((file_id, key)),
-    )
-
-    values = {
-        "file_id": "f_1",
-        "source_sha256": "aa" * 32,
-        "preview_blob_path": "previews/source/marker/fingerprint.pdf",
-        "source_revision": 1,
-        "source_etag": "etag-a",
-        "actor_user_id": "u_actor",
-    }
-    assert not worker._reuse_office_preview(**values)
-    assert touched == []
-    assert attached == []
-
-    preview = b"%PDF-" + b"x" * 2043
-    monkeypatch.setattr(
-        worker.blobstore,
-        "object_info",
-        lambda _key: {"size": len(preview), "content_type": "application/pdf"},
-    )
-    monkeypatch.setattr(worker.blobstore, "read_bytes", lambda _key, _limit: preview)
-    assert worker._reuse_office_preview(**values)
-    assert touched == [
-        {
-            "object_path": values["preview_blob_path"],
-            "kind": "office_preview",
-            "source_sha256": values["source_sha256"],
-            "size_bytes": 2048,
-            "strict": True,
-        }
-    ]
-    assert attached == [("f_1", values["preview_blob_path"])]
-
-    touched.clear()
-    attached.clear()
-    monkeypatch.setattr(
-        worker.blobstore,
-        "object_info",
-        lambda _key: (_ for _ in ()).throw(OSError("B2 unavailable")),
-    )
-    assert not worker._reuse_office_preview(**values)
-    assert touched == []
-    assert attached == []
-
-
-def test_oversized_cached_preview_is_not_reused_or_recorded(monkeypatch):
-    touched: list[dict] = []
-    attached: list[tuple] = []
-    monkeypatch.setattr(worker.cfg, "office_preview_max_bytes", 1024)
-    monkeypatch.setattr(worker.blobstore, "object_info", lambda _key: {"size": 1025})
-    monkeypatch.setattr(
-        worker, "_touch_or_upsert_artifact", lambda **values: touched.append(values)
-    )
-    monkeypatch.setattr(
-        worker, "_record_preview_blob", lambda *values: attached.append(values)
-    )
-
-    assert not worker._reuse_office_preview(
-        file_id="f_1",
-        source_sha256="aa" * 32,
-        preview_blob_path="previews/source/marker/fingerprint.pdf",
-        source_revision=1,
-        source_etag="etag-a",
-        actor_user_id="u_actor",
-    )
-    assert (
-        worker._donor_office_preview(
-            "lesson.docx",
-            {"preview_blob_path": "previews/source/marker/fingerprint.pdf"},
-        )
-        is None
-    )
-    assert touched == []
-    assert attached == []
-
-
-async def test_donor_preview_is_attached_before_the_destination_becomes_ready(
+async def test_donor_content_is_copied_before_the_destination_becomes_ready(
     monkeypatch,
 ):
     order: list[str] = []
@@ -1228,11 +902,6 @@ async def test_donor_preview_is_attached_before_the_destination_becomes_ready(
     monkeypatch.setattr(worker.store, "mark_content_ready", _ready)
     monkeypatch.setattr(
         worker,
-        "_reuse_office_preview",
-        lambda **_kwargs: order.append("preview") or True,
-    )
-    monkeypatch.setattr(
-        worker,
         "_finish_ok",
         lambda *_args, **_kwargs: order.append("file-ready") or True,
     )
@@ -1261,11 +930,10 @@ async def test_donor_preview_is_attached_before_the_destination_becomes_ready(
         },
         identity="pipeline-v1",
         source_sha256="aa" * 32,
-        preview_blob_path="previews/source/marker/fingerprint.pdf",
     )
 
     assert reused
-    assert order == ["copy", "preview", "ready", "file-ready"]
+    assert order == ["copy", "ready", "file-ready"]
 
 
 def test_content_hash_includes_citation_geometry():

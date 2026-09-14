@@ -28,6 +28,7 @@ import {
   useEffect,
   useState,
 } from 'react';
+import { ContentSwap } from '@/components/ui/ContentSwap';
 import {
   Select,
   SelectContent,
@@ -236,11 +237,13 @@ function CodeBlock(props: PlateElementProps) {
           title={copied ? m.editor_copied() : m.editor_copy_code()}
           type="button"
         >
-          {copied ? (
-            <Check className="size-3.5" />
-          ) : (
-            <Clipboard className="size-3.5" />
-          )}
+          <ContentSwap contentKey={String(copied)} kind="icon">
+            {copied ? (
+              <Check className="size-3.5" />
+            ) : (
+              <Clipboard className="size-3.5" />
+            )}
+          </ContentSwap>
         </button>
       </div>
       {props.children}

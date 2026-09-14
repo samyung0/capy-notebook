@@ -1,0 +1,146 @@
+/* transitions.dev tokens, namespaced to preserve Tailwind's default easing. */
+:root {
+  --motion-duration-micro: 80ms;
+  --motion-duration-quick: 150ms;
+  --motion-duration-fast: 250ms;
+  --motion-duration-medium: 350ms;
+  --motion-duration-slow: 400ms;
+  --motion-duration-very-slow: 500ms;
+  --motion-ease-smooth-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-ease-in-out: ease-in-out;
+  --motion-ease-out: ease-out;
+  --motion-ease-linear: linear;
+  --motion-distance-micro: 4px;
+  --motion-distance-medium: 12px;
+  --motion-scale-modal: 0.96;
+  --motion-scale-popup: 0.97;
+  --motion-scale-tooltip: 0.98;
+  --motion-scale-close: 0.99;
+  --motion-blur-small: 2px;
+  --motion-blur-medium: 3px;
+}
+
+@utility motion-fade {
+  --tw-duration: var(--motion-duration-fast);
+  --tw-ease: var(--motion-ease-smooth-out);
+  @apply data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0;
+  &[data-state="closed"] {
+    --tw-duration: var(--motion-duration-quick);
+    pointer-events: none;
+  }
+}
+
+@utility motion-popup {
+  --tw-enter-scale: var(--motion-scale-popup);
+  --tw-exit-scale: var(--motion-scale-close);
+  @apply motion-fade;
+}
+
+@utility motion-modal {
+  --tw-enter-scale: var(--motion-scale-modal);
+  --tw-exit-scale: var(--motion-scale-modal);
+  @apply motion-fade;
+}
+
+@utility motion-blur-in {
+  --tw-enter-blur: var(--motion-blur-small);
+}
+
+@utility motion-tooltip {
+  --tw-duration: var(--motion-duration-quick);
+  --tw-ease: var(--motion-ease-out);
+  --tw-enter-scale: var(--motion-scale-tooltip);
+  --tw-exit-scale: var(--motion-scale-tooltip);
+  @apply data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0;
+}
+
+@utility motion-panel-reveal {
+  filter: none;
+  transition-timing-function:
+    cubic-bezier(0.45, 1.005, 0, 1.005), var(--motion-ease-smooth-out);
+  transition-duration: 300ms, var(--motion-duration-slow);
+  transition-property: opacity, filter;
+  .group\/drawer-popup[data-starting-style] & {
+    filter: blur(var(--motion-blur-small));
+  }
+  .group\/drawer-popup:is(
+      [data-swiping],
+      [data-ending-style],
+      [data-nested-drawer-swiping]
+    )
+    & {
+    filter: none;
+    transition-property: opacity;
+  }
+}
+
+@keyframes motion-content-reveal {
+  from {
+    opacity: 0;
+    filter: blur(var(--motion-blur-small));
+  }
+  to {
+    opacity: 1;
+    filter: none;
+  }
+}
+
+@utility motion-content-reveal {
+  animation: motion-content-reveal var(--motion-duration-slow)
+    var(--motion-ease-in-out);
+}
+
+@keyframes motion-text-reveal {
+  from {
+    opacity: 0;
+    translate: 0 var(--motion-distance-medium);
+    filter: blur(var(--motion-blur-medium));
+  }
+  to {
+    opacity: 1;
+    translate: none;
+    filter: none;
+  }
+}
+
+@utility motion-text-reveal {
+  animation: motion-text-reveal var(--motion-duration-very-slow)
+    var(--motion-ease-in-out);
+}
+
+@keyframes motion-text-in {
+  from {
+    opacity: 0;
+    translate: 0 var(--motion-distance-micro);
+    filter: blur(var(--motion-blur-small));
+  }
+  to {
+    opacity: 1;
+    translate: none;
+    filter: none;
+  }
+}
+
+@keyframes motion-copy-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@utility motion-text-in {
+  animation: motion-text-in var(--motion-duration-quick)
+    var(--motion-ease-in-out);
+}
+
+@utility motion-icon-in {
+  animation: motion-content-reveal var(--motion-duration-fast)
+    var(--motion-ease-in-out);
+}
+
+@utility motion-copy-out {
+  animation: motion-copy-out var(--motion-duration-quick)
+    var(--motion-ease-in-out) forwards;
+}

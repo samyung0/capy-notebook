@@ -194,8 +194,7 @@ export type AttemptDetail = Omit<GenAttemptDetail, 'questions'> & {
 export type SourceFile = GenFile & { ingestPct?: number };
 /** A file the viewer has resolved through GET /files/{id}/links: `url` is a
  * short-lived presigned read, the only URL the browser ever holds for file
- * bytes; `previewUrl` stays the row's presence marker and the citation
- * preview signs its own link. */
+ * bytes; `previewUrl` is a presence marker for PDF sources. */
 export type ViewableFile = SourceFile & { url: string };
 
 /** `color` is a client-side tint derived from the owning workspace/label/flashcardSet. */

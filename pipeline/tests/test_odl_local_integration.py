@@ -157,7 +157,7 @@ async def test_local_parser_index_capture_citations(workspace, monkeypatch, tmp_
     artifact["version"] = parser_client.parser_version(parser_client.ROUTE_FAST)
     raw = evidence / "bundle"
     content = parser_client.extract_artifact(
-        artifact, raw, route=parser_client.ROUTE_FAST, require_office_preview=False
+        artifact, raw, route=parser_client.ROUTE_FAST, office=False
     )
     bundle = spool / artifact["key"]
     shutil.copyfile(bundle, evidence / "artifact.zip")

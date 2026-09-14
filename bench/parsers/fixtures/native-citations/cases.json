@@ -1,0 +1,23 @@
+{
+  "docx": [
+    {"id": "overview", "text": "Wetland restoration improves flood resilience by slowing runoff before it reaches nearby homes.", "cases": ["unique"]},
+    {"id": "duplicate_first", "text": "Inspect the water level before opening the gate.", "cases": ["duplicate"]},
+    {"id": "wrapped", "text": "The monitoring team records rainfall, soil moisture, and river height every morning. A single high reading does not establish a trend; comparisons must use the same observation window and account for recent maintenance. This deliberately long paragraph wraps across several lines so that one bookmark cannot be mistaken for the whole citation region.", "cases": ["wrapped"]},
+    {"id": "unicode", "text": "Café observations: naïve estimates overstate recovery; 日本語の観測記録には水位と降雨量を含める。", "cases": ["unicode"]},
+    {"id": "duplicate_second", "text": "Inspect the water level before opening the gate.", "cases": ["duplicate", "second_page"]},
+    {"id": "table_detail", "text": "Sediment sampling is repeated after heavy rainfall.", "cases": ["table"]}
+  ],
+  "xlsx": {
+    "header": "Quarterly wetland observations",
+    "duplicate": "Review required",
+    "detail": "Record rainfall and water depth before the morning inspection.",
+    "unicode": "Café review — 水位の観測"
+  },
+  "pptx": {
+    "duplicate": "Inspect the water level before opening the gate.",
+    "wrapped": "Measure the river at the same location each morning. Compare readings across a complete week before changing the release schedule.",
+    "unicode": "Café results — 水位の観測",
+    "rotated": "Floodplain survey boundary",
+    "grouped": "Survey team checks the eastern inlet."
+  }
+}

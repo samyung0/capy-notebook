@@ -436,73 +436,6 @@ def test_ingest_provider_admission_serializes_with_lease_reclaim(workspace):
         conn.execute("DELETE FROM jobs WHERE id=%s", (job_id,))
 
 
-def test_stale_donor_cleanup_leaves_successor_preview(workspace):
-    import psycopg
-
-    from pipeline.ingest import worker
-
-    file_id = workspace.add_file("successor-preview.docx")
-    successor_preview = "previews/successor/preview.pdf"
-    with psycopg.connect(workspace.dsn) as conn:
-        conn.execute(
-            """
-            UPDATE files
-            SET source_etag='etag-a', status='processing', preview_blob_path=%s
-            WHERE id=%s
-            """,
-            (successor_preview, file_id),
-        )
-        job_id, old_attempt_id, reservation_id = _install_running_pipeline_claim(
-            conn,
-            workspace_id=workspace.id,
-            file_id=file_id,
-            actor_user_id=workspace.user_id,
-        )
-        conn.execute(
-            "UPDATE ingest_job_attempts SET status='lease_expired' WHERE id=%s",
-            (old_attempt_id,),
-        )
-        conn.execute(
-            """
-            UPDATE jobs
-            SET status='running', attempts=2,
-                lease_expires_at=now()+interval '3 minutes'
-            WHERE id=%s
-            """,
-            (job_id,),
-        )
-        conn.execute(
-            """
-            INSERT INTO ingest_job_attempts
-              (job_id, operation_id, attempt, job_type, environment, host_id,
-               worker_instance_id, trace_id, queued_at)
-            VALUES (%s,%s,2,'ingest','test','test-host','successor',%s,now())
-            """,
-            (job_id, f"op_{secrets.token_hex(6)}", f"trace_{secrets.token_hex(6)}"),
-        )
-
-    assert not worker._clear_preview_blob(
-        file_id,
-        1,
-        "etag-a",
-        workspace.user_id,
-        job_id=job_id,
-        attempt=1,
-        workspace_id=workspace.id,
-        reservation_id=reservation_id,
-    )
-
-    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
-        assert (
-            conn.execute(
-                "SELECT preview_blob_path FROM files WHERE id=%s", (file_id,)
-            ).fetchone()[0]
-            == successor_preview
-        )
-        conn.execute("DELETE FROM provider_sessions WHERE id=%s", (reservation_id,))
-        conn.execute("DELETE FROM jobs WHERE id=%s", (job_id,))
-
-
 def test_applied_ingest_provider_receipt_exact_replay_is_duplicate(workspace):
     import psycopg
 
@@ -1903,20 +1836,18 @@ async def test_donor_copy_reuses_chunks_across_workspaces(workspace):
         """,
         (sha, identity, donor_id),
     )
-    preview_path = "previews/donor.pdf"
     workspace.scalar(
         """UPDATE files
-        SET preview_blob_path = %s, source_sha256 = %s
+        SET source_sha256 = %s
         WHERE id = %s RETURNING id""",
-        (preview_path, sha, src_file),
+        (sha, src_file),
     )
     mismatched_file = workspace.add_file("other-layout.txt")
-    mismatched_preview = "previews/other-layout.pdf"
     workspace.scalar(
         """UPDATE files
-        SET preview_blob_path = %s, source_sha256 = %s, added_at = now() + interval '1 hour'
+        SET source_sha256 = %s, added_at = now() + interval '1 hour'
         WHERE id = %s RETURNING id""",
-        (mismatched_preview, "cd" * 32, mismatched_file),
+        ("cd" * 32, mismatched_file),
     )
     workspace.scalar(
         """INSERT INTO rag_file_contents (file_id, workspace_id, content_id)
@@ -1951,7 +1882,6 @@ async def test_donor_copy_reuses_chunks_across_workspaces(workspace):
     )
     assert donor is not None
     assert donor["id"] == donor_id
-    assert donor["preview_blob_path"] == preview_path
     association = await store.attach_file_content(
         workspace_id=other.id,
         file_id=dest_file,
@@ -2407,7 +2337,7 @@ async def test_replaced_source_rejects_a_paused_ingests_stale_writes(workspace):
         """
         UPDATE files SET revision=2, source_etag='etag-b', status='pending',
           indexed=false, source_sha256=NULL, content_hash=NULL,
-          preview_blob_path=NULL, parsed_blob_path=NULL
+          parsed_blob_path=NULL
         WHERE id=%s RETURNING id
         """,
         (file_id,),
@@ -2416,10 +2346,6 @@ async def test_replaced_source_rejects_a_paused_ingests_stale_writes(workspace):
     with pytest.raises(TerminalError, match="superseded"):
         worker._record_source_sha(
             file_id, "a" * 64, old_revision, old_etag, workspace.user_id
-        )
-    with pytest.raises(TerminalError, match="superseded"):
-        worker._record_preview_blob(
-            file_id, "previews/a.pdf", old_revision, old_etag, workspace.user_id
         )
     with pytest.raises(TerminalError, match="superseded"):
         await store.attach_file_content(
@@ -2453,7 +2379,7 @@ async def test_replaced_source_rejects_a_paused_ingests_stale_writes(workspace):
         cur.execute(
             """
             SELECT revision, source_etag, status, indexed, source_sha256,
-                   content_hash, preview_blob_path, parsed_blob_path
+                   content_hash, parsed_blob_path
             FROM files WHERE id=%s
             """,
             (file_id,),
@@ -2470,7 +2396,7 @@ async def test_replaced_source_rejects_a_paused_ingests_stale_writes(workspace):
         )
         reservation_status = cur.fetchone()[0]
 
-    assert state == (2, "etag-b", "pending", False, None, None, None, None)
+    assert state == (2, "etag-b", "pending", False, None, None, None)
     assert associations == 0
     assert job_status == "failed"
     assert reservation_status == "released"

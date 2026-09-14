@@ -398,19 +398,15 @@ func TestCloneThenDeleteKeepsTheSurvivingCopy(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := "sources/" + uid("blob")
-	previewPath := "previews/" + uid("blob") + ".pdf"
-	file, err := s.CreateSourceReady(ctx, source.ID, ownerID, "shared.pptx", "slides",
+	cachePath := "parse-cache/" + uid("blob") + ".zip"
+	_, err = s.CreateSourceReady(ctx, source.ID, ownerID, "shared.pptx", "slides",
 		nil, "", 2048, path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.pool.Exec(ctx, `UPDATE files SET preview_blob_path=$2 WHERE id=$1`,
-		file.ID, previewPath); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := s.pool.Exec(ctx, `INSERT INTO artifact_cache
-		(object_path, kind, source_sha256) VALUES ($1, 'office_preview', 'clone-source')`,
-		previewPath); err != nil {
+		(object_path, kind, source_sha256) VALUES ($1, 'parse_bundle', 'clone-source')`,
+		cachePath); err != nil {
 		t.Fatal(err)
 	}
 	for _, status := range []string{"pending", "processing", "failed"} {
@@ -476,17 +472,6 @@ func TestCloneThenDeleteKeepsTheSurvivingCopy(t *testing.T) {
 	if got := blobRefCount(t, s, path); got != 2 {
 		t.Fatalf("refs after clone = %d, want the original and the clone", got)
 	}
-	if got := blobRefCount(t, s, previewPath); got != 3 {
-		t.Fatalf("preview refs after clone = %d, want cache plus both files", got)
-	}
-	var clonedPreview *string
-	if err := s.pool.QueryRow(ctx, `SELECT preview_blob_path FROM files
-		WHERE workspace_id=$1 AND preview_blob_path IS NOT NULL`, clone.ID).Scan(&clonedPreview); err != nil {
-		t.Fatal(err)
-	}
-	if clonedPreview == nil || *clonedPreview != previewPath {
-		t.Fatalf("clone preview = %v, want %q", clonedPreview, previewPath)
-	}
 	var clonedFileCount, unfinishedFileCount int
 	if err := s.pool.QueryRow(ctx, `SELECT count(*), count(*) FILTER (
 		WHERE status IN ('pending','processing')) FROM files WHERE workspace_id=$1`,
@@ -533,8 +518,8 @@ func TestCloneThenDeleteKeepsTheSurvivingCopy(t *testing.T) {
 	if blobQueued(t, s, path) {
 		t.Error("the clone's object was queued for deletion with the original")
 	}
-	if got := blobRefCount(t, s, previewPath); got != 2 {
-		t.Errorf("preview refs after deleting original = %d, want cache plus clone", got)
+	if got := blobRefCount(t, s, cachePath); got != 1 {
+		t.Errorf("parse cache refs after deleting original = %d, want cache only", got)
 	}
 
 	if err := s.DeleteWorkspace(ctx, clonerID, clone.ID); err != nil {
@@ -543,25 +528,25 @@ func TestCloneThenDeleteKeepsTheSurvivingCopy(t *testing.T) {
 	if !blobQueued(t, s, path) {
 		t.Error("object was not queued once no workspace referenced it")
 	}
-	if got := blobRefCount(t, s, previewPath); got != 1 {
-		t.Errorf("preview refs after deleting clone = %d, want cache only", got)
+	if got := blobRefCount(t, s, cachePath); got != 1 {
+		t.Errorf("parse cache refs after deleting clone = %d, want cache only", got)
 	}
-	if blobQueued(t, s, previewPath) {
-		t.Error("preview was queued while its cache reference remained")
+	if blobQueued(t, s, cachePath) {
+		t.Error("parse cache was queued while its cache reference remained")
 	}
 	if _, err := s.pool.Exec(ctx, `UPDATE artifact_cache
 		SET last_used_at=now() - interval '200 days' WHERE object_path=$1`,
-		previewPath); err != nil {
+		cachePath); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.SweepArtifactCache(ctx, 90); err != nil {
 		t.Fatal(err)
 	}
-	if got := blobRefCount(t, s, previewPath); got != 0 {
-		t.Errorf("preview refs after cache expiry = %d, want 0", got)
+	if got := blobRefCount(t, s, cachePath); got != 0 {
+		t.Errorf("parse cache refs after cache expiry = %d, want 0", got)
 	}
-	if !blobQueued(t, s, previewPath) {
-		t.Error("preview was not queued after its file and cache references expired")
+	if !blobQueued(t, s, cachePath) {
+		t.Error("parse cache was not queued after its file and cache references expired")
 	}
 }
 

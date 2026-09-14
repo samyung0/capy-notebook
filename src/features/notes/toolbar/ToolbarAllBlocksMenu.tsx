@@ -2,10 +2,9 @@ import { ChevronDown, MessageSquarePlus, Plus } from 'lucide-react';
 import { KEYS } from 'platejs';
 import { useState } from 'react';
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/Popover';
+  DropdownMenu,
+  DropdownMenuTrigger,
+} from '@/components/ui/DropdownMenu';
 import { useNoteBlockDialogs } from '@/features/notes/blocks/dialogContext';
 import type { CollaborationActions } from '@/features/notes/Collaboration';
 import type {
@@ -16,7 +15,10 @@ import { clearEditorFormatting } from '@/features/notes/editorTransforms';
 import { WIDGET_GROUPS } from '@/features/notes/noteEditorPrefs';
 import type { AnyEditor } from '@/features/notes/toolbar/NoteToolbar';
 import { ToolbarButton } from '@/features/notes/toolbar/ToolbarButton';
-import { MenuRow } from '@/features/notes/toolbar/ToolbarMenuRow';
+import {
+  MenuRow,
+  ToolbarMenuContent,
+} from '@/features/notes/toolbar/ToolbarMenuRow';
 import { m } from '@/i18n';
 
 export function ToolbarAllBlocksMenu({
@@ -45,20 +47,14 @@ export function ToolbarAllBlocksMenu({
     clearEditorFormatting(editor);
   };
   return (
-    <Popover onOpenChange={setMoreOpen} open={moreOpen}>
-      <PopoverTrigger asChild>
-        <span className="inline-flex">
-          <ToolbarButton
-            className="w-fit"
-            label={m.editor_all_blocks()}
-            onClick={() => setMoreOpen(true)}
-          >
-            <Plus />
-            <ChevronDown className="size-3! text-fg-secondary" />
-          </ToolbarButton>
-        </span>
-      </PopoverTrigger>
-      <PopoverContent
+    <DropdownMenu modal={false} onOpenChange={setMoreOpen} open={moreOpen}>
+      <DropdownMenuTrigger asChild>
+        <ToolbarButton className="w-fit" label={m.editor_all_blocks()}>
+          <Plus />
+          <ChevronDown className="size-3! text-fg-secondary" />
+        </ToolbarButton>
+      </DropdownMenuTrigger>
+      <ToolbarMenuContent
         align="start"
         className="max-h-[min(80vh,38rem)] w-72 overflow-y-auto rounded-card border border-line bg-surface p-1 shadow-pop"
         data-all-blocks-menu
@@ -110,18 +106,18 @@ export function ToolbarAllBlocksMenu({
         <div className="mt-1 border-divider border-t pt-1">
           <MenuRow
             label={m.editor_subscript()}
-            onClick={() => mark(KEYS.sub)}
+            onSelect={() => mark(KEYS.sub)}
           />
           <MenuRow
             label={m.editor_superscript()}
-            onClick={() => mark(KEYS.sup)}
+            onSelect={() => mark(KEYS.sup)}
           />
           <MenuRow
             label={m.editor_clear_formatting()}
-            onClick={clearFormatting}
+            onSelect={clearFormatting}
           />
         </div>
-      </PopoverContent>
-    </Popover>
+      </ToolbarMenuContent>
+    </DropdownMenu>
   );
 }

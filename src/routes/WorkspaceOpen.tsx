@@ -52,6 +52,7 @@ import { Tabs } from '@/components/ui/Tabs';
 import { userToast } from '@/components/ui/userToast';
 import { FileListItem } from '@/features/files/FileListItem';
 import { fileIsIngesting } from '@/features/files/fileUtils';
+import type { OfficeCitation } from '@/features/files/officeProtocol';
 import { useOfficeEditGuard } from '@/features/files/useOfficeEditGuard';
 import { CenterContent } from '@/features/materials/CenterContent';
 import { MaterialListItem } from '@/features/materials/MaterialListItem';
@@ -136,13 +137,18 @@ export default function WorkspaceOpen() {
   const [citationTarget, setCitationTarget] = useState<{
     fileId: string;
     regions: Region[];
+    citation?: OfficeCitation;
   } | null>(null);
   const [officeEditDirty, setOfficeEditDirty] = useState(false);
   const confirmViewerReplacement = useOfficeEditGuard(officeEditDirty);
   const openItem =
     searchedOpenItem?.kind === 'file' &&
     citationTarget?.fileId === searchedOpenItem.id
-      ? { ...searchedOpenItem, regions: citationTarget.regions }
+      ? {
+          ...searchedOpenItem,
+          citation: citationTarget.citation,
+          regions: citationTarget.regions,
+        }
       : searchedOpenItem;
 
   function setOpenItem(item: OpenItem | null) {
@@ -159,7 +165,13 @@ export default function WorkspaceOpen() {
     if (!confirmViewerReplacement()) return;
     const regions = citation.regions ?? [];
     const regionPage = regions.find((region) => region.page > 0)?.page;
-    setCitationTarget({ fileId: citation.fileId, regions });
+    setCitationTarget({
+      citation: citation.snippet
+        ? { page: citation.pageStart ?? regionPage, quote: citation.snippet }
+        : undefined,
+      fileId: citation.fileId,
+      regions,
+    });
     navigate({
       replace: true,
       search: searchFromOpenItem({

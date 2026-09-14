@@ -57,11 +57,11 @@ def pdf(tmp_path):
 
 @pytest.fixture
 def rendered(monkeypatch, pdf):
-    async def _pdf_path(workspace_id, file_id):
+    async def _render_file(workspace_id, file_id, page, bbox, max_edge):
         assert (workspace_id, file_id) == ("ws_1", "f_1")
-        return pdf
+        return capture.render(pdf, page, bbox, max_edge)
 
-    monkeypatch.setattr(capture, "pdf_path", _pdf_path)
+    monkeypatch.setattr(capture, "render_file", _render_file)
     monkeypatch.setattr(tools.cfg, "capture_max_edge", 200)
     return pdf
 
@@ -135,12 +135,12 @@ async def test_capture_rejects_a_page_past_the_end_and_a_bad_box(rendered):
 
 
 async def test_capture_names_unsupported_sources(monkeypatch):
-    async def _no_pdf(workspace_id, file_id):
+    async def _no_pdf(*args):
         raise capture.CaptureUnavailable(
             "capture_page works on parsed PDF and Office sources only"
         )
 
-    monkeypatch.setattr(capture, "pdf_path", _no_pdf)
+    monkeypatch.setattr(capture, "render_file", _no_pdf)
     result = await tools._capture_page(
         {"file_id": "f_1", "page": 2, "_tool_call_id": "a"}, _ctx(2)
     )
@@ -296,20 +296,18 @@ def test_context_measurement_counts_images_by_pixels_not_base64():
 
 
 async def test_pdf_cache_is_keyed_by_the_stored_object(tmp_path, monkeypatch):
-    """A re-parsed Office source publishes a new preview path; the old render
+    """A replaced PDF source publishes a new source path; the old render
     must not be served under the new chunk regions."""
     monkeypatch.setattr(capture.cfg, "capture_cache_dir", str(tmp_path))
     rows = {
         "old": {
-            "kind": "docx",
-            "blob_path": "sources/a.docx",
-            "preview_blob_path": "previews/s/v1/fp1.pdf",
+            "kind": "pdf",
+            "blob_path": "previews/s/v1/fp1.pdf",
             "size_bytes": 10,
         },
         "new": {
-            "kind": "docx",
-            "blob_path": "sources/a.docx",
-            "preview_blob_path": "previews/s/v2/fp2.pdf",
+            "kind": "pdf",
+            "blob_path": "previews/s/v2/fp2.pdf",
             "size_bytes": 10,
         },
     }
@@ -335,3 +333,95 @@ async def test_pdf_cache_is_keyed_by_the_stored_object(tmp_path, monkeypatch):
     assert after_reparse != first
     assert downloads == ["previews/s/v1/fp1.pdf", "previews/s/v2/fp2.pdf"]
     assert after_reparse.read_bytes().endswith(b"previews/s/v2/fp2.pdf")
+
+
+def test_office_capture_returns_only_jpeg_and_removes_temporary_source(monkeypatch):
+    import base64
+    import hashlib
+    from contextlib import contextmanager
+
+    data = b"editable-office-source"
+    jpeg = _jpeg(100, 100)
+    downloaded_paths = []
+
+    def download(key, path, limit):
+        assert key == "sources/office" and limit == len(data)
+        target = Path(path)
+        downloaded_paths.append(target)
+        target.write_bytes(data)
+        return len(data), hashlib.sha256(data).hexdigest()
+
+    @contextmanager
+    def post(url, **kwargs):
+        assert url == "http://parser.test/capture_page"
+        assert kwargs["files"]["file"][1].read() == data
+
+        class Response:
+            def raise_for_status(self):
+                pass
+
+            def iter_content(self, _size):
+                yield json.dumps(
+                    {
+                        "jpeg": base64.b64encode(jpeg).decode(),
+                        "box": [0, 0, 1000, 1000],
+                        "size": [100, 100],
+                    }
+                ).encode()
+
+        yield Response()
+
+    monkeypatch.setattr(capture.cfg, "parser_url", "http://parser.test/file_parse")
+    monkeypatch.setattr(capture.blobstore, "download_file", download)
+    monkeypatch.setattr(capture.requests, "post", post)
+    result = capture._office_capture(
+        {
+            "name": "source.docx",
+            "blob_path": "sources/office",
+            "size_bytes": len(data),
+            "source_sha256": hashlib.sha256(data).hexdigest(),
+        },
+        1,
+        None,
+        100,
+    )
+    assert result[0] == jpeg and result[2] == (100, 100)
+    assert downloaded_paths and all(
+        not path.parent.exists() for path in downloaded_paths
+    )
+
+
+@pytest.mark.parametrize(
+    "kind,extension",
+    [("doc", "docx"), ("sheet", "xlsx"), ("slides", "pptx"), ("pdf", "pdf")],
+)
+async def test_capture_uses_stored_format_after_rename(
+    monkeypatch, pdf, kind, extension
+):
+    row = {
+        "kind": kind,
+        "name": "renamed.docx" if kind == "pdf" else "renamed without extension",
+        "ever_parsed_successfully": True,
+        "parse_mode": "standard",
+        "blob_path": "source/blob",
+    }
+    expected = capture.render(pdf, 1, None, 100)
+    calls = []
+
+    async def source(*_args):
+        return row
+
+    async def pdf_path(*_args):
+        calls.append("pdf")
+        return pdf
+
+    def office(source_row, page, bbox, max_edge):
+        calls.append(source_row["name"])
+        assert (page, bbox, max_edge) == (1, None, 100)
+        return expected
+
+    monkeypatch.setattr(capture.store, "file_page_source", source)
+    monkeypatch.setattr(capture, "pdf_path", pdf_path)
+    monkeypatch.setattr(capture, "_office_capture", office)
+    assert await capture.render_file("ws_1", "f_1", 1, None, 100) == expected
+    assert calls == ["pdf" if kind == "pdf" else f"source.{extension}"]

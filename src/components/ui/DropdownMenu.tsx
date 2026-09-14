@@ -1,12 +1,22 @@
 import { Check, ChevronRight } from 'lucide-react';
 import { DropdownMenu as DropdownMenuPrimitive } from 'radix-ui';
-import type * as React from 'react';
+import * as React from 'react';
 import { cn } from '@/lib/cn';
+import {
+  focusReopenedSubmenu,
+  MenuOpenContext,
+  useMenuOpenState,
+} from './menuOpenState';
 
 function DropdownMenu(
   props: React.ComponentProps<typeof DropdownMenuPrimitive.Root>
 ) {
-  return <DropdownMenuPrimitive.Root {...props} />;
+  const [open, onOpenChange] = useMenuOpenState(props);
+  return (
+    <MenuOpenContext.Provider value={open}>
+      <DropdownMenuPrimitive.Root {...props} onOpenChange={onOpenChange} />
+    </MenuOpenContext.Provider>
+  );
 }
 
 function DropdownMenuTrigger(
@@ -25,15 +35,18 @@ function DropdownMenuContent({
   sideOffset = 4,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
+  const open = React.useContext(MenuOpenContext);
   return (
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.Content
+        aria-hidden={!open || undefined}
         className={cn(
           'z-50 min-w-40 overflow-hidden rounded-card border border-line bg-surface p-1 text-fg shadow-pop outline-none',
-          'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=open]:animate-in',
+          'motion-fade',
           className
         )}
         data-slot="dropdown-menu-content"
+        inert={!open}
         sideOffset={sideOffset}
         {...props}
       />
@@ -116,13 +129,20 @@ function DropdownMenuSeparator({
 function DropdownMenuSub(
   props: React.ComponentProps<typeof DropdownMenuPrimitive.Sub>
 ) {
-  return <DropdownMenuPrimitive.Sub {...props} />;
+  const parentOpen = React.useContext(MenuOpenContext);
+  const [open, onOpenChange] = useMenuOpenState(props);
+  return (
+    <MenuOpenContext.Provider value={parentOpen && open}>
+      <DropdownMenuPrimitive.Sub {...props} onOpenChange={onOpenChange} />
+    </MenuOpenContext.Provider>
+  );
 }
 
 function DropdownMenuSubTrigger({
   children,
   className,
   inset,
+  onKeyDown,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.SubTrigger> & {
   inset?: boolean;
@@ -138,6 +158,10 @@ function DropdownMenuSubTrigger({
       )}
       data-inset={inset || undefined}
       data-slot="dropdown-menu-sub-trigger"
+      onKeyDown={(event) => {
+        onKeyDown?.(event);
+        focusReopenedSubmenu(event);
+      }}
       {...props}
     >
       {children}
@@ -151,14 +175,17 @@ function DropdownMenuSubContent({
   sideOffset = 2,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.SubContent>) {
+  const open = React.useContext(MenuOpenContext);
   return (
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.SubContent
+        aria-hidden={!open || undefined}
         className={cn(
-          'z-50 min-w-40 overflow-hidden rounded-card border border-line bg-surface p-1 text-fg shadow-pop outline-none',
+          'motion-popup motion-blur-in z-50 min-w-40 overflow-hidden rounded-card border border-line bg-surface p-1 text-fg shadow-pop outline-none',
           className
         )}
         data-slot="dropdown-menu-sub-content"
+        inert={!open}
         sideOffset={sideOffset}
         {...props}
       />

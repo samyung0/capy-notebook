@@ -8,12 +8,12 @@ from pipeline.jobs import TerminalError
 
 def _value(**overrides):
     value = {
-        "version": 1,
+        "version": 2,
         "format": "pdf",
         "route": "document_parse",
         "parserRoute": "fast",
         "captionMode": "none",
-        "officePreview": False,
+        "office": False,
         "stages": [
             "fetch_source",
             "parse_document",
@@ -46,7 +46,7 @@ def test_validates_the_versioned_server_contract() -> None:
     [
         None,
         {},
-        _value(version=2),
+        _value(version=3),
         _value(route="spreadsheet_magic"),
         _value(route="raw_text", parserRoute="fast"),
         _value(route="raw_text", parserRoute="", captionMode="none"),
@@ -58,12 +58,12 @@ def test_validates_the_versioned_server_contract() -> None:
             parserRoute="",
             captionMode="standalone",
         ),
-        _value(format="docx", officePreview=False),
-        _value(format="pdf", officePreview=True),
+        _value(format="docx", office=False),
+        _value(format="pdf", office=True),
         # Embedded figure captioning was retired with the MinerU parser.
         _value(captionMode="embedded"),
         _value(route="image_caption", parserRoute="", captionMode="none"),
-        _value(route="raw_text", parserRoute="", officePreview=True),
+        _value(route="raw_text", parserRoute="", office=True),
         _value(stages="fetch_source"),
         _value(stages=["fetch_source", "parse_document"]),
         _value(resources=["document_parser"]),

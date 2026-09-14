@@ -749,7 +749,7 @@ function SourceChooser({
 
   async function onGoogleClick() {
     if (
-      (!integrations?.google || integrations.googleDriveReadonly === false) &&
+      (!integrations?.google || !integrations.googleDriveReadonly) &&
       !USE_MSW
     ) {
       await connect('google');
@@ -891,7 +891,11 @@ function SourceChooser({
                 disabled={isPicking || isInspecting || workspaceRoom <= 0}
                 iconLeft="files"
                 onClick={() => {
-                  if (!integrations?.microsoft && !USE_MSW) {
+                  if (
+                    (!integrations?.microsoft ||
+                      !integrations.microsoftFilesRead) &&
+                    !USE_MSW
+                  ) {
                     void connect('microsoft');
                   } else {
                     void openMicrosoftPicker();

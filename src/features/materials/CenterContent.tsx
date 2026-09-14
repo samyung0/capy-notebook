@@ -12,6 +12,7 @@ import {
 } from '@/features/files/FileStates';
 import { FileViewer } from '@/features/files/FileViewer';
 import { fileIsIngesting, IMAGE_MIN_ZOOM } from '@/features/files/fileUtils';
+import type { OfficeCitation } from '@/features/files/officeProtocol';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -131,6 +132,7 @@ export function CenterContent({
         )}
         {item.kind === 'file' && (
           <FileBody
+            citation={item.citation}
             color={color}
             fileId={item.id}
             imageZoom={imageZoom}
@@ -286,6 +288,7 @@ function FileBody({
   onViewerDirtyChange,
   page,
   regions,
+  citation,
 }: {
   fileId: string;
   color?: UserColor;
@@ -294,6 +297,7 @@ function FileBody({
   onViewerDirtyChange?: (dirty: boolean) => void;
   page?: number;
   regions?: Region[];
+  citation?: OfficeCitation;
 }) {
   const {
     data: file,
@@ -344,6 +348,7 @@ function FileBody({
       {file && <FileNotIndexedBanner file={file} />}
       <div className="relative min-h-0 flex-1 overflow-auto">
         <FileViewer
+          citation={citation}
           file={file ?? null}
           imageZoom={imageZoom}
           onDirtyChange={onViewerDirtyChange}

@@ -9,7 +9,7 @@ from typing import Any
 
 from ..jobs import TerminalError
 
-VERSION = 1
+VERSION = 2
 
 STORE_ONLY = "store_only"
 RAW_TEXT = "raw_text"
@@ -31,7 +31,7 @@ ROUTES = frozenset(
 CAPTION_MODES = frozenset({"none", "standalone"})
 
 _DOCUMENT_FORMATS = frozenset({"pdf", "docx", "pptx", "xlsx"})
-_OFFICE_PREVIEW_FORMATS = frozenset({"docx", "pptx", "xlsx"})
+_OFFICE_FORMATS = frozenset({"docx", "pptx", "xlsx"})
 _DELIMITED_FORMATS = frozenset({"csv", "tsv"})
 _IMAGE_FORMATS = frozenset(
     {
@@ -90,9 +90,7 @@ _RAW_TEXT_FORMATS = (
 _DIRECT_RESOURCES = ("object_storage_read", "embedding_model", "ingest_model")
 
 
-def _expected_contract(
-    route: str, office_preview: bool
-) -> tuple[tuple[str, ...], tuple[str, ...]]:
+def _expected_contract(route: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
     if route == STORE_ONLY:
         return (), ()
     if route == RAW_TEXT:
@@ -138,9 +136,6 @@ def _expected_contract(
 
     stages = ["fetch_source", "parse_document"]
     resources = [*_DIRECT_RESOURCES, "document_parser", "shared_parse_spool"]
-    if office_preview:
-        stages.append("persist_office_preview")
-        resources.append("object_storage_write")
     stages.extend(("chunk", "index", "generate_derivatives"))
     return tuple(stages), tuple(resources)
 
@@ -152,7 +147,7 @@ class ProcessingPlan:
     route: str
     parser_route: str
     caption_mode: str
-    office_preview: bool
+    office: bool
     stages: tuple[str, ...]
     resources: tuple[str, ...]
 
@@ -167,7 +162,7 @@ def require(value: Any) -> ProcessingPlan:
         route = str(value["route"])
         parser_route = str(value.get("parserRoute") or "")
         caption_mode = str(value["captionMode"])
-        office_preview = value["officePreview"]
+        office = value["office"]
         stages_value = value["stages"]
         resources_value = value["resources"]
     except (KeyError, TypeError, ValueError) as exc:
@@ -177,7 +172,7 @@ def require(value: Any) -> ProcessingPlan:
         raise TerminalError(f"unsupported processing plan version {version}")
     if route not in ROUTES or caption_mode not in CAPTION_MODES:
         raise TerminalError("ingest payload has an invalid processing plan")
-    if not isinstance(office_preview, bool):
+    if not isinstance(office, bool):
         raise TerminalError("ingest payload has an invalid processing plan")
     if not isinstance(stages_value, list) or not all(
         isinstance(stage, str) and stage for stage in stages_value
@@ -191,8 +186,8 @@ def require(value: Any) -> ProcessingPlan:
         raise TerminalError("document processing plan has no supported parser route")
     if route != DOCUMENT_PARSE and parser_route:
         raise TerminalError("direct processing plan unexpectedly selects a parser")
-    if office_preview and route != DOCUMENT_PARSE:
-        raise TerminalError("Office preview requires document parsing")
+    if office and route != DOCUMENT_PARSE:
+        raise TerminalError("Office requires document parsing")
     if route == IMAGE_CAPTION and caption_mode != "standalone":
         raise TerminalError("image processing requires standalone captioning")
     if caption_mode == "standalone" and route != IMAGE_CAPTION:
@@ -210,9 +205,9 @@ def require(value: Any) -> ProcessingPlan:
         raise TerminalError("store-only processing plan has an unsupported format")
     if route == RAW_TEXT and format_name not in _RAW_TEXT_FORMATS:
         raise TerminalError("raw-text processing plan has an unsupported format")
-    if office_preview != (format_name in _OFFICE_PREVIEW_FORMATS):
-        raise TerminalError("processing plan has an invalid Office preview policy")
-    expected_stages, expected_resources = _expected_contract(route, office_preview)
+    if office != (format_name in _OFFICE_FORMATS):
+        raise TerminalError("processing plan has an invalid Office format")
+    expected_stages, expected_resources = _expected_contract(route)
     if tuple(stages_value) != expected_stages:
         raise TerminalError("processing plan stages do not match its route")
     if tuple(resources_value) != expected_resources:
@@ -224,7 +219,7 @@ def require(value: Any) -> ProcessingPlan:
         route=route,
         parser_route=parser_route,
         caption_mode=caption_mode,
-        office_preview=office_preview,
+        office=office,
         stages=tuple(stages_value),
         resources=tuple(resources_value),
     )

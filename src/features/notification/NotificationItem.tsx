@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import type { AppNotification } from '@/api/types';
+import { ContentSwap } from '@/components/ui/ContentSwap';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -125,30 +127,44 @@ function roleLabel(role: string) {
 export function NotificationItem({
   className,
   notification,
+  reveal = false,
 }: {
   className?: string;
   notification: AppNotification;
+  reveal?: boolean;
 }) {
   const copy = notificationCopy(notification);
+  const [revealOnMount] = useState(reveal);
   return (
-    <span className={cn('t-body flex w-full gap-3 text-left', className)}>
+    <span
+      className={cn(
+        't-body flex w-full gap-3 text-left',
+        revealOnMount && 'motion-text-reveal',
+        className
+      )}
+    >
       <span className="relative mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-button text-tint-accent-1-fg/70 group-hover:text-tint-accent-1-fg/95">
         <Icon name={KIND_ICON[notification.kind]} size={20} />
         {!notification.readAt && (
           <span className="absolute -top-px -right-px h-1.5 w-1.5 animate-pulse rounded-full bg-solid-error ring-1 ring-surface" />
         )}
       </span>
-      <span className="flex min-w-0 flex-col">
-        <span
-          className={cn(
-            'font-semibold',
-            notification.readAt ? 'text-fg' : 'text-fg-strong'
-          )}
-        >
-          {copy.title}
+      <ContentSwap
+        className="flex-1"
+        contentKey={JSON.stringify([copy.title, copy.body])}
+      >
+        <span className="flex min-w-0 flex-col">
+          <span
+            className={cn(
+              'font-semibold transition-colors duration-(--motion-duration-quick)',
+              notification.readAt ? 'text-fg-secondary' : 'text-fg'
+            )}
+          >
+            {copy.title}
+          </span>
+          <span className="text-fg-secondary">{copy.body}</span>
         </span>
-        <span className="text-fg-secondary">{copy.body}</span>
-      </span>
+      </ContentSwap>
     </span>
   );
 }

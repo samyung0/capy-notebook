@@ -457,9 +457,8 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         )
     started = time.perf_counter()
     try:
-        pdf = await capture.pdf_path(ctx.workspace_id, file_id)
-        jpeg, box, size = await asyncio.to_thread(
-            capture.render, pdf, page, bbox, cfg.capture_max_edge
+        jpeg, box, size = await capture.render_file(
+            ctx.workspace_id, file_id, page, bbox, cfg.capture_max_edge
         )
     except capture.CaptureUnavailable as exc:
         return _refused(f"capture_page: {exc}", code=exc.code)

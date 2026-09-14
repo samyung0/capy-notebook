@@ -194,7 +194,7 @@ codes for HTTP responses and chat events; neither starts an automatic retry.
 
 ## Cloud source pickers
 
-Google Picker temporarily replaces the source chooser so the Radix focus trap and pointer lock cannot intercept it. The chooser returns on cancel/error or while selected files are inspected. Google multi-select and folder selection are enabled; folders are expanded by the gateway before the source details step. Existing Google connections without `drive.readonly` or `drive` are asked to reconnect. Both provider buttons stay disabled while a picker is opening or active.
+Google Picker temporarily replaces the source chooser so the Radix focus trap and pointer lock cannot intercept it. The chooser returns on cancel/error or while selected files are inspected. Google multi-select and folder selection are enabled; folders are expanded by the gateway before the source details step. Import clicks check file grants separately from login connections: Google needs `drive.readonly` or `drive`, Microsoft needs `Files.Read`. Missing grants request consent through Clerk's `additionalScopes`; login/signup uses only baseline scopes. Consent returns to the current page, where the user can reopen the importer. Both provider buttons stay disabled while a picker is opening or active.
 
 Picker startup failures and Google `error` callbacks produce a toast and a frontend Sentry event tagged `component=source-picker`, `provider`, and `stage`. Telemetry uses a fixed message rather than the provider payload, which can contain OAuth tokens and file names. Internal HTTP failures in Google's cross-origin iframe are only observable when Google forwards an error callback; they never reach gateway Sentry.
 

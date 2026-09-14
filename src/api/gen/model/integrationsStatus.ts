@@ -11,4 +11,5 @@ export interface IntegrationsStatus {
   google: boolean;
   googleDriveReadonly: boolean;
   microsoft: boolean;
+  microsoftFilesRead: boolean;
 }

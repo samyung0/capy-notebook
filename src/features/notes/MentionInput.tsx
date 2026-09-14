@@ -19,6 +19,7 @@ import {
 } from 'platejs/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useWorkspaceCollaborators } from '@/api/hooks';
+import { PopupMotion } from '@/components/ui/PopupMotion';
 import { m } from '@/i18n';
 import { useEditorRuntime } from './EditorRuntime';
 
@@ -193,9 +194,11 @@ export function MentionInputElement(
           />
         </span>
         <FloatingPortal>
-          <span
-            className="z-50 block max-h-64 w-64 overflow-auto rounded-card border border-line bg-surface p-1 shadow-pop"
-            ref={refs.setFloating}
+          <PopupMotion
+            className="block max-h-64 w-64 overflow-auto rounded-card border border-line bg-surface p-1 shadow-pop"
+            open
+            positionClassName="z-50"
+            positionRef={refs.setFloating}
             role="listbox"
             style={floatingStyles}
           >
@@ -232,7 +235,7 @@ export function MentionInputElement(
                 {m.editor_mention_empty()}
               </span>
             )}
-          </span>
+          </PopupMotion>
         </FloatingPortal>
       </span>
       {props.children}

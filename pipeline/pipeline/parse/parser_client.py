@@ -4,10 +4,10 @@ The worker downloads each source from B2 once. This client gives the parser a
 relative key in their shared local spool, and the parser publishes its bundle
 back to that volume atomically. The zip contains ``content_list.json``
 (one entry per layout block, with page index and bounding box),
-``refinement.json`` (the running-furniture texts the parser froze before
-table recovery), ``preview.pdf`` for Office sources, ``parsed.pdf`` when font
-repair changed the bytes the parser read, plus the images it extracted. That
-block list is what makes page-accurate citations and page captures possible.
+``refinement.json`` (frozen furniture and Office page-text/heading evidence),
+plus extracted images. Only native PDF sources may include a repaired
+``parsed.pdf``; Office bundles contain no PDF. Native Office highlights resolve
+quoted text against the viewer, and page captures convert the source temporarily.
 
 The live route is OpenDataLoader with the reviewed native repairs and selective
 RapidOCR on pages without a text layer (``parser/odl``).
@@ -40,7 +40,7 @@ from ..store import blobstore
 log = logging.getLogger("capy.parse.client")
 
 SOURCE_DESCRIPTOR_SCHEMA = "capy-local-source-v1"
-ARTIFACT_SCHEMA = "capy-parser-bundle-v3"
+ARTIFACT_SCHEMA = "capy-parser-bundle-v4"
 
 ROUTE_FAST = "fast"
 
@@ -226,7 +226,7 @@ def _restore_durable_artifact(
     fingerprint: str,
     version: str,
     *,
-    require_office_preview: bool,
+    office: bool,
 ) -> dict[str, Any] | None:
     """Restore a verified B2 cache entry into the atomic local handoff path."""
     if not cfg.b2_bucket:
@@ -256,7 +256,7 @@ def _restore_durable_artifact(
             temporary_path,
             artifact,
             version,
-            require_office_preview=require_office_preview,
+            office=office,
         )
         temporary_path.chmod(0o640)
         temporary_path.replace(path)
@@ -335,7 +335,7 @@ def _request_artifact(
         artifact_key,
         fingerprint,
         version,
-        require_office_preview=Path(upload_name).suffix.lower() in OFFICE_SUFFIXES,
+        office=Path(upload_name).suffix.lower() in OFFICE_SUFFIXES,
     )
     if durable is not None:
         return durable
@@ -439,10 +439,8 @@ def _entry_limit(info: zipfile.ZipInfo) -> int:
         return min(cfg.parse_artifact_max_entry_bytes, cfg.parse_content_max_bytes)
     if info.filename == "manifest.json":
         return min(cfg.parse_artifact_max_entry_bytes, 64 << 10)
-    if info.filename == "preview.pdf":
-        return min(cfg.parse_artifact_max_entry_bytes, cfg.office_preview_max_bytes)
     if info.filename == "refinement.json":
-        return min(cfg.parse_artifact_max_entry_bytes, 4 << 20)
+        return min(cfg.parse_artifact_max_entry_bytes, cfg.parse_content_max_bytes)
     if info.filename.startswith("images/"):
         return min(cfg.parse_artifact_max_entry_bytes, cfg.parse_image_max_bytes)
     return cfg.parse_artifact_max_entry_bytes
@@ -493,7 +491,7 @@ def _validate_artifact_path(
     artifact: Mapping[str, Any],
     version: str,
     *,
-    require_office_preview: bool,
+    office: bool,
 ) -> None:
     """Verify bounds, checksum, identity, and required bundle contents."""
     try:
@@ -530,17 +528,33 @@ def _validate_artifact_path(
             raise ParserClientError("content_list.json is not a list of blocks")
         if len(content_list) > cfg.parse_content_max_blocks:
             raise ParserClientError("content_list.json contains too many blocks")
-        if require_office_preview:
-            try:
-                with archive.open("preview.pdf") as preview:
-                    if preview.read(4) != b"%PDF":
-                        raise ParserClientError(
-                            "Office parse artifact is missing preview.pdf"
-                        )
-            except KeyError as exc:
+        refinement = json.loads(archive.read("refinement.json"))
+        if (
+            not isinstance(refinement, dict)
+            or not isinstance(refinement.get("furniture"), list)
+            or not all(isinstance(t, str) for t in refinement["furniture"])
+        ):
+            raise ParserClientError("invalid parser refinement")
+        if office:
+            if any(name.lower().endswith(".pdf") for name in archive.namelist()):
+                raise ParserClientError("Office parse cache must not contain PDFs")
+            evidence = refinement.get("page_evidence")
+            if (
+                not isinstance(evidence, dict)
+                or not isinstance(evidence.get("page_texts"), list)
+                or not evidence["page_texts"]
+                or not all(isinstance(t, str) for t in evidence["page_texts"])
+            ):
                 raise ParserClientError(
-                    "Office parse artifact is missing preview.pdf"
-                ) from exc
+                    "Office parse artifact has no page text evidence"
+                )
+            headings = evidence.get("visible_headings")
+            if not isinstance(headings, list) or any(
+                type(i) is not int or not 0 <= i < len(content_list) for i in headings
+            ):
+                raise ParserClientError(
+                    "Office parse artifact has invalid heading evidence"
+                )
 
 
 def _read_entry(
@@ -564,14 +578,14 @@ def _extract(
     raw_dir: Path,
     version: str,
     *,
-    require_office_preview: bool = False,
+    office: bool = False,
 ) -> None:
     archive_path = _shared_path(str(artifact["key"]))
     _validate_artifact_path(
         archive_path,
         artifact,
         version,
-        require_office_preview=require_office_preview,
+        office=office,
     )
     with zipfile.ZipFile(archive_path) as archive:
         infos = _validated_entries(archive)
@@ -611,7 +625,7 @@ def publish_durable_artifact(
     artifact: Mapping[str, Any],
     *,
     route: str,
-    require_office_preview: bool,
+    office: bool,
 ) -> str | None:
     """Verify a local handoff, then cache it in B2 without gating ingest."""
     fingerprint = str(artifact.get("fingerprint") or "")
@@ -624,7 +638,7 @@ def publish_durable_artifact(
             local_path,
             artifact,
             version,
-            require_office_preview=require_office_preview,
+            office=office,
         )
     except (ParserClientError, OSError, ValueError, zipfile.BadZipFile):
         # A fingerprint-addressed local cache entry that fails full validation
@@ -657,7 +671,7 @@ def extract_artifact(
     raw_dir: Path,
     *,
     route: str,
-    require_office_preview: bool,
+    office: bool,
 ) -> list[dict[str, Any]]:
     """Verify and extract an artifact handed off by a completed parse job."""
     expected_version = parser_version(route)
@@ -669,7 +683,7 @@ def extract_artifact(
             artifact,
             raw_dir,
             expected_version,
-            require_office_preview=require_office_preview,
+            office=office,
         )
         content_path = raw_dir / "content_list.json"
         if content_path.stat().st_size > cfg.parse_content_max_bytes:
@@ -712,7 +726,7 @@ def parse_to_bundle(
     descriptor: Mapping[str, Any],
     upload_name: str,
     raw_dir: Path,
-    require_office_preview: bool | None = None,
+    office: bool | None = None,
     request_id: str = "",
 ) -> tuple[list[dict[str, Any]], str, str]:
     """Parse one source and return ``(content_list, artifact_key, fingerprint)``.
@@ -722,8 +736,8 @@ def parse_to_bundle(
     version = parser_version(_route(descriptor))
     if not request_id:
         raise ParserClientError("parser request id is required")
-    if require_office_preview is None:
-        require_office_preview = Path(upload_name).suffix.lower() in OFFICE_SUFFIXES
+    if office is None:
+        office = Path(upload_name).suffix.lower() in OFFICE_SUFFIXES
     raw_dir.mkdir(parents=True, exist_ok=True)
     artifact = _request_artifact(descriptor, upload_name, request_id)
     try:
@@ -731,7 +745,7 @@ def parse_to_bundle(
             artifact,
             raw_dir,
             version,
-            require_office_preview=require_office_preview,
+            office=office,
         )
     except Exception:
         if not artifact.get("cached"):
@@ -750,7 +764,7 @@ def parse_to_bundle(
             artifact,
             raw_dir,
             version,
-            require_office_preview=require_office_preview,
+            office=office,
         )
 
     content_path = raw_dir / "content_list.json"

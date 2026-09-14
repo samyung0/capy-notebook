@@ -35,11 +35,12 @@ type BillingInfo struct {
 	CreditsPeriodStart    time.Time `json:"creditsPeriodStart"`
 }
 
-// IntegrationsStatus reflects Clerk external-account links (not local rows).
+// IntegrationsStatus reflects Clerk external-account links and import grants.
 type IntegrationsStatus struct {
 	GoogleDriveReadonly bool `json:"googleDriveReadonly"`
 	Google              bool `json:"google"`
 	Microsoft           bool `json:"microsoft"`
+	MicrosoftFilesRead  bool `json:"microsoftFilesRead"`
 }
 
 /* --------------------------------------------------------------- users */

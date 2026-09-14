@@ -646,8 +646,8 @@ def test_bundle_rejects_image_bytes_beyond_configured_budget(
         )
 
 
-def test_bundle_layout_carries_receipt_preview_and_rewritten_image_paths() -> None:
-    """The capy-parser-bundle-v3 entries the worker validates and extracts;
+def test_bundle_layout_carries_receipt_evidence_and_rewritten_image_paths() -> None:
+    """The capy-parser-bundle-v4 entries the worker validates and extracts;
     ``parsed.pdf`` rides along only when font repair changed the bytes."""
     png = base64.b64encode(b"\x89PNG fake").decode()
     bundle = parser_app._bundle_bytes(
@@ -658,7 +658,7 @@ def test_bundle_layout_carries_receipt_preview_and_rewritten_image_paths() -> No
             ],
             "md": "# doc",
             "images": {"imageFile1.png": png},
-            "_preview_pdf": b"%PDF-1.7 preview",
+            "_page_evidence": {"page_texts": ["body"], "visible_headings": []},
             "_parsed_pdf": b"%PDF-1.7 repaired",
             "_furniture": ["Running header", "p."],
         },
@@ -671,10 +671,11 @@ def test_bundle_layout_carries_receipt_preview_and_rewritten_image_paths() -> No
         names = sorted(archive.namelist())
         manifest = json.loads(archive.read("manifest.json"))
         content = json.loads(archive.read("content_list.json"))
-        assert archive.read("preview.pdf").startswith(b"%PDF")
+        assert "preview.pdf" not in names
         assert archive.read("parsed.pdf") == b"%PDF-1.7 repaired"
         assert json.loads(archive.read("refinement.json")) == {
-            "furniture": ["Running header", "p."]
+            "furniture": ["Running header", "p."],
+            "page_evidence": {"page_texts": ["body"], "visible_headings": []},
         }
     assert names == [
         "content_list.json",
@@ -682,10 +683,9 @@ def test_bundle_layout_carries_receipt_preview_and_rewritten_image_paths() -> No
         "images/imageFile1.png",
         "manifest.json",
         "parsed.pdf",
-        "preview.pdf",
         "refinement.json",
     ]
-    assert manifest["schema"] == "capy-parser-bundle-v3"
+    assert manifest["schema"] == "capy-parser-bundle-v4"
     assert manifest["parser_version"] == parser_app.PARSER_VERSION
     assert manifest["source_fingerprint"] == "fp"
     assert manifest["parse_receipt"] == {
@@ -710,3 +710,141 @@ def test_bundle_without_font_repair_carries_no_parsed_pdf() -> None:
             "manifest.json",
             "refinement.json",
         ]
+
+
+def test_office_evidence_preserves_chunks_after_pdf_is_removed(tmp_path):
+    """Source proof is frozen once, then reused by uncached and cached ingestion."""
+    from dataclasses import asdict
+
+    import pymupdf
+    from odl.evidence import page_evidence
+
+    from pipeline.ingest.worker import _page_chunks
+
+    pdf = tmp_path / "converted.pdf"
+    blocks = []
+    with pymupdf.open() as doc:
+        for text, invisible in (
+            ("Wetland conservation", False),
+            ("Invisible heading", True),
+        ):
+            page = doc.new_page(width=400, height=600)
+            page.insert_text(
+                (50, 100), text, fontsize=18, render_mode=3 if invisible else 0
+            )
+            box = page.search_for(text)[0]
+            blocks.append(
+                {
+                    "type": "text",
+                    "text": text,
+                    "text_level": 1,
+                    "page_idx": len(doc) - 1,
+                    "bbox": [
+                        box.x0 / 400 * 1000,
+                        box.y0 / 600 * 1000,
+                        box.x1 / 400 * 1000,
+                        box.y1 / 600 * 1000,
+                    ],
+                }
+            )
+        doc.save(pdf)
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    refinement = bundle / "refinement.json"
+    refinement.write_text(json.dumps({"furniture": []}))
+    before = _page_chunks(blocks, bundle, pdf)
+    evidence = page_evidence(pdf.read_bytes(), blocks)
+    assert evidence["visible_headings"] == [0]
+    refinement.write_text(json.dumps({"furniture": [], "page_evidence": evidence}))
+    pdf.unlink()
+    after = _page_chunks(blocks, bundle, pdf)
+    assert [asdict(c) for c in after] == [asdict(c) for c in before]
+
+
+def test_office_run_keeps_only_evidence_in_bundle(monkeypatch, tmp_path):
+    monkeypatch.setattr(parser_app, "WORK_DIR", tmp_path)
+    from types import SimpleNamespace
+
+    import pymupdf
+    from odl import document, refine
+
+    with pymupdf.open() as pdf:
+        pdf.new_page().insert_text((50, 100), "Source text")
+        data = pdf.tobytes()
+    monkeypatch.setattr(
+        document,
+        "normalize_document",
+        lambda *_args: SimpleNamespace(
+            data=data, preview_pdf=data, source_format="docx"
+        ),
+    )
+    monkeypatch.setattr(
+        refine,
+        "parse_pdf",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            content_list=[{"type": "text", "text": "Source text", "page_idx": 0}],
+            markdown="Source text",
+            images={},
+            ocr_pages=[],
+            page_count=1,
+            phases={},
+            repaired_fonts=[],
+            furniture=[],
+            parsed_pdf=data,
+        ),
+    )
+    result = parser_app.run_document(parser_app.Document(b"office", "example.docx"))
+    assert result["_page_evidence"]["page_texts"][0].strip() == "Source text"
+    bundle = parser_app._bundle_bytes(result, "fingerprint", "request", {})
+    with zipfile.ZipFile(io.BytesIO(bundle)) as archive:
+        assert not any(name.lower().endswith(".pdf") for name in archive.namelist())
+        assert json.loads(archive.read("manifest.json"))["source_format"] == "docx"
+
+
+@pytest.mark.asyncio
+async def test_capture_uses_the_bounded_runtime_without_a_parse_receipt(monkeypatch):
+    from types import SimpleNamespace
+
+    import httpx
+
+    calls = []
+
+    async def parse(document):
+        calls.append(document)
+        return {"jpeg": "image", "box": [0, 0, 1000, 1000], "size": [100, 100]}, 0
+
+    monkeypatch.setattr(
+        parser_app, "runtime", SimpleNamespace(active_jobs=0, parse=parse)
+    )
+    monkeypatch.setattr(parser_app, "_authorized", lambda _: True)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=parser_app.app), base_url="http://parser.test"
+    ) as client:
+        response = await client.post(
+            "/capture_page",
+            files={"file": ("source.docx", b"office")},
+            data={
+                "filename": "source.docx",
+                "page": "2",
+                "max_edge": "200",
+                "bbox": "[0,0,500,500]",
+            },
+        )
+        assert response.status_code == 200
+        assert "parse_receipt" not in response.json()
+        assert calls[0].capture == {
+            "page": 2,
+            "bbox": [0, 0, 500, 500],
+            "max_edge": 200,
+        }
+        bad = await client.post(
+            "/capture_page",
+            files={"file": ("source.docx", b"office")},
+            data={
+                "filename": "source.docx",
+                "page": "2",
+                "max_edge": "200",
+                "bbox": "[NaN,0,500,500]",
+            },
+        )
+        assert bad.status_code == 400 and len(calls) == 1

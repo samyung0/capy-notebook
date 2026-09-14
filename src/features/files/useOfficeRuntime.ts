@@ -7,6 +7,7 @@ import {
   isOfficeRuntimeMessage,
   OFFICE_PROTOCOL_VERSION,
   type OfficeAnalysis,
+  type OfficeCitation,
   type OfficeFormat,
   type OfficeHostMessage,
   type OfficeMode,
@@ -20,6 +21,7 @@ import {
 
 interface OfficeRuntimeOptions {
   canEdit: boolean;
+  citation?: OfficeCitation;
   file: ViewableFile;
   format: OfficeFormat;
   initialMode?: OfficeMode;
@@ -43,11 +45,14 @@ export function isCurrentOfficeRuntimeMessage(
 
 export function useOfficeRuntime({
   canEdit,
+  citation,
   file,
   format,
   initialMode = 'view',
   revision,
 }: OfficeRuntimeOptions) {
+  const citationRef = useRef(citation);
+  citationRef.current = citation;
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const config = useRef(getOfficeRuntimeConfig()).current;
   const [mode, setMode] = useState<OfficeMode>(canEdit ? initialMode : 'view');
@@ -85,6 +90,14 @@ export function useOfficeRuntime({
       ),
     [config.origin]
   );
+  useEffect(() => {
+    if (frameLoaded)
+      post({
+        citation: mode === 'view' ? (citation ?? null) : null,
+        type: 'set-citation',
+        version: OFFICE_PROTOCOL_VERSION,
+      });
+  }, [citation, mode, frameLoaded, post]);
   const request = useCallback(
     (kind: 'flush' | 'export') =>
       new Promise<ArrayBuffer>((resolve, reject) => {
@@ -218,6 +231,7 @@ export function useOfficeRuntime({
         bytes,
         canEdit,
         checkpoint,
+        citation: mode === 'view' ? citationRef.current : null,
         collaboration,
         fileName: file.name,
         format,

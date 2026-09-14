@@ -13,7 +13,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
-func TestFileLinksPresignTheAuthorizedNormalizedPDF(t *testing.T) {
+func TestOfficeFileLinksPresignTheAuthorizedEditableSource(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.New(ctx, testdb.URL(t))
 	if err != nil {
@@ -48,15 +48,6 @@ func TestFileLinksPresignTheAuthorizedNormalizedPDF(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	previewPath := "previews/lesson.pdf"
-	if _, _, err := memory.Put(previewPath, bytes.NewReader([]byte("%PDF-preview"))); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := st.Pool().Exec(ctx,
-		`UPDATE files SET preview_blob_path=$2 WHERE id=$1`, file.ID, previewPath,
-	); err != nil {
-		t.Fatal(err)
-	}
 
 	if _, _, err := memory.Put("sources/lesson.pptx", bytes.NewReader([]byte("PK-source"))); err != nil {
 		t.Fatal(err)
@@ -72,12 +63,12 @@ func TestFileLinksPresignTheAuthorizedNormalizedPDF(t *testing.T) {
 		"/api/files/"+file.ID+"/links", "u_owner", nil)
 	if owner.Code != http.StatusOK ||
 		!bytes.Contains(owner.Body.Bytes(), []byte(`"url":"memory://sources/lesson.pptx"`)) ||
-		!bytes.Contains(owner.Body.Bytes(), []byte(`"previewUrl":"memory://`+previewPath+`"`)) {
+		bytes.Contains(owner.Body.Bytes(), []byte(`"previewUrl"`)) {
 		t.Fatalf("owner links = %d body=%s", owner.Code, owner.Body.String())
 	}
 
 	got := doReq(t, handler, http.MethodGet, "/api/files/"+file.ID, "u_owner", nil)
-	if got.Code != http.StatusOK || !bytes.Contains(got.Body.Bytes(), []byte(`"previewUrl":"/api/files/`+file.ID+`/preview"`)) {
+	if got.Code != http.StatusOK || bytes.Contains(got.Body.Bytes(), []byte(`"previewUrl"`)) {
 		t.Fatalf("file preview contract = %d body=%s", got.Code, got.Body.String())
 	}
 }

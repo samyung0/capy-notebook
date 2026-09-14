@@ -18,6 +18,7 @@ import hashlib
 import hmac
 import io
 import json
+import math
 import multiprocessing
 import os
 import pickle
@@ -42,7 +43,7 @@ from fastapi.responses import JSONResponse
 from odl.java import JavaTimeout
 from starlette.background import BackgroundTask
 
-ARTIFACT_SCHEMA = "capy-parser-bundle-v3"
+ARTIFACT_SCHEMA = "capy-parser-bundle-v4"
 PARSER_IMPLEMENTATION = "odl-2.5.7-refined-rapidocr-v3"
 RELEASE_SHA = os.environ.get("RELEASE_SHA", "dev").strip() or "dev"
 if os.environ.get("APP_ENV") == "production" and not re.fullmatch(
@@ -125,6 +126,7 @@ class Document:
     data: bytes
     name: str
     fingerprint: str = ""
+    capture: dict | None = None
 
 
 class ParseHardTimeout(RuntimeError):
@@ -184,6 +186,10 @@ def run_document(document: Document) -> dict[str, Any]:
     from odl.document import normalize_document
 
     normalized = normalize_document(document.data, document.name)
+    if document.capture is not None:
+        from odl.capture import capture_page
+
+        return capture_page(normalized.data, **document.capture)
     from odl.refine import parse_pdf
 
     WORK_DIR.mkdir(parents=True, exist_ok=True)
@@ -210,8 +216,12 @@ def run_document(document: Document) -> dict[str, Any]:
         "_furniture": output.furniture,
     }
     if normalized.preview_pdf is not None:
-        result["_preview_pdf"] = normalized.preview_pdf
-    if output.parsed_pdf is not None:
+        from odl.evidence import page_evidence
+
+        result["_page_evidence"] = page_evidence(
+            output.parsed_pdf or normalized.data, output.content_list
+        )
+    elif output.parsed_pdf is not None:
         result["_parsed_pdf"] = output.parsed_pdf
     return result
 
@@ -234,11 +244,13 @@ def _parse_worker_main(requests: Connection, responses: Connection) -> None:
             return
         if request is None:
             return
-        source_path, result_path, name, fingerprint = request
+        source_path, result_path, name, fingerprint, capture = request
         document = None
         result = None
         try:
-            document = Document(Path(source_path).read_bytes(), name, fingerprint)
+            document = Document(
+                Path(source_path).read_bytes(), name, fingerprint, capture
+            )
             result = run_document(document)
             with Path(result_path).open("wb") as output:
                 pickle.dump(result, output, protocol=pickle.HIGHEST_PROTOCOL)
@@ -310,6 +322,7 @@ class _ParseWorkerProcess:
                         str(result_path),
                         document.name,
                         document.fingerprint,
+                        document.capture,
                     ),
                 )
             except (BrokenPipeError, EOFError, OSError) as exc:
@@ -817,6 +830,7 @@ def _bundle_bytes(
             "schema": ARTIFACT_SCHEMA,
             "parser_version": PARSER_VERSION,
             "source_fingerprint": fingerprint,
+            "source_format": result.get("_source_format"),
             "parse_receipt": {
                 "id": fingerprint,
                 "request_id": request_id,
@@ -839,7 +853,11 @@ def _bundle_bytes(
     ):
         raise TypeError("parser furniture list is invalid")
     refinement = _bounded_utf8(
-        json.dumps({"furniture": furniture}, ensure_ascii=False, separators=(",", ":")),
+        json.dumps(
+            {"furniture": furniture, "page_evidence": result.get("_page_evidence")},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
         MAX_ARTIFACT_ENTRY_BYTES,
         "parser refinement",
     )
@@ -861,14 +879,6 @@ def _bundle_bytes(
             raise ValueError("parser images exceed configured byte limit")
         decoded_images.append((safe, decoded))
 
-    preview_pdf = result.get("_preview_pdf")
-    preview_size = 0
-    if isinstance(preview_pdf, bytes) and preview_pdf.startswith(b"%PDF"):
-        from odl.document import OFFICE_PREVIEW_MAX_BYTES
-
-        preview_size = len(preview_pdf)
-        if preview_size > min(OFFICE_PREVIEW_MAX_BYTES, MAX_ARTIFACT_ENTRY_BYTES):
-            raise ValueError("Office preview exceeds configured byte limit")
     parsed_pdf = result.get("_parsed_pdf")
     parsed_size = 0
     if isinstance(parsed_pdf, bytes) and parsed_pdf.startswith(b"%PDF"):
@@ -880,7 +890,6 @@ def _bundle_bytes(
         + len(content)
         + len(markdown)
         + len(refinement)
-        + preview_size
         + parsed_size
         + image_bytes
     )
@@ -893,8 +902,6 @@ def _bundle_bytes(
         archive.writestr("content_list.json", content)
         archive.writestr("document.md", markdown)
         archive.writestr("refinement.json", refinement)
-        if isinstance(preview_pdf, bytes) and preview_pdf.startswith(b"%PDF"):
-            archive.writestr("preview.pdf", preview_pdf)
         if parsed_size:
             archive.writestr("parsed.pdf", parsed_pdf)
         for safe, decoded in decoded_images:
@@ -1104,6 +1111,59 @@ def _failure_response(
     )
 
 
+@app.post("/capture_page")
+async def office_capture(request: Request) -> JSONResponse:
+    if not _authorized(request):
+        return JSONResponse({"detail": "invalid token"}, status_code=401)
+    if runtime.active_jobs >= QUEUE_DEPTH:
+        return JSONResponse(
+            {"detail": "parser document queue is full"}, status_code=429
+        )
+    form = await request.form()
+    upload = form.get("file")
+    if upload is None or not hasattr(upload, "read"):
+        return JSONResponse({"detail": "missing file field"}, status_code=400)
+    name = str(form.get("filename") or "")
+    if Path(name).suffix.lower() not in {".docx", ".xlsx", ".pptx"}:
+        return JSONResponse(
+            {"detail": "capture requires an Office source"}, status_code=400
+        )
+    try:
+        page, max_edge = int(str(form.get("page"))), int(str(form.get("max_edge")))
+        box = json.loads(str(form.get("bbox") or "null"))
+        if page < 1 or not 1 <= max_edge <= 2048:
+            raise ValueError("invalid page or render size")
+        if box is not None and (
+            not isinstance(box, list)
+            or len(box) != 4
+            or any(
+                type(v) not in (float, int)
+                or not math.isfinite(v)
+                or not 0 <= v <= 1000
+                for v in box
+            )
+            or box[0] >= box[2]
+            or box[1] >= box[3]
+        ):
+            raise ValueError("invalid capture box")
+    except (TypeError, ValueError):
+        return JSONResponse({"detail": "invalid capture parameters"}, status_code=400)
+    data = await upload.read(MAX_SOURCE_BYTES + 1)
+    if len(data) > MAX_SOURCE_BYTES:
+        return JSONResponse({"detail": "source exceeds size limit"}, status_code=413)
+    try:
+        result, _ = await runtime.parse(
+            Document(
+                data, name, capture={"page": page, "bbox": box, "max_edge": max_edge}
+            )
+        )
+        return JSONResponse(result)
+    except ParserCapacity as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=429)
+    except Exception as exc:  # noqa: BLE001 - bounded worker diagnostics
+        return _failure_response(exc)
+
+
 @app.post("/file_parse")
 async def file_parse(request: Request) -> JSONResponse:
     if not _authorized(request):
@@ -1135,9 +1195,8 @@ async def file_parse(request: Request) -> JSONResponse:
     except Exception as exc:  # noqa: BLE001 - API returns a bounded diagnostic
         return _failure_response(exc)
     result.update(measurements)
-    # The multipart compatibility route returns JSON. Binary previews belong
+    # The multipart compatibility route returns JSON. Repaired PDFs belong
     # only in the versioned artifact zip used by ingest.
-    result.pop("_preview_pdf", None)
     result.pop("_parsed_pdf", None)
     result.pop("_phases", None)
     result["_server_parse_s"] = round(measurements["_server_parse_ms"] / 1000, 3)

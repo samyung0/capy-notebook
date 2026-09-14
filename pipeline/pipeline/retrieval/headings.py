@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections import defaultdict
+from contextlib import nullcontext
 from pathlib import Path
 
 import pymupdf
@@ -67,7 +68,13 @@ def _source_text(groups: list[dict], area: pymupdf.Rect) -> str:
     )
 
 
-def retain_headings(blocks: list[dict], pdf: Path, chunks: list[Chunk]) -> list[Chunk]:
+def retain_headings(
+    blocks: list[dict],
+    pdf: Path,
+    chunks: list[Chunk],
+    *,
+    verified: set[int] | None = None,
+) -> list[Chunk]:
     """Add literal source headings, keeping every original chunk unchanged."""
     locations: dict[tuple[int, tuple], list[int]] = defaultdict(list)
     furniture: dict[tuple[str, bool], set[int]] = defaultdict(set)
@@ -90,7 +97,7 @@ def retain_headings(blocks: list[dict], pdf: Path, chunks: list[Chunk]) -> list[
         spans.append((min(positions), max(positions)) if positions else None)
     insertions: dict[int, list[Chunk]] = defaultdict(list)
     pages: dict[int, tuple[list[dict], list[dict]]] = {}
-    with pymupdf.open(pdf) as document:
+    with pymupdf.open(pdf) if verified is None else nullcontext() as document:
         for index, block in enumerate(blocks):
             text = block.get("text", "")
             box = block.get("bbox", [])
@@ -118,31 +125,35 @@ def retain_headings(blocks: list[dict], pdf: Path, chunks: list[Chunk]) -> list[
                 furniture[(label, box[3] < 100)]
             ) >= 3:
                 continue
-            if not 1 <= page_number <= len(document):
-                continue
-            page = document[page_number - 1]
-            if page.rotation:
-                continue
-            if page_number not in pages:
-                pages[page_number] = (
-                    page.get_text("rawdict", flags=RAW_FLAGS)["blocks"],
-                    page.get_texttrace(),
+            if verified is not None:
+                if index not in verified:
+                    continue
+            else:
+                if not 1 <= page_number <= len(document):
+                    continue
+                page = document[page_number - 1]
+                if page.rotation:
+                    continue
+                if page_number not in pages:
+                    pages[page_number] = (
+                        page.get_text("rawdict", flags=RAW_FLAGS)["blocks"],
+                        page.get_texttrace(),
+                    )
+                groups, traces = pages[page_number]
+                area = _rect_for(block, page)
+                if canonical(_source_text(groups, area)) != canonical(text):
+                    continue
+                visible = sum(
+                    1
+                    for span in traces
+                    if span["opacity"] >= 0.99
+                    and span["type"] != 3
+                    and span["dir"][0] > 0.99
+                    for char in span["chars"]
+                    if chr(char[0]).isalpha() and _center_inside(char[3], area)
                 )
-            groups, traces = pages[page_number]
-            area = _rect_for(block, page)
-            if canonical(_source_text(groups, area)) != canonical(text):
-                continue
-            visible = sum(
-                1
-                for span in traces
-                if span["opacity"] >= 0.99
-                and span["type"] != 3
-                and span["dir"][0] > 0.99
-                for char in span["chars"]
-                if chr(char[0]).isalpha() and _center_inside(char[3], area)
-            )
-            if visible < sum(c.isalpha() for c in text):
-                continue
+                if visible < sum(c.isalpha() for c in text):
+                    continue
             if any(span and span[0] < index < span[1] for span in spans):
                 continue
             slot = next(

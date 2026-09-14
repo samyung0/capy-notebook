@@ -32,7 +32,7 @@ function SelectValue({
 }
 
 const selectTriggerVariants = cva(
-  'flex w-full items-center justify-between gap-2 bg-surface text-left text-fg hover:border-line-strong focus-visible:border-line-strong disabled:cursor-not-allowed disabled:opacity-40 data-[state=open]:border-line-strong',
+  'group/select-trigger flex w-full items-center justify-between gap-2 bg-surface text-left text-fg hover:border-line-strong focus-visible:border-line-strong disabled:cursor-not-allowed disabled:opacity-40 data-[state=open]:border-line-strong',
   {
     defaultVariants: {
       size: 'md',
@@ -80,9 +80,8 @@ function SelectTrigger({
         <Spinner className="size-4 shrink-0 text-fg-muted" />
       ) : showDownIcon ? (
         <SelectPrimitive.Icon asChild>
-          {/* TODO: rotate to up when active */}
           <Icon
-            className="size-4 text-fg-muted transition-transform duration-200 data-[state=open]:rotate-180"
+            className="size-4 text-fg-muted transition-transform duration-(--motion-duration-fast) ease-(--motion-ease-in-out) group-data-[state=open]/select-trigger:rotate-180"
             name="chevronDown"
           />
         </SelectPrimitive.Icon>
@@ -103,7 +102,7 @@ function SelectContent({
       <SelectPrimitive.Content
         align={align}
         className={cn(
-          'data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=close]:fade-out-0 data-[state=close]:zoom-out-95 data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 relative z-100 max-h-(--radix-select-content-available-height) min-w-36 origin-(--radix-select-content-transform-origin) overflow-y-auto overflow-x-hidden rounded-button border border-line bg-surface duration-100 data-[align-trigger=true]:animate-none data-[state=close]:animate-out data-[state=open]:animate-in',
+          'motion-popup data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 relative z-100 max-h-(--radix-select-content-available-height) min-w-36 origin-(--radix-select-content-transform-origin) overflow-y-auto overflow-x-hidden rounded-button border border-line bg-surface data-[align-trigger=true]:animate-none',
           position === 'popper' &&
             'data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=bottom]:translate-y-1 data-[side=top]:-translate-y-1',
           className

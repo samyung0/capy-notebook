@@ -84,12 +84,13 @@ owner's** plan, create-only (no retroactive invalidation): **10 MiB** free,
 elsewhere. `GET /api/source-upload-policy?workspaceId=` returns the cap the
 dialog should enforce.
 
-The parser-generated Office citation PDF is a platform artifact and does not
-increase `files.size_bytes` or user storage usage. Its object path is held by
-both `artifact_cache` for cross-file reuse and `files.preview_blob_path` while a
-ready file needs it. Blob refcounting keeps a live preview through cache expiry,
-clone, and donor reuse, then queues deletion after its last file/cache reference
-is gone. Native PDFs reuse `blob_path` and do not create another preview object.
+Office parsing keeps no persistent preview PDF. The PDF-free structured parse
+cache remains a platform artifact and does not increase `files.size_bytes` or user
+storage usage. Migration 0016 removes the obsolete preview columns and cache kind.
+Native PDFs reuse `blob_path`.
+Google-native imports now store editable Office exports; those source bytes and
+saved editing state still count toward the owner's quota. Export sizes can differ
+substantially from the previous Google PDF export, in either direction.
 
 Per-workspace **file count** is a separate bound from byte quota: it exists so
 the chat catalogue (`list_sources`) fits in one tool result. Both plans currently
@@ -217,7 +218,7 @@ failed, missing, or otherwise uncopied editor asset are removed from the cloned
 document instead of retaining an unrenderable source id. The material's
 current content and cloned logical assets are the storage-accounted payload.
 Before writing cloned rows, the transaction locks every copied source,
-Office-preview, and ready editor-asset blob refcount in stable path order. The
+and ready editor-asset blob refcount in stable path order. The
 last source reference therefore cannot queue and reap a physical object until
 the clone commits. A path deleted after the repeatable-read snapshot causes a
 transaction retry instead of a clone that points at missing bytes.

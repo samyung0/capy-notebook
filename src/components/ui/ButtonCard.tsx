@@ -23,7 +23,7 @@ export function ButtonCard({
     <Button asChild size={'lg'} variant={variant}>
       <button
         className={cn(
-          'flex h-auto max-h-22 min-w-30 items-center justify-center rounded-card! px-6.5 py-5 transition-[transform,box-shadow] hover:-translate-y-0.5 hover:bg-initial hover:shadow-card',
+          'flex h-auto max-h-22 min-w-30 items-center justify-center rounded-card! px-6.5 py-5 transition-[transform,translate,scale,box-shadow] ease-(--motion-ease-smooth-out) hover:-translate-y-0.5 hover:bg-initial hover:shadow-card',
           flex === 'col' && 'flex-col gap-2',
           flex === 'row' && 'flex-row gap-2.5',
           className

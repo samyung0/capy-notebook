@@ -29,7 +29,7 @@ def candidate(workspace, *, format="docx"):
     }
     with workspace._connect() as conn:
         conn.execute(
-            "UPDATE files SET source_etag='etag-a',indexed=true,content_hash='hash-a',preview_blob_path='previews/a' WHERE id=%s",
+            "UPDATE files SET source_etag='etag-a',indexed=true,content_hash='hash-a' WHERE id=%s",
             (file_id,),
         )
         conn.execute(
@@ -48,7 +48,7 @@ def candidate(workspace, *, format="docx"):
 
 
 @pytest.mark.asyncio
-async def test_candidate_stages_preview_and_index_without_replacing_published(
+async def test_candidate_stages_parse_and_index_without_replacing_published(
     workspace,
 ):
     job = candidate(workspace)
@@ -66,7 +66,6 @@ async def test_candidate_stages_preview_and_index_without_replacing_published(
             db.require_current_file_source(cur, file_id, 1, "etag-b")
             db.set_file_status(cur, file_id, "processing")
             db.set_file_indexed(cur, file_id, False)
-            db.set_file_preview_blob(cur, file_id, "previews/b")
             db.set_file_parse_artifact(
                 cur, file_id, "parse/b", "fingerprint-b", "parser-v1"
             )
@@ -80,9 +79,9 @@ async def test_candidate_stages_preview_and_index_without_replacing_published(
         )
         with workspace._connect() as conn:
             assert conn.execute(
-                "SELECT status,indexed,preview_blob_path,source_etag,content_hash FROM files WHERE id=%s",
+                "SELECT status,indexed,source_etag,content_hash FROM files WHERE id=%s",
                 (file_id,),
-            ).fetchone() == ("ready", True, "previews/a", "etag-a", "hash-a")
+            ).fetchone() == ("ready", True, "etag-a", "hash-a")
             assert (
                 conn.execute(
                     "SELECT content_id FROM rag_file_contents WHERE file_id=%s",
@@ -91,9 +90,9 @@ async def test_candidate_stages_preview_and_index_without_replacing_published(
                 == old["content_id"]
             )
             assert conn.execute(
-                "SELECT preview_blob_path,parse_artifact_key,content_id FROM source_refresh_candidates WHERE file_id=%s",
+                "SELECT parse_artifact_key,content_id FROM source_refresh_candidates WHERE file_id=%s",
                 (file_id,),
-            ).fetchone() == ("previews/b", "parse/b", new["content_id"])
+            ).fetchone() == ("parse/b", new["content_id"])
             with conn.transaction(), conn.cursor() as cur:
                 db.discard_source_candidate(
                     cur, job["payload"], job["id"], "parse failed", stale=False
@@ -276,7 +275,6 @@ async def test_ready_donor_keeps_caption_ownership(workspace, monkeypatch, scena
     token = db.bind_source_refresh(job)
     monkeypatch.setattr(worker, "_finish_ok", lambda *args, **kwargs: True)
     monkeypatch.setattr(worker, "_publish_progress", lambda *args, **kwargs: None)
-    monkeypatch.setattr(worker, "_reuse_office_preview", lambda **kwargs: True)
 
     async def forbid_copy(**kwargs):
         pytest.fail("ready canonical content must not copy chunks onto itself")
@@ -302,7 +300,6 @@ async def test_ready_donor_keeps_caption_ownership(workspace, monkeypatch, scena
             donor={"id": donor["content_id"], "content_hash": "ready-hash", **pin},
             identity="ready-test",
             source_sha256="a" * 64,
-            preview_blob_path="previews/ready",
         )
         with workspace._connect() as conn:
             assert conn.execute(

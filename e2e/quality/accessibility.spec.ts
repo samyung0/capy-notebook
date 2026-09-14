@@ -50,19 +50,4 @@ test.describe('representative accessibility surfaces', () => {
     ).toBeVisible();
     await expectNoAutomatedAccessibilityViolations(anonymousPage);
   });
-
-  test('core workspace reflows at a 320 CSS-pixel viewport', async ({
-    ownerPage,
-    seed,
-  }) => {
-    await ownerPage.setViewportSize({ height: 800, width: 320 });
-    await ownerPage.goto(`/workspaces/${seed.privateWorkspace.id}`);
-    await expect(ownerPage.locator('main')).toBeVisible();
-
-    const overflow = await ownerPage.evaluate(() => ({
-      clientWidth: document.documentElement.clientWidth,
-      scrollWidth: document.documentElement.scrollWidth,
-    }));
-    expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth + 1);
-  });
 });

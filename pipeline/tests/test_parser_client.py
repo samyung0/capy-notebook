@@ -90,7 +90,7 @@ def test_source_schema_and_release_all_participate_in_identity(monkeypatch):
     _, other_source = parser_client.artifact_identity(
         _descriptor(source_sha256="bb" * 32)
     )
-    monkeypatch.setattr(parser_client, "ARTIFACT_SCHEMA", "capy-parser-bundle-v4")
+    monkeypatch.setattr(parser_client, "ARTIFACT_SCHEMA", "capy-parser-bundle-v5")
     _, other_schema = parser_client.artifact_identity(_descriptor())
     monkeypatch.setattr(parser_client.cfg, "release_sha", "b" * 40)
     _, other_release = parser_client.artifact_identity(_descriptor())
@@ -547,7 +547,7 @@ def test_verified_bundle_upload_is_best_effort(tmp_path: Path, monkeypatch):
         parser_client.publish_durable_artifact(
             artifact,
             route=parser_client.ROUTE_FAST,
-            require_office_preview=False,
+            office=False,
         )
         is None
     )
@@ -585,7 +585,7 @@ def test_bundle_is_verified_before_durable_upload(tmp_path: Path, monkeypatch):
         parser_client.publish_durable_artifact(
             artifact,
             route=parser_client.ROUTE_FAST,
-            require_office_preview=False,
+            office=False,
         )
     assert not path.exists()
 
@@ -605,7 +605,7 @@ def test_invalid_local_bundle_is_removed_before_the_next_parse_attempt(
         parser_client.publish_durable_artifact(
             artifact,
             route=parser_client.ROUTE_FAST,
-            require_office_preview=False,
+            office=False,
         )
     assert not path.exists()
 
@@ -636,21 +636,31 @@ def test_extract_writes_and_validates_the_bundle(tmp_path: Path, monkeypatch):
     assert (raw / "images" / "fig1.png").is_file()
 
 
-def test_office_bundle_requires_a_valid_preview(tmp_path: Path, monkeypatch):
-    artifact = _install_artifact(monkeypatch, tmp_path)
+def test_office_bundle_requires_evidence_and_rejects_pdfs(tmp_path: Path, monkeypatch):
     raw = tmp_path / "raw"
     raw.mkdir()
-    with pytest.raises(parser_client.ParserClientError, match="preview.pdf"):
-        parser_client._extract(artifact, raw, FAST_VERSION, require_office_preview=True)
-
-    artifact = _install_artifact(
-        monkeypatch,
-        tmp_path,
-        fingerprint="fp-2",
-        extra={"preview.pdf": b"%PDF-exact"},
+    artifact = _install_artifact(monkeypatch, tmp_path)
+    with pytest.raises(parser_client.ParserClientError, match="page text evidence"):
+        parser_client._extract(artifact, raw, FAST_VERSION, office=True)
+    evidence = json.dumps(
+        {
+            "furniture": [],
+            "page_evidence": {"page_texts": ["Hello"], "visible_headings": []},
+        }
     )
-    parser_client._extract(artifact, raw, FAST_VERSION, require_office_preview=True)
-    assert (raw / "preview.pdf").read_bytes() == b"%PDF-exact"
+    artifact = _install_artifact(
+        monkeypatch, tmp_path, fingerprint="valid", extra={"refinement.json": evidence}
+    )
+    parser_client._extract(artifact, raw, FAST_VERSION, office=True)
+    for name in ("preview.pdf", "parsed.pdf"):
+        artifact = _install_artifact(
+            monkeypatch,
+            tmp_path,
+            fingerprint=name,
+            extra={"refinement.json": evidence, name: b"%PDF-1.7"},
+        )
+        with pytest.raises(parser_client.ParserClientError, match="PDF"):
+            parser_client._extract(artifact, raw, FAST_VERSION, office=True)
 
 
 def test_extract_requires_the_frozen_furniture_entry(tmp_path: Path, monkeypatch):
@@ -670,6 +680,7 @@ def test_extract_requires_the_frozen_furniture_entry(tmp_path: Path, monkeypatch
 def test_extract_bounds_the_refinement_entry(tmp_path: Path, monkeypatch):
     raw = tmp_path / "raw"
     raw.mkdir()
+    monkeypatch.setattr(parser_client.cfg, "parse_content_max_bytes", 4 << 20)
     big = json.dumps({"furniture": ["x" * (4 << 20)]})
     artifact = _install_artifact(
         monkeypatch, tmp_path, fingerprint="fp-big", extra={"refinement.json": big}
@@ -873,7 +884,7 @@ def test_handoff_extraction_classifies_a_broken_zip_for_repair(
             artifact,
             tmp_path / "raw-handoff",
             route=parser_client.ROUTE_FAST,
-            require_office_preview=False,
+            office=False,
         )
 
 

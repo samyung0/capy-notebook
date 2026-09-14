@@ -28,17 +28,17 @@
     },
     "B2_APP_KEY": {
       "kind": "secret",
-      "targets": ["coolify", "ingest-production", "ingest-queue"],
+      "targets": ["coolify", "ingest-production", "ingest-queue", "quality"],
       "required_for": ["coolify", "ingest-production", "ingest-queue"]
     },
     "B2_BUCKET": {
       "kind": "variable",
-      "targets": ["coolify", "ingest-production", "ingest-queue"],
+      "targets": ["coolify", "ingest-production", "ingest-queue", "quality"],
       "required_for": ["coolify", "ingest-production", "ingest-queue"]
     },
     "B2_ENDPOINT": {
       "kind": "variable",
-      "targets": ["coolify", "ingest-production", "ingest-queue"],
+      "targets": ["coolify", "ingest-production", "ingest-queue", "quality"],
       "required_for": ["coolify", "ingest-production", "ingest-queue"]
     },
     "B2_FORCE_PATH_STYLE": {
@@ -47,7 +47,7 @@
     },
     "B2_KEY_ID": {
       "kind": "secret",
-      "targets": ["coolify", "ingest-production", "ingest-queue"],
+      "targets": ["coolify", "ingest-production", "ingest-queue", "quality"],
       "required_for": ["coolify", "ingest-production", "ingest-queue"]
     },
     "B2_LINK_TTL": {
@@ -60,7 +60,7 @@
     },
     "B2_REGION": {
       "kind": "variable",
-      "targets": ["coolify", "ingest-production", "ingest-queue"],
+      "targets": ["coolify", "ingest-production", "ingest-queue", "quality"],
       "required_for": ["coolify", "ingest-production", "ingest-queue"]
     },
     "CAPY_AUDIO_MAX_DURATION_SECONDS": {
@@ -329,12 +329,12 @@
     },
     "CLERK_PUBLISHABLE_KEY": {
       "kind": "variable",
-      "targets": ["workflow", "ops"],
+      "targets": ["workflow", "ops", "quality"],
       "required_for": ["ops"]
     },
     "CLERK_SECRET_KEY": {
       "kind": "secret",
-      "targets": ["coolify", "ops"],
+      "targets": ["coolify", "ops", "quality"],
       "required_for": ["coolify", "ops"]
     },
     "CLERK_WEBHOOK_HOST": {
@@ -474,24 +474,24 @@
     },
     "INGEST_HOST": {
       "kind": "variable",
-      "targets": ["workflow"],
+      "targets": ["workflow", "quality"],
       "required_for": ["workflow"]
     },
     "INGEST_HOST_KNOWN_HOSTS": {
       "kind": "secret",
-      "targets": ["workflow"]
+      "targets": ["workflow", "quality"]
     },
     "INGEST_HOST_SSH_PORT": {
       "kind": "variable",
-      "targets": ["workflow"]
+      "targets": ["workflow", "quality"]
     },
     "INGEST_HOST_SSH_PRIVATE_KEY": {
       "kind": "secret",
-      "targets": ["workflow"]
+      "targets": ["workflow", "quality"]
     },
     "INGEST_HOST_USER": {
       "kind": "variable",
-      "targets": ["workflow"]
+      "targets": ["workflow", "quality"]
     },
     "LLM_API_KEY": {
       "kind": "variable",
@@ -574,8 +574,8 @@
     },
     "PARSER_BIND_ADDRESS": {
       "kind": "variable",
-      "targets": ["ingest-production"],
-      "required_for": ["ingest-production"]
+      "targets": ["ingest-production", "ingest-shared"],
+      "required_for": ["ingest-production", "ingest-shared"]
     },
     "PARSER_PORT": {
       "kind": "variable",
@@ -587,12 +587,13 @@
     },
     "PARSER_TOKEN": {
       "kind": "secret",
-      "targets": ["ingest-production", "ingest-shared"],
-      "required_for": ["ingest-production", "ingest-shared"]
+      "targets": ["coolify", "local", "ingest-production", "ingest-shared"],
+      "required_for": ["coolify", "ingest-production", "ingest-shared"]
     },
     "PARSER_URL": {
       "kind": "variable",
-      "targets": ["local"]
+      "targets": ["local", "coolify"],
+      "required_for": ["coolify"]
     },
     "PIPELINE_SECRET": {
       "kind": "secret",
@@ -678,11 +679,11 @@
     },
     "STRIPE_PRICE_PRO": {
       "kind": "variable",
-      "targets": ["coolify"]
+      "targets": ["coolify", "quality"]
     },
     "STRIPE_SECRET_KEY": {
       "kind": "secret",
-      "targets": ["coolify"]
+      "targets": ["coolify", "quality"]
     },
     "STRIPE_WEBHOOK_SECRET": {
       "kind": "secret",
@@ -703,6 +704,101 @@
     "TENCENT_API_KEY": {
       "kind": "secret",
       "targets": ["coolify", "ingest-production", "ingest-queue", "ops"]
+    },
+    "UAT_ACTOR_EMAIL_DOMAIN": {
+      "kind": "variable",
+      "targets": ["quality"],
+      "environments": ["uat"]
+    },
+    "UAT_CLERK_TEST_MODE": {
+      "kind": "variable",
+      "targets": ["quality"],
+      "environments": ["uat"]
+    },
+    "UAT_DATABASE_NAME": {
+      "kind": "variable",
+      "targets": ["quality"],
+      "environments": ["uat"]
+    },
+    "UAT_DATABASE_URL": {
+      "kind": "secret",
+      "targets": ["quality"],
+      "environments": ["uat"]
+    },
+    "UAT_DB_FORWARD_HOST": {
+      "kind": "variable",
+      "targets": ["quality"],
+      "environments": ["uat"]
+    },
+    "UAT_DB_FORWARD_PORT": {
+      "kind": "variable",
+      "targets": ["quality"],
+      "environments": ["uat"]
+    },
+    "UAT_DB_LOCAL_PORT": {
+      "kind": "variable",
+      "targets": ["quality"],
+      "environments": ["uat"]
+    },
+    "UAT_DB_SSH_HOST": {
+      "kind": "variable",
+      "targets": ["quality"],
+      "environments": ["uat"]
+    },
+    "UAT_DB_SSH_KNOWN_HOSTS": {
+      "kind": "variable",
+      "targets": ["quality"],
+      "environments": ["uat"]
+    },
+    "UAT_DB_SSH_PORT": {
+      "kind": "variable",
+      "targets": ["quality"],
+      "environments": ["uat"]
+    },
+    "UAT_DB_SSH_PRIVATE_KEY": {
+      "kind": "secret",
+      "targets": ["quality"],
+      "environments": ["uat"]
+    },
+    "UAT_DB_SSH_USER": {
+      "kind": "variable",
+      "targets": ["quality"],
+      "environments": ["uat"]
+    },
+    "UAT_RESEND_FROM": {
+      "kind": "variable",
+      "targets": ["quality"],
+      "environments": ["uat"]
+    },
+    "UAT_RESEND_READ_KEY": {
+      "kind": "secret",
+      "targets": ["quality"],
+      "environments": ["uat"]
+    },
+    "UAT_SENTRY_ORG": {
+      "kind": "variable",
+      "targets": ["quality"],
+      "environments": ["uat"]
+    },
+    "UAT_SENTRY_PROJECTS": {
+      "kind": "variable",
+      "targets": ["quality"],
+      "environments": ["uat"]
+    },
+    "UAT_SENTRY_TOKEN": {
+      "kind": "secret",
+      "targets": ["quality"],
+      "environments": ["uat"]
+    },
+    "UAT_SENTRY_URL": {
+      "kind": "variable",
+      "targets": ["quality"],
+      "environments": ["uat"]
+    },
+    "UAT_STRIPE_ACCOUNT_ID": {
+      "kind": "variable",
+      "targets": ["quality"],
+      "environments": ["uat"]
     },
     "UAT_ALLOWED_HOSTS": {
       "kind": "variable",

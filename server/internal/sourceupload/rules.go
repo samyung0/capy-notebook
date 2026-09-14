@@ -17,7 +17,7 @@ const (
 	// ProcessingPlanVersion changes whenever the enqueue-time contract changes
 	// incompatibly. Workers reject versions they do not understand instead of
 	// guessing from a file kind or extension.
-	ProcessingPlanVersion = 1
+	ProcessingPlanVersion = 2
 
 	RouteStoreOnly       = "store_only"
 	RouteRawText         = "raw_text"
@@ -38,14 +38,14 @@ const (
 // and resources are declarative: the worker still owns retries, telemetry, and
 // the implementation of each stage.
 type ProcessingPlan struct {
-	Version       int      `json:"version"`
-	Format        string   `json:"format"`
-	Route         string   `json:"route"`
-	ParserRoute   string   `json:"parserRoute,omitempty"`
-	CaptionMode   string   `json:"captionMode"`
-	OfficePreview bool     `json:"officePreview"`
-	Stages        []string `json:"stages"`
-	Resources     []string `json:"resources"`
+	Version     int      `json:"version"`
+	Format      string   `json:"format"`
+	Route       string   `json:"route"`
+	ParserRoute string   `json:"parserRoute,omitempty"`
+	CaptionMode string   `json:"captionMode"`
+	Office      bool     `json:"office"`
+	Stages      []string `json:"stages"`
+	Resources   []string `json:"resources"`
 }
 
 // explicitKindExtensions mirrors AddSourceDialog's KIND_BY_EXT. Text/code
@@ -439,15 +439,9 @@ func BuildProcessingPlan(name, kind, mode string) (ProcessingPlan, error) {
 	case mode == ParseModeFast && parseExtensions[ext]:
 		plan.Route = RouteDocumentParse
 		plan.ParserRoute = ParseModeFast
-		plan.OfficePreview = ext == "docx" || ext == "pptx" || ext == "xlsx"
+		plan.Office = ext == "docx" || ext == "pptx" || ext == "xlsx"
 		plan.Stages = []string{"fetch_source", "parse_document"}
-		if plan.OfficePreview {
-			plan.Stages = append(plan.Stages, "persist_office_preview")
-		}
 		plan.Resources = appendResource(directResources, "document_parser", "shared_parse_spool")
-		if plan.OfficePreview {
-			plan.Resources = appendResource(plan.Resources, "object_storage_write")
-		}
 		plan.Stages = append(plan.Stages, "chunk", "index", "generate_derivatives")
 	}
 	return plan, nil

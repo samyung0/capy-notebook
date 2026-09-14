@@ -18,10 +18,12 @@ import { Menu } from '@/components/ui/Menu';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { ShareDialog } from '@/features/workspace/ShareDialog';
 import { m } from '@/i18n';
+import { useLoadingReveal } from '@/lib/useLoadingReveal';
 import { userColorPair } from '@/lib/userColor';
 
 export default function Flashcards() {
   const { data, fetchStatus, isLoading } = useFlashcardSets();
+  const revealRef = useLoadingReveal(isLoading);
   const { isPending: createFlashcardSetIsPending, mutate: createFlashcardSet } =
     useCreateFlashcardSet();
   const { mutate: cloneFlashcardSet } = useCloneFlashcardSet();
@@ -65,7 +67,10 @@ export default function Flashcards() {
         ) : isLoading ? (
           <SkeletonCardGrid cardHeight={190} count={6} />
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div
+            className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
+            ref={revealRef}
+          >
             {data?.map((d) => {
               const c = userColorPair(d.color);
               return (

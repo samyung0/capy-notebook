@@ -85,7 +85,6 @@ def stage_source_candidate(cur, file_id: str, fields: dict[str, Any]) -> bool:
         "parse_artifact_key",
         "parse_artifact_fingerprint",
         "parse_artifact_version",
-        "preview_blob_path",
         "source_sha256",
         "content_hash",
     }
@@ -814,7 +813,7 @@ def fail_pipeline_file_if_current(cur, payload: dict[str, Any]) -> bool:
     cur.execute(
         """
         UPDATE files
-        SET status='failed', indexed=false, preview_blob_path=NULL
+        SET status='failed', indexed=false
         WHERE id=%s AND revision=%s AND COALESCE(source_etag, '')=%s
           AND status IN ('pending','processing') AND trashed_at IS NULL
         """,
@@ -1344,15 +1343,6 @@ def set_file_caption_blob(cur, file_id: str, blob_path: str) -> None:
     )
 
 
-def set_file_preview_blob(cur, file_id: str, blob_path: str | None) -> None:
-    if stage_source_candidate(cur, file_id, {"preview_blob_path": blob_path}):
-        return
-    cur.execute(
-        "UPDATE files SET preview_blob_path=%s WHERE id=%s AND trashed_at IS NULL",
-        (blob_path, file_id),
-    )
-
-
 def require_current_file_source(
     cur,
     file_id: str,
@@ -1516,8 +1506,6 @@ def sweep_artifact_cache(cur, *, caption_ttl_days: int) -> int:
         WHERE (
                 (a.kind = 'captions'
                  AND a.last_used_at < now() - make_interval(days => %s))
-             OR (a.kind = 'office_preview'
-                 AND a.last_used_at < now() - make_interval(days => %s))
              OR (a.kind = 'derived_text'
                  AND a.last_used_at < now() - make_interval(days => %s))
              OR (a.kind = 'parse_bundle'
@@ -1532,7 +1520,6 @@ def sweep_artifact_cache(cur, *, caption_ttl_days: int) -> int:
           )
         """,
         (
-            caption_ttl_days,
             caption_ttl_days,
             caption_ttl_days,
             caption_ttl_days,

@@ -168,3 +168,19 @@ describe('source collaboration bridge', () => {
     ).toBe(true);
   });
 });
+
+it('accepts bounded citation changes without a document reload', () => {
+  const message = {
+    citation: { page: 2, quote: 'Source passage about wetlands' },
+    type: 'set-citation',
+    version: OFFICE_PROTOCOL_VERSION,
+  };
+  expect(isOfficeHostMessage(message)).toBe(true);
+  expect(isOfficeHostMessage({ ...message, citation: null })).toBe(true);
+  expect(
+    isOfficeHostMessage({ ...message, citation: { quote: 'x'.repeat(4001) } })
+  ).toBe(false);
+  expect(
+    isOfficeHostMessage({ ...message, citation: { page: -1, quote: 'text' } })
+  ).toBe(false);
+});
