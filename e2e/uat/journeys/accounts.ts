@@ -67,12 +67,26 @@ async function actorContext(env: UatEnvironment, browser: Browser) {
     locale: 'en-US',
   });
   // Official Clerk bot-protection token, not a mocked identity or application response.
-  await context.route(`https://${host}/**`, async (route) => {
-    if (testing.expiresAt * 1000 < Date.now() + 5000)
-      testing = await client.testingTokens.createTestingToken();
-    const url = new URL(route.request().url());
-    url.searchParams.set('__clerk_testing_token', testing.token);
-    await route.continue({ url: url.toString() });
+  await context.route(`https://${host}/v1/**`, async (route) => {
+    try {
+      if (testing.expiresAt * 1000 < Date.now() + 5000)
+        testing = await client.testingTokens.createTestingToken();
+      const url = new URL(route.request().url());
+      url.searchParams.set('__clerk_testing_token', testing.token);
+      const response = await route.fetch({ url: url.toString() });
+      const body = (await response.json()) as {
+        response?: { captcha_bypass?: boolean };
+        client?: { captcha_bypass?: boolean };
+      };
+      // Match Clerk's Playwright helper: the token bypasses server checks, while
+      // this flag prevents the browser from waiting for a CAPTCHA first.
+      for (const entry of [body.response, body.client]) {
+        if (entry?.captcha_bypass === false) entry.captcha_bypass = true;
+      }
+      await route.fulfill({ json: body, response });
+    } catch (error) {
+      throw setupFailure(error, 'Clerk testing request');
+    }
   });
   return context;
 }
@@ -171,8 +185,10 @@ export async function createPrimaryActor(
     }
   );
   const page = await context.newPage();
+  let stage = 'Primary actor signup page';
   try {
     await page.goto('/sign-up');
+    stage = 'Primary actor signup form';
     await page.locator('input[autocomplete="email"]').fill(email);
     await page
       .locator('input[autocomplete="new-password"]')
@@ -182,6 +198,7 @@ export async function createPrimaryActor(
       .filter({ has: page.locator('input[autocomplete="new-password"]') })
       .locator('button[type="submit"]')
       .click();
+    stage = 'Primary actor email verification';
     const codeInput = page.locator('input[autocomplete="one-time-code"]');
     await codeInput.waitFor({ state: 'visible', timeout: 60_000 });
     await codeInput.fill('424242');
@@ -190,11 +207,13 @@ export async function createPrimaryActor(
       .filter({ has: codeInput })
       .locator('button[type="submit"]')
       .click();
+    stage = 'Primary actor Clerk session';
     await sessionReady(page);
     const id = await page.evaluate(
       () => (window as unknown as { Clerk: BrowserClerk }).Clerk.user?.id
     );
     if (!id) throw new Error('Signup completed without a Clerk user');
+    stage = 'Primary actor Clerk identity';
     await run.record('actor', id, {
       email,
       label: 'owner',
@@ -214,11 +233,12 @@ export async function createPrimaryActor(
       privateMetadata: { capyUatRunId: run.id },
     });
     const actor = actorFor(run, context, page, id, email);
+    stage = 'Primary actor application profile';
     await waitForApplicationUser(run, actor);
     return actor;
   } catch (error) {
     await context.close();
-    throw setupFailure(error, 'Primary actor signup');
+    throw setupFailure(error, stage);
   }
 }
 

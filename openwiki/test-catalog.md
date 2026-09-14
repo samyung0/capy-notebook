@@ -443,7 +443,7 @@ reports are retained for 30 days.
 
 | File | About |
 | --- | --- |
-| `e2e/uat/journeys/accounts.spec.ts` | Browser registration with fixed Clerk codes, processed creation/deletion webhooks, profile persistence, deletion grace, revoked session and actual Resend delivery. |
+| `e2e/uat/journeys/accounts.spec.ts` | Browser registration with fixed Clerk codes and Clerk's testing-token/client-CAPTCHA setup, processed creation/deletion webhooks, profile persistence, deletion grace, revoked session and actual Resend delivery; setup errors identify the failing stage without provider details. |
 | `e2e/uat/journeys/billing.spec.ts` | App-created sandbox Checkout; paid subscription, test-clock renewal, deletion blocker and cancellation through actual Stripe webhooks. |
 | `e2e/uat/journeys/files.spec.ts` | DOCX/XLSX/PPTX browser upload/edit/collaboration/fresh-client export/reprocessing/purge; UTF-8 text automatic publication; digital PDF private annotations; terminal CSV ingest failure and settled spend. |
 | `e2e/uat/journeys/runtime.test.ts` | Offline canonical `app.uat` target guard with unchanged UAT Clerk identity, run/actor cleanup boundaries, durable sanitized evidence, malformed manifest/path refusal, saved-token transport redaction, and failed-inventory cleanup resumption. Included in `pnpm test:uat:verifier`. |

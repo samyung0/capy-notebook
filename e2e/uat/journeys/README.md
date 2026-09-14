@@ -29,6 +29,9 @@ asserted. The existing authorization/axe suite remains separate.
 Each test registers a disposable primary account. Collaborators use real Clerk
 accounts and short-lived sign-in tickets. No test writes the database, bypasses
 app authorization, fabricates signed webhooks, or changes shared parser settings.
+Browser setup follows [Clerk's Playwright testing helper](https://github.com/clerk/javascript/blob/main/packages/testing/src/playwright/setupClerkTestingToken.ts):
+it sends an instance testing token and overrides only the Clerk client CAPTCHA
+flag. The token alone does not prevent the browser from waiting for a challenge.
 The initial suite does not yet cover every feature or file type. Image/audio
 codecs, scans, legacy Office, structural Office edits, native citation paint,
 study tools, account restoration and actual OAuth consent remain gaps.
