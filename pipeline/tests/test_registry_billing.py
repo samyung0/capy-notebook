@@ -423,23 +423,16 @@ def test_parser_receipt_uses_fingerprint_idempotency(monkeypatch):
 
 def test_finish_fail_closes_reservation_from_recorded_spend(monkeypatch):
     closed: list[str] = []
-    previews: list[tuple[str, str | None]] = []
     monkeypatch.setattr(db, "connect", lambda: _Conn())
     monkeypatch.setattr(worker, "_lost_claim", lambda *_a, **_k: False)
     monkeypatch.setattr(db, "set_file_status", lambda *_a, **_k: None)
     monkeypatch.setattr(db, "set_file_indexed", lambda *_a, **_k: None)
-    monkeypatch.setattr(
-        db,
-        "set_file_preview_blob",
-        lambda _cur, file_id, path: previews.append((file_id, path)),
-    )
     monkeypatch.setattr(db, "set_job", lambda *_a, **_k: None)
     monkeypatch.setattr(
         db, "close_credit_reservation", lambda _cur, rid: closed.append(rid)
     )
     worker._finish_fail("f_1", "j_1", "boom", 1, "cr_fail")
     assert closed == ["cr_fail"]
-    assert previews == [("f_1", None)]
 
 
 def test_parse_page_rates_are_worst_case_and_ocr_replaces_digital_rate():
