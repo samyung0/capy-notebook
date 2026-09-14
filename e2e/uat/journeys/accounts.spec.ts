@@ -82,7 +82,8 @@ test('registration, durable profile, deletion grace and identity webhook purge',
     'SELECT extract(epoch FROM (purge_after-deletion_requested_at))::double precision AS grace_seconds,deleted_at FROM users WHERE id=%s',
     [actor.id]
   );
-  expect(grace[0].grace_seconds).toBe(30 * 86_400);
+  // Go computes purge_after before PostgreSQL records deletion_requested_at.
+  expect(grace[0].grace_seconds).toBeCloseTo(30 * 86_400, 0);
   expect(grace[0].deleted_at).toBeNull();
   expect(
     (await run.query('SELECT id FROM workspaces WHERE id=%s', [workspaceId]))
