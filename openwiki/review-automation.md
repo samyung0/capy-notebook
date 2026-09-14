@@ -14,7 +14,7 @@ schedule and nothing deploys on push.
 | Runs in Actions                                                                   | Runs locally                                                                                              |
 | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | `ci.yml`: lint, types, unit, Go/Postgres, pipeline, Playwright, boundary contract | `$review-repository` skill: reviewer lanes, challenger, report                                            |
-| `uat-quality.yml`: smoke, release SHA, 5-role authz matrix, axe     | Codex Security source scan, `scripts/review/codex-security-scan.sh`, posts `source/codex-security`        |
+| `uat-quality.yml`: smoke, release SHA, authorization and lifecycle checks | Codex Security source scan, `scripts/review/codex-security-scan.sh`, posts `source/codex-security`        |
 | `perf.yml`: editor budgets plus warn-only delta table                             | Strix dynamic UAT scan, `scripts/review/strix-scan.sh`, posts `uat/strix`                                 |
 | `promote-production.yml`: reruns both gates, then deploys                          | Ingest capacity benchmarks in `bench/parsers` against the ingest host (UAT is capped at one slice/worker) |
 
@@ -81,7 +81,7 @@ Other local commands:
 | `pnpm review:local` / `review:local:full`  | Fast static/unit/offline matrix; `full` adds Go, pipeline, browser, perf. |
 | `node scripts/review/source-snapshot.mjs`  | Record revision and source-tree metadata under `review-results/`.         |
 | `pnpm review:uat:smoke`                    | Probe the authorized UAT SPA, gateway, collab, and the ops Access gate.   |
-| `pnpm e2e:uat`                             | Clerk-backed authz matrix and accessibility checks against UAT.  |
+| `pnpm e2e:uat`                             | Clerk-backed authorization checks against UAT.  |
 | `pnpm review:validate-boundaries`          | Prove no workflow is scheduled, runs a scanner, or stages UAT on push.    |
 | `pnpm review:validate-scanners`            | Test the Strix and Codex result validators.                               |
 

@@ -83,7 +83,7 @@ jobs:
           EXPECTED_REVISION: ${{ steps.resolve.outputs.revision }}
         run: scripts/review/remote-smoke.sh
 
-  # A deploy only has to prove the services answer. The functional and UI checks
+  # A deploy only has to prove the services answer. The authorization checks
   # are run deliberately, before promoting UAT to production.
   authenticated_browser:
     if: inputs.browser_suite
@@ -102,7 +102,7 @@ jobs:
           node-version: 22
       - run: pnpm install --frozen-lockfile
       - run: pnpm run e2e:install
-      - name: Run authenticated functional and UI quality checks
+      - name: Run authenticated authorization checks
         env:
           CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}

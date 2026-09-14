@@ -12,7 +12,8 @@ The browser performs registration, direct uploads, Office/text edits and
 collaboration. Assertions read application APIs, PostgreSQL, exact B2 object
 bytes/versions, Clerk, Stripe, Resend and Sentry. Selecting an editor input or
 button is allowed; layout, nesting, toolbar order and screenshots are not
-asserted. The existing authorization/axe suite remains separate.
+asserted. The existing authorization suite remains separate. Accessibility scans
+run in the local `pnpm e2e:quality` suite and are excluded from the UAT gate.
 
 ## Current coverage
 

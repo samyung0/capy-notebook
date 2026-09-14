@@ -2033,7 +2033,7 @@ first. Roll back compatible Ops changes by selecting a previous passing SHA.
 1. Manually dispatch **Deploy UAT** from `main`. It deploys the selected SHA and
    automatically calls **Deterministic UAT quality**, which probes the SPA,
    gateway and collaboration health and verifies the released SHA. For the
-   authenticated authorization and accessibility evidence, dispatch
+   authenticated authorization evidence, dispatch
    **Deterministic UAT quality** yourself with `browser_suite`, which promotion
    also requires. Leave `revision` blank to resolve the running UAT backend's
    SHA once, matching the Ops and ingest defaults. The smoke, browser, and

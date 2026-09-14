@@ -419,14 +419,16 @@ Remote Chromium against an explicitly authorized UAT deployment
 account emails, and private fixture IDs described in
 [`deployment-runbook.md`](deployment-runbook.md#12-uat-review-environment-and-external-service-sandboxes).
 It never starts or targets the local E2E auth-bypass stack.
-The authorization/axe configuration excludes `journeys/`. The separate manual
+The authorization configuration excludes `journeys/`. The separate manual
 critical-path suite uploads through the UAT server and uses the shared
 nonproduction ingest project. See the [journey setup and cleanup guide](../e2e/uat/journeys/README.md).
 
 | File                                                                | About                                                                                                                                                                                                                                                                                                  |
 | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | [`e2e/uat/authorization.spec.ts`](../e2e/uat/authorization.spec.ts) | Short-lived Clerk Backend API sign-in tokens create real sessions that verify private-workspace visibility, non-disclosing unrelated-user denial, owner/editor workspace statistics, and write/denied collaboration-token modes across owner, editor, viewer, and unrelated accounts. |
-| [`e2e/uat/quality.spec.ts`](../e2e/uat/quality.spec.ts)             | Clerk-backed dashboard/workspace axe checks against the private fixture.                                                                                                                                                                                    |
+
+Accessibility scans remain in the local `pnpm e2e:quality` suite; they are not
+part of the UAT gate.
 
 Supporting configuration: [`e2e/uat/playwright.uat.config.ts`](../e2e/uat/playwright.uat.config.ts)
 fails closed unless authorization is exactly `true`, all UAT hosts are explicitly
