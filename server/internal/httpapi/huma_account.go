@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	clerkuser "github.com/clerk/clerk-sdk-go/v2/user"
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/samyung0/capy-notebook/server/internal/billing"
@@ -90,7 +91,7 @@ func (a *api) registerAccount(api huma.API) {
 	const tag = "Account"
 	reg(api, http.MethodGet, "/api/me", "getMe", tag, "Current user", http.StatusOK, a.getMe)
 	reg(api, http.MethodGet, "/api/me/ingest-slots", "getIngestSlots", tag, "Actor ingest slot remaining", http.StatusOK, a.getIngestSlots)
-	reg(api, http.MethodPatch, "/api/me", "updateMe", tag, "Update display name", http.StatusOK, a.updateMe)
+	reg(api, http.MethodPatch, "/api/me", "updateMe", tag, "Update profile", http.StatusOK, a.updateMe)
 	reg(api, http.MethodPatch, "/api/me/locale", "setLocale", tag, "Set account locale", http.StatusNoContent, a.setLocale)
 	reg(api, http.MethodGet, "/api/search", "search", tag, "Global search", http.StatusOK, a.searchAll)
 	reg(api, http.MethodGet, "/api/notifications", "listNotifications", tag, "List notifications", http.StatusOK, a.listNotifications)
@@ -140,7 +141,18 @@ func (a *api) updateMe(ctx context.Context, in *updateMeInput) (*meOutput, error
 	if name == "" {
 		return nil, huma.Error422UnprocessableEntity("name is required")
 	}
-	if err := a.s.SetName(ctx, userID(ctx), name); err != nil {
+	var photoURL *string
+	if in.Body.AvatarIconID != nil && *in.Body.AvatarIconID == "" {
+		profile, err := clerkuser.Get(ctx, userID(ctx))
+		if err != nil {
+			return nil, huma.Error503ServiceUnavailable("Could not confirm the profile photo with Clerk; try again")
+		}
+		if profile == nil || !profile.HasImage || profile.ImageURL == nil || *profile.ImageURL == "" {
+			return nil, huma.Error422UnprocessableEntity("Upload a profile photo before selecting it")
+		}
+		photoURL = profile.ImageURL
+	}
+	if err := a.s.SetProfile(ctx, userID(ctx), name, apimodel.Str(in.Body.AvatarIconID), photoURL); err != nil {
 		return nil, hErr(err)
 	}
 	return a.getMe(ctx, nil)

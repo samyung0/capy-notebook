@@ -69,7 +69,7 @@ operator hostname before traffic reaches its origin.
 | `app.capynotebook.com`     | SPA and workspace SSR (Cloudflare Worker)                    | yes        | yes                  |
 | `llm.capynotebook.com`     | optional; only if `VITE_LLM_RUNTIME_ORIGIN` is set | optional   | yes                  |
 | `office.capynotebook.com`  | isolated Office file runtime                       | yes        | yes                  |
-| `capynotebook.com`         | future separate Next.js public site                | yes        | yes                  |
+| `capynotebook.com`         | future separate static public site                | yes        | yes                  |
 | `www.capynotebook.com`     | future redirect to apex                                   | yes        | yes                  |
 | `api.capynotebook.com`     | Go gateway (`server`, :8080)                       | yes        | yes                  |
 | `collab.capynotebook.com`  | Hocuspocus WebSocket (`collaboration`, :1234)      | yes        | yes                  |
@@ -236,7 +236,8 @@ and a browser sign-in were not started.
 
 The approved UAT app is `https://app.uat.capynotebook.com`. Production is prepared
 for `https://app.capynotebook.com`, with `capynotebook.com` and `www` reserved for
-a separate public Next.js deployment. Building that public site is deferred.
+a separate public deployment. Astro with fully static output is the preliminary
+choice; building that site is deferred. See the [landing-site handoff](landing-site-handoff.md).
 Keep `/support`, `/help-and-legal`, credits, and existing auth links in the app
 until real public destinations and approved documents exist. `/w/{workspaceId}`
 and its legacy `/share/workspaces/{id}` alias stay on the app Worker.
@@ -297,6 +298,14 @@ and its legacy `/share/workspaces/{id}` alias stay on the app Worker.
    returns to `/`. Resolve those destinations before making redirects permanent.
    Keep old API DNS, ingress and scriptless routing until old tabs/links no longer
    need them. Remove the temporary old app origins only when that support ends.
+
+As of 2026-09-14, the app migration is deployed and the user confirmed there are
+no files or browser-only drafts to recover. Cloudflare ruleset
+`243013591162487eaa11f79f78c9a07f`, rule `650c35e45f5448ebade28397169e6c01`
+(`capy_uat_app_temporary_redirect`), temporarily redirects old-host GET/HEAD
+requests with HTTP 302 and preserves path/query. `/api` and `/api/*` are
+excluded; the old API routing and overlap origins remain. Disable this one rule
+to restore old-host page access without removing the API routes.
 
 Rollback restores the saved canonical app values, Clerk return paths and page
 routing together, then rebuilds/redeploys so generated origins agree. DNS alone

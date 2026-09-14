@@ -334,12 +334,27 @@ def _overlap_footer(overlap: int, hits: int) -> str:
 
 
 async def _list_sources(_args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    if not _gateway_ready() or not ctx.user_id:
+        return _refused(
+            "Source listing is unavailable for this user.", code="lifecycle_rejected"
+        )
+    body = await _gateway_read(
+        "/api/internal/documents/list",
+        {"workspaceId": ctx.workspace_id, "userId": ctx.user_id},
+        "list the sources",
+    )
+    if isinstance(body, ToolResult):
+        return body
+    documents = body["items"]
+    sources = {item["id"]: item for item in documents if item["kind"] == "source_file"}
     outline = await store.workspace_outline(ctx.workspace_id)
     allowed = None if ctx.file_ids is None else set(ctx.file_ids)
     lines: list[str] = []
     by_chapter: dict[str | None, list[dict[str, Any]]] = {}
     for file in outline["files"]:
-        if allowed is not None and file["id"] not in allowed:
+        if file["id"] not in sources or (
+            allowed is not None and file["id"] not in allowed
+        ):
             continue
         by_chapter.setdefault(file["chapter_id"], []).append(file)
     for chapter in outline["chapters"]:
@@ -347,13 +362,22 @@ async def _list_sources(_args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         if not files:
             continue
         lines.append(f"\n## {chapter['name']}")
-        lines.extend(_file_line(f) for f in files)
+        lines.extend(_file_line(f, sources[f["id"]]["editable"]) for f in files)
     unfiled = [f for files in by_chapter.values() for f in files]
     if unfiled:
         lines.append("\n## Unfiled")
-        lines.extend(_file_line(f) for f in unfiled)
+        lines.extend(_file_line(f, sources[f["id"]]["editable"]) for f in unfiled)
+    materials = [item for item in documents if item["kind"] == "material"]
+    if materials:
+        lines.append("\n## Study materials")
+        lines.extend(
+            f"- {item['title']} (id={item['id']}, kind=material, editable={str(item['editable']).lower()})"
+            for item in materials
+        )
     return _result(
-        "\n".join(lines) if lines else "This workspace has no indexed documents."
+        "\n".join(lines)
+        if lines
+        else "This workspace has no sources or materials in scope."
     )
 
 
@@ -384,8 +408,11 @@ async def _describe_documents(args: dict[str, Any], ctx: ToolContext) -> ToolRes
     return _result("\n\n".join(lines))
 
 
-def _file_line(file: dict[str, Any]) -> str:
-    head = f"- {file['name']} (file_id={file['id']}, {file['chunks']} passages)"
+def _file_line(file: dict[str, Any], editable: bool) -> str:
+    head = (
+        f"- {file['name']} (file_id={file['id']}, kind=source_file, "
+        f"editable={str(editable).lower()}, {file['chunks']} passages)"
+    )
     if file.get("status") != "ready":
         head += f" [{file['status']}]"
     if file.get("descriptor"):
@@ -879,49 +906,6 @@ async def _gateway_read(
     return body if isinstance(body, dict) else {}
 
 
-async def _list_documents(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    if not _gateway_ready() or not ctx.user_id:
-        return _refused(
-            "Document tools are unavailable for this user.", code="lifecycle_rejected"
-        )
-    body = await _gateway_read(
-        "/api/internal/documents/list",
-        {
-            "workspaceId": ctx.workspace_id,
-            "userId": ctx.user_id,
-            "kind": args.get("kind") or "",
-            "query": args.get("query") or "",
-        },
-        "list the documents",
-    )
-    if isinstance(body, ToolResult):
-        return body
-    allowed = None if ctx.file_ids is None else set(ctx.file_ids)
-    lines = []
-    for item in body.get("items") or []:
-        if (
-            item.get("kind") == "source_file"
-            and allowed is not None
-            and item.get("id") not in allowed
-        ):
-            continue
-        state = (
-            "editable"
-            if item.get("editable")
-            else f"read-only: {item.get('reason') or ''}".rstrip(": ")
-        )
-        extra = f", {item.get('materialKind')}" if item.get("materialKind") else ""
-        lines.append(
-            f"- {item.get('title')} (kind={item.get('kind')}, id={item.get('id')}, "
-            f"format={item.get('format')}{extra}, {state})"
-        )
-    if not lines:
-        return _result("This workspace has no documents in scope.")
-    return _result(
-        "Documents (inspect_document takes kind and id):\n" + "\n".join(lines)
-    )
-
-
 def _render_inspection(body: dict[str, Any]) -> str:
     head = [
         f"{body.get('title') or ''} format={body.get('format')}",
@@ -1025,7 +1009,6 @@ _register("read_document", _read_document)
 _register("capture_page", _capture_page)
 _register("create_material", _create_material)
 _register("resolve_source_change", _resolve_source_change)
-_register("list_documents", _list_documents)
 _register("inspect_document", _inspect_document)
 _register("edit_document", _edit_document)
 _register("trash_file", _trash_file)

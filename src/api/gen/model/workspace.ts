@@ -25,6 +25,7 @@ export interface Workspace {
   description: string;
   fileCount: number;
   filesLimit: number;
+  iconId: string;
   id: string;
   isOwner: boolean;
   lastAccessedAt: string;

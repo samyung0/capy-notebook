@@ -4,6 +4,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 // Bounded string types. Each one carries its maximum into the request schema
@@ -78,4 +79,12 @@ func Str[T ~string](p *T) *string {
 	}
 	s := string(*p)
 	return &s
+}
+
+// Empty means restore the Clerk photo on a profile; workspace requests require a value.
+type IconID string
+
+func (IconID) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
+	s.Pattern = "^$|" + store.IconIDPattern
+	return s
 }

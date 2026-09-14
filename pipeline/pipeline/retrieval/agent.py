@@ -91,8 +91,6 @@ def _describe(name: str, args: dict[str, Any]) -> str:
     if name in ("trash_file", "restore_file", "inspect_document", "edit_document"):
         target = args.get("target") or {}
         return str(target.get("id") or "") if isinstance(target, dict) else ""
-    if name == "list_documents":
-        return "listing documents"
     return ""
 
 

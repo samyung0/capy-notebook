@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "operations": [
     "source.read",
     "material.read",
@@ -74,7 +74,7 @@
     {
       "name": "list_sources",
       "version": 1,
-      "description": "List the chapters and documents in this workspace with a short descriptor of each file. Use this first when the question is about what the workspace contains, or to decide which documents to search or describe.",
+      "description": "List source files by chapter and workspace study materials, with ids, resource kinds and editability. Source files include passage counts and short descriptors.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {},
@@ -87,7 +87,8 @@
         "chat"
       ],
       "requiredOperations": [
-        "source.read"
+        "source.read",
+        "material.read"
       ],
       "retention": "full"
     },
@@ -334,41 +335,6 @@
       ],
       "requiredOperations": [
         "source.read"
-      ],
-      "retention": "full"
-    },
-    {
-      "name": "list_documents",
-      "version": 1,
-      "description": "List the editable documents of this workspace: source files (text, Markdown, CSV, DOCX, XLSX, PPTX; PDFs are read-only) and study materials, with ids, kinds and whether each can be edited. Use it to find a document to inspect or edit; use list_sources for retrieval.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "kind": {
-            "description": "Limit to one resource kind.",
-            "enum": [
-              "source_file",
-              "material"
-            ],
-            "type": "string"
-          },
-          "query": {
-            "description": "Case-insensitive name filter.",
-            "maxLength": 200,
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "mutates": false,
-      "usesEmbedding": false,
-      "concurrency": "read",
-      "allowedSlots": [
-        "chat"
-      ],
-      "requiredOperations": [
-        "source.read",
-        "material.read"
       ],
       "retention": "full"
     },

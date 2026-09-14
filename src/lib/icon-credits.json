@@ -1,0 +1,68 @@
+[
+  {
+    "id": "slice",
+    "name": "Slice",
+    "author": "DiceBear",
+    "source": "https://www.dicebear.com",
+    "license": {
+      "name": "CC0 1.0",
+      "url": "https://creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "adaptation": "DiceBear remix; catalog SVG color edits"
+  },
+  {
+    "id": "sprouts",
+    "name": "Sprouts",
+    "author": "DiceBear",
+    "source": "https://www.dicebear.com",
+    "license": {
+      "name": "CC0 1.0",
+      "url": "https://creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "adaptation": "DiceBear remix"
+  },
+  {
+    "id": "critters",
+    "name": "Critters",
+    "author": "DiceBear",
+    "source": "https://www.dicebear.com",
+    "license": {
+      "name": "CC0 1.0",
+      "url": "https://creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "adaptation": "DiceBear remix"
+  },
+  {
+    "id": "avataaars",
+    "name": "Avataaars",
+    "author": "Pablo Stanley",
+    "source": "https://avataaars.com/",
+    "license": {
+      "name": "Free for personal and commercial use",
+      "url": "https://avataaars.com/"
+    },
+    "adaptation": "DiceBear remix; catalog SVG color edits"
+  },
+  {
+    "id": "notionists",
+    "name": "Notionists",
+    "author": "Zoish",
+    "source": "https://heyzoish.gumroad.com/l/notionists",
+    "license": {
+      "name": "CC0 1.0",
+      "url": "https://creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "adaptation": "DiceBear remix"
+  },
+  {
+    "id": "waves",
+    "name": "Waves",
+    "author": "DiceBear",
+    "source": "https://www.dicebear.com",
+    "license": {
+      "name": "CC0 1.0",
+      "url": "https://creativecommons.org/publicdomain/zero/1.0/"
+    },
+    "adaptation": "DiceBear remix"
+  }
+]

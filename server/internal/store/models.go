@@ -17,6 +17,7 @@ type User struct {
 	ID                 string             `json:"id"`
 	Name               string             `json:"name"`
 	Email              string             `json:"email"`
+	AvatarIconID       string             `json:"avatarIconId,omitempty"`
 	AvatarURL          string             `json:"avatarUrl,omitempty"`
 	ClassLabel         string             `json:"classLabel,omitempty"`
 	Streak             int                `json:"streak"`
@@ -35,6 +36,7 @@ type Workspace struct {
 	ID          string    `json:"id"`
 	Name        string    `json:"name"`
 	Color       UserColor `json:"color"`
+	IconID      string    `json:"iconId"`
 	Privacy     Privacy   `json:"privacy"`
 	ShareRole   ShareRole `json:"shareRole"`
 	Tags        []Tag     `json:"tags"`

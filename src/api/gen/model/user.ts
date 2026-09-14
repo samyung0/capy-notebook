@@ -11,6 +11,7 @@ import type { SubscriptionStatus } from './subscriptionStatus.ts';
 export interface User {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  avatarIconId?: string;
   avatarUrl?: string;
   chatModel: Ref;
   classLabel?: string;

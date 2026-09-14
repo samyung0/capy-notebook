@@ -47,14 +47,14 @@ type IntegrationsStatus struct {
 
 func (s *Store) Me(ctx context.Context, userID string) (User, error) {
 	var u User
-	row := s.pool.QueryRow(ctx, `SELECT id, name, COALESCE(email,''), COALESCE(avatar_url,''),
+	row := s.pool.QueryRow(ctx, `SELECT id, name, COALESCE(email,''), COALESCE('/icons/' || NULLIF(avatar_icon_id,'') || '.svg', avatar_url,''), COALESCE(avatar_icon_id,''),
 		COALESCE(class_label,''), streak, locale,
 		chat_model_provider_slug, chat_model_slug,
 		generate_model_provider_slug, generate_model_slug,
 		editor_model_provider_slug, editor_model_slug,
 		plan_tier, subscription_status
 		FROM users WHERE id=$1`, userID)
-	err := row.Scan(&u.ID, &u.Name, &u.Email, &u.AvatarURL, &u.ClassLabel, &u.Streak,
+	err := row.Scan(&u.ID, &u.Name, &u.Email, &u.AvatarURL, &u.AvatarIconID, &u.ClassLabel, &u.Streak,
 		&u.Locale,
 		&u.ChatModel.ProviderSlug, &u.ChatModel.ModelSlug,
 		&u.GenerateModel.ProviderSlug, &u.GenerateModel.ModelSlug,
@@ -74,6 +74,17 @@ func (s *Store) Me(ctx context.Context, userID string) (User, error) {
 // SetName stores the display name the user typed. name is already trimmed and
 // bounded by the request schema.
 func (s *Store) SetName(ctx context.Context, userID, name string) error {
+	return s.SetProfile(ctx, userID, name, nil, nil)
+}
+
+// photoURL is a server-verified Clerk image, supplied only when restoring a photo.
+func (s *Store) SetProfile(ctx context.Context, userID, name string, iconID, photoURL *string) error {
+	if iconID != nil && *iconID != "" && !ValidIconID(*iconID) {
+		return ErrNotFound
+	}
+	if iconID != nil && *iconID == "" && (photoURL == nil || *photoURL == "") {
+		return ErrNotFound
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -82,8 +93,10 @@ func (s *Store) SetName(ctx context.Context, userID, name string) error {
 	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE users SET name=$2, updated_at=now()
-		WHERE id=$1`, userID, name); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE users SET name=$2,
+        avatar_icon_id=CASE WHEN $3::text IS NULL THEN avatar_icon_id ELSE $3 END,
+        avatar_url=COALESCE($4,avatar_url), updated_at=now()
+        WHERE id=$1`, userID, name, iconID, photoURL); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -401,17 +414,22 @@ func (s *Store) UpsertUserFromClerk(ctx context.Context, id, name, email, avatar
 	// without consulting the model registry: changing or temporarily disabling
 	// the signup defaults must not make an existing session fail. Locked rows
 	// intentionally do not match this update.
+	defaultIcon := ""
+	if avatarURL == "" {
+		defaultIcon = defaultAvatarIconID(id)
+	}
 	var needsDefaultWorkspace bool
 	// name is user-owned once the row exists (PATCH /api/me); a refresh only
 	// carries email and avatar.
 	err := s.pool.QueryRow(ctx, `UPDATE users SET
 			email=COALESCE(NULLIF($2,''), email),
 			avatar_url=COALESCE(NULLIF($3,''), avatar_url),
+            avatar_icon_id=COALESCE(avatar_icon_id, $4),
 			updated_at=now()
 		WHERE id=$1 AND deleted_at IS NULL
 			AND deletion_requested_at IS NULL
 			AND suspended_at IS NULL
-		RETURNING starter_workspace_provisioned_at IS NULL`, id, email, avatarURL).
+		RETURNING starter_workspace_provisioned_at IS NULL`, id, email, avatarURL, defaultIcon).
 		Scan(&needsDefaultWorkspace)
 	if err == nil {
 		return needsDefaultWorkspace, nil
@@ -433,14 +451,15 @@ func (s *Store) UpsertUserFromClerk(ctx context.Context, id, name, email, avatar
 		return false, err
 	}
 	err = s.pool.QueryRow(ctx, `INSERT INTO users
-			(id, name, email, avatar_url,
+			(id, name, email, avatar_url, avatar_icon_id,
 			 chat_model_provider_slug, chat_model_slug,
 			 generate_model_provider_slug, generate_model_slug,
 			 editor_model_provider_slug, editor_model_slug)
-			VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),$5,$6,$7,$8,$9,$10)
+			VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),$11,$5,$6,$7,$8,$9,$10)
 		ON CONFLICT (id) DO UPDATE SET
 			email=COALESCE(EXCLUDED.email, users.email),
 			avatar_url=COALESCE(NULLIF(EXCLUDED.avatar_url,''), users.avatar_url),
+            avatar_icon_id=COALESCE(users.avatar_icon_id, EXCLUDED.avatar_icon_id),
 			updated_at=now()
 		WHERE users.deleted_at IS NULL
 			AND users.deletion_requested_at IS NULL
@@ -449,7 +468,7 @@ func (s *Store) UpsertUserFromClerk(ctx context.Context, id, name, email, avatar
 		id, name, email, avatarURL,
 		chatModel.ProviderSlug, chatModel.ModelSlug,
 		genModel.ProviderSlug, genModel.ModelSlug,
-		editorModel.ProviderSlug, editorModel.ModelSlug).Scan(&needsDefaultWorkspace)
+		editorModel.ProviderSlug, editorModel.ModelSlug, defaultIcon).Scan(&needsDefaultWorkspace)
 	// The WHERE clause suppresses the RETURNING row for a tombstone, which is
 	// not an error: the account exists and stays scrubbed.
 	if isNoRows(err) {

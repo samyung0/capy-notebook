@@ -1,0 +1,395 @@
+{
+  "version": 1,
+  "styles": [
+    {
+      "id": "slice",
+      "label": "Slice",
+      "creditId": "slice",
+      "avatars": [
+        {
+          "id": "slice-01",
+          "src": "/icons/slice-01.svg"
+        },
+        {
+          "id": "slice-02",
+          "src": "/icons/slice-02.svg"
+        },
+        {
+          "id": "slice-03",
+          "src": "/icons/slice-03.svg"
+        },
+        {
+          "id": "slice-04",
+          "src": "/icons/slice-04.svg"
+        },
+        {
+          "id": "slice-05",
+          "src": "/icons/slice-05.svg"
+        },
+        {
+          "id": "slice-06",
+          "src": "/icons/slice-06.svg"
+        },
+        {
+          "id": "slice-07",
+          "src": "/icons/slice-07.svg"
+        },
+        {
+          "id": "slice-08",
+          "src": "/icons/slice-08.svg"
+        },
+        {
+          "id": "slice-09",
+          "src": "/icons/slice-09.svg"
+        },
+        {
+          "id": "slice-10",
+          "src": "/icons/slice-10.svg"
+        },
+        {
+          "id": "slice-11",
+          "src": "/icons/slice-11.svg"
+        },
+        {
+          "id": "slice-12",
+          "src": "/icons/slice-12.svg"
+        }
+      ]
+    },
+    {
+      "id": "sprouts",
+      "label": "Sprouts",
+      "creditId": "sprouts",
+      "avatars": [
+        {
+          "id": "sprouts-01",
+          "src": "/icons/sprouts-01.svg"
+        },
+        {
+          "id": "sprouts-02",
+          "src": "/icons/sprouts-02.svg"
+        },
+        {
+          "id": "sprouts-03",
+          "src": "/icons/sprouts-03.svg"
+        },
+        {
+          "id": "sprouts-04",
+          "src": "/icons/sprouts-04.svg"
+        },
+        {
+          "id": "sprouts-05",
+          "src": "/icons/sprouts-05.svg"
+        },
+        {
+          "id": "sprouts-06",
+          "src": "/icons/sprouts-06.svg"
+        },
+        {
+          "id": "sprouts-07",
+          "src": "/icons/sprouts-07.svg"
+        },
+        {
+          "id": "sprouts-08",
+          "src": "/icons/sprouts-08.svg"
+        },
+        {
+          "id": "sprouts-09",
+          "src": "/icons/sprouts-09.svg"
+        },
+        {
+          "id": "sprouts-10",
+          "src": "/icons/sprouts-10.svg"
+        },
+        {
+          "id": "sprouts-11",
+          "src": "/icons/sprouts-11.svg"
+        },
+        {
+          "id": "sprouts-12",
+          "src": "/icons/sprouts-12.svg"
+        }
+      ]
+    },
+    {
+      "id": "critters",
+      "label": "Critters",
+      "creditId": "critters",
+      "avatars": [
+        {
+          "id": "critters-01",
+          "src": "/icons/critters-01.svg"
+        },
+        {
+          "id": "critters-02",
+          "src": "/icons/critters-02.svg"
+        },
+        {
+          "id": "critters-03",
+          "src": "/icons/critters-03.svg"
+        },
+        {
+          "id": "critters-04",
+          "src": "/icons/critters-04.svg"
+        },
+        {
+          "id": "critters-05",
+          "src": "/icons/critters-05.svg"
+        },
+        {
+          "id": "critters-06",
+          "src": "/icons/critters-06.svg"
+        },
+        {
+          "id": "critters-07",
+          "src": "/icons/critters-07.svg"
+        },
+        {
+          "id": "critters-08",
+          "src": "/icons/critters-08.svg"
+        },
+        {
+          "id": "critters-09",
+          "src": "/icons/critters-09.svg"
+        },
+        {
+          "id": "critters-10",
+          "src": "/icons/critters-10.svg"
+        },
+        {
+          "id": "critters-11",
+          "src": "/icons/critters-11.svg"
+        },
+        {
+          "id": "critters-12",
+          "src": "/icons/critters-12.svg"
+        },
+        {
+          "id": "critters-13",
+          "src": "/icons/critters-13.svg"
+        },
+        {
+          "id": "critters-14",
+          "src": "/icons/critters-14.svg"
+        },
+        {
+          "id": "critters-15",
+          "src": "/icons/critters-15.svg"
+        },
+        {
+          "id": "critters-16",
+          "src": "/icons/critters-16.svg"
+        }
+      ]
+    },
+    {
+      "id": "avataaars",
+      "label": "Avataaars",
+      "creditId": "avataaars",
+      "avatars": [
+        {
+          "id": "avataaars-01",
+          "src": "/icons/avataaars-01.svg"
+        },
+        {
+          "id": "avataaars-02",
+          "src": "/icons/avataaars-02.svg"
+        },
+        {
+          "id": "avataaars-03",
+          "src": "/icons/avataaars-03.svg"
+        },
+        {
+          "id": "avataaars-04",
+          "src": "/icons/avataaars-04.svg"
+        },
+        {
+          "id": "avataaars-05",
+          "src": "/icons/avataaars-05.svg"
+        },
+        {
+          "id": "avataaars-06",
+          "src": "/icons/avataaars-06.svg"
+        },
+        {
+          "id": "avataaars-07",
+          "src": "/icons/avataaars-07.svg"
+        },
+        {
+          "id": "avataaars-08",
+          "src": "/icons/avataaars-08.svg"
+        },
+        {
+          "id": "avataaars-09",
+          "src": "/icons/avataaars-09.svg"
+        },
+        {
+          "id": "avataaars-10",
+          "src": "/icons/avataaars-10.svg"
+        },
+        {
+          "id": "avataaars-11",
+          "src": "/icons/avataaars-11.svg"
+        },
+        {
+          "id": "avataaars-12",
+          "src": "/icons/avataaars-12.svg"
+        },
+        {
+          "id": "avataaars-13",
+          "src": "/icons/avataaars-13.svg"
+        },
+        {
+          "id": "avataaars-14",
+          "src": "/icons/avataaars-14.svg"
+        },
+        {
+          "id": "avataaars-15",
+          "src": "/icons/avataaars-15.svg"
+        },
+        {
+          "id": "avataaars-16",
+          "src": "/icons/avataaars-16.svg"
+        },
+        {
+          "id": "avataaars-17",
+          "src": "/icons/avataaars-17.svg"
+        },
+        {
+          "id": "avataaars-18",
+          "src": "/icons/avataaars-18.svg"
+        },
+        {
+          "id": "avataaars-19",
+          "src": "/icons/avataaars-19.svg"
+        },
+        {
+          "id": "avataaars-20",
+          "src": "/icons/avataaars-20.svg"
+        },
+        {
+          "id": "avataaars-21",
+          "src": "/icons/avataaars-21.svg"
+        },
+        {
+          "id": "avataaars-22",
+          "src": "/icons/avataaars-22.svg"
+        },
+        {
+          "id": "avataaars-23",
+          "src": "/icons/avataaars-23.svg"
+        },
+        {
+          "id": "avataaars-24",
+          "src": "/icons/avataaars-24.svg"
+        }
+      ]
+    },
+    {
+      "id": "notionists",
+      "label": "Notionists",
+      "creditId": "notionists",
+      "avatars": [
+        {
+          "id": "notionists-01",
+          "src": "/icons/notionists-01.svg"
+        },
+        {
+          "id": "notionists-02",
+          "src": "/icons/notionists-02.svg"
+        },
+        {
+          "id": "notionists-03",
+          "src": "/icons/notionists-03.svg"
+        },
+        {
+          "id": "notionists-04",
+          "src": "/icons/notionists-04.svg"
+        },
+        {
+          "id": "notionists-05",
+          "src": "/icons/notionists-05.svg"
+        },
+        {
+          "id": "notionists-06",
+          "src": "/icons/notionists-06.svg"
+        },
+        {
+          "id": "notionists-07",
+          "src": "/icons/notionists-07.svg"
+        },
+        {
+          "id": "notionists-08",
+          "src": "/icons/notionists-08.svg"
+        },
+        {
+          "id": "notionists-09",
+          "src": "/icons/notionists-09.svg"
+        },
+        {
+          "id": "notionists-10",
+          "src": "/icons/notionists-10.svg"
+        },
+        {
+          "id": "notionists-11",
+          "src": "/icons/notionists-11.svg"
+        },
+        {
+          "id": "notionists-12",
+          "src": "/icons/notionists-12.svg"
+        }
+      ]
+    },
+    {
+      "id": "waves",
+      "label": "Waves",
+      "creditId": "waves",
+      "avatars": [
+        {
+          "id": "waves-01",
+          "src": "/icons/waves-01.svg"
+        },
+        {
+          "id": "waves-02",
+          "src": "/icons/waves-02.svg"
+        },
+        {
+          "id": "waves-03",
+          "src": "/icons/waves-03.svg"
+        },
+        {
+          "id": "waves-04",
+          "src": "/icons/waves-04.svg"
+        },
+        {
+          "id": "waves-05",
+          "src": "/icons/waves-05.svg"
+        },
+        {
+          "id": "waves-06",
+          "src": "/icons/waves-06.svg"
+        },
+        {
+          "id": "waves-07",
+          "src": "/icons/waves-07.svg"
+        },
+        {
+          "id": "waves-08",
+          "src": "/icons/waves-08.svg"
+        },
+        {
+          "id": "waves-09",
+          "src": "/icons/waves-09.svg"
+        },
+        {
+          "id": "waves-10",
+          "src": "/icons/waves-10.svg"
+        },
+        {
+          "id": "waves-11",
+          "src": "/icons/waves-11.svg"
+        }
+      ]
+    }
+  ]
+}

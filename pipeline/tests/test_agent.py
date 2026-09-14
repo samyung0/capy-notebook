@@ -1527,6 +1527,11 @@ async def test_restricted_scope_emptied_by_trash_stays_empty(monkeypatch):
         }
 
     monkeypatch.setattr(tools.store, "workspace_outline", _outline)
+
+    async def _documents(*_args):
+        return {"items": [{"kind": "source_file", "id": "f_2", "editable": False}]}
+
+    monkeypatch.setattr(tools, "_gateway_read", _documents)
     listed = await tools._list_sources({}, ctx)
     assert "two.pdf" not in listed.text()
     resolved = await tools._resolve_scope(ctx, tools._MISSING)
@@ -1610,9 +1615,12 @@ class _JsonResp:
         return self._body
 
 
-async def test_list_documents_hides_files_outside_a_restricted_scope(monkeypatch):
+@pytest.mark.parametrize("file_ids", [None, ["f_2"], []])
+async def test_list_sources_includes_materials_and_scoped_file_editability(
+    monkeypatch, file_ids
+):
     ctx = _owner_ctx()
-    ctx.file_ids = ["f_2"]
+    ctx.file_ids = file_ids
     seen: dict = {}
 
     def _post(url, **kwargs):
@@ -1649,13 +1657,45 @@ async def test_list_documents_hides_files_outside_a_restricted_scope(monkeypatch
         )
 
     _gateway(monkeypatch, post=_post)
-    result = await tools.run("list_documents", {"_tool_call_id": "c1"}, ctx)
+
+    async def _outline(_workspace_id):
+        return {
+            "chapters": [{"id": "ch_1", "name": "Biology"}],
+            "files": [
+                {
+                    "id": "f_1",
+                    "name": "one.pdf",
+                    "chapter_id": "ch_1",
+                    "chunks": 4,
+                    "status": "ready",
+                    "descriptor": "Cell structure",
+                },
+                {
+                    "id": "f_2",
+                    "name": "two.txt",
+                    "chapter_id": None,
+                    "chunks": 0,
+                    "status": "pending",
+                },
+            ],
+        }
+
+    monkeypatch.setattr(tools.store, "workspace_outline", _outline)
+    result = await tools.run("list_sources", {"_tool_call_id": "c1"}, ctx)
     text = result.text()
     assert seen["url"].endswith("/api/internal/documents/list")
     assert seen["userId"] == "u1" and seen["workspaceId"] == "ws_1"
-    assert "f_1" not in text and "one.pdf" not in text
-    assert "id=f_2" in text and "editable" in text
-    assert "id=mat_1" in text and "note" in text
+    if file_ids is None:
+        assert "## Biology" in text and "Cell structure" in text
+        assert "file_id=f_1, kind=source_file, editable=false, 4 passages" in text
+    else:
+        assert "f_1" not in text and "one.pdf" not in text
+    if file_ids != []:
+        assert "file_id=f_2, kind=source_file, editable=true, 0 passages" in text
+        assert "[pending]" in text
+    else:
+        assert "f_2" not in text and "two.txt" not in text
+    assert "Notes (id=mat_1, kind=material, editable=true)" in text
 
 
 async def test_inspect_document_renders_blocks_lines_and_office_entries(monkeypatch):

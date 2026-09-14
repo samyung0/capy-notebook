@@ -3452,7 +3452,7 @@ export const getUpdateMeUrl = () => {
 }
 
 /**
- * @summary Update display name
+ * @summary Update profile
  */
 export const updateMe = async (updateMeReq: NonReadonly<UpdateMeReq>, options?: RequestInit): Promise<updateMeResponse> => {
 

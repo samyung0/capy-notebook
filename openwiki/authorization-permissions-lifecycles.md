@@ -465,10 +465,25 @@ forms require 12 characters with a digit and a symbol; sign-in only checks
 non-empty. OAuth accounts are never asked for a password.
 
 The dashboard opens a first-run dialog when the Clerk user has no
-`unsafeMetadata.onboardedAt`. Confirm uploads the avatar to Clerk, saves the
-name through `PATCH /api/me` and writes `onboardedAt`; Skip writes only
-`onboardedAt`. The gateway picks the new avatar up through the ordinary profile
-sync on the next request.
+`unsafeMetadata.onboardedAt`. The profile chooser uses the fixed catalog in
+`src/lib/icon-catalog.json`; SVGs ship at `/icons/<id>.svg`. Confirm saves the
+name and optional `avatarIconId` through `PATCH /api/me`. Photos preview locally
+and upload directly to Clerk on Confirm, accepting PNG/JPEG/WebP up to
+10,000,000 bytes. After upload, an empty `avatarIconId` asks the gateway to
+verify the current real Clerk photo before clearing the override. Upload or
+verification failure preserves the stored icon. Skip writes only `onboardedAt`.
+
+Clerk `hasImage` distinguishes real photos from provider placeholders. Accounts
+without a real photo get a stored Avataaars ID on provisioning/sync. A selected
+catalog ID takes precedence over `avatar_url` in profile, member, mention and
+comment-author projections; Clerk sync preserves that override. Internally, `avatar_icon_id` is NULL until
+first sync and an empty string when Clerk is selected, so delayed no-photo
+events cannot reassign a default after a confirmed upload. Purge clears
+both fields. Workspace `icon_id` is required and validated against the same
+frozen catalog, receives a persisted random Slice default, follows existing
+member owner/editor settings permissions and survives cloning. Workspace color
+remains separate. Help and Legal contains support cards, FAQs and contact links and links to the author,
+source, artwork license and generator notices on Credits.
 
 Sources: [auth landing](../src/features/auth/AuthLanding.tsx),
 [password reset](../src/routes/ForgotPassword.tsx),

@@ -425,11 +425,18 @@ export const handlers = [
     return HttpResponse.json({ ...db.accountStatus });
   }),
   http.patch('/api/me', async ({ request }) => {
-    const body = (await request.json()) as { name?: string };
+    const body = (await request.json()) as {
+      name?: string;
+      avatarIconId?: string;
+    };
     const name = body.name?.trim() ?? '';
     if (!name || name.length > 60)
       return HttpResponse.json({ detail: 'name is required' }, { status: 422 });
     db.user.name = name;
+    if (body.avatarIconId) {
+      db.user.avatarIconId = body.avatarIconId;
+      db.user.avatarUrl = `/icons/${body.avatarIconId}.svg`;
+    }
     return HttpResponse.json(db.user);
   }),
   http.patch('/api/me/locale', async ({ request }) => {
@@ -820,6 +827,7 @@ export const handlers = [
       description: '',
       fileCount: 0,
       filesLimit: PLAN_LIMITS.pro.filesPerWorkspace,
+      iconId: `slice-${String(Math.floor(Math.random() * 12) + 1).padStart(2, '0')}`,
       id: uid('ws'),
       isOwner: true,
       lastAccessedAt: new Date().toISOString(),
@@ -843,6 +851,7 @@ export const handlers = [
     if (body.name !== undefined) ws.name = body.name;
     if (body.description !== undefined) ws.description = body.description;
     if (body.color !== undefined) ws.color = body.color;
+    if (body.iconId !== undefined) ws.iconId = body.iconId;
     return HttpResponse.json(ws);
   }),
   http.patch('/api/workspaces/:id/sharing', async ({ params, request }) => {

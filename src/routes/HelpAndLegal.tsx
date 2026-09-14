@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
 import { PageHeader, Panel } from '@/components/app/layout';
 import { Button } from '@/components/ui/Button';
@@ -52,6 +53,7 @@ function FaqItem({ q, a }: { q: string; a: string }) {
   return (
     <div className="border-divider border-b last:border-0">
       <button
+        aria-expanded={open}
         className="flex w-full items-center justify-between gap-4 py-4 text-left"
         onClick={() => setOpen((o) => !o)}
         type="button"
@@ -68,41 +70,48 @@ function FaqItem({ q, a }: { q: string; a: string }) {
   );
 }
 
-export default function Support() {
+export default function HelpAndLegal() {
   return (
     <Panel>
-      <PageHeader subtitle={m.support_subtitle()} title={m.nav_support()} />
+      <PageHeader subtitle={m.help_legal_hint()} title={m.nav_help_legal()} />
       <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
         <div className="mx-auto flex max-w-4xl flex-col gap-8">
-          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {CHANNELS.map((c) => (
-              <Card
-                className="flex flex-col p-5.5"
-                key={c.icon}
-                radius="card-lg"
-              >
-                <span
-                  className="flex h-11 w-11 items-center justify-center rounded-card"
-                  style={{ background: c.tint, color: c.tintFg }}
+          <section>
+            <h2 className="t-large-card-title mb-3">{m.nav_support()}</h2>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {CHANNELS.map((c) => (
+                <Card
+                  className="flex flex-col p-5.5"
+                  key={c.icon}
+                  radius="card-lg"
                 >
-                  <Icon name={c.icon} size={20} />
-                </span>
-                <p className="t-card-title mt-3">{c.title()}</p>
-                <p className="t-label mt-1 flex-1 text-fg-muted">{c.body()}</p>
-                <Button
-                  className="mt-4 self-start"
-                  iconRight="arrowRight"
-                  size="sm"
-                  variant="outline"
-                >
-                  {c.action()}
-                </Button>
-              </Card>
-            ))}
+                  <span
+                    className="flex h-11 w-11 items-center justify-center rounded-card"
+                    style={{ background: c.tint, color: c.tintFg }}
+                  >
+                    <Icon name={c.icon} size={20} />
+                  </span>
+                  <p className="t-card-title mt-3">{c.title()}</p>
+                  <p className="t-label mt-1 flex-1 text-fg-muted">
+                    {c.body()}
+                  </p>
+                  <Button
+                    className="mt-4 self-start"
+                    iconRight="arrowRight"
+                    size="sm"
+                    variant="outline"
+                  >
+                    {c.action()}
+                  </Button>
+                </Card>
+              ))}
+            </div>
           </section>
 
           <section>
-            <p className="t-large-card-title mb-3">{m.support_faq_heading()}</p>
+            <h2 className="t-large-card-title mb-3">
+              {m.support_faq_heading()}
+            </h2>
             <div className="rounded-card-lg border border-line bg-surface px-5">
               {FAQS.map((f) => {
                 const q = f.q();
@@ -110,6 +119,20 @@ export default function Support() {
               })}
             </div>
           </section>
+
+          <Link
+            className="flex items-center gap-4 rounded-card-lg border border-line bg-surface px-5 py-5 hover:text-link"
+            to="/help-and-legal/credits"
+          >
+            <Icon name="book" size={22} />
+            <div className="flex-1">
+              <h2 className="t-subtitle">{m.credits_title()}</h2>
+              <p className="t-meta mt-1 text-fg-muted">
+                {m.credits_link_hint()}
+              </p>
+            </div>
+            <Icon name="chevronRight" size={18} />
+          </Link>
 
           <section className="flex flex-col items-start gap-3 rounded-card-lg bg-tint-accent-1 px-6 py-6 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -120,8 +143,10 @@ export default function Support() {
                 {m.support_stuck_body()}
               </p>
             </div>
-            <Button iconLeft="message" variant="accent">
-              {m.support_contact()}
+            <Button asChild iconLeft="message" variant="accent">
+              <a href="mailto:support@stablestudio.org">
+                {m.support_contact()}
+              </a>
             </Button>
           </section>
         </div>

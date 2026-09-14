@@ -11,16 +11,18 @@ import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/feedback';
+import { IconPicker } from '@/components/ui/IconPicker';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { m } from '@/i18n';
+import { iconUrl } from '@/lib/icon-catalog';
 import { clerkMessage } from './clerk';
+import { PROFILE_PHOTO_ACCEPT, profilePhotoError } from './profile-photo';
 
 const NAME_MAX = UpdateMeBody.shape.name.maxLength ?? 60;
-const IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 
 /** First-run profile dialog. Opens once per Clerk account, keyed on
- * `unsafeMetadata.onboardedAt`; Confirm and Skip both set it. The avatar goes
- * to Clerk, the name to Capy's own users table. */
+ * `unsafeMetadata.onboardedAt`; Confirm and Skip both set it. Photos go
+ * to Clerk; names and curated icon selections stay in Capy. */
 export function OnboardingDialog() {
   const { isLoaded, user } = useUser();
   const { data: me } = useMe({ errorBoundary: false });
@@ -41,7 +43,10 @@ export function OnboardingDialog() {
   }, [preview]);
 
   const schema = useMemo(
-    () => z.object({ name: z.string().trim().pipe(UpdateMeBody.shape.name) }),
+    () =>
+      UpdateMeBody.extend({
+        name: z.string().trim().pipe(UpdateMeBody.shape.name),
+      }),
     []
   );
   const {
@@ -49,15 +54,21 @@ export function OnboardingDialog() {
     formState: { isValid },
     handleSubmit,
     reset,
+    watch,
   } = useForm({
-    defaultValues: { name: '' },
+    defaultValues: { avatarIconId: undefined, name: '' },
     mode: 'onChange',
     resolver: zodResolver(schema),
   });
-  // Prefill once the profile arrives; OAuth accounts carry the provider name.
+  const initializedUser = useRef<string | null>(null);
+  // A background refresh must not replace the user's pending choice or name.
   useEffect(() => {
-    if (me) reset({ name: me.name });
+    if (me && initializedUser.current !== me.id) {
+      initializedUser.current = me.id;
+      reset({ avatarIconId: me.avatarIconId, name: me.name });
+    }
   }, [me, reset]);
+  const avatarIconId = watch('avatarIconId');
 
   const open =
     isLoaded &&
@@ -81,14 +92,16 @@ export function OnboardingDialog() {
     }
   };
 
-  const confirm = handleSubmit(async ({ name }) => {
+  const confirm = handleSubmit(async ({ name, avatarIconId }) => {
     setBusy(true);
     setFormError(null);
     try {
       if (file) await user.setProfileImage({ file });
-      if (name !== me.name) await updateMe({ name });
+      if (name !== me.name || file || avatarIconId !== me.avatarIconId) {
+        await updateMe({ avatarIconId: file ? '' : avatarIconId, name });
+      }
       await markOnboarded();
-      // The gateway refreshes the avatar from Clerk on the next request.
+      // Refresh profile consumers after both services have saved successfully.
       await qc.invalidateQueries({ queryKey: qk.me });
       setDismissed(true);
     } catch (error) {
@@ -101,8 +114,14 @@ export function OnboardingDialog() {
   });
 
   const pickFile = (picked: File | null) => {
-    if (picked && picked.size > IMAGE_MAX_BYTES) {
-      setFileError(m.onboarding_image_too_large());
+    if (!picked) return;
+    const error = profilePhotoError(picked);
+    if (error) {
+      setFileError(
+        error === 'size'
+          ? m.onboarding_image_too_large()
+          : m.onboarding_image_type()
+      );
       return;
     }
     setFileError(null);
@@ -153,25 +172,52 @@ export function OnboardingDialog() {
         </p>
       )}
       <div className="mb-5 flex items-center gap-4">
-        <Avatar name={me.name} size={72} src={preview ?? me.avatarUrl} />
+        <Avatar
+          name={me.name}
+          size={72}
+          src={preview ?? (avatarIconId ? iconUrl(avatarIconId) : me.avatarUrl)}
+        />
         <div>
-          <Button
-            iconLeft="upload"
-            onClick={() => inputRef.current?.click()}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            {m.onboarding_upload()}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Controller
+              control={control}
+              name="avatarIconId"
+              render={({ field }) => (
+                <IconPicker
+                  disabled={busy}
+                  onChange={(id) => {
+                    field.onChange(id);
+                    setFile(null);
+                    setFileError(null);
+                    if (inputRef.current) inputRef.current.value = '';
+                  }}
+                  value={field.value}
+                />
+              )}
+            />
+            <Button
+              disabled={busy}
+              iconLeft="upload"
+              onClick={() => inputRef.current?.click()}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {m.onboarding_upload()}
+            </Button>
+          </div>
           <p className="t-meta mt-1.5 text-fg-muted">
             {m.onboarding_upload_hint()}
           </p>
           {fileError && <InputError errors={[{ message: fileError }]} />}
           <input
-            accept="image/png,image/jpeg,image/webp"
+            accept={PROFILE_PHOTO_ACCEPT}
+            disabled={busy}
             hidden
-            onChange={(event) => pickFile(event.target.files?.[0] ?? null)}
+            onChange={(event) => {
+              pickFile(event.target.files?.[0] ?? null);
+              event.target.value = '';
+            }}
             ref={inputRef}
             type="file"
           />
@@ -187,6 +233,7 @@ export function OnboardingDialog() {
               {...field}
               aria-invalid={fieldState.invalid}
               autoComplete="nickname"
+              disabled={busy}
               maxLength={NAME_MAX}
             />
             {fieldState.invalid && <InputError errors={[fieldState.error]} />}

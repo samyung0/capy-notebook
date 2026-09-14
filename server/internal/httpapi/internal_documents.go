@@ -22,8 +22,6 @@ import (
 type internalDocumentsListReq struct {
 	WorkspaceID string `json:"workspaceId"`
 	UserID      string `json:"userId"`
-	Kind        string `json:"kind"`
-	Query       string `json:"query"`
 }
 
 type documentListItem struct {
@@ -78,44 +76,33 @@ func (a *api) internalListDocuments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	query := strings.ToLower(strings.TrimSpace(req.Query))
 	items := []documentListItem{}
-	if req.Kind == "" || req.Kind == string(agenttools.KindSourceFile) {
-		files, err := a.s.ListFiles(ctx, "", req.WorkspaceID)
-		if err != nil {
-			a.fail(w, err)
-			return
-		}
-		for _, f := range files {
-			if query != "" && !strings.Contains(strings.ToLower(f.Name), query) {
-				continue
-			}
-			item := documentListItem{Kind: agenttools.KindSourceFile, ID: f.ID, Title: f.Name, Format: string(f.Kind)}
-			if format := store.SourceEditFormat(f.Name, string(f.Kind)); format != "" {
-				item.Format, item.Editable = format, true
-			} else if f.Kind == "pdf" {
-				item.Reason = pdfRefusal
-			} else {
-				item.Reason = "This file type cannot be edited."
-			}
-			items = append(items, item)
-		}
+	files, err := a.s.ListFiles(ctx, "", req.WorkspaceID)
+	if err != nil {
+		a.fail(w, err)
+		return
 	}
-	if req.Kind == "" || req.Kind == string(agenttools.KindMaterial) {
-		refs, err := a.s.ListMaterialRefs(ctx, req.WorkspaceID)
-		if err != nil {
-			a.fail(w, err)
-			return
+	for _, f := range files {
+		item := documentListItem{Kind: agenttools.KindSourceFile, ID: f.ID, Title: f.Name, Format: string(f.Kind)}
+		if format := store.SourceEditFormat(f.Name, string(f.Kind)); format != "" {
+			item.Format, item.Editable = format, true
+		} else if f.Kind == "pdf" {
+			item.Reason = pdfRefusal
+		} else {
+			item.Reason = "This file type cannot be edited."
 		}
-		for _, m := range refs {
-			if query != "" && !strings.Contains(strings.ToLower(m.Title), query) {
-				continue
-			}
-			items = append(items, documentListItem{
-				Kind: agenttools.KindMaterial, ID: m.ID, Title: m.Title, Format: "plate",
-				MaterialKind: string(m.Type), Editable: true,
-			})
-		}
+		items = append(items, item)
+	}
+	refs, err := a.s.ListMaterialRefs(ctx, req.WorkspaceID)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	for _, m := range refs {
+		items = append(items, documentListItem{
+			Kind: agenttools.KindMaterial, ID: m.ID, Title: m.Title, Format: "plate",
+			MaterialKind: string(m.Type), Editable: true,
+		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }

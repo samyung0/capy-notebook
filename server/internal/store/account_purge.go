@@ -307,7 +307,7 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 	tag, err := tx.Exec(ctx, `UPDATE users SET
 			name = '',
 			email = NULL,
-			avatar_url = NULL,
+			avatar_url = NULL, avatar_icon_id = NULL,
 			class_label = NULL,
 			streak = 0,
 			suspended_at = NULL,

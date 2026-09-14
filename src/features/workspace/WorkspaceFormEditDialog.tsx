@@ -16,11 +16,13 @@ import {
   DialogTitle,
 } from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/feedback';
+import { IconPicker } from '@/components/ui/IconPicker';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { flattenTagErrors, TagSelect } from '@/components/ui/TagSelect';
 import { Textarea } from '@/components/ui/TextArea';
 import { UserColorChooser } from '@/components/ui/UserColorChooser';
 import { m } from '@/i18n';
+import { iconUrl } from '@/lib/icon-catalog';
 
 export function WorkspaceFormEditDialog({
   open,
@@ -57,12 +59,38 @@ export function WorkspaceFormEditDialog({
         // The global mutation handler shows the normalized failure.
       }
     },
-    [onSubmit, setOpen, workspace]
+    [onSubmit, setOpen, embedded]
   );
 
   const form = (
     <form className="flex h-full flex-col" onSubmit={formSubmit(handleSubmit)}>
       <div className="flex flex-col gap-5">
+        <Controller
+          control={control}
+          name="iconId"
+          render={({ field, fieldState }) => (
+            <div className="flex flex-col gap-1.5">
+              <InputTitle>{m.icon_label()}</InputTitle>
+              <div className="flex items-center gap-3">
+                {field.value && (
+                  <img
+                    alt=""
+                    className="size-14 rounded-card"
+                    height={56}
+                    src={iconUrl(field.value)}
+                    width={56}
+                  />
+                )}
+                <IconPicker
+                  disabled={isSubmitting}
+                  onChange={field.onChange}
+                  value={field.value}
+                />
+              </div>
+              {fieldState.invalid && <InputError errors={[fieldState.error]} />}
+            </div>
+          )}
+        />
         <Controller
           control={control}
           name={'name'}

@@ -201,6 +201,7 @@ func (a *api) clerkWebhook(w http.ResponseWriter, r *http.Request) {
 				EmailAddress string `json:"email_address"`
 			} `json:"email_addresses"`
 			ImageURL *string `json:"image_url"`
+			HasImage *bool   `json:"has_image"`
 		}
 		if err := json.Unmarshal(evt.Data, &wrapper); err != nil {
 			procErr = err
@@ -221,7 +222,7 @@ func (a *api) clerkWebhook(w http.ResponseWriter, r *http.Request) {
 			email = wrapper.EmailAddresses[0].EmailAddress
 		}
 		avatar := ""
-		if wrapper.ImageURL != nil {
+		if wrapper.ImageURL != nil && (wrapper.HasImage == nil || *wrapper.HasImage) {
 			avatar = *wrapper.ImageURL
 		}
 		procErr = a.wh.UpsertUserFromWebhook(r.Context(), wrapper.ID, name, email, avatar)

@@ -79,7 +79,7 @@ func validateRelativeAnchor(start, end []byte, version int, quote string) error 
 func (s *Store) ListCollaborationDiscussions(ctx context.Context, materialID string) ([]Discussion, error) {
 	rows, err := s.pool.Query(ctx, `SELECT d.id, d.material_id, d.block_id, d.anchor_start,
 		d.anchor_end, d.anchor_version, d.anchor_quote, d.created_by,
-		COALESCE(u.name,''), COALESCE(u.avatar_url,''), d.is_resolved, false,
+		COALESCE(u.name,''), COALESCE('/icons/' || NULLIF(u.avatar_icon_id,'') || '.svg', u.avatar_url,''), d.is_resolved, false,
 		d.created_at, d.updated_at
 		FROM material_discussions d
 		LEFT JOIN users u ON u.id=d.created_by
@@ -122,7 +122,7 @@ func (s *Store) ListCollaborationDiscussions(ctx context.Context, materialID str
 
 func (s *Store) listDiscussionComments(ctx context.Context, discussionID string) ([]Comment, error) {
 	rows, err := s.pool.Query(ctx, `SELECT c.id, c.discussion_id, c.parent_comment_id, c.user_id,
-		COALESCE(u.name,''), COALESCE(u.avatar_url,''), c.content_rich, c.is_edited,
+		COALESCE(u.name,''), COALESCE('/icons/' || NULLIF(u.avatar_icon_id,'') || '.svg', u.avatar_url,''), c.content_rich, c.is_edited,
 		(c.deleted_at IS NOT NULL), c.created_at, c.updated_at
 		FROM material_comments c
 		LEFT JOIN users u ON u.id=c.user_id
@@ -429,7 +429,7 @@ func (s *Store) AddNestedComment(
 			          is_edited, created_at, updated_at
 		)
 		SELECT a.id, a.discussion_id, a.parent_comment_id, a.user_id,
-			COALESCE(u.name,''), COALESCE(u.avatar_url,''), a.content_rich,
+			COALESCE(u.name,''), COALESCE('/icons/' || NULLIF(u.avatar_icon_id,'') || '.svg', u.avatar_url,''), a.content_rich,
 			a.is_edited, false, a.created_at, a.updated_at
 		FROM added a LEFT JOIN users u ON u.id=a.user_id`,
 		id, discussionID, parentCommentID, actorID, content))
@@ -479,7 +479,7 @@ func (s *Store) EditOwnComment(
 			          is_edited, created_at, updated_at
 		)
 		SELECT e.id, e.discussion_id, e.parent_comment_id, e.user_id,
-			COALESCE(u.name,''), COALESCE(u.avatar_url,''), e.content_rich,
+			COALESCE(u.name,''), COALESCE('/icons/' || NULLIF(u.avatar_icon_id,'') || '.svg', u.avatar_url,''), e.content_rich,
 			e.is_edited, false, e.created_at, e.updated_at
 		FROM edited e LEFT JOIN users u ON u.id=e.user_id`, id, actorID, content))
 	if isNoRows(err) {

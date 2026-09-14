@@ -1,0 +1,631 @@
+{
+  "sourceRevision": 9,
+  "targetRevision": 10,
+  "avataaarsOrder": "shuffled once and frozen",
+  "otherStyleOrder": "source catalog order retained",
+  "entries": [
+    {
+      "style": "slice",
+      "oldId": "slice-01",
+      "newId": "slice-01",
+      "status": "retained",
+      "sha256": "4690899a4d88500dce72756c443192124595292f65fc2324156dec789eee3314"
+    },
+    {
+      "style": "slice",
+      "oldId": "slice-02",
+      "newId": "slice-02",
+      "status": "retained",
+      "sha256": "f115aafdb6c484c986cd3de5f69b6ee478b90c0ee0fce2db656a9d2cd4a3b342"
+    },
+    {
+      "style": "slice",
+      "oldId": "slice-04",
+      "newId": "slice-03",
+      "status": "retained",
+      "sha256": "5b45ee61e31e1d7a4a4cc54600e5148678017746a977670ad491e993525890ce"
+    },
+    {
+      "style": "slice",
+      "oldId": "slice-05",
+      "newId": "slice-04",
+      "status": "retained",
+      "sha256": "9bd4dc35259123552a2dd05f32407b3d0bb60606a3fcff692b484b522e8bcbc1"
+    },
+    {
+      "style": "slice",
+      "oldId": "slice-06",
+      "newId": "slice-05",
+      "status": "retained",
+      "sha256": "cfb465d39c6a1a2143efb5998f50ba94929673e42bb3458e59ddfbf4ae447bc4"
+    },
+    {
+      "style": "slice",
+      "oldId": "slice-07",
+      "newId": "slice-06",
+      "status": "retained",
+      "sha256": "6bd01a92400ff6f82d69e8096c8c623ffc871d2678f55ab1164b0829626dc705"
+    },
+    {
+      "style": "slice",
+      "oldId": "slice-09",
+      "newId": "slice-07",
+      "status": "retained",
+      "sha256": "c883c8c38e5860ce80c13d3f1bc38d40cc7315ccb90bb1048d07ba5c1cad19ab"
+    },
+    {
+      "style": "slice",
+      "oldId": "slice-10",
+      "newId": "slice-08",
+      "status": "retained",
+      "sha256": "1edd507942bb2f66132c4e21fddc505c781e27fc8008a6324d44c61a68c48699"
+    },
+    {
+      "style": "slice",
+      "oldId": "slice-12",
+      "newId": "slice-09",
+      "status": "retained",
+      "sha256": "9164735ea4d9af4323bb63752c8d2136c9309016569a3bd6639225cd1dcd86ad"
+    },
+    {
+      "style": "slice",
+      "oldId": "slice-14",
+      "newId": "slice-10",
+      "status": "retained",
+      "sha256": "ba6ae7b47c016b649ce8fce71d0f5a544b45171e650fbf9e9b9974d3d4e301f7"
+    },
+    {
+      "style": "slice",
+      "oldId": "slice-15",
+      "newId": "slice-11",
+      "status": "retained",
+      "sha256": "4089a317b85d35b0496e44f0ac65560dc2f5323cbb9e2b5193066502262e2c1e"
+    },
+    {
+      "style": "slice",
+      "oldId": "slice-16",
+      "newId": "slice-12",
+      "status": "retained",
+      "sha256": "76b7a15ba06927187af2ca11ca592871bf4077dd6c64622b2aa2ae8893700587"
+    },
+    {
+      "style": "sprouts",
+      "oldId": "sprouts-01",
+      "newId": "sprouts-01",
+      "status": "retained",
+      "sha256": "2082e9e362e939018088355396d406a5117a887955a13a58fc49082f447a5971"
+    },
+    {
+      "style": "sprouts",
+      "oldId": "sprouts-02",
+      "newId": "sprouts-02",
+      "status": "retained",
+      "sha256": "da7cd0b929311dfa962c1bbbdc8ed51010f31c317aaf11752a1c5371fd15dac0"
+    },
+    {
+      "style": "sprouts",
+      "oldId": "sprouts-03",
+      "newId": "sprouts-03",
+      "status": "retained",
+      "sha256": "e6cd0913b4bbc2f27ff81f05ee631267399d3d2fdc6bd463d92c785e71acf0ef"
+    },
+    {
+      "style": "sprouts",
+      "oldId": "sprouts-04",
+      "newId": "sprouts-04",
+      "status": "retained",
+      "sha256": "b574c8274f706af951e8249f6b552dba725b7137c9f4da296a970cf28eb5823b"
+    },
+    {
+      "style": "sprouts",
+      "oldId": "sprouts-06",
+      "newId": "sprouts-05",
+      "status": "retained",
+      "sha256": "c65dec8c47767f1e727df17b19bfa350a2da234d217349e802e9126d6817b320"
+    },
+    {
+      "style": "sprouts",
+      "oldId": "sprouts-09",
+      "newId": "sprouts-06",
+      "status": "retained",
+      "sha256": "cf78f884cb5720c0530efa27caf0064579da513998a455e8f9e7c805d905ee97"
+    },
+    {
+      "style": "sprouts",
+      "oldId": "sprouts-10",
+      "newId": "sprouts-07",
+      "status": "retained",
+      "sha256": "c1acdb2d3f2a3792b561e715ea991908bd9f5f82886ef44ade56f75157e0f022"
+    },
+    {
+      "style": "sprouts",
+      "oldId": "sprouts-11",
+      "newId": "sprouts-08",
+      "status": "retained",
+      "sha256": "4c4c57bc50e0eb2dea9cba9c37adf1b7d935f3bf7ec430b753b7fd10f1bd4029"
+    },
+    {
+      "style": "sprouts",
+      "oldId": "sprouts-12",
+      "newId": "sprouts-09",
+      "status": "retained",
+      "sha256": "48f16e48feeaebf853112b138969a9799bc2bd4c5060b859bc63de57c29c2b91"
+    },
+    {
+      "style": "sprouts",
+      "oldId": "sprouts-13",
+      "newId": "sprouts-10",
+      "status": "retained",
+      "sha256": "3483c09506457400e87b79956662ef75fdb3a08c529cc8d6f3d2575114b632ed"
+    },
+    {
+      "style": "sprouts",
+      "oldId": "sprouts-14",
+      "newId": "sprouts-11",
+      "status": "retained",
+      "sha256": "b04bfcd38bad4b14f14a38afd2ab866810ca0f5ea0d9a5e2a211babdf3b87c7c"
+    },
+    {
+      "style": "sprouts",
+      "oldId": "sprouts-15",
+      "newId": "sprouts-12",
+      "status": "retained",
+      "sha256": "9f07ee9adc63ad89c923beaeae08f5786bb9e3a283356ccf6bc3f78face84eed"
+    },
+    {
+      "style": "critters",
+      "oldId": "critters-01",
+      "newId": "critters-01",
+      "status": "retained",
+      "sha256": "bdce6e744dc9025976e123b98fba81b17b704c29e1a390b804c7580e2c8002b6"
+    },
+    {
+      "style": "critters",
+      "oldId": "critters-02",
+      "newId": "critters-02",
+      "status": "retained",
+      "sha256": "6ffdef0b1eb4f9559a6ec1273fdcd68a7dd7b837e0fbaa673920e67adf09b00f"
+    },
+    {
+      "style": "critters",
+      "oldId": "critters-03",
+      "newId": "critters-03",
+      "status": "retained",
+      "sha256": "2164889b76749aae40f1287fa0aba0625019a58ae9acd55558baf004c9bc786e"
+    },
+    {
+      "style": "critters",
+      "oldId": "critters-04",
+      "newId": "critters-04",
+      "status": "retained",
+      "sha256": "0da29ba7a490bd228839199b72424500a0e0ca5bd88d4b9f473c330d84ab120f"
+    },
+    {
+      "style": "critters",
+      "oldId": "critters-05",
+      "newId": "critters-05",
+      "status": "retained",
+      "sha256": "d3ca7df59213be4c96b3e9e4b54b517531d49ff23619039214e3169382c989b8"
+    },
+    {
+      "style": "critters",
+      "oldId": "critters-06",
+      "newId": "critters-06",
+      "status": "retained",
+      "sha256": "abfe8714f056643d8060aba0510d129ca44bff8cea0fedc0a4274da7c4e03d85"
+    },
+    {
+      "style": "critters",
+      "oldId": "critters-07",
+      "newId": "critters-07",
+      "status": "retained",
+      "sha256": "7388e7ee5c853dfaf4071a785801886dc71db1025f470225462916bfb34220fe"
+    },
+    {
+      "style": "critters",
+      "oldId": "critters-08",
+      "newId": "critters-08",
+      "status": "retained",
+      "sha256": "b2c4b0fd2039257c028348345e8d7c1be9c1915d1d030dd682a00b13af1f6934"
+    },
+    {
+      "style": "critters",
+      "oldId": "critters-09",
+      "newId": "critters-09",
+      "status": "retained",
+      "sha256": "9651c6cf2a08ff8dfa1e01cd1ec47887abb2d3b4fc8bdd8361ab8ba3ed4437ca"
+    },
+    {
+      "style": "critters",
+      "oldId": "critters-10",
+      "newId": "critters-10",
+      "status": "retained",
+      "sha256": "bc8e4d50da85bb50c745678ef06a257993184a95e5eb687e9e19d35269be572c"
+    },
+    {
+      "style": "critters",
+      "oldId": "critters-11",
+      "newId": "critters-11",
+      "status": "retained",
+      "sha256": "c4fddc50b03935bbc533866a53ae0356760bc5b05a2736ad1399da980a238af8"
+    },
+    {
+      "style": "critters",
+      "oldId": "critters-12",
+      "newId": "critters-12",
+      "status": "retained",
+      "sha256": "27b9fc0e492e2ecc4ed8869612930e94b11a8f1aa3a0c9e57ad51256735a3add"
+    },
+    {
+      "style": "critters",
+      "oldId": "critters-13",
+      "newId": "critters-13",
+      "status": "retained",
+      "sha256": "bd183c6b6cd3f6176bb122d26afb1e6adf8339a92f9b70834cd90f05fe8fa8aa"
+    },
+    {
+      "style": "critters",
+      "oldId": "critters-14",
+      "newId": "critters-14",
+      "status": "retained",
+      "sha256": "ea2e9b09bcd3525a83a0e0557ab66ea0454c8a074054ab17c6b2362f17ec36bb"
+    },
+    {
+      "style": "critters",
+      "oldId": "critters-15",
+      "newId": "critters-15",
+      "status": "retained",
+      "sha256": "fefc75ef01df0deea77f05e8923a7573a68d3b2c78522942b06232f1d04ab360"
+    },
+    {
+      "style": "critters",
+      "oldId": "critters-16",
+      "newId": "critters-16",
+      "status": "retained",
+      "sha256": "284404d664cff3e3f4fb1b575cae87e871ae90db467ff11570931c61875b3a2f"
+    },
+    {
+      "style": "avataaars",
+      "oldId": "avataaars-20",
+      "newId": "avataaars-01",
+      "status": "retained",
+      "sha256": "c7052d7ac54b00a987a6872f4447706063a871b2641d4a7114b499cb5ca02c14"
+    },
+    {
+      "style": "avataaars",
+      "oldId": "avataaars-15",
+      "newId": "avataaars-02",
+      "status": "retained",
+      "sha256": "b2d791a8096e1af9c99229f727e8b489948293a4dcce9c06137d3cbb0e87c930"
+    },
+    {
+      "style": "avataaars",
+      "oldId": "avataaars-31",
+      "newId": "avataaars-03",
+      "status": "retained",
+      "sha256": "42c859a2a91b9062e161130c64b53234552b9b32ffa66097533b8f92ba80e6b1"
+    },
+    {
+      "style": "avataaars",
+      "oldId": "avataaars-04",
+      "newId": "avataaars-04",
+      "status": "retained",
+      "sha256": "d41090ff178b27daf61bf2ce670324977ff61392f0464fa40858f4bb9ecb3c31"
+    },
+    {
+      "style": "avataaars",
+      "oldId": "avataaars-28",
+      "newId": "avataaars-05",
+      "status": "retained",
+      "sha256": "3511bb19ed14361dd0a6d7fe782979f9acb26d40c57f11c0ba781bc91c0ae64d"
+    },
+    {
+      "style": "avataaars",
+      "oldId": "avataaars-33",
+      "newId": "avataaars-06",
+      "status": "retained",
+      "sha256": "d4eee0220961ebf3669a986e563570234c631cf50b83f45572ce6bd2ee94c782"
+    },
+    {
+      "style": "avataaars",
+      "oldId": "avataaars-27",
+      "newId": "avataaars-07",
+      "status": "retained",
+      "sha256": "c84161c4a1f4a867b5be806b6a37b07d0bcfa534a83318737305a43972fb00b3"
+    },
+    {
+      "style": "avataaars",
+      "oldId": "avataaars-36",
+      "newId": "avataaars-08",
+      "status": "retained",
+      "sha256": "73b768badb43efa5b7af3bd0a8ce94027a2b58dcef1dd2fee4c42930ae3f9333"
+    },
+    {
+      "style": "avataaars",
+      "oldId": "avataaars-32",
+      "newId": "avataaars-09",
+      "status": "retained",
+      "sha256": "b79f119a84fe06aaf9c5887fbb3acf28b1ca1f751693cdadbe465b6a7a697611"
+    },
+    {
+      "style": "avataaars",
+      "oldId": "avataaars-25",
+      "newId": "avataaars-10",
+      "status": "retained",
+      "sha256": "99fe9efa9d42e10674cef735cb6b0f9b616ec7aabf2bc396bf20cfacbb9c4166"
+    },
+    {
+      "style": "avataaars",
+      "oldId": "avataaars-01",
+      "newId": "avataaars-11",
+      "status": "retained",
+      "sha256": "3d0a45601f34b1706e0fef875a3f4a9d69c47ba7170e12ab1e1318827658e080"
+    },
+    {
+      "style": "avataaars",
+      "oldId": "avataaars-22",
+      "newId": "avataaars-12",
+      "status": "retained",
+      "sha256": "69e0cc8ab22984387a3a8548c361d36057f97518b813ae45ad4ca64b59015905"
+    },
+    {
+      "style": "avataaars",
+      "oldId": "avataaars-21",
+      "newId": "avataaars-13",
+      "status": "retained",
+      "sha256": "316d2ec1f630b799ff1ca612160db2b7edaebb0a8d191bb8f7eae30a5649c610"
+    },
+    {
+      "style": "avataaars",
+      "oldId": "avataaars-35",
+      "newId": "avataaars-14",
+      "status": "retained",
+      "sha256": "c8e43a3a6ca3c59f15920d1fe001814826289995227a35e0f9a9fe26f09ea385"
+    },
+    {
+      "style": "avataaars",
+      "oldId": "avataaars-24",
+      "newId": "avataaars-15",
+      "status": "retained",
+      "sha256": "b56a502fa7d07ee1aff5f177746a245ddda8e0e81e97c8d000006b578cfe703e"
+    },
+    {
+      "style": "avataaars",
+      "oldId": "avataaars-23",
+      "newId": "avataaars-16",
+      "status": "retained",
+      "sha256": "c7eba805af4f28c4abbfef73132badf8463a53a9efecbd83f370b196e3a30554"
+    },
+    {
+      "style": "avataaars",
+      "oldId": "avataaars-09",
+      "newId": "avataaars-17",
+      "status": "retained",
+      "sha256": "0876fe7bcf20fc01ae7f92cf6a7e04d45a42d725728d86aa06595294617946d8"
+    },
+    {
+      "style": "avataaars",
+      "oldId": "avataaars-16",
+      "newId": "avataaars-18",
+      "status": "retained",
+      "sha256": "5fb13dff985700592fbe45bc5e766f25d026714b52ec49ae9c5a149fde478247"
+    },
+    {
+      "style": "avataaars",
+      "oldId": "avataaars-34",
+      "newId": "avataaars-19",
+      "status": "retained",
+      "sha256": "8bffc56e6560b941f770c2c0569e16a3675813af506679acd0a902e26ae2c7ca"
+    },
+    {
+      "style": "avataaars",
+      "oldId": "avataaars-08",
+      "newId": "avataaars-20",
+      "status": "retained",
+      "sha256": "13dc3d7bff2f5102cdae76341b9ab8bd7c5d3ca51264256f98f978475e66ef99"
+    },
+    {
+      "style": "avataaars",
+      "oldId": "avataaars-12",
+      "newId": "avataaars-21",
+      "status": "retained",
+      "sha256": "ee5f544c7a0ed8cbd93a5c194f06f2cb4fd88395109bfa07bcbc98f22d49ce35"
+    },
+    {
+      "style": "avataaars",
+      "oldId": "avataaars-03",
+      "newId": "avataaars-22",
+      "status": "retained",
+      "sha256": "b6dd9bb07469c4933648eb4edda8b7ec4ec8aa34588c63682b3896a423dcd805"
+    },
+    {
+      "style": "avataaars",
+      "oldId": "avataaars-07",
+      "newId": "avataaars-23",
+      "status": "retained",
+      "sha256": "40cc0816fecf1986de5635a0c6681e3e4a52945404f4c68709e27018359b2fde"
+    },
+    {
+      "style": "avataaars",
+      "oldId": "avataaars-19",
+      "newId": "avataaars-24",
+      "status": "retained",
+      "sha256": "6adb84fa0e34cf8a1363c77a505f87c0b476c8d13b67519cacf2cb9638b02f4b"
+    },
+    {
+      "style": "notionists",
+      "oldId": "notionists-02",
+      "newId": "notionists-01",
+      "status": "retained",
+      "sha256": "b02da8a1c09eaf5e9ed643cb10e6eeddb158f27d16b0f662feb484098dd96df2"
+    },
+    {
+      "style": "notionists",
+      "oldId": "notionists-04",
+      "newId": "notionists-02",
+      "status": "retained",
+      "sha256": "38086baa7a070110b71295ea729cd9d0188d52f2bfb6a80efacb42a51119e62c"
+    },
+    {
+      "style": "notionists",
+      "oldId": "notionists-05",
+      "newId": "notionists-03",
+      "status": "retained",
+      "sha256": "1d51168f6ca3710c768f6a90dca307c025faa42524024e5e0ec89a9db73ad8ed"
+    },
+    {
+      "style": "notionists",
+      "oldId": "notionists-06",
+      "newId": "notionists-04",
+      "status": "retained",
+      "sha256": "af67c4982da84a314d7d9befc8048333e04c49e8fdf177225cab44044fcbee59"
+    },
+    {
+      "style": "notionists",
+      "oldId": "notionists-07",
+      "newId": "notionists-05",
+      "status": "retained",
+      "sha256": "890ca0330852a45ce8ee6dcfd69bfe9800b8e7f5921302c45ff9914611cfa7ff"
+    },
+    {
+      "style": "notionists",
+      "oldId": "notionists-08",
+      "newId": "notionists-06",
+      "status": "retained",
+      "sha256": "596f57197629db758196d2d9e0fe964c2b7ace1945f1e02964d21df3bdcfb70a"
+    },
+    {
+      "style": "notionists",
+      "oldId": "notionists-09",
+      "newId": "notionists-07",
+      "status": "retained",
+      "sha256": "0b5be393eab797d3884d224bad29bb1aefeba03901794de48e2cbf7c424294bf"
+    },
+    {
+      "style": "notionists",
+      "oldId": "notionists-10",
+      "newId": "notionists-08",
+      "status": "retained",
+      "sha256": "60bf487ce3314b83e928fc4d766ac2581faf486afd48232a4643c81925b80e95"
+    },
+    {
+      "style": "notionists",
+      "oldId": "notionists-11",
+      "newId": "notionists-09",
+      "status": "retained",
+      "sha256": "6edf150e9dff63268a246fbb1ab61c2c0f355130cac0937bc7d1caf17c239111"
+    },
+    {
+      "style": "notionists",
+      "oldId": "notionists-12",
+      "newId": "notionists-10",
+      "status": "retained",
+      "sha256": "e1ea59e8ea5844053c3cfe2debd315b73af22fda93fa513e68b8bbd05ae138ea"
+    },
+    {
+      "style": "notionists",
+      "oldId": "notionists-13",
+      "newId": "notionists-11",
+      "status": "retained",
+      "sha256": "d07bf8a03171bbd017241edb94072484b28dc817700598fced5c8ab7ffb6f934"
+    },
+    {
+      "style": "notionists",
+      "oldId": "notionists-15",
+      "newId": "notionists-12",
+      "status": "retained",
+      "sha256": "af201ad5bb927f5b412f4a3c8352ec8093adea40e6517f3266a6cd2b7f990e0e"
+    },
+    {
+      "style": "waves",
+      "oldId": "waves-01",
+      "newId": "waves-01",
+      "status": "retained",
+      "sha256": "35578b5d244c0a67fc5c5acf284e4fad3d0a9275aabd4777184435acc7ce5476"
+    },
+    {
+      "style": "waves",
+      "oldId": "waves-02",
+      "newId": "waves-02",
+      "status": "retained",
+      "sha256": "4ecf633bde24cbe6dbc59839ba469d8abf656c95809ceadac1bf2d3eeb0c9264"
+    },
+    {
+      "style": "waves",
+      "oldId": "waves-03",
+      "newId": "waves-03",
+      "status": "retained",
+      "sha256": "596ed9b8c19c7705acd6c7026d839f9adf250c3112f7459775c905d7257e6de4"
+    },
+    {
+      "style": "waves",
+      "oldId": "waves-04",
+      "newId": "waves-04",
+      "status": "retained",
+      "sha256": "09c397c988116fa3163137bfea956c31d15446365f7623b23187c733b96099d9"
+    },
+    {
+      "style": "waves",
+      "oldId": "waves-05",
+      "newId": "waves-05",
+      "status": "retained",
+      "sha256": "6d1ef73c2f1fbd6ed801be5605c90692341e3e66415f89e7e2c2c971310b2daa"
+    },
+    {
+      "style": "waves",
+      "oldId": "waves-06",
+      "newId": "waves-06",
+      "status": "retained",
+      "sha256": "f3b4bf3085dda58ba9075b790ae4ea5a0eccaff2396ff2bb4e6d8b3774f2be61"
+    },
+    {
+      "style": "waves",
+      "oldId": "waves-07",
+      "newId": "waves-07",
+      "status": "retained",
+      "sha256": "fc041c51911f34de3b4c82dc62181bbe006087c230a6f248fda4bae5bbea7d89"
+    },
+    {
+      "style": "waves",
+      "oldId": "waves-08",
+      "newId": "waves-08",
+      "status": "retained",
+      "sha256": "cc13513379d73d953ede72cb137e3959d9e3bea66a1f0db7b4ff89075d62fe30"
+    },
+    {
+      "style": "waves",
+      "oldId": "waves-11",
+      "newId": "waves-09",
+      "status": "retained",
+      "sha256": "f40d70a8bb752702cf1a94103fcb61c62f43a0a009d255fa3a992212715f1426"
+    },
+    {
+      "style": "waves",
+      "oldId": "waves-12",
+      "newId": "waves-10",
+      "status": "retained",
+      "sha256": "e1824829d35a29d71dbc13100992ae9ff991e7d7d09d523a1b313808b196ac6c"
+    },
+    {
+      "style": "waves",
+      "oldId": "waves-15",
+      "newId": "waves-11",
+      "status": "retained",
+      "sha256": "27fc36b51b4b64cc7162b1fac2e82e02a02e7a2213ccfe7d7712d4d560e5c45a"
+    },
+    {
+      "style": "avataaars",
+      "oldId": "avataaars-02",
+      "newId": null,
+      "status": "removed",
+      "sha256": "f63ebcb81526238ace92891c26d87b41077b5e24619ea6c570e2867b5b28924d"
+    },
+    {
+      "style": "avataaars",
+      "oldId": "avataaars-10",
+      "newId": null,
+      "status": "removed",
+      "sha256": "b5fd128d354a80285d9eb1949aafe3ec2132e58d564a9b116772372d254112a5"
+    }
+  ]
+}

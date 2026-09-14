@@ -150,7 +150,7 @@ export function TagSelect({
       <div
         className={cn(
           'flex flex-wrap items-center gap-1.5 rounded-input border border-line bg-surface px-1.5 py-1.5 transition-colors duration-150 focus-within:border-line-strong',
-          invalid && 'border-[1.5px] border-solid-error'
+          invalid && 'motion-error-shake border-solid-error'
         )}
         onClick={() => inputRef.current?.focus()}
       >

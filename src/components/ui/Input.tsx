@@ -5,7 +5,7 @@ import { Icon, type IconName } from './Icon';
 import { IconButton, type IconButtonProps } from './IconButton';
 
 const inputContainerVariants = cva(
-  'flex items-center gap-2 outline-none transition-colors duration-150 file:inline-flex file:border-0 file:bg-transparent file:font-medium file:text-fg file:text-sm has-disabled:pointer-events-none has-disabled:cursor-not-allowed has-disabled:bg-surface-hover-bg',
+  'has-[input[aria-invalid=true]]:motion-error-shake flex items-center gap-2 outline-none transition-colors duration-150 file:inline-flex file:border-0 file:bg-transparent file:font-medium file:text-fg file:text-sm has-disabled:pointer-events-none has-disabled:cursor-not-allowed has-disabled:bg-surface-hover-bg',
   {
     compoundVariants: [
       {
@@ -36,10 +36,10 @@ const inputContainerVariants = cva(
       },
       variant: {
         light:
-          'border border-line bg-surface focus-within:border-line-strong has-[input[aria-invalid=true]]:border-[1.5px] has-[input[aria-invalid=true]]:border-solid-error',
+          'border border-line bg-surface focus-within:border-line-strong has-[input[aria-invalid=true]]:border-solid-error',
         transparent: '',
         underline:
-          'border-line border-b focus-within:border-line-strong has-[input[aria-invalid=true]]:border-[1.5px] has-[input[aria-invalid=true]]:border-solid-error has-[input[aria-invalid=true]]:border-b-2',
+          'border-line border-b focus-within:border-line-strong has-[input[aria-invalid=true]]:border-solid-error',
       },
     },
   }
@@ -194,7 +194,10 @@ export function InputError({
   }
   return (
     <div
-      className={cn('t-body mt-1.5 text-solid-error', className)}
+      className={cn(
+        'motion-error-in t-body mt-1.5 text-solid-error',
+        className
+      )}
       data-slot="field-error"
       role="alert"
       {...props}

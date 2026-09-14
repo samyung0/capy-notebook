@@ -297,7 +297,7 @@ func profileFromSession(ctx context.Context, userID string) (name, email, avatar
 	if len(u.EmailAddresses) > 0 && u.EmailAddresses[0] != nil {
 		email = u.EmailAddresses[0].EmailAddress
 	}
-	if u.ImageURL != nil {
+	if u.HasImage && u.ImageURL != nil {
 		avatar = *u.ImageURL
 	}
 	return name, email, avatar, nil

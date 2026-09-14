@@ -28,6 +28,7 @@ type WorkspacePatch struct {
 	Description *string    `json:"description"`
 	Name        *string    `json:"name"`
 	Color       *UserColor `json:"color"`
+	IconID      *string    `json:"iconId"`
 	Tags        *[]TagRef  `json:"tags"`
 }
 type ChapterPatch struct {
@@ -187,7 +188,7 @@ const wsCols = `w.id, w.name, w.description, w.color, w.privacy, w.share_role,
 		 FROM users u WHERE u.id=w.user_id),
 	(SELECT count(*) FROM chapters c WHERE c.workspace_id=w.id),
 	(SELECT count(*) FROM files f WHERE f.workspace_id=w.id AND f.trashed_at IS NULL),
-	w.created_at, w.last_accessed_at, w.auto_reparse, w.auto_reindex`
+	w.created_at, w.last_accessed_at, w.auto_reparse, w.auto_reindex, w.icon_id`
 
 // memberRoleCol resolves the requester's ($1) persisted role next to wsCols;
 // the query must LEFT JOIN workspace_members AS me on that user.
@@ -198,7 +199,7 @@ func (s *Store) scanWorkspace(row pgx.Row, extra ...any) (Workspace, error) {
 	var w Workspace
 	dest := append([]any{&w.ID, &w.Name, &w.Description, &w.Color, &w.Privacy, &w.ShareRole, &w.Tags,
 		&w.OwnerUserID, &w.OwnerName, &w.OwnerPlanTier, &w.ChapterCount,
-		&w.FileCount, &w.CreatedAt, &w.LastAccessedAt, &w.AutoReparse, &w.AutoReindex}, extra...)
+		&w.FileCount, &w.CreatedAt, &w.LastAccessedAt, &w.AutoReparse, &w.AutoReindex, &w.IconID}, extra...)
 	err := row.Scan(dest...)
 	if err != nil {
 		return w, err
@@ -523,6 +524,9 @@ func (s *Store) ListTags(ctx context.Context, userID, kind string) ([]Tag, error
 }
 
 func (s *Store) UpdateWorkspace(ctx context.Context, userID, id string, p WorkspacePatch) (Workspace, error) {
+	if p.IconID != nil && !ValidIconID(*p.IconID) {
+		return Workspace{}, ErrNotFound
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Workspace{}, err
@@ -535,8 +539,8 @@ func (s *Store) UpdateWorkspace(ctx context.Context, userID, id string, p Worksp
 
 	ct, err := tx.Exec(ctx, `UPDATE workspaces SET
 		name=COALESCE($2,name), color=COALESCE($3,color), description=COALESCE($4,description),
-		auto_reparse=COALESCE($5,auto_reparse), auto_reindex=COALESCE($6,auto_reindex) WHERE id=$1`,
-		id, p.Name, p.Color, p.Description, p.AutoReparse, p.AutoReindex)
+		auto_reparse=COALESCE($5,auto_reparse), auto_reindex=COALESCE($6,auto_reindex), icon_id=COALESCE($7,icon_id) WHERE id=$1`,
+		id, p.Name, p.Color, p.Description, p.AutoReparse, p.AutoReindex, p.IconID)
 	if err != nil {
 		return Workspace{}, err
 	}

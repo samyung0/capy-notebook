@@ -127,7 +127,7 @@ func (a *api) updateWorkspace(ctx context.Context, in *updateWorkspaceInput) (*w
 		return nil, err
 	}
 	p := store.WorkspacePatch{
-		Name: apimodel.Str(in.Body.Name), Color: in.Body.Color, Description: apimodel.Str(in.Body.Description),
+		Name: apimodel.Str(in.Body.Name), Color: in.Body.Color, IconID: apimodel.Str(in.Body.IconID), Description: apimodel.Str(in.Body.Description),
 		AutoReparse: in.Body.AutoReparse, AutoReindex: in.Body.AutoReindex,
 	}
 	if in.Body.Tags != nil {

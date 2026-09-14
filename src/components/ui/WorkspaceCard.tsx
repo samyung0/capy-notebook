@@ -14,12 +14,12 @@ import { WorkspaceFormEditDialog } from '@/features/workspace/WorkspaceFormEditD
 import { m } from '@/i18n';
 import { toastCloneError } from '@/lib/authToasts';
 import { cn } from '@/lib/cn';
+import { iconUrl } from '@/lib/icon-catalog';
 import { trackItemCloned } from '@/lib/observability';
 import { userColorPair } from '@/lib/userColor';
 import { Badge } from './Badge';
 import { Card } from './Card';
 import { Skeleton } from './feedback';
-import { Icon } from './Icon';
 
 export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
   const c = userColorPair(workspace.color);
@@ -95,17 +95,17 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
         >
           <span
             className={cn(
-              'size-fit rounded-card p-3',
+              'size-fit rounded-card p-1.5',
               workspace.color === 'transparent' && 'px-1'
             )}
             style={{ background: c.bg, color: c.fg }}
           >
-            <Icon
-              className={cn(
-                'size-5.5',
-                workspace.color === 'transparent' && 'size-6'
-              )}
-              name="workspaces"
+            <img
+              alt=""
+              className="size-11 rounded-button"
+              height={44}
+              src={iconUrl(workspace.iconId)}
+              width={44}
             />
           </span>
           <div className="flex-1">
@@ -168,6 +168,7 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
               workspace={{
                 color: workspace.color,
                 description: workspace.description,
+                iconId: workspace.iconId,
                 name: workspace.name,
                 tags: workspace.tags,
               }}

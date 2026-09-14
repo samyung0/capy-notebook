@@ -43,6 +43,7 @@ export const GetDeletionPreflightResponse = zod.object({
   "description": zod.string(),
   "fileCount": zod.int(),
   "filesLimit": zod.int(),
+  "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "lastAccessedAt": zod.iso.datetime({"offset":true}),
@@ -73,6 +74,7 @@ export const GetDeletionPreflightResponse = zod.object({
   "description": zod.string(),
   "fileCount": zod.int(),
   "filesLimit": zod.int(),
+  "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "lastAccessedAt": zod.iso.datetime({"offset":true}),
@@ -641,6 +643,7 @@ export const ExploreWorkspacesResponseItem = zod.object({
   "description": zod.string(),
   "fileCount": zod.int(),
   "filesLimit": zod.int(),
+  "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "lastAccessedAt": zod.iso.datetime({"offset":true}),
@@ -1723,6 +1726,7 @@ export const UpdateMaterialSharingResponse = zod.object({
  */
 export const GetMeResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "avatarIconId": zod.string().optional(),
   "avatarUrl": zod.string().optional(),
   "chatModel": zod.object({
   "modelSlug": zod.string(),
@@ -1748,18 +1752,21 @@ export const GetMeResponse = zod.object({
 
 
 /**
- * @summary Update display name
+ * @summary Update profile
  */
+export const updateMeBodyAvatarIconIdRegExp = new RegExp('^$|^((slice|sprouts|notionists)-(0[1-9]|1[0-2])|critters-(0[1-9]|1[0-6])|avataaars-(0[1-9]|1[0-9]|2[0-4])|waves-(0[1-9]|1[01]))$');
 export const updateMeBodyNameMax = 60;
 
 
 
 export const UpdateMeBody = zod.object({
+  "avatarIconId": zod.string().regex(updateMeBodyAvatarIconIdRegExp).optional().describe('Curated icon ID; empty restores the current Clerk photo; omitted preserves the selection'),
   "name": zod.string().min(1).max(updateMeBodyNameMax).describe('Display name')
 })
 
 export const UpdateMeResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "avatarIconId": zod.string().optional(),
   "avatarUrl": zod.string().optional(),
   "chatModel": zod.object({
   "modelSlug": zod.string(),
@@ -2721,6 +2728,7 @@ export const ListWorkspacesResponseItem = zod.object({
   "description": zod.string(),
   "fileCount": zod.int(),
   "filesLimit": zod.int(),
+  "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "lastAccessedAt": zod.iso.datetime({"offset":true}),
@@ -2779,6 +2787,7 @@ export const CreateWorkspaceResponse = zod.object({
   "description": zod.string(),
   "fileCount": zod.int(),
   "filesLimit": zod.int(),
+  "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "lastAccessedAt": zod.iso.datetime({"offset":true}),
@@ -2832,6 +2841,7 @@ export const GetWorkspaceResponse = zod.object({
   "description": zod.string(),
   "fileCount": zod.int(),
   "filesLimit": zod.int(),
+  "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "lastAccessedAt": zod.iso.datetime({"offset":true}),
@@ -2857,6 +2867,9 @@ export const UpdateWorkspaceParams = zod.object({
 
 export const updateWorkspaceBodyDescriptionMax = 500;
 
+
+
+export const updateWorkspaceBodyIconIdRegExp = new RegExp('^$|^((slice|sprouts|notionists)-(0[1-9]|1[0-2])|critters-(0[1-9]|1[0-6])|avataaars-(0[1-9]|1[0-9]|2[0-4])|waves-(0[1-9]|1[01]))$');
 export const updateWorkspaceBodyNameMax = 80;
 
 export const updateWorkspaceBodyTagsItemValueMax = 35;
@@ -2870,6 +2883,7 @@ export const UpdateWorkspaceBody = zod.object({
   "autoReparse": zod.boolean().optional(),
   "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']).optional(),
   "description": zod.string().max(updateWorkspaceBodyDescriptionMax).optional().describe('Optional workspace description; empty clears it'),
+  "iconId": zod.string().min(1).regex(updateWorkspaceBodyIconIdRegExp).optional(),
   "name": zod.string().min(1).max(updateWorkspaceBodyNameMax).optional(),
   "tags": zod.array(zod.object({
   "id": zod.string().optional(),
@@ -2897,6 +2911,7 @@ export const UpdateWorkspaceResponse = zod.object({
   "description": zod.string(),
   "fileCount": zod.int(),
   "filesLimit": zod.int(),
+  "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "lastAccessedAt": zod.iso.datetime({"offset":true}),
@@ -3002,6 +3017,7 @@ export const CloneWorkspaceResponse = zod.object({
   "description": zod.string(),
   "fileCount": zod.int(),
   "filesLimit": zod.int(),
+  "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "lastAccessedAt": zod.iso.datetime({"offset":true}),
@@ -3334,6 +3350,7 @@ export const UpdateWorkspaceSharingResponse = zod.object({
   "description": zod.string(),
   "fileCount": zod.int(),
   "filesLimit": zod.int(),
+  "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "lastAccessedAt": zod.iso.datetime({"offset":true}),
@@ -3596,6 +3613,7 @@ export const TransferWorkspaceResponse = zod.object({
   "description": zod.string(),
   "fileCount": zod.int(),
   "filesLimit": zod.int(),
+  "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "lastAccessedAt": zod.iso.datetime({"offset":true}),

@@ -20,8 +20,8 @@ import (
 // name or result shape changes incompatibly. Python refuses to start on a
 // version it does not know.
 //
-// v3: each tool explicitly declares conversation-result retention.
-const ContractVersion = 3
+// v4: list_sources includes materials and replaces list_documents.
+const ContractVersion = 4
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -382,13 +382,11 @@ func Definitions() []Definition {
 		chatTool(Definition{
 			Name:      "list_sources",
 			Retention: RetainFull,
-			Description: "List the chapters and documents in this workspace with a short " +
-				"descriptor of each file. Use this first when the question is " +
-				"about what the workspace contains, or to decide which documents " +
-				"to search or describe.",
+			Description: "List source files by chapter and workspace study materials, with " +
+				"ids, resource kinds and editability. Source files include passage counts and short descriptors.",
 			InputSchema:        obj(map[string]any{}),
 			Concurrency:        "read",
-			RequiredOperations: []Operation{OpSourceRead},
+			RequiredOperations: []Operation{OpSourceRead, OpMaterialRead},
 		}),
 		chatTool(Definition{
 			Name:      "describe_documents",
@@ -491,23 +489,6 @@ func Definitions() []Definition {
 			}, "file_id", "change_id", "checkpoint"),
 			Concurrency:        "read",
 			RequiredOperations: []Operation{OpSourceRead},
-		}),
-		chatTool(Definition{
-			Name:      "list_documents",
-			Retention: RetainFull,
-			Description: "List the editable documents of this workspace: source files " +
-				"(text, Markdown, CSV, DOCX, XLSX, PPTX; PDFs are read-only) and study " +
-				"materials, with ids, kinds and whether each can be edited. Use it to " +
-				"find a document to inspect or edit; use list_sources for retrieval.",
-			InputSchema: obj(map[string]any{
-				"kind": map[string]any{
-					"type": "string", "enum": []string{string(KindSourceFile), string(KindMaterial)},
-					"description": "Limit to one resource kind.",
-				},
-				"query": map[string]any{"type": "string", "maxLength": 200, "description": "Case-insensitive name filter."},
-			}),
-			Concurrency:        "read",
-			RequiredOperations: []Operation{OpSourceRead, OpMaterialRead},
 		}),
 		chatTool(Definition{
 			Name:      "inspect_document",

@@ -291,7 +291,15 @@ const appRoutes = [
         ),
       ]
     : []),
-  page('/support', () => import('@/routes/Support')),
+  createRoute({
+    beforeLoad: () => {
+      throw redirect({ replace: true, to: '/help-and-legal' });
+    },
+    getParentRoute: () => authShellRoute,
+    path: '/support',
+  }),
+  page('/help-and-legal', () => import('@/routes/HelpAndLegal')),
+  page('/help-and-legal/credits', () => import('@/routes/Credits')),
   createRoute({
     component: lazyRouteComponent(() => import('@/routes/Settings')),
     getParentRoute: () => authShellRoute,

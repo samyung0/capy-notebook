@@ -6,11 +6,13 @@
   --motion-duration-medium: 350ms;
   --motion-duration-slow: 400ms;
   --motion-duration-very-slow: 500ms;
+  --motion-duration-error: 280ms;
   --motion-ease-smooth-out: cubic-bezier(0.22, 1, 0.36, 1);
   --motion-ease-in-out: ease-in-out;
   --motion-ease-out: ease-out;
   --motion-ease-linear: linear;
   --motion-distance-micro: 4px;
+  --motion-distance-small: 6px;
   --motion-distance-medium: 12px;
   --motion-scale-modal: 0.96;
   --motion-scale-popup: 0.97;
@@ -18,6 +20,46 @@
   --motion-scale-close: 0.99;
   --motion-blur-small: 2px;
   --motion-blur-medium: 3px;
+}
+
+/* Reference shake legs are 80ms, 80ms, 60ms, 60ms. */
+@keyframes motion-error-shake {
+  0% {
+    translate: 0;
+    animation-timing-function: var(--motion-ease-smooth-out);
+  }
+  28.57% {
+    translate: var(--motion-distance-small);
+    animation-timing-function: var(--motion-ease-smooth-out);
+  }
+  57.14% {
+    translate: calc(var(--motion-distance-small) * -1);
+    animation-timing-function: var(--motion-ease-smooth-out);
+  }
+  78.57% {
+    translate: var(--motion-distance-micro);
+    animation-timing-function: var(--motion-ease-smooth-out);
+  }
+  100% {
+    translate: 0;
+  }
+}
+
+@utility motion-error-shake {
+  animation: motion-error-shake var(--motion-duration-error) linear;
+}
+
+@keyframes motion-error-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@utility motion-error-in {
+  animation: motion-error-in var(--motion-duration-error) var(--motion-ease-out);
 }
 
 @utility motion-fade {

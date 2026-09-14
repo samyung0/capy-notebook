@@ -953,7 +953,7 @@ conversation evidence according to each tool's `retention` contract field:
   chunks cited in the final answer, deduplicated by chunk id.
 - `none`: `capture_page` persists no result context or image bytes.
 
-This is contract version 3. Every tool must declare a policy; the policy is
+Result retention was added in contract version 3. Every tool must declare a policy; the policy is
 internal and is not a model argument. Live results stay exact throughout the
 active turn. There is no additional historical truncation limit: completed
 results/passages become separate bounded messages for chronological compaction.
@@ -1121,12 +1121,11 @@ a valid scope with no indexed content.
 | Tool | Side effects | Notes |
 | --- | --- | --- |
 | `search_workspace` | none | Hybrid search; one call per assistant message; omitted `file_ids` uses the chat scope; any invalid supplied id rejects the call |
-| `list_sources` | none | Chapters, file names, passage counts, and the short descriptor |
+| `list_sources` | none | Scoped source files grouped by chapter, plus workspace study materials; source `file_id` / material `id`, resource kind and editability; sources retain passage counts, status and short descriptors. Editability and materials come from Go `/api/internal/documents/list`; no name filter. |
 | `describe_documents` | none | Detailed summaries for one to eight required file ids; atomic scope validation |
 | `read_document` | none | Sequential chunks by required file id; workspace and chat scope checked before reading |
 | `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF or Office source as a JPEG for the model; refused unless a shown passage cites that page, past 8 per turn, and for text or store-only sources (`unsupported_format`); adds no citation |
 | `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, quizzes and flashcard sets |
-| `list_documents` | none | Editable materials and source files in the workspace with an editability reason (`/api/internal/documents/list`) |
 | `inspect_document` | none | Plate blocks with stable ids, text-source lines, or Office paragraphs/cells with target ids, paged by `start`/`count` |
 | `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt with an Undo ref |
 | `trash_file` | yes | Moves one source file or material into the 30-day trash (`/api/internal/trash`) |
@@ -1154,8 +1153,8 @@ render lives server-side because the pixels must be inside the provider request
 the Python agent builds mid-turn.
 
 **One contract.** `server/internal/agenttools` owns tool names, argument
-schemas, the operations table and the error codes (contract version 2 added
-`capture_page`). `cmd/openapi -agent-tools`
+schemas, the operations table and the error codes. Contract version 4 folds
+`list_documents` into `list_sources`. `cmd/openapi -agent-tools`
 exports it to `pipeline/pipeline/generated/agent_tools.json`; Python validates
 every call against that JSON (`retrieval/contract.py`) and refuses unknown
 tools, while the same Go types reach TypeScript through the OpenAPI schema. Go

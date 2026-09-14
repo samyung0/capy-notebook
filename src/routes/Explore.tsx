@@ -17,6 +17,7 @@ import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { Tabs } from '@/components/ui/Tabs';
 import { m } from '@/i18n';
+import { iconUrl } from '@/lib/icon-catalog';
 import { trackItemCloned } from '@/lib/observability';
 import { userColorPair } from '@/lib/userColor';
 
@@ -74,7 +75,13 @@ export default function Explore() {
                       className="flex h-11 w-11 items-center justify-center rounded-card"
                       style={{ background: c.bg, color: c.fg }}
                     >
-                      <Icon name="workspaces" size={20} />
+                      <img
+                        alt=""
+                        className="size-10 rounded-button"
+                        height={40}
+                        src={iconUrl(w.iconId)}
+                        width={40}
+                      />
                     </span>
                     <a
                       className="t-card-title mt-3 block truncate hover:underline"

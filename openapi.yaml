@@ -2349,6 +2349,8 @@ components:
         filesLimit:
           format: int64
           type: integer
+        iconId:
+          type: string
         id:
           type: string
         isOwner:
@@ -2381,6 +2383,7 @@ components:
         - id
         - name
         - color
+        - iconId
         - privacy
         - shareRole
         - tags
@@ -3770,6 +3773,10 @@ components:
           format: uri
           readOnly: true
           type: string
+        avatarIconId:
+          description: Curated icon ID; empty restores the current Clerk photo; omitted preserves the selection
+          pattern: ^$|^((slice|sprouts|notionists)-(0[1-9]|1[0-2])|critters-(0[1-9]|1[0-6])|avataaars-(0[1-9]|1[0-9]|2[0-4])|waves-(0[1-9]|1[01]))$
+          type: string
         name:
           description: Display name
           maxLength: 60
@@ -3882,6 +3889,10 @@ components:
         description:
           description: Optional workspace description; empty clears it
           maxLength: 500
+          type: string
+        iconId:
+          minLength: 1
+          pattern: ^$|^((slice|sprouts|notionists)-(0[1-9]|1[0-2])|critters-(0[1-9]|1[0-6])|avataaars-(0[1-9]|1[0-9]|2[0-4])|waves-(0[1-9]|1[01]))$
           type: string
         name:
           maxLength: 80
@@ -4016,6 +4027,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        avatarIconId:
+          type: string
         avatarUrl:
           type: string
         chatModel:
@@ -4102,6 +4115,8 @@ components:
         filesLimit:
           format: int64
           type: integer
+        iconId:
+          type: string
         id:
           type: string
         isOwner:
@@ -4132,6 +4147,7 @@ components:
         - id
         - name
         - color
+        - iconId
         - privacy
         - shareRole
         - tags
@@ -5951,7 +5967,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Update display name
+      summary: Update profile
       tags:
         - Account
   /api/me/ingest-slots:

@@ -727,10 +727,13 @@ export function useUpdateWorkspace() {
   return useMutation({
     mutationFn: ({ id, ...body }: UpdateWorkspaceReq & { id: string }) =>
       api.patch<Workspace>(`/workspaces/${id}`, body),
-    onSuccess: (_d, v) => {
-      qc.invalidateQueries({ queryKey: ['workspaces'] });
-      qc.invalidateQueries({ queryKey: qk.workspace(v.id) });
-      qc.invalidateQueries({ queryKey: ['tags'] });
+    onSuccess: async (workspace, v) => {
+      qc.setQueryData(qk.workspace(v.id), workspace);
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['workspaces'] }),
+        qc.invalidateQueries({ queryKey: qk.workspace(v.id) }),
+        qc.invalidateQueries({ queryKey: ['tags'] }),
+      ]);
     },
   });
 }

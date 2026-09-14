@@ -351,17 +351,13 @@ func (s *Store) ListPublicWorkspaces(ctx context.Context, userID string) ([]Publ
 	out := []PublicWorkspace{}
 	for rows.Next() {
 		var w PublicWorkspace
-		if err := rows.Scan(&w.ID, &w.Name, &w.Description, &w.Color, &w.Privacy, &w.ShareRole,
-			&w.Tags, &w.OwnerUserID, &w.OwnerName, &w.OwnerPlanTier,
-			&w.ChapterCount, &w.FileCount, &w.CreatedAt, &w.LastAccessedAt, &w.AutoReparse, &w.AutoReindex,
-			&w.Author, &w.Clones, &w.MemberRole); err != nil {
-			return nil, err
-		}
-		limits, err := s.PlanLimits(w.OwnerPlanTier)
+		var member WorkspaceRole
+		workspace, err := s.scanWorkspace(rows, &w.Author, &w.Clones, &member)
 		if err != nil {
 			return nil, err
 		}
-		w.FilesLimit = limits.FilesPerWorkspace
+		workspace.MemberRole = member
+		w.Workspace = workspace
 		out = append(out, w)
 	}
 	return out, rows.Err()
@@ -911,11 +907,11 @@ func (s *Store) cloneWorkspaceOnce(
 		return Workspace{}, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO workspaces
-			(id, user_id, name, color, description, privacy,
+			(id, user_id, name, color, description, privacy, icon_id,
 			 embedding_provider_slug, embedding_model_slug, embedding_model_version, embedding_dim)
-		VALUES ($1,$2,$3,$4,$9,'private',$5,$6,$7,$8)`,
+		VALUES ($1,$2,$3,$4,$9,'private',$10,$5,$6,$7,$8)`,
 		newID, userID, name, src.Color,
-		srcEmbed.Pin.ProviderSlug, srcEmbed.Pin.ModelSlug, srcEmbed.Pin.Version, srcEmbed.Dim, src.Description); err != nil {
+		srcEmbed.Pin.ProviderSlug, srcEmbed.Pin.ModelSlug, srcEmbed.Pin.Version, srcEmbed.Dim, src.Description, src.IconID); err != nil {
 		return Workspace{}, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,'owner')`,

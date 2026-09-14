@@ -20,7 +20,9 @@ interface NavItem {
 
 function items(): { general: NavItem[]; tools: NavItem[]; bottom: NavItem[] } {
   return {
-    bottom: [{ icon: 'help', label: m.nav_support(), to: '/support' }],
+    bottom: [
+      { icon: 'book', label: m.nav_help_legal(), to: '/help-and-legal' },
+    ],
     general: [
       { exact: true, icon: 'dashboard', label: m.nav_dashboard(), to: '/' },
       { icon: 'workspaces', label: m.nav_workspaces(), to: '/workspaces' },
@@ -135,14 +137,15 @@ export function Sidebar({
             <Row active={isActive(pathname, i)} collapsed item={i} key={i.to} />
           ))}
           <div className="mt-auto" />
-          <Link
-            className="flex h-10 w-10 items-center justify-center rounded-button text-fg hover:bg-surface-hover-bg"
-            preload="intent"
-            title={m.nav_support()}
-            to="/support"
-          >
-            <Icon name="help" size={19} />
-          </Link>
+          {nav.bottom.map((i) => (
+            <Row
+              active={isActive(pathname, i)}
+              collapsed
+              item={i}
+              key={i.to}
+              onNavigate={onNavigate}
+            />
+          ))}
         </nav>
       </Card>
     );

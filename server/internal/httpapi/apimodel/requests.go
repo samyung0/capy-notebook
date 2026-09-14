@@ -13,7 +13,8 @@ import (
 // UpdateMeReq is the body for PATCH /api/me. Name is the display name the user
 // typed; the handler trims it and refuses an empty result.
 type UpdateMeReq struct {
-	Name UserName `json:"name" minLength:"1" doc:"Display name"`
+	Name         UserName `json:"name" minLength:"1" doc:"Display name"`
+	AvatarIconID *IconID  `json:"avatarIconId,omitempty" doc:"Curated icon ID; empty restores the current Clerk photo; omitted preserves the selection"`
 }
 
 // CreateWorkspaceReq is the body for POST /api/workspaces. New workspaces are
@@ -31,6 +32,7 @@ type UpdateWorkspaceReq struct {
 	Description *WorkspaceDescription `json:"description,omitempty" doc:"Optional workspace description; empty clears it"`
 	Name        *WorkspaceName        `json:"name,omitempty" minLength:"1"`
 	Color       *store.UserColor      `json:"color,omitempty"`
+	IconID      *IconID               `json:"iconId,omitempty" minLength:"1"`
 	Tags        *[]TagInput           `json:"tags,omitempty" maxItems:"5" doc:"Tags; at most 5"`
 }
 

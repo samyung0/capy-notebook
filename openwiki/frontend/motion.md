@@ -43,6 +43,14 @@ Reduced motion disables keyframes globally. Custom exits use the actual browser
 animation lifetime and remove immediately when no animation runs. Reopening
 cancels pending removal. Foreground filters settle back to `none`.
 
+Input, Textarea and TagSelect shake their bordered control once when invalid,
+using the reference error shake's 280ms timing and 6px/4px travel. Remaining
+invalid does not replay the shake; becoming valid resets it. Border widths stay
+constant. InputError fades in for 280ms without moving and remains visible until
+validation clears it, with no timer or delayed removal. Reduced motion disables
+both animations. Repeated submission of an unchanged invalid field does not
+restart the shake.
+
 Sonner still owns its wrapper exit and 200ms removal lifetime. Changing its CSS
 alone to a 350ms exit would truncate the animation; that lifecycle change remains
 separate. Toast copy updates use the same compact swap as other changing text.

@@ -146,6 +146,8 @@ function dateAt(dayOffset: number, hour: number, minute = 0): string {
 }
 
 export const user: User = {
+  avatarIconId: 'avataaars-01',
+  avatarUrl: '/icons/avataaars-01.svg',
   chatModel: {
     modelSlug: 'deepseek-flash',
     providerSlug: 'deepseek',
@@ -188,6 +190,7 @@ export const workspaces: Workspace[] = [
     description: '',
     fileCount: 24,
     filesLimit: PLAN_LIMITS.pro.filesPerWorkspace,
+    iconId: 'slice-01',
     id: 'ws_bio',
     isOwner: true,
     lastAccessedAt: hours(3),
@@ -213,6 +216,7 @@ export const workspaces: Workspace[] = [
     description: '',
     fileCount: 12,
     filesLimit: PLAN_LIMITS.pro.filesPerWorkspace,
+    iconId: 'slice-02',
     id: 'ws_calc',
     isOwner: true,
     lastAccessedAt: days(1),
@@ -238,6 +242,7 @@ export const workspaces: Workspace[] = [
     description: '',
     fileCount: 18,
     filesLimit: PLAN_LIMITS.pro.filesPerWorkspace,
+    iconId: 'slice-03',
     id: 'ws_hist',
     isOwner: true,
     lastAccessedAt: days(2),
@@ -263,6 +268,7 @@ export const workspaces: Workspace[] = [
     description: '',
     fileCount: 9,
     filesLimit: PLAN_LIMITS.pro.filesPerWorkspace,
+    iconId: 'slice-04',
     id: 'ws_chem',
     isOwner: true,
     lastAccessedAt: days(5),
@@ -288,6 +294,7 @@ export const workspaces: Workspace[] = [
     description: '',
     fileCount: 21,
     filesLimit: PLAN_LIMITS.pro.filesPerWorkspace,
+    iconId: 'slice-05',
     id: 'ws_eng',
     isOwner: true,
     lastAccessedAt: hours(20),

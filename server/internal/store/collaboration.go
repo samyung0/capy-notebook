@@ -14,7 +14,7 @@ import (
 
 func (s *Store) ListWorkspaceMembers(ctx context.Context, wsID string) ([]WorkspaceMember, error) {
 	rows, err := s.pool.Query(ctx, `SELECT wm.workspace_id, wm.user_id, COALESCE(NULLIF(u.name,''), u.id),
-		COALESCE(u.avatar_url,''), wm.role, wm.created_at
+		COALESCE('/icons/' || NULLIF(u.avatar_icon_id,'') || '.svg', u.avatar_url,''), wm.role, wm.created_at
 		FROM workspace_members wm JOIN users u ON u.id=wm.user_id
 		WHERE wm.workspace_id=$1 ORDER BY CASE wm.role WHEN 'owner' THEN 0 ELSE 1 END, COALESCE(NULLIF(u.name,''), u.id)`, wsID)
 	if err != nil {
@@ -38,7 +38,7 @@ func (s *Store) ListWorkspaceMembers(ctx context.Context, wsID string) ([]Worksp
 // leaving a row to enumerate, and someone reachable solely through a link is
 // not a dependable mention target anyway.
 func (s *Store) ListWorkspaceCollaborators(ctx context.Context, wsID string) ([]WorkspaceCollaborator, error) {
-	rows, err := s.pool.Query(ctx, `SELECT wm.user_id, COALESCE(NULLIF(u.name,''), u.id), COALESCE(u.avatar_url,'')
+	rows, err := s.pool.Query(ctx, `SELECT wm.user_id, COALESCE(NULLIF(u.name,''), u.id), COALESCE('/icons/' || NULLIF(u.avatar_icon_id,'') || '.svg', u.avatar_url,'')
 		FROM workspace_members wm JOIN users u ON u.id=wm.user_id
 		WHERE wm.workspace_id=$1 ORDER BY COALESCE(NULLIF(u.name,''), u.id)`, wsID)
 	if err != nil {
