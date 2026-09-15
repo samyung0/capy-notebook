@@ -302,7 +302,7 @@ test('oversized delimited structure: terminal ingest failure never publishes an 
     0
   );
   const attempts = await run.query(
-    `SELECT a.error_code,a.error_detail,a.status,a.release_sha,a.environment,a.trace_id,a.job_id FROM ingest_job_attempts a JOIN jobs j ON j.id=a.job_id WHERE j.payload->>'fileId'=%s`,
+    `SELECT a.error_code,j.error AS job_error,a.status,a.release_sha,a.environment,a.trace_id,a.job_id FROM ingest_job_attempts a JOIN jobs j ON j.id=a.job_id WHERE j.payload->>'fileId'=%s`,
     [fileId]
   );
   assert(
@@ -310,7 +310,7 @@ test('oversized delimited structure: terminal ingest failure never publishes an 
       (attempt) =>
         attempt.status === 'failed' &&
         attempt.error_code === 'terminalerror' &&
-        attempt.error_detail === 'delimited table exceeds the cell limit'
+        attempt.job_error === 'delimited table exceeds the cell limit'
     )
   );
   for (const attempt of attempts) {
@@ -318,7 +318,11 @@ test('oversized delimited structure: terminal ingest failure never publishes an 
       fileId,
       jobId: attempt.job_id,
     });
-    if (attempt.status === 'failed' && attempt.error_code === 'terminalerror') {
+    if (
+      attempt.status === 'failed' &&
+      attempt.error_code === 'terminalerror' &&
+      attempt.job_error === 'delimited table exceeds the cell limit'
+    ) {
       await run.record('sentry-expected', string(attempt.trace_id), {
         errorCode: 'terminalerror',
         fileId,
