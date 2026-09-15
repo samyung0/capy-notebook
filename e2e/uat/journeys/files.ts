@@ -220,7 +220,7 @@ export async function upload(
 
 export async function indexText(run: UatRun, fileId: string) {
   const rows = await run.query(
-    `SELECT c.text FROM rag_chunks c JOIN rag_file_contents f ON f.content_id=c.content_id AND f.workspace_id=c.workspace_id
+    `SELECT c.indexed_text AS text FROM rag_chunks c JOIN rag_file_contents f ON f.content_id=c.content_id AND f.workspace_id=c.workspace_id
     WHERE f.file_id=%s ORDER BY c.chunk_idx`,
     [fileId]
   );

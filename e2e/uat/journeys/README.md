@@ -34,6 +34,8 @@ Authenticated API actions wait for Clerk to restore the actor's browser session
 after navigation before reading its token.
 Office publication waits fail immediately when the database records a terminal
 refresh error, rather than waiting out the processing timeout.
+Ingest assertions read persisted indexed text, including heading context, so
+facts remain verifiable when parsing recognizes an edited sentence as a heading.
 Browser setup follows [Clerk's Playwright testing helper](https://github.com/clerk/javascript/blob/main/packages/testing/src/playwright/setupClerkTestingToken.ts):
 it sends an instance testing token and overrides only the Clerk client CAPTCHA
 flag. The token alone does not prevent the browser from waiting for a challenge.
