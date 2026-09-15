@@ -69,9 +69,9 @@
 
 /* ---------------- classroom · LIGHT ---------------- */
 [data-style="classroom"][data-theme="latte"] {
-  --surface-page: #f4f6f5; /* outer "device" */
+  --surface-page: #f7f7f7; /* outer "device" */
   --surface-page-hover: #e6e9ea;
-  --surface-canvas: #f4f6f5; /* page wash behind inset cards */
+  --surface-canvas: #f4f6f5;
   --surface-card-bg: #ffffff;
   --surface-card-dark-bg: #e6e9ea; /* dark card */
   --surface-card-hover-bg: #f7f8f8;
@@ -86,8 +86,8 @@
   --text-link-hover: rgb(65, 51, 134);
 
   /* Borders & lines */
-  --border-default: #e6e6e6;
-  --border-strong: #c5c5c5;
+  --border-default: #d6d6d6;
+  --border-strong: #afafaf;
   --divider: #e6e6e6;
 
   /* Actions (pairs) */

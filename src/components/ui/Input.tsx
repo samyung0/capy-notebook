@@ -5,7 +5,7 @@ import { Icon, type IconName } from './Icon';
 import { IconButton, type IconButtonProps } from './IconButton';
 
 const inputContainerVariants = cva(
-  'has-[input[aria-invalid=true]]:motion-error-shake flex items-center gap-2 outline-none transition-colors duration-150 file:inline-flex file:border-0 file:bg-transparent file:font-medium file:text-fg file:text-sm has-disabled:pointer-events-none has-disabled:cursor-not-allowed has-disabled:bg-surface-hover-bg',
+  'has-[input[aria-invalid=true]]:motion-error-shake flex items-center gap-2 outline-none transition-none duration-150 file:inline-flex file:border-0 file:bg-transparent file:font-medium file:text-fg file:text-sm has-disabled:pointer-events-none has-disabled:cursor-not-allowed has-disabled:bg-surface-hover-bg',
   {
     compoundVariants: [
       {
@@ -36,10 +36,10 @@ const inputContainerVariants = cva(
       },
       variant: {
         light:
-          'border border-line bg-surface focus-within:border-line-strong has-[input[aria-invalid=true]]:border-solid-error',
+          'border border-line bg-surface focus-within:border-action-accent has-[input[aria-invalid=true]]:border-solid-error',
         transparent: '',
         underline:
-          'border-line border-b focus-within:border-line-strong has-[input[aria-invalid=true]]:border-solid-error',
+          'border-line border-b focus-within:border-action-accent has-[input[aria-invalid=true]]:border-solid-error',
       },
     },
   }
@@ -194,10 +194,7 @@ export function InputError({
   }
   return (
     <div
-      className={cn(
-        'motion-error-in t-body mt-1.5 text-solid-error',
-        className
-      )}
+      className={cn('motion-error-in t-body text-solid-error', className)}
       data-slot="field-error"
       role="alert"
       {...props}
@@ -226,5 +223,30 @@ export function InputTitle({
       <div>{children}</div>
       {required && <div className="text-solid-error">*</div>}
     </div>
+  );
+}
+
+export function InputField({
+  id,
+  label,
+  trailing,
+  children,
+  error,
+}: {
+  id: string;
+  label: string;
+  trailing?: React.ReactNode;
+  children: React.ReactNode;
+  error?: { message?: string };
+}) {
+  return (
+    <label className="mb-3 flex flex-col gap-1.5" htmlFor={id}>
+      {children}
+      <span className="order-first flex items-baseline justify-between">
+        <InputTitle>{label}</InputTitle>
+        {trailing}
+      </span>
+      {error && <InputError errors={[error]} />}
+    </label>
   );
 }

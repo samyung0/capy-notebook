@@ -34,7 +34,7 @@ export function AppShell() {
       <main className="flex h-full min-w-0 flex-1 flex-col overflow-hidden p-1.5 sm:p-2.5">
         <AccountStatusBanner />
         <ConnectionBanner />
-        <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+        <div className="min-h-0 min-w-0 flex-1">
           <Outlet />
         </div>
       </main>

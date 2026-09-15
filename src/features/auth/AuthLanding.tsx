@@ -1,75 +1,69 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useRouter } from '@tanstack/react-router';
+import { Link, useRouter } from '@tanstack/react-router';
 import { useEffect, useId, useMemo, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { Panel } from '@/components/app/layout';
 import { Button } from '@/components/ui/Button';
+import { ButtonCard } from '@/components/ui/ButtonCard';
 import { Card } from '@/components/ui/Card';
 import { Spinner } from '@/components/ui/feedback';
-import { Input, InputError, InputTitle } from '@/components/ui/Input';
-import { LogoMark } from '@/components/ui/Logo';
+import { Input, InputField } from '@/components/ui/Input';
 import { useAuth, useSignIn, useSignUp } from '@/features/auth/clerkHooks';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import { clerkMessage, redirectAfterAuth, ssoUrls } from './clerk';
 import { GoogleIcon, MicrosoftIcon } from './ProviderIcons';
 import { newPasswordSchema, signInPasswordSchema } from './password';
 
 type Mode = 'signIn' | 'signUp';
 
-/** Keeps `redirect_url` while hopping between the auth pages. */
-function authHref(path: string) {
-  return `${path}${window.location.search}`;
-}
-
 export function AuthPage({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-dvh bg-page text-fg">
-      <div className="mx-auto grid min-h-dvh max-w-6xl lg:grid-cols-[1.15fr_1fr]">
-        <BrandColumn />
-        <div className="flex items-center justify-center px-5 pb-10 lg:justify-end lg:px-8 lg:py-10">
-          {children}
+    <main className="h-svh overflow-hidden p-1.5 sm:p-2.5">
+      <Panel
+        className="h-full w-full"
+        sectionClassName="h-full w-full min-h-full flex flex-row"
+      >
+        <div className="flex flex-1 flex-col gap-4 p-6 md:p-8">
+          <div className="flex flex-1 items-center justify-center">
+            <div className="w-sm">{children}</div>
+          </div>
         </div>
-      </div>
-    </div>
+        <div className="relative hidden flex-1 xl:block">
+          <BrandColumn />
+        </div>
+      </Panel>
+    </main>
   );
 }
 
 function BrandColumn() {
   return (
-    <div className="flex flex-col justify-between gap-10 px-6 pt-8 pb-4 lg:px-12 lg:py-12">
-      <div>
-        <a className="flex items-center gap-2.5 font-bold" href="/sign-in">
-          <LogoMark />
-          {m.app_name()}
-        </a>
-        <h1 className="t-display mt-10 max-w-[18ch] text-balance lg:mt-14">
-          {m.auth_brand_headline_a()}{' '}
-          <em className="rounded-button bg-solid-success/70 px-2 text-fg not-italic">
-            {m.auth_brand_headline_em()}
-          </em>
-          {m.auth_brand_headline_b()}
-        </h1>
-        <p className="mt-4 max-w-[46ch] text-base text-fg-secondary">
-          {m.auth_brand_lead()}
-        </p>
-        <ul className="mt-6 flex flex-wrap gap-2">
-          {[
-            m.auth_pill_quizzes(),
-            m.auth_pill_flashcards(),
-            m.auth_pill_shared(),
-            m.auth_pill_chat(),
-          ].map((label) => (
-            <li
-              className="rounded-full border border-line bg-surface px-3 py-1.5 font-semibold text-fg-secondary text-sm"
-              key={label}
-            >
-              {label}
-            </li>
-          ))}
-        </ul>
-      </div>
-      <p className="hidden text-fg-muted text-xs lg:block">{m.auth_legal()}</p>
-    </div>
+    <Card
+      className={cn(
+        'relative flex h-full flex-1 flex-col items-center justify-center gap-10 bg-[#322a5c] p-11 text-[#f7f7f7]'
+      )}
+      radius="card"
+      theme="surface-dark"
+    >
+      <figure className="authBlockquote -mt-6 min-w-sm max-w-[600px]">
+        <blockquote>
+          <p>
+            Perhaps studying is not about the destination. Perhaps it is about
+            the promise engraved in each step you take, that the seeking itself
+            is the answer.{' '}
+          </p>
+        </blockquote>
+        <figcaption className="mt-7 flex items-center gap-3 font-sans tracking-wide">
+          <span
+            aria-hidden="true"
+            className="h-0.5 w-11 flex-none bg-action-accent"
+          />
+          <span>A wise man inspired from Metal Garden</span>
+        </figcaption>
+      </figure>
+    </Card>
   );
 }
 
@@ -83,14 +77,14 @@ export function AuthCard({
   children: React.ReactNode;
 }) {
   return (
-    <Card
-      border="solid"
-      className="w-full max-w-[400px] gap-0 p-7"
-      radius="card-lg"
-    >
-      <h2 className="t-large-card-title">{title}</h2>
-      {hint && <p className="t-meta mt-1 text-fg-muted">{hint}</p>}
-      <div className="mt-5">{children}</div>
+    <Card border="none" className="gap-0 p-0" radius="card-lg">
+      <h2 className="t-page-title self-center xl:self-start">{title}</h2>
+      {hint && (
+        <p className="t-card-title self-center text-fg-muted xl:self-start">
+          {hint}
+        </p>
+      )}
+      <div className="mt-7">{children}</div>
     </Card>
   );
 }
@@ -115,28 +109,24 @@ function OAuthButtons({ onError }: { onError: (message: string) => void }) {
     if (error) onError(clerkMessage(error));
   };
   return (
-    <div className="flex flex-col gap-2">
-      <Button
-        fullWidth
-        onClick={() => void start('oauth_google')}
-        type="button"
-        variant="outline"
-      >
-        <GoogleIcon />
-        {m.auth_google()}
-      </Button>
-      <Button
-        fullWidth
-        onClick={() => void start('oauth_microsoft')}
-        type="button"
-        variant="outline"
-      >
-        <MicrosoftIcon />
-        {m.auth_microsoft()}
-      </Button>
+    <div className="mt-4 flex flex-col gap-0">
       <p className="t-label my-2 flex items-center gap-3 text-fg-muted uppercase before:h-px before:flex-1 before:bg-line after:h-px after:flex-1 after:bg-line">
         {m.auth_or()}
       </p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <ButtonCard
+          buttonText={'Google'}
+          className="w-full flex-1 gap-1.5! py-3"
+          componentBeforeText={<GoogleIcon className="h-6 w-6 shrink-0" />}
+          onClick={() => void start('oauth_google')}
+        />
+        <ButtonCard
+          buttonText={'Microsoft'}
+          className="w-full flex-1 gap-1.5! py-3"
+          componentBeforeText={<MicrosoftIcon className="h-6 w-6 shrink-0" />}
+          onClick={() => void start('oauth_microsoft')}
+        />
+      </div>
     </div>
   );
 }
@@ -152,31 +142,6 @@ function SubmitButton({
     <Button disabled={busy} fullWidth type="submit" variant="accent">
       {busy ? <Spinner /> : children}
     </Button>
-  );
-}
-
-function Field({
-  id,
-  label,
-  trailing,
-  children,
-  error,
-}: {
-  id: string;
-  label: string;
-  trailing?: React.ReactNode;
-  children: React.ReactNode;
-  error?: { message?: string };
-}) {
-  return (
-    <label className="mb-3 flex flex-col gap-1.5" htmlFor={id}>
-      <span className="flex items-baseline justify-between">
-        <InputTitle>{label}</InputTitle>
-        {trailing}
-      </span>
-      {children}
-      {error && <InputError errors={[error]} />}
-    </label>
   );
 }
 
@@ -222,7 +187,11 @@ export function NewPasswordForm({
         control={control}
         name="password"
         render={({ field, fieldState }) => (
-          <Field error={fieldState.error} id={id} label={m.auth_new_password()}>
+          <InputField
+            error={fieldState.error}
+            id={id}
+            label={m.auth_new_password()}
+          >
             <Input
               {...field}
               aria-invalid={fieldState.invalid}
@@ -236,7 +205,7 @@ export function NewPasswordForm({
                 {m.auth_password_rule()}
               </span>
             )}
-          </Field>
+          </InputField>
         )}
       />
       <SubmitButton busy={isSubmitting}>{submitLabel}</SubmitButton>
@@ -289,8 +258,8 @@ function SignInCard() {
 
   return (
     <AuthCard hint={m.auth_signin_hint()} title={m.auth_signin_title()}>
-      <OAuthButtons onError={setFormError} />
       <form
+        className="flex flex-col gap-2"
         onSubmit={handleSubmit(async ({ email, password }) => {
           setFormError(null);
           const { error } = await signIn.password({
@@ -313,7 +282,7 @@ function SignInCard() {
           control={control}
           name="email"
           render={({ field, fieldState }) => (
-            <Field
+            <InputField
               error={fieldState.error}
               id={`${id}-email`}
               label={m.auth_email()}
@@ -324,26 +293,28 @@ function SignInCard() {
                 autoComplete="email"
                 autoFocus
                 id={`${id}-email`}
+                placeholder={'Enter your email address...'}
                 type="email"
               />
-            </Field>
+            </InputField>
           )}
         />
         <Controller
           control={control}
           name="password"
           render={({ field, fieldState }) => (
-            <Field
+            <InputField
               error={fieldState.error}
               id={`${id}-password`}
               label={m.auth_password()}
               trailing={
-                <a
+                <Link
                   className="font-semibold text-link text-sm hover:text-link-hover"
-                  href={authHref('/forgot-password')}
+                  search
+                  to="/forgot-password"
                 >
                   {m.auth_forgot()}
-                </a>
+                </Link>
               }
             >
               <Input
@@ -351,21 +322,24 @@ function SignInCard() {
                 aria-invalid={fieldState.invalid}
                 autoComplete="current-password"
                 id={`${id}-password`}
+                placeholder={'and password...'}
                 type="password"
               />
-            </Field>
+            </InputField>
           )}
         />
         <SubmitButton busy={isSubmitting}>{m.action_sign_in()}</SubmitButton>
       </form>
-      <p className="mt-4 text-center text-fg-secondary text-sm">
+      <OAuthButtons onError={setFormError} />
+      <p className="mt-7 text-center text-fg-secondary text-sm">
         {m.auth_new_here()}{' '}
-        <a
-          className="font-semibold text-link hover:text-link-hover"
-          href={authHref('/sign-up')}
+        <Link
+          className="font-semibold text-link underline hover:text-link-hover"
+          search
+          to="/sign-up"
         >
           {m.auth_create_link()}
-        </a>
+        </Link>
       </p>
     </AuthCard>
   );
@@ -390,7 +364,6 @@ function SignUpCard() {
     handleSubmit,
   } = useForm({
     defaultValues: { email: '', password: '' },
-    mode: 'onBlur',
     resolver: zodResolver(schema),
   });
   const {
@@ -427,7 +400,7 @@ function SignUpCard() {
             control={codeControl}
             name="code"
             render={({ field, fieldState }) => (
-              <Field
+              <InputField
                 error={fieldState.error}
                 id={`${id}-code`}
                 label={m.auth_code()}
@@ -440,7 +413,7 @@ function SignUpCard() {
                   id={`${id}-code`}
                   inputMode="numeric"
                 />
-              </Field>
+              </InputField>
             )}
           />
           <SubmitButton busy={codeSubmitting}>
@@ -476,7 +449,6 @@ function SignUpCard() {
 
   return (
     <AuthCard hint={m.auth_signup_hint()} title={m.auth_signup_title()}>
-      <OAuthButtons onError={setFormError} />
       <form
         onSubmit={handleSubmit(async (values) => {
           setFormError(null);
@@ -503,7 +475,7 @@ function SignUpCard() {
           control={control}
           name="email"
           render={({ field, fieldState }) => (
-            <Field
+            <InputField
               error={fieldState.error}
               id={`${id}-email`}
               label={m.auth_email()}
@@ -514,16 +486,17 @@ function SignUpCard() {
                 autoComplete="email"
                 autoFocus
                 id={`${id}-email`}
+                placeholder={'Enter your email address...'}
                 type="email"
               />
-            </Field>
+            </InputField>
           )}
         />
         <Controller
           control={control}
           name="password"
           render={({ field, fieldState }) => (
-            <Field
+            <InputField
               error={fieldState.error}
               id={`${id}-password`}
               label={m.auth_password()}
@@ -533,14 +506,15 @@ function SignUpCard() {
                 aria-invalid={fieldState.invalid}
                 autoComplete="new-password"
                 id={`${id}-password`}
+                placeholder={'and password...'}
                 type="password"
               />
               {!fieldState.error && (
-                <span className="t-meta text-fg-muted">
+                <span className="t-meta pt-1.5 text-fg-muted">
                   {m.auth_password_rule()}
                 </span>
               )}
-            </Field>
+            </InputField>
           )}
         />
         {/* Clerk mounts its bot-protection widget here; smart mode stays invisible unless challenged. */}
@@ -549,14 +523,16 @@ function SignUpCard() {
           {m.auth_signup_submit()}
         </SubmitButton>
       </form>
-      <p className="mt-4 text-center text-fg-secondary text-sm">
+      <OAuthButtons onError={setFormError} />
+      <p className="mt-7 text-center text-fg-secondary text-sm">
         {m.auth_have_account()}{' '}
-        <a
-          className="font-semibold text-link hover:text-link-hover"
-          href={authHref('/sign-in')}
+        <Link
+          className="font-semibold text-link underline hover:text-link-hover"
+          search
+          to={'/sign-in'}
         >
           {m.action_sign_in()}
-        </a>
+        </Link>
       </p>
     </AuthCard>
   );

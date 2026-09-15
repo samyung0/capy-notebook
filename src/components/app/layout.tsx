@@ -49,19 +49,22 @@ export function Panel({
   children,
   className,
   sectionClassName,
+  as,
 }: {
   children: ReactNode;
   className?: string;
   sectionClassName?: string;
   scroll?: boolean;
+  as?: React.ElementType;
 }) {
+  const El = as || 'section';
   return (
     <Card
       asChild
       className={cn('h-full overflow-hidden p-0 shadow-card', className)}
       radius="card-xl"
     >
-      <section>
+      <El>
         <div
           className={cn(
             'flex max-h-full flex-col items-stretch gap-2 overflow-auto p-0',
@@ -70,7 +73,7 @@ export function Panel({
         >
           {children}
         </div>
-      </section>
+      </El>
     </Card>
   );
 }

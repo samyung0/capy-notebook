@@ -460,7 +460,8 @@ Microsoft, email plus password, forgot-password and create-account links),
 password; the verified reset also signs the user in) and `/sso-callback`
 (Clerk's redirect callback, which completes the session or transfers a
 first-time OAuth account into sign-up). A same-origin `redirect_url` query
-carries the post-auth destination through every hop. Sign-up and new-password
+carries the post-auth destination through every hop. Links between auth pages
+use SPA navigation and preserve search parameters. Sign-up and new-password
 forms require 12 characters with a digit and a symbol; sign-in only checks
 non-empty. OAuth accounts are never asked for a password.
 

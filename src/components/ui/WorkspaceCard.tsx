@@ -22,7 +22,7 @@ import { Card } from './Card';
 import { Skeleton } from './feedback';
 
 export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
-  const c = userColorPair(workspace.color);
+  const _c = userColorPair(workspace.color);
   const { mutate: deleteWorkspace } = useDeleteWorkspace();
   const { mutateAsync: updateWorkspace } = useUpdateWorkspace();
   const { isPending: updateSharingIsPending, mutateAsync: updateSharing } =
@@ -95,10 +95,10 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
         >
           <span
             className={cn(
-              'size-fit rounded-card p-1.5',
-              workspace.color === 'transparent' && 'px-1'
+              'size-fit rounded-card'
+              // workspace.color === 'transparent' && 'px-1'
             )}
-            style={{ background: c.bg, color: c.fg }}
+            // style={{ background: c.bg, color: c.fg }}
           >
             <img
               alt=""

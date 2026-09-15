@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useRouter } from '@tanstack/react-router';
+import { Link, useRouter } from '@tanstack/react-router';
 import { useId, useMemo, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -65,12 +65,13 @@ export default function ForgotPasswordPage() {
     return (
       <AuthPage>
         <AuthCard hint={m.auth_reset_hint()} title={m.auth_reset_title()}>
-          <a
+          <Link
             className="t-meta mb-4 inline-block text-fg-muted hover:text-fg"
-            href="/sign-in"
+            search
+            to="/sign-in"
           >
             ← {m.auth_back_to_signin()}
-          </a>
+          </Link>
           <form
             onSubmit={handleEmailSubmit(async (values) => {
               setFormError(null);
