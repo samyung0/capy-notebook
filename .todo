@@ -17,7 +17,6 @@ low priority:
 15. add suspend/unsuspend account controls to the Ops dashboard (separate feature; current suspension is database/operator-only)
 
 high PRIORITIES:
-reserve root domain to a next js page that is public (rather than dashboard, dashboard help and support should point to a publicly accessible page (with a generated support token in url if necessary)
 what contributes to a change in editing office files? (so it passes the gate for reparsing)
 check upload session timeout (shouldnt have 15 minutes, ttl is 5 minutes for the link alr)
 1. diagrams.net (generate have a 1 turn generate->QA->fix loop on server)

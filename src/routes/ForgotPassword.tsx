@@ -1,4 +1,3 @@
-import { useSignIn } from '@clerk/react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useRouter } from '@tanstack/react-router';
 import { useId, useMemo, useState } from 'react';
@@ -9,6 +8,7 @@ import { Spinner } from '@/components/ui/feedback';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { AuthCard, AuthPage, FormAlert } from '@/features/auth/AuthLanding';
 import { clerkMessage } from '@/features/auth/clerk';
+import { useSignIn } from '@/features/auth/clerkHooks';
 import { newPasswordSchema } from '@/features/auth/password';
 import { m } from '@/i18n';
 

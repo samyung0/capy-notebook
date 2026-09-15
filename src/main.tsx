@@ -1,5 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query';
-import { RouterProvider } from '@tanstack/react-router';
+import { RouterContextProvider, RouterProvider } from '@tanstack/react-router';
 import { lazy, StrictMode, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
@@ -50,7 +50,9 @@ enableMocks().finally(() => {
 
                 {MockScenarioPanel && (
                   <Suspense fallback={null}>
-                    <MockScenarioPanel />
+                    <RouterContextProvider router={router}>
+                      <MockScenarioPanel />
+                    </RouterContextProvider>
                   </Suspense>
                 )}
               </TooltipProvider>

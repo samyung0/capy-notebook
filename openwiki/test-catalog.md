@@ -66,7 +66,7 @@ The local grading checks in [`bench/grading/scripts/test_benchmark.py`](../bench
 | [`src/lib/errors.test.ts`](../src/lib/errors.test.ts)                     | Normalizes API, network, cancellation, quota, file-cap, credits, ingest-lease, BYOK key, and chunk-load failures into safe UI error kinds and actions. A `provider_busy` answer is its own retryable kind. |
 | [`src/lib/googlePicker.test.ts`](../src/lib/googlePicker.test.ts) | Google multi-select, folder selection, origin/app id, and picked/cancel/error callback dispatch. |
 | [`src/lib/onedrivePicker.test.ts`](../src/lib/onedrivePicker.test.ts)     | OneDrive mixed file/folder multi-selection with persistence and popup cleanup, picker host from `/me/drive`, personal vs work scopes, `event.origin` allowlist, pick payload to import `fileIds`/`driveIds`, tenant-consent vs user-cancel mapping, and Google Picker env rejection of missing keys and non-numeric project ids. |
-| [`src/mocks/scenarios.test.ts`](../src/mocks/scenarios.test.ts)           | Validates unique development error scenarios, runtime-handler mappings, and Huma coded error envelopes.                                                                                                          |
+| [`src/mocks/scenarios.test.ts`](../src/mocks/scenarios.test.ts)           | Validates development scenario IDs and handler mappings, auth step isolation/reset, Huma error envelopes, upload/import/flashcard endpoint dispatch, and chat warning/text/effect delivery through the real SSE parser.                                                                                                          |
 
 ### Lib
 

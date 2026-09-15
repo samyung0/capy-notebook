@@ -1,4 +1,3 @@
-import { useUser } from '@clerk/react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -13,6 +12,7 @@ import { SimpleDialog } from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/feedback';
 import { IconPicker } from '@/components/ui/IconPicker';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
+import { useUser } from '@/features/auth/clerkHooks';
 import { m } from '@/i18n';
 import { iconUrl } from '@/lib/icon-catalog';
 import { clerkMessage } from './clerk';

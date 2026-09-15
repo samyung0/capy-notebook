@@ -41,11 +41,14 @@ function roleOptions(): Array<{ value: AssignableRole; label: string }> {
 
 export function WorkspaceMemberManager({
   workspaceId,
+  initialTransferTarget = null,
 }: {
   workspaceId: string;
+  /** Allows the MSW dialog preview to reach the existing confirmation. */
+  initialTransferTarget?: WorkspaceMember | null;
 }) {
   const [transferTarget, setTransferTarget] = useState<WorkspaceMember | null>(
-    null
+    initialTransferTarget
   );
   const [manageTarget, setManageTarget] = useState<WorkspaceMember | null>(
     null

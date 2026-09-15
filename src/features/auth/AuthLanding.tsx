@@ -1,4 +1,3 @@
-import { useAuth, useSignIn, useSignUp } from '@clerk/react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useRouter } from '@tanstack/react-router';
 import { useEffect, useId, useMemo, useState } from 'react';
@@ -9,6 +8,7 @@ import { Card } from '@/components/ui/Card';
 import { Spinner } from '@/components/ui/feedback';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { LogoMark } from '@/components/ui/Logo';
+import { useAuth, useSignIn, useSignUp } from '@/features/auth/clerkHooks';
 import { m } from '@/i18n';
 import { clerkMessage, redirectAfterAuth, ssoUrls } from './clerk';
 import { GoogleIcon, MicrosoftIcon } from './ProviderIcons';

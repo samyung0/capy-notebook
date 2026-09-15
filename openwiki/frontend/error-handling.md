@@ -150,12 +150,28 @@ Run the Vite development app with MSW enabled (the default, or
 a scenario, and apply it. Applying first resets previous runtime overrides, so
 only one scenario is active. **Clear** restores the normal mock handlers.
 
-The offline scenario drives TanStack Query's `onlineManager`; clearing, changing
-scenario, or unmounting the panel restores online state. The two boundary probes
-throw a regular render error and a chunk-load-shaped `TypeError`. The probes
-intentionally replace the root UI, so use Retry/Reload or refresh afterward.
+The panel includes authentication page links and direct previews of the real
+onboarding, source import, statistics, task, ownership-transfer and file dialogs.
+Authentication forms use local mock operations in MSW; any locally valid input
+works unless the chosen scenario rejects that step. No credentials or photos
+are sent to Clerk. For code/reset errors, reach the relevant step before applying
+the failure.
 
-The panel is not mounted in production or when `VITE_USE_MSW=false`.
+Scenarios survive page links and reloads in the same tab. **Clear** restores the
+normal handlers but does not undo mock database edits. Keep **Clear cached
+responses when applying** checked for initial-load failures; uncheck it to retain
+cached data during a failed refresh. The panel shows per-scenario usage hints.
+
+The offline scenario drives TanStack Query's `onlineManager`. The reconnecting
+scenario sets the events-stream status cache because the real events connection
+is disabled in MSW. Clearing, changing scenario, or unmounting the panel restores
+these states. Boundary probes throw a regular render error or a chunk-load-shaped
+`TypeError`; use Retry/Reload afterward.
+
+The panel and auth mock alias are enabled only in MSW development. Production
+and `VITE_USE_MSW=false` continue using Clerk. See the
+[coverage audit](msw-scenarios-audit.md) for added paths and remaining cases where
+the product currently suppresses errors or transport mocks are incomplete.
 
 ## Stable test selectors
 

@@ -1,5 +1,5 @@
-import { AuthenticateWithRedirectCallback } from '@clerk/react';
 import { redirectAfterAuth } from '@/features/auth/clerk';
+import { AuthenticateWithRedirectCallback } from '@/features/auth/clerkHooks';
 import { m } from '@/i18n';
 
 /** Google and Microsoft return here. Clerk completes the session, or transfers

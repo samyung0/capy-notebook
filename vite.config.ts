@@ -103,6 +103,17 @@ export default defineConfig(({ mode }) => {
       // by prefix, so an object sorted by a formatter turns `/viewer` into
       // `index.ts/viewer`.
       alias: [
+        ...(useMsw
+          ? [
+              {
+                find: '@/features/auth/clerkHooks',
+                replacement: path.resolve(
+                  import.meta.dirname,
+                  './src/mocks/auth.tsx'
+                ),
+              },
+            ]
+          : []),
         {
           find: '@betteroffice/docx-react',
           replacement: path.resolve(

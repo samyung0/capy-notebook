@@ -8,7 +8,6 @@ import {
   redirect,
 } from '@tanstack/react-router';
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools';
-import { USE_MSW } from '@/api/auth';
 import {
   allFilesQuery,
   attemptQuery,
@@ -126,32 +125,26 @@ const publicRoutes = [
     },
     path: '/share/flashcards/$flashcardSetId',
   }),
-  ...(USE_MSW
-    ? []
-    : [
-        createRoute({
-          component: lazyRouteComponent(() => import('@/routes/SignIn')),
-          getParentRoute: () => rootRoute,
-          path: '/sign-in',
-        }),
-        createRoute({
-          component: lazyRouteComponent(() => import('@/routes/SignUp')),
-          getParentRoute: () => rootRoute,
-          path: '/sign-up',
-        }),
-        createRoute({
-          component: lazyRouteComponent(
-            () => import('@/routes/ForgotPassword')
-          ),
-          getParentRoute: () => rootRoute,
-          path: '/forgot-password',
-        }),
-        createRoute({
-          component: lazyRouteComponent(() => import('@/routes/SsoCallback')),
-          getParentRoute: () => rootRoute,
-          path: '/sso-callback',
-        }),
-      ]),
+  createRoute({
+    component: lazyRouteComponent(() => import('@/routes/SignIn')),
+    getParentRoute: () => rootRoute,
+    path: '/sign-in',
+  }),
+  createRoute({
+    component: lazyRouteComponent(() => import('@/routes/SignUp')),
+    getParentRoute: () => rootRoute,
+    path: '/sign-up',
+  }),
+  createRoute({
+    component: lazyRouteComponent(() => import('@/routes/ForgotPassword')),
+    getParentRoute: () => rootRoute,
+    path: '/forgot-password',
+  }),
+  createRoute({
+    component: lazyRouteComponent(() => import('@/routes/SsoCallback')),
+    getParentRoute: () => rootRoute,
+    path: '/sso-callback',
+  }),
 ];
 
 const appRoutes = [

@@ -47,6 +47,7 @@ import { getFileKind } from '@/features/workspace/sourceUpload';
 import { isKnown, newSrsState } from '@/lib/srs';
 import * as db from './db';
 import { uid } from './db';
+import { dialogFiles } from './dialogFiles';
 import { sourceUploadPolicy } from './sourceUploadPolicy';
 
 /** Map a material's storage kind to the left-panel ref type. */
@@ -378,6 +379,35 @@ function trashMaterial(id: string, kind?: string) {
 }
 
 export const handlers = [
+  http.get('/api/files/:id/links', ({ params }) => {
+    if (!dialogFiles.some((file) => file.id === params.id)) return;
+    return HttpResponse.json({
+      url:
+        params.id === 'mock-preview-text'
+          ? '/__mock/preview/text'
+          : '/__mock/preview/unavailable',
+    });
+  }),
+  http.get('/__mock/preview/text', () =>
+    HttpResponse.text(
+      'Dummy source text. Choose Edit source to preview a failed source session.'
+    )
+  ),
+  http.get(
+    '/__mock/preview/unavailable',
+    () => new HttpResponse(null, { status: 503 })
+  ),
+  http.get('/api/files/:id/source-session', ({ params }) => {
+    if (!dialogFiles.some((file) => file.id === params.id)) return;
+    return HttpResponse.json(
+      { detail: 'Mock source session unavailable.', status: 503 },
+      { status: 503 }
+    );
+  }),
+  http.post('/__mock/auth/:operation', async () => {
+    await delay(250);
+    return HttpResponse.json({ error: null, status: 'complete' });
+  }),
   http.all('/api/*', async () => {
     await latency();
   }),
@@ -1842,13 +1872,15 @@ export const handlers = [
         });
         send({ citations, type: 'citations' });
         send({ phase: 'answering', type: 'phase' });
+        send({ blockId: 'mock-answer', type: 'block_start' });
         let acc = '';
         for (const w of words) {
           if (request.signal.aborted) break;
           await delay(35);
           acc += w + ' ';
-          send({ text: w + ' ', type: 'token' });
+          send({ blockId: 'mock-answer', text: w + ' ', type: 'block_delta' });
         }
+        send({ blockId: 'mock-answer', kind: 'answer', type: 'block_end' });
         const aborted = request.signal.aborted;
         db.chatMessages.push({
           activity: [

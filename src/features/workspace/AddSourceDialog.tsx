@@ -133,7 +133,7 @@ function reportPickerFailure(
 }
 
 type Provider = 'google' | 'microsoft';
-interface PendingSource {
+export interface PendingSource {
   analysisInput?: SourceAnalysisInput;
   analysisProgress?: SourceAnalysisProgress;
   analysisResult?: SourceAnalysisResult;
@@ -946,7 +946,7 @@ function sourceCreditEstimate(
   });
 }
 
-function SourceDetailsDialog({
+export function SourceDetailsDialog({
   initialSources,
   onClose,
   onEmpty,
