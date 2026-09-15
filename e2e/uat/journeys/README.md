@@ -32,6 +32,8 @@ accounts and short-lived sign-in tickets. No test writes the database, bypasses
 app authorization, fabricates signed webhooks, or changes shared parser settings.
 Authenticated API actions wait for Clerk to restore the actor's browser session
 after navigation before reading its token.
+Office publication waits fail immediately when the database records a terminal
+refresh error, rather than waiting out the processing timeout.
 Browser setup follows [Clerk's Playwright testing helper](https://github.com/clerk/javascript/blob/main/packages/testing/src/playwright/setupClerkTestingToken.ts):
 it sends an instance testing token and overrides only the Clerk client CAPTCHA
 flag. The token alone does not prevent the browser from waiting for a challenge.

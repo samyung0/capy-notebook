@@ -10,12 +10,59 @@ import { cleanupRun, validateCleanupTarget } from './cleanup';
 import { loadEnvironment, type UatEnvironment } from './environment';
 import {
   type Manifest,
+  poll,
   readManifest,
   runDirectory,
   sanitize,
   writeEvidence,
   writeManifest,
 } from './evidence';
+import { refresh } from './office';
+import type { UatRun } from './runtime';
+
+test('Office publication stops on a terminal pipeline job while the old file stays ready', async () => {
+  const recorded: string[] = [];
+  const run = {
+    attach: async () => {},
+    owner: {
+      request: async () => ({ body: { jobId: 'job_refresh' }, status: 202 }),
+    },
+    poll: <T>(
+      label: string,
+      read: () => Promise<T>,
+      accept: (value: T) => boolean
+    ) => poll(label, read, accept, 1),
+    query: async (sql: string) => {
+      if (sql.includes('FROM source_documents'))
+        return [
+          {
+            base_blob_path: 'sources/original',
+            checkpoint: 10,
+            indexed_checkpoint: 0,
+          },
+        ];
+      if (sql.includes('FROM files')) return [{ revision: 1, status: 'ready' }];
+      if (sql.includes('FROM jobs'))
+        return [
+          { error: null, id: 'job_refresh', status: 'done' },
+          {
+            error: 'source publication gateway returned 503',
+            id: 'job_ingest',
+            status: 'failed',
+          },
+        ];
+      return [];
+    },
+    record: async (_kind: string, id: string) => {
+      recorded.push(id);
+    },
+  } as unknown as UatRun;
+  await assert.rejects(
+    refresh(run, 'file_fixture'),
+    /source refresh file_fixture failed in job_ingest: source publication gateway returned 503/
+  );
+  assert(recorded.includes('job_ingest'));
+});
 
 test('cleanup requires the original target and exact run-owned registration intent', () => {
   const id = randomUUID();

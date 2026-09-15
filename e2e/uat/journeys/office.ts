@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import type { FrameLocator } from '@playwright/test';
 import { strFromU8, unzipSync } from 'fflate';
 import * as Y from 'yjs';
+import { sanitize } from './evidence';
 import { api, fileRow, object, openFile, sha256, string } from './files';
 import type { Actor, UatRun } from './runtime';
 
@@ -219,9 +220,25 @@ export async function refresh(run: UatRun, fileId: string) {
     )
   );
   await run.attach(`${fileId}-process`, result);
+  const jobId = string(result.jobId);
   await run.poll(
     'published saved checkpoint',
     async () => {
+      const jobs = await run.query(
+        `SELECT j.id,j.status,j.error FROM jobs j JOIN jobs requested ON requested.id=%s
+        WHERE j.payload->>'fileId'=%s AND (j.id=requested.id OR
+        j.payload->>'sourceLeaseToken'=requested.payload->>'sourceLeaseToken')`,
+        [jobId, fileId]
+      );
+      assert(jobs.length > 0, `missing source refresh job ${jobId}`);
+      for (const job of jobs) {
+        await run.record('job', string(job.id), { fileId });
+        assert.notEqual(
+          job.status,
+          'failed',
+          `source refresh ${fileId} failed in ${job.id}: ${sanitize(job.error)}`
+        );
+      }
       const candidates = await run.query(
         'SELECT job_id,source_blob_path,source_sha256 FROM source_refresh_candidates WHERE file_id=%s',
         [fileId]
