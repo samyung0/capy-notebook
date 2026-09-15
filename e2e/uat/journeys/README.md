@@ -24,7 +24,7 @@ run in the local `pnpm e2e:quality` suite and are excluded from the UAT gate.
 | Billing | Sandbox subscription, paid renewal using a test clock, webhook-backed plan projection, deletion blocker and cancellation. Hosted payment-form entry is not covered. |
 | DOCX, XLSX, PPTX | Browser reserve/PUT/complete, exact source hash, parse/index facts and vectors, saved native edits from two accounts, first open by a third account, native export, reprocessing, trash/restore/purge. Spreadsheet formulas and document content survive. |
 | UTF-8 text | Browser edit, persisted Y.Text, automatic indexing and exact published bytes. |
-| Digital PDF | Upload/index and unchanged bytes; API-based private annotation isolation. Pointer gestures and visual rendering are outside this assertion policy. |
+| Digital PDF | Upload/index and unchanged bytes; unavailable source collaboration room and API-based private annotation isolation. Pointer gestures and visual rendering are outside this assertion policy. |
 | Invalid CSV | Direct-ingest cell limit fails terminally, no index/model spend publishes, exact expected error reaches Sentry. |
 
 Each test registers a disposable primary account. Collaborators use real Clerk

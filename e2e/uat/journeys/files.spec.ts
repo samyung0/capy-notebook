@@ -205,10 +205,11 @@ test('digital PDF: reader annotations are private and source bytes stay unchange
   const viewer = await run.createActor('pdf-viewer');
   await invite(run, workspaceId, viewer, 'viewer');
   await openFile(run, viewer, workspaceId, fileId);
+  // PDF sources have no collaboration room, including for their owner.
   assert.equal(
     (await viewer.request(`/api/files/${fileId}/collaboration-token`, 'POST'))
       .status,
-    403
+    404
   );
   const annotations = `/api/files/${fileId}/annotations`;
   const mark = {
