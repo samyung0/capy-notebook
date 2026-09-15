@@ -367,6 +367,7 @@ export function useSourceSession(fileId: string, enabled: boolean) {
               `/files/${fileId}/collaboration-token`,
               {}
             ));
+          if (cancelled) throw new Error(m.source_edit_session_changed());
           initialToken = null;
           if (token.epoch !== session.epoch || token.room !== session.room) {
             if (
