@@ -23,13 +23,12 @@ import (
 /* ------------------------------------------------------------------ patches */
 
 type WorkspacePatch struct {
-	AutoReparse *bool      `json:"autoReparse"`
-	AutoReindex *bool      `json:"autoReindex"`
-	Description *string    `json:"description"`
-	Name        *string    `json:"name"`
-	Color       *UserColor `json:"color"`
-	IconID      *string    `json:"iconId"`
-	Tags        *[]TagRef  `json:"tags"`
+	AutoReparse *bool     `json:"autoReparse"`
+	AutoReindex *bool     `json:"autoReindex"`
+	Description *string   `json:"description"`
+	Name        *string   `json:"name"`
+	IconID      *string   `json:"iconId"`
+	Tags        *[]TagRef `json:"tags"`
 }
 type ChapterPatch struct {
 	Name  *string `json:"name"`
@@ -171,7 +170,7 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 
 // The owner name is a subselect rather than a join so every caller of wsCols
 // keeps its existing FROM clause.
-const wsCols = `w.id, w.name, w.description, w.color, w.privacy, w.share_role,
+const wsCols = `w.id, w.name, w.description, w.privacy, w.share_role,
 	COALESCE((SELECT jsonb_agg(jsonb_build_object('id', t.id, 'value', t.name) ORDER BY t.name)
 		FROM entity_tags et JOIN tags t ON t.id=et.tag_id
 		WHERE et.workspace_id=w.id), '[]'::jsonb),
@@ -197,7 +196,7 @@ const memberRoleCol = `CASE WHEN w.user_id=$1 THEN 'owner' ELSE COALESCE(me.role
 // scanWorkspace reads wsCols; extra receives any columns appended after them.
 func (s *Store) scanWorkspace(row pgx.Row, extra ...any) (Workspace, error) {
 	var w Workspace
-	dest := append([]any{&w.ID, &w.Name, &w.Description, &w.Color, &w.Privacy, &w.ShareRole, &w.Tags,
+	dest := append([]any{&w.ID, &w.Name, &w.Description, &w.Privacy, &w.ShareRole, &w.Tags,
 		&w.OwnerUserID, &w.OwnerName, &w.OwnerPlanTier, &w.ChapterCount,
 		&w.FileCount, &w.CreatedAt, &w.LastAccessedAt, &w.AutoReparse, &w.AutoReindex, &w.IconID}, extra...)
 	err := row.Scan(dest...)
@@ -228,7 +227,7 @@ func splitCSVQuery(s string) []string {
 	return out
 }
 
-func (s *Store) ListWorkspaces(ctx context.Context, userID, q, sortKey, color, tag string) ([]Workspace, error) {
+func (s *Store) ListWorkspaces(ctx context.Context, userID, q, sortKey, tag string) ([]Workspace, error) {
 	sb := "SELECT " + wsCols + ", " + memberRoleCol + " FROM workspaces w JOIN users owner ON owner.id=w.user_id LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1 WHERE owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND (w.user_id=$1 OR me.user_id IS NOT NULL)"
 	args := []any{userID}
 	if q != "" {
@@ -236,19 +235,10 @@ func (s *Store) ListWorkspaces(ctx context.Context, userID, q, sortKey, color, t
 		n := len(args)
 		sb += fmt.Sprintf(" AND (lower(w.name) LIKE $%d OR EXISTS (SELECT 1 FROM entity_tags et JOIN tags t ON t.id=et.tag_id WHERE et.workspace_id=w.id AND lower(t.name) LIKE $%d))", n, n)
 	}
-	colors := splitCSVQuery(color)
 	tags := splitCSVQuery(tag)
-	if len(colors) > 0 || len(tags) > 0 {
-		var parts []string
-		if len(colors) > 0 {
-			args = append(args, colors)
-			parts = append(parts, fmt.Sprintf("w.color = ANY($%d)", len(args)))
-		}
-		if len(tags) > 0 {
-			args = append(args, tags)
-			parts = append(parts, fmt.Sprintf("EXISTS (SELECT 1 FROM entity_tags et JOIN tags t ON t.id=et.tag_id WHERE et.workspace_id=w.id AND t.name = ANY($%d))", len(args)))
-		}
-		sb += " AND (" + strings.Join(parts, " OR ") + ")"
+	if len(tags) > 0 {
+		args = append(args, tags)
+		sb += fmt.Sprintf(" AND EXISTS (SELECT 1 FROM entity_tags et JOIN tags t ON t.id=et.tag_id WHERE et.workspace_id=w.id AND t.name = ANY($%d))", len(args))
 	}
 	switch sortKey {
 	case "created":
@@ -353,7 +343,7 @@ func (s *Store) newWorkspaceEmbedding(ctx context.Context) (workspaceEmbedding, 
 	return workspaceEmbedding{Pin: cfg.Pin(), Dim: dim}, nil
 }
 
-func (s *Store) CreateWorkspace(ctx context.Context, userID, name string, color UserColor, tags []TagRef) (Workspace, error) {
+func (s *Store) CreateWorkspace(ctx context.Context, userID, name string, tags []TagRef) (Workspace, error) {
 	id := uid("ws")
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -378,7 +368,7 @@ func (s *Store) CreateWorkspace(ctx context.Context, userID, name string, color 
 	if err != nil {
 		return Workspace{}, err
 	}
-	if err := s.insertWorkspaceTx(ctx, tx, id, userID, name, color, tags, embed); err != nil {
+	if err := s.insertWorkspaceTx(ctx, tx, id, userID, name, tags, embed); err != nil {
 		return Workspace{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -391,15 +381,14 @@ func (s *Store) insertWorkspaceTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	id, userID, name string,
-	color UserColor,
 	tags []TagRef,
 	embed workspaceEmbedding,
 ) error {
 	if _, err := tx.Exec(ctx, `INSERT INTO workspaces
-			(id, user_id, name, color, privacy, share_role,
+			(id, user_id, name, privacy, share_role,
 			 embedding_provider_slug, embedding_model_slug, embedding_model_version, embedding_dim)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-		id, userID, name, color, PrivacyPrivate, ShareViewer,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		id, userID, name, PrivacyPrivate, ShareViewer,
 		embed.Pin.ProviderSlug, embed.Pin.ModelSlug, embed.Pin.Version, embed.Dim); err != nil {
 		return err
 	}
@@ -538,9 +527,9 @@ func (s *Store) UpdateWorkspace(ctx context.Context, userID, id string, p Worksp
 	}
 
 	ct, err := tx.Exec(ctx, `UPDATE workspaces SET
-		name=COALESCE($2,name), color=COALESCE($3,color), description=COALESCE($4,description),
-		auto_reparse=COALESCE($5,auto_reparse), auto_reindex=COALESCE($6,auto_reindex), icon_id=COALESCE($7,icon_id) WHERE id=$1`,
-		id, p.Name, p.Color, p.Description, p.AutoReparse, p.AutoReindex, p.IconID)
+		name=COALESCE($2,name), description=COALESCE($3,description),
+		auto_reparse=COALESCE($4,auto_reparse), auto_reindex=COALESCE($5,auto_reindex), icon_id=COALESCE($6,icon_id) WHERE id=$1`,
+		id, p.Name, p.Description, p.AutoReparse, p.AutoReindex, p.IconID)
 	if err != nil {
 		return Workspace{}, err
 	}

@@ -221,3 +221,16 @@ error boundaries continue to render their existing recovery UI without another
 capture call. Sentry filters `ApiError` events, since backend responses and
 stream failures are reported by their owning service. Mutation toasts do not
 report them again.
+
+Biology 101 also exposes file states through ordinary source rows: empty bytes,
+unsupported legacy files, link and PDF/CSV/audio/image errors, Office/text-session
+errors, annotation-load failure, and pending/processing/failed/store-only ingest.
+PDF document/page failures use `FileError`; retry reopens the PDF and requests
+fresh links. Annotation tools mount only after a PDF loads. Their separate error
+means saved private highlights/shapes could not load, not that the PDF failed.
+The mock annotation API persists reads/writes locally.
+
+Workspace invitations render in the auth main/Panel layout outside `AppShell`.
+`AuthGate` handles client authentication and preserves the invitation return URL.
+The ownership-transfer developer preview renders the shared confirmation alone.
+Workspace statistics are a settings tab, reachable from owner/editor card menus.

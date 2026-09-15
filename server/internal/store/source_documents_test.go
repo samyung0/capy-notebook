@@ -13,7 +13,7 @@ import (
 func sourceTestFile(t *testing.T, s *Store, owner, name, kind string) (Workspace, File) {
 	t.Helper()
 	ctx := context.Background()
-	ws, err := s.CreateWorkspace(ctx, owner, "Source workspace", ColorGreen, []TagRef{})
+	ws, err := s.CreateWorkspace(ctx, owner, "Source workspace", []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -374,7 +374,7 @@ def workspace(_test_infra) -> Workspace:
     workspace_id = f"ws_{secrets.token_hex(6)}"
     with psycopg.connect(dsn, autocommit=True) as conn:
         conn.execute(
-            "INSERT INTO workspaces (id, user_id, name, color) VALUES (%s, %s, %s, 'green')",
+            "INSERT INTO workspaces (id, user_id, name) VALUES (%s, %s, %s)",
             (workspace_id, _SEED_USER, "Test workspace"),
         )
         row = conn.execute(

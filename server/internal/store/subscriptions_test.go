@@ -876,7 +876,7 @@ func TestLapsedSubscriptionOverQuotaFreezesButNeverDeletes(t *testing.T) {
 	if err := s.UpsertSubscription(ctx, proSubscription(user, subID, 1000)); err != nil {
 		t.Fatal(err)
 	}
-	ws, err := s.CreateWorkspace(ctx, user, "Over quota", ColorGreen, []TagRef{})
+	ws, err := s.CreateWorkspace(ctx, user, "Over quota", []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -936,7 +936,7 @@ func TestExpiredPaidPeriodAppliesFreeLimitsBeforeWebhookProjection(t *testing.T)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	user := newBlobTestUser(t, s, "sub_stale_projection")
-	workspace, err := s.CreateWorkspace(ctx, user, "Stale plan", ColorGreen, []TagRef{})
+	workspace, err := s.CreateWorkspace(ctx, user, "Stale plan", []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1033,7 +1033,7 @@ func TestCurrentFreeSubscriptionBeatsExpiredProSubscription(t *testing.T) {
 		t.Fatalf("entitling subscription=%#v, want current free", sub)
 	}
 
-	workspace, err := s.CreateWorkspace(ctx, user, "Live Free after Pro", ColorGreen, []TagRef{})
+	workspace, err := s.CreateWorkspace(ctx, user, "Live Free after Pro", []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1087,7 +1087,7 @@ func TestOverQuotaNoticesIncludeLiveFreeAfterPaidLapse(t *testing.T) {
 		uid("sub"), uid("sub"), user, expired, current); err != nil {
 		t.Fatal(err)
 	}
-	workspace, err := s.CreateWorkspace(ctx, user, "Notice workspace", ColorGreen, nil)
+	workspace, err := s.CreateWorkspace(ctx, user, "Notice workspace", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

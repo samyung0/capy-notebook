@@ -5,7 +5,6 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { Privacy } from './privacy.ts';
-import type { UserColor } from './userColor.ts';
 import type { WorkspaceSummaryChapter } from './workspaceSummaryChapter.ts';
 import type { WorkspaceSummaryFile } from './workspaceSummaryFile.ts';
 
@@ -14,7 +13,6 @@ export interface WorkspaceSummary {
   readonly $schema?: string;
   author: string;
   chapters: WorkspaceSummaryChapter[];
-  color: UserColor;
   description: string;
   /** Unfiled files */
   files: WorkspaceSummaryFile[];

@@ -24,7 +24,7 @@ func TestWorkspaceFileCapRejectsThe101stFile(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "u_files")
-	ws, err := s.CreateWorkspace(ctx, owner, "Cap", ColorGreen, []TagRef{})
+	ws, err := s.CreateWorkspace(ctx, owner, "Cap", []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestPendingUploadSessionsOccupyFileSlots(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "u_slot")
-	ws, err := s.CreateWorkspace(ctx, owner, "Slots", ColorGreen, []TagRef{})
+	ws, err := s.CreateWorkspace(ctx, owner, "Slots", []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestExpiredUploadSessionsDoNotOccupyFileSlots(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "u_exp")
-	ws, err := s.CreateWorkspace(ctx, owner, "Expired", ColorGreen, []TagRef{})
+	ws, err := s.CreateWorkspace(ctx, owner, "Expired", []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestFileBatchCapRejectsMoreThanTwenty(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "u_batch")
-	ws, err := s.CreateWorkspace(ctx, owner, "Batch", ColorGreen, []TagRef{})
+	ws, err := s.CreateWorkspace(ctx, owner, "Batch", []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestWorkspacePayloadReportsFileLimit(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "u_lim")
-	ws, err := s.CreateWorkspace(ctx, owner, "Limit", ColorGreen, []TagRef{})
+	ws, err := s.CreateWorkspace(ctx, owner, "Limit", []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}

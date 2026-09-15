@@ -47,6 +47,7 @@ import {
   quizNode,
 } from '@/features/materials/document';
 import { isDue, isKnown, newSrsState, reviewSrs } from '@/lib/srs';
+import { dialogFiles, dialogSourceFile } from './dialogFiles';
 import {
   buildEditorNoteValue,
   EDITOR_NOTE,
@@ -185,12 +186,11 @@ export const workspaces: Workspace[] = [
       canView: true,
     },
     chapterCount: 6,
-    color: 'green',
     createdAt: days(40),
     description: '',
     fileCount: 24,
     filesLimit: PLAN_LIMITS.pro.filesPerWorkspace,
-    iconId: 'slice-01',
+    iconId: 'waves-01',
     id: 'ws_bio',
     isOwner: true,
     lastAccessedAt: hours(3),
@@ -211,12 +211,11 @@ export const workspaces: Workspace[] = [
       canView: true,
     },
     chapterCount: 4,
-    color: 'purple',
     createdAt: days(30),
     description: '',
     fileCount: 12,
     filesLimit: PLAN_LIMITS.pro.filesPerWorkspace,
-    iconId: 'slice-02',
+    iconId: 'waves-02',
     id: 'ws_calc',
     isOwner: true,
     lastAccessedAt: days(1),
@@ -237,12 +236,11 @@ export const workspaces: Workspace[] = [
       canView: true,
     },
     chapterCount: 5,
-    color: 'amber',
     createdAt: days(22),
     description: '',
     fileCount: 18,
     filesLimit: PLAN_LIMITS.pro.filesPerWorkspace,
-    iconId: 'slice-03',
+    iconId: 'waves-03',
     id: 'ws_hist',
     isOwner: true,
     lastAccessedAt: days(2),
@@ -263,12 +261,11 @@ export const workspaces: Workspace[] = [
       canView: true,
     },
     chapterCount: 3,
-    color: 'blue',
     createdAt: days(12),
     description: '',
     fileCount: 9,
     filesLimit: PLAN_LIMITS.pro.filesPerWorkspace,
-    iconId: 'slice-04',
+    iconId: 'waves-04',
     id: 'ws_chem',
     isOwner: true,
     lastAccessedAt: days(5),
@@ -289,12 +286,11 @@ export const workspaces: Workspace[] = [
       canView: true,
     },
     chapterCount: 7,
-    color: 'coral',
     createdAt: days(8),
     description: '',
     fileCount: 21,
     filesLimit: PLAN_LIMITS.pro.filesPerWorkspace,
-    iconId: 'slice-05',
+    iconId: 'waves-05',
     id: 'ws_eng',
     isOwner: true,
     lastAccessedAt: hours(20),
@@ -355,6 +351,16 @@ export function textUrl(body: string): string {
  * Rows only carry `hasBytes`, like production, so a viewer that reads bytes
  * without asking for links fails here too. */
 export const fileLinks: Record<string, { previewUrl?: string; url: string }> = {
+  ...Object.fromEntries(
+    ['pending', 'processing', 'failed', 'ready'].map((status) => [
+      `bio-state-${status}`,
+      {
+        url: textUrl(
+          '# Biology notes\n\nThe original source remains readable while indexing is pending or failed.'
+        ),
+      },
+    ])
+  ),
   f_1: {
     url: 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf',
   },
@@ -386,6 +392,27 @@ export const fileLinks: Record<string, { previewUrl?: string; url: string }> = {
 };
 
 export const files: SourceFile[] = [
+  ...dialogFiles.map((file, position) => ({
+    ...dialogSourceFile(file.id),
+    position,
+  })),
+  ...(['pending', 'processing', 'failed', 'ready'] as const).map(
+    (status, position): SourceFile => ({
+      addedAt: hours(1),
+      chapterId: null,
+      hasBytes: true,
+      id: `bio-state-${status}`,
+      indexed: false,
+      kind: 'md',
+      name: `Biology notes - ${status === 'ready' ? 'stored without indexing' : status}.md`,
+      position: position + dialogFiles.length,
+      revision: 1,
+      sizeBytes: 2048,
+      status,
+      workspaceId: 'ws_bio',
+      ...(status === 'processing' ? { ingestPct: 45 } : {}),
+    })
+  ),
   {
     addedAt: days(20),
     chapterId: 'ch_1',
@@ -491,6 +518,11 @@ export const files: SourceFile[] = [
     workspaceId: 'ws_bio',
   },
 ];
+
+// Keep Biology's card totals in step with its file-state showcase.
+workspaces[0].fileCount = files.filter(
+  (file) => file.workspaceId === 'ws_bio'
+).length;
 
 const seedQuizzes: Quiz[] = [
   {

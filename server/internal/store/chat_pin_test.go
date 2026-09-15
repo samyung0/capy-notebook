@@ -28,7 +28,7 @@ func TestAssistantMessagePinsTheResolvedChatModel(t *testing.T) {
 	}
 	s.SetModelRegistry(reg)
 	userID := newCreditsTestUser(t, s)
-	ws, err := s.CreateWorkspace(ctx, userID, "Pin", ColorGreen, nil)
+	ws, err := s.CreateWorkspace(ctx, userID, "Pin", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestConversationPromptLoadsEveryMessageAfterCheckpoint(t *testing.T) {
 	}
 	s.SetModelRegistry(reg)
 	userID := newCreditsTestUser(t, s)
-	ws, err := s.CreateWorkspace(ctx, userID, "Long chat", ColorGreen, nil)
+	ws, err := s.CreateWorkspace(ctx, userID, "Long chat", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +219,7 @@ func TestCloneInheritsSourceEmbeddingPin(t *testing.T) {
 	}
 	s.SetModelRegistry(reg)
 	userID := newCreditsTestUser(t, s)
-	src, err := s.CreateWorkspace(ctx, userID, "Source", ColorGreen, nil)
+	src, err := s.CreateWorkspace(ctx, userID, "Source", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +257,7 @@ func TestCreateWorkspacePinsLiveEmbeddingDefault(t *testing.T) {
 	s.SetModelRegistry(reg)
 	userID := newCreditsTestUser(t, s)
 
-	first, err := s.CreateWorkspace(ctx, userID, "First", ColorGreen, nil)
+	first, err := s.CreateWorkspace(ctx, userID, "First", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,7 +326,7 @@ func TestCreateWorkspacePinsLiveEmbeddingDefault(t *testing.T) {
 	}
 	s.SetModelRegistry(fresh)
 
-	second, err := s.CreateWorkspace(ctx, userID, "Second", ColorBlue, nil)
+	second, err := s.CreateWorkspace(ctx, userID, "Second", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -365,7 +365,7 @@ func TestEmbeddingRatesFailsWhenPinCannotResolve(t *testing.T) {
 	}
 	s.SetModelRegistry(reg)
 	userID := newCreditsTestUser(t, s)
-	ws, err := s.CreateWorkspace(ctx, userID, "Broken pin", ColorGreen, nil)
+	ws, err := s.CreateWorkspace(ctx, userID, "Broken pin", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

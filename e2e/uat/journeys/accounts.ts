@@ -256,7 +256,8 @@ export async function createPrimaryActor(
 export async function createSecondaryActor(
   run: UatRun,
   browser: Browser,
-  label: string
+  label: string,
+  password = `Uat!${randomBytes(24).toString('base64url')}7`
 ): Promise<Actor> {
   if (!/^[a-z0-9-]{1,20}$/.test(label))
     throw new Error('Actor label must be a short lowercase identifier');
@@ -266,7 +267,7 @@ export async function createSecondaryActor(
   const user = await client.users
     .createUser({
       emailAddress: [email],
-      password: `Uat!${randomBytes(24).toString('base64url')}7`,
+      password,
       privateMetadata: { capyUatRunId: run.id },
     })
     .catch((error: unknown) => {

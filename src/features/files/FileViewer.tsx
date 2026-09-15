@@ -199,6 +199,7 @@ function ResolvedFileView({
     return lazyView(
       <PdfView
         annotationFile={file}
+        onRetry={onRetryLinks}
         page={page}
         regions={regions}
         url={file.url}

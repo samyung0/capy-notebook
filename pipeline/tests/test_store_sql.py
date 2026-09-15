@@ -1865,7 +1865,7 @@ async def test_donor_copy_reuses_chunks_across_workspaces(workspace):
     other_id = f"ws_{secrets.token_hex(6)}"
     with psycopg.connect(workspace.dsn, autocommit=True) as conn:
         conn.execute(
-            "INSERT INTO workspaces (id, user_id, name, color) VALUES (%s, %s, %s, 'blue')",
+            "INSERT INTO workspaces (id, user_id, name) VALUES (%s, %s, %s)",
             (other_id, workspace.user_id, "Other"),
         )
     other = type(workspace)(workspace.dsn, other_id)
@@ -1946,7 +1946,7 @@ async def test_donor_copy_skips_vectors_when_pins_differ(workspace):
     other_id = f"ws_{secrets.token_hex(6)}"
     with psycopg.connect(workspace.dsn, autocommit=True) as conn:
         conn.execute(
-            "INSERT INTO workspaces (id, user_id, name, color) VALUES (%s, %s, %s, 'blue')",
+            "INSERT INTO workspaces (id, user_id, name) VALUES (%s, %s, %s)",
             (other_id, workspace.user_id, "Other"),
         )
     other = type(workspace)(workspace.dsn, other_id)
@@ -2022,7 +2022,7 @@ async def test_donor_lookup_prefers_matching_pin(workspace):
     other_id = f"ws_{secrets.token_hex(6)}"
     with psycopg.connect(workspace.dsn, autocommit=True) as conn:
         conn.execute(
-            "INSERT INTO workspaces (id, user_id, name, color) VALUES (%s, %s, %s, 'blue')",
+            "INSERT INTO workspaces (id, user_id, name) VALUES (%s, %s, %s)",
             (other_id, workspace.user_id, "Other"),
         )
     workspace.scalar(
@@ -2536,7 +2536,7 @@ def test_heartbeat_cancels_collaborator_job_after_owner_deletion_skip(
             (actor_id, "Lifecycle actor", f"{actor_id}@example.com"),
         )
         conn.execute(
-            "INSERT INTO workspaces (id,user_id,name,color) VALUES (%s,%s,'Lifecycle','green')",
+            "INSERT INTO workspaces (id,user_id,name) VALUES (%s,%s,'Lifecycle')",
             (workspace_id, owner_id),
         )
         conn.execute(

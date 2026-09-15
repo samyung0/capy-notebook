@@ -39,7 +39,7 @@ func TestOverQuotaAccountCanReserveCheckout(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			userID := newBlobTestUser(t, s, "u_checkout_"+name)
-			ws, err := s.CreateWorkspace(ctx, userID, "Checkout recovery", ColorGreen, []TagRef{})
+			ws, err := s.CreateWorkspace(ctx, userID, "Checkout recovery", []TagRef{})
 			if err != nil {
 				t.Fatal(err)
 			}

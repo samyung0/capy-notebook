@@ -51,8 +51,13 @@ export class UatRun {
     this.actors.push(this.owner);
   }
 
-  async createActor(label: string) {
-    const actor = await createSecondaryActor(this, this.browser, label);
+  async createActor(label: string, password?: string) {
+    const actor = await createSecondaryActor(
+      this,
+      this.browser,
+      label,
+      password
+    );
     this.actors.push(actor);
     return actor;
   }

@@ -105,7 +105,7 @@ func TestImportCompleteRetriesWhenCreditsExhausted(t *testing.T) {
 	t.Cleanup(func() {
 		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM users WHERE id=$1`, actor)
 	})
-	ws, err := st.CreateWorkspace(ctx, actor, "Import Credits", store.ColorGreen, nil)
+	ws, err := st.CreateWorkspace(ctx, actor, "Import Credits", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -2,61 +2,6 @@
   "version": 1,
   "styles": [
     {
-      "id": "slice",
-      "label": "Slice",
-      "creditId": "slice",
-      "avatars": [
-        {
-          "id": "slice-01",
-          "src": "/icons/slice-01.svg"
-        },
-        {
-          "id": "slice-02",
-          "src": "/icons/slice-02.svg"
-        },
-        {
-          "id": "slice-03",
-          "src": "/icons/slice-03.svg"
-        },
-        {
-          "id": "slice-04",
-          "src": "/icons/slice-04.svg"
-        },
-        {
-          "id": "slice-05",
-          "src": "/icons/slice-05.svg"
-        },
-        {
-          "id": "slice-06",
-          "src": "/icons/slice-06.svg"
-        },
-        {
-          "id": "slice-07",
-          "src": "/icons/slice-07.svg"
-        },
-        {
-          "id": "slice-08",
-          "src": "/icons/slice-08.svg"
-        },
-        {
-          "id": "slice-09",
-          "src": "/icons/slice-09.svg"
-        },
-        {
-          "id": "slice-10",
-          "src": "/icons/slice-10.svg"
-        },
-        {
-          "id": "slice-11",
-          "src": "/icons/slice-11.svg"
-        },
-        {
-          "id": "slice-12",
-          "src": "/icons/slice-12.svg"
-        }
-      ]
-    },
-    {
       "id": "sprouts",
       "label": "Sprouts",
       "creditId": "sprouts",

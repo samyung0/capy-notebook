@@ -40,11 +40,11 @@ func TestCollaborationWriteDirectionFollowsTheStorageOwner(t *testing.T) {
 	overQuotaUser := newBlobTestUser(t, s, "collab_over")
 	healthyUser := newBlobTestUser(t, s, "collab_ok")
 
-	overQuotaWS, err := s.CreateWorkspace(ctx, overQuotaUser, "Over quota", ColorGreen, []TagRef{})
+	overQuotaWS, err := s.CreateWorkspace(ctx, overQuotaUser, "Over quota", []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	healthyWS, err := s.CreateWorkspace(ctx, healthyUser, "Healthy", ColorGreen, []TagRef{})
+	healthyWS, err := s.CreateWorkspace(ctx, healthyUser, "Healthy", []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestActiveEditorCannotGrowAnOverQuotaOwnersMaterial(t *testing.T) {
 	owner := newBlobTestUser(t, s, "collab_owner")
 	editor := newBlobTestUser(t, s, "collab_editor")
 
-	ws, err := s.CreateWorkspace(ctx, owner, "Owner workspace", ColorGreen, []TagRef{})
+	ws, err := s.CreateWorkspace(ctx, owner, "Owner workspace", []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}

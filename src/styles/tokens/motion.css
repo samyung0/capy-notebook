@@ -186,3 +186,32 @@
   animation: motion-copy-out var(--motion-duration-quick)
     var(--motion-ease-in-out) forwards;
 }
+
+/* Text states leave above before the replacement enters from below. */
+@keyframes motion-text-state-out {
+  to {
+    opacity: 0;
+    translate: 0 calc(var(--motion-distance-micro) * -1);
+    filter: blur(var(--motion-blur-small));
+  }
+}
+@utility motion-text-state-out {
+  animation: motion-text-state-out var(--motion-duration-quick)
+    var(--motion-ease-in-out) forwards;
+}
+@utility motion-text-state-in {
+  animation: motion-text-in var(--motion-duration-quick)
+    var(--motion-ease-in-out) var(--motion-duration-quick) both;
+}
+@keyframes motion-number-pop {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+    filter: blur(var(--motion-blur-small));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: none;
+  }
+}

@@ -125,7 +125,7 @@ func TestCardStateRestoreAppliesOnceWhenTheCardReappears(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "restore_owner")
-	ws, err := s.CreateWorkspace(ctx, owner, "Restore workspace", ColorGreen, []TagRef{})
+	ws, err := s.CreateWorkspace(ctx, owner, "Restore workspace", []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}

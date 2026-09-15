@@ -200,7 +200,7 @@ export default function WorkspaceOpen() {
   const [addSourceOpen, setAddSourceOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<MaterialRef | null>(null);
 
-  const pair = userColorPair(ws?.color);
+  const pair = userColorPair('purple');
   const unfiled = files?.filter((f) => f.chapterId === null) ?? [];
   const unfiledMaterials =
     materials?.filter((mt) => mt.chapterId == null) ?? [];
@@ -424,7 +424,7 @@ export default function WorkspaceOpen() {
               isFileActive(item.id) ? confirmViewerReplacement : undefined
             }
             chapters={chapters}
-            color={ws?.color}
+            color={'purple'}
             file={item.data}
             onDeleted={onFileDeleted}
             onOpen={(id) => setOpenItem({ id, kind: 'file' })}
@@ -432,7 +432,7 @@ export default function WorkspaceOpen() {
             workspaceId={workspaceId}
           />
         ) : (
-          renderMaterial(item.data, ws?.color)
+          renderMaterial(item.data, 'purple')
         )}
       </div>
     );
@@ -738,7 +738,7 @@ export default function WorkspaceOpen() {
                           <MaterialListItem
                             active={false}
                             chapters={chapters}
-                            color={ws?.color}
+                            color={'purple'}
                             data={{
                               chapterId: null,
                               createdAt: new Date().toISOString(),
@@ -787,7 +787,7 @@ export default function WorkspaceOpen() {
               <CenterContent
                 beforeFileDelete={confirmViewerReplacement}
                 chapters={chapters ?? []}
-                color={ws?.color}
+                color={'purple'}
                 item={openItem}
                 onDeleted={() => setOpenItem(null)}
                 onFileViewerDirtyChange={setOfficeEditDirty}
@@ -834,7 +834,7 @@ export default function WorkspaceOpen() {
                   <AppErrorBoundary resetKeys={[workspaceId, mode]}>
                     <ChatPanel
                       canReprocess={ws?.isOwner}
-                      color={ws?.color}
+                      color={'purple'}
                       onOpenCitation={openCitation}
                       onOpenResource={(ref) =>
                         setOpenItem(

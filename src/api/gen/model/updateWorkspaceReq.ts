@@ -5,14 +5,12 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { TagInput } from './tagInput.ts';
-import type { UserColor } from './userColor.ts';
 
 export interface UpdateWorkspaceReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   autoReindex?: boolean;
   autoReparse?: boolean;
-  color?: UserColor;
   /**
      * Optional workspace description; empty clears it
      * @maxLength 500
@@ -20,7 +18,7 @@ export interface UpdateWorkspaceReq {
   description?: string;
   /**
      * @minLength 1
-     * @pattern ^$|^((slice|sprouts|notionists)-(0[1-9]|1[0-2])|critters-(0[1-9]|1[0-6])|avataaars-(0[1-9]|1[0-9]|2[0-4])|waves-(0[1-9]|1[01]))$
+     * @pattern ^$|^((sprouts|notionists)-(0[1-9]|1[0-2])|critters-(0[1-9]|1[0-6])|avataaars-(0[1-9]|1[0-9]|2[0-4])|waves-(0[1-9]|1[01]))$
      */
   iconId?: string;
   /**

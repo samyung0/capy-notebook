@@ -187,7 +187,7 @@ func TestPurgedIdentityDeletionIsRetriedUntilConfirmed(t *testing.T) {
 	userID := newBlobTestUser(t, s, "u_identity_retry")
 	memberID := newBlobTestUser(t, s, "u_identity_retry_member")
 	workspace, err := s.CreateWorkspace(
-		ctx, userID, "Purge-owned workspace", ColorGreen, []TagRef{},
+		ctx, userID, "Purge-owned workspace", []TagRef{},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -404,7 +404,7 @@ func TestStarterWorkspaceDoesNotRaceOrdinaryCreation(t *testing.T) {
 
 	ordinaryResult := make(chan error, 1)
 	go func() {
-		_, createErr := s.CreateWorkspace(ctx, userID, "User workspace", ColorBlue, nil)
+		_, createErr := s.CreateWorkspace(ctx, userID, "User workspace", nil)
 		ordinaryResult <- createErr
 	}()
 	waitForAccountLockWaiters(t, s, ctx, 1)
@@ -468,7 +468,7 @@ func TestWorkspaceCollaboratorDoesNotBlockOwnerDeletion(t *testing.T) {
 	ownerID := newBlobTestUser(t, s, "u_delete_block_owner")
 	memberID := newBlobTestUser(t, s, "u_delete_block_member")
 	workspace, err := s.CreateWorkspace(
-		ctx, ownerID, "Pending member workspace", ColorGreen, []TagRef{},
+		ctx, ownerID, "Pending member workspace", []TagRef{},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -505,7 +505,7 @@ func TestCancelDeletionRestoresOwnedWorkspaceAccessAndSharing(t *testing.T) {
 	inviteeID := newBlobTestUser(t, s, "u_restore_invitee")
 	clonerID := newBlobTestUser(t, s, "u_restore_cloner")
 	workspace, err := s.CreateWorkspace(
-		ctx, ownerID, "Restorable workspace", ColorGreen, []TagRef{},
+		ctx, ownerID, "Restorable workspace", []TagRef{},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -515,7 +515,7 @@ func TestCancelDeletionRestoresOwnedWorkspaceAccessAndSharing(t *testing.T) {
 		t.Fatal(err)
 	}
 	linkWorkspace, err := s.CreateWorkspace(
-		ctx, ownerID, "Restorable link workspace", ColorBlue, []TagRef{},
+		ctx, ownerID, "Restorable link workspace", []TagRef{},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -558,7 +558,7 @@ func TestCancelDeletionRestoresOwnedWorkspaceAccessAndSharing(t *testing.T) {
 	if _, err := s.WorkspaceAccess(ctx, memberID, workspace.ID); err != nil {
 		t.Fatalf("member access was not restored: %v", err)
 	}
-	listed, err := s.ListWorkspaces(ctx, memberID, "", "", "", "")
+	listed, err := s.ListWorkspaces(ctx, memberID, "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -779,7 +779,7 @@ func TestDeletionPendingHidesContentAndCancelsAsyncWork(t *testing.T) {
 	ownerID := newBlobTestUser(t, s, "u_delete_owner")
 	viewerID := newBlobTestUser(t, s, "u_delete_viewer")
 	workspace, err := s.CreateWorkspace(
-		ctx, ownerID, "Deleting workspace", ColorGreen, []TagRef{},
+		ctx, ownerID, "Deleting workspace", []TagRef{},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -952,7 +952,7 @@ func TestPurgeRemovesMembershipsInvitesAndAuxiliaryPII(t *testing.T) {
 	hostID := newBlobTestUser(t, s, "u_purge_host")
 	inviteeID := newBlobTestUser(t, s, "u_purge_invitee")
 	hostWorkspace, err := s.CreateWorkspace(
-		ctx, hostID, "Surviving workspace", ColorBlue, []TagRef{},
+		ctx, hostID, "Surviving workspace", []TagRef{},
 	)
 	if err != nil {
 		t.Fatal(err)

@@ -6,3 +6,4 @@
 - Developer Epo decided (2026-09-14) implement the agreed UAT lifecycle suite with native Office/Google-export behavior, use fixed-code Clerk test emails on the isolated UAT instance for registration, and finish with a fresh Astra xhigh review. e2e/uat/journeys/ .github/workflows/uat-quality.yml
 - Developer Epo decided (2026-09-14) generated UAT accounts use stablestudio.org, with a Hostinger catch-all mailbox receiving their application emails. e2e/uat/journeys/setup-status.md
 - Developer Epo decided (2026-09-14) UAT reuses the existing Resend key after upgrading its permissions and uses the new Sentry token for both SENTRY_AUTH_TOKEN and UAT_SENTRY_TOKEN. e2e/uat/journeys/setup-status.md
+- Developer Epo requested (2026-09-16) critical-path coverage for a signed-out workspace invitation, sign-in return, browser acceptance and persisted membership. e2e/uat/journeys/invitations.spec.ts

@@ -10,7 +10,7 @@ export function ContentSwap({
 }: {
   children: ReactNode;
   contentKey: string;
-  kind?: 'text' | 'icon';
+  kind?: 'text' | 'icon' | 'text-state';
   className?: string;
 }) {
   const [snapshot, setSnapshot] = useState({
@@ -53,7 +53,8 @@ export function ContentSwap({
         <span
           aria-hidden
           className={cn(
-            'motion-copy-out pointer-events-none col-start-1 row-start-1 min-w-0',
+            'pointer-events-none col-start-1 row-start-1 min-w-0',
+            kind === 'text-state' ? 'motion-text-state-out' : 'motion-copy-out',
             kind === 'icon' &&
               '[animation-duration:var(--motion-duration-fast)]'
           )}
@@ -67,7 +68,11 @@ export function ContentSwap({
         className={cn(
           'col-start-1 row-start-1 min-w-0',
           revision > 0 &&
-            (kind === 'icon' ? 'motion-icon-in' : 'motion-text-in')
+            (kind === 'icon'
+              ? 'motion-icon-in'
+              : kind === 'text-state'
+                ? 'motion-text-state-in'
+                : 'motion-text-in')
         )}
         key={revision}
         ref={incomingRef}

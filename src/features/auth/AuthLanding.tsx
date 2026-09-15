@@ -1,12 +1,13 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, useRouter } from '@tanstack/react-router';
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Panel } from '@/components/app/layout';
 import { BASE_BUTTON_STYLE, Button } from '@/components/ui/Button';
 import { ButtonCard } from '@/components/ui/ButtonCard';
 import { Card } from '@/components/ui/Card';
+import { ContentSwap } from '@/components/ui/ContentSwap';
 import { Spinner } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { Input, InputField } from '@/components/ui/Input';
@@ -351,8 +352,33 @@ function SignUpCard() {
   const target = redirectAfterAuth();
   const [step, setStep] = useState<'form' | 'code'>('form');
   const [formError, setFormError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [_email, setEmail] = useState('');
+  const [sentAt, setSentAt] = useState<number | null>(null);
+  const [now, setNow] = useState(Date.now);
+  const [resending, setResending] = useState(false);
+  const sendingRef = useRef(false);
+  const remaining =
+    sentAt === null
+      ? 0
+      : Math.max(0, Math.ceil((sentAt + 61_500 - now) / 1000));
+  const justSent = sentAt !== null && now - sentAt < 1500;
+  const resendLabel = justSent
+    ? m.auth_code_sent()
+    : remaining > 0
+      ? m.auth_code_resend_cooldown({
+          seconds: String(Math.min(60, remaining)),
+        })
+      : m.auth_code_resend();
+  const coolingDown = remaining > 0;
+  useEffect(() => {
+    if (!coolingDown) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 250);
+    return () => window.clearInterval(timer);
+  }, [coolingDown]);
+  const markCodeSent = () => {
+    const time = Date.now();
+    setSentAt(time);
+    setNow(time);
+  };
   const id = useId();
   const schema = useMemo(
     () => z.object({ email: emailField, password: newPasswordSchema() }),
@@ -410,7 +436,6 @@ function SignUpCard() {
               if (finalizeError) setFormError(clerkMessage(finalizeError));
             })}
           >
-            {notice && <p className="t-meta text-fg-secondary">{notice}</p>}
             <Controller
               control={codeControl}
               name="code"
@@ -440,27 +465,39 @@ function SignUpCard() {
             <button
               className={cn(
                 BASE_BUTTON_STYLE,
-                'font-semibold text-link hover:text-link-hover'
+                'font-semibold text-link hover:text-link-hover disabled:cursor-default disabled:text-fg-muted'
               )}
+              disabled={remaining > 0 || resending}
               onClick={async () => {
-                const { error } = await signUp.verifications.sendEmailCode();
-                setFormError(error ? clerkMessage(error) : null);
-                setNotice(error ? null : m.auth_code_resent());
+                if (
+                  sendingRef.current ||
+                  (sentAt !== null && Date.now() < sentAt + 61_500)
+                )
+                  return;
+                sendingRef.current = true;
+                setResending(true);
+                try {
+                  const { error } = await signUp.verifications.sendEmailCode();
+                  setFormError(error ? clerkMessage(error) : null);
+                  if (!error) markCodeSent();
+                } catch {
+                  setFormError(m.auth_error_generic());
+                } finally {
+                  sendingRef.current = false;
+                  setResending(false);
+                }
               }}
               type="button"
             >
-              {m.auth_code_resend()}
+              <ContentSwap
+                contentKey={
+                  justSent ? 'sent' : remaining > 0 ? 'cooldown' : 'resend'
+                }
+                kind="text-state"
+              >
+                {resendLabel}
+              </ContentSwap>
             </button>
-            {/* <button
-            className={cn(BASE_BUTTON_STYLE, "text-fg-muted hover:text-fg")}
-            onClick={() => {
-              setFormError(null);
-              setStep("form");
-            }}
-            type="button"
-          >
-            {m.auth_code_back()}
-          </button> */}
           </div>
         </AuthCard>
       </>
@@ -487,7 +524,7 @@ function SignUpCard() {
             setFormError(clerkMessage(sendError));
             return;
           }
-          setEmail(values.email);
+          markCodeSent();
           setStep('code');
         })}
       >

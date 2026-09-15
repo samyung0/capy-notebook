@@ -11,7 +11,6 @@ import (
 
 	"github.com/samyung0/capy-notebook/server/internal/auth"
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
-	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 func multipartUpload(t *testing.T, h http.Handler, wsID, userID, name string) *httptest.ResponseRecorder {
@@ -38,7 +37,7 @@ func multipartUpload(t *testing.T, h http.Handler, wsID, userID, name string) *h
 // editor check in its middleware and before the handler runs.
 func TestUploadSourceValidatesName(t *testing.T) {
 	h, st := openInternalHTTP(t)
-	ws, err := st.CreateWorkspace(context.Background(), "u_owner", "Uploads", store.ColorGreen, nil)
+	ws, err := st.CreateWorkspace(context.Background(), "u_owner", "Uploads", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

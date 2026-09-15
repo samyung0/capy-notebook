@@ -1,6 +1,6 @@
 # UAT critical paths
 
-Run these nine journeys deliberately through **Deterministic UAT quality**.
+Run these ten journeys deliberately through **Deterministic UAT quality**.
 Its `critical_paths` input defaults to true for manual dispatch and false for
 the lightweight deploy check. **Promote revision to production** requires it.
 Normal pull-request CI does not contact UAT or these providers.
@@ -20,6 +20,7 @@ run in the local `pnpm e2e:quality` suite and are excluded from the UAT gate.
 | Journey | Verified outcome |
 | --- | --- |
 | Account | Real signup with fixed Clerk code, verified identity, processed `user.created`, durable profile, 30-day deletion grace, session revocation, Resend delivery, real Clerk deletion and processed `user.deleted` purge. |
+| Invitation | Signed-out invitation redirects to the app's password sign-in and returns to the original invitation; browser acceptance persists the recipient and viewer membership, then opens the authorized workspace. |
 | Checkout | App-created sandbox customer/session/reservation, expected price and return URLs, session expiration. |
 | Billing | Sandbox subscription, paid renewal using a test clock, webhook-backed plan projection, deletion blocker and cancellation. Hosted payment-form entry is not covered. |
 | DOCX, XLSX, PPTX | Browser reserve/PUT/complete, exact source hash, parse/index facts and vectors, saved native edits from two accounts, first open by a third account, native export, reprocessing, trash/restore/purge. Spreadsheet formulas and document content survive. |
@@ -30,6 +31,8 @@ run in the local `pnpm e2e:quality` suite and are excluded from the UAT gate.
 Each test registers a disposable primary account. Collaborators use real Clerk
 accounts and short-lived sign-in tickets. No test writes the database, bypasses
 app authorization, fabricates signed webhooks, or changes shared parser settings.
+The invitation recipient signs out after setup and signs back in through the
+password form. Its generated password stays in memory and is omitted from failure details.
 Authenticated API actions wait for Clerk to restore the actor's browser session
 after navigation before reading its token.
 Office publication waits fail immediately when the database records a terminal

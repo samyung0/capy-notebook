@@ -120,7 +120,7 @@ func (s *Store) AssertWorkspaceEditor(ctx context.Context, userID, wsID string) 
 	return nil
 }
 
-// AssertWorkspaceMemberEditor gates workspace settings (name, color, tags,
+// AssertWorkspaceMemberEditor gates workspace settings (name, tags,
 // sharing, stats), which stay with persisted owner/editor membership.
 func (s *Store) AssertWorkspaceMemberEditor(ctx context.Context, userID, wsID string) error {
 	role, err := s.WorkspaceRole(ctx, userID, wsID)
@@ -907,10 +907,10 @@ func (s *Store) cloneWorkspaceOnce(
 		return Workspace{}, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO workspaces
-			(id, user_id, name, color, description, privacy, icon_id,
+			(id, user_id, name, description, privacy, icon_id,
 			 embedding_provider_slug, embedding_model_slug, embedding_model_version, embedding_dim)
-		VALUES ($1,$2,$3,$4,$9,'private',$10,$5,$6,$7,$8)`,
-		newID, userID, name, src.Color,
+		VALUES ($1,$2,$3,$8,'private',$9,$4,$5,$6,$7)`,
+		newID, userID, name,
 		srcEmbed.Pin.ProviderSlug, srcEmbed.Pin.ModelSlug, srcEmbed.Pin.Version, srcEmbed.Dim, src.Description, src.IconID); err != nil {
 		return Workspace{}, err
 	}

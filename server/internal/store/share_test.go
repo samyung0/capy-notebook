@@ -67,7 +67,7 @@ func TestWorkspaceCloneRejectsAPathReapedAfterItsSnapshot(t *testing.T) {
 	defer cancel()
 	ownerID := newBlobTestUser(t, s, "u_clone_blob_fence_source")
 	targetID := newBlobTestUser(t, s, "u_clone_blob_fence_target")
-	source, err := s.CreateWorkspace(ctx, ownerID, "Blob fence", ColorBlue, nil)
+	source, err := s.CreateWorkspace(ctx, ownerID, "Blob fence", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +228,7 @@ func TestMaterialDeleteTakesCloneFenceBeforeAccountLock(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	ownerID := newBlobTestUser(t, s, "u_material_delete_lock_order")
-	workspace, err := s.CreateWorkspace(ctx, ownerID, "Material hierarchy", ColorBlue, nil)
+	workspace, err := s.CreateWorkspace(ctx, ownerID, "Material hierarchy", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +276,7 @@ func TestWorkspaceDeleteTakesCloneFenceBeforeAccountLock(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	ownerID := newBlobTestUser(t, s, "u_workspace_delete_lock_order")
-	source, err := s.CreateWorkspace(ctx, ownerID, "Delete lock order", ColorBlue, nil)
+	source, err := s.CreateWorkspace(ctx, ownerID, "Delete lock order", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -519,7 +519,7 @@ func TestConcurrentWorkspaceClonesBothComplete(t *testing.T) {
 		newBlobTestUser(t, s, "u_workspace_clone_lock_target_3"),
 		newBlobTestUser(t, s, "u_workspace_clone_lock_target_4"),
 	}
-	source, err := s.CreateWorkspace(ctx, ownerID, "Concurrent workspace clone", ColorBlue, nil)
+	source, err := s.CreateWorkspace(ctx, ownerID, "Concurrent workspace clone", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -554,7 +554,7 @@ func TestWorkspaceCloneDoesNotWaitForSourceRow(t *testing.T) {
 	defer cancel()
 	ownerID := newBlobTestUser(t, s, "u_clone_unlocked_workspace_source")
 	targetID := newBlobTestUser(t, s, "u_clone_unlocked_workspace_target")
-	source, err := s.CreateWorkspace(ctx, ownerID, "Unlocked workspace clone", ColorBlue, nil)
+	source, err := s.CreateWorkspace(ctx, ownerID, "Unlocked workspace clone", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -596,7 +596,7 @@ func TestSuspendedSourceOwnerDoesNotHideSharedCloneSources(t *testing.T) {
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_clone_suspended_source")
 	targetID := newBlobTestUser(t, s, "u_clone_suspended_target")
-	workspace, err := s.CreateWorkspace(ctx, ownerID, "Suspended source", ColorBlue, nil)
+	workspace, err := s.CreateWorkspace(ctx, ownerID, "Suspended source", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -746,7 +746,7 @@ func TestCloneMaterialUsesProjectionAndRehomesReferencedAssets(t *testing.T) {
 			[]string{sourceUserID, targetUserID})
 	})
 
-	workspace, err := s.CreateWorkspace(ctx, sourceUserID, "Shared media", ColorBlue, nil)
+	workspace, err := s.CreateWorkspace(ctx, sourceUserID, "Shared media", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -903,10 +903,6 @@ components:
           format: uri
           readOnly: true
           type: string
-        color:
-          $ref: "#/components/schemas/UserColor"
-          default: graphite
-          description: User color
         name:
           description: Workspace name
           maxLength: 80
@@ -2336,8 +2332,6 @@ components:
         clones:
           format: int64
           type: integer
-        color:
-          $ref: "#/components/schemas/UserColor"
         createdAt:
           format: date-time
           type: string
@@ -2382,7 +2376,6 @@ components:
         - description
         - id
         - name
-        - color
         - iconId
         - privacy
         - shareRole
@@ -3775,7 +3768,7 @@ components:
           type: string
         avatarIconId:
           description: Curated icon ID; empty restores the current Clerk photo; omitted preserves the selection
-          pattern: ^$|^((slice|sprouts|notionists)-(0[1-9]|1[0-2])|critters-(0[1-9]|1[0-6])|avataaars-(0[1-9]|1[0-9]|2[0-4])|waves-(0[1-9]|1[01]))$
+          pattern: ^$|^((sprouts|notionists)-(0[1-9]|1[0-2])|critters-(0[1-9]|1[0-6])|avataaars-(0[1-9]|1[0-9]|2[0-4])|waves-(0[1-9]|1[01]))$
           type: string
         name:
           description: Display name
@@ -3884,15 +3877,13 @@ components:
           type: boolean
         autoReparse:
           type: boolean
-        color:
-          $ref: "#/components/schemas/UserColor"
         description:
           description: Optional workspace description; empty clears it
           maxLength: 500
           type: string
         iconId:
           minLength: 1
-          pattern: ^$|^((slice|sprouts|notionists)-(0[1-9]|1[0-2])|critters-(0[1-9]|1[0-6])|avataaars-(0[1-9]|1[0-9]|2[0-4])|waves-(0[1-9]|1[01]))$
+          pattern: ^$|^((sprouts|notionists)-(0[1-9]|1[0-2])|critters-(0[1-9]|1[0-6])|avataaars-(0[1-9]|1[0-9]|2[0-4])|waves-(0[1-9]|1[01]))$
           type: string
         name:
           maxLength: 80
@@ -4102,8 +4093,6 @@ components:
         chapterCount:
           format: int64
           type: integer
-        color:
-          $ref: "#/components/schemas/UserColor"
         createdAt:
           format: date-time
           type: string
@@ -4146,7 +4135,6 @@ components:
         - description
         - id
         - name
-        - color
         - iconId
         - privacy
         - shareRole
@@ -4275,8 +4263,6 @@ components:
           items:
             $ref: "#/components/schemas/WorkspaceSummaryChapter"
           type: array
-        color:
-          $ref: "#/components/schemas/UserColor"
         description:
           type: string
         files:
@@ -4296,7 +4282,6 @@ components:
         - name
         - author
         - description
-        - color
         - privacy
         - tags
         - chapters
@@ -7050,19 +7035,12 @@ paths:
           name: sort
           schema:
             type: string
-        - description: Comma-separated colors; OR-matched with tags
-          explode: false
-          in: query
-          name: color
-          schema:
-            description: Comma-separated colors; OR-matched with tags
-            type: string
-        - description: Comma-separated tags; OR-matched with colors
+        - description: Comma-separated tags
           explode: false
           in: query
           name: tag
           schema:
-            description: Comma-separated tags; OR-matched with colors
+            description: Comma-separated tags
             type: string
       responses:
         "200":

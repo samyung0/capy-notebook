@@ -539,7 +539,7 @@ func (s *Store) CreateDefaultWorkspace(ctx context.Context, userID string) error
 			return err
 		}
 		if err := s.insertWorkspaceTx(
-			ctx, tx, uid("ws"), userID, "My workspace", ColorGreen, nil, embed,
+			ctx, tx, uid("ws"), userID, "My workspace", nil, embed,
 		); err != nil {
 			return err
 		}

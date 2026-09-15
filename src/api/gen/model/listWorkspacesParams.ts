@@ -9,11 +9,7 @@ export type ListWorkspacesParams = {
 q?: string;
 sort?: string;
 /**
- * Comma-separated colors; OR-matched with tags
- */
-color?: string;
-/**
- * Comma-separated tags; OR-matched with colors
+ * Comma-separated tags
  */
 tag?: string;
 };

@@ -10,7 +10,7 @@ export interface UpdateMeReq {
   readonly $schema?: string;
   /**
      * Curated icon ID; empty restores the current Clerk photo; omitted preserves the selection
-     * @pattern ^$|^((slice|sprouts|notionists)-(0[1-9]|1[0-2])|critters-(0[1-9]|1[0-6])|avataaars-(0[1-9]|1[0-9]|2[0-4])|waves-(0[1-9]|1[01]))$
+     * @pattern ^$|^((sprouts|notionists)-(0[1-9]|1[0-2])|critters-(0[1-9]|1[0-6])|avataaars-(0[1-9]|1[0-9]|2[0-4])|waves-(0[1-9]|1[01]))$
      */
   avatarIconId?: string;
   /**

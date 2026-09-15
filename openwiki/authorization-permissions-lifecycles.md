@@ -37,7 +37,7 @@ workspace settings and membership follow persisted membership only.
 | Create, resolve, and edit comments; delete **own** comments                                 | Yes   | Yes           | Yes                | No            | No                 | No           |
 | Delete **another user's** comment or discussion                                             | Yes   | No            | No                 | No            | No                 | No           |
 | Chapters, upload/rename/move/delete files, material metadata and delete, generate materials | Yes   | Yes           | Yes                | No            | No                 | No           |
-| Workspace name, color, description, tags, privacy, `shareRole`, statistics                  | Yes   | Yes           | No                 | No            | No                 | No           |
+| Workspace name, description, tags, privacy, `shareRole`, statistics                  | Yes   | Yes           | No                 | No            | No                 | No           |
 | Invite/remove members, change roles, delete or transfer the workspace                       | Yes   | No            | No                 | No            | No                 | No           |
 | Member roster (`userId`, `name`, `avatarUrl`, `role`; never email)                          | Yes   | Yes           | No                 | Yes           | No                 | No           |
 | Mention directory (`userId`, `name`, `avatarUrl`)                                           | Yes   | Yes           | Yes                | No            | No                 | No           |
@@ -61,7 +61,7 @@ Sources: [role definitions](../server/internal/store/enums.go#L62),
 `GET /api/public/workspaces/{id}/summary` reads live metadata for link/public
 workspaces. `HEAD` checks the same visibility without returning a body. Existing
 `ws_` identifiers remain the link identity. The response contains the workspace
-name, description, color, tags, privacy, owner display name, chapter names and,
+name, description, tags, privacy, owner display name, chapter names and,
 for every file including unfiled ones, its name, `sizeBytes` and `addedAt`. It
 contains no material content, extracted text, internal content IDs, blob keys,
 download URLs, member details or account email. This is a metadata projection, not an AI-generated content summary.
@@ -76,7 +76,7 @@ larger than 256 KiB returns `422` rather than a truncated outline.
 
 Owners edit an optional description through ordinary workspace PATCH. It accepts
 at most 500 characters; omission preserves the value and an empty string clears
-it. Clones copy the description. Existing name/color/tag and lifecycle
+it. Clones copy the description. Existing name/tag and lifecycle
 permissions remain in force.
 
 Sources: [public handler](../server/internal/httpapi/huma_workspace_summary.go),
@@ -107,7 +107,7 @@ Important boundaries:
   credits to the actor. This is deliberate so users can predict what an edit
   link grants.
 - A share role never reaches workspace settings or membership. Renaming,
-  recoloring, tagging, changing privacy or `shareRole`, reading statistics,
+  tagging, changing privacy or `shareRole`, reading statistics,
   inviting, and deleting or transferring read persisted membership only.
 - Anonymous visitors cannot read workspace contents, standalone materials,
   files, previews, editor assets, quizzes, flashcards, or Explore. The public
@@ -481,9 +481,8 @@ comment-author projections; Clerk sync preserves that override. Internally, `ava
 first sync and an empty string when Clerk is selected, so delayed no-photo
 events cannot reassign a default after a confirmed upload. Purge clears
 both fields. Workspace `icon_id` is required and validated against the same
-frozen catalog, receives a persisted random Slice default, follows existing
-member owner/editor settings permissions and survives cloning. Workspace color
-remains separate. Help and Legal contains support cards, FAQs and contact links and links to the author,
+frozen catalog, receives a persisted random Waves default, follows existing
+member owner/editor settings permissions and survives cloning. Workspace colors are removed by migration `0018_workspace_appearance.sql`; existing Slice workspace/avatar selections become Waves before the catalog constraints narrow. Help and Legal contains support cards, FAQs and contact links and links to the author,
 source, artwork license and generator notices on Credits.
 
 Sources: [auth landing](../src/features/auth/AuthLanding.tsx),

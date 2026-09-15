@@ -46,7 +46,7 @@ func TestFileAndAccountDeletionDoNotWaitForWorkerHeldJobRows(t *testing.T) {
 
 	t.Run("file", func(t *testing.T) {
 		ownerID := newBlobTestUser(t, s, "u_delete_file_lock")
-		ws, err := s.CreateWorkspace(ctx, ownerID, "Delete without job wait", ColorGreen, []TagRef{})
+		ws, err := s.CreateWorkspace(ctx, ownerID, "Delete without job wait", []TagRef{})
 		if err != nil {
 			t.Fatal(err)
 		}

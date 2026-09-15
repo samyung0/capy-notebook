@@ -9,6 +9,7 @@ import {
 import type { Workspace } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
+import { NumberPopIn } from '@/components/ui/NumberPopIn';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Switch } from '@/components/ui/Switch';
 import { Tabs } from '@/components/ui/Tabs';
@@ -36,12 +37,14 @@ export function WorkspaceSettingsDialog({
   workspace,
   open,
   onClose,
+  initialTab = 'general',
 }: {
+  initialTab?: 'general' | 'sharing' | 'indexing' | 'statistics';
   workspace: Workspace;
   open: boolean;
   onClose: () => void;
 }) {
-  const [tab, setTab] = useState('general');
+  const [tab, setTab] = useState<string>(initialTab);
   const { mutateAsync: update, isPending: saving } = useUpdateWorkspace();
   const { mutateAsync: updateSharing, isPending: sharing } =
     useUpdateWorkspaceSharing();
@@ -66,12 +69,13 @@ export function WorkspaceSettingsDialog({
   return (
     <SimpleDialog onClose={onClose} open={open} title={m.workspace_settings()}>
       <Tabs
-        className="mt-4"
+        className="mt-4 overflow-x-auto whitespace-nowrap"
         onChange={setTab}
         tabs={[
           { label: m.workspace_general(), value: 'general' },
           { label: m.workspace_sharing(), value: 'sharing' },
           { label: m.workspace_indexing(), value: 'indexing' },
+          { label: m.workspace_stats_title(), value: 'statistics' },
         ]}
         value={tab}
       />
@@ -130,6 +134,36 @@ export function WorkspaceSettingsDialog({
             workspaceId={workspace.id}
           />
         )}
+        {tab === 'statistics' &&
+          (isError ? (
+            <Button onClick={() => void refetch()} variant="ghost">
+              {m.action_retry()}
+            </Button>
+          ) : isPending ? (
+            <p role="status">{m.common_loading()}</p>
+          ) : (
+            stats && (
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  [m.quiz_col_chapters(), stats.chapters],
+                  [m.nav_files(), stats.files],
+                  [m.nav_quizzes(), stats.quizzes],
+                  [m.stats_attempts(), stats.attempts],
+                  [m.stats_average_score(), `${stats.avgScore}%`],
+                ].map(([label, value]) => (
+                  <div
+                    className="rounded-card border border-line bg-surface-hover-bg px-4 py-3"
+                    key={label}
+                  >
+                    <p className="t-label text-fg-muted">{label}</p>
+                    <p className="t-large-card-title mt-1">
+                      <NumberPopIn value={String(value)} />
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )
+          ))}
         {tab === 'indexing' && (
           <div className="flex flex-col gap-6">
             {isError ? (

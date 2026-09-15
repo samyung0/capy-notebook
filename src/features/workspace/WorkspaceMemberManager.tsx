@@ -41,15 +41,9 @@ function roleOptions(): Array<{ value: AssignableRole; label: string }> {
 
 export function WorkspaceMemberManager({
   workspaceId,
-  initialTransferTarget = null,
 }: {
   workspaceId: string;
-  /** Allows the MSW dialog preview to reach the existing confirmation. */
-  initialTransferTarget?: WorkspaceMember | null;
 }) {
-  const [transferTarget, setTransferTarget] = useState<WorkspaceMember | null>(
-    initialTransferTarget
-  );
   const [manageTarget, setManageTarget] = useState<WorkspaceMember | null>(
     null
   );
@@ -61,8 +55,6 @@ export function WorkspaceMemberManager({
   const { isPending: updateMemberIsPending, mutate: updateMember } =
     useUpdateWorkspaceMember(workspaceId);
   const { mutate: removeMember } = useRemoveWorkspaceMember(workspaceId);
-  const { isPending: transferIsPending, mutateAsync: transfer } =
-    useTransferWorkspace(workspaceId);
 
   const {
     formState: { isValid, isSubmitting },
@@ -88,20 +80,6 @@ export function WorkspaceMemberManager({
       userToast({
         description: m.members_invite_sent_body(),
         title: m.members_invite_sent_title(),
-      });
-    } catch {
-      // The global mutation handler shows the normalized failure.
-    }
-  }
-
-  async function confirmTransfer() {
-    if (!transferTarget) return;
-    try {
-      await transfer(transferTarget.userId);
-      setTransferTarget(null);
-      userToast({
-        title: m.workspace_transfer_success(),
-        variant: 'success',
       });
     } catch {
       // The global mutation handler shows the normalized failure.
@@ -218,26 +196,6 @@ export function WorkspaceMemberManager({
           </div>
         )}
       </SimpleDialog>
-
-      <ConfirmDialog
-        body={
-          transferTarget
-            ? m.workspace_transfer_confirm_body({
-                name: transferTarget.name,
-              })
-            : undefined
-        }
-        closeOnConfirm={false}
-        confirmLabel={m.workspace_transfer_confirm()}
-        danger
-        isSubmitting={transferIsPending}
-        onClose={() => {
-          if (!transferIsPending) setTransferTarget(null);
-        }}
-        onConfirm={() => void confirmTransfer()}
-        open={!!transferTarget}
-        title={m.workspace_transfer_title()}
-      />
     </section>
   );
 }
@@ -272,5 +230,44 @@ function RoleSelect({
         </SelectGroup>
       </SelectContent>
     </Select>
+  );
+}
+
+export function WorkspaceTransferDialog({
+  workspaceId,
+  member,
+  onClose,
+}: {
+  workspaceId: string;
+  member: WorkspaceMember;
+  onClose: () => void;
+}) {
+  const { isPending, mutateAsync: transfer } =
+    useTransferWorkspace(workspaceId);
+  return (
+    <ConfirmDialog
+      body={m.workspace_transfer_confirm_body({ name: member.name })}
+      closeOnConfirm={false}
+      confirmLabel={m.workspace_transfer_confirm()}
+      danger
+      isSubmitting={isPending}
+      onClose={() => {
+        if (!isPending) onClose();
+      }}
+      onConfirm={async () => {
+        try {
+          await transfer(member.userId);
+          onClose();
+          userToast({
+            title: m.workspace_transfer_success(),
+            variant: 'success',
+          });
+        } catch {
+          // The mutation handler reports the failure; keep the confirmation open.
+        }
+      }}
+      open
+      title={m.workspace_transfer_title()}
+    />
   );
 }

@@ -27,7 +27,7 @@ func TestWorkspaceDeletionReleasesProviderSessionsButKeepsLateReceipts(t *testin
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_delete_workspace_session")
 	workspace, err := s.CreateWorkspace(
-		ctx, ownerID, "Provider session workspace", ColorGreen, nil,
+		ctx, ownerID, "Provider session workspace", nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -81,7 +81,6 @@ func createSharingTestWorkspace(t *testing.T, s *Store, shareRole ShareRole) (co
 		ctx,
 		"u_owner",
 		"Sharing test "+uid("name"),
-		ColorGraphite,
 		[]TagRef{},
 	)
 	if err != nil {
@@ -102,7 +101,7 @@ func createSharingTestWorkspace(t *testing.T, s *Store, shareRole ShareRole) (co
 func TestWorkspaceDefaultsToInviteOnlyViewer(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
-	ws, err := s.CreateWorkspace(ctx, "u_owner", "Default test "+uid("name"), ColorGraphite, []TagRef{})
+	ws, err := s.CreateWorkspace(ctx, "u_owner", "Default test "+uid("name"), []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +239,7 @@ func TestWorkspaceInviteAcceptanceGrantsRoleCapabilities(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
-			ws, err := s.CreateWorkspace(ctx, "u_owner", "Invite role "+uid("name"), ColorGraphite, []TagRef{})
+			ws, err := s.CreateWorkspace(ctx, "u_owner", "Invite role "+uid("name"), []TagRef{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -266,7 +265,7 @@ func TestWorkspaceInviteAcceptanceGrantsRoleCapabilities(t *testing.T) {
 				t.Fatalf("edit access error = %v, want canEdit=%v", err, tc.canEdit)
 			}
 
-			listed, err := s.ListWorkspaces(ctx, tc.userID, "", "", "", "")
+			listed, err := s.ListWorkspaces(ctx, tc.userID, "", "", "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -306,13 +305,13 @@ func TestReciprocalWorkspaceInviteAcceptanceUsesCanonicalAccountLockOrder(t *tes
 	firstUserID := newBlobTestUser(t, s, "a_reciprocal_invite")
 	secondUserID := newBlobTestUser(t, s, "z_reciprocal_invite")
 	firstWorkspace, err := s.CreateWorkspace(
-		ctx, firstUserID, "First reciprocal invite", ColorGreen, nil,
+		ctx, firstUserID, "First reciprocal invite", nil,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	secondWorkspace, err := s.CreateWorkspace(
-		ctx, secondUserID, "Second reciprocal invite", ColorBlue, nil,
+		ctx, secondUserID, "Second reciprocal invite", nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -383,7 +382,7 @@ func TestReciprocalWorkspaceInviteAcceptanceUsesCanonicalAccountLockOrder(t *tes
 func TestWorkspaceMembershipNotificationsAndNoOpRoleChange(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
-	ws, err := s.CreateWorkspace(ctx, "u_owner", "Membership events "+uid("name"), ColorGraphite, []TagRef{})
+	ws, err := s.CreateWorkspace(ctx, "u_owner", "Membership events "+uid("name"), []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -433,7 +432,7 @@ func TestEmailLessInviteeGetsInAppMembershipEventsWithoutEmail(t *testing.T) {
 		t.Fatal(err)
 	}
 	ws, err := s.CreateWorkspace(
-		ctx, "u_owner", "Email-less membership "+uid("name"), ColorGraphite, nil,
+		ctx, "u_owner", "Email-less membership "+uid("name"), nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -498,7 +497,7 @@ func TestEmailLessInviteeGetsInAppMembershipEventsWithoutEmail(t *testing.T) {
 func TestWorkspaceInvitePrivacyAndAutomaticExpiry(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
-	ws, err := s.CreateWorkspace(ctx, "u_owner", "Invite expiry "+uid("name"), ColorGraphite, []TagRef{})
+	ws, err := s.CreateWorkspace(ctx, "u_owner", "Invite expiry "+uid("name"), []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -575,7 +574,7 @@ func TestQueuedInviteEmailMaySendButDeletingWorkspaceOwnerMakesLinkUnavailable(t
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_invite_deleting_owner")
-	ws, err := s.CreateWorkspace(ctx, ownerID, "Deleting invite owner", ColorGraphite, []TagRef{})
+	ws, err := s.CreateWorkspace(ctx, ownerID, "Deleting invite owner", []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -634,7 +633,7 @@ func TestQueuedInviteEmailMaySendAfterWorkspaceDeletion(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_invite_deleted_workspace_owner")
-	ws, err := s.CreateWorkspace(ctx, ownerID, "Deleted invitation workspace", ColorGraphite, []TagRef{})
+	ws, err := s.CreateWorkspace(ctx, ownerID, "Deleted invitation workspace", []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -695,7 +694,7 @@ func TestOverQuotaOwnerCannotInviteOrPromoteButCanDemote(t *testing.T) {
 	viewerID := newBlobTestUser(t, s, "u_over_quota_members_viewer")
 	editorID := newBlobTestUser(t, s, "u_over_quota_members_editor")
 	inviteeID := newBlobTestUser(t, s, "u_over_quota_members_invitee")
-	ws, err := s.CreateWorkspace(ctx, ownerID, "Over quota membership", ColorGreen, []TagRef{})
+	ws, err := s.CreateWorkspace(ctx, ownerID, "Over quota membership", []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -734,7 +733,7 @@ func TestOwnerLifecycleBlocksAcceptanceOfPreviouslyIssuedInvite(t *testing.T) {
 			ctx := context.Background()
 			ownerID := newBlobTestUser(t, s, "u_invite_owner_"+lifecycle)
 			inviteeID := newBlobTestUser(t, s, "u_invite_target_"+lifecycle)
-			ws, err := s.CreateWorkspace(ctx, ownerID, "Lifecycle invite", ColorGreen, []TagRef{})
+			ws, err := s.CreateWorkspace(ctx, ownerID, "Lifecycle invite", []TagRef{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -828,7 +827,7 @@ func TestCommentMutationsRecheckLifecycleAndCurrentRole(t *testing.T) {
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_comment_owner")
 	editorID := newBlobTestUser(t, s, "u_comment_actor")
-	ws, err := s.CreateWorkspace(ctx, ownerID, "Comment lifecycle", ColorGreen, []TagRef{})
+	ws, err := s.CreateWorkspace(ctx, ownerID, "Comment lifecycle", []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -899,7 +898,7 @@ func TestOverQuotaOwnerMayNarrowButNotWidenSharing(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_share_gate_owner")
-	ws, err := s.CreateWorkspace(ctx, ownerID, "Sharing gate", ColorGreen, []TagRef{})
+	ws, err := s.CreateWorkspace(ctx, ownerID, "Sharing gate", []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}

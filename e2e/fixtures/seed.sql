@@ -18,13 +18,13 @@ ON CONFLICT (id) DO UPDATE SET
   name = EXCLUDED.name,
   email = EXCLUDED.email;
 
-INSERT INTO workspaces (id, user_id, name, color, privacy, share_role, created_at, last_accessed_at) VALUES
-  ('ws_e2e_private', 'u_owner', 'E2E Private Workspace', 'green',  'private', 'viewer', now(), now()),
-  ('ws_e2e_link',    'u_owner', 'E2E Link Workspace',    'purple', 'link',    'viewer', now(), now()),
-  ('ws_e2e_public',  'u_owner', 'E2E Public Workspace',  'blue',   'public',  'viewer', now(), now()),
-  ('ws_e2e_edit',    'u_owner', 'E2E Editable Link Workspace', 'coral', 'link', 'editor', now(), now()),
-  ('ws_e2e_invite',  'u_owner', 'E2E Invite Only Workspace', 'graphite', 'private', 'viewer', now(), now()),
-  ('ws_e2e_mutate',  'u_owner', 'E2E Mutate Workspace',  'amber',  'private', 'viewer', now(), now())
+INSERT INTO workspaces (id, user_id, name, privacy, share_role, created_at, last_accessed_at) VALUES
+  ('ws_e2e_private', 'u_owner', 'E2E Private Workspace',  'private', 'viewer', now(), now()),
+  ('ws_e2e_link',    'u_owner', 'E2E Link Workspace', 'link',    'viewer', now(), now()),
+  ('ws_e2e_public',  'u_owner', 'E2E Public Workspace',   'public',  'viewer', now(), now()),
+  ('ws_e2e_edit',    'u_owner', 'E2E Editable Link Workspace', 'link', 'editor', now(), now()),
+  ('ws_e2e_invite',  'u_owner', 'E2E Invite Only Workspace', 'private', 'viewer', now(), now()),
+  ('ws_e2e_mutate',  'u_owner', 'E2E Mutate Workspace',  'private', 'viewer', now(), now())
 ON CONFLICT (id) DO UPDATE SET
   user_id = EXCLUDED.user_id,
   name = EXCLUDED.name,

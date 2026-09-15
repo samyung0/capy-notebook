@@ -7,7 +7,7 @@ import (
 )
 
 // IconIDPattern describes the frozen catalog in src/lib/icon-catalog.json.
-const IconIDPattern = `^((slice|sprouts|notionists)-(0[1-9]|1[0-2])|critters-(0[1-9]|1[0-6])|avataaars-(0[1-9]|1[0-9]|2[0-4])|waves-(0[1-9]|1[01]))$`
+const IconIDPattern = `^((sprouts|notionists)-(0[1-9]|1[0-2])|critters-(0[1-9]|1[0-6])|avataaars-(0[1-9]|1[0-9]|2[0-4])|waves-(0[1-9]|1[01]))$`
 
 var iconIDRE = regexp.MustCompile(IconIDPattern)
 

@@ -17,7 +17,7 @@ func TestCollaborationQuotaLiveFreeOnlyAccountStaysActive(t *testing.T) {
 		VALUES ($1,$2,'active','free',$3,1)`, uid("sub"), user, current); err != nil {
 		t.Fatal(err)
 	}
-	workspace, err := s.CreateWorkspace(ctx, user, "Live Free only", ColorGreen, nil)
+	workspace, err := s.CreateWorkspace(ctx, user, "Live Free only", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

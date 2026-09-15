@@ -9,7 +9,6 @@ import type { AccountState } from './accountState.ts';
 import type { Privacy } from './privacy.ts';
 import type { ShareRole } from './shareRole.ts';
 import type { Tag } from './tag.ts';
-import type { UserColor } from './userColor.ts';
 import type { WorkspaceRole } from './workspaceRole.ts';
 
 export interface Workspace {
@@ -20,7 +19,6 @@ export interface Workspace {
   canClone: boolean;
   capabilities: AccessCapabilities;
   chapterCount: number;
-  color: UserColor;
   createdAt: string;
   description: string;
   fileCount: number;

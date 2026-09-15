@@ -3,28 +3,24 @@ import { useState } from 'react';
 import {
   useCloneWorkspace,
   useDeleteWorkspace,
-  useUpdateWorkspace,
   useUpdateWorkspaceSharing,
 } from '@/api/hooks';
 import type { Workspace } from '@/api/types';
 import { ConfirmDialog } from '@/components/ui/Dialog';
 import { Menu } from '@/components/ui/Menu';
+import { canManageWorkspaceSettings } from '@/features/workspace/access';
 import { ShareDialog } from '@/features/workspace/ShareDialog';
-import { WorkspaceFormEditDialog } from '@/features/workspace/WorkspaceFormEditDialog';
+import { WorkspaceSettingsDialog } from '@/features/workspace/WorkspaceSettingsDialog';
 import { m } from '@/i18n';
 import { toastCloneError } from '@/lib/authToasts';
-import { cn } from '@/lib/cn';
 import { iconUrl } from '@/lib/icon-catalog';
 import { trackItemCloned } from '@/lib/observability';
-import { userColorPair } from '@/lib/userColor';
 import { Badge } from './Badge';
 import { Card } from './Card';
 import { Skeleton } from './feedback';
 
 export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
-  const _c = userColorPair(workspace.color);
   const { mutate: deleteWorkspace } = useDeleteWorkspace();
-  const { mutateAsync: updateWorkspace } = useUpdateWorkspace();
   const { isPending: updateSharingIsPending, mutateAsync: updateSharing } =
     useUpdateWorkspaceSharing();
   const [shareOpen, setShareOpen] = useState(false);
@@ -34,12 +30,13 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
     useCloneWorkspace();
   const navigate = useNavigate();
   const canManage = workspace.capabilities.canManageMembers;
+  const canSettings = canManageWorkspaceSettings(workspace);
   const menuItems = [
-    ...(canManage
+    ...(canSettings
       ? [
           {
             icon: 'settings' as const,
-            label: m.action_edit(),
+            label: m.workspace_settings(),
             onClick: () => setEditOpen(true),
           },
           {
@@ -93,13 +90,7 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
           className="relative h-full gap-4 p-4.5 xl:p-5.5"
           interactive
         >
-          <span
-            className={cn(
-              'size-fit rounded-card'
-              // workspace.color === 'transparent' && 'px-1'
-            )}
-            // style={{ background: c.bg, color: c.fg }}
-          >
+          <span className="size-fit rounded-card">
             <img
               alt=""
               className="size-11 rounded-button"
@@ -141,10 +132,17 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
           <Menu items={menuItems} />
         </div>
       )}
-      {canManage && (
+      {editOpen && canSettings && (
+        <WorkspaceSettingsDialog
+          onClose={() => setEditOpen(false)}
+          open
+          workspace={workspace}
+        />
+      )}
+      {canSettings && (
         <>
           <ShareDialog
-            canManageMembers
+            canManageMembers={canManage}
             link={`/w/${workspace.id}`}
             onClose={() => setShareOpen(false)}
             onPrivacyChange={(privacy) =>
@@ -160,20 +158,6 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
             title={m.workspace_share_title()}
             workspaceId={workspace.id}
           />
-          {editOpen && (
-            <WorkspaceFormEditDialog
-              onSubmit={(v) => updateWorkspace({ id: workspace.id, ...v })}
-              open
-              setOpen={setEditOpen}
-              workspace={{
-                color: workspace.color,
-                description: workspace.description,
-                iconId: workspace.iconId,
-                name: workspace.name,
-                tags: workspace.tags,
-              }}
-            />
-          )}
           <ConfirmDialog
             body={m.confirm_delete_body()}
             onClose={() => setConfirmDelete(false)}

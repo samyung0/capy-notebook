@@ -100,6 +100,13 @@ const SharedFlashcards = lazyRouteComponent(
 );
 const publicRoutes = [
   createRoute({
+    component: lazyRouteComponent(
+      () => import('@/routes/WorkspaceInviteAccept')
+    ),
+    getParentRoute: () => rootRoute,
+    path: '/workspace-invites/$token',
+  }),
+  createRoute({
     component: () => (
       <AuthGate>
         <SharedQuiz />
@@ -163,9 +170,7 @@ const appRoutes = [
     '/workspaces',
     () => import('@/routes/Workspaces'),
     ({ context: { queryClient: qc } }) =>
-      qc.prefetchQuery(
-        workspacesQuery({ color: undefined, q: '', sort: 'accessed' })
-      )
+      qc.prefetchQuery(workspacesQuery({ q: '', sort: 'accessed' }))
   ),
   createRoute({
     component: lazyRouteComponent(() => import('@/routes/WorkspaceOpen')),
@@ -182,10 +187,6 @@ const appRoutes = [
     staticData: { hideSidebar: true },
     validateSearch: parseWorkspaceOpenSearch,
   }),
-  page(
-    '/workspace-invites/$token',
-    () => import('@/routes/WorkspaceInviteAccept')
-  ),
   page(
     '/quizzes',
     () => import('@/routes/Quizzes'),

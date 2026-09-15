@@ -2,6 +2,18 @@ import type { SourceFile } from '@/api/types';
 
 export const dialogFiles = [
   {
+    hasBytes: true,
+    id: 'mock-preview-links',
+    kind: 'pdf',
+    name: 'File link error.pdf',
+  },
+  {
+    hasBytes: true,
+    id: 'mock-preview-annotations',
+    kind: 'pdf',
+    name: 'Annotation load error.pdf',
+  },
+  {
     hasBytes: false,
     id: 'mock-preview-empty',
     kind: 'txt',

@@ -1131,6 +1131,8 @@
   "auth_code_hint": "我们已把验证码发送到 {email}，输入后即可完成。",
   "auth_code": "验证码",
   "auth_code_submit": "验证邮箱",
+  "auth_code_sent": "验证码已发送",
+  "auth_code_resend_cooldown": "重新发送验证码（{seconds}秒）",
   "auth_code_resend": "重新发送验证码",
   "auth_code_resent": "已发送新的验证码",
   "auth_code_back": "换一个邮箱",

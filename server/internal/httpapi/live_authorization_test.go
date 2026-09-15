@@ -29,7 +29,7 @@ func TestLiveWorkspaceContextClosesAtAccountDeletionBoundary(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	workspace, err := st.CreateWorkspace(ctx, userID, "Live boundary", store.ColorGreen, nil)
+	workspace, err := st.CreateWorkspace(ctx, userID, "Live boundary", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

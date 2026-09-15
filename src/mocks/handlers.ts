@@ -15,6 +15,8 @@ import type {
   MaterialRef,
   MaterialRefType,
   ModelRef,
+  PDFAnnotation,
+  PDFAnnotationBody,
   Question,
   Quiz,
   SearchResult,
@@ -23,7 +25,6 @@ import type {
   TagInput,
   Task,
   TrashItem,
-  UserColor,
   Workspace,
   WorkspaceMember,
 } from '@/api/types';
@@ -378,9 +379,54 @@ function trashMaterial(id: string, kind?: string) {
   });
 }
 
+const pdfAnnotations: Record<string, PDFAnnotation[]> = {};
 export const handlers = [
+  http.get('/api/files/:id/annotations', ({ params }) =>
+    params.id === 'mock-preview-annotations'
+      ? new HttpResponse(null, { status: 503 })
+      : HttpResponse.json(pdfAnnotations[String(params.id)] ?? [])
+  ),
+  http.post('/api/files/:id/annotations', async ({ params, request }) => {
+    const fileId = String(params.id);
+    const body = (await request.json()) as PDFAnnotationBody;
+    const mark: PDFAnnotation = {
+      ...body,
+      authorId: db.user.id,
+      createdAt: new Date().toISOString(),
+      fileId,
+      id: uid('annotation'),
+      updatedAt: new Date().toISOString(),
+    };
+    pdfAnnotations[fileId] ??= [];
+    pdfAnnotations[fileId].push(mark);
+    return HttpResponse.json(mark, { status: 201 });
+  }),
+  http.patch(
+    '/api/files/:id/annotations/:annotationId',
+    async ({ params, request }) => {
+      const mark = pdfAnnotations[String(params.id)]?.find(
+        (item) => item.id === params.annotationId
+      );
+      if (!mark) return new HttpResponse(null, { status: 404 });
+      Object.assign(mark, await request.json(), {
+        updatedAt: new Date().toISOString(),
+      });
+      return HttpResponse.json(mark);
+    }
+  ),
+  http.delete('/api/files/:id/annotations/:annotationId', ({ params }) => {
+    const fileId = String(params.id);
+    pdfAnnotations[fileId] = (pdfAnnotations[fileId] ?? []).filter(
+      (item) => item.id !== params.annotationId
+    );
+    return new HttpResponse(null, { status: 204 });
+  }),
   http.get('/api/files/:id/links', ({ params }) => {
     if (!dialogFiles.some((file) => file.id === params.id)) return;
+    if (params.id === 'mock-preview-links')
+      return new HttpResponse(null, { status: 503 });
+    if (params.id === 'mock-preview-annotations')
+      return HttpResponse.json(db.fileLinks.f_1);
     return HttpResponse.json({
       url:
         params.id === 'mock-preview-text'
@@ -661,7 +707,6 @@ export const handlers = [
         w.tags.some((t) => t.value.toLowerCase().includes(q))
       )
         results.push({
-          color: w.color,
           href: `/workspaces/${w.id}`,
           id: w.id,
           kind: 'workspace',
@@ -672,7 +717,7 @@ export const handlers = [
       if (f.name.toLowerCase().includes(q)) {
         const ws = db.workspaces.find((w) => w.id === f.workspaceId);
         results.push({
-          color: ws?.color,
+          color: 'purple',
           href: `/workspaces/${f.workspaceId}?file=${f.id}`,
           id: f.id,
           kind: 'file',
@@ -769,10 +814,6 @@ export const handlers = [
   http.get('/api/workspaces', async ({ request }) => {
     const url = new URL(request.url);
     const q = (url.searchParams.get('q') ?? '').toLowerCase().trim();
-    const colors = (url.searchParams.get('color') ?? '')
-      .split(',')
-      .map((c) => c.trim())
-      .filter(Boolean);
     const tags = (url.searchParams.get('tag') ?? '')
       .split(',')
       .map((t) => t.trim())
@@ -785,11 +826,9 @@ export const handlers = [
           w.name.toLowerCase().includes(q) ||
           w.tags.some((t) => t.value.toLowerCase().includes(q))
       );
-    if (colors.length || tags.length) {
+    if (tags.length) {
       list = list.filter(
-        (w) =>
-          (colors.length > 0 && colors.includes(w.color)) ||
-          (tags.length > 0 && w.tags.some((t) => tags.includes(t.value)))
+        (w) => tags.length > 0 && w.tags.some((t) => tags.includes(t.value))
       );
     }
     return HttpResponse.json(sortWorkspaces(list, sort));
@@ -852,12 +891,11 @@ export const handlers = [
         canView: true,
       },
       chapterCount: 0,
-      color: (body.color as UserColor) ?? 'graphite',
       createdAt: new Date().toISOString(),
       description: '',
       fileCount: 0,
       filesLimit: PLAN_LIMITS.pro.filesPerWorkspace,
-      iconId: `slice-${String(Math.floor(Math.random() * 12) + 1).padStart(2, '0')}`,
+      iconId: `waves-${String(Math.floor(Math.random() * 11) + 1).padStart(2, '0')}`,
       id: uid('ws'),
       isOwner: true,
       lastAccessedAt: new Date().toISOString(),
@@ -880,7 +918,6 @@ export const handlers = [
     if (body.tags !== undefined) ws.tags = resolveTags('workspace', body.tags);
     if (body.name !== undefined) ws.name = body.name;
     if (body.description !== undefined) ws.description = body.description;
-    if (body.color !== undefined) ws.color = body.color;
     if (body.iconId !== undefined) ws.iconId = body.iconId;
     return HttpResponse.json(ws);
   }),

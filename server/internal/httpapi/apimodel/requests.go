@@ -20,9 +20,8 @@ type UpdateMeReq struct {
 // CreateWorkspaceReq is the body for POST /api/workspaces. New workspaces are
 // always private; visibility is configured later through the sharing endpoint.
 type CreateWorkspaceReq struct {
-	Name  WorkspaceName   `json:"name" minLength:"1" doc:"Workspace name"`
-	Color store.UserColor `json:"color,omitempty" default:"graphite" doc:"User color"`
-	Tags  []TagInput      `json:"tags,omitempty" maxItems:"5" doc:"Tags; at most 5; reuse existing by id or create new by value"`
+	Name WorkspaceName `json:"name" minLength:"1" doc:"Workspace name"`
+	Tags []TagInput    `json:"tags,omitempty" maxItems:"5" doc:"Tags; at most 5; reuse existing by id or create new by value"`
 }
 
 // UpdateWorkspaceReq updates general workspace settings only.
@@ -31,7 +30,6 @@ type UpdateWorkspaceReq struct {
 	AutoReindex *bool                 `json:"autoReindex,omitempty"`
 	Description *WorkspaceDescription `json:"description,omitempty" doc:"Optional workspace description; empty clears it"`
 	Name        *WorkspaceName        `json:"name,omitempty" minLength:"1"`
-	Color       *store.UserColor      `json:"color,omitempty"`
 	IconID      *IconID               `json:"iconId,omitempty" minLength:"1"`
 	Tags        *[]TagInput           `json:"tags,omitempty" maxItems:"5" doc:"Tags; at most 5"`
 }

@@ -20,7 +20,7 @@ func TestWorkspaceMutationRechecksCurrentEditorRole(t *testing.T) {
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_acl_owner")
 	editorID := newBlobTestUser(t, s, "u_acl_editor")
-	workspace, err := s.CreateWorkspace(ctx, ownerID, "ACL workspace", ColorGreen, []TagRef{})
+	workspace, err := s.CreateWorkspace(ctx, ownerID, "ACL workspace", []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestUploadFinalizationRechecksCreatorMembership(t *testing.T) {
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_upload_acl_owner")
 	editorID := newBlobTestUser(t, s, "u_upload_acl_editor")
-	workspace, err := s.CreateWorkspace(ctx, ownerID, "Upload ACL", ColorGreen, []TagRef{})
+	workspace, err := s.CreateWorkspace(ctx, ownerID, "Upload ACL", []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestConversationFollowsEffectiveRole(t *testing.T) {
 	ownerID := newBlobTestUser(t, s, "u_chat_acl_owner")
 	editorID := newBlobTestUser(t, s, "u_chat_acl_editor")
 	visitorID := newBlobTestUser(t, s, "u_chat_acl_visitor")
-	workspace, err := s.CreateWorkspace(ctx, ownerID, "Chat ACL", ColorGreen, []TagRef{})
+	workspace, err := s.CreateWorkspace(ctx, ownerID, "Chat ACL", []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}

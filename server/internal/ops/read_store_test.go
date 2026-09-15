@@ -102,8 +102,8 @@ func TestHealthClassifiesTurnAndProviderLifecycles(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `
-		INSERT INTO workspaces (id, user_id, name, color)
-		VALUES ($1, $2, 'Ops Health Workspace', 'green')`,
+		INSERT INTO workspaces (id, user_id, name)
+		VALUES ($1, $2, 'Ops Health Workspace')`,
 		workspaceID, userID,
 	); err != nil {
 		t.Fatal(err)

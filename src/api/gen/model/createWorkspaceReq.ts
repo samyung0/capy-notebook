@@ -5,13 +5,10 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { TagInput } from './tagInput.ts';
-import type { UserColor } from './userColor.ts';
 
 export interface CreateWorkspaceReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  /** User color */
-  color?: UserColor;
   /**
      * Workspace name
      * @minLength 1

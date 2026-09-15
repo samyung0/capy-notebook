@@ -48,10 +48,10 @@ func TestIconCatalogMatchesAssets(t *testing.T) {
 			}
 		}
 	}
-	if len(ids) != 87 {
-		t.Fatalf("catalog contains %d icons, want 87", len(ids))
+	if len(ids) != 75 {
+		t.Fatalf("catalog contains %d icons, want 75", len(ids))
 	}
-	for _, bad := range []string{"", "../../secret", "slice-1", "unknown-01", "slice-01.svg", "slice-01\n"} {
+	for _, bad := range []string{"", "../../secret", "slice-01", "slice-1", "unknown-01", "slice-01.svg", "slice-01\n"} {
 		if ValidIconID(bad) {
 			t.Errorf("accepted invalid id %q", bad)
 		}
@@ -135,11 +135,11 @@ func TestWorkspaceIconPersistsAndClonesWithMemberPermissions(t *testing.T) {
 	owner := newBlobTestUser(t, s, "icon_owner")
 	editor := newBlobTestUser(t, s, "icon_editor")
 	visitor := newBlobTestUser(t, s, "icon_visitor")
-	ws, err := s.CreateWorkspace(ctx, owner, "Icons", ColorGreen, nil)
+	ws, err := s.CreateWorkspace(ctx, owner, "Icons", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(ws.IconID, "slice-") || !ValidIconID(ws.IconID) {
+	if !strings.HasPrefix(ws.IconID, "waves-") || !ValidIconID(ws.IconID) {
 		t.Fatalf("invalid default %s", ws.IconID)
 	}
 	loaded, err := s.GetWorkspace(ctx, owner, ws.ID, false)
@@ -158,8 +158,8 @@ func TestWorkspaceIconPersistsAndClonesWithMemberPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.IconID != selected || updated.Color != ws.Color {
-		t.Fatal("icon edit changed color or failed")
+	if updated.IconID != selected {
+		t.Fatal("icon edit failed")
 	}
 	cloned, err := s.CloneWorkspace(ctx, owner, ws.ID)
 	if err != nil {

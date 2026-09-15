@@ -56,7 +56,7 @@ func TestPublicWorkspaceSummary(t *testing.T) {
 		t.Fatal(err)
 	}
 	delete(keys, "$schema") // Huma adds its standard schema link.
-	if len(keys) != 8 {
+	if len(keys) != 7 {
 		t.Fatalf("unexpected projection keys: %v", keys)
 	}
 	for _, secret := range []string{owner, ws, chapter, file, "summary@example.test", "workspaceId", "content", "blob"} {

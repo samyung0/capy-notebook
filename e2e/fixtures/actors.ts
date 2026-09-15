@@ -187,7 +187,7 @@ export const test = base.extend<ActorFixtures>({
     await use({
       create: async ({ name }) => {
         const response = await ownerApi.post('/api/workspaces', {
-          data: { color: 'graphite', name },
+          data: { name },
         });
         if (response.status() !== 201) {
           throw new Error(

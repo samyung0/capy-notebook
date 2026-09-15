@@ -13,7 +13,6 @@ type WorkspaceSummary struct {
 	Name        string                    `json:"name"`
 	Author      string                    `json:"author"`
 	Description string                    `json:"description"`
-	Color       UserColor                 `json:"color"`
 	Privacy     Privacy                   `json:"privacy"`
 	Tags        []string                  `json:"tags" nullable:"false"`
 	Chapters    []WorkspaceSummaryChapter `json:"chapters" nullable:"false"`
@@ -41,7 +40,7 @@ func (s *Store) PublicWorkspaceSummary(ctx context.Context, id string) (Workspac
 	var body []byte
 	err := s.pool.QueryRow(ctx, `
  SELECT jsonb_build_object(
-   'name', w.name, 'author', COALESCE(owner.name, ''), 'description', w.description, 'color', w.color, 'privacy', w.privacy,
+   'name', w.name, 'author', COALESCE(owner.name, ''), 'description', w.description, 'privacy', w.privacy,
    'tags', COALESCE((SELECT jsonb_agg(t.name ORDER BY t.name)
      FROM entity_tags et JOIN tags t ON t.id=et.tag_id WHERE et.workspace_id=w.id), '[]'::jsonb),
    'chapters', COALESCE((SELECT jsonb_agg(jsonb_build_object('name', c.name,

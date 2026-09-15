@@ -19,6 +19,10 @@ The CSS recipes share timing while keeping component semantics separate:
   root's nested-drawer brightness filter.
   Its entrance filter follows `data-starting-style` and stays clear after
   cancelled or nested swipes.
+- Shared `DialogContent` uses `will-change: transform` while mounted to keep
+  its rendering layer stable at animation completion. Without it, Chromium can
+  paint body controls 1px higher on the final frame while the title stays fixed,
+  despite unchanged layout positions. Scale, blur and timing remain unchanged.
 - `PopupMotion` keeps custom popup content mounted through its CSS exit, freezes
   the last open position/content, and makes it inert immediately. Positioning
   belongs to the outer node; animation belongs to the inner node. Changes to
@@ -57,3 +61,16 @@ separate. Toast copy updates use the same compact swap as other changing text.
 
 Browser checks: `VITE_FEATURE_EDITOR_AI=true pnpm run e2e:msw:editor --workers=1 ui-motion.spec.ts`.
 The feature flag includes the AI input's rapid-reopen focus check.
+
+Manual dialog rendering check: at 10% animation speed in Chromium DevTools,
+compare the final moving frame with the settled frame for the icon picker,
+workspace edit/create and task edit dialogs. Body controls should stay in place.
+Compare page screenshots; Playwright locator screenshots wait for stability and
+can miss the final-frame jump.
+
+Signup code sends disable resend immediately. Success shows “Code sent” for
+1.5 seconds, then a 60-second wall-clock countdown. `ContentSwap`'s `text-state`
+variant exits upward with 2px blur before entering from 4px below, 150ms per phase.
+Failed sends remain retryable. Countdown digits update without replaying the swap.
+Workspace statistics use `NumberPopIn`: 8px travel, 2px blur, 500ms bounce easing
+and 70ms digit stagger. Reduced motion renders both transitions without animation.

@@ -14,7 +14,6 @@ const file = (name: string) => ({
 const summary = {
   author: 'Mia',
   chapters: [{ files: [file('Cells.pdf')], name: 'Cells' }],
-  color: 'purple',
   description: 'Lecture files',
   files: [file('Reading.pdf')],
   name: 'Biology',

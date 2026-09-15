@@ -38,7 +38,7 @@ func TestUserDeleteCascadeSplitsOwnershipFromAuthorship(t *testing.T) {
 	})
 
 	// The leaver's own workspace, with a file and a tagged material in it.
-	ownWS, err := s.CreateWorkspace(ctx, leaverID, "Leaver workspace", ColorGreen,
+	ownWS, err := s.CreateWorkspace(ctx, leaverID, "Leaver workspace",
 		[]TagRef{{Value: "cascade-tag"}})
 	if err != nil {
 		t.Fatal(err)
@@ -56,7 +56,7 @@ func TestUserDeleteCascadeSplitsOwnershipFromAuthorship(t *testing.T) {
 
 	// A material the leaver authored inside the host's workspace. The host owns
 	// the workspace and is charged for the bytes.
-	hostWS, err := s.CreateWorkspace(ctx, hostID, "Host workspace", ColorBlue, []TagRef{})
+	hostWS, err := s.CreateWorkspace(ctx, hostID, "Host workspace", []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,11 +142,11 @@ func TestChapterReferencesCannotCrossWorkspaces(t *testing.T) {
 		_, _ = s.pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, ownerID)
 	})
 
-	first, err := s.CreateWorkspace(ctx, ownerID, "First", ColorGreen, []TagRef{})
+	first, err := s.CreateWorkspace(ctx, ownerID, "First", []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := s.CreateWorkspace(ctx, ownerID, "Second", ColorBlue, []TagRef{})
+	second, err := s.CreateWorkspace(ctx, ownerID, "Second", []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}

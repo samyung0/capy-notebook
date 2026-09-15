@@ -13,12 +13,12 @@ INSERT INTO users (id, name, email, class_label, streak, plan_tier, subscription
   ('u_2', 'Theo Park',   'theo@capynotebook.app', 'Grade 12 · Science', 0, 'pro',  'active')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO workspaces (id, user_id, name, color, privacy, created_at, last_accessed_at) VALUES
-  ('ws_bio',  'u_1', 'Biology 101',        'green',  'private', now()-interval '40 day', now()-interval '3 hour'),
-  ('ws_calc', 'u_1', 'Calculus II',        'purple', 'private', now()-interval '30 day', now()-interval '1 day'),
-  ('ws_hist', 'u_1', 'World History',      'amber',  'link',    now()-interval '22 day', now()-interval '2 day'),
-  ('ws_chem', 'u_1', 'Organic Chemistry',  'blue',   'private', now()-interval '12 day', now()-interval '5 day'),
-  ('ws_eng',  'u_1', 'English Literature', 'coral',  'public',  now()-interval '8 day',  now()-interval '20 hour')
+INSERT INTO workspaces (id, user_id, name, privacy, created_at, last_accessed_at) VALUES
+  ('ws_bio',  'u_1', 'Biology 101',  'private', now()-interval '40 day', now()-interval '3 hour'),
+  ('ws_calc', 'u_1', 'Calculus II', 'private', now()-interval '30 day', now()-interval '1 day'),
+  ('ws_hist', 'u_1', 'World History',  'link',    now()-interval '22 day', now()-interval '2 day'),
+  ('ws_chem', 'u_1', 'Organic Chemistry',   'private', now()-interval '12 day', now()-interval '5 day'),
+  ('ws_eng',  'u_1', 'English Literature',  'public',  now()-interval '8 day',  now()-interval '20 hour')
 ON CONFLICT (id) DO NOTHING;
 
 -- Owners of the demo workspaces only. Do not touch later real workspaces.

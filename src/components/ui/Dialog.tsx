@@ -66,8 +66,9 @@ function DialogContent({
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Content
+        // Keep the rendering layer stable to prevent a 1px snap when motion ends.
         className={cn(
-          'motion-modal motion-blur-in fixed top-1/2 left-1/2 z-50 grid max-h-[88dvh] w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 px-4 outline-none',
+          'motion-modal motion-blur-in fixed top-1/2 left-1/2 z-50 grid max-h-[88dvh] w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 px-4 outline-none will-change-transform',
           className
         )}
         data-slot="dialog-content"

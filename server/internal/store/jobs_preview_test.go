@@ -10,7 +10,7 @@ func TestCreateSourceReadyOnlyAdvertisesPDFPreviewWithSourceBlob(t *testing.T) {
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_preview_url")
 	workspace, err := s.CreateWorkspace(
-		ctx, ownerID, "Preview URL", ColorGreen, []TagRef{},
+		ctx, ownerID, "Preview URL", []TagRef{},
 	)
 	if err != nil {
 		t.Fatal(err)

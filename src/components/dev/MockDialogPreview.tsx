@@ -10,8 +10,8 @@ import {
   type PendingSource,
   SourceDetailsDialog,
 } from '@/features/workspace/AddSourceDialog';
-import { WorkspaceMemberManager } from '@/features/workspace/WorkspaceMemberManager';
-import { WorkspaceStatsDialog } from '@/features/workspace/WorkspaceStatsDialog';
+import { WorkspaceTransferDialog } from '@/features/workspace/WorkspaceMemberManager';
+import { WorkspaceSettingsDialog } from '@/features/workspace/WorkspaceSettingsDialog';
 import { tasks, workspaces } from '@/mocks/db';
 import { dialogFiles, dialogSourceFile } from '@/mocks/dialogFiles';
 import { sourceUploadPolicy } from '@/mocks/sourceUploadPolicy';
@@ -66,7 +66,14 @@ export default function MockDialogPreview({
     );
   }
   if (dialog === 'workspace-stats')
-    return <WorkspaceStatsDialog id={workspaceId} onClose={onClose} />;
+    return (
+      <WorkspaceSettingsDialog
+        initialTab="statistics"
+        onClose={onClose}
+        open
+        workspace={workspaces[0]}
+      />
+    );
   if (dialog === 'task-edit')
     return (
       <TaskEditDialog
@@ -78,18 +85,17 @@ export default function MockDialogPreview({
     );
   if (dialog === 'ownership-transfer')
     return (
-      <SimpleDialog onClose={onClose} open title="Mock workspace members">
-        <WorkspaceMemberManager
-          initialTransferTarget={{
-            createdAt: '2026-09-15T00:00:00Z',
-            name: 'Morgan Lee',
-            role: 'editor',
-            userId: 'u_mock_collaborator',
-            workspaceId,
-          }}
-          workspaceId={workspaceId}
-        />
-      </SimpleDialog>
+      <WorkspaceTransferDialog
+        member={{
+          createdAt: '2026-09-15T00:00:00Z',
+          name: 'Morgan Lee',
+          role: 'editor',
+          userId: 'u_mock_collaborator',
+          workspaceId,
+        }}
+        onClose={onClose}
+        workspaceId={workspaceId}
+      />
     );
   return (
     <AppErrorBoundary>

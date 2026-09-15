@@ -35,7 +35,6 @@ type Workspace struct {
 	Description string    `json:"description"`
 	ID          string    `json:"id"`
 	Name        string    `json:"name"`
-	Color       UserColor `json:"color"`
 	IconID      string    `json:"iconId"`
 	Privacy     Privacy   `json:"privacy"`
 	ShareRole   ShareRole `json:"shareRole"`

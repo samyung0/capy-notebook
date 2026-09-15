@@ -438,7 +438,7 @@ allowed, URL schemes are secure, and every Clerk key, synthetic identity, and
 fixture ID is present. CI retains trace, screenshot, video, and HTML evidence
 only for the configured artifact window.
 
-The heavy suite (`pnpm e2e:uat:journeys`) has nine cases, one worker and no
+The heavy suite (`pnpm e2e:uat:journeys`) has ten cases, one worker and no
 whole-journey retries. Normal CI and lightweight deploy checks exclude it;
 manual quality defaults it on and production promotion requires it. Assertions
 use backend/storage/provider outcomes, with browser controls used for actions.
@@ -447,8 +447,9 @@ reports are retained for 30 days.
 
 | File | About |
 | --- | --- |
-| `e2e/uat/journeys/accounts.spec.ts` | Browser registration with fixed Clerk codes and Clerk's testing-token/client-CAPTCHA setup, processed creation/deletion webhooks, profile persistence, 30-day deletion grace with sub-second tolerance between application/database timestamps, revoked session and actual Resend delivery; API actions wait for session restoration after navigation, setup errors identify the failing stage without provider details, and actor teardown finishes pending Clerk handlers before closing the browser context. |
+| `e2e/uat/journeys/accounts.spec.ts` | Browser registration with fixed Clerk codes and Clerk's testing-token/client-CAPTCHA setup, processed creation/deletion webhooks, profile persistence, workspace creation with the current name-only request, 30-day deletion grace with sub-second tolerance between application/database timestamps, revoked session and actual Resend delivery; API actions wait for session restoration after navigation, setup errors identify the failing stage without provider details, and actor teardown finishes pending Clerk handlers before closing the browser context. |
 | `e2e/uat/journeys/billing.spec.ts` | App-created sandbox Checkout; paid subscription, test-clock renewal, deletion blocker and cancellation through actual Stripe webhooks. |
+| `e2e/uat/journeys/invitations.spec.ts` | Signed-out invitation redirects to password sign-in, returns to the original invite, accepts in the browser, and verifies the accepted recipient, persisted viewer membership and authorized workspace access. |
 | `e2e/uat/journeys/files.spec.ts` | DOCX/XLSX/PPTX browser upload/edit/collaboration/fresh-client export/reprocessing/purge; exact UTF-8 text replacement after initial collaboration sync and automatic publication; digital PDF private annotations and unavailable source collaboration room; terminal CSV ingest failure with the exact persisted job error and settled spend. Ingest assertions read persisted indexed text including heading context. Office parse checks use the persisted job receipt for the current source and verify optional cached bytes against it; publication waits fail on terminal refresh errors. Uploads use the enabled file-picker action; browser actions/navigation have 30/60-second limits independent of processing polls. |
 | `e2e/uat/journeys/runtime.test.ts` | Terminal Office publication job failure with the previous source still ready; offline canonical `app.uat` target guard with unchanged UAT Clerk identity, run/actor cleanup boundaries, durable sanitized evidence, malformed manifest/path refusal, saved-token transport redaction, and failed-inventory cleanup resumption. Included in `pnpm test:uat:verifier`. |
 | `e2e/uat/journeys/test_verify.py` | Read-only database identity gating and exact-key paginated B2 version filtering. Run `uv run --frozen python e2e/uat/journeys/test_verify.py`. |
@@ -471,6 +472,9 @@ MSW + Vite only (`pnpm e2e:msw:editor`); no Docker.
 | [`e2e/editor/insertions.spec.ts`](../e2e/editor/insertions.spec.ts)                 | Mentions in heading/paragraph, slash-insert table, toolbar table menu, and table of contents following a retitle. |
 
 | [`e2e/editor/ui-motion.spec.ts`](../e2e/editor/ui-motion.spec.ts) | Real-component popup exit/reopen and anchor retention, single-execution keyboard menus and submenu refocus, All blocks toggling, cancelled drawer swipes, palette search focus, fresh workspace forms, notification arrival/copy/read-state motion, primitive timing, and reduced-motion cleanup; feature-gated AI input refocus runs with `VITE_FEATURE_EDITOR_AI=true`; fixture in `e2e/fixtures/ui-motion.*`. |
+
+The [manual dialog rendering check](frontend/motion.md) covers final-frame pixel
+stability in the icon picker, workspace edit/create and task edit dialogs.
 
 ---
 
@@ -672,3 +676,7 @@ commands; scorers require the retained local artifacts and fresh output paths.
 - `bench/parsers/scripts/verify_native_viewers.ts`: real Office iframe citation updates, visible overlay painting and clearing without document reload.
 - `pipeline/tests/test_parser_app.py`: v4 PDF-free Office bundle, frozen evidence/chunk parity and bounded capture dispatch.
 - `pipeline/tests/test_capture.py`: temporary Office source cleanup, JPEG-only capture response, and format routing preserved after PDF/Office renames.
+
+### Frontend workspace and signup flows
+
+- `e2e/editor/frontend-workspaces.spec.ts`: MSW browser checks for signup resend cooldown and failed-send retry, workspace card settings/statistics, Biology PDF/empty file states, standalone invitations, and the single ownership-transfer confirmation. Run `pnpm run e2e:msw:editor --workers=1 frontend-workspaces.spec.ts`.

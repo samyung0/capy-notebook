@@ -5,9 +5,9 @@ import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 import type { Region } from '@/api/types';
 import { Skeleton } from '@/components/ui/feedback';
-import { m } from '@/i18n';
 import { CitationOverlay } from './CitationOverlay';
 import { normalizeCitationRegions } from './citationRegions';
+import { FileError } from './FileStates';
 import { PdfAnnotations } from './PdfAnnotations';
 
 // Keep PDF rendering available under the app's CSP and while offline.
@@ -36,6 +36,7 @@ function nearestScrollContainer(element: HTMLElement): Element | null {
 // mount only near the viewport. The cited page is always mounted immediately.
 function LazyPdfPage({
   forceRender,
+  onRetry,
   pageNumber,
   pageWidth,
   onAspectRatio,
@@ -45,6 +46,7 @@ function LazyPdfPage({
   regions,
 }: {
   forceRender: boolean;
+  onRetry: () => void;
   pageNumber: number;
   pageWidth: number;
   onAspectRatio?: (ratio: number) => void;
@@ -81,6 +83,7 @@ function LazyPdfPage({
     >
       {visible ? (
         <Page
+          error={<FileError onRetry={onRetry} />}
           loading={<Skeleton className="absolute inset-0 h-full w-full" />}
           onLoadSuccess={(pdfPage) => {
             const viewport = pdfPage.getViewport({ scale: 1 });
@@ -111,8 +114,10 @@ export default function PdfView({
   page,
   regions,
   annotationFile,
+  onRetry,
 }: {
   annotationFile?: { id: string; revision: number };
+  onRetry?: () => void;
   url: string;
   /** 1-based page to scroll to once rendered, from a chat citation. */
   page?: number;
@@ -120,6 +125,12 @@ export default function PdfView({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [numPages, setNumPages] = useState(0);
+  const [retryVersion, setRetryVersion] = useState(0);
+  const retry = () => {
+    setNumPages(0);
+    setRetryVersion((value) => value + 1);
+    onRetry?.();
+  };
   const [pageWidth, setPageWidth] = useState(0);
   const [pageMeasureVersion, setPageMeasureVersion] = useState(0);
   const [pageAspectRatio, setPageAspectRatio] = useState(
@@ -247,11 +258,9 @@ export default function PdfView({
     >
       <Document
         className="h-full w-full max-w-[800px]"
-        error={
-          <p className="py-8 text-tint-error-fg">{m.files_pdf_failed()}</p>
-        }
+        error={<FileError onRetry={retry} />}
         file={url}
-        key={url}
+        key={`${url}:${retryVersion}`}
         loading={<Skeleton className="h-full w-full" />}
         onLoadSuccess={(pdf) => setNumPages(pdf.numPages)}
       >
@@ -272,6 +281,7 @@ export default function PdfView({
                   if (p === targetPage && citationKey)
                     setMeasuredCitationKey(citationKey);
                 }}
+                onRetry={retry}
                 pageNumber={p}
                 pageWidth={pageWidth}
                 placeholderAspectRatio={pageAspectRatio}
@@ -281,7 +291,7 @@ export default function PdfView({
           })}
         </div>
       </Document>
-      {annotationFile && (
+      {annotationFile && numPages > 0 && (
         <PdfAnnotations
           containerRef={containerRef}
           fileId={annotationFile.id}

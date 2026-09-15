@@ -20,7 +20,6 @@ import { IconPicker } from '@/components/ui/IconPicker';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { flattenTagErrors, TagSelect } from '@/components/ui/TagSelect';
 import { Textarea } from '@/components/ui/TextArea';
-import { UserColorChooser } from '@/components/ui/UserColorChooser';
 import { m } from '@/i18n';
 import { iconUrl } from '@/lib/icon-catalog';
 
@@ -147,25 +146,6 @@ export function WorkspaceFormEditDialog({
                 <InputError errors={flattenTagErrors(fieldState.error)} />
               )}
             </div>
-          )}
-        />
-        <Controller
-          control={control}
-          name={'color'}
-          render={({ field, fieldState }) => (
-            <>
-              <div className="flex flex-col gap-1.5">
-                <InputTitle>{m.common_color()}</InputTitle>
-                <UserColorChooser
-                  aria-invalid={fieldState.invalid}
-                  onChange={field.onChange}
-                  selected={field.value}
-                />
-                {fieldState.invalid && (
-                  <InputError errors={[fieldState.error]} />
-                )}
-              </div>
-            </>
           )}
         />
       </div>

@@ -68,7 +68,7 @@ export default function Explore() {
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {workspaces?.map((w) => {
-                const c = userColorPair(w.color);
+                const c = userColorPair('purple');
                 return (
                   <Card className="p-5.5" key={w.id} radius="card-lg">
                     <span

@@ -59,7 +59,7 @@ func openBilling(t *testing.T) billingFixture {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1 OR id=$2`, ownerID, actorID)
 	})
 
-	ws, err := st.CreateWorkspace(ctx, ownerID, "Billing", store.ColorGreen, nil)
+	ws, err := st.CreateWorkspace(ctx, ownerID, "Billing", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

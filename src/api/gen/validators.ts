@@ -38,7 +38,6 @@ export const GetDeletionPreflightResponse = zod.object({
   "canView": zod.boolean()
 }),
   "chapterCount": zod.int(),
-  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
   "createdAt": zod.iso.datetime({"offset":true}),
   "description": zod.string(),
   "fileCount": zod.int(),
@@ -69,7 +68,6 @@ export const GetDeletionPreflightResponse = zod.object({
   "canView": zod.boolean()
 }),
   "chapterCount": zod.int(),
-  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
   "createdAt": zod.iso.datetime({"offset":true}),
   "description": zod.string(),
   "fileCount": zod.int(),
@@ -638,7 +636,6 @@ export const ExploreWorkspacesResponseItem = zod.object({
 }),
   "chapterCount": zod.int(),
   "clones": zod.int(),
-  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
   "createdAt": zod.iso.datetime({"offset":true}),
   "description": zod.string(),
   "fileCount": zod.int(),
@@ -1754,7 +1751,7 @@ export const GetMeResponse = zod.object({
 /**
  * @summary Update profile
  */
-export const updateMeBodyAvatarIconIdRegExp = new RegExp('^$|^((slice|sprouts|notionists)-(0[1-9]|1[0-2])|critters-(0[1-9]|1[0-6])|avataaars-(0[1-9]|1[0-9]|2[0-4])|waves-(0[1-9]|1[01]))$');
+export const updateMeBodyAvatarIconIdRegExp = new RegExp('^$|^((sprouts|notionists)-(0[1-9]|1[0-2])|critters-(0[1-9]|1[0-6])|avataaars-(0[1-9]|1[0-9]|2[0-4])|waves-(0[1-9]|1[01]))$');
 export const updateMeBodyNameMax = 60;
 
 
@@ -2035,7 +2032,6 @@ export const GetPublicWorkspaceSummaryResponse = zod.object({
 })),
   "name": zod.string()
 })),
-  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
   "description": zod.string(),
   "files": zod.array(zod.object({
   "addedAt": zod.iso.datetime({"offset":true}),
@@ -2704,8 +2700,7 @@ export const AcceptWorkspaceInviteResponse = zod.object({
 export const ListWorkspacesQueryParams = zod.object({
   "q": zod.string().optional(),
   "sort": zod.string().optional(),
-  "color": zod.string().optional().describe('Comma-separated colors; OR-matched with tags'),
-  "tag": zod.string().optional().describe('Comma-separated tags; OR-matched with colors')
+  "tag": zod.string().optional().describe('Comma-separated tags')
 })
 
 export const listWorkspacesResponseTagsItemValueMax = 35;
@@ -2723,7 +2718,6 @@ export const ListWorkspacesResponseItem = zod.object({
   "canView": zod.boolean()
 }),
   "chapterCount": zod.int(),
-  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
   "createdAt": zod.iso.datetime({"offset":true}),
   "description": zod.string(),
   "fileCount": zod.int(),
@@ -2749,7 +2743,6 @@ export const ListWorkspacesResponse = zod.array(ListWorkspacesResponseItem)
 /**
  * @summary Create a workspace
  */
-export const createWorkspaceBodyColorDefault = `graphite`;
 export const createWorkspaceBodyNameMax = 80;
 
 export const createWorkspaceBodyTagsItemValueMax = 35;
@@ -2759,7 +2752,6 @@ export const createWorkspaceBodyTagsMax = 5;
 
 
 export const CreateWorkspaceBody = zod.object({
-  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']).default(createWorkspaceBodyColorDefault).describe('User color'),
   "name": zod.string().min(1).max(createWorkspaceBodyNameMax).describe('Workspace name'),
   "tags": zod.array(zod.object({
   "id": zod.string().optional(),
@@ -2782,7 +2774,6 @@ export const CreateWorkspaceResponse = zod.object({
   "canView": zod.boolean()
 }),
   "chapterCount": zod.int(),
-  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
   "createdAt": zod.iso.datetime({"offset":true}),
   "description": zod.string(),
   "fileCount": zod.int(),
@@ -2836,7 +2827,6 @@ export const GetWorkspaceResponse = zod.object({
   "canView": zod.boolean()
 }),
   "chapterCount": zod.int(),
-  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
   "createdAt": zod.iso.datetime({"offset":true}),
   "description": zod.string(),
   "fileCount": zod.int(),
@@ -2869,7 +2859,7 @@ export const updateWorkspaceBodyDescriptionMax = 500;
 
 
 
-export const updateWorkspaceBodyIconIdRegExp = new RegExp('^$|^((slice|sprouts|notionists)-(0[1-9]|1[0-2])|critters-(0[1-9]|1[0-6])|avataaars-(0[1-9]|1[0-9]|2[0-4])|waves-(0[1-9]|1[01]))$');
+export const updateWorkspaceBodyIconIdRegExp = new RegExp('^$|^((sprouts|notionists)-(0[1-9]|1[0-2])|critters-(0[1-9]|1[0-6])|avataaars-(0[1-9]|1[0-9]|2[0-4])|waves-(0[1-9]|1[01]))$');
 export const updateWorkspaceBodyNameMax = 80;
 
 export const updateWorkspaceBodyTagsItemValueMax = 35;
@@ -2881,7 +2871,6 @@ export const updateWorkspaceBodyTagsMax = 5;
 export const UpdateWorkspaceBody = zod.object({
   "autoReindex": zod.boolean().optional(),
   "autoReparse": zod.boolean().optional(),
-  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']).optional(),
   "description": zod.string().max(updateWorkspaceBodyDescriptionMax).optional().describe('Optional workspace description; empty clears it'),
   "iconId": zod.string().min(1).regex(updateWorkspaceBodyIconIdRegExp).optional(),
   "name": zod.string().min(1).max(updateWorkspaceBodyNameMax).optional(),
@@ -2906,7 +2895,6 @@ export const UpdateWorkspaceResponse = zod.object({
   "canView": zod.boolean()
 }),
   "chapterCount": zod.int(),
-  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
   "createdAt": zod.iso.datetime({"offset":true}),
   "description": zod.string(),
   "fileCount": zod.int(),
@@ -3012,7 +3000,6 @@ export const CloneWorkspaceResponse = zod.object({
   "canView": zod.boolean()
 }),
   "chapterCount": zod.int(),
-  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
   "createdAt": zod.iso.datetime({"offset":true}),
   "description": zod.string(),
   "fileCount": zod.int(),
@@ -3345,7 +3332,6 @@ export const UpdateWorkspaceSharingResponse = zod.object({
   "canView": zod.boolean()
 }),
   "chapterCount": zod.int(),
-  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
   "createdAt": zod.iso.datetime({"offset":true}),
   "description": zod.string(),
   "fileCount": zod.int(),
@@ -3608,7 +3594,6 @@ export const TransferWorkspaceResponse = zod.object({
   "canView": zod.boolean()
 }),
   "chapterCount": zod.int(),
-  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
   "createdAt": zod.iso.datetime({"offset":true}),
   "description": zod.string(),
   "fileCount": zod.int(),

@@ -1,16 +1,5 @@
 [
   {
-    "id": "slice",
-    "name": "Slice",
-    "author": "DiceBear",
-    "source": "https://www.dicebear.com",
-    "license": {
-      "name": "CC0 1.0",
-      "url": "https://creativecommons.org/publicdomain/zero/1.0/"
-    },
-    "adaptation": "DiceBear remix; catalog SVG color edits"
-  },
-  {
     "id": "sprouts",
     "name": "Sprouts",
     "author": "DiceBear",

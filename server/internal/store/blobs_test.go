@@ -60,7 +60,7 @@ func TestBlobRefcountQueuesOnlyUnreferencedObjects(t *testing.T) {
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_blob")
 
-	ws, err := s.CreateWorkspace(ctx, ownerID, "Blob workspace", ColorGreen, []TagRef{})
+	ws, err := s.CreateWorkspace(ctx, ownerID, "Blob workspace", []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestArtifactCacheRefsSurviveFileDelete(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_art")
-	ws, err := s.CreateWorkspace(ctx, ownerID, "Cache workspace", ColorGreen, []TagRef{})
+	ws, err := s.CreateWorkspace(ctx, ownerID, "Cache workspace", []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +202,7 @@ func TestBlobReferenceCancelsQueuedDeletion(t *testing.T) {
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_requeue")
 
-	ws, err := s.CreateWorkspace(ctx, ownerID, "Requeue workspace", ColorBlue, []TagRef{})
+	ws, err := s.CreateWorkspace(ctx, ownerID, "Requeue workspace", []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +249,7 @@ func TestExpiredBlobDeletionClaimCannotBeResurrected(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_claimed_blob")
-	workspace, err := s.CreateWorkspace(ctx, ownerID, "Claimed blob", ColorBlue, nil)
+	workspace, err := s.CreateWorkspace(ctx, ownerID, "Claimed blob", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -388,7 +388,7 @@ func TestCloneThenDeleteKeepsTheSurvivingCopy(t *testing.T) {
 	ownerID := newBlobTestUser(t, s, "u_clonesrc")
 	clonerID := newBlobTestUser(t, s, "u_clonedst")
 
-	source, err := s.CreateWorkspace(ctx, ownerID, "Cloneable", ColorGreen, []TagRef{})
+	source, err := s.CreateWorkspace(ctx, ownerID, "Cloneable", []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -558,7 +558,7 @@ func TestAbandonedUploadQueuesBothPaths(t *testing.T) {
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_upload")
 
-	ws, err := s.CreateWorkspace(ctx, ownerID, "Upload workspace", ColorGreen, []TagRef{})
+	ws, err := s.CreateWorkspace(ctx, ownerID, "Upload workspace", []TagRef{})
 	if err != nil {
 		t.Fatal(err)
 	}

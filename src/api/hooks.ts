@@ -657,28 +657,20 @@ export const useTags = (kind = 'workspace', options?: QueryUiOptions) =>
 
 /* ---------------- workspaces ---------------- */
 export interface WorkspaceQuery {
-  /** One or more colors; OR-matched with tags on the server. */
-  color?: string | string[];
   q?: string;
   sort?: string;
-  /** One or more tag values; OR-matched with colors on the server. */
+  /** One or more tag values. */
   tag?: string | string[];
 }
 export const workspacesQuery = (params: WorkspaceQuery = {}) => {
   const search = new URLSearchParams();
   if (params.q) search.set('q', params.q);
   if (params.sort) search.set('sort', params.sort);
-  const colors = Array.isArray(params.color)
-    ? params.color
-    : params.color
-      ? [params.color]
-      : [];
   const tags = Array.isArray(params.tag)
     ? params.tag
     : params.tag
       ? [params.tag]
       : [];
-  if (colors.length) search.set('color', colors.join(','));
   if (tags.length) search.set('tag', tags.join(','));
   const qs = search.toString();
   return queryOptions({

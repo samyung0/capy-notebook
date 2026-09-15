@@ -44,7 +44,6 @@ test('registration, durable profile, deletion grace and identity webhook purge',
   ).toBe(name);
 
   const created = await actor.request('/api/workspaces', 'POST', {
-    color: 'graphite',
     name: `Deletion ${run.id}`,
   });
   expect(created.status).toBe(201);

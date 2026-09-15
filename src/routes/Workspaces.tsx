@@ -14,14 +14,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/Popover';
-import { UserColorChooser } from '@/components/ui/UserColorChooser';
 import { WorkspaceCard } from '@/components/ui/WorkspaceCard';
 import { WorkspaceFormCreateDialog } from '@/features/workspace/WorkspaceFormCreateDialog';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { track } from '@/lib/observability';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
-import { type USER_COLORS, USER_COLORS_DISPLAY } from '@/lib/userColor';
 
 const SORTS = [
   { label: m.workspaces_sort_accessed, value: 'accessed' },
@@ -38,13 +36,11 @@ function toggleIn(list: string[], value: string) {
 
 export default function Workspaces() {
   const [sort, setSort] = useState('accessed');
-  const [colorFilters, setColorFilters] = useState<string[]>([]);
   const [tagFilters, setTagFilters] = useState<string[]>([]);
   const [filterOpen, setFilterOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
 
   const { data, fetchStatus, isLoading } = useWorkspaces({
-    color: colorFilters,
     sort,
     tag: tagFilters,
   });
@@ -56,19 +52,13 @@ export default function Workspaces() {
     () => SORTS.find((s) => s.value === sort)?.label() ?? '',
     [sort]
   );
-  const hasFilters = colorFilters.length > 0 || tagFilters.length > 0;
+  const hasFilters = tagFilters.length > 0;
   const filterLabel = useMemo(() => {
-    const parts = [
-      ...colorFilters.map(
-        (color) =>
-          USER_COLORS_DISPLAY[color as (typeof USER_COLORS)[number]] ?? color
-      ),
-      ...tagFilters,
-    ];
+    const parts = tagFilters;
     if (!parts.length) return m.workspaces_filter();
     if (parts.length <= 2) return parts.join(' · ');
     return `${parts.slice(0, 2).join(' · ')} +${parts.length - 2}`;
-  }, [colorFilters, tagFilters]);
+  }, [tagFilters]);
 
   return (
     <PanelWithInvertedRadius>
@@ -122,18 +112,6 @@ export default function Workspaces() {
                 className="max-h-80 gap-5 overflow-y-auto p-3"
                 radius="card"
               >
-                <section className="mt-1 flex flex-col gap-2">
-                  <p className="t-label text-fg-muted">
-                    {m.workspaces_filter_color()}
-                  </p>
-                  <UserColorChooser
-                    onChange={(c) =>
-                      setColorFilters((prev) => toggleIn(prev, c))
-                    }
-                    selected={colorFilters}
-                  />
-                </section>
-
                 <section className="flex flex-col gap-2">
                   <p className="t-label text-fg-muted">
                     {m.workspaces_filter_tags()}
@@ -176,7 +154,6 @@ export default function Workspaces() {
                   disabled={!hasFilters}
                   fullWidth
                   onClick={() => {
-                    setColorFilters([]);
                     setTagFilters([]);
                   }}
                   size="sm"
@@ -228,7 +205,7 @@ export default function Workspaces() {
         }}
         open={createOpen}
         setOpen={setCreateOpen}
-        workspace={{ color: 'graphite', name: '', tags: [] }}
+        workspace={{ name: '', tags: [] }}
       />
     </PanelWithInvertedRadius>
   );

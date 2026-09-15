@@ -11,10 +11,9 @@ import (
 )
 
 type listWorkspacesInput struct {
-	Q     string `query:"q"`
-	Sort  string `query:"sort"`
-	Color string `query:"color" doc:"Comma-separated colors; OR-matched with tags"`
-	Tag   string `query:"tag" doc:"Comma-separated tags; OR-matched with colors"`
+	Q    string `query:"q"`
+	Sort string `query:"sort"`
+	Tag  string `query:"tag" doc:"Comma-separated tags"`
 }
 type workspacesOutput struct {
 	Body []apimodel.Workspace `nullable:"false"`
@@ -71,7 +70,7 @@ func (a *api) workspaceOutputFor(
 }
 
 func (a *api) listWorkspaces(ctx context.Context, in *listWorkspacesInput) (*workspacesOutput, error) {
-	res, err := a.s.ListWorkspaces(ctx, userID(ctx), in.Q, in.Sort, in.Color, in.Tag)
+	res, err := a.s.ListWorkspaces(ctx, userID(ctx), in.Q, in.Sort, in.Tag)
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -111,7 +110,6 @@ func (a *api) createWorkspace(ctx context.Context, in *createWorkspaceInput) (*w
 		ctx,
 		userID(ctx),
 		string(in.Body.Name),
-		in.Body.Color,
 		apimodel.ToTagRefs(in.Body.Tags),
 	)
 	if err != nil {
@@ -127,7 +125,7 @@ func (a *api) updateWorkspace(ctx context.Context, in *updateWorkspaceInput) (*w
 		return nil, err
 	}
 	p := store.WorkspacePatch{
-		Name: apimodel.Str(in.Body.Name), Color: in.Body.Color, IconID: apimodel.Str(in.Body.IconID), Description: apimodel.Str(in.Body.Description),
+		Name: apimodel.Str(in.Body.Name), IconID: apimodel.Str(in.Body.IconID), Description: apimodel.Str(in.Body.Description),
 		AutoReparse: in.Body.AutoReparse, AutoReindex: in.Body.AutoReindex,
 	}
 	if in.Body.Tags != nil {

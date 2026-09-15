@@ -176,7 +176,7 @@ async def test_replaced_source_cannot_attach_a_late_private_caption(
     target_ws, target_file = "ws_" + secrets.token_hex(8), "f_" + secrets.token_hex(8)
     with workspace._connect() as conn:
         conn.execute(
-            "INSERT INTO workspaces(id,user_id,name,color) VALUES(%s,'u_1','Unrelated','blue')",
+            "INSERT INTO workspaces(id,user_id,name) VALUES(%s,'u_1','Unrelated')",
             (target_ws,),
         )
         conn.execute(
@@ -303,7 +303,7 @@ async def test_workspace_reuse_survives_one_holder_and_private_workspaces_do_not
     other_file = "f_" + secrets.token_hex(8)
     with workspace._connect() as conn:
         conn.execute(
-            "INSERT INTO workspaces(id,user_id,name,color) VALUES(%s,'u_1','Private','blue')",
+            "INSERT INTO workspaces(id,user_id,name) VALUES(%s,'u_1','Private')",
             (other_ws,),
         )
         conn.execute(
@@ -423,7 +423,7 @@ async def test_unreadable_owner_cannot_donate_but_prior_target_keeps_its_grant(
         )
         if resource == "workspace":
             conn.execute(
-                "INSERT INTO workspaces(id,user_id,name,color,privacy) VALUES(%s,%s,'Donor','blue','public')",
+                "INSERT INTO workspaces(id,user_id,name,privacy) VALUES(%s,%s,'Donor','public')",
                 (parent, owner),
             )
             conn.execute(

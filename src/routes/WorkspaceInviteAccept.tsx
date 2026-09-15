@@ -1,6 +1,7 @@
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { useAcceptWorkspaceInvite } from '@/api/hooks';
-import { PanelWithInvertedRadius } from '@/components/app/layout';
+import { AuthGate } from '@/components/app/AuthProvider';
+import { Panel } from '@/components/app/layout';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
@@ -12,6 +13,21 @@ export function isUnavailableWorkspaceInviteError(error: unknown): boolean {
 }
 
 export default function WorkspaceInviteAccept() {
+  return (
+    <main className="h-svh overflow-hidden p-1.5 sm:p-2.5">
+      <Panel
+        className="h-full w-full"
+        sectionClassName="h-full w-full min-h-full flex items-center justify-center"
+      >
+        <AuthGate>
+          <InviteContent />
+        </AuthGate>
+      </Panel>
+    </main>
+  );
+}
+
+function InviteContent() {
   const { token } = useParams({ strict: false }) as { token: string };
   const navigate = useNavigate();
   const {
@@ -32,7 +48,7 @@ export default function WorkspaceInviteAccept() {
   const retryError = acceptIsError ? describeError(acceptError) : null;
 
   return (
-    <PanelWithInvertedRadius className="mx-auto w-full max-w-xl">
+    <div className="mx-auto w-full max-w-xl">
       <div className="flex min-h-80 flex-col items-center justify-center px-6 py-12 text-center">
         <span className="mb-5 rounded-card bg-tint-accent-1 p-3 text-tint-accent-1-fg">
           <Icon className="size-6" name="workspaces" />
@@ -86,6 +102,6 @@ export default function WorkspaceInviteAccept() {
           </div>
         )}
       </div>
-    </PanelWithInvertedRadius>
+    </div>
   );
 }

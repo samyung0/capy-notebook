@@ -261,7 +261,6 @@ type Workspace struct {
 	Description    string                   `json:"description"`
 	ID             string                   `json:"id"`
 	Name           string                   `json:"name"`
-	Color          store.UserColor          `json:"color"`
 	IconID         string                   `json:"iconId"`
 	Privacy        store.Privacy            `json:"privacy"`
 	ShareRole      store.ShareRole          `json:"shareRole"`
@@ -300,7 +299,7 @@ func FromWorkspace(w store.Workspace, ownerState store.AccountState) Workspace {
 	role := store.RoleOwner
 	out := Workspace{
 		AutoReparse: w.AutoReparse, AutoReindex: w.AutoReindex,
-		ID: w.ID, Name: w.Name, Description: w.Description, Color: w.Color, IconID: w.IconID, Privacy: w.Privacy, ShareRole: w.ShareRole,
+		ID: w.ID, Name: w.Name, Description: w.Description, IconID: w.IconID, Privacy: w.Privacy, ShareRole: w.ShareRole,
 		Tags: WrapTags(w.Tags), ChapterCount: w.ChapterCount, FileCount: w.FileCount,
 		FilesLimit: w.FilesLimit,
 		CreatedAt:  w.CreatedAt, LastAccessedAt: w.LastAccessedAt, IsOwner: true,
