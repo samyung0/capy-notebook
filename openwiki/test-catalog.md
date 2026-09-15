@@ -674,4 +674,4 @@ commands; scorers require the retained local artifacts and fresh output paths.
 
 ### Frontend workspace and signup flows
 
-- `e2e/editor/frontend-workspaces.spec.ts`: MSW browser checks for signup resend cooldown and failed-send retry, workspace card settings/statistics, Biology PDF/empty file states, standalone invitations, and the single ownership-transfer confirmation. Run `pnpm run e2e:msw:editor --workers=1 frontend-workspaces.spec.ts`.
+- `e2e/editor/frontend-workspaces.spec.ts`: MSW browser checks for signup resend cooldown and failed-send retry, workspace card settings/statistics, Biology PDF/empty file states, standalone invitations, and the single ownership-transfer confirmation. The PDF error assertion allows 30 seconds for viewer initialization. Run `pnpm run e2e:msw:editor --workers=1 frontend-workspaces.spec.ts`.

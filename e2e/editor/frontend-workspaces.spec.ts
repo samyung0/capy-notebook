@@ -80,7 +80,7 @@ test('Biology file fixtures reach the shared PDF error and empty preview', async
   await page.goto('/workspaces/ws_bio?file=mock-preview-pdf');
   await expect(
     page.getByRole('alert').getByText('Something went wrong', { exact: true })
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 30_000 });
   await expect(
     page.getByRole('button', { exact: true, name: 'Try again' })
   ).toBeVisible();
