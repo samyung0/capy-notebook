@@ -42,7 +42,6 @@ Study workspace: notes, sources, quizzes, flashcards, schedule, and AI retrieval
 Then run:
 ```sh
 # office setup
-git config push.recurseSubmodules check
 git config submodule.recurse true
 git submodule update --init vendor/betteroffice
 rustup target add wasm32-unknown-unknown

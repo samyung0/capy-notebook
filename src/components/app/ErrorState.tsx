@@ -54,7 +54,7 @@ export function ErrorState({
         )}
       </div>
       {action && (
-        <div className={variant === 'page' ? 'mt-4' : 'mt-2'}>{action}</div>
+        <div className={variant === 'page' ? 'mt-4' : 'mt-3'}>{action}</div>
       )}
     </div>
   );

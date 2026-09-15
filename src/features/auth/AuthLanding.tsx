@@ -4,10 +4,11 @@ import { useEffect, useId, useMemo, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Panel } from '@/components/app/layout';
-import { Button } from '@/components/ui/Button';
+import { BASE_BUTTON_STYLE, Button } from '@/components/ui/Button';
 import { ButtonCard } from '@/components/ui/ButtonCard';
 import { Card } from '@/components/ui/Card';
 import { Spinner } from '@/components/ui/feedback';
+import { Icon } from '@/components/ui/Icon';
 import { Input, InputField } from '@/components/ui/Input';
 import { useAuth, useSignIn, useSignUp } from '@/features/auth/clerkHooks';
 import { m } from '@/i18n';
@@ -84,7 +85,7 @@ export function AuthCard({
           {hint}
         </p>
       )}
-      <div className="mt-7">{children}</div>
+      <div className="mt-8">{children}</div>
     </Card>
   );
 }
@@ -93,7 +94,7 @@ export function FormAlert({ message }: { message: string | null }) {
   if (!message) return null;
   return (
     <p
-      className="mb-3 rounded-button bg-tint-error px-3 py-2 text-sm text-tint-error-fg"
+      className="mt-2 w-full rounded-button bg-tint-error px-3 py-2 text-sm text-tint-error-fg"
       role="alert"
     >
       {message}
@@ -155,11 +156,9 @@ const requiredField = z
 
 /** New-password form, shared by the breached-password step and the reset page. */
 export function NewPasswordForm({
-  hint,
   submitLabel,
   onSubmit,
 }: {
-  hint?: string;
   submitLabel: string;
   onSubmit: (password: string) => Promise<string | null>;
 }) {
@@ -170,19 +169,17 @@ export function NewPasswordForm({
     handleSubmit,
   } = useForm({
     defaultValues: { password: '' },
-    mode: 'onBlur',
     resolver: zodResolver(schema),
   });
   const [formError, setFormError] = useState<string | null>(null);
   const id = useId();
   return (
     <form
+      className="relative flex flex-col gap-2"
       onSubmit={handleSubmit(async ({ password }) => {
         setFormError(await onSubmit(password));
       })}
     >
-      {hint && <p className="t-meta mb-4 text-fg-secondary">{hint}</p>}
-      <FormAlert message={formError} />
       <Controller
         control={control}
         name="password"
@@ -201,7 +198,7 @@ export function NewPasswordForm({
               type="password"
             />
             {!fieldState.error && (
-              <span className="t-meta text-fg-muted">
+              <span className="t-meta pt-1.5 text-fg-muted">
                 {m.auth_password_rule()}
               </span>
             )}
@@ -209,6 +206,7 @@ export function NewPasswordForm({
         )}
       />
       <SubmitButton busy={isSubmitting}>{submitLabel}</SubmitButton>
+      <FormAlert message={formError} />
     </form>
   );
 }
@@ -241,9 +239,11 @@ function SignInCard() {
 
   if (step === 'newPassword') {
     return (
-      <AuthCard title={m.auth_new_password_title()}>
+      <AuthCard
+        hint={m.auth_new_password_breach_hint()}
+        title={m.auth_new_password_title()}
+      >
         <NewPasswordForm
-          hint={m.auth_new_password_breach_hint()}
           onSubmit={async (password) => {
             const { error } =
               await signIn.resetPasswordEmailCode.submitPassword({ password });
@@ -259,7 +259,7 @@ function SignInCard() {
   return (
     <AuthCard hint={m.auth_signin_hint()} title={m.auth_signin_title()}>
       <form
-        className="flex flex-col gap-2"
+        className="relative flex flex-col gap-2"
         onSubmit={handleSubmit(async ({ email, password }) => {
           setFormError(null);
           const { error } = await signIn.password({
@@ -277,7 +277,6 @@ function SignInCard() {
           setFormError(await finish());
         })}
       >
-        <FormAlert message={formError} />
         <Controller
           control={control}
           name="email"
@@ -329,6 +328,7 @@ function SignInCard() {
           )}
         />
         <SubmitButton busy={isSubmitting}>{m.action_sign_in()}</SubmitButton>
+        <FormAlert message={formError} />
       </form>
       <OAuthButtons onError={setFormError} />
       <p className="mt-7 text-center text-fg-secondary text-sm">
@@ -352,7 +352,7 @@ function SignUpCard() {
   const [step, setStep] = useState<'form' | 'code'>('form');
   const [formError, setFormError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [email, setEmail] = useState('');
+  const [_email, setEmail] = useState('');
   const id = useId();
   const schema = useMemo(
     () => z.object({ email: emailField, password: newPasswordSchema() }),
@@ -377,79 +377,100 @@ function SignUpCard() {
 
   if (step === 'code') {
     return (
-      <AuthCard hint={m.auth_code_hint({ email })} title={m.auth_code_title()}>
-        <form
-          onSubmit={handleCodeSubmit(async ({ code }) => {
+      <>
+        <button
+          className={cn(
+            BASE_BUTTON_STYLE,
+            'mb-4 inline-flex items-center text-fg-muted underline hover:text-fg'
+          )}
+          onClick={() => {
             setFormError(null);
-            const { error } = await signUp.verifications.verifyEmailCode({
-              code,
-            });
-            if (error) {
-              setFormError(clerkMessage(error));
-              return;
-            }
-            const { error: finalizeError } = await signUp.finalize({
-              navigate: async () => router.history.push(target),
-            });
-            if (finalizeError) setFormError(clerkMessage(finalizeError));
-          })}
+            setStep('form');
+          }}
+          type="button"
         >
-          <FormAlert message={formError} />
-          {notice && <p className="t-meta mb-3 text-fg-secondary">{notice}</p>}
-          <Controller
-            control={codeControl}
-            name="code"
-            render={({ field, fieldState }) => (
-              <InputField
-                error={fieldState.error}
-                id={`${id}-code`}
-                label={m.auth_code()}
-              >
-                <Input
-                  {...field}
-                  aria-invalid={fieldState.invalid}
-                  autoComplete="one-time-code"
-                  autoFocus
-                  id={`${id}-code`}
-                  inputMode="numeric"
-                />
-              </InputField>
-            )}
-          />
-          <SubmitButton busy={codeSubmitting}>
-            {m.auth_code_submit()}
-          </SubmitButton>
-        </form>
-        <div className="mt-4 flex justify-between text-sm">
-          <button
-            className="font-semibold text-link hover:text-link-hover"
-            onClick={async () => {
-              const { error } = await signUp.verifications.sendEmailCode();
-              setFormError(error ? clerkMessage(error) : null);
-              setNotice(error ? null : m.auth_code_resent());
-            }}
-            type="button"
+          <Icon className="mr-1 inline-block" name="navigationBack" size={18} />
+          <span>{m.auth_code_back()}</span>
+        </button>
+        <AuthCard hint={m.auth_code_hint()} title={m.auth_code_title()}>
+          <form
+            className="relative flex flex-col gap-2"
+            onSubmit={handleCodeSubmit(async ({ code }) => {
+              setFormError(null);
+              const { error } = await signUp.verifications.verifyEmailCode({
+                code,
+              });
+              if (error) {
+                setFormError(clerkMessage(error));
+                return;
+              }
+              const { error: finalizeError } = await signUp.finalize({
+                navigate: async () => router.history.push(target),
+              });
+              if (finalizeError) setFormError(clerkMessage(finalizeError));
+            })}
           >
-            {m.auth_code_resend()}
-          </button>
-          <button
-            className="text-fg-muted hover:text-fg"
+            {notice && <p className="t-meta text-fg-secondary">{notice}</p>}
+            <Controller
+              control={codeControl}
+              name="code"
+              render={({ field, fieldState }) => (
+                <InputField
+                  error={fieldState.error}
+                  id={`${id}-code`}
+                  label={m.auth_code()}
+                >
+                  <Input
+                    {...field}
+                    aria-invalid={fieldState.invalid}
+                    autoComplete="one-time-code"
+                    autoFocus
+                    id={`${id}-code`}
+                    inputMode="numeric"
+                  />
+                </InputField>
+              )}
+            />
+            <SubmitButton busy={codeSubmitting}>
+              {m.auth_code_submit()}
+            </SubmitButton>
+            <FormAlert message={formError} />
+          </form>
+          <div className="mt-6 flex justify-between text-sm">
+            <button
+              className={cn(
+                BASE_BUTTON_STYLE,
+                'font-semibold text-link hover:text-link-hover'
+              )}
+              onClick={async () => {
+                const { error } = await signUp.verifications.sendEmailCode();
+                setFormError(error ? clerkMessage(error) : null);
+                setNotice(error ? null : m.auth_code_resent());
+              }}
+              type="button"
+            >
+              {m.auth_code_resend()}
+            </button>
+            {/* <button
+            className={cn(BASE_BUTTON_STYLE, "text-fg-muted hover:text-fg")}
             onClick={() => {
               setFormError(null);
-              setStep('form');
+              setStep("form");
             }}
             type="button"
           >
             {m.auth_code_back()}
-          </button>
-        </div>
-      </AuthCard>
+          </button> */}
+          </div>
+        </AuthCard>
+      </>
     );
   }
 
   return (
     <AuthCard hint={m.auth_signup_hint()} title={m.auth_signup_title()}>
       <form
+        className="relative flex flex-col gap-2"
         onSubmit={handleSubmit(async (values) => {
           setFormError(null);
           const { error } = await signUp.password({
@@ -470,7 +491,6 @@ function SignUpCard() {
           setStep('code');
         })}
       >
-        <FormAlert message={formError} />
         <Controller
           control={control}
           name="email"
@@ -522,6 +542,7 @@ function SignUpCard() {
         <SubmitButton busy={isSubmitting}>
           {m.auth_signup_submit()}
         </SubmitButton>
+        <FormAlert message={formError} />
       </form>
       <OAuthButtons onError={setFormError} />
       <p className="mt-7 text-center text-fg-secondary text-sm">

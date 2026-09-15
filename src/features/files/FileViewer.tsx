@@ -89,14 +89,14 @@ function UnsupportedPreview({ file }: { file: ViewableFile }) {
   return (
     <div className="grid h-full place-items-center">
       <div className="flex max-w-sm flex-col items-center gap-2 text-center">
-        <Icon name="files" size={32} />
+        <Icon className="size-8" name="files" />
         <p className="t-subtitle">{m.files_preview_unavailable()}</p>
         <p className="t-meta text-fg-muted">
           {ext
             ? m.files_preview_unsupported_body({ ext: `.${ext}` })
             : m.files_preview_unsupported_body_noext()}
         </p>
-        <Button onClick={download} size="sm" variant="ghost">
+        <Button className="underline" onClick={download} variant="ghost">
           {m.files_download_original({ name: file.name })}
         </Button>
       </div>

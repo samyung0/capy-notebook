@@ -1,0 +1,157 @@
+{
+  "at": "2026-09-15T06:53:13.453542+00:00",
+  "seconds": 10.352,
+  "http_status": 200,
+  "response": {
+    "id": "resp_8a0984b2-e272-9226-bd19-238efcf96c37",
+    "created_at": 1789455166,
+    "error": null,
+    "incomplete_details": null,
+    "instructions": null,
+    "metadata": {},
+    "model": "qwen3.5-plus",
+    "object": "response",
+    "output": [
+      {
+        "id": "msg_6953c91b-775b-408e-846a-d58c1d92afb9",
+        "action": {
+          "query": "cell mitosis high school educational explanation site:.edu OR site:.org OR site:.gov",
+          "type": "search",
+          "sources": [
+            {
+              "type": "url",
+              "url": "https://www.khanacademy.org/science/biology/cellular-molecular-biology/mitosis/a/phases-of-mitosis"
+            },
+            {
+              "type": "url",
+              "url": "https://www.khanacademy.org/science/ap-biology/cell-communication-and-cell-cycle/cell-cycle/v/mitosis"
+            },
+            {
+              "type": "url",
+              "url": "https://classroomscience.org/articles/ngss/next-generations-science-standards/what-about-stages-mitosis"
+            },
+            {
+              "type": "url",
+              "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC256985/"
+            },
+            {
+              "type": "url",
+              "url": "https://www.biointeractive.org/CrashCourse/biology-29"
+            },
+            {
+              "type": "url",
+              "url": "https://agclassroom.org/matrix/lessons/278/"
+            },
+            {
+              "type": "url",
+              "url": "https://www.pdesas.org/ContentWeb/Content/Content/16634/Lesson%20Plan"
+            },
+            {
+              "type": "url",
+              "url": "https://www.pbslearningmedia.org/resource/94766da6-a53d-4680-b964-f414edf3b946/mitosis-splitting-up-is-complicated-crash-course-biology-12/"
+            },
+            {
+              "type": "url",
+              "url": "https://flexbooks.ck12.org/cbook/ck-12-middle-school-life-science-2.0/section/2.21/primary/lesson/mitosis-and-cytokinesis-ms-ls/"
+            }
+          ],
+          "queries": [
+            "cell mitosis high school educational explanation site:.edu OR site:.org OR site:.gov"
+          ]
+        },
+        "status": "completed",
+        "type": "web_search_call"
+      },
+      {
+        "id": "msg_56ee4cf3-b0ee-437c-ae8a-13dd6f31437b",
+        "content": [
+          {
+            "annotations": [],
+            "text": "Here are five reliable educational sources explaining cell mitosis for high school learners:\n\n1.  **Phases of Mitosis (Khan Academy)**\n    https://www.khanacademy.org/science/biology/cellular-molecular-biology/mitosis/a/phases-of-mitosis\n    This article provides a detailed, step-by-step text and diagram explanation of how a mother cell divides into two genetically identical daughter cells through specific phases.\n\n2.  **Mitosis (Video) (Khan Academy)**\n    https://www.khanacademy.org/science/ap-biology/cell-communication-and-cell-cycle/cell-cycle/v/mitosis\n    This video resource visually demonstrates the key stages of the cell cycle, including prophase, metaphase, anaphase, and telophase, tailored for AP Biology students.\n\n3.  **WWW.Cell Biology Education (NIH/PMC)**\n    https://pmc.ncbi.nlm.nih.gov/articles/PMC256985/\n    Hosted by the National Institutes of Health, this peer-reviewed educational article clearly defines the four sequential stages of mitosis and distinguishes them from interphase.\n\n4.  **Mitosis & the Cell Cycle: How Cells Clone Themselves (HHMI BioInteractive)**\n    https://www.biointeractive.org/CrashCourse/biology-29\n    This engaging video episode from Crash Course Biology explains the life of a cell and the mechanics of cloning itself through mitosis and cytokinesis.\n\n5.  **Mitosis and Cytokinesis (CK-12 Foundation)**\n    https://flexbooks.ck12.org/cbook/ck-12-middle-school-life-science-2.0/section/2.21/primary/lesson/mitosis-and-cytokinesis-ms-ls/\n    This interactive flexbook lesson breaks down the formation of two new nuclei during mitosis and the subsequent division of the cell cytoplasm in accessible language.",
+            "type": "output_text",
+            "logprobs": null
+          }
+        ],
+        "role": "assistant",
+        "status": "completed",
+        "type": "message"
+      }
+    ],
+    "parallel_tool_calls": true,
+    "temperature": 1.0,
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "type": "web_search",
+        "filters": null,
+        "search_context_size": null,
+        "user_location": null
+      }
+    ],
+    "top_p": 1.0,
+    "background": false,
+    "conversation": null,
+    "max_output_tokens": 3000,
+    "max_tool_calls": null,
+    "previous_response_id": null,
+    "prompt": null,
+    "prompt_cache_key": null,
+    "prompt_cache_retention": null,
+    "reasoning": null,
+    "safety_identifier": null,
+    "service_tier": "default",
+    "status": "completed",
+    "text": null,
+    "top_logprobs": 0,
+    "truncation": null,
+    "usage": {
+      "input_tokens": 1576,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens": 454,
+      "output_tokens_details": {
+        "reasoning_tokens": 0
+      },
+      "total_tokens": 2030,
+      "x_tools": {
+        "web_search": {
+          "count": 1
+        }
+      },
+      "x_details": [
+        {
+          "input_tokens": 1576,
+          "output_tokens": 454,
+          "total_tokens": 2030,
+          "plugins": {
+            "web_search": {
+              "count": 1
+            }
+          },
+          "x_billing_type": "response_api"
+        }
+      ]
+    },
+    "user": null,
+    "completed_at": 1789455174,
+    "frequency_penalty": 0.0,
+    "presence_penalty": 0.0,
+    "store": true,
+    "moderation": null,
+    "billing": null
+  },
+  "provider": "alibaba",
+  "query": "Use web_search exactly once for the query \"cell mitosis\". Find reliable English educational explanations of mitosis for a high-school learner. Return the best 5 source titles and page URLs with one sentence each explaining what they teach. Keep your answer under 400 words. Do not answer from memory or invent sources.",
+  "request": {
+    "model": "qwen3.5-plus",
+    "input": "Use web_search exactly once for the query \"cell mitosis\". Find reliable English educational explanations of mitosis for a high-school learner. Return the best 5 source titles and page URLs with one sentence each explaining what they teach. Keep your answer under 400 words. Do not answer from memory or invent sources.",
+    "tools": [
+      {
+        "type": "web_search"
+      }
+    ],
+    "max_output_tokens": 3000,
+    "enable_thinking": false
+  }
+}

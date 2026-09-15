@@ -1,0 +1,80 @@
+[
+  {
+    "index": 1,
+    "url": "https://cdn.kastatic.org/ka-content-images/327eb027821865dfaeb2bbf3bec97ce4d5fb1b71.png",
+    "status": 206,
+    "content_type": "image/png",
+    "final_url": "https://cdn.kastatic.org/ka-content-images/327eb027821865dfaeb2bbf3bec97ce4d5fb1b71.png",
+    "seconds": 0.721
+  },
+  {
+    "index": 2,
+    "url": "https://i.pinimg.com/474x/8d/fd/26/8dfd266dab7946c3807acb5298d7967f.jpg",
+    "status": 206,
+    "content_type": "image/jpeg",
+    "final_url": "https://i.pinimg.com/474x/8d/fd/26/8dfd266dab7946c3807acb5298d7967f.jpg",
+    "seconds": 0.756
+  },
+  {
+    "index": 3,
+    "url": "https://ecdn.teacherspayteachers.com/thumbitem/The-Cell-Cycle-Mitosis-PowerPoint-3274628-1645970417/original-3274628-1.jpg",
+    "status": 206,
+    "content_type": "image/jpeg",
+    "final_url": "https://ecdn.teacherspayteachers.com/thumbitem/The-Cell-Cycle-Mitosis-PowerPoint-3274628-1645970417/original-3274628-1.jpg",
+    "seconds": 0.691
+  },
+  {
+    "index": 4,
+    "url": "https://lookaside.fbsbx.com/lookaside/crawler/media/?media_id=831196165828673",
+    "status": 200,
+    "content_type": "text/html; charset=\"utf-8\"",
+    "final_url": "https://lookaside.fbsbx.com/lookaside/crawler/media/?media_id=831196165828673",
+    "seconds": 0.824
+  },
+  {
+    "index": 5,
+    "url": "https://dr282zn36sxxg.cloudfront.net/datastreams/f-d%3A878df64c63462553305d51d5deccdec3c0cb0aee48fa51aeb9297f1b%2BIMAGE_THUMB_POSTCARD_TINY%2BIMAGE_THUMB_POSTCARD_TINY.1",
+    "status": 206,
+    "content_type": null,
+    "final_url": "https://dr282zn36sxxg.cloudfront.net/datastreams/f-d%3A878df64c63462553305d51d5deccdec3c0cb0aee48fa51aeb9297f1b%2BIMAGE_THUMB_POSTCARD_TINY%2BIMAGE_THUMB_POSTCARD_TINY.1",
+    "seconds": 1.37
+  },
+  {
+    "index": 6,
+    "url": "https://www.nature.com/scitable/content/ne0000/ne0000/ne0000/ne0000/104598247/3533_13b.jpg",
+    "status": 404,
+    "seconds": 3.718
+  },
+  {
+    "index": 7,
+    "url": "http://kmbiology.weebly.com/uploads/6/0/1/1/6011704/5272082.gif?528",
+    "status": 206,
+    "content_type": "image/gif",
+    "final_url": "http://kmbiology.weebly.com/uploads/6/0/1/1/6011704/5272082.gif?528",
+    "seconds": 0.775
+  },
+  {
+    "index": 8,
+    "url": "https://pub-8c0ddfa5c0454d40822bc9944fe6f303.r2.dev/seo/tools/mitosis-diagram/telophase.png",
+    "status": 206,
+    "content_type": "image/png",
+    "final_url": "https://pub-8c0ddfa5c0454d40822bc9944fe6f303.r2.dev/seo/tools/mitosis-diagram/telophase.png",
+    "seconds": 0.763
+  },
+  {
+    "index": 9,
+    "url": "https://www.shutterstock.com/image-vector/mitosis-phases-prophase-metaphase-anaphase-260nw-2063899022.jpg",
+    "status": 206,
+    "content_type": "image/jpeg",
+    "final_url": "https://www.shutterstock.com/image-vector/mitosis-phases-prophase-metaphase-anaphase-260nw-2063899022.jpg",
+    "seconds": 0.844
+  },
+  {
+    "index": 10,
+    "url": "https://askabiologist.asu.edu/sites/default/files/resources/articles/cells/Mitosis_Mysid_0.png",
+    "status": 206,
+    "content_type": "image/png",
+    "final_url": "https://askabiologist.asu.edu/sites/default/files/resources/articles/cells/Mitosis_Mysid_0.png",
+    "seconds": 0.552
+  }
+]

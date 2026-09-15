@@ -146,7 +146,7 @@ message under the result card without the mutation toast.
 ## Development scenario panel
 
 Run the Vite development app with MSW enabled (the default, or
-`VITE_USE_MSW=true`). Open **Error scenarios** in the lower-right corner, choose
+`VITE_USE_MSW=true`). Open **User scenarios** in the lower-right corner, choose
 a scenario, and apply it. Applying first resets previous runtime overrides, so
 only one scenario is active. **Clear** restores the normal mock handlers.
 

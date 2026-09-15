@@ -271,8 +271,8 @@ function EmptyCenter() {
         <h2 className="t-subtitle translate-y-px truncate">--</h2>
       </div>
       <div className="grid flex-1 place-items-center p-6">
-        <div className="flex flex-col items-center gap-2">
-          <Icon className="size-7" name="files" />
+        <div className="flex flex-col items-center gap-3">
+          <Icon className="size-8" name="files" />
           <p>{m.material_select()}</p>
         </div>
       </div>

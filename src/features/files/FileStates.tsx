@@ -34,7 +34,7 @@ export function FileError({
     <ErrorState
       action={
         onRetry && (
-          <Button onClick={onRetry} size="sm">
+          <Button onClick={onRetry} variant="ghost">
             {m.error_action_retry()}
           </Button>
         )

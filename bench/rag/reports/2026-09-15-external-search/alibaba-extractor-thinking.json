@@ -1,0 +1,21 @@
+{
+  "at": "2026-09-15T06:55:39.571482+00:00",
+  "seconds": 3.048,
+  "http_status": 400,
+  "response": {
+    "error": "{\"request_id\":\"90c8e580-4905-9893-a220-19e36c2e1c3c\",\"error\":{\"code\":\"InvalidParameter\",\"type\":\"invalid_request_error\",\"message\":\"<400> InternalError.Algo.InvalidParameter: The web_extractor tool must be executed with web_search tool.\"}}"
+  },
+  "provider": "alibaba",
+  "query": "Use web_extractor exactly once to read https://pmc.ncbi.nlm.nih.gov/articles/PMC256985/ . Based only on the retrieved page, report its exact title, publication year, whether it is itself a beginner tutorial on mitosis or a review of teaching websites, and any mitosis image URLs or image licensing information actually returned by the tool. Say not returned when absent. Keep the answer under 250 words.",
+  "request": {
+    "model": "qwen3.5-plus",
+    "input": "Use web_extractor exactly once to read https://pmc.ncbi.nlm.nih.gov/articles/PMC256985/ . Based only on the retrieved page, report its exact title, publication year, whether it is itself a beginner tutorial on mitosis or a review of teaching websites, and any mitosis image URLs or image licensing information actually returned by the tool. Say not returned when absent. Keep the answer under 250 words.",
+    "tools": [
+      {
+        "type": "web_extractor"
+      }
+    ],
+    "max_output_tokens": 3000,
+    "enable_thinking": true
+  }
+}

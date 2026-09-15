@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { m } from '@/i18n';
 import { describeError, privateErrorDescription } from '@/lib/errors';
 import { ErrorState } from './ErrorState';
+import { Panel } from './layout';
 
 interface BoundaryProps {
   children: ReactNode;
@@ -60,23 +61,28 @@ class BoundaryCore extends Component<BoundaryCoreProps, BoundaryState> {
     const description = describeError(this.state.error);
     const reload = description.action === 'reload';
     return (
-      <ErrorState
-        action={
-          <Button
-            onClick={reload ? () => window.location.reload() : this.reset}
-          >
-            {reload ? m.error_action_reload() : m.error_action_retry()}
-          </Button>
-        }
-        className={
-          this.props.variant === 'page'
-            ? 'min-h-dvh w-full bg-page text-fg'
-            : undefined
-        }
-        description={description.description}
-        title={description.title}
-        variant={this.props.variant ?? 'panel'}
-      />
+      <main className="h-svh overflow-hidden p-1.5 sm:p-2.5">
+        <Panel
+          className="h-full w-full"
+          sectionClassName="h-full w-full min-h-full flex flex-row"
+        >
+          <ErrorState
+            action={
+              <Button
+                onClick={reload ? () => window.location.reload() : this.reset}
+              >
+                {reload ? m.error_action_reload() : m.error_action_retry()}
+              </Button>
+            }
+            className={
+              this.props.variant === 'page' ? 'h-full w-full' : undefined
+            }
+            description={description.description}
+            title={description.title}
+            variant={this.props.variant ?? 'panel'}
+          />
+        </Panel>
+      </main>
     );
   }
 }

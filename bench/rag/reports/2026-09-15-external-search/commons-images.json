@@ -1,0 +1,543 @@
+{
+  "at": "2026-09-15T06:53:17.163776+00:00",
+  "seconds": 1.839,
+  "http_status": 200,
+  "response": {
+    "batchcomplete": "",
+    "continue": {
+      "gsroffset": 10,
+      "continue": "gsroffset||"
+    },
+    "query": {
+      "pages": {
+        "22965076": {
+          "pageid": 22965076,
+          "ns": 6,
+          "title": "File:Animal cell cycle-en.svg",
+          "index": 1,
+          "imagerepository": "local",
+          "imageinfo": [
+            {
+              "size": 1515531,
+              "width": 7207,
+              "height": 7003,
+              "thumburl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/2f/Animal_cell_cycle-en.svg/960px-Animal_cell_cycle-en.svg.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+              "thumbwidth": 640,
+              "thumbheight": 622,
+              "responsiveUrls": {
+                "2": "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/2f/Animal_cell_cycle-en.svg/1280px-Animal_cell_cycle-en.svg.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail"
+              },
+              "thumbattribs": {
+                "src": "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/2f/Animal_cell_cycle-en.svg/960px-Animal_cell_cycle-en.svg.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+                "decoding": "async",
+                "loading": "lazy",
+                "width": 640,
+                "height": 622,
+                "srcset": "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/2f/Animal_cell_cycle-en.svg/1280px-Animal_cell_cycle-en.svg.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail 2x"
+              },
+              "url": "https://upload.wikimedia.org/wikipedia/commons/2/2f/Animal_cell_cycle-en.svg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+              "descriptionurl": "https://commons.wikimedia.org/wiki/File:Animal_cell_cycle-en.svg",
+              "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=22965076",
+              "extmetadata": {
+                "ImageDescription": {
+                  "value": "Diagram of the animal cell cycle.",
+                  "source": "commons-desc-page"
+                },
+                "Artist": {
+                  "value": "<a href=\"//commons.wikimedia.org/wiki/User:Kelvinsong\" class=\"mw-redirect\" title=\"User:Kelvinsong\">Kelvinsong</a>",
+                  "source": "commons-desc-page"
+                },
+                "LicenseShortName": {
+                  "value": "CC0",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "AttributionRequired": {
+                  "value": "false",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "LicenseUrl": {
+                  "value": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+                  "source": "commons-desc-page"
+                }
+              }
+            }
+          ]
+        },
+        "1810282": {
+          "pageid": 1810282,
+          "ns": 6,
+          "title": "File:Mitosis In A Lymphoma Cell.jpg",
+          "index": 8,
+          "imagerepository": "local",
+          "imageinfo": [
+            {
+              "size": 288071,
+              "width": 715,
+              "height": 667,
+              "thumburl": "https://upload.wikimedia.org/wikipedia/commons/9/95/Mitosis_In_A_Lymphoma_Cell.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled",
+              "thumbwidth": 640,
+              "thumbheight": 597,
+              "thumbattribs": {
+                "src": "https://upload.wikimedia.org/wikipedia/commons/9/95/Mitosis_In_A_Lymphoma_Cell.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled",
+                "decoding": "async",
+                "loading": "lazy",
+                "width": 640,
+                "height": 597
+              },
+              "url": "https://upload.wikimedia.org/wikipedia/commons/9/95/Mitosis_In_A_Lymphoma_Cell.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+              "descriptionurl": "https://commons.wikimedia.org/wiki/File:Mitosis_In_A_Lymphoma_Cell.jpg",
+              "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=1810282",
+              "extmetadata": {
+                "ImageDescription": {
+                  "value": "<p><b>Mitosis In A Lymphoma Cell</b>\n</p>\nMitosis In A Lymphoma Cell. Wright stain, 1000x.",
+                  "source": "commons-desc-page"
+                },
+                "Artist": {
+                  "value": "Ed Uthman, MD",
+                  "source": "commons-desc-page"
+                },
+                "LicenseShortName": {
+                  "value": "CC BY-SA 2.0",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "AttributionRequired": {
+                  "value": "true",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "LicenseUrl": {
+                  "value": "https://creativecommons.org/licenses/by-sa/2.0",
+                  "source": "commons-desc-page"
+                }
+              }
+            }
+          ]
+        },
+        "49721676": {
+          "pageid": 49721676,
+          "ns": 6,
+          "title": "File:Mitosis Stages.svg",
+          "index": 2,
+          "imagerepository": "local",
+          "imageinfo": [
+            {
+              "size": 1180278,
+              "width": 2361,
+              "height": 409,
+              "thumburl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c9/Mitosis_Stages.svg/960px-Mitosis_Stages.svg.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+              "thumbwidth": 640,
+              "thumbheight": 111,
+              "responsiveUrls": {
+                "2": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c9/Mitosis_Stages.svg/1280px-Mitosis_Stages.svg.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail"
+              },
+              "thumbattribs": {
+                "src": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c9/Mitosis_Stages.svg/960px-Mitosis_Stages.svg.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+                "decoding": "async",
+                "loading": "lazy",
+                "width": 640,
+                "height": 111,
+                "srcset": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c9/Mitosis_Stages.svg/1280px-Mitosis_Stages.svg.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail 2x"
+              },
+              "url": "https://upload.wikimedia.org/wikipedia/commons/c/c9/Mitosis_Stages.svg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+              "descriptionurl": "https://commons.wikimedia.org/wiki/File:Mitosis_Stages.svg",
+              "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=49721676",
+              "extmetadata": {
+                "ImageDescription": {
+                  "value": "A diagram of mitosis stages<br>\n<b>Interphase (G₂)</b>: In this substage, the cell prepares for nuclear division and a protein that makes microtubles for cell division is synthesized.<br><b>Prophase</b>: The longest stage of mitosis. In this stage the chromosomes become visible and the centrioles separate and move to opposite poles of the cell.<br><b>Prometaphase</b>: The nuclear envelope disintegrates and microtubules can attach to kinetochores. Chromosomes congress toward the metaphase plate of the cell.<br><b>Metaphase</b>: In this stage the chromosomes line up across the center of the cell and become connected to the spindle fiber at their centromere.<br><b>Anaphase</b>: In this stage the sister chromatids separate into individual chromosomes and are pulled apart.<br><b>Telophase &amp; cytokinesis</b>: Chromosomes decondense and are surrounded by a newly formed nuclear envelope. Cytokinesis typically coincides with and telophase.",
+                  "source": "commons-desc-page"
+                },
+                "Artist": {
+                  "value": "<a href=\"//commons.wikimedia.org/wiki/User:Ali_Zifan\" class=\"mw-redirect\" title=\"User:Ali Zifan\">Ali Zifan</a>",
+                  "source": "commons-desc-page"
+                },
+                "LicenseShortName": {
+                  "value": "CC BY-SA 4.0",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "AttributionRequired": {
+                  "value": "true",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "LicenseUrl": {
+                  "value": "https://creativecommons.org/licenses/by-sa/4.0",
+                  "source": "commons-desc-page"
+                }
+              }
+            }
+          ]
+        },
+        "4757631": {
+          "pageid": 4757631,
+          "ns": 6,
+          "title": "File:Mitosis cells sequence.svg",
+          "index": 10,
+          "imagerepository": "local",
+          "imageinfo": [
+            {
+              "size": 470427,
+              "width": 774,
+              "height": 115,
+              "thumburl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e8/Mitosis_cells_sequence.svg/960px-Mitosis_cells_sequence.svg.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+              "thumbwidth": 640,
+              "thumbheight": 95,
+              "responsiveUrls": {
+                "2": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e8/Mitosis_cells_sequence.svg/1280px-Mitosis_cells_sequence.svg.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail"
+              },
+              "thumbattribs": {
+                "src": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e8/Mitosis_cells_sequence.svg/960px-Mitosis_cells_sequence.svg.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+                "decoding": "async",
+                "loading": "lazy",
+                "width": 640,
+                "height": 95,
+                "srcset": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e8/Mitosis_cells_sequence.svg/1280px-Mitosis_cells_sequence.svg.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail 2x"
+              },
+              "url": "https://upload.wikimedia.org/wikipedia/commons/e/e8/Mitosis_cells_sequence.svg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+              "descriptionurl": "https://commons.wikimedia.org/wiki/File:Mitosis_cells_sequence.svg",
+              "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=4757631",
+              "extmetadata": {
+                "ImageDescription": {
+                  "value": "A series of cell diagrams showing the mitosis division of eukaryotic cells.",
+                  "source": "commons-desc-page"
+                },
+                "Artist": {
+                  "value": "<a href=\"//commons.wikimedia.org/wiki/User:LadyofHats\" title=\"User:LadyofHats\">LadyofHats</a>",
+                  "source": "commons-desc-page"
+                },
+                "LicenseShortName": {
+                  "value": "Public domain",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "AttributionRequired": {
+                  "value": "false",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                }
+              }
+            }
+          ]
+        },
+        "94837983": {
+          "pageid": 94837983,
+          "ns": 6,
+          "title": "File:Mitosis cells sequence English.svg",
+          "index": 3,
+          "imagerepository": "local",
+          "imageinfo": [
+            {
+              "size": 506204,
+              "width": 774,
+              "height": 115,
+              "thumburl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f7/Mitosis_cells_sequence_English.svg/960px-Mitosis_cells_sequence_English.svg.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+              "thumbwidth": 640,
+              "thumbheight": 95,
+              "responsiveUrls": {
+                "2": "https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f7/Mitosis_cells_sequence_English.svg/1280px-Mitosis_cells_sequence_English.svg.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail"
+              },
+              "thumbattribs": {
+                "src": "https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f7/Mitosis_cells_sequence_English.svg/960px-Mitosis_cells_sequence_English.svg.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+                "decoding": "async",
+                "loading": "lazy",
+                "width": 640,
+                "height": 95,
+                "srcset": "https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f7/Mitosis_cells_sequence_English.svg/1280px-Mitosis_cells_sequence_English.svg.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail 2x"
+              },
+              "url": "https://upload.wikimedia.org/wikipedia/commons/f/f7/Mitosis_cells_sequence_English.svg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+              "descriptionurl": "https://commons.wikimedia.org/wiki/File:Mitosis_cells_sequence_English.svg",
+              "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=94837983",
+              "extmetadata": {
+                "ImageDescription": {
+                  "value": "Steps of Mitosis with captions",
+                  "source": "commons-desc-page"
+                },
+                "Artist": {
+                  "value": "LadyofHats",
+                  "source": "commons-desc-page"
+                },
+                "LicenseShortName": {
+                  "value": "CC0",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "AttributionRequired": {
+                  "value": "false",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "LicenseUrl": {
+                  "value": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+                  "source": "commons-desc-page"
+                }
+              }
+            }
+          ]
+        },
+        "136671011": {
+          "pageid": 136671011,
+          "ns": 6,
+          "title": "File:Mitosis in Onion Root various stages (Metaphase).jpg",
+          "index": 7,
+          "imagerepository": "local",
+          "imageinfo": [
+            {
+              "size": 9224527,
+              "width": 4912,
+              "height": 3684,
+              "thumburl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/0a/Mitosis_in_Onion_Root_various_stages_%28Metaphase%29.jpg/960px-Mitosis_in_Onion_Root_various_stages_%28Metaphase%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+              "thumbwidth": 640,
+              "thumbheight": 480,
+              "responsiveUrls": {
+                "2": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/0a/Mitosis_in_Onion_Root_various_stages_%28Metaphase%29.jpg/1280px-Mitosis_in_Onion_Root_various_stages_%28Metaphase%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail"
+              },
+              "thumbattribs": {
+                "src": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/0a/Mitosis_in_Onion_Root_various_stages_%28Metaphase%29.jpg/960px-Mitosis_in_Onion_Root_various_stages_%28Metaphase%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+                "decoding": "async",
+                "loading": "lazy",
+                "width": 640,
+                "height": 480,
+                "srcset": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/0a/Mitosis_in_Onion_Root_various_stages_%28Metaphase%29.jpg/1280px-Mitosis_in_Onion_Root_various_stages_%28Metaphase%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail 2x"
+              },
+              "url": "https://upload.wikimedia.org/wikipedia/commons/0/0a/Mitosis_in_Onion_Root_various_stages_%28Metaphase%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+              "descriptionurl": "https://commons.wikimedia.org/wiki/File:Mitosis_in_Onion_Root_various_stages_(Metaphase).jpg",
+              "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=136671011",
+              "extmetadata": {
+                "ImageDescription": {
+                  "value": "Mitosis in Onion Root - various stages",
+                  "source": "commons-desc-page"
+                },
+                "Artist": {
+                  "value": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:Natalierussell77&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:Natalierussell77 (page does not exist)\">Natalierussell77</a>",
+                  "source": "commons-desc-page"
+                },
+                "LicenseShortName": {
+                  "value": "CC BY-SA 4.0",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "AttributionRequired": {
+                  "value": "true",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "LicenseUrl": {
+                  "value": "https://creativecommons.org/licenses/by-sa/4.0",
+                  "source": "commons-desc-page"
+                }
+              }
+            }
+          ]
+        },
+        "193851502": {
+          "pageid": 193851502,
+          "ns": 6,
+          "title": "File:Mitosis vs. Meiosis.png",
+          "index": 9,
+          "imagerepository": "local",
+          "imageinfo": [
+            {
+              "size": 365599,
+              "width": 1871,
+              "height": 1662,
+              "thumburl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e8/Mitosis_vs._Meiosis.png/960px-Mitosis_vs._Meiosis.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+              "thumbwidth": 640,
+              "thumbheight": 569,
+              "responsiveUrls": {
+                "2": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e8/Mitosis_vs._Meiosis.png/1280px-Mitosis_vs._Meiosis.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail"
+              },
+              "thumbattribs": {
+                "src": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e8/Mitosis_vs._Meiosis.png/960px-Mitosis_vs._Meiosis.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+                "decoding": "async",
+                "loading": "lazy",
+                "width": 640,
+                "height": 569,
+                "srcset": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e8/Mitosis_vs._Meiosis.png/1280px-Mitosis_vs._Meiosis.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail 2x"
+              },
+              "url": "https://upload.wikimedia.org/wikipedia/commons/e/e8/Mitosis_vs._Meiosis.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+              "descriptionurl": "https://commons.wikimedia.org/wiki/File:Mitosis_vs._Meiosis.png",
+              "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=193851502",
+              "extmetadata": {
+                "ImageDescription": {
+                  "value": "Mitosis is the process of the division of general cells. It goes through the process once, and produces two haploid daughter cells after sister chromatids line up and separate. Meiosis, on the other hand, is the process of the division of zygotes. It goes through the process of cell division twice, and the first time, homologous chromosomes line up instead of sister chromatids. When they line up, they cross some of their parts over to induce genetic variation.",
+                  "source": "commons-desc-page"
+                },
+                "Artist": {
+                  "value": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:Edn0987&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:Edn0987 (page does not exist)\">Edn0987</a>",
+                  "source": "commons-desc-page"
+                },
+                "LicenseShortName": {
+                  "value": "CC BY 4.0",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "AttributionRequired": {
+                  "value": "true",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "LicenseUrl": {
+                  "value": "https://creativecommons.org/licenses/by/4.0",
+                  "source": "commons-desc-page"
+                }
+              }
+            }
+          ]
+        },
+        "89953450": {
+          "pageid": 89953450,
+          "ns": 6,
+          "title": "File:Stages of early mitosis in a vertebrate cell.svg",
+          "index": 6,
+          "imagerepository": "local",
+          "imageinfo": [
+            {
+              "size": 159387,
+              "width": 512,
+              "height": 1408,
+              "thumburl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c5/Stages_of_early_mitosis_in_a_vertebrate_cell.svg/960px-Stages_of_early_mitosis_in_a_vertebrate_cell.svg.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+              "thumbwidth": 640,
+              "thumbheight": 1760,
+              "responsiveUrls": {
+                "2": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c5/Stages_of_early_mitosis_in_a_vertebrate_cell.svg/1280px-Stages_of_early_mitosis_in_a_vertebrate_cell.svg.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail"
+              },
+              "thumbattribs": {
+                "src": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c5/Stages_of_early_mitosis_in_a_vertebrate_cell.svg/960px-Stages_of_early_mitosis_in_a_vertebrate_cell.svg.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+                "decoding": "async",
+                "loading": "lazy",
+                "width": 640,
+                "height": 1760,
+                "srcset": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c5/Stages_of_early_mitosis_in_a_vertebrate_cell.svg/1280px-Stages_of_early_mitosis_in_a_vertebrate_cell.svg.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail 2x"
+              },
+              "url": "https://upload.wikimedia.org/wikipedia/commons/c/c5/Stages_of_early_mitosis_in_a_vertebrate_cell.svg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+              "descriptionurl": "https://commons.wikimedia.org/wiki/File:Stages_of_early_mitosis_in_a_vertebrate_cell.svg",
+              "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=89953450",
+              "extmetadata": {
+                "ImageDescription": {
+                  "value": "Stages of early mitosis in a vertebrate cell",
+                  "source": "commons-desc-page"
+                },
+                "Artist": {
+                  "value": "David O Morgan",
+                  "source": "commons-desc-page"
+                },
+                "LicenseShortName": {
+                  "value": "Attribution",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                }
+              }
+            }
+          ]
+        },
+        "126215226": {
+          "pageid": 126215226,
+          "ns": 6,
+          "title": "File:Stages of early mitosis in a vertebrate cell (hy).svg",
+          "index": 4,
+          "imagerepository": "local",
+          "imageinfo": [
+            {
+              "size": 70275,
+              "width": 512,
+              "height": 239,
+              "thumburl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/7d/Stages_of_early_mitosis_in_a_vertebrate_cell_%28hy%29.svg/960px-Stages_of_early_mitosis_in_a_vertebrate_cell_%28hy%29.svg.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+              "thumbwidth": 640,
+              "thumbheight": 299,
+              "responsiveUrls": {
+                "2": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/7d/Stages_of_early_mitosis_in_a_vertebrate_cell_%28hy%29.svg/1280px-Stages_of_early_mitosis_in_a_vertebrate_cell_%28hy%29.svg.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail"
+              },
+              "thumbattribs": {
+                "src": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/7d/Stages_of_early_mitosis_in_a_vertebrate_cell_%28hy%29.svg/960px-Stages_of_early_mitosis_in_a_vertebrate_cell_%28hy%29.svg.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+                "decoding": "async",
+                "loading": "lazy",
+                "width": 640,
+                "height": 299,
+                "srcset": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/7d/Stages_of_early_mitosis_in_a_vertebrate_cell_%28hy%29.svg/1280px-Stages_of_early_mitosis_in_a_vertebrate_cell_%28hy%29.svg.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail 2x"
+              },
+              "url": "https://upload.wikimedia.org/wikipedia/commons/7/7d/Stages_of_early_mitosis_in_a_vertebrate_cell_%28hy%29.svg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+              "descriptionurl": "https://commons.wikimedia.org/wiki/File:Stages_of_early_mitosis_in_a_vertebrate_cell_(hy).svg",
+              "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=126215226",
+              "extmetadata": {
+                "ImageDescription": {
+                  "value": "Stages of early mitosis in a vertebrate cell",
+                  "source": "commons-desc-page"
+                },
+                "Artist": {
+                  "value": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:%D5%84%D5%A1%D6%80%D5%AB%D5%A1%D5%B4%D5%80.&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:ՄարիամՀ. (page does not exist)\">ՄարիամՀ.</a>",
+                  "source": "commons-desc-page"
+                },
+                "LicenseShortName": {
+                  "value": "CC BY-SA 4.0",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "AttributionRequired": {
+                  "value": "true",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "LicenseUrl": {
+                  "value": "https://creativecommons.org/licenses/by-sa/4.0",
+                  "source": "commons-desc-page"
+                }
+              }
+            }
+          ]
+        },
+        "89955214": {
+          "pageid": 89955214,
+          "ns": 6,
+          "title": "File:Stages of early mitosis in a vertebrate cell with micrographs of chromatids.svg",
+          "index": 5,
+          "imagerepository": "local",
+          "imageinfo": [
+            {
+              "size": 468719,
+              "width": 512,
+              "height": 1170,
+              "thumburl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/74/Stages_of_early_mitosis_in_a_vertebrate_cell_with_micrographs_of_chromatids.svg/960px-Stages_of_early_mitosis_in_a_vertebrate_cell_with_micrographs_of_chromatids.svg.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+              "thumbwidth": 640,
+              "thumbheight": 1463,
+              "responsiveUrls": {
+                "2": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/74/Stages_of_early_mitosis_in_a_vertebrate_cell_with_micrographs_of_chromatids.svg/1280px-Stages_of_early_mitosis_in_a_vertebrate_cell_with_micrographs_of_chromatids.svg.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail"
+              },
+              "thumbattribs": {
+                "src": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/74/Stages_of_early_mitosis_in_a_vertebrate_cell_with_micrographs_of_chromatids.svg/960px-Stages_of_early_mitosis_in_a_vertebrate_cell_with_micrographs_of_chromatids.svg.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+                "decoding": "async",
+                "loading": "lazy",
+                "width": 640,
+                "height": 1463,
+                "srcset": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/74/Stages_of_early_mitosis_in_a_vertebrate_cell_with_micrographs_of_chromatids.svg/1280px-Stages_of_early_mitosis_in_a_vertebrate_cell_with_micrographs_of_chromatids.svg.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail 2x"
+              },
+              "url": "https://upload.wikimedia.org/wikipedia/commons/7/74/Stages_of_early_mitosis_in_a_vertebrate_cell_with_micrographs_of_chromatids.svg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+              "descriptionurl": "https://commons.wikimedia.org/wiki/File:Stages_of_early_mitosis_in_a_vertebrate_cell_with_micrographs_of_chromatids.svg",
+              "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=89955214",
+              "extmetadata": {
+                "ImageDescription": {
+                  "value": "Stages of early mitosis in a vertebrate cell. Scanning electron microscopy reveals that sister-chromatid pairs first condense into single rod-like structures during prophase. As mitosis proceeds, chromatid arms are gradually resolved and become almost completely distinct by the end of metaphase. Kindly provided by Adrian T. Sumner. From Sumner, A.T.: Chromosoma 1991, 100:410–418.<sup id=\"cite_ref-1\" class=\"reference\"><a href=\"#cite_note-1\"><span class=\"cite-bracket\">[</span>1<span class=\"cite-bracket\">]</span></a></sup>",
+                  "source": "commons-desc-page"
+                },
+                "Artist": {
+                  "value": "David O Morgan",
+                  "source": "commons-desc-page"
+                },
+                "LicenseShortName": {
+                  "value": "Attribution",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "provider": "commons",
+  "query": "cell mitosis",
+  "request": null
+}

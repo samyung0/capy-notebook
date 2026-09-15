@@ -34,7 +34,7 @@ afterAll(() => {
   vi.unstubAllGlobals();
 });
 
-describe('mock error scenarios', () => {
+describe('mock user scenarios', () => {
   it('keeps scenario identifiers unique and maps network scenarios to handlers', () => {
     const ids = mockScenarioOptions.map(({ id }) => id);
 

@@ -96,7 +96,7 @@ export default function MockScenarioPanel() {
         ref={detailsRef}
       >
         <summary className="cursor-pointer font-semibold">
-          Error scenarios
+          User scenarios
           {active === 'none' ? '' : ` · ${active}`}
         </summary>
         <div className="mt-2 grid gap-2">

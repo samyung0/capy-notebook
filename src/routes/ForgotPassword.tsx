@@ -5,6 +5,7 @@ import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/feedback';
+import { Icon } from '@/components/ui/Icon';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { AuthCard, AuthPage, FormAlert } from '@/features/auth/AuthLanding';
 import { clerkMessage } from '@/features/auth/clerk';
@@ -57,22 +58,23 @@ export default function ForgotPasswordPage() {
     handleSubmit: handleResetSubmit,
   } = useForm({
     defaultValues: { code: '', password: '' },
-    mode: 'onBlur',
     resolver: zodResolver(resetSchema),
   });
 
   if (email === null) {
     return (
       <AuthPage>
+        <Link
+          className="mb-4 inline-flex items-center text-fg-muted underline hover:text-fg"
+          search
+          to="/sign-in"
+        >
+          <Icon className="mr-1 inline-block" name="navigationBack" size={18} />
+          <span>{m.auth_back_to_signin()}</span>
+        </Link>
         <AuthCard hint={m.auth_reset_hint()} title={m.auth_reset_title()}>
-          <Link
-            className="t-meta mb-4 inline-block text-fg-muted hover:text-fg"
-            search
-            to="/sign-in"
-          >
-            ← {m.auth_back_to_signin()}
-          </Link>
           <form
+            className="relative flex flex-col gap-2"
             onSubmit={handleEmailSubmit(async (values) => {
               setFormError(null);
               const { error } = await signIn.create({
@@ -91,7 +93,6 @@ export default function ForgotPasswordPage() {
               setEmail(values.email);
             })}
           >
-            <FormAlert message={formError} />
             <Controller
               control={emailControl}
               name="email"
@@ -116,6 +117,7 @@ export default function ForgotPasswordPage() {
               )}
             />
             <Submit busy={emailSubmitting} label={m.auth_reset_submit()} />
+            <FormAlert message={formError} />
           </form>
         </AuthCard>
       </AuthPage>

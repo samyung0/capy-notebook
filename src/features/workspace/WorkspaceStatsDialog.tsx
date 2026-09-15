@@ -18,12 +18,7 @@ export function WorkspaceStatsDialog({
     [m.stats_average_score(), data ? `${data.avgScore}%` : undefined],
   ] as const;
   return (
-    <SimpleDialog
-      onClose={onClose}
-      open
-      title={m.workspace_stats_title()}
-      width={420}
-    >
+    <SimpleDialog onClose={onClose} open title={m.workspace_stats_title()}>
       <div className="grid grid-cols-2 gap-3">
         {rows.map(([label, val]) => (
           <div

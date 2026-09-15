@@ -50,6 +50,8 @@ The local grading checks in [`bench/grading/scripts/test_benchmark.py`](../bench
 
 ---
 
+The manual [external-search spot-check](../bench/rag/reports/2026-09-15-external-search.md) compares Alibaba web/image/extractor tools with Commons and Openverse through [a one-request runner](../bench/rag/scripts/compare_external_search.py); it records latency, provider output and usage, and is not a CI test.
+
 ## Frontend Vitest (`src/`, `bench/editor/`)
 
 ### API

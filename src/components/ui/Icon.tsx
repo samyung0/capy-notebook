@@ -2,6 +2,7 @@ import {
   Alert02Icon,
   AlertCircleIcon,
   ArrowExpand01Icon,
+  ArrowLeft04Icon,
   ArrowRight02Icon,
   ArrowShrink02Icon,
   BellIcon,
@@ -98,6 +99,7 @@ const HugeIcons = {
   mindmap: ChartRelationshipIcon,
   minimize: ArrowShrink02Icon,
   moreVertical: MoreVerticalIcon,
+  navigationBack: ArrowLeft04Icon,
   newFile: FileEditIcon,
   newNote: PencilEdit02Icon,
   palette: [

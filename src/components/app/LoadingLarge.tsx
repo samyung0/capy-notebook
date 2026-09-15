@@ -30,7 +30,7 @@ export function LoadingLarge({
         </h1>
         {backTo && (
           <Link className="-translate-x-1" preload="intent" to={backTo}>
-            <Button iconLeft="chevronLeft" variant="ghost">
+            <Button iconLeft="navigationBack" variant="ghost">
               {backLabel ?? m.error_action_go_back()}
             </Button>
           </Link>

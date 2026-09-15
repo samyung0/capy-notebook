@@ -13,7 +13,7 @@ error policies, mutations, mock handlers, feature flags, and streaming events.
 
 ## Added coverage
 
-Use **Error scenarios** in the lower-right corner of the MSW development app.
+Use **User scenarios** in the lower-right corner of the MSW development app.
 Apply a scenario before opening its dialog or performing its action. The selected
 scenario survives links and reloads in the same tab. **Clear** removes the
 scenario override; it does not undo edits made to the in-memory mock database.
@@ -88,7 +88,7 @@ part of adding development tools.
   are not reproduced by these HTTP scenarios. The browser events stream is
   deliberately disabled in MSW; its reconnecting preview sets the cached status.
 - **PDF annotations:** successful annotation CRUD has no baseline MSW handlers;
-  the new error scenarios make read/write failures deterministic.
+  the new user scenarios make read/write failures deterministic.
 - **Unreachable normal openers:** ownership transfer has no normal setter for
   its target, and `WorkspaceStatsDialog` and `TaskEditDialog` have no normal
   callers. The panel now opens them directly. Feature-flagged pages remain

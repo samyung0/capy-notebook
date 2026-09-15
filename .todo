@@ -17,6 +17,13 @@ low priority:
 15. add suspend/unsuspend account controls to the Ops dashboard (separate feature; current suspension is database/operator-only)
 
 high PRIORITIES:
+stuttering when opening dialogs (esp the select icon dialog, use browser tool to capture)
+extend msw file with different states of files
+pdf failed should use the same fileerror state component, what about annotation failed
+resend email code cooldown, use a text transition instead of the notice text
+workspace invitation shouldnt be inside of appshell?
+workspace statistics number transition, remove average score? remove dialog and make a new tab in the settings
+msw user scenario transfer worksapce ownership spawns the mock workspace member dialog underneath?
 what contributes to a change in editing office files? (so it passes the gate for reparsing)
 check upload session timeout (shouldnt have 15 minutes, ttl is 5 minutes for the link alr)
 1. diagrams.net (generate have a 1 turn generate->QA->fix loop on server)
