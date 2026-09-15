@@ -207,7 +207,6 @@ export function useSourceSession(fileId: string, enabled: boolean) {
       for (const restored of restoredDrafts)
         Y.applyUpdate(shared, restored.state, RESTORE_ORIGIN);
       if (restoredDrafts.length) setDirty(true);
-      setLoaded({ bytes, doc: shared, session });
       let initialToken: SourceCollaborationToken | null = credentials;
       const pending = new Map<string, number>();
       const active = {
@@ -356,6 +355,7 @@ export function useSourceSession(fileId: string, enabled: boolean) {
         },
         onSynced: ({ state }) => {
           if (state && !cancelled && !active.recovery) {
+            setLoaded({ bytes, doc: shared, session });
             setSynced(true);
             checkpoint();
           }
@@ -379,6 +379,7 @@ export function useSourceSession(fileId: string, enabled: boolean) {
               throw new Error(m.source_edit_session_changed());
             }
             active.recovery = true;
+            setLoaded({ bytes, doc: shared, session });
             setStatus('recovery');
             setError(m.source_edit_recovery());
             setSynced(false);

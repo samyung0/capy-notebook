@@ -246,7 +246,10 @@ gateway's HEAD result. Rejected exports send a complete failure receipt so the
 job closes without waiting for its lease to expire.
 
 Text, JSON, Markdown, CSV and TSV use a raw UTF-8 Y.Text editor with local undo,
-selection tracking and IME composition support. Newlines and BOM are retained;
+selection tracking and IME composition support. The editable document is exposed
+only after its first collaboration sync supplies the authoritative seed. It stays
+available across ordinary disconnects so mounted offline edits retain their drafts.
+Newlines and BOM are retained;
 invalid UTF-8 fails explicitly. Text refresh batches every 15 seconds even
 while typing continues. Its published checkpoint may lag the current document,
 with exact residual edits retained in the same Y.Text lineage and Undo history.
