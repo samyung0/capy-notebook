@@ -87,7 +87,6 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
-    "@axe-core/playwright": "4.13.0",
     "@biomejs/biome": "2.5.5",
     "@clerk/backend": "^3.16.12",
     "@inlang/paraglide-js": "^2.0.0",
@@ -142,7 +141,6 @@
     "e2e:slow": "playwright test --workers=1",
     "e2e:ui": "playwright test --ui",
     "e2e:msw:editor": "playwright test --config=e2e/editor/playwright.editor.config.ts",
-    "e2e:quality": "playwright test e2e/quality",
     "e2e:uat": "playwright test --config=e2e/uat/playwright.uat.config.ts",
     "e2e:uat:journeys": "playwright test --config=e2e/uat/journeys/playwright.journeys.config.ts",
     "e2e:uat:cleanup": "tsx e2e/uat/journeys/cleanup.ts",

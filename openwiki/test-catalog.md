@@ -20,7 +20,6 @@ at the top of each section.
 | Python pipeline                  | `pnpm test:pipeline` / offline: `pnpm test:pipeline:offline`     |
 | Certified model cassette replay  | `pnpm test:pipeline:replay`                                      |
 | Playwright sharing/API e2e       | `pnpm e2e` / serialized: `pnpm e2e:slow`                         |
-| Playwright accessibility quality | `pnpm e2e:quality` (also included by `pnpm e2e`)                 |
 | Playwright editor (MSW)          | `pnpm e2e:msw:editor`                                            |
 | Playwright editor perf           | `pnpm bench:editor`                                              |
 | Playwright authorized UAT        | `pnpm e2e:uat`                                                   |
@@ -382,7 +381,7 @@ Real stack via Docker (`pnpm e2e`). Editor specs are ignored by the root Playwri
 
 E2E tests check functional outcomes and may select individual UI elements. They
 do not enforce UI layout, DOM wrapper structure, or section/menu organization.
-Accessibility checks and authorization assertions remain part of the suite.
+Authorization assertions remain part of the suite.
 
 Shared upload inputs belong in [`e2e/fixtures/files/`](../e2e/fixtures/files/README.md).
 Its guide describes scenario sets, format-specific edits, and expected persisted
@@ -407,7 +406,6 @@ material-mode specs fail even though the flows complete. Use `pnpm e2e:slow`
 | [`e2e/sharing/quiz-sharing.spec.ts`](../e2e/sharing/quiz-sharing.spec.ts)                 | New quiz creates a blank question through the real API and opens the editor; anonymous full-read/clone/attempt 401, signed-in public/link reading and cloning, private non-member 404, and Explore visibility.                                                                                           |
 | [`e2e/sharing/workspace-membership.spec.ts`](../e2e/sharing/workspace-membership.spec.ts) | Private exact-identifier workspace invite is visible only to its recipient; roster carries no email.                                                        |
 | [`e2e/sharing/workspace-sharing.spec.ts`](../e2e/sharing/workspace-sharing.spec.ts)       | Workspace privacy roles, Explore, member-only clone, share-editor content authority vs settings, role raise, mention redaction.                             |
-| [`e2e/quality/accessibility.spec.ts`](../e2e/quality/accessibility.spec.ts)               | Automated WCAG A/AA axe checks on the owner dashboard, private workspace, sharing dialog, and anonymous public workspace. |
 
 ---
 
@@ -428,9 +426,6 @@ nonproduction ingest project. See the [journey setup and cleanup guide](../e2e/u
 | File                                                                | About                                                                                                                                                                                                                                                                                                  |
 | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | [`e2e/uat/authorization.spec.ts`](../e2e/uat/authorization.spec.ts) | Short-lived Clerk Backend API sign-in tokens create real sessions that verify private-workspace visibility, non-disclosing unrelated-user denial, owner/editor workspace statistics, and write/denied collaboration-token modes across owner, editor, viewer, and unrelated accounts. |
-
-Accessibility scans remain in the local `pnpm e2e:quality` suite; they are not
-part of the UAT gate.
 
 Supporting configuration: [`e2e/uat/playwright.uat.config.ts`](../e2e/uat/playwright.uat.config.ts)
 fails closed unless authorization is exactly `true`, all UAT hosts are explicitly
