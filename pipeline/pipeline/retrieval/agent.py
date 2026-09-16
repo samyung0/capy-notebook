@@ -272,8 +272,12 @@ async def run_agent(
                 budget.completion_calls += 1
                 budget.compaction_calls += 1
 
-            # Captures ride outside ``messages``; the budget still has to hold them.
-            image_tokens = capture.image_tokens(ctx.captures)
+            # Captures ride outside ``messages``; the budget still has to hold the
+            # ones whose exchange is still live. ponytail: the post-fold fit check
+            # inside compact_messages reuses this count, so the step that folds an
+            # exchange over-counts its captures once; recompute inside compaction
+            # if a turn ever fails on that margin.
+            image_tokens = capture.image_tokens(ctx.captures, messages)
             pending_message, pending_reserve, omitted = pending.reserve(
                 messages, ctx.pending_sources, spec, active_schemas, extra=image_tokens
             )

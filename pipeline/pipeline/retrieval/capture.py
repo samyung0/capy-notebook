@@ -362,8 +362,18 @@ def split_images(messages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], 
     return out, tokens
 
 
-def image_tokens(captures: list[dict[str, Any]]) -> int:
-    """Tokens the turn's attached captures add to every later request."""
+def image_tokens(
+    captures: list[dict[str, Any]], messages: list[dict[str, Any]] | None = None
+) -> int:
+    """Tokens the turn's captures add to the next request.
+
+    A capture rides after its tool result, so once live compaction folds that
+    exchange into the turn note the image leaves the request. Only captures
+    whose tool result is still in ``messages`` count; no ``messages`` counts all.
+    """
+    if messages is not None:
+        live = {m.get("tool_call_id") for m in messages if m.get("role") == "tool"}
+        captures = [record for record in captures if record["callId"] in live]
     return sum(int(record["estimatedImageTokens"]) for record in captures)
 
 

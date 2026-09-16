@@ -71,8 +71,11 @@ Cost with Qwen3.8-Flash on Beijing (checked 2026-09-16): 0.113 USD input and 0.3
 - Coherence rule: one primary excerpt per material section. Another book's excerpt fills a named gap only after checking terminology and notation. A worked example is never split.
 - Provenance: `create_material` takes an optional list of library excerpt ids. Go persists it as material provenance and renders a footer from it: one line per book (title, authors, edition, licence, URL), an "adapted from" notice, and the material's own licence line when any source is ShareAlike. Mixed CC BY and CC BY-SA sources make the material CC BY-SA. The footer is a column on the material, rendered by the frontend outside the editable document, so it cannot be deleted.
 - No citations. Curate mode ignores the final answer's passages server-side. The reply is the list of created materials with their receipts. Under the existing retention rule, library evidence is then dropped from conversation history after the turn; provenance on the material is the durable record.
-- Budget (proposal, not decided; the 8/2/16 caps stay until a separate decision): live compaction now folds the current turn (decision 2026-09-16), keeping the query, one turn note of at most 12,000 tokens and the last two tool exchanges exact. That bounds the live chain, so the per-turn count of 16 can go in curate mode. Two limits still matter: the per-response count, because the fold drops whole exchanges and cannot split one oversized exchange (proposal: 4 knowledge calls per response, matching the parallel-execution limit, so one exchange is at most about 32k tokens); and a planning-response ceiling as a runaway guard rather than a context guard (proposal: raise from 8, do not remove; credit exhaustion already ends a turn gracefully).
+- Budget (decided: no per-turn count and no planning-response ceiling in curate mode, 4 knowledge calls per response, 200k window minimum; a stall guard ends the turn after a few consecutive responses that change nothing in the ledger, and the credit guard bounds cost): live compaction now folds the current turn (decision 2026-09-16), keeping the query, one turn note of at most 12,000 tokens and the last two tool exchanges exact. That bounds the live chain, so the per-turn count of 16 can go in curate mode. Two limits still matter: the per-response count, because the fold drops whole exchanges and cannot split one oversized exchange (proposal: 4 knowledge calls per response, matching the parallel-execution limit, so one exchange is at most about 32k tokens); and a planning-response ceiling as a runaway guard rather than a context guard (proposal: raise from 8, do not remove; credit exhaustion already ends a turn gracefully).
 - Ordering rule for curate (prompt pattern, no code): the response that writes a material comes within two responses of the reads it depends on. Per section: search, read, write. Create the note after the first section and grow it with `edit_document` per section rather than creating one large note at the end. Materials that span sections (quiz, flashcards) re-read the excerpts they need in one response, up to the per-response cap, and create in the next; the turn note keeps excerpt ids and what each supports, so the model knows what to re-read. Reads are database fetches, so re-reading is cheaper than raising `TURN_KEEP_EXCHANGES` for the whole turn.
+- Measured (2026-09-16, mocked, see `bench/rag/reports/2026-09-16-turn-fold-capacity.md`): with a 200k window the fold never fails through 96 sections; the turn note saturates at about 46 sections and silently drops its oldest lines; captures accumulate as a standing charge. Models below 200k are out of scope for curate mode.
+- Progress ledger (decided): an event log the loop derives from tool events, never compacted, riding outside the messages like captures: the request, materials created or appended (id, kind, title, size such as a running question count), excerpts read (id, section title, the material that used them). No declared sections or plan; the model compares the log against the request to decide what is left. Roughly 30 tokens per entry. The note ceiling stays at 12k.
+- Captures (decided and implemented 2026-09-16, both modes): a capture lives as long as its exchange is kept verbatim and is dropped when that exchange folds; the note keeps the numbers read from it in text.
 
 ### Figures
 
@@ -101,13 +104,16 @@ Every mutation lands in `operator_audit_events`. Reruns replace model-origin row
 
 ## Open items needing a decision
 
-- Curate mode caps: per-response knowledge-call count and planning-response ceiling (per-turn count proposed dropped).
+None. Next step is the pilot.
+
+Assumption to check when building: appending a batch of questions to an existing quiz through `edit_document`, so a 200-question quiz is built in batches rather than one create call.
 
 ## References
 
 - `bench/rag/reports/2026-09-15-external-knowledge-strategy.md`
 - `bench/rag/reports/2026-09-15-topic-knowledge-base.md`
 - `bench/rag/reports/2026-09-15-external-search.md`
+- `bench/rag/reports/2026-09-16-turn-fold-capacity.md`
 - `knowledge-base-review.md`
 - `human/agentic-retrieval.md`
 - `openwiki/agentic-retrieval.md`

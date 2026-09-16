@@ -287,12 +287,16 @@ def test_context_measurement_counts_images_by_pixels_not_base64():
     )
     assert anthropic[-1]["content"][-1]["type"] == "image"
     assert capture.split_images(anthropic)[1] == expected_image
-    assert (
-        capture.image_tokens(
-            [{"estimatedImageTokens": 10}, {"estimatedImageTokens": 5}]
-        )
-        == 15
-    )
+    captures = [
+        {"callId": "k1", "estimatedImageTokens": 10},
+        {"callId": "k2", "estimatedImageTokens": 5},
+    ]
+    assert capture.image_tokens(captures) == 15
+    # k1's exchange folded into the turn note: its image no longer rides along.
+    folded = [{"role": "user", "content": "note", "_kind": "turn_note"}] + [
+        {"role": "tool", "tool_call_id": "k2", "content": "Captured page 2."}
+    ]
+    assert capture.image_tokens(captures, folded) == 5
 
 
 async def test_pdf_cache_is_keyed_by_the_stored_object(tmp_path, monkeypatch):

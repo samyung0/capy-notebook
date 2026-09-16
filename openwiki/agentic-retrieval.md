@@ -1156,7 +1156,11 @@ Both routes render `CAPY_CAPTURE_MAX_EDGE` (1568 px), JPEG q80. Images are bille
 through the ordinary LLM usage path. Context telemetry and the compaction
 budget count each attached image by its 28-px patch estimate
 (`capture.patch_tokens`), not by its base64; the captures ride outside the
-compacted history, so their estimate is passed to compaction as extra weight. The model is told to capture when a
+compacted history, so their estimate is passed to compaction as extra weight.
+A capture is attached after its own tool result, so it lives exactly as long as
+that exchange stays verbatim: once live compaction folds the exchange into the
+turn note (decision 2026-09-16), the image leaves the request and
+`capture.image_tokens` stops counting it. The model is told to capture when a
 passage header carries a low extraction-confidence note or the answer depends
 on a figure, table layout or formula, and to read the image directly. The
 render lives server-side because the pixels must be inside the provider request

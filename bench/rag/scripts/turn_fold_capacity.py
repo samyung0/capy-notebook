@@ -2,7 +2,7 @@
 
 Offline and deterministic: synthetic textbook sections, mocked tool results and
 a stub summarizer. No provider call, no database, no credentials. This measures
-the compaction *mechanism* only -- fold count, kept exchanges, admitted request
+the compaction *mechanism* only: fold count, kept exchanges, admitted request
 size, and the note-saturation arithmetic under the 12,000-token note ceiling.
 Note quality is not measured; a real summarizer writes different notes.
 
@@ -42,9 +42,9 @@ CAPTURES_PER_TURN = 8
 IMAGE_SIZES = ((1024, 768), (1280, 960), (1400, 1120))
 
 QUERY = (
-    "Go through the linear algebra and cell biology books in the library, "
-    "make one study note per section, and finish with a quiz that covers the "
-    "sections you judged hardest."
+    "Go through the biology and statistics books in the library, make one "
+    "study note per section, and finish with a quiz covering the sections you "
+    "judged hardest."
 )
 
 # ---------------------------------------------------------------- synthetic corpus
@@ -274,9 +274,7 @@ def build_corpus(files: int, sections: int, seed: int) -> list[Section]:
                     excerpt_id=excerpt_id,
                     fact_code=fact_code,
                     text=_prose(rng, subject, marker),
-                    image_tokens=(
-                        capture.patch_tokens(width, height) if image else 0
-                    ),
+                    image_tokens=(capture.patch_tokens(width, height) if image else 0),
                 )
             )
     return corpus
@@ -592,6 +590,7 @@ async def run_window(
     spec = model_spec(window)
     schemas = curate_schemas()
     stub = StubSummarizer()
+    # The one patch in this script: no summarizer call leaves the process.
     compact.models.complete_text = stub.complete_text  # type: ignore[assignment]
 
     messages: list[dict] = [
@@ -611,6 +610,7 @@ async def run_window(
 
     for index, exchange in enumerate(plan):
         folds_before = stub.calls
+        summ_in, summ_out = stub.input_tokens, stub.output_tokens
         try:
             messages = await compact.compact_messages(
                 messages,
@@ -653,7 +653,9 @@ async def run_window(
                 "schema_tokens": measured.tool_tokens,
                 "image_tokens": image_tokens,
                 "folded": stub.calls > folds_before,
-                "summarizer_calls": stub.calls,
+                "summarizer_calls": stub.calls - folds_before,
+                "summarizer_input_tokens": stub.input_tokens - summ_in,
+                "summarizer_output_tokens": stub.output_tokens - summ_out,
                 "note_tokens": accounting.estimate_context_value(note),
                 "note_excerpt_ids": len(ids),
                 "note_fact_codes": len(facts),
@@ -703,6 +705,9 @@ async def run_window(
         "excerpt_ids_in_final_request": len(set(EXCERPT_RE.findall(final_request))),
         "fact_codes_in_final_request": len(set(FACT_RE.findall(final_request))),
         "quiz_excerpt_ids_needed": quiz_ids,
+        "quiz_excerpt_ids_in_final_note": sorted(
+            set(quiz_ids) & set(EXCERPT_RE.findall(final_note))
+        ),
         "quiz_excerpt_ids_in_final_request": sorted(
             set(quiz_ids) & set(EXCERPT_RE.findall(final_request))
         ),
