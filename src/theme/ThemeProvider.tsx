@@ -9,7 +9,7 @@ import {
 } from 'react';
 
 export type Style = 'classroom' | 'notion';
-export type Theme = 'latte' | 'mocha';
+export type Theme = 'latte' | 'mocha' | 'macchiato';
 
 export const STYLES: {
   value: Style;
@@ -18,10 +18,14 @@ export const STYLES: {
 }[] = [
   {
     label: 'Classroom',
-    supportedThemes: ['latte', 'mocha'],
+    supportedThemes: ['latte', 'mocha', 'macchiato'],
     value: 'classroom',
   },
-  { label: 'Notion', supportedThemes: ['latte', 'mocha'], value: 'notion' },
+  {
+    label: 'Notion',
+    supportedThemes: ['latte', 'mocha', 'macchiato'],
+    value: 'notion',
+  },
 ];
 
 export const THEMES: {
@@ -32,6 +36,12 @@ export const THEMES: {
 }[] = [
   { displayColor: '#fafafa', isDark: false, label: 'Latte', value: 'latte' },
   { displayColor: '#222222', isDark: true, label: 'Mocha', value: 'mocha' },
+  {
+    displayColor: '#24273a',
+    isDark: true,
+    label: 'Macchiato',
+    value: 'macchiato',
+  },
 ];
 
 interface ThemeState {

@@ -1,6 +1,5 @@
 import { toUnitLess } from '@platejs/basic-styles';
 import { FontSizePlugin } from '@platejs/basic-styles/react';
-import { Minus, Plus } from 'lucide-react';
 import { KEYS } from 'platejs';
 import { useEditorPlugin, useEditorSelector } from 'platejs/react';
 import { useState } from 'react';
@@ -10,6 +9,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/Popover';
 import { ButtonTooltip } from '@/components/ui/Tooltip';
+import { EditorIcon } from '@/features/notes/EditorIcon';
 import { ToolbarButton } from '@/features/notes/toolbar/ToolbarButton';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -64,7 +64,7 @@ export function FontSizeControl() {
         label={m.editor_font_size_decrease()}
         onClick={() => setFontSize(cursorFontSize - 1)}
       >
-        <Minus />
+        <EditorIcon name="minus" />
       </ToolbarButton>
       <ButtonTooltip label={m.editor_font_size()}>
         <Popover onOpenChange={setOpen} open={open}>
@@ -125,7 +125,7 @@ export function FontSizeControl() {
         label={m.editor_font_size_increase()}
         onClick={() => setFontSize(cursorFontSize + 1)}
       >
-        <Plus />
+        <EditorIcon name="plus" />
       </ToolbarButton>
     </div>
   );

@@ -38,6 +38,7 @@ import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/Dialog';
+import { FileIcon } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
 import { HoverActions } from '@/components/ui/HoverActions';
 import { Icon } from '@/components/ui/Icon';
@@ -651,9 +652,8 @@ export default function WorkspaceOpen() {
                               }
                               type="button"
                             >
-                              <Icon
-                                className="shrink-0 text-fg-muted"
-                                name={expanded ? 'chevronDown' : 'chevronRight'}
+                              <FileIcon
+                                name={expanded ? '_folder_open' : '_folder'}
                                 size={15}
                               />
                               <span className="line-clamp-1 translate-y-px truncate font-semibold">

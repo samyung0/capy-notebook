@@ -1,6 +1,6 @@
-import { ExternalLink } from 'lucide-react';
 import type { PlateElementProps } from 'platejs/react';
 import { PlateElement } from 'platejs/react';
+import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 
@@ -42,7 +42,7 @@ export function YouTubeEmbed({
           target="_blank"
         >
           {m.youtube_open()}
-          <ExternalLink className="size-3" />
+          <EditorIcon className="size-3" name="externalLink" />
         </a>
       )}
     </div>

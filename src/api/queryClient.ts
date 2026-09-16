@@ -53,36 +53,40 @@ export const queryClient = new QueryClient({
         isAccountBlockingError(error)
       )
         return;
-
-      const description = describeError(error);
-      const button =
-        description.action === 'subscription'
-          ? {
-              label: m.account_banner_subscription(),
-              onClick: () => {
-                window.location.href = '/settings?tab=subscription';
-              },
-            }
-          : description.action === 'signIn'
-            ? {
-                label: m.action_sign_in(),
-                onClick: () => {
-                  const returnTo = `${window.location.pathname}${window.location.search}`;
-                  window.location.href = `/sign-in?${new URLSearchParams({
-                    redirect_url: returnTo,
-                  })}`;
-                },
-              }
-            : undefined;
-
       trackQuotaBlocked(error, 'mutation');
-      userToast({
-        button,
-        description: description.description,
-        id: toastKeyFor(error),
-        title: description.title,
-        variant: 'error',
-      });
+      showErrorToast(error);
     },
   }),
 });
+
+/** The mutation error toast; the dev scenario panel spawns it directly. */
+export function showErrorToast(error: unknown) {
+  const description = describeError(error);
+  const button =
+    description.action === 'subscription'
+      ? {
+          label: m.account_banner_subscription(),
+          onClick: () => {
+            window.location.href = '/settings?tab=subscription';
+          },
+        }
+      : description.action === 'signIn'
+        ? {
+            label: m.action_sign_in(),
+            onClick: () => {
+              const returnTo = `${window.location.pathname}${window.location.search}`;
+              window.location.href = `/sign-in?${new URLSearchParams({
+                redirect_url: returnTo,
+              })}`;
+            },
+          }
+        : undefined;
+
+  userToast({
+    button,
+    description: description.description,
+    id: toastKeyFor(error),
+    title: description.title,
+    variant: 'error',
+  });
+}

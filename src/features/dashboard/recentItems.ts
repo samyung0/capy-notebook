@@ -1,4 +1,5 @@
 import type {
+  FileKind,
   MaterialRef,
   MaterialRefType,
   SourceFile,
@@ -10,6 +11,7 @@ export const RECENT_ITEM_LIMIT = 20;
 export type RecentItem =
   | {
       createdAt: string;
+      fileKind: FileKind;
       id: string;
       kind: 'file';
       title: string;
@@ -40,6 +42,7 @@ export function mergeRecentItems(
   const items: RecentItem[] = [
     ...files.map((file) => ({
       createdAt: file.addedAt,
+      fileKind: file.kind,
       id: file.id,
       kind: 'file' as const,
       title: file.name,

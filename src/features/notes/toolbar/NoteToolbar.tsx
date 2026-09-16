@@ -1,29 +1,5 @@
 import { encodeUrlIfNeeded, validateUrl } from '@platejs/link';
 import { ListStyleType, toggleList } from '@platejs/list';
-import {
-  AtSign,
-  Baseline,
-  Bold,
-  Code2,
-  Columns2,
-  Columns3,
-  Highlighter,
-  IndentDecrease,
-  IndentIncrease,
-  Italic,
-  Link,
-  List,
-  ListChecks,
-  ListOrdered,
-  MessageSquarePlus,
-  PaintBucket,
-  Redo2,
-  Sigma,
-  Sparkles,
-  Strikethrough,
-  Underline,
-  Undo2,
-} from 'lucide-react';
 import { KEYS } from 'platejs';
 import { useEditorRef, useEditorSelector } from 'platejs/react';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -42,6 +18,7 @@ import {
   importJsonDocument,
   importMarkdownDocument,
 } from '@/features/notes/documentAdapters';
+import { EditorIcon } from '@/features/notes/EditorIcon';
 import { useEditorRuntime } from '@/features/notes/EditorRuntime';
 import { EDITOR_COMMANDS } from '@/features/notes/editorCommands';
 import {
@@ -242,7 +219,7 @@ export function NoteToolbar({ className }: { className?: string }) {
               label={m.editor_comment()}
               onClick={collaboration.openComment}
             >
-              <MessageSquarePlus />
+              <EditorIcon name="commentAdd" />
             </ToolbarButton>
           </ToolbarGroup>
         )}
@@ -272,7 +249,7 @@ export function NoteToolbar({ className }: { className?: string }) {
                 label={m.editor_comment()}
                 onClick={collaboration.openComment}
               >
-                <MessageSquarePlus />
+                <EditorIcon name="commentAdd" />
               </ToolbarButton>
             )}
             <ToolbarAllBlocksMenu
@@ -296,7 +273,7 @@ export function NoteToolbar({ className }: { className?: string }) {
                 onClick={() => editor.tf.undo()}
                 shortcut={EDITOR_SHORTCUTS.undo}
               >
-                <Undo2 />
+                <EditorIcon name="undo" />
               </ToolbarButton>
               <ToolbarButton
                 disabled={!canRedo}
@@ -304,7 +281,7 @@ export function NoteToolbar({ className }: { className?: string }) {
                 onClick={() => editor.tf.redo()}
                 shortcut={EDITOR_SHORTCUTS.redo}
               >
-                <Redo2 />
+                <EditorIcon name="redo" />
               </ToolbarButton>
             </ToolbarGroup>
           )}
@@ -320,13 +297,13 @@ export function NoteToolbar({ className }: { className?: string }) {
               <FontSizeControl />
               <FontColorControl
                 fallbackColor="var(--color-fg)"
-                icon={<Baseline />}
+                icon={<EditorIcon name="textColor" />}
                 label={m.editor_text_color()}
                 markKey={KEYS.color}
               />
               <FontColorControl
                 fallbackColor="transparent"
-                icon={<PaintBucket />}
+                icon={<EditorIcon name="paintBucket" />}
                 label={m.editor_bg_color()}
                 markKey={KEYS.backgroundColor}
               />
@@ -339,35 +316,35 @@ export function NoteToolbar({ className }: { className?: string }) {
                 onClick={() => mark(KEYS.bold)}
                 shortcut={EDITOR_SHORTCUTS.bold}
               >
-                <Bold />
+                <EditorIcon name="bold" />
               </ToolbarButton>
               <ToolbarButton
                 label={m.editor_italic()}
                 onClick={() => mark(KEYS.italic)}
                 shortcut={EDITOR_SHORTCUTS.italic}
               >
-                <Italic />
+                <EditorIcon name="italic" />
               </ToolbarButton>
               <ToolbarButton
                 label={m.editor_underline()}
                 onClick={() => mark(KEYS.underline)}
                 shortcut={EDITOR_SHORTCUTS.underline}
               >
-                <Underline />
+                <EditorIcon name="underline" />
               </ToolbarButton>
               <ToolbarButton
                 label={m.editor_strikethrough()}
                 onClick={() => mark(KEYS.strikethrough)}
                 shortcut={EDITOR_SHORTCUTS.strikethrough}
               >
-                <Strikethrough />
+                <EditorIcon name="strikethrough" />
               </ToolbarButton>
               <ToolbarButton
                 label={m.editor_highlight()}
                 onClick={() => mark(KEYS.highlight)}
                 shortcut={EDITOR_SHORTCUTS.highlight}
               >
-                <Highlighter />
+                <EditorIcon name="highlighter" />
               </ToolbarButton>
             </ToolbarGroup>
           )}
@@ -378,7 +355,7 @@ export function NoteToolbar({ className }: { className?: string }) {
                   label={inlineEquationCommand.label}
                   onClick={() => inlineEquationCommand.run(editor)}
                 >
-                  <Sigma />
+                  <EditorIcon name="sigma" />
                 </ToolbarButton>
               )}
               <ToolbarButton
@@ -386,7 +363,7 @@ export function NoteToolbar({ className }: { className?: string }) {
                 onClick={() => mark(KEYS.code)}
                 shortcut={EDITOR_SHORTCUTS.code}
               >
-                <Code2 />
+                <EditorIcon name="code" />
               </ToolbarButton>
               <ToolbarButton
                 label={m.editor_link()}
@@ -410,14 +387,14 @@ export function NoteToolbar({ className }: { className?: string }) {
                   setLinkOpen(true);
                 }}
               >
-                <Link />
+                <EditorIcon name="link" />
               </ToolbarButton>
               {mentionCommand && (
                 <ToolbarButton
                   label={mentionCommand.label}
                   onClick={() => mentionCommand.run(editor)}
                 >
-                  <AtSign />
+                  <EditorIcon name="at" />
                 </ToolbarButton>
               )}
             </ToolbarGroup>
@@ -431,7 +408,7 @@ export function NoteToolbar({ className }: { className?: string }) {
                   toggleList(editor, { listStyleType: ListStyleType.Decimal })
                 }
               >
-                <ListOrdered />
+                <EditorIcon name="listOrdered" />
               </ToolbarButton>
               <ToolbarButton
                 label={m.editor_bulleted_list()}
@@ -439,7 +416,7 @@ export function NoteToolbar({ className }: { className?: string }) {
                   toggleList(editor, { listStyleType: ListStyleType.Disc })
                 }
               >
-                <List />
+                <EditorIcon name="list" />
               </ToolbarButton>
               <ToolbarButton
                 label={m.editor_task_list()}
@@ -447,7 +424,7 @@ export function NoteToolbar({ className }: { className?: string }) {
                   toggleList(editor, { listStyleType: KEYS.listTodo })
                 }
               >
-                <ListChecks />
+                <EditorIcon name="todo" />
               </ToolbarButton>
             </ToolbarGroup>
           )}
@@ -459,7 +436,7 @@ export function NoteToolbar({ className }: { className?: string }) {
                   label={twoColumnCommand.label}
                   onClick={() => twoColumnCommand.run(editor)}
                 >
-                  <Columns2 />
+                  <EditorIcon name="columns2" />
                 </ToolbarButton>
               )}
               {threeColumnCommand && (
@@ -467,7 +444,7 @@ export function NoteToolbar({ className }: { className?: string }) {
                   label={threeColumnCommand.label}
                   onClick={() => threeColumnCommand.run(editor)}
                 >
-                  <Columns3 />
+                  <EditorIcon name="columns3" />
                 </ToolbarButton>
               )}
             </ToolbarGroup>
@@ -478,13 +455,13 @@ export function NoteToolbar({ className }: { className?: string }) {
                 label={m.editor_outdent()}
                 onClick={() => editor.tf.outdent()}
               >
-                <IndentDecrease />
+                <EditorIcon name="indentDecrease" />
               </ToolbarButton>
               <ToolbarButton
                 label={m.editor_indent()}
                 onClick={() => editor.tf.indent()}
               >
-                <IndentIncrease />
+                <EditorIcon name="indentIncrease" />
               </ToolbarButton>
             </ToolbarGroup>
           )}
@@ -496,7 +473,7 @@ export function NoteToolbar({ className }: { className?: string }) {
               onClick={() => openAiMenu(editor)}
               shortcut={EDITOR_SHORTCUTS.ai}
             >
-              <Sparkles />
+              <EditorIcon name="sparkles" />
             </ToolbarButton>
           )}
           <WidgetSettingsDialog />

@@ -10,7 +10,6 @@ import {
   shift,
   useFloating,
 } from '@platejs/floating';
-import { MessageSquarePlus } from 'lucide-react';
 import type { PointRef, TComboboxInputElement } from 'platejs';
 import {
   PlateElement,
@@ -106,7 +105,7 @@ export function SlashInputElement(
               return m.editor_comment_selection();
             },
             group: 'general',
-            icon: MessageSquarePlus,
+            icon: 'commentAdd',
             id: 'comment',
             get label() {
               return m.editor_comment();

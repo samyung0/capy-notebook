@@ -1,0 +1,997 @@
+<!-- Catppuccin file icons, css-variables flavor. MIT, (c) Catppuccin.
+     Source: https://github.com/catppuccin/vscode-icons/tree/b6915da9f688/icons/css-variables
+     Colors are var(ctp-*) custom properties defined in src/styles/tokens/catppuccin.css.
+     XML comments cannot contain a double hyphen, hence the spelling above. -->
+<svg xmlns="http://www.w3.org/2000/svg">
+  <symbol id="_folder" viewBox="0 0 16 16">
+    <path
+      d="M4.5 4.5H12c.83 0 1.5.67 1.5 1.5v6c0 .83-.67 1.5-1.5 1.5H2A1.5 1.5 0 01.5 12V3.5a1 1 0 011-1h5a1 1 0 011 1v1"
+      fill="none"
+      stroke="var(--ctp-text)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="_folder_open" viewBox="0 0 16 16">
+    <path
+      d="m1.87 8 .7-2.74a1 1 0 01.96-.76h10.94a1 1 0 01.97 1.24l-1.75 7a1 1 0 01-.97.76H2A1.5 1.5 0 01.5 12V3.5a1 1 0 011-1h5a1 1 0 011 1v1"
+      fill="none"
+      stroke="var(--ctp-text)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="_file" viewBox="0 0 16 16">
+    <path
+      d="M13.5 6.5v6a2 2 0 01-2 2h-7a2 2 0 01-2-2v-9c0-1.1.9-2 2-2h4.01m-.01 0 5 5h-4a1 1 0 01-1-1z"
+      fill="none"
+      stroke="var(--ctp-text)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="pdf" viewBox="0 0 16 16">
+    <path
+      d="M2.8 14.34c1.81-1.25 3.02-3.16 3.91-5.5.9-2.33 1.86-4.33 1.44-6.63-.06-.36-.57-.73-.83-.7-1.02.06-.95 1.21-.85 1.9.24 1.71 1.56 3.7 2.84 5.56 1.27 1.87 2.32 2.16 3.78 2.26.5.03 1.25-.14 1.37-.58.77-2.8-9.02-.54-12.28 2.08-.4.33-.86 1-.6 1.46.2.36.87.4 1.23.15h0Z"
+      fill="none"
+      stroke="var(--ctp-red)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="ms-word" viewBox="0 0 16 16">
+    <g
+      fill="none"
+      stroke="var(--ctp-blue)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path
+        d="M2.5 3.13c0-.77.86-1.63 1.62-1.63h9.76c.76 0 1.62.86 1.62 1.63v9.75c0 .76-.86 1.62-1.62 1.62H4.13c-.77 0-1.63-.86-1.63-1.62"
+      />
+      <path d="m.5 5.5 1 5 1-5 1 5 .97-5m3.03 1h4m-4 3h4" />
+    </g>
+  </symbol>
+  <symbol id="markdown" viewBox="0 0 16 16">
+    <path
+      d="m9.25 8.25 2.25 2.25 2.25-2.25M3.5 11V5.5l2.04 3 1.96-3V11m4-.5V5M1.65 2.5h12.7c.59 0 1.15.49 1.15 1v9c0 .51-.56 1-1.15 1H1.65c-.59 0-1.15-.49-1.15-1V3.58c0-.5.56-1.08 1.15-1.08"
+      fill="none"
+      stroke="var(--ctp-sapphire)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="markdown-mdx" viewBox="0 0 16 16">
+    <path
+      d="m9.25 8.25 2.25 2.25 2.25-2.25M3.5 11V5.5l2.04 3 1.96-3V11m4-.5V5M1.65 2.5h12.7c.59 0 1.15.49 1.15 1v9c0 .51-.56 1-1.15 1H1.65c-.59 0-1.15-.49-1.15-1V3.58c0-.5.56-1.08 1.15-1.08"
+      fill="none"
+      stroke="var(--ctp-peach)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="image" viewBox="0 0 16 16">
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path
+        d="M11.5 6A1.5 1.5 0 0110 7.5 1.5 1.5 0 018.5 6 1.5 1.5 0 0110 4.5 1.5 1.5 0 0111.5 6"
+        stroke="var(--ctp-yellow)"
+      />
+      <path
+        d="M7.5 13.5 11 10c.5-.5 1.5-.5 2 0l1.5 1.5"
+        stroke="var(--ctp-green)"
+      />
+      <path d="m1.5 9.5 2-2C4 7 5 7 5.5 7.5l4 4" stroke="var(--ctp-green)" />
+      <path
+        d="M3 2.5h10c.83 0 1.5.67 1.5 1.5v8c0 .83-.67 1.5-1.5 1.5H3A1.5 1.5 0 011.5 12V4c0-.83.67-1.5 1.5-1.5"
+        stroke="var(--ctp-sapphire)"
+      />
+    </g>
+  </symbol>
+  <symbol id="text" viewBox="0 0 16 16">
+    <g
+      fill="none"
+      stroke="var(--ctp-text)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path
+        d="M13.5 6.5v6a2 2 0 01-2 2h-7a2 2 0 01-2-2v-9c0-1.1.9-2 2-2h4.01"
+      />
+      <path d="m8.5 1.5 5 5h-4a1 1 0 01-1-1zm-3 10h5m-5-3h5m-5-3h1" />
+    </g>
+  </symbol>
+  <symbol id="ms-excel" viewBox="0 0 16 16">
+    <g
+      fill="none"
+      stroke="var(--ctp-green)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path
+        d="M2.5 3.13c0-.77.86-1.63 1.62-1.63h9.76c.76 0 1.62.86 1.62 1.63v9.75c0 .76-.86 1.62-1.62 1.62H4.13c-.77 0-1.63-.86-1.63-1.62M.5 5.5l4 5m0-5-4 5"
+      />
+      <path d="M7.5 5.5h5v5h-5zm2 0v5m-2-3h5" />
+    </g>
+  </symbol>
+  <symbol id="ms-powerpoint" viewBox="0 0 16 16">
+    <g
+      fill="none"
+      stroke="var(--ctp-peach)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path
+        d="M2.5 3.13c0-.77.86-1.63 1.62-1.63h9.76c.76 0 1.62.86 1.62 1.63v9.75c0 .76-.86 1.62-1.62 1.62H4.13c-.77 0-1.63-.86-1.63-1.62"
+      />
+      <path d="M7.5 5.8 11.88 8 7.5 10.2zm-7-.3v5m0-2H2a1.5 1.5 0 000-3H.5" />
+    </g>
+  </symbol>
+  <symbol id="audio" viewBox="0 0 16 16">
+    <g
+      fill="none"
+      stroke="var(--ctp-maroon)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path
+        d="M5.5 12.5a2 2 0 01-2 2 2 2 0 01-2-2 2 2 0 012-2 2 2 0 012 2m9-2a2 2 0 01-2 2 2 2 0 01-2-2 2 2 0 012-2 2 2 0 012 2"
+      />
+      <path
+        d="M5.5 12.5V5c0-.54.44-1.21 1.35-1.5l6.3-2c.9 0 1.35.88 1.35 1.5v7.58m-9-3.08 9-3"
+      />
+    </g>
+  </symbol>
+  <symbol id="video" viewBox="0 0 16 16">
+    <g
+      fill="none"
+      stroke="var(--ctp-sapphire)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path
+        d="M3 2.5h10c.83 0 1.5.67 1.5 1.5v9c0 .83-.67 1.5-1.5 1.5H3A1.5 1.5 0 011.5 13V4c0-.83.67-1.5 1.5-1.5m-1.5 3h13"
+      />
+      <path d="m3.5 5.5 2-3m1.5 3 2-3m1.5 3 2-3M6.5 8v4l4-2z" />
+    </g>
+  </symbol>
+  <symbol id="json" viewBox="0 0 16 16">
+    <path
+      d="M4.5 2.5H4c-.75 0-1.5.75-1.5 1.5v2c0 1.1-1 2-1.83 2 .83 0 1.83.9 1.83 2v2c0 .75.75 1.5 1.5 1.5h.5m7-11h.5c.75 0 1.5.75 1.5 1.5v2c0 1.1 1 2 1.83 2-.83 0-1.83.9-1.83 2v2c0 .74-.75 1.5-1.5 1.5h-.5m-6.5-3a.5.5 0 100-1 .5.5 0 000 1m3 0a.5.5 0 100-1 .5.5 0 000 1m3 0a.5.5 0 100-1 .5.5 0 000 1"
+      fill="none"
+      stroke="var(--ctp-yellow)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="typescript" viewBox="0 0 16 16">
+    <g
+      fill="none"
+      stroke="var(--ctp-blue)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path
+        d="M4 1.5h8A2.5 2.5 0 0114.5 4v8a2.5 2.5 0 01-2.5 2.5H4A2.5 2.5 0 011.5 12V4A2.5 2.5 0 014 1.5"
+      />
+      <path
+        d="M12.5 8.75c0-.69-.54-1.25-1.2-1.25h-.6c-.66 0-1.2.56-1.2 1.25S10.04 10 10.7 10h.6c.66 0 1.2.56 1.2 1.25s-.54 1.25-1.2 1.25h-.6c-.66 0-1.2-.56-1.2-1.25m-3-3.75v5M5 7.5h3"
+      />
+    </g>
+  </symbol>
+  <symbol id="typescript-react" viewBox="0 0 16 16">
+    <g
+      fill="none"
+      stroke="var(--ctp-blue)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path
+        d="M8 11.3c4.14 0 7.5-1.28 7.5-2.86S12.14 5.58 8 5.58.5 6.86.5 8.44s3.36 2.87 7.5 2.87Z"
+      />
+      <path
+        d="M5.52 9.87c2.07 3.6 4.86 5.86 6.23 5.07 1.37-.8.8-4.34-1.27-7.93S5.62 1.16 4.25 1.95s-.8 4.34 1.27 7.92"
+      />
+      <path
+        d="M5.52 7.01c-2.07 3.59-2.64 7.14-1.27 7.93s4.16-1.48 6.23-5.07c2.07-3.58 2.64-7.13 1.27-7.92-1.37-.8-4.16 1.47-6.23 5.06"
+      />
+      <path
+        d="M8.5 8.44a.5.5 0 01-.5.5.5.5 0 01-.5-.5.5.5 0 01.5-.5.5.5 0 01.5.5"
+      />
+    </g>
+  </symbol>
+  <symbol id="javascript" viewBox="0 0 16 16">
+    <g
+      fill="none"
+      stroke="var(--ctp-yellow)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path
+        d="M4.5 11c0 .828427.6715729 1.5 1.5 1.5.8284271 0 1.5-.671573 1.5-1.5V7.5M12.5 8.75C12.5 8.05964406 11.9627417 7.5 11.3 7.5L10.7 7.5C10.0372583 7.5 9.5 8.05964406 9.5 8.75 9.5 9.44035594 10.0372583 10 10.7 10L11.3 10C11.9627417 10 12.5 10.5596441 12.5 11.25 12.5 11.9403559 11.9627417 12.5 11.3 12.5L10.7 12.5C10.0372583 12.5 9.5 11.9403559 9.5 11.25"
+      />
+      <path
+        d="m 4,1.5 h 8 c 1.385,0 2.5,1.115 2.5,2.5 v 8 c 0,1.385 -1.115,2.5 -2.5,2.5 H 4 C 2.615,14.5 1.5,13.385 1.5,12 V 4 C 1.5,2.615 2.615,1.5 4,1.5 Z"
+      />
+    </g>
+  </symbol>
+  <symbol id="javascript-react" viewBox="0 0 16 16">
+    <g
+      fill="none"
+      stroke="var(--ctp-sky)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path
+        d="M8 10.8c4.14 0 7.5-1.25 7.5-2.8S12.14 5.2 8 5.2.5 6.45.5 8s3.36 2.8 7.5 2.8"
+      />
+      <path
+        d="M5.52 9.4c2.07 3.5 4.86 5.72 6.23 4.95 1.37-.78.8-4.24-1.27-7.75C8.41 3.1 5.62.88 4.25 1.65c-1.37.78-.8 4.24 1.27 7.75"
+      />
+      <path
+        d="M5.52 6.6c-2.07 3.5-2.64 6.97-1.27 7.75 1.37.77 4.16-1.45 6.23-4.95s2.64-6.97 1.27-7.75C10.38.88 7.59 3.1 5.52 6.6"
+      />
+      <path
+        d="M8.5 8a.5.5 0 01-.5.5.5.5 0 01-.5-.5.5.5 0 01.5-.5.5.5 0 01.5.5"
+      />
+    </g>
+  </symbol>
+  <symbol id="html" viewBox="0 0 16 16">
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M1.5 1.5h13L13 13l-5 2-5-2z" stroke="var(--ctp-peach)" />
+      <path
+        d="M11 4.5H5l.25 3h5.5l-.25 3-2.5 1-2.5-1-.08-1"
+        stroke="var(--ctp-text)"
+      />
+    </g>
+  </symbol>
+  <symbol id="css" viewBox="0 0 16 16">
+    <g
+      fill="none"
+      stroke="var(--ctp-mauve)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path
+        d="m4 1.5h8c1.38 0 2.5 1.12 2.5 2.5v8c0 1.38-1.12 2.5-2.5 2.5h-8c-1.38 0-2.5-1.12-2.5-2.5v-8c0-1.38 1.12-2.5 2.5-2.5z"
+      />
+      <path
+        d="m 10.240861,11.529149 c 0,0.58011 0.437448,1.039154 0.96002,1.035371 l 0.451635,-0.0032 c 0.522572,-0.0036 0.949379,-0.451477 0.949379,-1.032848 0,-0.581372 -0.426807,-1.065638 -0.949379,-1.065638 l -0.451635,3.4e-5 c -0.522572,3.9e-5 -0.949379,-0.4855273 -0.949379,-1.0656374 0,-0.5801104 0.426807,-1.0378931 0.949379,-1.0378931 l 0.451635,2.825e-4 c 0.522572,3.267e-4 0.951743,0.4577827 0.951743,1.0378931 M 6.8003972,11.529149 c 0,0.58011 0.4374474,1.039154 0.9600196,1.035371 l 0.46464,-0.0032 c 0.5225722,-0.0035 0.9363738,-0.451477 0.9363738,-1.031587 0,-0.580111 -0.4090724,-1.065638 -0.9316446,-1.065638 l -0.4693692,3.4e-5 c -0.5225722,3.8e-5 -0.949379,-0.4855272 -0.949379,-1.0656373 0,-0.5801104 0.4268068,-1.0378931 0.949379,-1.0378931 h 0.4516348 c 0.5225722,0 0.9635665,0.4577827 0.9635665,1.0378931 M 3.4072246,11.529149 c 0,0.58011 0.4374474,1.051765 0.9600196,1.051765 H 4.818879 c 0.5225722,0 0.949379,-0.456521 0.949379,-1.037893 m 0.01129,-2.1312747 c 0,-0.5801103 -0.4374474,-1.037893 -0.9600196,-1.037893 L 4.3678939,8.3741358 C 3.8453217,8.3744624 3.4078743,8.8420074 3.4078743,9.4233788 v 2.1186642"
+        stroke-width=".814"
+      />
+    </g>
+  </symbol>
+  <symbol id="sass" viewBox="0 0 16 16">
+    <path
+      d="M6.75 6.38c1.85 1.07 3.35.74 4.83-.2 1.5-.95 2.7-2.78 1.3-4.15-.7-.68-3.25-.8-5.62.19-2.36.99-4.59 3.02-4.74 4.11-.31 2.19 3.15 2.88 3.64 4.23s.28 1.98-.2 2.83c-.5.85-1.96 1.62-2.8.68-.83-.95 1.67-2.75 2.98-3.25 1.3-.5 3.1-.4 3.69.25.58.64-.07 1.79-.03 1.79"
+      fill="none"
+      stroke="var(--ctp-pink)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="less" viewBox="0 0 16 16">
+    <path
+      d="M4 2.5c-.74 0-1.5.76-1.5 1.5v2c0 1.1-1.1 2-1.83 2 .74 0 1.83.9 1.83 2v2c0 .74.76 1.5 1.5 1.5m1.5-8v5a1 1 0 001 1H7m4.5-4c0-.69-.59-1-1.25-1h-.5c-.66 0-1.25.56-1.25 1.25S9.09 9 9.75 9h.5c.66 0 1.25.56 1.25 1.25s-.59 1.25-1.25 1.25h-.5c-.66 0-1.25-.31-1.25-1m3.5-8c.74 0 1.5.76 1.5 1.5v2c0 1.1 1.1 2 1.83 2-.74 0-1.83.9-1.83 2v2c0 .74-.76 1.5-1.5 1.5"
+      fill="none"
+      stroke="var(--ctp-blue)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="vue" viewBox="0 0 16 16">
+    <g
+      fill="none"
+      stroke="var(--ctp-green)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path d="M1 1.5h5.44L8 4.56 9.56 1.5H15l-6.99 13z" />
+      <path d="M12.05 1.73 8 9.28 3.95 1.73" />
+    </g>
+  </symbol>
+  <symbol id="svelte" viewBox="0 0 16 16">
+    <g
+      fill="none"
+      stroke="var(--ctp-peach)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path
+        d="m 12.86,6.72 c 0,0 1.39,-1.98 0.08,-3.87 C 11.28625,0.7625 9.44,1.6 9.44,1.6 c 0,0 -3.29,1.75 -5.11,2.99 -1.4,1 -2.24,2.26 -1.03,4.37 1.22,2.1 4.58,1.21 4.58,1.21"
+      />
+      <path
+        d="M3.14 9.28s-1.39 1.98-.08 3.87c1.31 1.9 3.5 1.24 3.5 1.24s3.29-1.74 5.11-2.98c1.4-1 2.24-2.26 1.03-4.37-1.22-2.1-4.58-1.21-4.58-1.21M6.3 6.96l4.14-2.56m-4.92 7.25L9.66 9.1"
+      />
+    </g>
+  </symbol>
+  <symbol id="graphql" viewBox="0 0 16 16">
+    <path
+      d="M9 1.5a1 1 0 01-1 1 1 1 0 01-1-1 1 1 0 011-1 1 1 0 011 1m-5.5 3a1 1 0 01-1 1 1 1 0 01-1-1 1 1 0 011-1 1 1 0 011 1m0 7a1 1 0 01-1 1 1 1 0 01-1-1 1 1 0 011-1 1 1 0 011 1m11 0a1 1 0 01-1 1 1 1 0 01-1-1 1 1 0 011-1 1 1 0 011 1m-5.5 3a1 1 0 01-1 1 1 1 0 01-1-1 1 1 0 011-1 1 1 0 011 1m5.5-10a1 1 0 01-1 1 1 1 0 01-1-1 1 1 0 011-1 1 1 0 011 1m-12 1v5m11-5v5m-10 1h9m-6 2.5-3-1.5m6 1.5 3-1.5m-9-2 4-8m5 8-4-8m-5 1 3-1.5m3 0 3 1.5"
+      fill="none"
+      stroke="var(--ctp-pink)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="python" viewBox="0 0 16 16">
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path
+        d="M8.5 5.5h-3m6 0V3c0-.8-.7-1.5-1.5-1.5H7c-.8 0-1.5.7-1.5 1.5v2.5H3c-.8 0-1.5.7-1.5 1.5v2c0 .8.7 1.5 1.48 1.5"
+        stroke="var(--ctp-blue)"
+      />
+      <path
+        d="M10.5 10.5h-3m-3 0V13c0 .8.7 1.5 1.5 1.5h3c.8 0 1.5-.7 1.5-1.5v-2.5H13c.8 0 1.5-.7 1.5-1.5V7c0-.8-.7-1.5-1.48-1.5H11.5c0 1.5 0 2-1 2h-2"
+        stroke="var(--ctp-yellow)"
+      />
+      <path
+        d="M2.98 10.5H4.5c0-1.5 0-2 1-2h2M7.5 3.5v0"
+        stroke="var(--ctp-blue)"
+      />
+      <path d="m 8.5,12.5 v 0" stroke="var(--ctp-yellow)" />
+    </g>
+  </symbol>
+  <symbol id="go" viewBox="0 0 16 16">
+    <path
+      d="m15.48 8.06-4.85.48m4.85-.48a4.98 4.98 0 01-4.54 5.42 5 5 0 112.95-8.66l-1.7 1.84a2.5 2.5 0 00-4.18 2.06c.05.57.3 1.1.69 1.51.25.27 1 .83 1.78.82.8-.02 1.58-.25 2.07-.81 0 0 .8-.96.68-1.88M2.5 8.5l-2 .01m1.5 2h1.5m-2-3.99 2-.02"
+      fill="none"
+      stroke="var(--ctp-sapphire)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="rust" viewBox="0 0 16 16">
+    <g
+      fill="none"
+      stroke="var(--ctp-peach)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path
+        d="M15.5 9.5Q8 13.505.5 9.5l1-1-1-2 2-.5V4.5h2l.5-2 1.5 1 1.5-2 1.5 2 1.5-1 .5 2h2V6l2 .5-1 2z"
+      />
+      <path
+        d="M6.5 7.5a1 1 0 01-1 1 1 1 0 01-1-1 1 1 0 011-1 1 1 0 011 1m5 0a1 1 0 01-1 1 1 1 0 01-1-1 1 1 0 011-1 1 1 0 011 1M4 11.02c-.67.37-1.5.98-1.5 2.23s1.22 1.22 2 1.25v-2M12 11c.67.37 1.5 1 1.5 2.25s-1.22 1.22-2 1.25v-2"
+      />
+    </g>
+  </symbol>
+  <symbol id="java" viewBox="0 0 16 16">
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path
+        d="M10.73 8.41c.57 3 1.59 5.83 2.77 7.09-6.63-3.45-9.76-1.75-10.5 0-.66-3.4-.54-5.74.09-7.78"
+        stroke="var(--ctp-text)"
+      />
+      <path
+        d="M8.5 7c.63.34 1.82 1.07 2.24 1.41-.54-2.9-.64-5.96-.74-7.91-2.13.58-5.73 1.98-6.9 7.22.52-.69 1.72-1.05 2.4-1.22"
+        stroke="var(--ctp-red)"
+      />
+      <path
+        d="M5.5 7A1.5 1.5 0 007 8.5 1.5 1.5 0 008.5 7 1.5 1.5 0 007 5.5 1.5 1.5 0 005.5 7"
+        stroke="var(--ctp-red)"
+      />
+    </g>
+  </symbol>
+  <symbol id="kotlin" viewBox="0 0 16 16">
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M2.5 13.5h11L8 8" stroke="var(--ctp-mauve)" />
+      <path d="M8.03 2.5h5.47l-8 8" stroke="var(--ctp-peach)" />
+      <path d="M2.5 13.5V8" stroke="var(--ctp-red)" />
+      <path d="M8 2.5H2.5V8l3-2.5" stroke="var(--ctp-sapphire)" />
+    </g>
+  </symbol>
+  <symbol id="swift" viewBox="0 0 16 16">
+    <path
+      d="M14.34 10.2c.34-1.08 1.1-5.07-4.45-8.62a.48.48 0 00-.6.07.44.44 0 00-.02.6c.03.02 2.07 2.5 1.34 5.34-1.26-.86-6.24-4.81-6.24-4.81L7.25 7.5 1.9 4.05S5.68 8.7 8 10.45c-1.12.4-3.56.82-6.78-1.18a.48.48 0 00-.58.06.44.44 0 00-.08.56c.11.18 2.7 4.36 8.14 4.36 1.5 0 2.37-.42 3.08-.77.43-.2.77-.37 1.14-.37.93 0 1.54.92 1.54.93.1.14.27.22.44.21a.46.46 0 00.4-.28c.67-1.55-.49-3.2-.96-3.78h0Z"
+      fill="none"
+      stroke="var(--ctp-peach)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="c" viewBox="0 0 16 16">
+    <path
+      clip-rule="evenodd"
+      d="m 4.0559072,12.951629 c 2.7459832,2.734744 7.1981158,2.734744 9.9441188,0 l -1.789955,-1.782586 c -1.75742,1.750224 -4.6067879,1.750224 -6.3642294,0 -1.7574416,-1.7502236 -1.7574416,-4.587893 0,-6.338097 1.7574415,-1.750224 4.6068094,-1.750224 6.3642294,0 l 0.894977,-0.8912929 0.894978,-0.891293 c -2.746003,-2.73472867 -7.1981359,-2.73472867 -9.944119,0 -2.7459858,2.7347089 -2.7459858,7.1685599 2e-7,9.9032689 z"
+      fill="none"
+      stroke="var(--ctp-blue)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="c-header" viewBox="0 0 16 16">
+    <path
+      clip-rule="evenodd"
+      d="m 4.0559072,12.951629 c 2.7459832,2.734744 7.1981158,2.734744 9.9441188,0 l -1.789955,-1.782586 c -1.75742,1.750224 -4.6067879,1.750224 -6.3642294,0 -1.7574416,-1.7502236 -1.7574416,-4.587893 0,-6.338097 1.7574415,-1.750224 4.6068094,-1.750224 6.3642294,0 l 0.894977,-0.8912929 0.894978,-0.891293 c -2.746003,-2.73472867 -7.1981359,-2.73472867 -9.944119,0 -2.7459858,2.7347089 -2.7459858,7.1685599 2e-7,9.9032689 z"
+      fill="none"
+      stroke="var(--ctp-mauve)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="cpp" viewBox="0 0 16 16">
+    <path
+      clip-rule="evenodd"
+      d="m 2.5559121,12.951629 c 2.7459832,2.734744 7.1981158,2.734744 9.9441189,0 l -1.789955,-1.782586 c -1.7574201,1.750224 -4.606788,1.750224 -6.3642295,0 -1.7574416,-1.7502236 -1.7574416,-4.587893 0,-6.338097 1.7574415,-1.750224 4.6068094,-1.750224 6.3642295,0 l 0.894977,-0.8912929 0.894978,-0.891293 c -2.7460031,-2.73472867 -7.198136,-2.73472867 -9.9441191,0 -2.74598585,2.7347089 -2.74598585,7.1685599 2e-7,9.9032689 z"
+      fill="none"
+      stroke="var(--ctp-blue)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M7.5 6v4M5.513524 7.9999996H9.51304M13.486476 5.9999996v4M11.5 7.9999992h3.999516"
+      fill="none"
+      stroke="var(--ctp-blue)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="cpp-header" viewBox="0 0 16 16">
+    <path
+      clip-rule="evenodd"
+      d="m 2.5559121,12.951629 c 2.7459832,2.734744 7.1981158,2.734744 9.9441189,0 l -1.789955,-1.782586 c -1.7574201,1.750224 -4.606788,1.750224 -6.3642295,0 -1.7574416,-1.7502236 -1.7574416,-4.587893 0,-6.338097 1.7574415,-1.750224 4.6068094,-1.750224 6.3642295,0 l 0.894977,-0.8912929 0.894978,-0.891293 c -2.7460031,-2.73472867 -7.198136,-2.73472867 -9.9441191,0 -2.74598585,2.7347089 -2.74598585,7.1685599 2e-7,9.9032689 z"
+      fill="none"
+      stroke="var(--ctp-mauve)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M7.5 6v4M5.513524 7.9999996H9.51304M13.486476 5.9999996v4M11.5 7.9999992h3.999516"
+      fill="none"
+      stroke="var(--ctp-mauve)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="csharp" viewBox="0 0 16 16">
+    <path
+      d="m 6.665625,1.0107144 c 0.54375,0.090628 0.9125,0.6062693 0.821875,1.1500367 L 7.18125,3.9983098 h 2.971875 L 10.5125,1.8326156 c 0.09063,-0.5437673 0.60625,-0.9125291 1.15,-0.8219012 0.54375,0.090628 0.9125,0.6062693 0.821875,1.1500367 L 12.18125,3.9983098 H 14 c 0.553125,0 1,0.4468892 1,1.0000319 0,0.5531426 -0.446875,1.0000319 -1,1.0000319 H 11.846875 L 11.18125,9.9985013 H 13 c 0.553125,0 1,0.4468897 1,1.0000317 0,0.553143 -0.446875,1.000032 -1,1.000032 H 10.846875 L 10.4875,14.164259 c -0.09063,0.543768 -0.60625,0.912529 -1.15,0.821902 -0.54375,-0.09063 -0.9125,-0.60627 -0.821875,-1.150037 l 0.30625,-1.834434 h -2.975 L 5.4875,14.167384 c -0.090625,0.543768 -0.60625,0.91253 -1.15,0.821902 C 3.79375,14.898658 3.425,14.383016 3.515625,13.839249 L 3.81875,11.998565 H 2 c -0.553125,0 -1,-0.446889 -1,-1.000032 C 1,10.445391 1.446875,9.9985013 2,9.9985013 H 4.153125 L 4.81875,5.9983736 H 3 c -0.553125,0 -1,-0.4468893 -1,-1.0000319 C 2,4.445199 2.446875,3.9983098 3,3.9983098 H 5.153125 L 5.5125,1.8326156 C 5.603125,1.2888483 6.11875,0.9200865 6.6625,1.0107144 Z M 6.846875,5.9983736 6.18125,9.9985013 H 9.153125 L 9.81875,5.9983736 Z"
+      fill="none"
+      stroke="var(--ctp-blue)"
+    />
+  </symbol>
+  <symbol id="ruby" viewBox="0 0 16 16">
+    <path
+      d="M1.5 9.06v2.5c.02.86.36 1.61.9 2.15 1.76 1.76 5.71.65 8.84-2.47 3.12-3.13 4.23-7.08 2.47-8.84a3.1 3.1 0 00-2.15-.9h-2.5M14.5 4l-.25 10.25L4 14.5m4.39-6.11c2.34-2.35 3.29-5.2 2.12-6.37S6.49 1.8 4.14 4.14C1.8 6.5.85 9.34 2.02 10.51s4.02.22 6.37-2.12M5.5 14.5l.25-3.75L11 11l-.25-5.25 3.75-.25"
+      fill="none"
+      stroke="var(--ctp-red)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="php" viewBox="0 0 16 16">
+    <path
+      d="M0.5,12.5 L0.5,13.24 C0.5,14 1.27360724,14.5 2,14.5 C2.9375516,14.5 3.5,14 3.5,13.2445661 L3.5,6.00089968 C3.5,4.28551107 4.99401107,2.52263547 7.14960413,2.5 C9.49387886,2.5 11,4.0579782 11,5.5 C11.1657296,8.48962302 9.57820404,9.63684469 7.49621582,10.5 L7.49621582,14.5 L15.4979764,14.5 L15.4979764,9 C15.5394484,8.36478228 14.9387379,7.15595371 14.1308258,6.5 C13.1942239,5.80827275 12.0584852,5.50253264 11,5.5 M11.5,14.5 L11.5,11.5 M6,6.5 C6.27614237,6.5 6.5,6.27614237 6.5,6 C6.5,5.72385763 6.27614237,5.5 6,5.5 C5.72385763,5.5 5.5,5.72385763 5.5,6 C5.5,6.27614237 5.72385763,6.5 6,6.5 Z"
+      fill="none"
+      stroke="var(--ctp-blue)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="dart" viewBox="0 0 16 16">
+    <g
+      fill="none"
+      stroke="var(--ctp-sapphire)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path
+        d="M7 14.5h4.5v-3h3V7L9.17 1.64c-.28-.29-.8-.47-1.17-.29L3.5 3.5 1.35 8c-.18.37 0 .88.3 1.17z"
+      />
+      <path d="M3.5 11V3.5H11m-7.5 0 8 8" />
+    </g>
+  </symbol>
+  <symbol id="scala" viewBox="0 0 16 16">
+    <path
+      d="m2.5 2.48 11-.98v3.04l-11 1zm0 5 11-.98v3.04l-11 1zm0 5 11-.98v3.04l-11 1z"
+      fill="none"
+      stroke="var(--ctp-red)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="lua" viewBox="0 0 16 16">
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path
+        d="M10.5 7A1.5 1.5 0 019 8.5 1.5 1.5 0 017.5 7 1.5 1.5 0 019 5.5 1.5 1.5 0 0110.5 7"
+        stroke="var(--ctp-text)"
+      />
+      <path
+        d="M7 2.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13m7-2a1.5 1.5 0 100 3 1.5 1.5 0 000-3"
+        stroke="var(--ctp-blue)"
+      />
+    </g>
+  </symbol>
+  <symbol id="r" viewBox="0 0 16 16">
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path
+        d="M13.5 9.5c.63-.7 1-1.54 1-2.43 0-2.52-2.91-4.57-6.5-4.57S1.5 4.55 1.5 7.07c0 1.9 1.65 3.53 4 4.22"
+        stroke="var(--ctp-overlay1)"
+      />
+      <path
+        d="M10.5 9.5c.4 0 .86.34 1 .7l1 3.3m-5 0v-8h3.05c.95 0 1.95 1 1.95 2s-1 2-1.95 2H7.5Z"
+        stroke="var(--ctp-blue)"
+      />
+    </g>
+  </symbol>
+  <symbol id="julia" viewBox="0 0 16 16">
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path
+        d="M10.5 5a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0"
+        stroke="var(--ctp-green)"
+      />
+      <path
+        d="M6.5 11a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0"
+        stroke="var(--ctp-red)"
+      />
+      <path
+        d="M14.5 11a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0"
+        stroke="var(--ctp-mauve)"
+      />
+    </g>
+  </symbol>
+  <symbol id="haskell" viewBox="0 0 16 16">
+    <path
+      d="M12.5 4.5h3m-1.5 3h1.5m-10 6 2.5-5-2.5-5H8l5.6 10h-2.53l-1.52-2.92L8 13.5zm-5 0 2.5-5-2.5-5H3l2.5 5-2.5 5z"
+      fill="none"
+      stroke="var(--ctp-mauve)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="elixir" viewBox="0 0 16 16">
+    <path
+      d="M8.03 14.5C5 14.5 3.5 12.49 3.5 10.01c0-2.82 2.25-7.02 4.62-8.48a.24.24 0 01.24 0c.08.04.12.12.11.2-.13 1.25.22 2.5.98 3.54.3.43.63.8 1.02 1.27.54.66.94 1.03 1.52 2.08l.01.02c.33.56.5 1.2.5 1.84 0 2.03-1.69 4.02-4.47 4.02"
+      fill="none"
+      stroke="var(--ctp-mauve)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="erlang" viewBox="0 0 16 16">
+    <g
+      fill="none"
+      stroke="var(--ctp-red)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path d="M6.5 5.5c0-1.25 1-2 2-2s2 .75 2 2z" />
+      <path
+        d="M13.5 13c.47-.57 1.12-1.24 1.5-2l-2.25-1.25c-.74 1.36-1.76 2.75-3.25 2.75-2.1 0-3-2.3-3-5h8c.05-1.61-.31-3.45-1-4.5M3 13c-1.08-1.3-1.5-3-1.5-5S2.1 4.24 3 3"
+      />
+    </g>
+  </symbol>
+  <symbol id="clojure" viewBox="0 0 16 16">
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14.17 10.03A6.5 6.5 0 011.81 6.02" stroke="var(--ctp-green)" />
+      <path d="M1.87 5.85A6.5 6.5 0 0114.22 9.9" stroke="var(--ctp-blue)" />
+      <path d="M6.36 4.9a3.5 3.5 0 103.41 6.12" stroke="var(--ctp-green)" />
+      <path d="M9.77 11.02a3.5 3.5 0 00-3.03-6.29" stroke="var(--ctp-blue)" />
+      <path d="M8 7.5s-1.66 2.48-1.5 3.65" stroke="var(--ctp-text)" />
+      <path
+        d="M1.81 6.02C2.47 5 3.83 4.49 5 4.46c4.06 0 3 5.56 5.03 6.86 1.21.52 3.5-.21 4.15-1.32"
+        stroke="var(--ctp-text)"
+      />
+    </g>
+  </symbol>
+  <symbol id="zig" viewBox="0 0 16 16">
+    <path
+      d="M10 3.5H6l-1.5 2h4l-7 9 4.5-2h4l1.5-2h-4l7-9z"
+      fill="none"
+      stroke="var(--ctp-yellow)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="bash" viewBox="0 0 16 16">
+    <g
+      fill="none"
+      stroke="var(--ctp-green)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path
+        d="M2 15.5c-.7 0-1.5-.8-1.5-1.5V5c0-.7.8-1.5 1.5-1.5h9c.7 0 1.5.8 1.5 1.5v9c0 .7-.8 1.5-1.5 1.5z"
+      />
+      <path
+        d="m1.2 3.8 3.04-2.5S5.17.5 5.7.5h8.4c.66 0 1.4.73 1.4 1.4v7.73a2.7 2.7 0 01-.7 1.75l-2.68 3.51"
+      />
+      <path
+        d="M6 8.75c0-.69-.54-1.25-1.2-1.25h-.6c-.66 0-1.2.56-1.2 1.25S3.54 10 4.2 10h.6c.66 0 1.2.56 1.2 1.25s-.54 1.25-1.2 1.25h-.6c-.66 0-1.2-.56-1.2-1.25M4.5 6.5v1m0 5v1"
+      />
+    </g>
+  </symbol>
+  <symbol id="powershell" viewBox="0 0 16 16">
+    <g
+      fill="none"
+      stroke="var(--ctp-blue)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path
+        d="M2 15.5c-.7 0-1.5-.8-1.5-1.5V5c0-.7.8-1.5 1.5-1.5h9c.7 0 1.5.8 1.5 1.5v9c0 .7-.8 1.5-1.5 1.5z"
+      />
+      <path
+        d="m1.2 3.8 3.04-2.5S5.17.5 5.7.5h8.4c.66 0 1.4.73 1.4 1.4v7.73a2.7 2.7 0 01-.7 1.75l-2.68 3.51M3 8.5l3 2-3 2m4 0h2"
+      />
+    </g>
+  </symbol>
+  <symbol id="batch" viewBox="0 0 16 16">
+    <g
+      fill="none"
+      stroke="var(--ctp-blue)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path
+        d="M2 15.5c-.7 0-1.5-.8-1.5-1.5V5c0-.7.8-1.5 1.5-1.5h9c.7 0 1.5.8 1.5 1.5v9c0 .7-.8 1.5-1.5 1.5z"
+      />
+      <path
+        d="m1.2 3.8 3.04-2.5S5.17.5 5.7.5h8.4c.66 0 1.4.73 1.4 1.4v7.73a2.7 2.7 0 01-.7 1.75l-2.68 3.51M3 8.5l3 2-3 2"
+      />
+    </g>
+  </symbol>
+  <symbol id="database" viewBox="0 0 16 16">
+    <path
+      d="M8 6.5c3.59 0 6.5-1.4 6.5-2.68S11.59 1.5 8 1.5 1.5 2.54 1.5 3.82 4.41 6.5 8 6.5M14.5 8c0 .83-1.24 1.79-3.25 2.2s-4.49.41-6.5 0S1.5 8.83 1.5 8m13 4.18c0 .83-1.24 1.6-3.25 2-2.01.42-4.49.42-6.5 0-2.01-.4-3.25-1.17-3.25-2m0-8.3v8.3m13-8.3v8.3"
+      fill="none"
+      stroke="var(--ctp-yellow)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="proto" viewBox="0 0 16 16">
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m.5 8.5 3-6h3l-3 6" stroke="var(--ctp-red)" />
+      <path d="M6.5 13.5h-3l-3-5 1.36-2.73z" stroke="var(--ctp-blue)" />
+      <path d="m15.5 7.5-3 6h-3l3-6" stroke="var(--ctp-yellow)" />
+      <path d="M9.5 2.5h3l3 5-1.36 2.73z" stroke="var(--ctp-green)" />
+    </g>
+  </symbol>
+  <symbol id="http" viewBox="0 0 16 16">
+    <g
+      fill="none"
+      stroke="var(--ctp-blue)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path
+        d="M14.5 8A6.5 6.5 0 018 14.5 6.5 6.5 0 011.5 8 6.5 6.5 0 018 1.5 6.5 6.5 0 0114.5 8"
+      />
+      <path
+        d="M8 1.5c1.67 2 2.5 4.17 2.5 6.5s-.83 4.5-2.5 6.5m0-13A9.96 9.96 0 005.5 8c0 2.33.83 4.5 2.5 6.5m-5.5-4h11m-11-5h11"
+      />
+    </g>
+  </symbol>
+  <symbol id="yaml" viewBox="0 0 16 16">
+    <path
+      d="M2.5 1.5h3l3 4 3-4h3l-9 13h-3L7 8z"
+      fill="none"
+      stroke="var(--ctp-red)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="toml" viewBox="0 0 16 16">
+    <path
+      d="M3.5 1.5h-2v13h2m9-13h2v13h-2m-8-11h7v3h-2v6h-3v-6h-2z"
+      fill="none"
+      stroke="var(--ctp-maroon)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="xml" viewBox="0 0 16 16">
+    <path
+      d="M4.5 4.5 1 8 4.5 11.5M11.5 4.5 15 8 11.5 11.5M9.5 2 6.5 14"
+      fill="none"
+      stroke="var(--ctp-peach)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="csv" viewBox="0 0 16 16">
+    <path
+      d="M1.5 3.5c0-.54.48-1 1.08-1H6.5l1.54 1h5.38c.6 0 1.08.44 1.08.98l-.09 9.04c0 .54-.48.98-1.08.98H2.58c-.6 0-1.08-.44-1.08-.98zm2 4v4m3-4v4m3-4v4m3-4v4m-9 0h9m-9-2h9m-9-2h9"
+      fill="none"
+      stroke="var(--ctp-green)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="properties" viewBox="0 0 16 16">
+    <path
+      d="M8 1.5c-.87 0-1.17 1.32-2.03 1.63-.86.3-2.17-.68-2.84 0-.68.67.3 1.98 0 2.84S1.5 7.13 1.5 8s1.32 1.17 1.63 2.03c.3.86-.68 2.17 0 2.85.67.67 1.98-.3 2.84 0 .85.3 1.16 1.62 2.03 1.62s1.17-1.32 2.03-1.63c.86-.3 2.17.68 2.85 0 .67-.67-.3-1.98 0-2.84.3-.85 1.62-1.16 1.62-2.03s-1.32-1.17-1.63-2.03c-.3-.86.68-2.17 0-2.84-.67-.68-1.98.3-2.84 0S8.87 1.5 8 1.5m0 9a2.5 2.5 0 100-5 2.5 2.5 0 000 5"
+      fill="none"
+      stroke="var(--ctp-text)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="env" viewBox="0 0 16 16">
+    <path
+      d="M5.5 8.5V12m0-6.5V4m0 4.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3m5 3.5v-1.5m0-3V4m0 6.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3M4 1.5h8A2.5 2.5 0 0114.5 4v8a2.5 2.5 0 01-2.5 2.5H4A2.5 2.5 0 011.5 12V4A2.5 2.5 0 014 1.5"
+      fill="none"
+      stroke="var(--ctp-yellow)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="lock" viewBox="0 0 16 16">
+    <path
+      d="m12.36 7.104c0.4817 0 0.8722 0.3903 0.8722 0.8717v5.23c0 0.4814-0.3905 0.8717-0.8722 0.8717h-8.721c-0.4817 0-0.8722-0.3903-0.8722-0.8717v-5.23c0-0.4814 0.3905-0.8717 0.8722-0.8717zm-6.977 0v-2.616c0-1.445 1.172-2.616 2.617-2.616 1.445 0 2.617 1.171 2.617 2.616v2.616"
+      fill="none"
+      stroke="var(--ctp-overlay1)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      stroke-width="1.744"
+    />
+  </symbol>
+  <symbol id="jupyter" viewBox="0 0 16 16">
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path
+        d="M2.5 2a.5.5 0 01-.5.5.5.5 0 01-.5-.5.5.5 0 01.5-.5.5.5 0 01.5.5m12 0a.5.5 0 01-.5.5.5.5 0 01-.5-.5.5.5 0 01.5-.5.5.5 0 01.5.5m-12 12a.5.5 0 01-.5.5.5.5 0 01-.5-.5.5.5 0 01.5-.5.5.5 0 01.5.5"
+        stroke="var(--ctp-overlay1)"
+      />
+      <path
+        d="M1.5 9.5c1.67 2 3.83 3 6.5 3s4.83-1 6.5-3m-13-3c1.67-2 3.83-3 6.5-3s4.83 1 6.5 3"
+        stroke="var(--ctp-peach)"
+      />
+    </g>
+  </symbol>
+  <symbol id="asciidoc" viewBox="0 0 16 16">
+    <path
+      d="M3 15 4.7144695 11M5.7787881 8.5 9 1 15 15M1 8.5H8.0000001M1 11H7"
+      fill="none"
+      stroke="var(--ctp-red)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="latex" viewBox="0 0 16 16">
+    <path
+      d="M13 12.5h1.5m-.5-4-3 4m0-4 3 4m-3.5 0h1m2-4 1.1.01m-4.1-.01h1.42m-4.42 4H9m-1.5-2v4m-.86 0h3.66l.2-.5m-3.75-3.5H10l.5.5M2 13.5h3m-1.5-5v5m-2-3.5.25-1.5h3.5L5.5 10m4-3.5 2-5 2 5m-3-2h2M9 6.5h1m3 0h1m-9.5-5v5m-1-5h2m-2 5H7l.54-.99"
+      fill="none"
+      stroke="var(--ctp-text)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="org" viewBox="0 0 16 16">
+    <path
+      d="M 2.2871875,10.408589 C 1.9490532,11.150344 0.88839286,12.951485 2,15.480391 M 9.5605513,9.5 c 0,0 -1.9115455,2.815807 1.0848657,5.550291 M 10.272772,3.3881058 13.5,0.5 11.540927,4.485982"
+      fill="none"
+      stroke="var(--ctp-teal)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      stroke-miterlimit="10"
+    />
+    <path
+      d="m 8,7.4673896 c 0.3444436,2.2881001 2.82696,1.6452931 3.574949,1.6603108 0.09437,0.002 0.345692,0.1564661 0.425051,0.2075741 l 0.994375,0.4689582 c 0.11517,0.073833 0.263324,0.1250159 0.388135,0.06962 l 0.466996,-0.2072715 c 0.324798,-0.071048 0.56773,-0.3418696 0.603135,-0.6723794 l 0.0494,-0.4614084 c 0.024,-0.2242193 -0.0512,-0.4477185 -0.205864,-0.6118319 L 11.5,4.5 10,3.5 V 1.5003632 c 0,0 -2.1907303,0.2606448 -2,1.9243834 0,0 -4.433939,1.7641989 -1.5132378,5.8671714 0,0 0.7898303,1.510176 0.018531,3.159567"
+      fill="none"
+      stroke="var(--ctp-teal)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      stroke-miterlimit="10"
+    />
+    <path
+      d="M 8,3 C 8,3 1.5997572,3.1630907 4,9"
+      fill="none"
+      stroke="var(--ctp-teal)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      stroke-miterlimit="10"
+    />
+    <path
+      d="m 3.526123,6 c 0,0 -3.46208629,2.3289406 -0.025579,6 0,0 0.9790286,1.517656 0.4994562,3.496795"
+      fill="none"
+      stroke="var(--ctp-teal)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      stroke-miterlimit="10"
+    />
+    <path
+      d="m 10.5,6.5 v 0"
+      fill="none"
+      stroke="var(--ctp-teal)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="typst" viewBox="0 0 16 16">
+    <path
+      d="m 8.343437,11.166576 q 0,0.904586 0.2515369,1.21442 0.2520611,0.309833 0.9152992,0.309833 0.6868689,0 1.7623329,-0.714459 l 0.457387,0.785418 Q 9.7161248,14.500542 8.412229,14.5 7.1072838,14.5 6.3526737,13.857041 5.5975376,13.190789 5.5975376,11.524076 V 5.2856881 H 4.4532815 L 4.2700125,4.4049361 5.5975376,3.976477 V 2.809724 L 8.343437,1.4999709 V 4.118935 l 2.700213,-0.213958 -0.252063,1.5475442 -2.44815,-0.09533 z"
+      fill="none"
+      stroke="var(--ctp-teal)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="log" viewBox="0 0 16 16">
+    <g
+      fill="none"
+      stroke="var(--ctp-text)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path d="M4.5 3.5h9v11h-9z" />
+      <path d="M11.5 3.45V1.5h-9v11h1.95m3.05-5h3m-3 3h3" />
+    </g>
+  </symbol>
+  <symbol id="diff" viewBox="0 0 16 16">
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10 6H6m2-2v4" stroke="var(--ctp-green)" />
+      <path d="M10 11.5H6" stroke="var(--ctp-red)" />
+      <path
+        d="M6.1.5h3.8c1.44 0 2.6 1.09 2.6 2.43v10.14c0 1.34-1.16 2.43-2.6 2.43H6.1c-1.44 0-2.6-1.09-2.6-2.43V2.93C3.5 1.6 4.66.5 6.1.5"
+        stroke="var(--ctp-text)"
+      />
+    </g>
+  </symbol>
+  <symbol id="license" viewBox="0 0 16 16">
+    <path
+      d="M4.5 13.5h7M8.01 1v12.06M1.5 3.5h3l1.5-1h4l1.5 1h3M.5 10 3 4.48 5.5 10C4 11 2 11 .5 10m10 0L13 4.48 15.5 10c-1.5 1-3.5 1-5 0"
+      fill="none"
+      stroke="var(--ctp-peach)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="readme" viewBox="0 0 16 16">
+    <g
+      fill="none"
+      stroke="var(--ctp-teal)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path d="M8 14.5a6.5 6.5 0 100-13 6.5 6.5 0 000 13" />
+      <path
+        d="M7 7.5h2v5H7Zm2-3a1 1 0 01-1 1 1 1 0 01-1-1 1 1 0 011-1 1 1 0 011 1"
+      />
+    </g>
+  </symbol>
+  <symbol id="docker" viewBox="0 0 16 16">
+    <path
+      d="M.5 8.5H11l.75-.5a5.35 5.35 0 010-3.5c1 .6 1 1.88 1.74 2 .77-.09 1.23.01 2 .52 0 0-.97 1.77-2.5 1.98-1.93 3.65-4.5 5.5-6.98 5.5C0 14.5.5 8.5.5 8.5m1 0v-2m0 0h8m-6 2v-4m0 0h4m-2-2h2m-2 6v-6m2 6v-6m2 6v-2"
+      fill="none"
+      stroke="var(--ctp-blue)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="makefile" viewBox="0 0 16 16">
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path
+        d="m9.24 8.47-5.28 5.58c-.56.6-1.47.6-2.04 0a1.57 1.57 0 010-2.14L7.2 6.32"
+        stroke="var(--ctp-peach)"
+      />
+      <path
+        d="m13.74 8.03-.86-.93a2.46 2.46 0 01-.64-1.68v-.65l-1.89-2.04A3.7 3.7 0 007.63 1.5H5.5l.64.61A4.72 4.72 0 017.5 5.57v1.16l1.46 1.5h1.71l1.57 1.42m-.74.85 3-3"
+        stroke="var(--ctp-text)"
+      />
+    </g>
+  </symbol>
+  <symbol id="cmake" viewBox="0 0 16 16">
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m6 11.5-3.5 3H13Z" stroke="var(--ctp-green)" />
+      <path d="m9 1.5 5.5 11-4.5-2z" stroke="var(--ctp-red)" />
+      <path d="m1.5 12.5 6-5-.5-6Z" stroke="var(--ctp-blue)" />
+    </g>
+  </symbol>
+  <symbol id="gradle" viewBox="0 0 16 16">
+    <g
+      fill="none"
+      stroke="var(--ctp-sapphire)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path d="m7.5 7.5-1.97.78c-.2.15-.74.33-1.2-.2a7.3 7.3 0 01-1-1.63" />
+      <path
+        d="M11.43 2.98c.54-.48 4.07-1.39 4.07 2.1 0 2.34-1.6 3.53-2.76 4.5-.75.61-1.35 1.28-1.35 3.92H9.88c0-1.29-2.66-2.32-3.17 0H5.38c0-1.29-2.65-2.32-3.16 0H.7C.29 11.92.22 8.3 3.33 6.45c-.15-.25-.27-1.02.43-1.3.87-.34 3.77-1.34 6.51.12s5.01 1.12 5.14.74"
+      />
+    </g>
+  </symbol>
+  <symbol id="git" viewBox="0 0 16 16">
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path
+        d="M8.5 10.5a1 1 0 01-1 1 1 1 0 01-1-1 1 1 0 011-1 1 1 0 011 1m0-6a1 1 0 01-1 1 1 1 0 01-1-1 1 1 0 011-1 1 1 0 011 1m3 3a1 1 0 01-1 1 1 1 0 01-1-1 1 1 0 011-1 1 1 0 011 1m-4-2v4m-1-6-1-1m4 4-1-1"
+        stroke="var(--ctp-text)"
+      />
+      <path
+        d="m9.06 1.06 5.88 5.88a1.5 1.5 0 010 2.12l-5.88 5.88a1.5 1.5 0 01-2.12 0L1.06 9.06a1.5 1.5 0 010-2.12l5.88-5.88a1.5 1.5 0 012.12 0"
+        stroke="var(--ctp-peach)"
+      />
+    </g>
+  </symbol>
+  <symbol id="zip" viewBox="0 0 16 16">
+    <path
+      d="m5.5 10v1m1-2v1m-1-2v1m1-2v1m-1-2v1m1-2v1m-1-2v1m0-3v1m1 0v1m7 2.5v6c0 1.105-0.8954 2-2 2h-7c-1.105 0-2-0.8954-2-2v-9c0-1.1 0.9-2 2-2h4.01m-0.01 0 5 5h-4c-0.5523 0-1-0.4477-1-1z"
+      fill="none"
+      stroke="var(--ctp-text)"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="exe" viewBox="0 0 16 16">
+    <g
+      fill="none"
+      stroke="var(--ctp-text)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path
+        d="M3 2.5h10c.83 0 1.5.67 1.5 1.5v9c0 .83-.67 1.5-1.5 1.5H3A1.5 1.5 0 011.5 13V4c0-.83.67-1.5 1.5-1.5m-1.5 3h13"
+      />
+      <path d="m6.5 8-2 2 2 2m3-4 2 2-2 2" />
+    </g>
+  </symbol>
+  <symbol id="font" viewBox="0 0 16 16">
+    <path
+      d="m7 5 4 8.5h2.5L8 2.5l-4.5 11m-1 0h2m5 0h5m-9-4H9"
+      fill="none"
+      stroke="var(--ctp-flamingo)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="binary" viewBox="0 0 16 16">
+    <g
+      fill="none"
+      stroke="var(--ctp-text)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path
+        d="M3.5 1.5h9a2 2 0 012 2v9a2 2 0 01-2 2h-9a2 2 0 01-2-2v-9c0-1.1.9-2 2-2"
+      />
+      <path
+        d="M10.5 9.5h1v3.05M6 9.5h1c.28 0 .5.22.5.5v2a.5.5 0 01-.5.5H6a.5.5 0 01-.5-.5v-2c0-.28.22-.5.5-.5m4-6h1c.28 0 .5.22.5.5v2a.5.5 0 01-.5.5h-1a.5.5 0 01-.5-.5V4c0-.28.22-.5.5-.5m-4.5 0h1v3.05"
+      />
+    </g>
+  </symbol>
+  <symbol id="svg" viewBox="0 0 16 16">
+    <path
+      d="m4.54 10 6.92-4m-6.92 4a1.5 1.5 0 10-2.6 1.5 1.5 1.5 0 002.6-1.5M8 4v8m0-8a1.5 1.5 0 100-3 1.5 1.5 0 000 3M4.54 6l6.92 4M4.54 6a1.5 1.5 0 10-2.6-1.5A1.5 1.5 0 004.54 6M8 12a1.5 1.5 0 100 3 1.5 1.5 0 000-3m3.46-2a1.5 1.5 0 102.6 1.5 1.5 1.5 0 00-2.6-1.5m0-4a1.5 1.5 0 102.6-1.5 1.5 1.5 0 00-2.6 1.5"
+      fill="none"
+      stroke="var(--ctp-peach)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="stackblitz" viewBox="0 0 16 16">
+    <path
+      d="m3.5 9.5 7.04-9-2.04 6h4l-7.04 9 2.04-6z"
+      fill="none"
+      stroke="var(--ctp-blue)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="mjml" viewBox="0 0 16 16">
+    <path
+      d="M13.5 4.5a1 1 0 100-2 1 1 0 000 2m-11-2h7a1 1 0 010 2h-7a1 1 0 110-2m11 12a1 1 0 100-2 1 1 0 000 2m-11-2h7a1 1 0 010 2h-7a1 1 0 010-2m0-3a1 1 0 100-2 1 1 0 000 2m4-2h7a1 1 0 010 2h-7a1 1 0 110-2"
+      fill="none"
+      stroke="var(--ctp-peach)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+  <symbol id="forgejo" viewBox="0 0 16 16">
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path
+        d="m12.58 1.877a1.345 1.377 0 0 1-1.345 1.377 1.345 1.377 0 0 1-1.345-1.377 1.345 1.377 0 0 1 1.345-1.377 1.345 1.377 0 0 1 1.345 1.377zm-7.619 10.87v-7.038c0-2.114 1.672-3.827 3.734-3.827h1.195"
+        stroke="var(--ctp-peach)"
+      />
+      <path
+        d="m6.305 14.13a1.345 1.377 0 0 1-1.345 1.377 1.345 1.377 0 0 1-1.345-1.377 1.345 1.377 0 0 1 1.345-1.377 1.345 1.377 0 0 1 1.345 1.377zm6.273-7.038a1.345 1.377 0 0 1-1.345 1.377 1.345 1.377 0 0 1-1.345-1.377 1.345 1.377 0 0 1 1.345-1.377 1.345 1.377 0 0 1 1.345 1.377zm-7.619 5.664v-1.837c0-2.114 1.672-3.827 3.734-3.827h1.195"
+        stroke="var(--ctp-red)"
+      />
+    </g>
+  </symbol>
+  <symbol id="drawio" viewBox="0 0 16 16">
+    <path
+      d="M2.25 10.5h3.5c.41 0 .75.34.75.75v2.5c0 .41-.34.75-.75.75h-3.5a.75.75 0 01-.75-.75v-2.5c0-.41.34-.75.75-.75m8 0h3.5c.41 0 .75.34.75.75v2.5c0 .41-.34.75-.75.75h-3.5a.75.75 0 01-.75-.75v-2.5c0-.41.34-.75.75-.75m-4-9h3.5c.41 0 .75.34.75.75v2.5c0 .41-.34.75-.75.75h-3.5a.75.75 0 01-.75-.75v-2.5c0-.41.34-.75.75-.75M4 10.5l3.5-5m4.5 5-3.5-5"
+      fill="none"
+      stroke="var(--ctp-peach)"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </symbol>
+</svg>

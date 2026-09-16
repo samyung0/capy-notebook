@@ -1,7 +1,7 @@
-import { ChevronRight } from 'lucide-react';
 import { ContextMenu as ContextMenuPrimitive } from 'radix-ui';
 import * as React from 'react';
 import { cn } from '@/lib/cn';
+import { Icon } from './Icon';
 import {
   focusReopenedSubmenu,
   MenuOpenContext,
@@ -132,7 +132,7 @@ function ContextMenuSubTrigger({
       {...props}
     >
       {children}
-      <ChevronRight className="ml-auto size-4 text-fg-muted" />
+      <Icon className="ml-auto size-4 text-fg-muted" name="chevronRight" />
     </ContextMenuPrimitive.SubTrigger>
   );
 }

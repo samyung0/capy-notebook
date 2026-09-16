@@ -12,10 +12,10 @@ import {
   useFloatingLinkEdit,
   useFloatingLinkEditState,
 } from '@platejs/link/react';
-import { Check, ExternalLink, Pencil, Unlink, X } from 'lucide-react';
 import { useEditorPlugin, useEditorRef, usePluginOption } from 'platejs/react';
 import { useMemo, useState } from 'react';
 import { PopupMotion } from '@/components/ui/PopupMotion';
+import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { FloatingActionButton } from './nodeComponents';
@@ -97,13 +97,13 @@ export function LinkFloatingToolbar() {
           </label>
           <div className="flex items-center justify-end gap-0.5">
             <FloatingActionButton label={m.editor_link_save()} type="submit">
-              <Check />
+              <EditorIcon name="check" />
             </FloatingActionButton>
             <FloatingActionButton
               label={m.editor_link_cancel()}
               onClick={cancelEdit}
             >
-              <X />
+              <EditorIcon name="x" />
             </FloatingActionButton>
           </div>
           {invalid && (
@@ -122,18 +122,18 @@ export function LinkFloatingToolbar() {
             label={m.editor_link_edit()}
             {...editButtonProps}
           >
-            <Pencil />
+            <EditorIcon name="pencil" />
           </FloatingActionButton>
           <FloatingActionButton asChild label={m.editor_link_open()}>
             <LinkOpenButton rel="noopener noreferrer">
-              <ExternalLink />
+              <EditorIcon name="externalLink" />
             </LinkOpenButton>
           </FloatingActionButton>
           <FloatingActionButton
             label={m.editor_link_remove()}
             {...unlinkButtonProps}
           >
-            <Unlink />
+            <EditorIcon name="unlink" />
           </FloatingActionButton>
         </div>
       )}

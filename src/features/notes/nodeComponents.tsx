@@ -1,14 +1,6 @@
 import { useLink } from '@platejs/link/react';
 import { isOrderedList } from '@platejs/list';
 import { useTocElementState } from '@platejs/toc/react';
-import {
-  Check,
-  CircleAlert,
-  CircleCheck,
-  CircleX,
-  Clipboard,
-  Info,
-} from 'lucide-react';
 import { KEYS, NodeApi, type Path, type TLinkElement } from 'platejs';
 import {
   type PlateEditor,
@@ -39,6 +31,7 @@ import {
 import { ButtonTooltip } from '@/components/ui/Tooltip';
 import { Katex } from '@/features/materials/Katex';
 import { YouTubeEmbedElement } from '@/features/materials/YouTubeEmbed';
+import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { Column, ColumnGroup } from './ColumnNodes';
@@ -239,9 +232,9 @@ function CodeBlock(props: PlateElementProps) {
         >
           <ContentSwap contentKey={String(copied)} kind="icon">
             {copied ? (
-              <Check className="size-3.5" />
+              <EditorIcon className="size-3.5" name="check" />
             ) : (
-              <Clipboard className="size-3.5" />
+              <EditorIcon className="size-3.5" name="clipboard" />
             )}
           </ContentSwap>
         </button>
@@ -330,13 +323,13 @@ function CalloutIcon({ variant }: { variant: CalloutVariant }) {
   const className = 'mt-0.5 size-5 shrink-0';
   switch (variant) {
     case 'success':
-      return <CircleCheck aria-hidden className={className} />;
+      return <EditorIcon className={className} name="circleCheck" />;
     case 'warning':
-      return <CircleAlert aria-hidden className={className} />;
+      return <EditorIcon className={className} name="warning" />;
     case 'danger':
-      return <CircleX aria-hidden className={className} />;
+      return <EditorIcon className={className} name="circleX" />;
     default:
-      return <Info aria-hidden className={className} />;
+      return <EditorIcon className={className} name="info" />;
   }
 }
 

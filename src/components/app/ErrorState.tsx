@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react';
-import { Icon } from '@/components/ui/Icon';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import { cn } from '@/lib/cn';
 
 export function ErrorState({
   action,
   className,
   description,
+  icon = 'warning',
   testId,
   title,
   variant,
@@ -13,6 +14,7 @@ export function ErrorState({
   action?: ReactNode;
   className?: string;
   description?: ReactNode;
+  icon?: IconName;
   testId?: string;
   title: ReactNode;
   variant: 'page' | 'panel';
@@ -38,7 +40,7 @@ export function ErrorState({
       >
         <Icon
           className={variant === 'page' ? 'size-7' : 'size-6.5'}
-          name="warning"
+          name={icon}
         />
       </span>
       <div className="flex flex-col items-center justify-center gap-1.5">

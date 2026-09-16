@@ -6,7 +6,6 @@ import {
   shift,
   useVirtualFloating,
 } from '@platejs/floating';
-import { Copy, PencilLine, Trash2 } from 'lucide-react';
 import {
   PlateElement,
   type PlateElementProps,
@@ -37,6 +36,7 @@ import {
 import { StandaloneMaterialTitle } from '@/features/materials/MaterialRenderContext';
 import { Mermaid } from '@/features/materials/Mermaid';
 import { mermaidBlockLabel } from '@/features/materials/MermaidBlockLabel';
+import { EditorIcon } from '@/features/notes/EditorIcon';
 import { answerKey } from '@/features/quizzes/grade';
 import {
   QuestionRunner,
@@ -223,16 +223,16 @@ function StudyBlockToolbar({
         {onEdit && (
           <>
             <StudyBlockAction label={m.action_edit()} onClick={onEdit}>
-              <PencilLine />
+              <EditorIcon name="newNote" />
             </StudyBlockAction>
             <span className="mx-1 h-5 w-px bg-divider" />
           </>
         )}
         <StudyBlockAction label={m.editor_duplicate()} onClick={onDuplicate}>
-          <Copy />
+          <EditorIcon name="copy" />
         </StudyBlockAction>
         <StudyBlockAction danger label={m.action_delete()} onClick={onDelete}>
-          <Trash2 />
+          <EditorIcon name="trash" />
         </StudyBlockAction>
       </PopupMotion>
     </FloatingPortal>

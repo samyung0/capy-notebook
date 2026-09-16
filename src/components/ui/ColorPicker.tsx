@@ -1,7 +1,7 @@
-import { Check, RotateCcw } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { Icon } from './Icon';
 
 export interface ColorOption {
   name: string;
@@ -113,7 +113,7 @@ export function ColorPicker({
           onMouseDown={(event) => event.preventDefault()}
           type="button"
         >
-          <RotateCcw className="size-3.5" />
+          <Icon className="size-3.5" name="refresh" />
           <span className="translate-y-px">{m.color_default()}</span>
         </button>
       </div>
@@ -145,11 +145,12 @@ export function ColorPicker({
               type="button"
             >
               {selected && (
-                <Check
+                <Icon
                   className={cn(
                     'size-3.5 drop-shadow-sm',
                     isBrightColor(color.value) ? 'text-black' : 'text-white'
                   )}
+                  name="check"
                 />
               )}
             </button>

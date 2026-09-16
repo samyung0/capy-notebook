@@ -1,16 +1,4 @@
 import { TablePlugin, useTableMergeState } from '@platejs/table/react';
-import {
-  ArrowDown,
-  ArrowLeft,
-  ArrowRight,
-  ArrowUp,
-  Combine,
-  Grid3X3,
-  Table2,
-  Trash2,
-  Ungroup,
-  X,
-} from 'lucide-react';
 import { KEYS } from 'platejs';
 import { useEditorPlugin, useEditorSelector } from 'platejs/react';
 import { useState } from 'react';
@@ -24,6 +12,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/DropdownMenu';
+import { EditorIcon } from '@/features/notes/EditorIcon';
 import { ToolbarButton } from '@/features/notes/toolbar/ToolbarButton';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -36,7 +25,7 @@ export function TableMenu() {
       <DropdownMenuTrigger asChild>
         <span className="inline-flex">
           <ToolbarButton active={open} label={m.editor_table_controls()}>
-            <Table2 />
+            <EditorIcon name="table" />
           </ToolbarButton>
         </span>
       </DropdownMenuTrigger>
@@ -72,7 +61,7 @@ function TableMenuItems({ onClose }: { onClose: () => void }) {
     <DropdownMenuGroup>
       <DropdownMenuSub>
         <DropdownMenuSubTrigger>
-          <Grid3X3 />
+          <EditorIcon name="grid" />
           <span>{m.editor_table()}</span>
         </DropdownMenuSubTrigger>
         <DropdownMenuSubContent className="w-auto p-0">
@@ -97,14 +86,14 @@ function TableMenuItems({ onClose }: { onClose: () => void }) {
             disabled={!canMerge}
             onSelect={() => run(() => tf.table.merge())}
           >
-            <Combine />
+            <EditorIcon name="combine" />
             {m.editor_merge_cells()}
           </DropdownMenuItem>
           <DropdownMenuItem
             disabled={!canSplit}
             onSelect={() => run(() => tf.table.split())}
           >
-            <Ungroup />
+            <EditorIcon name="ungroup" />
             {m.editor_split_cell()}
           </DropdownMenuItem>
         </DropdownMenuSubContent>
@@ -119,15 +108,15 @@ function TableMenuItems({ onClose }: { onClose: () => void }) {
           <DropdownMenuItem
             onSelect={() => run(() => tf.insert.tableRow({ before: true }))}
           >
-            <ArrowUp />
+            <EditorIcon name="arrowUp" />
             {m.editor_insert_row_before()}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => run(() => tf.insert.tableRow())}>
-            <ArrowDown />
+            <EditorIcon name="arrowDown" />
             {m.editor_insert_row_after()}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => run(() => tf.remove.tableRow())}>
-            <X />
+            <EditorIcon name="x" />
             {m.editor_delete_row()}
           </DropdownMenuItem>
         </DropdownMenuSubContent>
@@ -142,15 +131,15 @@ function TableMenuItems({ onClose }: { onClose: () => void }) {
           <DropdownMenuItem
             onSelect={() => run(() => tf.insert.tableColumn({ before: true }))}
           >
-            <ArrowLeft />
+            <EditorIcon name="arrowLeft" />
             {m.editor_insert_col_before()}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => run(() => tf.insert.tableColumn())}>
-            <ArrowRight />
+            <EditorIcon name="arrowRight" />
             {m.editor_insert_col_after()}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => run(() => tf.remove.tableColumn())}>
-            <X />
+            <EditorIcon name="x" />
             {m.editor_delete_col()}
           </DropdownMenuItem>
         </DropdownMenuSubContent>
@@ -160,7 +149,7 @@ function TableMenuItems({ onClose }: { onClose: () => void }) {
         disabled={!tableSelected}
         onSelect={() => run(() => tf.remove.table())}
       >
-        <Trash2 />
+        <EditorIcon name="trash" />
         {m.editor_delete_table()}
       </DropdownMenuItem>
     </DropdownMenuGroup>

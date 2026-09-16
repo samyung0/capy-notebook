@@ -68,6 +68,7 @@ The manual [external-search spot-check](../bench/rag/reports/2026-09-15-external
 | [`src/lib/googlePicker.test.ts`](../src/lib/googlePicker.test.ts) | Google multi-select, folder selection, origin/app id, and picked/cancel/error callback dispatch. |
 | [`src/lib/onedrivePicker.test.ts`](../src/lib/onedrivePicker.test.ts)     | OneDrive mixed file/folder multi-selection with persistence and popup cleanup, picker host from `/me/drive`, personal vs work scopes, `event.origin` allowlist, pick payload to import `fileIds`/`driveIds`, tenant-consent vs user-cancel mapping, and Google Picker env rejection of missing keys and non-numeric project ids. |
 | [`src/mocks/scenarios.test.ts`](../src/mocks/scenarios.test.ts)           | Validates development scenario IDs and handler mappings, auth step isolation/reset, Huma error envelopes, upload/import/flashcard endpoint dispatch, and chat warning/text/effect delivery through the real SSE parser.                                                                                                          |
+| [`src/lib/fileIcons.test.ts`](../src/lib/fileIcons.test.ts)               | Every `FileIcon` name has a symbol in the Catppuccin sprite and vice versa; extension refinement wins over the backend `FileKind` (code files, video under audio, csv under sheet, dotless names) with the kind as fallback; material types map. |
 
 ### Lib
 

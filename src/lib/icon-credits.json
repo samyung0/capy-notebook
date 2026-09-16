@@ -53,5 +53,16 @@
       "url": "https://creativecommons.org/publicdomain/zero/1.0/"
     },
     "adaptation": "DiceBear remix"
+  },
+  {
+    "id": "catppuccin",
+    "name": "Catppuccin Icons",
+    "author": "Catppuccin",
+    "source": "https://github.com/catppuccin/vscode-icons",
+    "license": {
+      "name": "MIT",
+      "url": "https://github.com/catppuccin/vscode-icons/blob/main/LICENSE"
+    },
+    "adaptation": "css-variables flavor; palette bound to the app theme"
   }
 ]

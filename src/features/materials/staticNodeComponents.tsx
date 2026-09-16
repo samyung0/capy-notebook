@@ -3,7 +3,6 @@
  * Styling is shared with the editable components via nodeStyles. */
 
 import { getTableColumnCount } from '@platejs/table';
-import { CircleAlert, CircleCheck, CircleX, Info } from 'lucide-react';
 import { KEYS, NodeApi, type Path, type TTableElement } from 'platejs';
 import {
   SlateElement,
@@ -12,6 +11,7 @@ import {
   type SlateLeafProps,
 } from 'platejs/static';
 import type { CSSProperties, MouseEvent } from 'react';
+import { EditorIcon } from '@/features/notes/EditorIcon';
 import {
   BLOCK_SHELL_CLASS,
   BLOCKQUOTE_CLASS,
@@ -199,13 +199,13 @@ function CalloutIcon({ variant }: { variant: CalloutVariant }) {
   const className = 'mt-0.5 size-5 shrink-0';
   switch (variant) {
     case 'success':
-      return <CircleCheck aria-hidden className={className} />;
+      return <EditorIcon className={className} name="circleCheck" />;
     case 'warning':
-      return <CircleAlert aria-hidden className={className} />;
+      return <EditorIcon className={className} name="warning" />;
     case 'danger':
-      return <CircleX aria-hidden className={className} />;
+      return <EditorIcon className={className} name="circleX" />;
     default:
-      return <Info aria-hidden className={className} />;
+      return <EditorIcon className={className} name="info" />;
   }
 }
 

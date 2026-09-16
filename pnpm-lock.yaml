@@ -168,9 +168,6 @@ importers:
       lowlight:
         specifier: ^3.3.0
         version: 3.3.0
-      lucide-react:
-        specifier: ^1.23.0
-        version: 1.30.0(react@19.2.8)
       mermaid:
         specifier: ^11.16.0
         version: 11.16.1

@@ -5,3 +5,7 @@
 - Developer Epo requested (2026-09-15) broader MSW frontend user scenarios, reachable sign-in/sign-up/password-reset pages, and developer buttons opening real dialogs with dummy data when normal mock flows cannot reach them. src/mocks/scenarios.ts src/components/dev/MockScenarioPanel.tsx
 
 - Developer Epo requested (2026-09-16) Biology 101 file-state fixtures reachable as ordinary files, PDF failures using FileError, and an ownership-transfer preview without an underlying mock member dialog. src/mocks/dialogFiles.ts src/features/files/PdfView.tsx src/components/dev/MockDialogPreview.tsx
+
+- Developer Epo decided (2026-09-16) ErrorDescription carries an optional icon typed IconName rendered only by ErrorState boundaries (toasts keep their variant icon, the share route keeps the default): offline wifiOff, network wifiError, sourceChanged fileError, forbidden securityWarning, server error. src/lib/errors.ts src/components/ui/Icon.tsx src/components/app/ErrorState.tsx src/components/app/AppErrorBoundary.tsx
+- Developer Epo decided (2026-09-16) the mock scenario panel has an Error toasts section spawning every toast-producing ErrorKind through the shared mutation toast. src/api/queryClient.ts src/mocks/toastErrors.ts src/components/dev/MockScenarioPanel.tsx
+- Developer Epo requested (2026-09-16) dropdown scenarios for every request-reachable ErrorKind: plain 403 and a rejected fetch on the files list, provider_busy, llm_key_failed and files_batch_exceeded; failure status accepts network for a rejected fetch. src/mocks/scenarioFailures.ts

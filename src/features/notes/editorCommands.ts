@@ -1,31 +1,6 @@
 import { ListStyleType, toggleList } from '@platejs/list';
-import {
-  AtSign,
-  Braces,
-  CircleAlert,
-  Columns2,
-  Columns3,
-  ExternalLink,
-  FileAudio,
-  FileText,
-  Heading1,
-  Heading2,
-  Heading3,
-  Image,
-  Info,
-  List,
-  ListChecks,
-  ListOrdered,
-  type LucideIcon,
-  Minus,
-  PanelLeft,
-  PanelRight,
-  Pilcrow,
-  Quote,
-  Sigma,
-  Table2,
-} from 'lucide-react';
 import { KEYS } from 'platejs';
+import type { IconName } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 import type { NoteBlockDialogsApi } from './blocks/dialogContext';
 import { customBlockNode } from './blocks/shared';
@@ -44,7 +19,7 @@ export interface EditorCommand {
   description: string;
   focusEditor?: boolean;
   group: EditorCommandGroup;
-  icon: LucideIcon;
+  icon: IconName;
   id: string;
   keywords?: string[];
   label: string;
@@ -106,7 +81,7 @@ function blockCommand(
   id: string,
   label: () => string,
   type: string,
-  icon: LucideIcon,
+  icon: IconName,
   group: EditorCommandGroup,
   keywords: string[] = [],
   shortcut?: string
@@ -134,7 +109,7 @@ function listCommand(
   id: string,
   label: () => string,
   listStyleType: string,
-  icon: LucideIcon,
+  icon: IconName,
   keywords: string[] = []
 ) {
   return {
@@ -159,7 +134,7 @@ function columnCommand(
   id: string,
   label: () => string,
   widths: readonly string[],
-  icon: LucideIcon,
+  icon: IconName,
   keywords: string[] = []
 ) {
   return {
@@ -184,7 +159,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     'paragraph',
     () => m.editor_block_text(),
     'p',
-    Pilcrow,
+    'paragraph',
     'general',
     ['paragraph', 'plain']
   ),
@@ -192,7 +167,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     'heading-1',
     () => m.editor_heading_1(),
     'h1',
-    Heading1,
+    'heading1',
     'general',
     ['title', 'h1'],
     'Ctrl/Cmd+Alt+1'
@@ -201,7 +176,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     'heading-2',
     () => m.editor_heading_2(),
     'h2',
-    Heading2,
+    'heading2',
     'general',
     ['subtitle', 'h2'],
     'Ctrl/Cmd+Alt+2'
@@ -210,7 +185,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     'heading-3',
     () => m.editor_heading_3(),
     'h3',
-    Heading3,
+    'heading3',
     'general',
     ['section', 'h3'],
     'Ctrl/Cmd+Alt+3'
@@ -219,7 +194,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     'heading-4',
     () => m.editor_heading_4(),
     'h4',
-    Heading1,
+    'heading1',
     'general',
     ['h4']
   ),
@@ -227,7 +202,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     'heading-5',
     () => m.editor_heading_5(),
     'h5',
-    Heading2,
+    'heading2',
     'general',
     ['h5']
   ),
@@ -235,7 +210,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     'heading-6',
     () => m.editor_heading_6(),
     'h6',
-    Heading3,
+    'heading3',
     'general',
     ['h6']
   ),
@@ -243,7 +218,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     'quote',
     () => m.editor_blockquote(),
     'blockquote',
-    Quote,
+    'quote',
     'general',
     ['quote', 'citation'],
     'Ctrl/Cmd+Shift+.'
@@ -252,7 +227,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     'code-block',
     () => m.editor_code_block(),
     'code_block',
-    Braces,
+    'braces',
     'general',
     ['code', 'pre'],
     'Ctrl/Cmd+Alt+8'
@@ -262,7 +237,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
       return m.editor_cmd_divider();
     },
     group: 'general',
-    icon: Minus,
+    icon: 'minus',
     id: 'divider',
     get label() {
       return m.editor_divider();
@@ -274,29 +249,26 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     'bulleted-list',
     () => m.editor_bulleted_list(),
     ListStyleType.Disc,
-    List,
+    'list',
     ['unordered', 'ul', 'bullet']
   ),
   listCommand(
     'numbered-list',
     () => m.editor_numbered_list(),
     ListStyleType.Decimal,
-    ListOrdered,
+    'listOrdered',
     ['ordered', 'ol', 'number']
   ),
-  listCommand(
-    'task-list',
-    () => m.editor_task_list(),
-    KEYS.listTodo,
-    ListChecks,
-    ['todo', 'checklist']
-  ),
+  listCommand('task-list', () => m.editor_task_list(), KEYS.listTodo, 'todo', [
+    'todo',
+    'checklist',
+  ]),
   {
     get description() {
       return m.editor_cmd_table();
     },
     group: 'blockElements',
-    icon: Table2,
+    icon: 'table',
     id: 'table',
     get label() {
       return m.editor_table();
@@ -319,7 +291,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
       return m.editor_cmd_callout();
     },
     group: 'blockElements',
-    icon: Info,
+    icon: 'info',
     id: 'callout',
     get label() {
       return m.editor_callout();
@@ -340,12 +312,12 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
         : () => layout.label,
       layout.widths,
       layout.value === 'equal-3'
-        ? Columns3
+        ? 'columns3'
         : layout.value === 'left-wide'
-          ? PanelRight
+          ? 'panelRight'
           : layout.value === 'right-wide'
-            ? PanelLeft
-            : Columns2,
+            ? 'panelLeft'
+            : 'columns2',
       ['columns', 'layout']
     )
   ),
@@ -354,7 +326,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
       return m.editor_cmd_image();
     },
     group: 'fileOperations',
-    icon: Image,
+    icon: 'image',
     id: 'image',
     get label() {
       return m.editor_image();
@@ -367,7 +339,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
       return m.editor_cmd_youtube();
     },
     group: 'fileOperations',
-    icon: ExternalLink,
+    icon: 'externalLink',
     id: 'youtube',
     get label() {
       return m.editor_youtube_embed();
@@ -383,7 +355,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
       return m.editor_cmd_audio();
     },
     group: 'fileOperations',
-    icon: FileAudio,
+    icon: 'fileAudio',
     id: 'audio',
     get label() {
       return m.editor_audio();
@@ -396,7 +368,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
       return m.editor_cmd_file();
     },
     group: 'fileOperations',
-    icon: FileText,
+    icon: 'fileText',
     id: 'file',
     get label() {
       return m.editor_file();
@@ -410,7 +382,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     },
     focusEditor: false,
     group: 'inlineElements',
-    icon: AtSign,
+    icon: 'at',
     id: 'mention',
     keywords: ['user', '@'],
     get label() {
@@ -427,7 +399,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
       return m.editor_cmd_equation();
     },
     group: 'blockElements',
-    icon: Sigma,
+    icon: 'sigma',
     id: 'equation',
     get label() {
       return m.editor_equation();
@@ -445,7 +417,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
       return m.editor_cmd_inline_equation();
     },
     group: 'inlineElements',
-    icon: Sigma,
+    icon: 'sigma',
     id: 'inline-equation',
     get label() {
       return m.editor_inline_equation();
@@ -458,7 +430,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
       return m.editor_cmd_toc();
     },
     group: 'blockElements',
-    icon: List,
+    icon: 'list',
     id: 'toc',
     keywords: ['toc', 'outline'],
     get label() {
@@ -473,7 +445,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
       return m.editor_cmd_quiz();
     },
     group: 'blockElements',
-    icon: CircleAlert,
+    icon: 'warning',
     id: 'quiz',
     get label() {
       return m.editor_quiz();
@@ -489,7 +461,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
       return m.editor_cmd_flashcards();
     },
     group: 'blockElements',
-    icon: ListChecks,
+    icon: 'todo',
     id: 'flashcards',
     get label() {
       return m.editor_flashcards();
@@ -505,7 +477,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
       return m.editor_cmd_mermaid();
     },
     group: 'blockElements',
-    icon: Braces,
+    icon: 'braces',
     id: 'mermaid',
     keywords: ['diagram', 'flowchart'],
     get label() {

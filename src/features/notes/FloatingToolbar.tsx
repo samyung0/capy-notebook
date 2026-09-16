@@ -5,17 +5,6 @@ import {
   useFloatingToolbar,
   useFloatingToolbarState,
 } from '@platejs/floating';
-import {
-  Bold,
-  Code2,
-  Italic,
-  Link,
-  MessageSquarePlus,
-  Sigma,
-  Sparkles,
-  Strikethrough,
-  Underline,
-} from 'lucide-react';
 import { KEYS } from 'platejs';
 import {
   useEditorId,
@@ -25,6 +14,7 @@ import {
 } from 'platejs/react';
 import { PopupMotion } from '@/components/ui/PopupMotion';
 import { ButtonTooltip } from '@/components/ui/Tooltip';
+import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { features } from '@/lib/features';
@@ -104,7 +94,7 @@ function FloatingToolbarChrome({
               onClick={() => openAiMenu(editor)}
               shortcut={EDITOR_SHORTCUTS.ai}
             >
-              <Sparkles />{' '}
+              <EditorIcon name="sparkles" />{' '}
               <span className="pr-1 text-xs">{m.editor_ask_ai()}</span>
             </FloatingButton>
             <Separator />
@@ -115,41 +105,41 @@ function FloatingToolbarChrome({
           onClick={() => mark(KEYS.bold)}
           shortcut={EDITOR_SHORTCUTS.bold}
         >
-          <Bold />
+          <EditorIcon name="bold" />
         </FloatingButton>
         <FloatingButton
           label={m.editor_italic()}
           onClick={() => mark(KEYS.italic)}
           shortcut={EDITOR_SHORTCUTS.italic}
         >
-          <Italic />
+          <EditorIcon name="italic" />
         </FloatingButton>
         <FloatingButton
           label={m.editor_underline()}
           onClick={() => mark(KEYS.underline)}
           shortcut={EDITOR_SHORTCUTS.underline}
         >
-          <Underline />
+          <EditorIcon name="underline" />
         </FloatingButton>
         <FloatingButton
           label={m.editor_strikethrough()}
           onClick={() => mark(KEYS.strikethrough)}
           shortcut={EDITOR_SHORTCUTS.strikethrough}
         >
-          <Strikethrough />
+          <EditorIcon name="strikethrough" />
         </FloatingButton>
         <FloatingButton
           label={m.editor_inline_code()}
           onClick={() => mark(KEYS.code)}
           shortcut={EDITOR_SHORTCUTS.code}
         >
-          <Code2 />
+          <EditorIcon name="code" />
         </FloatingButton>
         <FloatingButton
           label={m.editor_inline_equation()}
           onClick={() => insertInlineEquation(editor)}
         >
-          <Sigma />
+          <EditorIcon name="sigma" />
         </FloatingButton>
         <FloatingButton
           label={m.editor_link()}
@@ -161,7 +151,7 @@ function FloatingToolbarChrome({
             )?.click()
           }
         >
-          <Link />
+          <EditorIcon name="link" />
         </FloatingButton>
         {canEdit && collaboration && (
           <>
@@ -170,7 +160,7 @@ function FloatingToolbarChrome({
               label={m.editor_comment()}
               onClick={collaboration.openComment}
             >
-              <MessageSquarePlus />
+              <EditorIcon name="commentAdd" />
             </FloatingButton>
           </>
         )}

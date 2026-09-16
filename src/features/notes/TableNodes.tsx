@@ -11,17 +11,6 @@ import {
   useTableMergeState,
   useTableSelectionDom,
 } from '@platejs/table/react';
-import {
-  ArrowDown,
-  ArrowLeft,
-  ArrowRight,
-  ArrowUp,
-  Combine,
-  GripVertical,
-  Trash2,
-  Ungroup,
-  X,
-} from 'lucide-react';
 import { PathApi, type TTableCellElement, type TTableElement } from 'platejs';
 import {
   PlateElement,
@@ -40,6 +29,7 @@ import {
   PopoverAnchor,
   PopoverContent,
 } from '@/components/ui/Popover';
+import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { FloatingActionButton } from './nodeComponents';
@@ -164,7 +154,7 @@ function TableFloatingToolbarContent({ multiCell }: { multiCell: boolean }) {
           label={m.editor_merge_cells()}
           onClick={() => action(() => tf.table.merge())}
         >
-          <Combine />
+          <EditorIcon name="combine" />
         </FloatingActionButton>
       )}
       {canSplit && (
@@ -172,7 +162,7 @@ function TableFloatingToolbarContent({ multiCell }: { multiCell: boolean }) {
           label={m.editor_split_cell()}
           onClick={() => action(() => tf.table.split())}
         >
-          <Ungroup />
+          <EditorIcon name="ungroup" />
         </FloatingActionButton>
       )}
 
@@ -183,19 +173,19 @@ function TableFloatingToolbarContent({ multiCell }: { multiCell: boolean }) {
             label={m.editor_insert_row_before()}
             onClick={() => action(() => tf.insert.tableRow({ before: true }))}
           >
-            <ArrowUp />
+            <EditorIcon name="arrowUp" />
           </FloatingActionButton>
           <FloatingActionButton
             label={m.editor_insert_row_after()}
             onClick={() => action(() => tf.insert.tableRow())}
           >
-            <ArrowDown />
+            <EditorIcon name="arrowDown" />
           </FloatingActionButton>
           <FloatingActionButton
             label={m.editor_delete_row()}
             onClick={() => action(() => tf.remove.tableRow())}
           >
-            <X />
+            <EditorIcon name="x" />
           </FloatingActionButton>
           <TableActionSeparator />
           <FloatingActionButton
@@ -204,26 +194,26 @@ function TableFloatingToolbarContent({ multiCell }: { multiCell: boolean }) {
               action(() => tf.insert.tableColumn({ before: true }))
             }
           >
-            <ArrowLeft />
+            <EditorIcon name="arrowLeft" />
           </FloatingActionButton>
           <FloatingActionButton
             label={m.editor_insert_col_after()}
             onClick={() => action(() => tf.insert.tableColumn())}
           >
-            <ArrowRight />
+            <EditorIcon name="arrowRight" />
           </FloatingActionButton>
           <FloatingActionButton
             label={m.editor_delete_col()}
             onClick={() => action(() => tf.remove.tableColumn())}
           >
-            <X />
+            <EditorIcon name="x" />
           </FloatingActionButton>
           <TableActionSeparator />
           <FloatingActionButton
             label={m.editor_delete_table()}
             onClick={() => action(() => tf.remove.table())}
           >
-            <Trash2 />
+            <EditorIcon name="trash" />
           </FloatingActionButton>
         </>
       )}
@@ -283,7 +273,7 @@ export function TableRowElement({ children, ...props }: PlateElementProps) {
             title={m.editor_drag_row()}
             type="button"
           >
-            <GripVertical className="size-3.5" />
+            <EditorIcon className="size-3.5" name="gripVertical" />
           </button>
         </td>
       )}

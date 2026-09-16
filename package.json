@@ -53,7 +53,6 @@
     "html2canvas-pro": "^2.2.1",
     "katex": "^0.17.0",
     "lowlight": "^3.3.0",
-    "lucide-react": "^1.23.0",
     "mermaid": "^11.16.0",
     "pdfjs-dist": "4.8.69",
     "platejs": "^53.2.4",

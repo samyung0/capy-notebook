@@ -7,7 +7,8 @@ type Failure = {
   hint: string;
   method: 'get' | 'post' | 'patch' | 'put' | 'delete';
   paths: string[];
-  status: number;
+  /** 'network' rejects the fetch itself (TypeError: Failed to fetch). */
+  status: number | 'network';
   code?: string;
 };
 
@@ -36,6 +37,22 @@ export const failureScenarios = [
     method: 'get',
     paths: ['/api/files', '/api/workspaces/:id/files'],
     status: 500,
+  },
+  {
+    hint: 'Open Files or a workspace. Plain 403 without an account code.',
+    id: 'file-list-forbidden',
+    label: 'Files list GET 403',
+    method: 'get',
+    paths: ['/api/files', '/api/workspaces/:id/files'],
+    status: 403,
+  },
+  {
+    hint: 'Open Files or a workspace. The request never reaches a server.',
+    id: 'file-list-network',
+    label: 'Files list network error',
+    method: 'get',
+    paths: ['/api/files', '/api/workspaces/:id/files'],
+    status: 'network',
   },
   {
     hint: 'Open a file preview from Files.',
@@ -250,6 +267,15 @@ export const failureScenarios = [
     status: 403,
   },
   {
+    code: 'files_batch_exceeded',
+    hint: 'Choose several local files and upload them.',
+    id: 'upload-batch-cap',
+    label: 'Upload batch cap 403',
+    method: 'post',
+    paths: ['/api/workspaces/:id/sources'],
+    status: 403,
+  },
+  {
     code: 'too_many_ingest_leases',
     hint: 'Upload or import a source.',
     id: 'ingest-slots',
@@ -365,6 +391,30 @@ export const failureScenarios = [
       '/api/quiz-grade',
     ],
     status: 422,
+  },
+  {
+    code: 'llm_key_failed',
+    hint: 'Send chat, generate, use editor AI or grade a free-text quiz answer.',
+    id: 'ai-key-failed',
+    label: 'AI provider key failed 422',
+    method: 'post',
+    paths: [
+      '/api/workspaces/:id/chat/stream',
+      '/api/workspaces/:id/generate',
+      '/api/workspaces/:id/ai/command',
+      '/api/workspaces/:id/ai/copilot',
+      '/api/quiz-grade',
+    ],
+    status: 422,
+  },
+  {
+    code: 'provider_busy',
+    hint: 'Send chat or generate a material.',
+    id: 'ai-busy',
+    label: 'AI provider busy 503',
+    method: 'post',
+    paths: ['/api/workspaces/:id/chat/stream', '/api/workspaces/:id/generate'],
+    status: 503,
   },
   {
     code: 'model_unavailable',
@@ -678,16 +728,21 @@ export const failureScenarios = [
 ] as const satisfies readonly Failure[];
 
 export function failureHandlers(scenario: Failure): RequestHandler[] {
+  const { status } = scenario;
   return scenario.paths.map((path) =>
     http[scenario.method](path, () =>
-      HttpResponse.json(
-        {
-          detail: `Mock failure: ${scenario.label}`,
-          status: scenario.status,
-          ...(scenario.code ? { errors: [{ message: scenario.code }] } : {}),
-        },
-        { status: scenario.status }
-      )
+      status === 'network'
+        ? HttpResponse.error()
+        : HttpResponse.json(
+            {
+              detail: `Mock failure: ${scenario.label}`,
+              status,
+              ...(scenario.code
+                ? { errors: [{ message: scenario.code }] }
+                : {}),
+            },
+            { status }
+          )
     )
   );
 }

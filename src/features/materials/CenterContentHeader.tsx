@@ -8,7 +8,7 @@ import type {
   UserColor,
 } from '@/api/types';
 import { Button } from '@/components/ui/Button';
-import { Icon, type IconName } from '@/components/ui/Icon';
+import { FileIcon, type FileIconName } from '@/components/ui/FileIcon';
 import { IconButton } from '@/components/ui/IconButton';
 import {
   Select,
@@ -36,17 +36,14 @@ import {
 } from '@/features/workspace/ContentActions';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import {
-  MATERIALMODE_ICON,
-  MATERIALMODE_LABEL,
-  materialIcon,
-} from './materialIconMappings';
+import { fileIconName, materialIconName } from '@/lib/fileIcons';
+import { MATERIALMODE_ICON, MATERIALMODE_LABEL } from './materialIconMappings';
 import { type MaterialMode, materialModePolicy } from './modePolicy';
 import type { OpenItem } from './openItem';
 
 function useHeader(item: OpenItem): {
   file?: SourceFile;
-  icon: IconName;
+  icon: FileIconName;
   title?: string;
   material?: Material;
   materialKind?: MaterialKind;
@@ -64,17 +61,16 @@ function useHeader(item: OpenItem): {
   if (item.kind === 'file') {
     return {
       file: fileData,
-      icon: 'files',
+      icon: fileData ? fileIconName(fileData) : '_file',
       showImageZoom: !!fileData && isImageFile(fileData),
       title: fileData?.name,
     };
   }
   const mt = materialData;
-  if (!mt)
-    return { icon: 'workspaces', showImageZoom: false, title: undefined };
+  if (!mt) return { icon: '_file', showImageZoom: false, title: undefined };
   return {
     defaultMode: materialModePolicy(mt.kind, mt.capabilities).defaultMode,
-    icon: materialIcon(mt.kind),
+    icon: materialIconName(mt.kind),
     material: mt,
     materialKind: mt.kind,
     modeOptions: materialModePolicy(mt.kind, mt.capabilities).modes.map(
@@ -228,7 +224,7 @@ export function Header({
   return (
     <div className="flex h-14 items-center gap-3 border-divider border-b px-5 py-4">
       <div className="flex items-center gap-1">
-        <Icon name={icon} />
+        <FileIcon name={icon} size={18} />
         <h2 className="t-subtitle ml-1 min-w-0 flex-1 translate-y-px truncate">
           {title ?? '--'}
         </h2>

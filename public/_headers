@@ -8,3 +8,8 @@
 # under a new name and the old name is never reused.
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
+
+# Avatar and workspace icons keep their names when the artwork changes, so a
+# day of freshness skips the per-load revalidation and bounds staleness.
+/icons/*
+  Cache-Control: public, max-age=86400

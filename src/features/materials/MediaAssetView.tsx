@@ -1,6 +1,6 @@
-import { FileText, LoaderCircle } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { resolveEditorAsset } from '@/api/editorAssets';
+import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 
 /** Persisted media node shape for workspace-backed asset elements. */
@@ -79,7 +79,10 @@ export function MediaAssetView({ element }: { element: MediaAssetNode }) {
     <figure className="group relative m-0" contentEditable={false}>
       {asset.status === 'loading' && (
         <div className="grid min-h-24 place-items-center rounded-card border border-line bg-surface-hover-bg">
-          <LoaderCircle className="size-5 animate-spin text-fg-muted" />
+          <EditorIcon
+            className="size-5 animate-spin text-fg-muted"
+            name="loader"
+          />
         </div>
       )}
       {asset.status === 'error' && (
@@ -112,7 +115,7 @@ export function MediaAssetView({ element }: { element: MediaAssetNode }) {
           onClick={openFile}
           type="button"
         >
-          <FileText className="size-4 text-fg-muted" />
+          <EditorIcon className="size-4 text-fg-muted" name="fileText" />
           <span className="truncate">{element.name || asset.name}</span>
         </button>
       )}

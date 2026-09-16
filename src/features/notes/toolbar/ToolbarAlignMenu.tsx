@@ -1,10 +1,10 @@
-import { AlignCenter, AlignLeft, AlignRight } from 'lucide-react';
 import { useState } from 'react';
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/Popover';
+import { EditorIcon } from '@/features/notes/EditorIcon';
 import type { AnyEditor } from '@/features/notes/toolbar/NoteToolbar';
 import { ToolbarButton } from '@/features/notes/toolbar/ToolbarButton';
 import { m } from '@/i18n';
@@ -20,7 +20,7 @@ export function AlignMenu({ editor }: { editor: AnyEditor }) {
             label={m.editor_text_alignment()}
             onClick={() => setOpen(true)}
           >
-            <AlignLeft />
+            <EditorIcon name="alignLeft" />
           </ToolbarButton>
         </span>
       </PopoverTrigger>
@@ -32,19 +32,19 @@ export function AlignMenu({ editor }: { editor: AnyEditor }) {
           label={m.editor_align_left()}
           onClick={() => align('left')}
         >
-          <AlignLeft />
+          <EditorIcon name="alignLeft" />
         </ToolbarButton>
         <ToolbarButton
           label={m.editor_align_center()}
           onClick={() => align('center')}
         >
-          <AlignCenter />
+          <EditorIcon name="alignCenter" />
         </ToolbarButton>
         <ToolbarButton
           label={m.editor_align_right()}
           onClick={() => align('right')}
         >
-          <AlignRight />
+          <EditorIcon name="alignRight" />
         </ToolbarButton>
         {/* <ToolbarButton label="Justify" onClick={() => align('justify')}>
           <AlignJustify />

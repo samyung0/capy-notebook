@@ -89,7 +89,9 @@ export function Button({
         data-variant={variant}
         {...rest}
       >
+        {iconLeft && <InlineIcon name={iconLeft} size={size} />}
         {children}
+        {iconRight && <InlineIcon name={iconRight} size={size} />}
       </Slot.Root>
     );
   }

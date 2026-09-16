@@ -1,13 +1,5 @@
 import { useDraggable, useDropLine } from '@platejs/dnd';
 import { setColumns } from '@platejs/layout';
-import {
-  Columns2,
-  Columns3,
-  GripHorizontal,
-  PanelLeft,
-  PanelRight,
-  Trash2,
-} from 'lucide-react';
 import { PathApi, type TColumnElement } from 'platejs';
 import {
   PlateElement,
@@ -26,6 +18,7 @@ import {
   PopoverAnchor,
   PopoverContent,
 } from '@/components/ui/Popover';
+import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { FloatingActionButton } from './nodeComponents';
@@ -86,14 +79,6 @@ function ColumnFloatingToolbarContent() {
       sideOffset={8}
     >
       {COLUMN_LAYOUTS.map((layout) => {
-        const LayoutIcon =
-          layout.value === 'equal-3'
-            ? Columns3
-            : layout.value === 'left-wide'
-              ? PanelRight
-              : layout.value === 'right-wide'
-                ? PanelLeft
-                : Columns2;
         return (
           <FloatingActionButton
             key={layout.value}
@@ -102,13 +87,24 @@ function ColumnFloatingToolbarContent() {
             onClick={() => changeLayout(layout.widths)}
             type="button"
           >
-            <LayoutIcon className="size-4" />
+            <EditorIcon
+              className="size-4"
+              name={
+                layout.value === 'equal-3'
+                  ? 'columns3'
+                  : layout.value === 'left-wide'
+                    ? 'panelRight'
+                    : layout.value === 'right-wide'
+                      ? 'panelLeft'
+                      : 'columns2'
+              }
+            />
           </FloatingActionButton>
         );
       })}
       <div className="mx-0.5 h-4 w-px bg-divider" />
       <FloatingActionButton label={m.editor_delete_table()} onClick={remove}>
-        <Trash2 />
+        <EditorIcon name="trash" />
       </FloatingActionButton>
     </PopoverContent>
   );
@@ -147,7 +143,7 @@ export function Column(props: PlateElementProps) {
           title={m.editor_drag_column()}
           type="button"
         >
-          <GripHorizontal className="size-4" />
+          <EditorIcon className="size-4" name="gripHorizontal" />
         </button>
       )}
       {props.children}

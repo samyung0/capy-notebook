@@ -78,6 +78,7 @@ class BoundaryCore extends Component<BoundaryCoreProps, BoundaryState> {
               this.props.variant === 'page' ? 'h-full w-full' : undefined
             }
             description={description.description}
+            icon={description.icon}
             title={description.title}
             variant={this.props.variant ?? 'panel'}
           />
@@ -110,16 +111,24 @@ export function RouteErrorComponent({ error, reset }: ErrorComponentProps) {
   };
 
   return (
-    <ErrorState
-      action={
-        <Button onClick={reload ? () => window.location.reload() : retry}>
-          {reload ? m.error_action_reload() : m.error_action_retry()}
-        </Button>
-      }
-      description={description.description}
-      title={description.title}
-      variant="page"
-    />
+    <main className="h-full overflow-hidden p-1.5 sm:p-2.5">
+      <Panel
+        className="h-full w-full"
+        sectionClassName="h-full w-full min-h-full flex flex-row"
+      >
+        <ErrorState
+          action={
+            <Button onClick={reload ? () => window.location.reload() : retry}>
+              {reload ? m.error_action_reload() : m.error_action_retry()}
+            </Button>
+          }
+          description={description.description}
+          icon={description.icon}
+          title={description.title}
+          variant="page"
+        />
+      </Panel>
+    </main>
   );
 }
 
@@ -128,36 +137,50 @@ export function ShareRouteErrorComponent({ reset }: ErrorComponentProps) {
   const description = privateErrorDescription();
 
   return (
-    <ErrorState
-      action={
-        <Button
-          onClick={() => {
-            resetQueries();
-            reset();
-          }}
-        >
-          {m.error_action_retry()}
-        </Button>
-      }
-      description={description.description}
-      testId="private-or-unavailable"
-      title={description.title}
-      variant="page"
-    />
+    <main className="h-full overflow-hidden p-1.5 sm:p-2.5">
+      <Panel
+        className="h-full w-full"
+        sectionClassName="h-full w-full min-h-full flex flex-row"
+      >
+        <ErrorState
+          action={
+            <Button
+              onClick={() => {
+                resetQueries();
+                reset();
+              }}
+            >
+              {m.error_action_funny()}
+            </Button>
+          }
+          description={description.description}
+          testId="private-or-unavailable"
+          title={description.title}
+          variant="page"
+        />
+      </Panel>
+    </main>
   );
 }
 
 export function RouteNotFoundComponent() {
   return (
-    <ErrorState
-      action={
-        <Button asChild iconLeft="chevronLeft">
-          <Link to="/">{m.error_action_go_back()}</Link>
-        </Button>
-      }
-      description={m.error_not_found_page_body()}
-      title={m.error_not_found_page_title()}
-      variant="page"
-    />
+    <main className="h-full overflow-hidden p-1.5 sm:p-2.5">
+      <Panel
+        className="h-full w-full"
+        sectionClassName="h-full w-full min-h-full flex flex-row"
+      >
+        <ErrorState
+          action={
+            <Button asChild iconLeft="chevronLeft">
+              <Link to="/">{m.error_action_go_back()}</Link>
+            </Button>
+          }
+          description={m.error_not_found_page_body()}
+          title={m.error_not_found_page_title()}
+          variant="page"
+        />
+      </Panel>
+    </main>
   );
 }

@@ -1,15 +1,3 @@
-import {
-  Braces,
-  ChevronDown,
-  Heading1,
-  Heading2,
-  Heading3,
-  Heading4,
-  Heading5,
-  Heading6,
-  Pilcrow,
-  Quote,
-} from 'lucide-react';
 import { KEYS } from 'platejs';
 import { useEditorSelector } from 'platejs/react';
 import { useState } from 'react';
@@ -17,6 +5,7 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
 } from '@/components/ui/DropdownMenu';
+import { EditorIcon } from '@/features/notes/EditorIcon';
 import { ToolbarButton } from '@/features/notes/toolbar/ToolbarButton';
 import {
   MenuRow,
@@ -60,7 +49,10 @@ export function BlockTypeMenu({
       <DropdownMenuTrigger asChild>
         <ToolbarButton className="w-23" label={m.editor_block_type()}>
           <span className="translate-y-px">{blockTypeLabel}</span>
-          <ChevronDown className="size-3! text-fg-secondary" />
+          <EditorIcon
+            className="size-3! text-fg-secondary"
+            name="chevronDown"
+          />
         </ToolbarButton>
       </DropdownMenuTrigger>
       <ToolbarMenuContent
@@ -68,47 +60,47 @@ export function BlockTypeMenu({
         className="w-42 gap-0.5 bg-surface p-1 shadow-pop"
       >
         <MenuRow
-          icon={<Pilcrow />}
+          icon={<EditorIcon name="paragraph" />}
           label={m.editor_block_paragraph()}
           onClick={() => onBlock(KEYS.p)}
         />
         <MenuRow
-          icon={<Heading1 />}
+          icon={<EditorIcon name="heading1" />}
           label={m.editor_heading_1()}
           onClick={() => onBlock(KEYS.h1)}
         />
         <MenuRow
-          icon={<Heading2 />}
+          icon={<EditorIcon name="heading2" />}
           label={m.editor_heading_2()}
           onClick={() => onBlock(KEYS.h2)}
         />
         <MenuRow
-          icon={<Heading3 />}
+          icon={<EditorIcon name="heading3" />}
           label={m.editor_heading_3()}
           onClick={() => onBlock(KEYS.h3)}
         />
         <MenuRow
-          icon={<Heading4 />}
+          icon={<EditorIcon name="heading4" />}
           label={m.editor_heading_4()}
           onClick={() => onBlock(KEYS.h4)}
         />
         <MenuRow
-          icon={<Heading5 />}
+          icon={<EditorIcon name="heading5" />}
           label={m.editor_heading_5()}
           onClick={() => onBlock(KEYS.h5)}
         />
         <MenuRow
-          icon={<Heading6 />}
+          icon={<EditorIcon name="heading6" />}
           label={m.editor_heading_6()}
           onClick={() => onBlock(KEYS.h6)}
         />
         <MenuRow
-          icon={<Quote />}
+          icon={<EditorIcon name="quote" />}
           label={m.editor_blockquote()}
           onClick={() => onBlock(KEYS.blockquote)}
         />
         <MenuRow
-          icon={<Braces />}
+          icon={<EditorIcon name="braces" />}
           label={m.editor_code_block()}
           onClick={() => onBlock(KEYS.codeBlock)}
         />

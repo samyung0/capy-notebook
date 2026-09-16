@@ -3,14 +3,6 @@ import {
   PlaceholderProvider,
   updateUploadHistory,
 } from '@platejs/media/react';
-import {
-  FileAudio,
-  FileText,
-  Image,
-  LoaderCircle,
-  Upload,
-  X,
-} from 'lucide-react';
 import type { TPlaceholderElement } from 'platejs';
 import { KEYS } from 'platejs';
 import {
@@ -23,10 +15,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFilePicker } from 'use-file-picker';
 import { isStorageQuotaError } from '@/api/client';
 import { uploadEditorAsset } from '@/api/editorAssets';
+import type { IconName } from '@/components/ui/Icon';
 import {
   type MediaAssetNode,
   MediaAssetView,
 } from '@/features/materials/MediaAssetView';
+import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { useEditorRuntime } from './EditorRuntime';
@@ -44,11 +38,11 @@ type MediaType = ReturnType<typeof plateMediaType>;
 
 const PLACEHOLDER_COPY: Record<
   MediaType,
-  { label: () => string; icon: typeof Image }
+  { label: () => string; icon: IconName }
 > = {
-  audio: { icon: FileAudio, label: () => m.editor_add_audio() },
-  file: { icon: FileText, label: () => m.editor_add_file() },
-  img: { icon: Image, label: () => m.editor_add_image() },
+  audio: { icon: 'fileAudio', label: () => m.editor_add_audio() },
+  file: { icon: 'fileText', label: () => m.editor_add_file() },
+  img: { icon: 'image', label: () => m.editor_add_image() },
 };
 
 function purposeForMediaType(type: string) {
@@ -76,7 +70,6 @@ export const MediaPlaceholderElement = withHOC(
     const mediaType = (element.mediaType || KEYS.file) as MediaType;
     const purpose = purposeForMediaType(mediaType);
     const content = PLACEHOLDER_COPY[mediaType] ?? PLACEHOLDER_COPY.file;
-    const Icon = content.icon;
 
     const replaceCurrentPlaceholder = useCallback(
       async (file: File) => {
@@ -193,9 +186,12 @@ export const MediaPlaceholderElement = withHOC(
           tabIndex={canCreateAssets ? 0 : undefined}
         >
           {uploading ? (
-            <LoaderCircle className="size-5 animate-spin text-action-accent" />
+            <EditorIcon
+              className="size-5 animate-spin text-action-accent"
+              name="loader"
+            />
           ) : (
-            <Icon className="size-5 text-fg-muted" />
+            <EditorIcon className="size-5 text-fg-muted" name={content.icon} />
           )}
           <div className="min-w-0 flex-1">
             <p className="truncate font-medium text-fg text-sm">
@@ -235,10 +231,10 @@ export const MediaPlaceholderElement = withHOC(
               }}
               type="button"
             >
-              <X className="size-4" />
+              <EditorIcon className="size-4" name="x" />
             </button>
           ) : canCreateAssets ? (
-            <Upload className="size-4 text-fg-muted" />
+            <EditorIcon className="size-4 text-fg-muted" name="upload" />
           ) : null}
         </div>
         {props.children}

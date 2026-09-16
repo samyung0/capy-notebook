@@ -1,4 +1,3 @@
-import { ArrowDownToLine, ChevronDown } from 'lucide-react';
 import type { SlatePlugin } from 'platejs';
 import { useState } from 'react';
 import {
@@ -11,6 +10,7 @@ import {
   exportDocxDocument,
   exportMarkdownDocument,
 } from '@/features/notes/documentAdapters';
+import { EditorIcon } from '@/features/notes/EditorIcon';
 import { MaterialKit } from '@/features/notes/plugins';
 import type { AnyEditor } from '@/features/notes/toolbar/NoteToolbar';
 import { ToolbarButton } from '@/features/notes/toolbar/ToolbarButton';
@@ -26,8 +26,11 @@ export function ExportMenu({ editor }: { editor: AnyEditor }) {
     <DropdownMenu modal={false} onOpenChange={setOpen} open={open}>
       <DropdownMenuTrigger asChild>
         <ToolbarButton className="w-fit" label={m.editor_export()}>
-          <ArrowDownToLine />
-          <ChevronDown className="size-3! text-fg-secondary" />
+          <EditorIcon name="download" />
+          <EditorIcon
+            className="size-3! text-fg-secondary"
+            name="chevronDown"
+          />
         </ToolbarButton>
       </DropdownMenuTrigger>
       <ToolbarMenuContent

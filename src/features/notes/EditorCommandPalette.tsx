@@ -1,9 +1,9 @@
-import { MessageSquarePlus, Search, X } from 'lucide-react';
 import { useEditorRef } from 'platejs/react';
 import { Dialog as DialogPrimitive } from 'radix-ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Dialog, DialogOverlay, DialogPortal } from '@/components/ui/Dialog';
+import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { useOptionalNoteBlockDialogs } from './blocks/dialogContext';
 import { useCollaborationActions } from './Collaboration';
@@ -47,7 +47,7 @@ export function EditorCommandPalette() {
               return m.editor_comment_selection();
             },
             group: 'general',
-            icon: MessageSquarePlus,
+            icon: 'commentAdd',
             id: 'comment',
             get label() {
               return m.editor_comment();
@@ -87,7 +87,7 @@ export function EditorCommandPalette() {
             {m.editor_command_palette()}
           </DialogPrimitive.Title>
           <div className="flex items-center gap-2 border-divider border-b px-3">
-            <Search className="size-4 text-fg-muted" />
+            <EditorIcon className="size-4 text-fg-muted" name="search" />
             <input
               className="h-11 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-placeholder"
               onChange={(event) => setQuery(event.target.value)}
@@ -110,41 +110,41 @@ export function EditorCommandPalette() {
               size="sm"
               variant="ghost"
             >
-              <X className="size-4" />
+              <EditorIcon className="size-4" name="x" />
             </Button>
           </div>
           <div className="max-h-80 overflow-auto p-1">
             {commands.length ? (
-              commands.map((command) => {
-                const Icon = command.icon;
-                return (
-                  <button
-                    className="flex w-full items-center gap-3 rounded-button px-2 py-2 text-left hover:bg-surface-hover-bg"
-                    key={command.id}
-                    onClick={() => {
-                      setOpen(false);
-                      if (command.focusEditor !== false) editor.tf.focus();
-                      command.run(editor, dialogs);
-                    }}
-                    type="button"
-                  >
-                    <Icon className="size-4 text-fg-muted" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block font-medium text-sm">
-                        {command.label}
-                      </span>
-                      <span className="block truncate text-fg-muted text-xs">
-                        {command.description}
-                      </span>
+              commands.map((command) => (
+                <button
+                  className="flex w-full items-center gap-3 rounded-button px-2 py-2 text-left hover:bg-surface-hover-bg"
+                  key={command.id}
+                  onClick={() => {
+                    setOpen(false);
+                    if (command.focusEditor !== false) editor.tf.focus();
+                    command.run(editor, dialogs);
+                  }}
+                  type="button"
+                >
+                  <EditorIcon
+                    className="size-4 text-fg-muted"
+                    name={command.icon}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-medium text-sm">
+                      {command.label}
                     </span>
-                    {command.shortcut && (
-                      <span className="text-fg-muted text-xs">
-                        {command.shortcut}
-                      </span>
-                    )}
-                  </button>
-                );
-              })
+                    <span className="block truncate text-fg-muted text-xs">
+                      {command.description}
+                    </span>
+                  </span>
+                  {command.shortcut && (
+                    <span className="text-fg-muted text-xs">
+                      {command.shortcut}
+                    </span>
+                  )}
+                </button>
+              ))
             ) : (
               <p className="px-2 py-5 text-center text-fg-muted text-sm">
                 {m.editor_commands_none()}

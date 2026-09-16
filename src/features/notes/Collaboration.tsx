@@ -3,7 +3,6 @@ import {
   slateRangeToRelativeRange,
   type YjsEditor,
 } from '@slate-yjs/core';
-import { MessageSquareText, X } from 'lucide-react';
 import { NodeApi, type Path } from 'platejs';
 import {
   createPlatePlugin,
@@ -33,6 +32,7 @@ import {
 } from '@/components/ui/Popover';
 import { Textarea } from '@/components/ui/TextArea';
 import type { MaterialValue } from '@/features/materials/document';
+import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { canReplyAtDepth } from './canReplyAtDepth';
@@ -225,7 +225,7 @@ function BlockDiscussionThreads({
               size="sm"
               variant="ghost"
             >
-              <X className="size-4" />
+              <EditorIcon className="size-4" name="x" />
             </Button>
           </div>
           <div className="flex flex-col gap-2 p-2">
@@ -256,7 +256,7 @@ function BlockDiscussionThreads({
               size="sm"
               variant="ghost-hover"
             >
-              <MessageSquareText className="size-4 shrink-0" />
+              <EditorIcon className="size-4 shrink-0" name="comment" />
               <span className="font-semibold text-xs">
                 {discussions.length}
               </span>

@@ -30,6 +30,7 @@ describe('frontend error normalization', () => {
     expect(describeError(error)).toEqual({
       action: 'retry',
       description: m.error_source_changed_body(),
+      icon: 'fileError',
       title: m.error_source_changed_title(),
     });
   });

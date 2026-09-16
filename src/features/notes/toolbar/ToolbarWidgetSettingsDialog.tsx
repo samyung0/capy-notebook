@@ -1,4 +1,3 @@
-import { Settings2 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import {
@@ -8,6 +7,7 @@ import {
   DialogTitle,
 } from '@/components/ui/Dialog';
 import { Switch } from '@/components/ui/Switch';
+import { EditorIcon } from '@/features/notes/EditorIcon';
 import {
   useNoteEditorPrefs,
   WIDGET_GROUPS,
@@ -43,7 +43,7 @@ export function WidgetSettingsDialog() {
         label={m.editor_prefs_settings()}
         onClick={() => setOpen(true)}
       >
-        <Settings2 />
+        <EditorIcon name="preferences" />
       </ToolbarButton>
       <DialogContent className="max-w-2xl">
         <DialogTitle className="pb-2">{m.editor_prefs_title()}</DialogTitle>

@@ -173,3 +173,87 @@
   --shadow-chip: 0 1px 2px rgba(0, 0, 0, 0.5);
   color-scheme: dark;
 }
+
+/* ---------------- NOTION · MACCHIATO (starts as a copy of mocha; tune independently) ---------------- */
+[data-style="notion"][data-theme="macchiato"] {
+  --surface-page: #191919;
+  --surface-canvas: #191919;
+  --surface-card-bg: #202020;
+  --surface-card-fg: #d4d4d2;
+  --surface-card-fg-muted: #797874;
+  --surface-card-border: #2f2f2f;
+  --surface-inset-bg: #262626;
+  --surface-inset-fg: #d4d4d2;
+  --surface-inset-border: #2f2f2f;
+  --surface-topbar-bg: #262626;
+  --surface-topbar-fg: #d4d4d2;
+
+  --text-primary: #d4d4d2;
+  --text-secondary: #9b9a97;
+  --text-muted: #797874;
+  --text-placeholder: #5a5a57;
+
+  --text-link: #5b9bd5;
+  --text-link-hover: #7db0e0;
+
+  --border-default: #2f2f2f;
+  --border-strong: #3d3d3d;
+  --divider: #2a2a2a;
+
+  --action-primary-bg: #d4d4d2;
+  --action-primary-fg: #202020;
+  --action-primary-hover: #ffffff;
+  --action-accent-bg: #2383e2;
+  --action-accent-fg: #ffffff;
+  --action-accent-hover: #4a9aea;
+  --action-outline-bg: transparent;
+  --action-outline-fg: #d4d4d2;
+  --action-outline-border: #3d3d3d;
+  --action-ghost-fg: #9b9a97;
+
+  --tint-success-bg: #1c2b21;
+  --tint-success-fg: #6cae8a;
+  --solid-success: #6cae8a;
+  --tint-info-bg: #18262f;
+  --tint-info-fg: #6aa6c8;
+  --solid-info: #6aa6c8;
+  --tint-warning-bg: #2c2515;
+  --tint-warning-fg: #d9ad5f;
+  --solid-warning: #d9ad5f;
+  --tint-error-bg: #2e1c1b;
+  --tint-error-fg: #df7773;
+  --solid-error: #df7773;
+  --tint-accent-1-bg: #261f30;
+  --tint-accent-1-fg: #b18ad0;
+  --solid-purple: #b18ad0;
+  --tint-accent-2-bg: #1c2b21;
+  --tint-accent-2-fg: #6cae8a;
+  --solid-green: #6cae8a;
+
+  --note-green-bg: #1c2b21;
+  --note-green-fg: #a9d4ba;
+  --note-green-fg-muted: #6cae8a;
+  --note-purple-bg: #261f30;
+  --note-purple-fg: #cdb4e3;
+  --note-purple-fg-muted: #b18ad0;
+  --note-green-soft-bg: #1c2b21;
+  --note-green-soft-fg: #6cae8a;
+  --note-purple-soft-bg: #261f30;
+  --note-purple-soft-fg: #b18ad0;
+
+  --radius-input: 4px;
+  --radius-button: 4px;
+  --radius-row: 4px;
+  --radius-card: 5px;
+  --radius-card-lg: 6px;
+  --radius-panel: 6px;
+  --radius-frame: 8px;
+  --radius-pill: 999px;
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-raised: 0 2px 8px rgba(0, 0, 0, 0.55);
+  --shadow-pop: 0 4px 18px rgba(0, 0, 0, 0.65);
+  --shadow-chip: 0 1px 2px rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
+}

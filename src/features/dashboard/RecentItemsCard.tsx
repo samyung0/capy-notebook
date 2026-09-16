@@ -1,20 +1,12 @@
 import { useQueries } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { materialsQuery, useAllFiles, useWorkspaces } from '@/api/hooks';
-import type { MaterialRefType } from '@/api/types';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
+import { FileIcon } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
-import { Icon, type IconName } from '@/components/ui/Icon';
 import { getLocale, m } from '@/i18n';
+import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { mergeRecentItems } from './recentItems';
-
-const MATERIAL_ICON: Record<MaterialRefType, IconName> = {
-  diagram: 'diagram',
-  flashcards: 'flashcards',
-  mindmap: 'mindmap',
-  note: 'write',
-  quiz: 'quiz',
-};
 
 function formatRecentDate(iso: string): string {
   const locale = getLocale() === 'zh' ? 'zh-CN' : 'en';
@@ -90,9 +82,11 @@ export function RecentItemsCard() {
               to="/workspaces/$workspaceId"
             >
               <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-button bg-surface-hover-bg text-fg-secondary">
-                <Icon
+                <FileIcon
                   name={
-                    item.kind === 'file' ? 'files' : MATERIAL_ICON[item.type]
+                    item.kind === 'file'
+                      ? fileIconName({ kind: item.fileKind, name: item.title })
+                      : materialIconName(item.type)
                   }
                   size={16}
                 />

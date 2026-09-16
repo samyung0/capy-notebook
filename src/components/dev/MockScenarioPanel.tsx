@@ -1,7 +1,7 @@
 import { onlineManager } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { qk } from '@/api/client';
-import { queryClient } from '@/api/queryClient';
+import { queryClient, showErrorToast } from '@/api/queryClient';
 import { worker } from '@/mocks/browser';
 import {
   getMockScenarioHandlers,
@@ -10,6 +10,7 @@ import {
   storedMockScenario,
   storeMockScenario,
 } from '@/mocks/scenarios';
+import { toastErrors } from '@/mocks/toastErrors';
 import { router } from '@/router';
 import MockDialogPreview, {
   type MockDialogId,
@@ -20,6 +21,20 @@ const MOCKS_ENABLED =
   import.meta.env.DEV && import.meta.env.VITE_USE_MSW !== 'false';
 
 type Probe = 'chunk' | 'error' | null;
+
+// errorKind reads navigator.onLine, so the offline toast shadows it for one call.
+function spawnToast({ error, kind }: (typeof toastErrors)[number]) {
+  if (kind !== 'offline') return showErrorToast(error());
+  Object.defineProperty(navigator, 'onLine', {
+    configurable: true,
+    get: () => false,
+  });
+  try {
+    showErrorToast(error());
+  } finally {
+    Reflect.deleteProperty(navigator, 'onLine');
+  }
+}
 
 export default function MockScenarioPanel() {
   const [selected, setSelected] = useState<MockScenarioId>(storedMockScenario);
@@ -201,6 +216,19 @@ export default function MockScenarioPanel() {
                 Close preview
               </button>
             )}
+          </fieldset>
+          <fieldset className="grid grid-cols-2 gap-1 border-line border-t pt-2">
+            <legend className="px-1 font-semibold">Error toasts</legend>
+            {toastErrors.map((probe) => (
+              <button
+                className="h-8 rounded-button border border-line px-2 text-left"
+                key={probe.label}
+                onClick={() => spawnToast(probe)}
+                type="button"
+              >
+                {probe.label}
+              </button>
+            ))}
           </fieldset>
           <fieldset className="grid gap-1 border-line border-t pt-2">
             <legend className="px-1 font-semibold">Boundary probes</legend>

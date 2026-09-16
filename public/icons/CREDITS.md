@@ -4,6 +4,7 @@
 - Critters by DiceBear. https://www.dicebear.com License: CC0 1.0, https://creativecommons.org/publicdomain/zero/1.0/. DiceBear remix.
 - Avataaars by Pablo Stanley. https://avataaars.com/ License: Free for personal and commercial use, https://avataaars.com/. DiceBear remix; catalog SVG color edits.
 - Notionists by Zoish. https://heyzoish.gumroad.com/l/notionists License: CC0 1.0, https://creativecommons.org/publicdomain/zero/1.0/. DiceBear remix.
+- Catppuccin Icons by Catppuccin. https://github.com/catppuccin/vscode-icons License: MIT, see LICENSE-catppuccin.txt. css-variables flavor; the app binds the palette to its theme.
 - Waves by DiceBear. https://www.dicebear.com License: CC0 1.0, https://creativecommons.org/publicdomain/zero/1.0/. DiceBear remix.
 
 DiceBear software MIT notice is included in LICENSE-dicebear-core.txt. Preserve these artwork credits when distributing the assets.

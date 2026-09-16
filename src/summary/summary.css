@@ -287,7 +287,8 @@
 }
 
 /* The existing dark palettes expose semantic tint roles, not the light swatches. */
-[data-theme="mocha"] .summary-page {
+[data-theme="mocha"] .summary-page,
+[data-theme="macchiato"] .summary-page {
   --tint-green: var(--tint-success-bg);
   --tint-green-fg: var(--tint-success-fg);
   --tint-purple: var(--tint-accent-1-bg);

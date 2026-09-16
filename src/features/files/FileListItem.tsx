@@ -1,6 +1,6 @@
 import type { Chapter, SourceFile, UserColor } from '@/api/types';
+import { FileIcon } from '@/components/ui/FileIcon';
 import { Spinner } from '@/components/ui/feedback';
-import { Icon } from '@/components/ui/Icon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import {
   ContentActions,
@@ -8,6 +8,7 @@ import {
 } from '@/features/workspace/ContentActions';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { fileIconName } from '@/lib/fileIcons';
 import { fileIsIngesting } from './fileUtils';
 
 /** A file row in the workspace sidebar. Opens the file in the center pane, shows
@@ -57,12 +58,7 @@ export function FileListItem({
           onClick={() => !ingesting && onOpen(file.id)}
           type="button"
         >
-          <Icon
-            // hugeicon file icon looks a bit weirdly balanced
-            className={cn('-translate-x-0.5', failed && 'text-solid-error')}
-            name="files"
-            size={15}
-          />
+          <FileIcon name={fileIconName(file)} size={15} />
           <span
             className={cn(
               'line-clamp-1 flex-1 translate-y-px truncate',

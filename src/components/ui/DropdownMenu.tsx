@@ -1,7 +1,7 @@
-import { Check, ChevronRight } from 'lucide-react';
 import { DropdownMenu as DropdownMenuPrimitive } from 'radix-ui';
 import * as React from 'react';
 import { cn } from '@/lib/cn';
+import { Icon } from './Icon';
 import {
   focusReopenedSubmenu,
   MenuOpenContext,
@@ -105,7 +105,7 @@ function DropdownMenuCheckboxItem({
     >
       <span className="pointer-events-none absolute left-2 flex size-4 items-center justify-center">
         <DropdownMenuPrimitive.ItemIndicator>
-          <Check className="size-4" />
+          <Icon className="size-4" name="check" />
         </DropdownMenuPrimitive.ItemIndicator>
       </span>
       {children}
@@ -165,7 +165,7 @@ function DropdownMenuSubTrigger({
       {...props}
     >
       {children}
-      <ChevronRight className="ml-auto size-4 text-fg-muted" />
+      <Icon className="ml-auto size-4 text-fg-muted" name="chevronRight" />
     </DropdownMenuPrimitive.SubTrigger>
   );
 }

@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
+import { FileIcon } from '@/components/ui/FileIcon';
 import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { Tabs } from '@/components/ui/Tabs';
@@ -25,6 +26,7 @@ import { FileViewer } from '@/features/files/FileViewer';
 import { formatFileSize } from '@/features/files/fileUtils';
 import { useOfficeEditGuard } from '@/features/files/useOfficeEditGuard';
 import { getLocale, m } from '@/i18n';
+import { fileIconName } from '@/lib/fileIcons';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
 type FilesTab = 'files' | 'trash';
@@ -95,7 +97,7 @@ function ActiveFiles() {
             radius="card-lg"
           >
             <span className="flex h-10 w-10 items-center justify-center rounded-card bg-surface-hover-bg text-fg-secondary">
-              <Icon name="files" size={18} />
+              <FileIcon name={fileIconName(f)} size={18} />
             </span>
             <div className="min-w-0 flex-1">
               <p className="t-subtitle truncate">{f.name}</p>

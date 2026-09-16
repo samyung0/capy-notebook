@@ -103,7 +103,7 @@ export function Menu({
             onSelect={() => it.onClick?.()}
           >
             {it.icon && <Icon className="-translate-y-px" name={it.icon} />}
-            <span className="translate-y-px">{it.label}</span>
+            <span>{it.label}</span>
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

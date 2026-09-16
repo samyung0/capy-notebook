@@ -12,25 +12,15 @@ import {
   BlockSelectionPlugin,
 } from '@platejs/selection/react';
 import {
-  Check,
-  Feather,
-  ListMinus,
-  ListPlus,
-  LoaderCircle,
-  PenLine,
-  RotateCcw,
-  Sparkles,
-  WandSparkles,
-  X,
-} from 'lucide-react';
-import {
   useEditorRef,
   useEditorSelector,
   usePluginOption,
 } from 'platejs/react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/Button';
+import type { IconName } from '@/components/ui/Icon';
 import { PopupMotion } from '@/components/ui/PopupMotion';
+import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { llmKeyUserMessage } from '@/lib/errors';
@@ -38,7 +28,7 @@ import { track } from '@/lib/observability';
 import { applyAiPreview, setAiPreview, useAiPreview } from './aiPreviewState';
 
 interface AiAction {
-  icon: typeof Sparkles;
+  icon: IconName;
   id: string;
   label: string;
   mode?: 'chat' | 'insert';
@@ -48,7 +38,7 @@ interface AiAction {
 
 const ACTIONS: AiAction[] = [
   {
-    icon: PenLine,
+    icon: 'pencil',
     id: 'continue',
     get label() {
       return m.editor_ai_continue();
@@ -59,7 +49,7 @@ const ACTIONS: AiAction[] = [
     toolName: 'generate',
   },
   {
-    icon: WandSparkles,
+    icon: 'wand',
     id: 'improve',
     get label() {
       return m.editor_ai_improve();
@@ -69,7 +59,7 @@ const ACTIONS: AiAction[] = [
     toolName: 'edit',
   },
   {
-    icon: Check,
+    icon: 'check',
     id: 'grammar',
     get label() {
       return m.editor_ai_grammar();
@@ -79,7 +69,7 @@ const ACTIONS: AiAction[] = [
     toolName: 'edit',
   },
   {
-    icon: ListMinus,
+    icon: 'listMinus',
     id: 'shorter',
     get label() {
       return m.editor_ai_shorter();
@@ -88,7 +78,7 @@ const ACTIONS: AiAction[] = [
     toolName: 'edit',
   },
   {
-    icon: ListPlus,
+    icon: 'listPlus',
     id: 'longer',
     get label() {
       return m.editor_ai_longer();
@@ -98,7 +88,7 @@ const ACTIONS: AiAction[] = [
     toolName: 'edit',
   },
   {
-    icon: Feather,
+    icon: 'feather',
     id: 'simplify',
     get label() {
       return m.editor_ai_simplify();
@@ -235,7 +225,7 @@ export function AiMenu() {
         style={floating.style}
       >
         <div className="flex items-center border-divider border-b px-2">
-          <Sparkles className="size-4 text-action-accent" />
+          <EditorIcon className="size-4 text-action-accent" name="sparkles" />
           <input
             className="h-10 min-w-0 flex-1 bg-transparent px-2 text-fg text-sm outline-none placeholder:text-placeholder"
             data-plate-focus="true"
@@ -259,7 +249,7 @@ export function AiMenu() {
             onClick={() => editor.getApi(AIChatPlugin).aiChat.hide()}
             type="button"
           >
-            <X className="size-4" />
+            <EditorIcon className="size-4" name="x" />
           </button>
         </div>
 
@@ -275,7 +265,7 @@ export function AiMenu() {
         {loading ? (
           <div className="flex items-center justify-between gap-2 p-3 text-fg-muted text-sm">
             <span className="flex items-center gap-2">
-              <LoaderCircle className="size-4 animate-spin" />
+              <EditorIcon className="size-4 animate-spin" name="loader" />
               {chat.status === 'submitted'
                 ? m.editor_ai_thinking()
                 : m.editor_ai_writing_ellipsis()}
@@ -339,28 +329,28 @@ export function AiMenu() {
           </div>
         ) : (
           <div className="max-h-72 overflow-auto p-1">
-            {ACTIONS.map((action) => {
-              const Icon = action.icon;
-              return (
-                <button
-                  className={cn(
-                    'flex w-full items-center gap-2 rounded-button px-2 py-2 text-left text-fg text-sm',
-                    'hover:bg-surface-hover-bg'
-                  )}
-                  key={action.id}
-                  onClick={() =>
-                    submit(action.prompt, {
-                      mode: action.mode,
-                      toolName: action.toolName,
-                    })
-                  }
-                  type="button"
-                >
-                  <Icon className="size-4 text-fg-muted" />
-                  {action.label}
-                </button>
-              );
-            })}
+            {ACTIONS.map((action) => (
+              <button
+                className={cn(
+                  'flex w-full items-center gap-2 rounded-button px-2 py-2 text-left text-fg text-sm',
+                  'hover:bg-surface-hover-bg'
+                )}
+                key={action.id}
+                onClick={() =>
+                  submit(action.prompt, {
+                    mode: action.mode,
+                    toolName: action.toolName,
+                  })
+                }
+                type="button"
+              >
+                <EditorIcon
+                  className="size-4 text-fg-muted"
+                  name={action.icon}
+                />
+                {action.label}
+              </button>
+            ))}
             {chat.messages.length > 0 && (
               <button
                 className="flex w-full items-center gap-2 rounded-button px-2 py-2 text-left text-fg text-sm hover:bg-surface-hover-bg"
@@ -375,7 +365,7 @@ export function AiMenu() {
                 }}
                 type="button"
               >
-                <RotateCcw className="size-4 text-fg-muted" />
+                <EditorIcon className="size-4 text-fg-muted" name="refresh" />
                 {m.action_retry()}
               </button>
             )}

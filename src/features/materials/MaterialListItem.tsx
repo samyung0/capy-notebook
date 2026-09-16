@@ -1,25 +1,13 @@
-import type {
-  Chapter,
-  MaterialRef,
-  MaterialRefType,
-  UserColor,
-} from '@/api/types';
+import type { Chapter, MaterialRef, UserColor } from '@/api/types';
+import { FileIcon } from '@/components/ui/FileIcon';
 import { Spinner } from '@/components/ui/feedback';
-import { Icon, type IconName } from '@/components/ui/Icon';
 import {
   ContentActions,
   toMaterialActionTarget,
 } from '@/features/workspace/ContentActions';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-
-const MATERIAL_ICON: Record<MaterialRefType, IconName> = {
-  diagram: 'diagram',
-  flashcards: 'flashcards',
-  mindmap: 'mindmap',
-  note: 'write',
-  quiz: 'quiz',
-};
+import { materialIconName } from '@/lib/fileIcons';
 
 export function MaterialListItem({
   data: matRef,
@@ -63,7 +51,7 @@ export function MaterialListItem({
         onClick={onOpen}
         type="button"
       >
-        <Icon name={MATERIAL_ICON[matRef.type]} size={15} />
+        <FileIcon name={materialIconName(matRef.type)} size={15} />
         <span className="line-clamp-2 flex-1 translate-y-px">
           {matRef.title}
         </span>

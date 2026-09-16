@@ -3,6 +3,7 @@
 @import "tailwindcss";
 @import "./tokens/themes/classroom.css";
 @import "./tokens/themes/notion.css";
+@import "./tokens/catppuccin.css";
 @import "tw-animate-css";
 @import "./tokens/motion.css";
 

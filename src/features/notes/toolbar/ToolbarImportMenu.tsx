@@ -1,10 +1,10 @@
-import { ArrowUpFromLine, ChevronDown } from 'lucide-react';
 import { useRef, useState } from 'react';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
 } from '@/components/ui/DropdownMenu';
 import { userToast } from '@/components/ui/userToast';
+import { EditorIcon } from '@/features/notes/EditorIcon';
 import { ToolbarButton } from '@/features/notes/toolbar/ToolbarButton';
 import {
   MenuRow,
@@ -115,8 +115,11 @@ export function ImportMenu({
       <DropdownMenu modal={false} onOpenChange={setOpen} open={open}>
         <DropdownMenuTrigger asChild>
           <ToolbarButton className="w-fit" label={m.editor_import()}>
-            <ArrowUpFromLine />
-            <ChevronDown className="size-3! text-fg-secondary" />
+            <EditorIcon name="upload" />
+            <EditorIcon
+              className="size-3! text-fg-secondary"
+              name="chevronDown"
+            />
           </ToolbarButton>
         </DropdownMenuTrigger>
         <ToolbarMenuContent

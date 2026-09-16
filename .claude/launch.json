@@ -11,6 +11,12 @@
         "dev"
       ],
       "port": 5173
+    },
+    {
+      "name": "web-msw",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["VITE_USE_MSW=true", "pnpm", "dev", "--port", "5174"],
+      "port": 5174
     }
   ]
 }

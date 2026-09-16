@@ -18,7 +18,6 @@ import {
   BlockMenuPlugin,
   BlockSelectionPlugin,
 } from '@platejs/selection/react';
-import { GripVertical } from 'lucide-react';
 import { getPluginByType, isType, KEYS, type TElement } from 'platejs';
 import {
   MemoizedChildren,
@@ -44,6 +43,7 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from '@/components/ui/ContextMenu';
+import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { editorAiEnabled } from '@/lib/features';
@@ -327,7 +327,7 @@ const DragHandle = React.memo(function DragHandle({
         resetPreview();
       }}
     >
-      <GripVertical className="pointer-events-none size-4" />
+      <EditorIcon className="pointer-events-none size-4" name="gripVertical" />
     </div>
   );
 });

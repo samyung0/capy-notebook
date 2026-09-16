@@ -1,21 +1,5 @@
-import type { MaterialKind } from '@/api/types';
 import type { IconName } from '@/components/ui/Icon';
 import type { MaterialMode } from './modePolicy';
-
-export function materialIcon(kind: MaterialKind): IconName {
-  switch (kind) {
-    case 'diagram':
-      return 'diagram';
-    case 'quiz':
-      return 'quiz';
-    case 'flashcards':
-      return 'flashcards';
-    case 'note':
-      return 'write';
-    default:
-      return 'workspaces';
-  }
-}
 
 export const MATERIALMODE_ICON: Record<MaterialMode, IconName> = {
   comment: 'message',

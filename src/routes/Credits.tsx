@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import { PageHeader, Panel } from '@/components/app/layout';
+import { FileIcon } from '@/components/ui/FileIcon';
 import { m } from '@/i18n';
 import { iconUrl } from '@/lib/icon-catalog';
 import credits from '@/lib/icon-credits.json';
@@ -19,13 +20,19 @@ export default function Credits() {
           <div className="divide-y divide-divider rounded-card-lg border border-line bg-surface px-5">
             {credits.map((credit) => (
               <section className="flex items-start gap-4 py-5" key={credit.id}>
-                <img
-                  alt=""
-                  className="size-14 shrink-0 rounded-card"
-                  height={56}
-                  src={iconUrl(`${credit.id}-01`)}
-                  width={56}
-                />
+                {credit.id === 'catppuccin' ? (
+                  <span className="flex size-14 shrink-0 items-center justify-center rounded-card bg-surface-hover-bg">
+                    <FileIcon name="markdown" size={28} />
+                  </span>
+                ) : (
+                  <img
+                    alt=""
+                    className="size-14 shrink-0 rounded-card"
+                    height={56}
+                    src={iconUrl(`${credit.id}-01`)}
+                    width={56}
+                  />
+                )}
                 <div className="min-w-0">
                   <h2 className="t-subtitle">
                     {credit.name}{' '}
@@ -34,9 +41,11 @@ export default function Credits() {
                     </span>
                   </h2>
                   <p className="t-meta mt-1 text-fg-muted">
-                    {credit.id === 'slice' || credit.id === 'avataaars'
-                      ? m.credits_adapted_colors()
-                      : m.credits_adapted()}
+                    {credit.id === 'catppuccin'
+                      ? m.credits_adapted_theme()
+                      : credit.id === 'slice' || credit.id === 'avataaars'
+                        ? m.credits_adapted_colors()
+                        : m.credits_adapted()}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-link text-sm">
                     <a href={credit.source} rel="noreferrer" target="_blank">

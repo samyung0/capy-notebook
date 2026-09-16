@@ -12,10 +12,11 @@ import type {
 } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { ButtonCard } from '@/components/ui/ButtonCard';
-import type { IconName } from '@/components/ui/Icon';
+import { FileIcon } from '@/components/ui/FileIcon';
 import type { OpenItem } from '@/features/materials/openItem';
 import { m } from '@/i18n';
 import { describeError } from '@/lib/errors';
+import { materialIconName } from '@/lib/fileIcons';
 import { GenerateFormDialog, type GenerateMode } from './GenerateFormDialog';
 
 type GenerateResultData =
@@ -23,12 +24,7 @@ type GenerateResultData =
   | { kind: 'quiz'; quiz?: Quiz }
   | { kind: 'mindmap' | 'diagram'; material?: Material };
 
-const TILES: [GenerateMode, IconName][] = [
-  ['flashcards', 'flashcards'],
-  ['quiz', 'quiz'],
-  ['mindmap', 'workspaces'],
-  ['diagram', 'chart'],
-];
+const TILES: GenerateMode[] = ['flashcards', 'quiz', 'mindmap', 'diagram'];
 
 function tileLabel(mode: GenerateMode): string {
   switch (mode) {
@@ -117,11 +113,13 @@ export function GeneratePanel({
   return (
     <div className="flex flex-col gap-4 overflow-auto p-4">
       <div className="grid w-full auto-rows-fr grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-4">
-        {TILES.map(([k, icon]) => (
+        {TILES.map((k) => (
           <ButtonCard
             buttonText={tileLabel(k)}
+            componentBeforeText={
+              <FileIcon name={materialIconName(k)} size={22} />
+            }
             disabled={generateIsPending}
-            icon={icon}
             key={k}
             onClick={() => {
               setResult(null);

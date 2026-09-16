@@ -229,3 +229,81 @@
   --shadow-chip: 0 1px 2px rgba(0, 0, 0, 0.5);
   color-scheme: dark;
 }
+
+/* ---------------- classroom · MACCHIATO (starts as a copy of mocha; tune independently) ---------------- */
+[data-style="classroom"][data-theme="macchiato"] {
+  --surface-page: #121513;
+  --surface-canvas: #0e100f;
+  --surface-card-bg: #1c201e;
+  --surface-card-fg: #f1f3f0;
+  --surface-card-fg-muted: #888d88;
+  --surface-card-border: #2c302d;
+  --surface-topbar-bg: #2b302c;
+  --surface-topbar-fg: #f1f3f0;
+
+  /* Text roles */
+  --text-primary: #f1f3f0;
+  --text-secondary: #b4b8b3;
+  --text-muted: #888d88;
+  --text-placeholder: #6a6f6a;
+  --text-link: #b3a6ea;
+  --text-link-hover: #9d8ee0;
+
+  /* Borders & lines */
+  --border-default: #2c302d;
+  --border-strong: #3a403c;
+  --divider: #262b28;
+
+  /* Actions — near-black primary inverts to near-white */
+  --action-primary-bg: #f1f3f0;
+  --action-primary-fg: #1c201e;
+  --action-primary-hover: #ffffff;
+  --action-accent-bg: #9d8ee0;
+  --action-accent-fg: #1a1626;
+  --action-accent-hover: #b3a6ea;
+  --action-outline-bg: transparent;
+  --action-outline-fg: #f1f3f0;
+  --action-outline-border: #3a403c;
+  --action-ghost-fg: #b4b8b3;
+
+  /* Tinted containers */
+  --tint-success-bg: #16301f;
+  --tint-success-fg: #8fe3b9;
+  --solid-success: #7bd9ab;
+  --tint-info-bg: #142634;
+  --tint-info-fg: #9bcdf6;
+  --solid-info: #8ec9f9;
+  --tint-warning-bg: #2f2611;
+  --tint-warning-fg: #f4c878;
+  --solid-warning: #ffcc61;
+  --tint-error-bg: #321a1f;
+  --tint-error-fg: #f49aa8;
+  --solid-error: #f98e9e;
+  --tint-accent-1-bg: #322a5c;
+  --tint-accent-1-fg: #cfc4f2;
+  --solid-purple: #9d8ee0;
+  --tint-accent-2-bg: #2c3b1c;
+  --tint-accent-2-fg: #cbe9a6;
+  --solid-green: #aef07f;
+
+  /* Sticky-note surfaces */
+  --note-green-bg: #2c3b1c;
+  --note-green-fg: #cbe9a6;
+  --note-green-fg-muted: rgba(203, 233, 166, 0.66);
+  --note-purple-bg: #322a5c;
+  --note-purple-fg: #cfc4f2;
+  --note-purple-fg-muted: rgba(207, 196, 242, 0.66);
+  --note-green-soft-bg: #2c3b1c;
+  --note-green-soft-fg: #cbe9a6;
+  --note-purple-soft-bg: #322a5c;
+  --note-purple-soft-fg: #cfc4f2;
+
+  /* Shadows */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.45);
+  --shadow-raised:
+    0 1px 2px rgba(0, 0, 0, 0.45), 0 16px 44px rgba(0, 0, 0, 0.55);
+  --shadow-pop: 0 10px 34px rgba(0, 0, 0, 0.6);
+  --shadow-chip: 0 1px 2px rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
+}

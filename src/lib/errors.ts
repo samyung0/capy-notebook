@@ -11,6 +11,7 @@ import {
   isTooManyIngestLeasesError,
   isWorkspaceLimitError,
 } from '@/api/client';
+import type { IconName } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 
 export type ErrorKind =
@@ -38,6 +39,8 @@ export type ErrorAction = 'reload' | 'retry' | 'signIn' | 'subscription';
 export interface ErrorDescription {
   action?: ErrorAction;
   description: string;
+  /** Overrides ErrorState's default icon; toasts keep their variant icon. */
+  icon?: IconName;
   title: string;
 }
 
@@ -108,12 +111,14 @@ export function describeError(error: unknown): ErrorDescription {
     case 'offline':
       return {
         description: m.error_offline_body(),
+        icon: 'wifiOff',
         title: m.error_offline_title(),
       };
     case 'network':
       return {
         action: 'retry',
         description: m.error_network_body(),
+        icon: 'wifiError',
         title: m.error_network_title(),
       };
     case 'auth':
@@ -125,6 +130,7 @@ export function describeError(error: unknown): ErrorDescription {
     case 'forbidden':
       return {
         description: m.error_forbidden_body(),
+        icon: 'securityWarning',
         title: m.error_forbidden_title(),
       };
     case 'notFound':
@@ -187,6 +193,7 @@ export function describeError(error: unknown): ErrorDescription {
       return {
         action: 'retry',
         description: m.error_source_changed_body(),
+        icon: 'fileError',
         title: m.error_source_changed_title(),
       };
     case 'validation':
@@ -198,6 +205,7 @@ export function describeError(error: unknown): ErrorDescription {
       return {
         action: 'retry',
         description: m.error_server_body(),
+        icon: 'error',
         title: m.error_server_title(),
       };
     case 'chunkLoad':

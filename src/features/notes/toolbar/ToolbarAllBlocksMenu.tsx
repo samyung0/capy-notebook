@@ -1,4 +1,3 @@
-import { ChevronDown, MessageSquarePlus, Plus } from 'lucide-react';
 import { KEYS } from 'platejs';
 import { useState } from 'react';
 import {
@@ -7,6 +6,7 @@ import {
 } from '@/components/ui/DropdownMenu';
 import { useNoteBlockDialogs } from '@/features/notes/blocks/dialogContext';
 import type { CollaborationActions } from '@/features/notes/Collaboration';
+import { EditorIcon } from '@/features/notes/EditorIcon';
 import type {
   EDITOR_COMMANDS,
   EditorCommand,
@@ -50,8 +50,11 @@ export function ToolbarAllBlocksMenu({
     <DropdownMenu modal={false} onOpenChange={setMoreOpen} open={moreOpen}>
       <DropdownMenuTrigger asChild>
         <ToolbarButton className="w-fit" label={m.editor_all_blocks()}>
-          <Plus />
-          <ChevronDown className="size-3! text-fg-secondary" />
+          <EditorIcon name="plus" />
+          <EditorIcon
+            className="size-3! text-fg-secondary"
+            name="chevronDown"
+          />
         </ToolbarButton>
       </DropdownMenuTrigger>
       <ToolbarMenuContent
@@ -76,22 +79,19 @@ export function ToolbarAllBlocksMenu({
               >
                 {group.label}
               </h3>
-              {commands.map((command) => {
-                const Icon = command.icon;
-                return (
-                  <MenuRow
-                    icon={<Icon />}
-                    key={command.id}
-                    label={command.label}
-                    onClick={() => runAllBlockCommand(command)}
-                    shortcut={command.shortcut}
-                  />
-                );
-              })}
+              {commands.map((command) => (
+                <MenuRow
+                  icon={<EditorIcon name={command.icon} />}
+                  key={command.id}
+                  label={command.label}
+                  onClick={() => runAllBlockCommand(command)}
+                  shortcut={command.shortcut}
+                />
+              ))}
               {hasComment && (
                 <MenuRow
                   className="mt-1 border-divider border-t pt-2"
-                  icon={<MessageSquarePlus />}
+                  icon={<EditorIcon name="commentAdd" />}
                   label={m.editor_comment()}
                   onClick={() => {
                     setMoreOpen(false);
