@@ -97,9 +97,11 @@ as in production: when the request would not fit, completed history is folded
 into a memory message, a `checkpoint` event names the last folded message, and
 the page drops those messages from the history it sends next time and passes
 the checkpoint payload instead (what the Go gateway does). Live compaction
-inside a turn folds the same way. Each summarizer call is shown as a
-`compaction` card with the folded count, the memory size and the text, and is
-kept under `compactions` in the run. Seen while testing: on a two-message
+inside a turn folds history the same way; if the request still does not fit,
+the turn's older tool exchanges fold into a turn note (`kind: turn_note`) and
+the last two exchanges stay exact. Each summarizer call is shown as a
+`compaction` card with its kind, the folded count, the memory size and the
+text, and is kept under `compactions` in the run. Seen while testing: on a two-message
 history the memory came back longer than the history it replaced (295 to 410
 tokens for about 360), so a very small forced limit ends in
 `context_too_large`; the summarizer prompt targets 4k to 10k tokens and is

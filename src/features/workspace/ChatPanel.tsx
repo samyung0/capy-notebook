@@ -15,11 +15,16 @@ import type {
   UserColor,
 } from '@/api/types';
 import { Button } from '@/components/ui/Button';
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { Input } from '@/components/ui/Input';
-import { Menu } from '@/components/ui/Menu';
 import {
   Tooltip,
   TooltipContent,
@@ -433,9 +438,10 @@ export function ChatPanel({
   const { data: conversations } = useConversations(workspaceId, {
     errorBoundary: false,
   });
-  // TODO: add time stamp for convos (last chat), show timestamp and action menu in chat history dropdown items
+  // TODO: show last-chat timestamps and rename/delete actions in chat history.
 
   const [text, setText] = useState('');
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [selectId, setSelectId] = useState<string | null>(null);
   const { data: history } = useMessages(selectId, { errorBoundary: false });
   const hydratedRef = useRef<string | null>(null);
@@ -481,24 +487,9 @@ export function ChatPanel({
     >
       <div className="flex items-center justify-end pt-1.5 pb-3 pl-3">
         <div className="flex grow-0 items-center">
-          {/* TODO: change chat history/details to dialog for better visibility/responsiveness */}
-          {/* TODO: add action menu to the side inside of history item and let user edit name/delete */}
-          <Tooltip>
-            <Menu
-              align="start"
-              items={
-                conversations?.length
-                  ? conversations.map((c) => ({
-                      icon: 'message' as const,
-                      label: c.title || m.chat_untitled(),
-                      onClick: () => {
-                        hydratedRef.current = null;
-                        setSelectId(c.id);
-                      },
-                    }))
-                  : [{ disabled: true, label: m.chat_no_conversations() }]
-              }
-              trigger={
+          <Dialog onOpenChange={setHistoryOpen} open={historyOpen}>
+            <Tooltip>
+              <DialogTrigger asChild>
                 <TooltipTrigger
                   render={
                     <IconButton
@@ -511,10 +502,50 @@ export function ChatPanel({
                     />
                   }
                 />
-              }
-            />
-            <TooltipContent>{m.chat_history()}</TooltipContent>
-          </Tooltip>
+              </DialogTrigger>
+              <TooltipContent>{m.chat_history()}</TooltipContent>
+            </Tooltip>
+            <DialogContent aria-describedby={undefined} className="max-w-lg">
+              <DialogTitle className="pr-10 pb-4">
+                {m.chat_history()}
+              </DialogTitle>
+              <div className="flex max-h-[60dvh] flex-col gap-1 overflow-y-auto p-1">
+                {conversations?.length ? (
+                  conversations.map((c) => (
+                    <Button
+                      aria-current={
+                        c.id === conversationId ? 'true' : undefined
+                      }
+                      className={cn(
+                        'h-auto w-full shrink-0 justify-start rounded-card px-3 py-3 text-left font-normal',
+                        c.id === conversationId && 'bg-surface-hover-bg'
+                      )}
+                      iconLeft="message"
+                      key={c.id}
+                      onClick={() => {
+                        hydratedRef.current = null;
+                        setSelectId(c.id);
+                        setHistoryOpen(false);
+                      }}
+                      type="button"
+                      variant="ghost-hover"
+                    >
+                      <span className="wrap-anywhere min-w-0 flex-1 whitespace-normal">
+                        {c.title || m.chat_untitled()}
+                      </span>
+                      {c.id === conversationId && (
+                        <Icon name="check" size={16} />
+                      )}
+                    </Button>
+                  ))
+                ) : (
+                  <p className="py-8 text-center text-fg-muted text-sm">
+                    {m.chat_no_conversations()}
+                  </p>
+                )}
+              </div>
+            </DialogContent>
+          </Dialog>
           <IconButton
             className="rounded-l-none bg-(--temp-btn-bg) py-1.5 pr-2.5 text-(--temp-btn-fg) hover:bg-(--temp-btn-bg) hover:brightness-97 disabled:opacity-30"
             disabled={!conversationId}

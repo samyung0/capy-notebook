@@ -23,6 +23,8 @@ The CSS recipes share timing while keeping component semantics separate:
   its rendering layer stable at animation completion. Without it, Chromium can
   paint body controls 1px higher on the final frame while the title stays fixed,
   despite unchanged layout positions. Scale, blur and timing remain unchanged.
+  Share dialog member content follows the dialog's mount lifetime, so closing
+  does not remove the member section before the exit animation finishes.
 - `PopupMotion` keeps custom popup content mounted through its CSS exit, freezes
   the last open position/content, and makes it inert immediately. Positioning
   belongs to the outer node; animation belongs to the inner node. Changes to

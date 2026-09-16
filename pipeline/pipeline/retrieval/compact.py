@@ -1,16 +1,24 @@
 """Conversation compaction and rolling checkpoint summaries.
 
-System instructions, tool schemas, the current user message, and the active
-provider tool chain are protected. Only completed conversation history may be
-summarized.
+System instructions, tool schemas, the current user message, and the most
+recent tool exchanges of the turn are protected. Completed history folds into
+memory; older exchanges of the current turn fold into an ephemeral turn note.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from .. import elitellm, registry
-from ..prompts.chat import SUMMARY_MAX_TOKENS, checkpoint_messages, memory_message
+from ..prompts.chat import (
+    SUMMARY_MAX_TOKENS,
+    TURN_KEEP_EXCHANGES,
+    checkpoint_messages,
+    memory_message,
+    turn_note_message,
+    turn_note_messages,
+)
 from ..registry import ModelConfig
 from . import accounting, models
 
@@ -104,9 +112,10 @@ def _summary_input_fits(
     turns: list[dict[str, Any]],
     current_user_message: str,
     spec: ModelConfig,
+    build: Callable[..., list[dict[str, str]]] = checkpoint_messages,
 ) -> bool:
     return fits_request(
-        checkpoint_messages(
+        build(
             prior_memory=prior_memory,
             turns=turns,
             current_user_message=current_user_message,
@@ -125,8 +134,9 @@ async def _summarize_batch(
     spec: ModelConfig,
     on_compact: Any | None,
     purpose: str,
+    build: Callable[..., list[dict[str, str]]],
 ) -> str:
-    messages = checkpoint_messages(
+    messages = build(
         prior_memory=prior_memory,
         turns=turns,
         current_user_message=current_user_message,
@@ -160,6 +170,7 @@ async def summarize_checkpoint(
     spec: ModelConfig,
     on_compact: Any | None = None,
     purpose: str = accounting.PURPOSE_CHECKPOINT,
+    build: Callable[..., list[dict[str, str]]] = checkpoint_messages,
 ) -> str:
     """Fold all supplied turns, using chronological batches when necessary."""
     memory = str(prior_summary or "").strip()
@@ -171,6 +182,7 @@ async def summarize_checkpoint(
             turns=candidate,
             current_user_message=current_user_message,
             spec=spec,
+            build=build,
         ):
             batch = candidate
             continue
@@ -185,6 +197,7 @@ async def summarize_checkpoint(
             spec=spec,
             on_compact=on_compact,
             purpose=purpose,
+            build=build,
         )
         batch = [turn]
         if not _summary_input_fits(
@@ -192,6 +205,7 @@ async def summarize_checkpoint(
             turns=batch,
             current_user_message=current_user_message,
             spec=spec,
+            build=build,
         ):
             raise ContextTooLarge(
                 "One historical message is too large to summarize without truncation."
@@ -204,6 +218,7 @@ async def summarize_checkpoint(
             spec=spec,
             on_compact=on_compact,
             purpose=purpose,
+            build=build,
         )
     if memory:
         return memory
@@ -220,6 +235,46 @@ def _current_query_index(messages: list[dict[str, Any]]) -> int:
     return len(messages)
 
 
+def _exchanges(turn: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    """Group a turn into assistant tool_calls messages with their tool results."""
+    groups: list[list[dict[str, Any]]] = []
+    for message in turn:
+        if message.get("role") == "assistant" or not groups:
+            groups.append([])
+        groups[-1].append(message)
+    return groups
+
+
+async def _fold_turn(
+    messages: list[dict[str, Any]],
+    query_index: int,
+    spec: ModelConfig,
+    on_compact: Any | None,
+) -> list[dict[str, Any]]:
+    """Replace this turn's older exchanges with a note; the last ones stay exact."""
+    query, *turn = messages[query_index:]
+    prior_note = "\n\n".join(
+        str(message.get("_note") or "")
+        for message in turn
+        if message.get("_kind") == "turn_note" and message.get("_note")
+    ).strip()
+    groups = _exchanges([m for m in turn if m.get("_kind") != "turn_note"])
+    fold = [m for group in groups[:-TURN_KEEP_EXCHANGES] for m in group]
+    keep = [m for group in groups[-TURN_KEEP_EXCHANGES:] for m in group]
+    if not fold:
+        return messages
+    note = await summarize_checkpoint(
+        prior_summary=prior_note,
+        turns=fold,
+        current_user_message=str(query.get("content") or ""),
+        spec=spec,
+        on_compact=on_compact,
+        purpose=accounting.PURPOSE_LIVE_COMPACTION,
+        build=turn_note_messages,
+    )
+    return [*messages[:query_index], query, turn_note_message(note), *keep]
+
+
 async def compact_messages(
     messages: list[dict[str, Any]],
     spec: ModelConfig,
@@ -231,7 +286,7 @@ async def compact_messages(
     on_compact: Any | None = None,
     allow_summary: bool = True,
 ) -> list[dict[str, Any]]:
-    """Summarize only history before the exact current user message."""
+    """Fold history into memory, then this turn's older exchanges into a note."""
     del protect_live_chain, protect_openai_chain
     if not needs_compact(messages, spec, schemas=schemas, extra=extra):
         return messages
@@ -250,24 +305,26 @@ async def compact_messages(
     ).strip()
     history = [message for message in history_slice if message.get("_kind") != "memory"]
     protected = messages[query_index:]
-    if (not history and not prior_memory) or not protected:
+    if not protected:
         raise ContextTooLarge(
             "Protected context exceeds the selected model's input limit."
         )
-    current_user_message = str(protected[0].get("content") or "")
-    summary = await summarize_checkpoint(
-        prior_summary=prior_memory,
-        turns=history,
-        current_user_message=current_user_message,
-        spec=spec,
-        on_compact=on_compact,
-        purpose=accounting.PURPOSE_LIVE_COMPACTION,
+    compacted = messages
+    if history or prior_memory:
+        summary = await summarize_checkpoint(
+            prior_summary=prior_memory,
+            turns=history,
+            current_user_message=str(protected[0].get("content") or ""),
+            spec=spec,
+            on_compact=on_compact,
+            purpose=accounting.PURPOSE_LIVE_COMPACTION,
+        )
+        compacted = [*messages[:head_count], memory_message(summary), *protected]
+        if not needs_compact(compacted, spec, schemas=schemas, extra=extra):
+            return compacted
+    compacted = await _fold_turn(
+        compacted, _current_query_index(compacted), spec, on_compact
     )
-    compacted = [
-        *messages[:head_count],
-        memory_message(summary),
-        *protected,
-    ]
     if needs_compact(compacted, spec, schemas=schemas, extra=extra):
         raise ContextTooLarge(
             "Protected context exceeds the selected model's input limit."

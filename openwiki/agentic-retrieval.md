@@ -954,8 +954,8 @@ conversation evidence according to each tool's `retention` contract field:
 - `none`: `capture_page` persists no result context or image bytes.
 
 Result retention was added in contract version 3. Every tool must declare a policy; the policy is
-internal and is not a model argument. Live results stay exact throughout the
-active turn. There is no additional historical truncation limit: completed
+internal and is not a model argument. Live results stay exact until live
+compaction folds the turn's older exchanges into a turn note (item 6 below). There is no additional historical truncation limit: completed
 results/passages become separate bounded messages for chronological compaction.
 Go forwards evidence privately to Python, never through the browser message API
 or Ops. Replay checks passage ids/text against the current untrashed workspace
@@ -1059,14 +1059,24 @@ current pending changes applied. Embedded source instructions remain untrusted.
 
    Before every agent model call, live admission measures the provider-shaped
    request against the selected model's input budget. The system prompt, tool
-   schemas, current query, tool arguments and results, and
-   provider continuity items remain exact. Compaction starts only when the
-   request would exceed the smaller of the selected model's input budget and the
-   250,000-token effective-context cap, after the output reserve and safety
-   margin. There is no percentage trigger and no deterministic clipping
+   schemas, current query, and the last two tool exchanges of the turn (an
+   assistant `tool_calls` message with its tool results, provider continuity
+   items included) remain exact. Compaction starts only when the request would
+   exceed the smaller of the selected model's input budget and the 250,000-token
+   effective-context cap, after the output reserve and safety margin. It folds
+   in order: completed history into memory (as above); then, if the request
+   still does not fit, the turn's older exchanges into one turn note
+   (`TURN_NOTE_SYSTEM_PROMPT`, same 12,000-token ceiling) placed right after the
+   query, chained through any earlier note of the same turn. The note keeps tool
+   calls, passage numbers with their locations and facts, gaps, and the intended
+   next step; citation numbers stay valid because the number→chunk map lives on
+   `ToolContext`, not in the messages. The note is turn-local and never persisted
+   or checkpointed. There is no percentage trigger and no deterministic clipping
    fallback. Tool output is capped at 8,192 estimated tokens with a visible
    truncation marker. If protected context still cannot fit, the turn fails with
-   `context_too_large`.
+   `context_too_large`. Keep-tail folding drops whole exchanges only; on providers
+   that bind thinking blocks to the full prior history the retained exchanges may
+   need their thinking stripped.
 7. Python settles every provider call through
    `POST /api/internal/provider-calls` before the agent chooses its next action.
    The turn spend session remains open, so this does not take another

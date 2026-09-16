@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 
@@ -321,3 +322,146 @@ async def test_live_compaction_reuses_existing_memory_without_resummarizing(
             messages,
             _spec(context_window_tokens=10_000),
         )
+
+
+@pytest.mark.asyncio
+async def test_live_compaction_folds_older_turn_exchanges_into_a_note(monkeypatch):
+    def exchange(n: int) -> list[dict]:
+        return [
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": f"c{n}",
+                        "type": "function",
+                        "function": {"name": "read_document", "arguments": "{}"},
+                    }
+                ],
+                "output_items": [
+                    {"type": "reasoning", "id": f"rs{n}", "encrypted_content": "enc"}
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": f"c{n}",
+                "content": f"[{n}] passage {n} " * 1_500,
+            },
+        ]
+
+    messages = [
+        {"role": "system", "content": "system"},
+        {"role": "user", "content": "current exact question", "_kind": "query"},
+        *exchange(1),
+        *exchange(2),
+        *exchange(3),
+        *exchange(4),
+    ]
+    seen: list[dict] = []
+
+    async def fake_complete(request, **_kwargs):
+        seen.append(json.loads(request[-1]["content"]))
+        return "turn note"
+
+    monkeypatch.setattr(compact.models, "complete_text", fake_complete)
+    out = await compact.compact_messages(messages, _spec(context_window_tokens=30_000))
+
+    assert out[1]["content"] == "current exact question"
+    assert out[2]["_kind"] == "turn_note" and out[2]["_note"] == "turn note"
+    kept = {m.get("tool_call_id") for m in out if m.get("role") == "tool"}
+    assert kept == {"c3", "c4"}
+    assert [
+        m["output_items"][0]["id"] for m in out if m.get("role") == "assistant"
+    ] == [
+        "rs3",
+        "rs4",
+    ]
+    # Only the folded exchanges reach the summarizer, without provider protocol state.
+    assert [
+        step["tool_call_id"] for step in seen[0]["steps"] if "tool_call_id" in step
+    ] == [
+        "c1",
+        "c2",
+    ]
+    assert "output_items" not in json.dumps(seen[0])
+    assert seen[0]["current_user_message"] == "current exact question"
+
+
+_EXCERPT = re.compile(r"ex_f\d+s\d+")
+
+
+def _curate_exchange(call_id: str, name: str, result: str) -> list[dict]:
+    return [
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": call_id,
+                    "type": "function",
+                    "function": {"name": name, "arguments": json.dumps({"n": call_id})},
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": call_id, "content": result},
+    ]
+
+
+def _curate_turn(files: int = 8, sections: int = 4) -> list[list[dict]]:
+    """One search, one full read and one material receipt per library section."""
+    turn: list[list[dict]] = []
+    for index in range(files * sections):
+        sid = f"f{index // sections:02d}s{index % sections}"
+        hits = "\n".join(
+            f"[{n}] ex_{sid} | section {n} | score 0.8 " + "hit snippet text " * 18
+            for n in range(12)
+        )
+        body = f"ex_{sid}\n" + "section prose sentence " * 220
+        turn.append(_curate_exchange(f"s{index}", "search_knowledge", hits))
+        turn.append(_curate_exchange(f"r{index}", "read_knowledge", body))
+        turn.append(
+            _curate_exchange(f"w{index}", "create_material", f"Created ex_{sid} note.")
+        )
+    return turn
+
+
+@pytest.mark.asyncio
+async def test_curate_turn_folds_every_section_without_losing_an_excerpt_id(
+    monkeypatch,
+):
+    """A 32-section curate turn on a 64k window: repeated folds, nothing dropped."""
+    folds = {"count": 0}
+
+    async def fake_complete(request, **_kwargs):
+        folds["count"] += 1
+        payload = json.loads(request[-1]["content"])
+        ids = sorted(set(_EXCERPT.findall(json.dumps(payload["steps"]))))
+        return " ".join([payload["previous_note"], *ids]).strip()
+
+    monkeypatch.setattr(compact.models, "complete_text", fake_complete)
+    spec = _spec(context_window_tokens=64_000)
+    messages: list[dict] = [
+        {"role": "system", "content": "system"},
+        {"role": "user", "content": "Note every section.", "_kind": "query"},
+    ]
+    kept_after_fold: list[int] = []
+
+    for exchange in _curate_turn():
+        before = folds["count"]
+        messages = await compact.compact_messages(
+            messages, spec, protect_live_chain=True, allow_summary=True
+        )
+        if folds["count"] > before:
+            kept_after_fold.append(
+                sum(1 for m in messages if m.get("role") == "assistant")
+            )
+        messages.extend(exchange)
+
+    assert folds["count"] >= 2
+    assert kept_after_fold and all(kept <= 2 for kept in kept_after_fold)
+    note = " ".join(
+        str(m.get("_note") or "") for m in messages if m.get("_kind") == "turn_note"
+    )
+    verbatim = json.dumps([m for m in messages if m.get("_kind") != "turn_note"])
+    retained = set(_EXCERPT.findall(note)) | set(_EXCERPT.findall(verbatim))
+    assert {f"ex_f{i // 4:02d}s{i % 4}" for i in range(32)} <= retained

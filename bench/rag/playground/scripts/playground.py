@@ -277,6 +277,7 @@ class Turn:
             summary = await saved["summarize"](**kw)
             record = {
                 "purpose": kw.get("purpose", "checkpoint"), "turns_folded": len(kw.get("turns") or []),
+                "kind": getattr(kw.get("build"), "__name__", "checkpoint_messages").removesuffix("_messages"),
                 "prior_summary_tokens": estimate_tokens(kw.get("prior_summary") or ""),
                 "summary_tokens": estimate_tokens(summary), "elapsed_seconds": round(time.perf_counter() - started, 2),
                 "summary": summary,
