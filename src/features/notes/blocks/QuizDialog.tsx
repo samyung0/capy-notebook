@@ -61,7 +61,7 @@ export function QuizDialog({
           <Button onClick={onClose} variant="ghost">
             {m.action_cancel()}
           </Button>
-          <Button disabled={!canSave} onClick={save}>
+          <Button disabled={!canSave} onClick={save} variant="accent">
             {initialCode ? m.action_save() : m.action_insert()}
           </Button>
         </>

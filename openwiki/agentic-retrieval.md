@@ -95,6 +95,7 @@ network and no pin.
 | `ingest.py` | `ingest` | File descriptor and summary, and `SUMMARY_VERSION` |
 | `captioning.py` | `captioning` | Whole-image captions for standalone image uploads |
 | `retrieval.py` | `retrieval` | The Qwen3 instruct prefix for embedding queries |
+| `curate.py` | `chat` | Curate-mode system prompt, its tool-description overrides, and the progress-ledger message |
 | `locale.py` | shared | The account-locale rule appended by chat, generate, and editor |
 
 Two prompts have a twin outside this package. `quiz.py` and
@@ -102,8 +103,12 @@ Two prompts have a twin outside this package. `quiz.py` and
 path builds its own request — and `prompts/quiz_grade.golden.json` is asserted
 by both `pipeline/tests/test_quiz_grade.py` and
 `src/features/quizzes/judge.test.ts`, so a change made to one implementation
-and not the other fails. Agent tool descriptions stay in `retrieval/tools.py`
-next to their handlers and schemas.
+and not the other fails. Ordinary agent tool descriptions come from the shared
+contract (`retrieval/contract.py`), and curate mode replaces four of them from
+`prompts/curate.TOOL_DESCRIPTIONS`. Nothing model-facing is written in
+`retrieval/`: `STRUCTURED_RULE` and `REPAIR_PROMPT` live in `chat.py`, and
+`retrieval/` keeps only tool results and refusal strings, which the model reads
+as data rather than instruction.
 
 ## Schema ownership
 
@@ -302,7 +307,11 @@ captions and units expand citation bounds without consuming adjacent prose.
 Existing supported numeric/native tables are protected. Ambiguous headers,
 partial emphasis and unsupported background scope leave the original text.
 Font repair abstains for an encoding containing an unsupported glyph name. The parser identity is
-`odl-2.5.7-refined-rapidocr-v3` plus the release SHA.
+`odl-2.5.7-refined-rapidocr-v4` plus the release SHA.
+Before table recovery, source-matched folio banners recurring on three pages
+become discarded blocks. Numbered captions and widely separated, unbold diagram
+labels lose heading status while retaining literal text and geometry. PDF outline
+matches are protected; rotated pages and ambiguous source matches abstain.
 The lab corpus (`/opt/capy-odl-third-pass-20260909/refined-final-r1`) checks
 port compatibility, with reviewed bug fixes checked separately. It does not
 establish accuracy on unseen layouts or fresh selective OCR. Each successful
@@ -642,14 +651,13 @@ raise it to `high` or `max`.
   because kept it indexes `rocher1`, a token no query contains. Units and
   variables are one or two letters, so `m<sup>2</sup>` and `10<sup>15</sup>`
   keep their exponent.
-- Drops running page furniture (`_repeated_across_pages`): a non-heading text
-  block whose text recurs on three or more pages is a running header, footer
-  or licence line whatever label the layout model gave it, and every copy is
-  dropped. The real title is a heading (`text_level`) and lives on in the
-  section path. Measured motivation: a journal's title-and-authors line
-  opened 28 of that paper's 75 chunks, so every question near its topic came
-  back as copies of it. Keeping the first copy was tried and measured
-  neutral on the lab sets.
+- Finds furniture candidates (`_repeated_across_pages`) from non-heading text
+  recurring on three or more pages. Deletion is occurrence-specific: a block
+  wholly inside x=50–950 and y=100–900 in page-1000 coordinates survives even
+  when its text is a frozen candidate. This preserves recurring formulas and
+  table labels in the body. Margin occurrences and blocks without valid boxes
+  retain the previous deletion rule; explicit discarded/footer types stay omitted.
+  This guard can also retain repeated body boilerplate.
 - Marks a reference list (`Chunk.reference`): a `list` block in which at
   least 80% of five or more items are citation-shaped (`_CITATION_RE`: a
   `[n]` marker, a year, "et al.", pages, a DOI or arXiv id). On the lab
@@ -674,10 +682,10 @@ raise it to `high` or `max`.
   there is no model-written description.
 
 Document bundles are packed by `retrieval/packing.py`, the lab's `pack_odl`
-folded into production (`CHUNKER_VERSION` v9; `tests/test_packing.py` preserves
-198 of the 200 historical `hongkong-figures` chunks exactly, removes stale
-overlap across oversized tables from two page-45 chunks, and separately checks
-the short bilingual heading on page 13 and exclusion note on page 45):
+folded into production (`CHUNKER_VERSION` v10; `tests/test_packing.py` pins all
+204 `hongkong-figures` chunks from the pre-implementation recovery experiment,
+including 76 restored interior occurrences; the original 200-chunk lab artifact
+is retained separately as historical evidence):
 
 - Unique short prose survives section boundaries and final tails. A tail
   containing only carried overlap is omitted. `CAPY_CHUNK_MIN_TOKENS` is removed.
@@ -686,8 +694,8 @@ the short bilingual heading on page 13 and exclusion note on page 45):
 
 - **Frozen furniture.** The parser decides the running headers and footers on
   the block list *before* source-geometry table recovery and ships the texts
-  in the bundle's `refinement.json`; the packer drops exactly those and never
-  infers recurrence again on the replaced list. Otherwise a header that sat
+  in the bundle's `refinement.json`; the packer applies the interior-occurrence
+  guard to those candidates and never infers recurrence again on the replaced list. Otherwise a header that sat
   inside one recovered region falls below the three-page threshold on the
   remaining pages and is indexed as body text. The parser's copy of the rule
   (`parser/odl/furniture.py`) is pinned equal to the chunker's by test.
@@ -896,6 +904,11 @@ always point at document passages.
    (`vec_rank`, `vec_dist`, `lex_rank`) and `flat_score`, the fusion with no
    exact tier, so `search()` can flag hits the tier alone put in the result
    (`Passage.tier_only`) for telemetry.
+   Every ordering in the statement ends on the chunk id: lexical scores tie
+   constantly (35 of 44 adjacent candidates on one pilot question), and
+   without the key the candidate cut and the order inside a tied block
+   followed physical row order, so a copied or rebuilt index returned a
+   different top five for the same query.
 3. Optional `file_ids` filter is applied **in SQL** and intersected with the
    request scope. The agent cannot widen a scope the user narrowed.
 4. `_rerank` is a seam that currently returns identity. Heading prefixes and
@@ -938,6 +951,76 @@ language says the lexical leg is dead there. Rows are pruned after 90 days by
 the writer itself; a failed write is logged and never fails the turn. Turns
 that error out or lose their client are not recorded.
 
+## Knowledge library
+
+`pipeline/retrieval/library.py` is the reader side of the shared textbook
+library, a separate database (`deploy/docker-compose.library-db.yml`, runbook
+§7.3) holding one live set of books. The module owns `LIBRARY_SCHEMA`; the
+loader (`bench/rag/scripts/knowledge_base_library.py`) and the tests create
+exactly that schema. The index tables mirror the workspace ones (`workspaces`,
+`files`, `rag_contents`, `rag_file_contents`, `library_chunks` behind the
+`rag_chunks` view, `rag_chunk_vectors_2560`), so `store.hybrid_search` runs its
+one statement unchanged against the library connection with a `chunk_filter`
+predicate; the library-owned tables carry books, topics, excerpts with tag
+outcomes, figures and model-run receipts.
+
+Versions are per book, not per dataset. There is one workspace row, the
+constant `library`, and one file per book. Publishing a book loads its content
+under a new content id, records version n+1 in `library_book_versions` with the
+receipts of that publish (source run, corpus identity, parser release and
+fingerprint, chunker, `object_key`, note), marks the previous version
+`retained` and swaps `rag_file_contents` in one transaction. The book's
+`descriptor` and `summary` are written from that content, so they sit on the
+version row too and a rollback restores the prose with the content it
+describes. Excerpts, figures,
+chunks, vectors and model runs are keyed by content id; the topic catalog is
+library-wide. Every read here follows `rag_file_contents` to the current
+content, exactly as workspace search does, so a retained version is invisible
+to retrieval while staying exportable in ops. UAT and production read the same
+live library; nothing is pinned. A rollback points a book back at a retained
+version, and `retire` drops a retained version's content rows.
+
+- `search(query, topics, roles)`: hybrid search restricted in SQL to chunks
+  whose excerpt carries a verified tag (evidence quote found in the body,
+  confidence at least `CAPY_LIBRARY_TAG_MIN_CONFIDENCE`) matching every
+  requested facet; hits fold into excerpts by best chunk, so `top_k` counts
+  excerpts rather than chunks, each returning with synopsis, roles, topics,
+  pages, figure ids and the hit chunk.
+  An empty result under a role filter carries the verified counts by role
+  for the same topics, so the model relaxes on purpose — only when topics were
+  given, because without them those counts are the whole library's and say
+  nothing about the query.
+- `browse(topic, page)`: verified excerpt counts by role and by book, then a
+  page of excerpts ordered by book and first page. The by-role numbers are
+  role assignments: an excerpt tagged both `formal` and `reference` counts in
+  both, so they do not sum to the total.
+- `catalog(conn)`: the library-wide topic catalog for the `browse_knowledge`
+  description. It is read once at curate admission, which is also how a
+  configured but unreachable library becomes a typed `model_unavailable`
+  instead of a generic failure on the first tool call. `pool()` takes a lock
+  so two turns starting together cannot each build a pool, and waits at most
+  ten seconds for a connection.
+- `read_excerpt(excerpt_id, start)`: the excerpt's own chunks from chunk index
+  `start`, at most 12 per call, with `next_start` (the last chunk shown plus
+  one) when more remain — chunk indexes of the book, exactly the unit
+  `read_document` pages a workspace file in. The read header shows the
+  excerpt's own chunk range.
+- `provenance(excerpt_ids)`: one entry per source book (id, title, authors,
+  edition, licence, licence url, source url, the book version read and the
+  excerpt ids used), which is what a curated material stores and its
+  attribution footer renders.
+- `capture_target(excerpt_id)`: the book's stored object
+  (`library_book_versions.object_key`, `books/<sha256>.pdf` in the
+  knowledge-base bucket), its byte size and the pages the excerpt and its
+  figures cover — the guard and the source for `capture_knowledge_page`. The
+  loader records the key only after a `head_object` on that bucket succeeds,
+  and refuses the publish otherwise (`knowledge_base_library.py publish`).
+- Measured motivation (`bench/rag/reports/2026-09-17-knowledge-base-retrieval.md`):
+  plain search lands on the expected topic for every first hit but reaches
+  an expected role 58 of 110 times; role wording in the query does not move
+  that; tag predicates do, and expose gaps. Curate mode (below) is what
+  offers these as `search_knowledge`, `browse_knowledge` and `read_knowledge`.
+
 ## Chat agent workflow
 
 Streaming chat (`POST /chat/stream` via the Go gateway):
@@ -951,7 +1034,9 @@ conversation evidence according to each tool's `retention` contract field:
   the full text result already limited to 8,192 tool-output tokens.
 - `cited_passages`: `search_workspace` and `read_document` retain only whole
   chunks cited in the final answer, deduplicated by chunk id.
-- `none`: `capture_page` persists no result context or image bytes.
+- `none`: `capture_page` persists no result context or image bytes, and the
+  knowledge tools drop their library evidence after the turn; the durable
+  record of what a curate turn read is the provenance on the material.
 
 Result retention was added in contract version 3. Every tool must declare a policy; the policy is
 internal and is not a model argument. Live results stay exact until live
@@ -1126,6 +1211,221 @@ scope. The tool resolves and persists source provenance, cannot widen the chat
 scope, rejects the whole call if any id is invalid or unavailable, and rejects
 a valid scope with no indexed content.
 
+### Curate mode
+
+Curate is a per-chat mode, not a per-turn flag: `conversations.curate` is set
+when the thread is created (the `ChatPanel` toggle is hidden for a visitor who
+cannot write, and live only while the chat has no messages, is not streaming
+and has finished loading the selected thread's stored flag) and the stream
+refuses a request whose flag disagrees, in either direction, with
+`curate_mismatch`. Curate turns carry no citations and drop their library
+evidence, so a mixed history would not replay. Curate writes materials, so an
+actor who cannot edit is refused with 400 `curate_requires_editor` by both the
+create route and the stream rather than running a turn with no library tools;
+every curate turn therefore carries `library.read`. Go forwards `curate` to
+Python, which puts it on the `ToolContext`.
+
+A curate turn builds materials instead of answering:
+
+- **Admission.** The turn fails as `model_unavailable` when the library is
+  unconfigured, unreachable, holds no published topic, or the selected model's
+  window is under 200,000 tokens; the reason is logged. Reading the library's
+  topic catalog is part of that check, so a library that is down fails here
+  rather than 30 seconds into the first tool call, and an empty catalog is a
+  library that is not published rather than a turn that spends its whole stall
+  budget on unknown-topic refusals. The catalog is appended to the
+  `browse_knowledge` description only — it is long, and `search_knowledge`
+  points at it.
+- **Prompt** (`prompts/curate.py`): the working sequence, stated as a temporary
+  shape until a more rigorous generation path exists — browse or search the
+  library to see what it holds, create the ledger, read and search as needed,
+  write one material or section with `create_material` or `edit_document` and
+  mark its todo, repeat until every todo is done, then reply with the materials
+  list. Browse to see what a topic covers; search when you need a specific role
+  or a specific idea. Excerpts are inputs, not output: write in your own words
+  and correct errors visible in the source. One primary excerpt per section and
+  one book for notation are guidance, not enforced. Capture a printed page when
+  a passage header carries a low extraction-confidence note or the material
+  depends on a figure, a table's layout or a formula. Refuse honestly when the
+  library lacks the topic or role, and never answer the question in prose
+  instead of creating materials. Workspace read tools stay offered: a learner's
+  own files remain readable. The same module owns `TOOL_DESCRIPTIONS`, the
+  curate-mode descriptions of `create_material`, `edit_document`,
+  `search_knowledge` and `browse_knowledge`, which `schemas_for` substitutes for
+  the contract's ordinary-chat text. Every prompt in this system lives under
+  `pipeline/pipeline/prompts/`, including `STRUCTURED_RULE` and `REPAIR_PROMPT`
+  (`prompts/chat.py`); `retrieval/` keeps only tool results and refusals.
+- **Progress ledger.** One `Ledger` on the `ToolContext`, rendered as a message
+  placed right after the query on every model call. It is never part of the
+  message history and never compacted; the loop rebuilds it each call. The
+  ledger belongs to the conversation, not the turn: it is stored as
+  `conversations.ledger` jsonb (null until a curate turn writes one), sent to
+  Python as `ledger` on the stream request beside `curate`, and written back at
+  turn end through `POST /api/internal/conversations/ledger`
+  `{workspaceId, userId, assistantMessageId, ledger}` — pipeline secret, the
+  actor's account access and workspace editor role checked exactly as the
+  document tools check them (`internalDocumentsActor`), the conversation
+  resolved from the assistant message the same way, refused for a chat that is
+  not curate, and bounded at 64 KiB on the request body rather than on the
+  parsed value. The write is fenced on the turn: the pipeline writes from a
+  `finally` block, so an aborted turn's late write can arrive after the next
+  turn began, carrying the older snapshot. `SetConversationLedger` updates the
+  row only while the request's assistant message is still the conversation's
+  newest, as a subselect in the `UPDATE`'s `WHERE` rather than a separate read,
+  so the next turn's assistant row cannot commit between the check and the
+  write; zero rows is 409 `stale_turn`.
+  Every refusal (both 400s and the 409) logs a gateway warning
+  `curate ledger write refused` with the code and the conversation id: the
+  pipeline writes fire and forget, so nothing else records a dropped turn of
+  progress. The JSON is opaque to Go; Python owns the shape
+  (`{requests, next_todo_id, todos[{id, text}], materials[{id, kind, title, size, todo}]}`).
+  The model writes the plan with `create_ledger {body, todos[1..12]}`, once per
+  user message; the call appends to the conversation's ledger, and open todos
+  and the materials created carry across messages. The loop records the rest:
+  each `read_knowledge` once per (excerpt id, start), and each write as a
+  material (id, kind, title, size, todo). A second `create_ledger` in the same
+  turn is refused, saying the ledger for this message exists and todos are
+  completed through the write tools; nothing is reset, because the ledger is
+  never replaced. The rendering is the requests in order, the todos as
+  `[x]`/`[ ]` lines carrying their id and the material that completed them, the
+  materials created so far, and one line per excerpt read this turn. Searches
+  and browses are not recorded.
+- **What is stored, and the todo ids.** Each todo carries an id from a
+  per-conversation counter (`next_todo_id`, stored with the ledger), assigned
+  when `create_ledger` appends the todo and never reused or renumbered. The
+  rendered ledger shows that id, the write tools take it as `todo`, and a
+  material keeps the id of the todo it completed whether or not that todo is
+  still stored. `Ledger.stored()` keeps only what a later turn can act on: the
+  newest 24 open todos (`STORED_TODOS`), the last 50 materials
+  (`STORED_MATERIALS`) and the last 5 requests (`STORED_REQUESTS`). A done todo drops, because the
+  material entry already records what it produced. Those three bounds are what
+  holds a conversation that runs for a term under the gateway's 64 KiB; past it
+  every write-back is refused, and the model re-creates the materials of the
+  last successful write forever.
+- **A malformed stored ledger.** `Ledger.from_stored` is total. The row is read
+  again on every turn, so a shape Python cannot parse (an operator repair, a
+  writer we do not know) would otherwise raise before the first yield and leave
+  the browser a 200 with an empty body, on every attempt. Instead the failure is
+  logged at error level with the conversation id — the gateway's
+  `conversationId` when it sends one, otherwise the `assistantMessageId` it
+  always sends — and the turn starts from an empty ledger. Malformed means any
+  shape `stored()` does not write, including ones that could be coerced into
+  something: an object where an array belongs (`{"requests": {"a": 1}}` would
+  otherwise read as its keys), an array entry that is not an object, a todo with
+  no id, and a `next_todo_id` that is not past every stored todo id, which would
+  let two todos answer to the same number. The `ToolContext` is built inside
+  `_chat_events`' `try`, so anything else raised there still becomes a typed
+  error event.
+- **Limits.** Four tool calls per model response, no per-turn tool count, no
+  planning-response ceiling for any payer and no capture cap. The stall guard is
+  the workload bound; the credit guard is a platform-paid billing cutoff and
+  bounds nothing else. Progress in a response is exactly this turn's
+  `create_ledger` call or a completed todo — a repeated read is not, and a
+  second `create_ledger` is refused rather than counted. After four consecutive
+  responses without progress the stall guard runs the next call with tools off,
+  and the ledger message on that call ends with a notice that tools are off and
+  the reply must list the materials made, the open todos and what to ask next
+  (`curate_prompts.FINAL_NOTICE`; without it the first live run of the reshaped
+  loop answered "now writing the note again" to a call that could not write).
+  That call ends the turn, and the turn reports `stopReason: curate_stall`
+  (`limits.STOP_CURATE_STALL`) whether or not the last call produced an answer.
+  The warning it logs carries the barren-response count and how many of the
+  ledger's todos are done. A response with no text and no tool calls is one more
+  no-progress response, not the end of the turn: the guard counts it and the
+  loop asks again, and only a response the guard had already turned tools off
+  for ends the turn. The credit guard's terminal call also runs with tools off,
+  and a silent one is not the stall guard: it reports `planning_cap`, the same
+  as the same call outside curate, so counts of `curate_stall` size
+  `CURATE_STALL_RESPONSES` instead of mixing in billing cutoffs.
+- **Read before write.** For a **material** target, `create_material` and
+  `edit_document` refuse until the ledger exists, require `todo` and refuse an
+  id the ledger does not hold or has already closed (both refusals list the open
+  ids), mark it done on success, and accept only `excerpt_ids` the turn has
+  read through `read_knowledge`, naming the ones it has not. A refusal on a
+  ledger with nothing open names the only move left instead of the ids:
+  reply with the materials created, and leave more work to the learner's next
+  message, because a second `create_ledger` is refused too. Once the turn has
+  read any excerpt, `excerpt_ids` is required; a material written only from
+  workspace files in a turn with no library reads stays allowed. None of this
+  reaches an `edit_document` on a **source file**: the learner's own file is not
+  written from the library, so it needs no ledger, no todo and no excerpt ids,
+  carries no provenance to Go (which refuses a source edit that does), and is
+  not recorded on the ledger. `excerpt_ids` and `todo` on a source target are
+  both refused rather than ignored: a dropped todo would leave the model
+  believing it had closed one.
+- **Provenance.** Provenance is the excerpts a work was written from. Both
+  writes resolve their `excerpt_ids` through `library.provenance` and send the
+  books to Go, which bounds the shape, requires each book's version (the
+  publish the excerpts were read from) and computes the work's own licence over
+  normalized licence strings (upper case, runs of space, `-` and `_` collapsed
+  to one space). Copyleft is a short family list — CC BY-NC-SA (`BY NC SA` or
+  `NONCOMMERCIAL SHAREALIKE`, matched first and distinct from plain
+  ShareAlike), CC BY-SA (`BY SA` or `SHAREALIKE`), GFDL (`GFDL` or
+  `GNU FREE DOCUMENTATION LICENSE`), ODbL (`ODBL` or `OPEN DATABASE LICENSE`).
+  With no copyleft source the licence stays empty;
+  with one family the work carries that family's newest version written exactly
+  as its book wrote it (CC BY-SA 3.0 plus 4.0 is the 4.0 book's string); two
+  families have no single answer, so the write is refused with
+  `lifecycle_rejected` naming both.
+  Provenance is appendable: `edit_document` takes its own `provenance`, and Go
+  merges it into the stored record — books union by id, excerpt ids union per
+  book in reading order, licence recomputed over the merged set — then hands
+  the authority the merged record, which commits it in the same transaction as
+  the edit. A family conflict refuses the edit and leaves the material
+  untouched. One call may name 1 to 32 books with 32 excerpt ids and 32 authors
+  per book and 300 characters per string field; the merged record a material
+  stores is bounded by the 32-book ceiling and the field lengths only, because
+  excerpt ids are deduplicated on merge and accumulate as the note grows — a
+  per-call cap on the merged record would make a long curated note un-editable.
+  Undo restores the text only and leaves provenance where it is: provenance
+  only grows, over-crediting a source is harmless and under-crediting one is
+  the licence risk. The pipeline never merges, and the user-facing material
+  routes have no provenance field at all. Files carry the same `provenance jsonb` column
+  and the same `store.Provenance` type, for files a curate turn generates;
+  uploads leave it null. It is returned on every file and material response —
+  file get and list, material get and list, quiz, flashcard set, their public
+  Explore forms and the public workspace material document — with
+  `getPublicWorkspaceSummary` the one exception. Every path that copies a row
+  into another workspace or library carries it: the workspace clone, for its
+  files as well as its materials, and the standalone material clone the share
+  and typed-material routes use. Nothing else copies a file or material row.
+  Its marshalled bytes are counted by the storage gate at material creation
+  only — never on an `edit_document` merge and never on a clone — and are never
+  charged: `materials.size_bytes` stays the content JSON, so the record is
+  admission-checked once and grows free after that
+  (`backend-storage-quota.md`). The frontend renders it as a footer
+  outside the editable document so a user cannot delete the credit: one line per
+  book with its edition and version, licence and source link (a licence or
+  source reference becomes a link only when it parses as an `http:` or `https:`
+  URL), on the open material, the quiz attempt page, the attempt result page
+  (which reads the quiz the attempt names, because the attempt snapshot carries
+  no provenance), the standalone quiz editor and the flashcard study page,
+  which the public share routes reuse.
+- **Answer.** Plain prose listing the materials created with their receipts:
+  no structured claims, no `citations` event and no persisted citation list
+  (`PlainRenderer` streams the deltas as they arrive). The attribution the user
+  sees is the provenance footer on each material, not a citation.
+- **Playground.** `bench/rag/playground` runs this loop in process with
+  `curate: true` (`configs/curate-statistics.json`): the real prompt, tools,
+  ledger and stall guard against the live library through the ingest tunnel,
+  with `limits.knowledge_tools_per_response` and `limits.stall_responses`
+  patching the two curate caps. There is no gateway, so `create_material` and
+  `edit_document` write `materials/<id>.json` under the run and return the
+  receipt the gateway would have produced — through the same
+  `tools.curate_write` / `note_created` / `note_appended` helpers the real
+  handlers use, so the ledger rules are not reimplemented. There is no gateway
+  to store the ledger in either, so `tools.store_ledger` is stubbed and
+  `run.json` is where it lands. Its `ledger` carries the turn as the model saw
+  it — every todo under the id the rendered ledger showed, the materials, the
+  turn's `progress` and `reads` — and, under `stored`, exactly what the gateway
+  would have persisted: at most 24 open todos with their ids, the last 5
+  requests and 50 materials. Alongside it are the stall events and every material with its
+  provenance books. A follow-up turn on the same conversation is run by pointing
+  `--ledger` (or the config's `ledger` field) at that `run.json`, which starts
+  from its `stored` ledger, so the playground sees what a real second turn
+  would. The page shows the requests, the todos with their state, the materials
+  and the turn's reads.
+
 ### Tools
 
 | Tool | Side effects | Notes |
@@ -1134,10 +1434,15 @@ a valid scope with no indexed content.
 | `list_sources` | none | Scoped source files grouped by chapter, plus workspace study materials; source `file_id` / material `id`, resource kind and editability; sources retain passage counts, status and short descriptors. Editability and materials come from Go `/api/internal/documents/list`; no name filter. |
 | `describe_documents` | none | Detailed summaries for one to eight required file ids; atomic scope validation |
 | `read_document` | none | Sequential chunks by required file id; workspace and chat scope checked before reading |
-| `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF or Office source as a JPEG for the model; refused unless a shown passage cites that page, past 8 per turn, and for text or store-only sources (`unsupported_format`); adds no citation |
-| `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, quizzes and flashcard sets |
+| `search_knowledge` | none | Curate mode only. Excerpt-level hybrid search of the knowledge library with verified `topics` / `roles` predicates; an empty result reports what those topics hold by role, or, with no topics, says the search had no topic filter. Retains nothing |
+| `browse_knowledge` | none | Curate mode only. One catalog topic: verified excerpt counts by role and by book, then a page of excerpts with section paths and synopses. The library's topic catalog is appended to this description at runtime. Retains nothing |
+| `read_knowledge` | none | Curate mode only. One excerpt's chunks from chunk index `start`, with the excerpt's chunk range in the header and a next-start marker. Retains nothing |
+| `create_ledger` | none | Curate mode only. Writes the turn's plan: `body` plus one to twelve `todos`. Required before any write; one call per user message, appended to the conversation's ledger, and a second call in the same turn is refused. Retains nothing |
+| `capture_knowledge_page` | none | Curate mode only, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. Curate mode has no per-turn capture cap. Adds no citation. Retains nothing |
+| `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF or Office source as a JPEG for the model; refused unless a shown passage cites that page, past `CAPY_CAPTURES_PER_TURN` (8) outside curate mode, and for text or store-only sources (`unsupported_format`); adds no citation |
+| `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, quizzes and flashcard sets. Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record; a material with provenance is grounded in the library and does not require indexed workspace content. In curate mode the ledger gates it: see Read before write. `todo` is required there and marks the open ledger entry this write completes |
 | `inspect_document` | none | Plate blocks with stable ids, text-source lines, or Office paragraphs/cells with target ids, paged by `start`/`count` |
-| `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt with an Undo ref |
+| `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt with an Undo ref. In curate mode a material target takes the same required `todo` and `excerpt_ids` as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes neither and may not carry provenance |
 | `trash_file` | yes | Moves one source file or material into the 30-day trash (`/api/internal/trash`) |
 | `list_trashed_files` | none | Trash of the workspace, owner only |
 | `restore_file` | yes | Restores one trashed resource, owner only |
@@ -1166,17 +1471,39 @@ on a figure, table layout or formula, and to read the image directly. The
 render lives server-side because the pixels must be inside the provider request
 the Python agent builds mid-turn.
 
+`capture_knowledge_page` is the same machinery over the library. The book's PDF
+lives in its own private bucket (`KNOWLEDGE_BASE_B2_*`, content-addressed as
+`books/<sha256>.pdf` and recorded in `library_book_versions.object_key`), is downloaded
+once per object key into the same LRU cache (`capture.cache_name(object_key)`)
+and rendered by the same `capture.render`; `blobstore.download_file` takes the
+bucket and client, so there is one download implementation. The excerpt replaces
+the cited page as the guard: only pages the excerpt covers, or the page of one
+of its figures, may be captured (`library.capture_target`). It shares
+`CAPY_CAPTURES_PER_TURN` with `capture_page` in ordinary chat and neither tool
+is capped in curate mode, where a capture is dropped when its exchange folds
+into the turn note anyway. It adds no citation, and its JPEG
+rides in the same user message after the step's tool results. An unset bucket
+leaves the tool unoffered; the five settings are validated all-or-none.
+
 **One contract.** `server/internal/agenttools` owns tool names, argument
-schemas, the operations table and the error codes. Contract version 4 folds
-`list_documents` into `list_sources`. `cmd/openapi -agent-tools`
+schemas, the operations table and the error codes. Contract version 6 adds the
+knowledge tools (`search_knowledge`, `browse_knowledge`, `read_knowledge`,
+`capture_knowledge_page`), the `library.read` operation, `create_ledger`, a
+`todo` id on `create_material` and `edit_document` (schema-optional, required by
+curate mode for a material target) and `excerpt_ids` on both writes; version 5
+was never released. `cmd/openapi -agent-tools`
 exports it to `pipeline/pipeline/generated/agent_tools.json`; Python validates
 every call against that JSON (`retrieval/contract.py`) and refuses unknown
 tools, while the same Go types reach TypeScript through the OpenAPI schema. Go
 computes the caller's operations from the effective role
 (`source.read, material.read, material.create, document.edit, resource.trash,
 trash.read, trash.restore`) and sends them with the chat request; Python offers
-only the tools those operations allow and rechecks on dispatch. A
-`contractVersion` mismatch fails the turn with `contract_mismatch`.
+only the tools those operations allow and rechecks on dispatch. `library.read`
+is the one operation no role grants: the gateway adds it per turn when the
+conversation is curate, because the shared library is not a workspace resource;
+an actor who cannot edit never reaches that point, having been refused
+`curate_requires_editor`. A `contractVersion` mismatch fails the turn with
+`contract_mismatch`.
 
 **Receipts.** Every mutation is an `agent_operations` row keyed by
 `op_ + sha256(assistantMessageId + "\n" + toolCallId)[:24]`, holding the
@@ -1404,9 +1731,11 @@ reduction path.
 | Chunk size | `CAPY_CHUNK_*` | Estimated-token budgets (`estimate_tokens`), not a real tokenizer |
 | Embedding | `EMBEDDING_DIM` | The shipped width, matching `halfvec(N)`. The *model* is never env: it is a `model_configs` row pinned per workspace |
 | Search | `CAPY_SEARCH_CANDIDATES`, `CAPY_SEARCH_TOP_K`, `CAPY_SEARCH_PER_FILE_CAP` | |
-| Agent | `CAPY_AGENT_MAX_STEPS` | Default 8 planning responses, 2 tool calls per response, 16 per turn (`retrieval/limits.py`). Cap is the design, not a safety valve |
+| Knowledge library | `LIBRARY_DATABASE_URL`, `CAPY_LIBRARY_TAG_MIN_CONFIDENCE` | Unset URL leaves library tools unavailable. Every environment reads the same live library; books carry their own versions, so there is nothing to pin. Tags below 0.8 confidence, or with an unverified evidence quote, never act as filters. |
+| Library source PDFs | `KNOWLEDGE_BASE_B2_ENDPOINT`, `KNOWLEDGE_BASE_B2_REGION`, `KNOWLEDGE_BASE_B2_BUCKET`, `KNOWLEDGE_BASE_B2_KEY_ID`, `KNOWLEDGE_BASE_B2_APP_KEY` | A dedicated private bucket with its own restricted key, not a prefix of the app bucket. All five or none; unset leaves `capture_knowledge_page` unoffered. |
+| Agent | `CAPY_AGENT_MAX_STEPS` | Default 8 planning responses, 2 tool calls per response, 16 per turn (`retrieval/limits.py`). Cap is the design, not a safety valve. Curate mode instead allows `KNOWLEDGE_TOOLS_PER_RESPONSE` (4) calls per response with no per-turn or planning cap, ends on the `CURATE_STALL_RESPONSES` (4) stall guard, and requires a 200,000-token window |
 | Extraction confidence | `CAPY_CONFIDENCE_NOTE_BELOW` | Default 0.9. A passage whose chunk confidence is below this carries `[extraction confidence 0.72: reasons]` in its header, which the capture rule keys on |
-| capture_page | `CAPY_CAPTURE_CACHE_DIR`, `CAPY_CAPTURE_CACHE_MAX_BYTES`, `CAPY_CAPTURE_MAX_EDGE`, `CAPY_CAPTURES_PER_TURN` | Retrieval-host PDF cache (LRU by size, 2 GiB), 1568 px long edge JPEG q80, 8 captures per turn |
+| capture_page | `CAPY_CAPTURE_CACHE_DIR`, `CAPY_CAPTURE_CACHE_MAX_BYTES`, `CAPY_CAPTURE_MAX_EDGE`, `CAPY_CAPTURES_PER_TURN` | Retrieval-host PDF cache (LRU by size, 2 GiB), 1568 px long edge JPEG q80, 8 captures per turn in ordinary chat, no cap in curate mode |
 | LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `CAPY_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 250k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |
 | Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`). The ZAI GLM-5.3-Flash catalog row is served from Tencent TokenHub. Captions always use `reasoning_effort: low`, which is also the catalog default for chat. |
 | Direct media | `CAPY_IMAGE_MAX_PIXELS`, `ELEVENLABS_API_KEY`, `ELEVENLABS_BASE_URL`, `CAPY_ELEVENLABS_CONCURRENCY_UNITS`, `CAPY_ELEVENLABS_SYNC_TIMEOUT_S`, `CAPY_AUDIO_MAX_DURATION_SECONDS`, `CAPY_TABULAR_TEXT_VERSION` | Image decoding is capped at 100M pixels. Scribe v2 is synchronous, has an absolute 12-hour request timeout, and defaults to 12 weighted Starter units, with each file consuming `min(4, ceil(duration_seconds / 480))`; audio is capped at 10 hours. |

@@ -49,7 +49,8 @@ log = logging.getLogger("capy.retrieval.chunking")
 #     chunks with merged-cell notes and the adjacent caption as section path.
 # v8: bounded oversized table context, short visible orphan headings, and
 #     extraction confidence in canonical content identity.
-CHUNKER_VERSION = "v9"
+# v10: repeated keys preserve interior occurrences; source roles correct heading ancestry.
+CHUNKER_VERSION = "v10"
 
 # Picture blocks arrive under two labels: ``image`` for photos and diagrams,
 # ``chart`` for plots the layout model recognises as data graphics. Same shape,
@@ -81,7 +82,8 @@ _FURNITURE_TYPES = frozenset({"footer", "page_number", "aside_text", "discarded"
 # of 25 pages and opened 28 of the paper's 75 chunks, so every question near
 # its topic came back as copies of it; a slide deck's licence line arrived as
 # ``text`` on 40 pages. Any non-heading text block whose text recurs on this
-# many pages is dropped before packing.
+# many pages is a furniture candidate. Its occurrences inside the page body
+# survive: formulas and teaching labels legitimately recur there.
 _REPEATED_ON_PAGES = 3
 _REPEATABLE_TYPES = frozenset({"text"}) | _BODY_TEXT_TYPES
 
@@ -549,12 +551,12 @@ def chunk_content_list(
                 flush_section()
                 _push_heading(stack, level, text)
                 continue
-            if _normalized(text) in furniture:
+            if _is_furniture(item, furniture):
                 continue
             pending.append(_Block(text, None, page_no, bbox))
         elif kind in _BODY_TEXT_TYPES:
             text = clean_inline(str(item.get("text") or "")).strip()
-            if text and _normalized(text) not in furniture:
+            if text and not _is_furniture(item, furniture):
                 pending.append(_Block(text, None, page_no, bbox))
         elif kind in _LIST_TYPES:
             # A reference list arrives as one block of many items and is the
@@ -602,6 +604,24 @@ def chunk_content_list(
 
 def _normalized(text: str) -> str:
     return " ".join(text.split())
+
+
+def _is_furniture(block: dict, furniture: set[str] | frozenset[str]) -> bool:
+    """A frozen repeated key cannot erase a supported interior occurrence."""
+    box = block.get("bbox")
+    interior = (
+        isinstance(box, (list, tuple))
+        and len(box) == 4
+        and all(type(n) in (int, float) for n in box)
+        and 50 <= box[0] < box[2] <= 950
+        and 100 <= box[1] < box[3] <= 900
+    )
+    return (
+        not interior
+        and block.get("type") in _REPEATABLE_TYPES
+        and not block.get("text_level", 0)
+        and _normalized(clean_inline(str(block.get("text") or ""))) in furniture
+    )
 
 
 def _repeated_across_pages(content_list: list[dict[str, Any]]) -> set[str]:

@@ -46,7 +46,7 @@ export function YouTubeDialog({
           <Button onClick={onClose} variant="ghost">
             {m.action_cancel()}
           </Button>
-          <Button disabled={!videoId} onClick={save}>
+          <Button disabled={!videoId} onClick={save} variant="accent">
             {m.action_insert()}
           </Button>
         </>

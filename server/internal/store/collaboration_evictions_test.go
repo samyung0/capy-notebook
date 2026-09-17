@@ -90,7 +90,7 @@ func TestWorkspaceMembershipAndLifecycleChangesQueueEvictions(t *testing.T) {
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_eviction_scope_owner")
 	memberID := newBlobTestUser(t, s, "u_eviction_scope_member")
-	workspace, err := s.CreateWorkspace(ctx, ownerID, "Eviction scope", nil)
+	workspace, err := s.CreateWorkspace(ctx, ownerID, WorkspaceCreate{Name: "Eviction scope", Tags: nil})
 	if err != nil {
 		t.Fatal(err)
 	}

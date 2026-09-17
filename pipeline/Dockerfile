@@ -15,7 +15,10 @@ ENV PYTHONUNBUFFERED=1
 ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
 
+# Dependencies first so a source change reuses the installed venv layer.
 COPY pyproject.toml uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-install-project
 COPY pipeline ./pipeline
 COPY server/internal/models/elitellm_providers.json ./server/internal/models/elitellm_providers.json
 COPY server/internal/sourceupload/text_extensions.json ./server/internal/sourceupload/text_extensions.json

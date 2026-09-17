@@ -20,6 +20,7 @@ import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { CardEditModal } from '@/features/flashcards/CardEditModal';
+import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { ShareDialog } from '@/features/workspace/ShareDialog';
 import { m } from '@/i18n';
 import { cardCountBucket, flashcardsStudySource } from '@/lib/analytics';
@@ -366,6 +367,7 @@ export default function FlashcardStudy() {
             </Button>
           </div>
         )}
+        <MaterialAttributionFooter provenance={flashcardSet?.provenance} />
       </div>
 
       {canEdit && editing !== null && (

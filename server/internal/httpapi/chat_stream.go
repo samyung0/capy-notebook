@@ -27,11 +27,18 @@ import (
 type chatStreamReq struct {
 	ConversationID string `json:"conversationId"`
 	Text           string `json:"text"`
+	// Curate only opens a new thread. An existing thread's stored value governs;
+	// a disagreeing flag is rejected rather than silently ignored.
+	Curate bool `json:"curate"`
 }
 
 const (
 	chatQueryMaxEstimatedTokens = 8192
 	chatQueryMaxBytes           = 65_536
+
+	// Shared by the stream and the conversation create route.
+	curateRequiresEditorCode    = "curate_requires_editor"
+	curateRequiresEditorMessage = "Curating from the library needs edit access to this workspace."
 )
 
 func estimateChatQueryTokens(text string) int {
@@ -125,6 +132,14 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	// Curate reads the shared library to write materials. Without edit access
+	// the turn would run with no library tools and stall, so refuse it here.
+	if req.Curate && !access.canEdit {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"code": curateRequiresEditorCode, "message": curateRequiresEditorMessage,
+		})
+		return
+	}
 
 	ctx := r.Context()
 	userID := uid(r)
@@ -138,9 +153,15 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg := llm.Cfg
 
-	conv, err := a.resolveConversation(ctx, userID, wsID, req.ConversationID)
+	conv, err := a.resolveConversation(ctx, userID, wsID, req.ConversationID, req.Curate)
 	if err != nil {
 		a.fail(w, err)
+		return
+	}
+	if conv.Curate != req.Curate {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"code": "curate_mismatch", "message": "This chat's mode was fixed when it was created.",
+		})
 		return
 	}
 
@@ -220,7 +241,14 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		usage        pipeUsage
 	)
 
-	streamErr := a.relayChat(ctx, userID, agenttools.OperationsForRole(string(access.role)), conv, llm, charge.id, req.Text, assistant.ID, prompt, func(ev pipeChatEvent) {
+	// library.read is granted per curate turn; the actor can edit, because a
+	// curate request from anyone else was refused above.
+	operations := agenttools.OperationsForRole(string(access.role))
+	if conv.Curate {
+		operations = append(operations, agenttools.OpLibraryRead)
+	}
+
+	streamErr := a.relayChat(ctx, userID, operations, conv, llm, charge.id, req.Text, assistant.ID, prompt, func(ev pipeChatEvent) {
 		switch ev.Type {
 		case "checkpoint":
 			cpCtx, cpCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -321,9 +349,9 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (a *api) resolveConversation(ctx context.Context, userID, wsID, convID string) (store.Conversation, error) {
+func (a *api) resolveConversation(ctx context.Context, userID, wsID, convID string, curate bool) (store.Conversation, error) {
 	if convID == "" {
-		return a.s.CreateConversation(ctx, userID, wsID, "")
+		return a.s.CreateConversation(ctx, userID, wsID, "", curate)
 	}
 	conv, err := a.s.GetConversation(ctx, userID, convID)
 	if err != nil {
@@ -379,6 +407,11 @@ func (a *api) relayChat(
 		"assistantMessageId": assistantID,
 		"spendSessionId":     spendSessionID,
 		"locale":             a.userLocale(ctx, userID),
+		"curate":             conv.Curate,
+		"conversationId":     conv.ID,
+		// The curate ledger lives outside the message list; null until a curate
+		// turn has written one back through /api/internal/conversations/ledger.
+		"ledger": conv.Ledger,
 	}
 	if prompt.Checkpoint != nil {
 		body["checkpoint"] = prompt.Checkpoint

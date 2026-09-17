@@ -23,6 +23,13 @@ Do not report the same failure through multiple surfaces.
 
 ## TanStack Query defaults
 
+Queries stay fresh for five minutes by default. Notifications and workspace
+chapter, file, and material lists use five seconds and refetch on window focus
+when stale. The workspace list options also apply to route prefetches.
+File and material detail queries also use five seconds, but retain the global
+disabled focus refetching. Reopening stale details refreshes them; live material
+editing continues to receive content through Yjs.
+
 The query client throws a query error to the nearest boundary only when the
 query has no cached data. A failed background refresh therefore keeps rendering
 the last usable result. Secondary and optional queries must opt out with:
@@ -103,7 +110,11 @@ Chat SSE failures stay on the assistant turn. An explicit `error` frame
 stream that closes before a terminal `done` frame, both mark that turn as errored;
 they do not crash a page boundary or emit the default mutation toast. A
 `model_unavailable` (422) response before the stream opens is the same surface,
-with copy that sends the user to Settings → LLM. A rejected or unclear user
+with copy that sends the user to Settings → LLM. So are the two curate
+refusals, both 400 before the stream opens: `curate_mismatch` when the request
+disagrees with the mode the chat was created in (either direction), and
+`curate_requires_editor` when the actor cannot write to the workspace. A
+rejected or unclear user
 provider key (`invalid_llm_key` / `llm_key_failed`, or the matching stream
 `invalid_key` / `key_failed` frames) stays on that same chat/editor/quiz
 surface and asks the user to check the key. The one events stream

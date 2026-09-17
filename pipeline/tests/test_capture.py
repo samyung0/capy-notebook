@@ -108,7 +108,7 @@ async def test_capture_attaches_the_image_and_adds_no_citation(rendered):
     assert list(record["pixels"]) == [134, 200]
 
 
-async def test_capture_stops_at_the_turn_cap(rendered, monkeypatch):
+async def test_capture_stops_at_the_turn_cap_except_in_curate(rendered, monkeypatch):
     monkeypatch.setattr(tools.cfg, "captures_per_turn", 1)
     ctx = _ctx(1)
     first = await tools._capture_page(
@@ -119,6 +119,14 @@ async def test_capture_stops_at_the_turn_cap(rendered, monkeypatch):
     )
     assert not first.refused
     assert second.refused and second.error_code == "limit_reached"
+
+    # A whole set of materials is one curate turn, and captures leave the
+    # request when their exchange folds, so curate has no cap.
+    ctx.curate = True
+    third = await tools._capture_page(
+        {"file_id": "f_1", "page": 1, "_tool_call_id": "c"}, ctx
+    )
+    assert not third.refused
 
 
 async def test_capture_rejects_a_page_past_the_end_and_a_bad_box(rendered):
@@ -337,6 +345,86 @@ async def test_pdf_cache_is_keyed_by_the_stored_object(tmp_path, monkeypatch):
     assert after_reparse != first
     assert downloads == ["previews/s/v1/fp1.pdf", "previews/s/v2/fp2.pdf"]
     assert after_reparse.read_bytes().endswith(b"previews/s/v2/fp2.pdf")
+
+
+def _capture_target(pages: list[int]):
+    from pipeline.retrieval import library
+
+    return library.CaptureTarget(
+        excerpt_id="e_1",
+        book_id="ahss",
+        book_title="Advanced High School Statistics",
+        object_key="books/aaa.pdf",
+        bytes=1024,
+        pages=pages,
+    )
+
+
+async def test_knowledge_capture_is_bounded_by_the_excerpt_pages(monkeypatch, pdf):
+    """An excerpt is the unit the curate model works in: it may look at its own
+    pages and its figures' pages, not browse the book."""
+    rendered: list[tuple] = []
+
+    async def _target(excerpt_id):
+        assert excerpt_id == "e_1"
+        return _capture_target([338, 339, 341])
+
+    async def _render(object_key, max_bytes, page, bbox, max_edge):
+        rendered.append((object_key, max_bytes, page))
+        return capture.render(pdf, 1, bbox, max_edge)
+
+    monkeypatch.setattr(tools.library, "capture_target", _target)
+    monkeypatch.setattr(capture, "render_knowledge", _render)
+    ctx = ToolContext(workspace_id="ws_1", curate=True)
+
+    outside = await tools._capture_knowledge_page(
+        {"excerpt_id": "e_1", "page": 400, "_tool_call_id": "a"}, ctx
+    )
+    assert outside.refused and "pages 338, 339, 341" in outside.text()
+    assert not rendered and not ctx.pending_images
+
+    # 341 is the page of one of the excerpt's figures.
+    inside = await tools._capture_knowledge_page(
+        {"excerpt_id": "e_1", "page": 341, "_tool_call_id": "b"}, ctx
+    )
+    assert not inside.refused and not inside.passages, "a capture adds no citation"
+    label, url = ctx.pending_images["b"]
+    assert label == (
+        "capture_knowledge_page result 1: Advanced High School Statistics page 341"
+    )
+    assert url.startswith("data:image/jpeg;base64,")
+    assert rendered == [("books/aaa.pdf", 1024, 341)]
+    assert ctx.captures[0]["fileId"] == "e_1" and ctx.captures[0]["page"] == 341
+
+    # Curate mode has no per-turn capture cap: a capture is dropped when its
+    # exchange folds into the turn note anyway.
+    monkeypatch.setattr(tools.cfg, "captures_per_turn", 1)
+    again = await tools._capture_knowledge_page(
+        {"excerpt_id": "e_1", "page": 338, "_tool_call_id": "c"}, ctx
+    )
+    assert not again.refused and len(ctx.captures) == 2
+
+
+async def test_knowledge_pdf_cache_is_keyed_by_the_object_key(tmp_path, monkeypatch):
+    monkeypatch.setattr(capture.cfg, "capture_cache_dir", str(tmp_path))
+    downloads: list[tuple[str, int]] = []
+
+    def _download(object_key, local_path, max_bytes):
+        downloads.append((object_key, max_bytes))
+        Path(local_path).write_bytes(b"%PDF " + object_key.encode())
+        return len(object_key) + 5, "sha"
+
+    monkeypatch.setattr(capture.blobstore, "library_download_file", _download)
+
+    first = await capture.knowledge_pdf_path("books/aaa.pdf", 1024)
+    again = await capture.knowledge_pdf_path("books/aaa.pdf", 1024)
+    other = await capture.knowledge_pdf_path("books/bbb.pdf", 2048)
+
+    assert first == again == tmp_path / capture.cache_name("books/aaa.pdf")
+    assert other != first and first.read_bytes().endswith(b"books/aaa.pdf")
+    assert downloads == [("books/aaa.pdf", 1024), ("books/bbb.pdf", 2048)]
+    with pytest.raises(capture.CaptureUnavailable):
+        await capture.knowledge_pdf_path("", 10)
 
 
 def test_office_capture_returns_only_jpeg_and_removes_temporary_source(monkeypatch):

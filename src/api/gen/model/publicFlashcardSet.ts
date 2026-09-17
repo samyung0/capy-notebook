@@ -5,6 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { Privacy } from './privacy.ts';
+import type { Provenance } from './provenance.ts';
 import type { UserColor } from './userColor.ts';
 
 export interface PublicFlashcardSet {
@@ -19,6 +20,7 @@ export interface PublicFlashcardSet {
   knownPct: number;
   name: string;
   privacy: Privacy;
+  provenance?: Provenance;
   workspaceId: string;
   workspaceName: string;
 }

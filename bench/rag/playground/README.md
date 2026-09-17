@@ -9,20 +9,35 @@ uv run --with pymupdf==1.28.2 python bench/rag/playground/scripts/playground.py 
 # then open http://127.0.0.1:8765
 ```
 
-Set `ALIBABA_API_KEY` in the shell first if a config uses `capture.mode = "ocr"`, and
-`TENCENT_API_KEY` for configs whose model transport points at Tencent TokenHub.
+Set `ALIBABA_API_KEY` in the shell first if a config uses `capture.mode = "ocr"`.
+`TOKENHUB` (Tencent TokenHub, used by the `curate-statistics` and `*-tencent`
+configs) is lifted from the repository-root `.env.local` with the other provider
+keys, so it needs no export. The Claude desktop app's `.claude/launch.json`
+carries `rag-playground-uat`, which starts this server against UAT on port
+18765 with `uv` invoked by its full path. The server opens its own SSH tunnel
+without `ssh -f`, which Windows OpenSSH ignores, and polls the forwards instead.
 
 ## Targets
 
 | Target | Index | How it is reached |
 | --- | --- | --- |
-| `lab` | Frozen September 9 evaluation database (`odl_eval`): 29 sources, workspaces `odl_eval_odl` (refined ODL with generated captions), `odl_eval_mineru`, `odl_eval_odl_nocaption` (same refined ODL chunks, no caption step; added 2026-09-12 by `odl_agentic_prepare.py nocaption` then `index --arms odl_nocaption`) and `odl_eval_odl_ocr` (the caption-free chunks plus RapidOCR lines on the eleven pages with no text layer, staged by `bench/parsers/scripts/experiment_odl_selective_ocr.py`, then `index --arms odl_ocr`) | ssh tunnel to the ingest host, loopback port 55435 |
+| `lab` | Frozen September 9 evaluation database (`odl_eval`): 29 sources, workspaces `odl_eval_odl` (refined ODL with generated captions), `odl_eval_mineru`, `odl_eval_odl_nocaption` (same refined ODL chunks, no caption step; added 2026-09-12 by `odl_agentic_prepare.py nocaption` then `index --arms odl_nocaption`) and `odl_eval_odl_ocr` (the caption-free chunks plus RapidOCR lines on the eleven pages with no text layer, staged by `bench/parsers/scripts/experiment_odl_selective_ocr.py`, then `index --arms odl_ocr`) | ssh tunnel to the ingest host, loopback port 15435 |
 | `uat` | The UAT Postgres (currently five workspaces, one file, no chunks) | ssh tunnel through the ingest host to the WireGuard address 10.77.0.3 |
+| `local` | The dev compose stack on this PC (`deploy/docker-compose.yml`), `DATABASE_URL` from `deploy/.env` | no tunnel |
 
-The server opens the tunnel itself (`~/.ssh/id_ed25519_capy_ingest`), reads the
-UAT worker's provider and bucket credentials over ssh into process memory, and
-points `DATABASE_URL` at the chosen target. Provider spend lands on the UAT keys.
-One server process serves one target; run two on different ports for both.
+The server opens the tunnel itself (`CAPY_INGEST_SSH_KEY`, else the first of
+`~/.ssh/id_ed25519_capy_ingest` and `~/.ssh/capy_ingest_159_195_61_195` that
+exists), reads the UAT worker's provider and bucket credentials over ssh into
+process memory, and points `DATABASE_URL` at the chosen target. Provider spend
+lands on the UAT keys. One server process serves one target; run two on
+different ports for both.
+
+The tunnel also forwards 15433 to the shared knowledge library
+(10.77.0.2:5433). `LIBRARY_DATABASE_URL`, `CAPY_LIBRARY_TAG_MIN_CONFIDENCE` and
+the five `KNOWLEDGE_BASE_B2_*` values are lifted from the repository-root
+`.env.local` before the pipeline imports; only when `.env.local` has no library
+URL does the server fall back to the deployed one moved onto port 15433. Every
+target reads the same live library; books carry their own versions.
 
 Lab source PDFs come from `bench/rag/fixtures/local/2026-09-09-odl-agentic/pdfs`.
 UAT PDFs are downloaded from the UAT bucket on first capture into `local/pdfs/uat`
@@ -39,6 +54,14 @@ Nothing in either database. The `rag_search_events` telemetry write is disabled
 for the turn. Runs land in `local/runs/<id>/run.json` with the effective config,
 the exact system prompt, every tool call with the text the model saw, every
 provider call with token counts, captured images, citations and the answer.
+A curate run also records the progress ledger twice: the turn as the model saw
+it (`requests`, `next_todo_id`, `todos` with the id the rendered ledger showed,
+their done state and the material that closed each, `materials`, plus the turn's
+own `progress` and `reads`), and under `stored` exactly what the gateway would
+have persisted — the newest 24 open todos, the last 5 requests and 50 materials.
+It records the stall events and every material with its provenance books too;
+the materials themselves are written as
+`local/runs/<id>/materials/<id>.json`.
 `local/` is git-ignored; `configs/` is committed so config changes are reviewable.
 
 ## Config
@@ -52,8 +75,10 @@ Fields absent from a config take the defaults in `DEFAULT_CONFIG`
 | `model.transport` | Send this pin to another OpenAI-compatible endpoint: `{"url", "key_env", "wire_model", "body"}`. `body` picks the request builder (`zai`, `openai`, `deepseek`). Used to serve GLM-5.3-flash from Tencent TokenHub (`https://tokenhub-intl.tencentcloudmaas.com/v1/chat/completions`) instead of the production DeepInfra route |
 | `answer.citations` | `as_is` (production numbering), `renumber` (markers rewritten to 1, 2, … in first-appearance order while streaming; the final list holds only the passages used) or `structured` (the answer is JSON: claims with the passages that ground each; the playground writes the prose and numbers) |
 | `system_prompt` / `prompt_addon` | `null` keeps the production prompt; a string replaces it. The addon is appended either way |
-| `tools` | Subset of `search_workspace`, `list_sources`, `describe_documents`, `read_document`, `capture_page` |
-| `limits` | `planning_responses`, `tools_per_response`, `tools_per_turn`, `captures_per_turn` |
+| `curate` | Run the real curate loop: library tools, the curate prompt, curate limits, the progress ledger and the stall guard (see below) |
+| `ledger` | Path to a stored ledger the curate turn continues: a previous `run.json`, or a bare ledger. `--ledger <path>` sets it for every config that does not carry its own |
+| `tools` | Subset of `search_workspace`, `list_sources`, `describe_documents`, `read_document`, `capture_page`, and in curate mode `search_knowledge`, `browse_knowledge`, `read_knowledge`, `capture_knowledge_page`, `create_ledger`, `create_material`, `edit_document` |
+| `limits` | `planning_responses`, `tools_per_response`, `tools_per_turn`, `captures_per_turn` for ordinary chat; `knowledge_tools_per_response` and `stall_responses` for curate |
 | `search` | `top_k`, `per_file_cap` |
 | `capture.mode` | `pixels` attaches the JPEG to the conversation (needs a vision chat model); `ocr` sends it to Qwen3.5-OCR (`ocr_route` `docparse` or `chat`) and returns the transcript as a passage; `caption` asks the captioning model, question-aware when `question_aware` is true |
 | `capture.require_seen_page` | Refuse captures of pages no retrieved passage has shown |
@@ -67,6 +92,37 @@ page grid (top-left origin, the same space as chunk `regions`). In `pixels` mode
 the image rides in a user message placed after the tool results of that step,
 because chat-completions tool messages carry text only. Captures get a citation
 with the rendered box as its region.
+
+## Curate mode
+
+`curate: true` runs the production curate loop (`configs/curate-statistics.json`
+is the frozen statistics case against the UAT library pin; its `question` field
+prefills the question box). The agent gets the curate system prompt, the
+library tools and `create_ledger`, no planning ceiling, and the two curate caps
+from `limits.knowledge_tools_per_response` and `limits.stall_responses`, which
+patch `KNOWLEDGE_TOOLS_PER_RESPONSE` and `CURATE_STALL_RESPONSES` for the turn.
+The answer is plain prose with no citations, and the page shows the ledger's
+requests, its todos with their state, its materials and the turn's reads beside
+the runs list. The config's
+`planning_responses`, `tools_per_response`, `tools_per_turn` and
+`captures_per_turn` are inert in curate mode.
+
+There is no gateway, so `create_material` and `edit_document` are handled in
+process: a created material is written to `materials/<id>.json` under the run
+with the provenance `library.provenance` resolved for its `excerpt_ids`, an edit
+appends its commands to that file and merges its own books into the record by
+book id the way Go does, and both return the receipt the gateway would
+have produced. Both go through `tools.curate_write` and the ledger helpers the
+real handlers use, so the ledger rules — ledger first, a required todo id that
+is on the ledger and still open, only excerpts this turn read — are the
+production ones rather than a copy. There is no gateway to store the ledger in
+either, so `tools.store_ledger` is stubbed and `run.json` holds it; point
+`--ledger` at that file to run the next turn of the same conversation, which
+starts from its `stored` ledger the way the gateway hands one back — done todos
+gone, the open ones under the ids they already had. Everything
+else — the library reads, `capture_knowledge_page`, compaction — is the real
+code path. `capture_knowledge_page` renders from the knowledge-base bucket into
+the same capture cache, keyed by the book's `books/<sha256>.pdf` object key.
 
 ## Citation modes
 

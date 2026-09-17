@@ -20,8 +20,11 @@ import (
 // name or result shape changes incompatibly. Python refuses to start on a
 // version it does not know.
 //
-// v4: list_sources includes materials and replaces list_documents.
-const ContractVersion = 4
+// v6: curate mode adds the library.read operation, the knowledge tools
+// (including capture_knowledge_page), the conversation progress ledger
+// (create_ledger plus a todo id on create_material and edit_document) and
+// excerpt_ids on both writes.
+const ContractVersion = 6
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -40,21 +43,28 @@ const (
 	OpResourceTrash  Operation = "resource.trash"
 	OpTrashRead      Operation = "trash.read"
 	OpTrashRestore   Operation = "trash.restore"
+	// OpLibraryRead is not derived from a role: the shared knowledge library is
+	// not a workspace resource. Curate mode grants it per turn.
+	OpLibraryRead Operation = "library.read"
 )
 
 // AllOperations is the closed policy table, in stable order.
 var AllOperations = []Operation{
 	OpSourceRead, OpMaterialRead, OpMaterialCreate, OpDocumentEdit,
-	OpResourceTrash, OpTrashRead, OpTrashRestore,
+	OpResourceTrash, OpTrashRead, OpTrashRestore, OpLibraryRead,
 }
 
 // OperationsForRole maps a workspace effective role onto the operations the
 // chat turn may offer. Viewers read; editors (member or share role) also
 // create, edit and trash; only the owner reads or restores trash.
+// library.read is deliberately absent: curate mode adds it.
 func OperationsForRole(role string) []Operation {
 	switch role {
 	case "owner":
-		return append([]Operation(nil), AllOperations...)
+		return []Operation{
+			OpSourceRead, OpMaterialRead, OpMaterialCreate, OpDocumentEdit,
+			OpResourceTrash, OpTrashRead, OpTrashRestore,
+		}
 	case "editor":
 		return []Operation{OpSourceRead, OpMaterialRead, OpMaterialCreate, OpDocumentEdit, OpResourceTrash}
 	case "viewer":
@@ -439,6 +449,95 @@ func Definitions() []Definition {
 			RequiredOperations: []Operation{OpSourceRead},
 		}),
 		chatTool(Definition{
+			Name:      "search_knowledge",
+			Retention: RetainNone,
+			Description: "Search the shared knowledge library of verified textbook excerpts. " +
+				"One excerpt is one section of one book. `roles` filters what the excerpt " +
+				"teaches: introduction, formal, worked_example, exercise, summary, reference. " +
+				"`topics` takes topic ids from the catalog listed below. An empty result " +
+				"under a role filter reports what those topics do hold by role, so relax " +
+				"the filter on purpose instead of rewording.",
+			InputSchema: obj(map[string]any{
+				"query":  str(""),
+				"topics": idList("Catalog topic ids to restrict to.", 0, 8),
+				"roles":  idList("Excerpt roles to restrict to.", 0, 6),
+			}, "query"),
+			UsesEmbedding:      true,
+			Concurrency:        "read",
+			RequiredOperations: []Operation{OpLibraryRead},
+		}),
+		chatTool(Definition{
+			Name:      "browse_knowledge",
+			Retention: RetainNone,
+			Description: "List what the library holds for one catalog topic: verified excerpt " +
+				"counts by role and by book, then a page of excerpts with their section " +
+				"paths and synopses. Use it before searching to see whether the library " +
+				"covers the request at all.",
+			InputSchema: obj(map[string]any{
+				"topic": str("Catalog topic id."),
+				"page":  map[string]any{"type": "integer", "minimum": 1, "default": 1},
+			}, "topic"),
+			Concurrency:        "read",
+			RequiredOperations: []Operation{OpLibraryRead},
+		}),
+		chatTool(Definition{
+			Name:      "read_knowledge",
+			Retention: RetainNone,
+			Description: "Read a library excerpt in full, in order from a chunk index. Always " +
+				"read an excerpt before writing a material from it; a search hit is one " +
+				"chunk of it.",
+			InputSchema: obj(map[string]any{
+				"excerpt_id": str(""),
+				"start":      map[string]any{"type": "integer", "minimum": 0, "default": 0},
+			}, "excerpt_id"),
+			Concurrency:        "read",
+			RequiredOperations: []Operation{OpLibraryRead},
+		}),
+		chatTool(Definition{
+			Name:      "capture_knowledge_page",
+			Retention: RetainNone,
+			Description: "Render one printed page of the book an excerpt comes from, or a boxed " +
+				"region of it, and read it directly as an image. Only pages the excerpt " +
+				"covers, or the page of one of its figures, can be captured. bbox is " +
+				"optional: [x0, y0, x1, y1] on a 0-1000 grid over the page, origin " +
+				"top-left, to zoom into a figure, table or formula. Use it when the text " +
+				"of an excerpt does not carry the layout the material needs.",
+			InputSchema: obj(map[string]any{
+				"excerpt_id": str(""),
+				"page":       map[string]any{"type": "integer", "minimum": 1},
+				"bbox": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "number", "minimum": 0, "maximum": 1000},
+					"minItems":    4,
+					"maxItems":    4,
+					"description": "Region to zoom into on the 0-1000 page grid, top-left origin.",
+				},
+			}, "excerpt_id", "page"),
+			Concurrency:        "read",
+			RequiredOperations: []Operation{OpLibraryRead},
+		}),
+		chatTool(Definition{
+			Name:      "create_ledger",
+			Retention: RetainNone,
+			Description: "Curate mode: write the turn's progress ledger before any material is " +
+				"written. `body` restates what the learner asked for; `todos` lists the " +
+				"materials or sections to produce, one short line each. The ledger is shown " +
+				"back on every response; create_material and edit_document mark a todo done " +
+				"through their `todo` id. One call per user message; it appends to the " +
+				"conversation's ledger, and open todos carry across messages.",
+			InputSchema: obj(map[string]any{
+				"body": map[string]any{"type": "string", "maxLength": 2000},
+				"todos": map[string]any{
+					"type":     "array",
+					"minItems": 1,
+					"maxItems": 12,
+					"items":    map[string]any{"type": "string", "maxLength": 200},
+				},
+			}, "body", "todos"),
+			Concurrency:        "read",
+			RequiredOperations: []Operation{OpLibraryRead},
+		}),
+		chatTool(Definition{
 			Name:      "create_material",
 			Retention: RetainFull,
 			Description: "Create a study material in this workspace from content you " +
@@ -471,6 +570,16 @@ func Definitions() []Definition {
 					"description": "mindmap/diagram/note only; markdown with a mermaid block",
 				},
 				"scope": scopeSchema(),
+				"excerpt_ids": idList(
+					"Library excerpt ids this material was written from. Required for every "+
+						"material built from the knowledge library; they become its attribution footer.",
+					0, 32,
+				),
+				"todo": map[string]any{
+					"type":        "integer",
+					"minimum":     0,
+					"description": "Curate mode: id of the ledger todo this write completes, as shown on the ledger.",
+				},
 			}, "kind"),
 			Mutates:            true,
 			Concurrency:        "mutate",
@@ -520,6 +629,16 @@ func Definitions() []Definition {
 					"minItems": 1,
 					"maxItems": 20,
 					"items":    editCommandSchema(),
+				},
+				"excerpt_ids": idList(
+					"Curate mode: library excerpt ids the appended content was written from; "+
+						"they join the material's attribution footer.",
+					0, 32,
+				),
+				"todo": map[string]any{
+					"type":        "integer",
+					"minimum":     0,
+					"description": "Curate mode: id of the ledger todo this write completes, as shown on the ledger.",
 				},
 			}, "target", "commands"),
 			Mutates:            true,

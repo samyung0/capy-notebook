@@ -64,7 +64,7 @@ export function CardEditModal({
           <Button onClick={onClose} type="button" variant="ghost">
             {m.action_cancel()}
           </Button>
-          <Button disabled={submitDisabled} type="submit">
+          <Button disabled={submitDisabled} type="submit" variant="accent">
             {!isSubmitting && (
               <span>{card ? m.action_save() : m.flashcards_add_card()}</span>
             )}

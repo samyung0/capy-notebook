@@ -986,6 +986,25 @@ rejects every table-level write or unexpected column-level write outside the
 documented registry allowlist. Required column-level `SELECT` grants remain
 allowed.
 
+The Library section (`/api/ops/library`, `read_all`) is a third pool, opened
+lazily from the optional `OPS_LIBRARY_DATABASE_URL` on the first library
+request. It reaches the shared knowledge library on the ingest host, not an app
+database, so it skips the app role contract: that schema belongs to the library
+loader (`pipeline/pipeline/retrieval/library.py` owns `LIBRARY_SCHEMA`) and
+ships its own `capy_library_reader` role. Because the library is on another
+host, an unreachable one answers its own routes 503 `library_unavailable` and
+leaves every other page working; startup never waits on it. Without the
+variable every library route answers 404 `library_unconfigured`. The nav entry
+is shown to every `read_all` operator either way, and the page itself reports
+the unconfigured state. The section
+is read-only by design — the live counts, books with their version history and
+receipts, topics with excerpt counts by role, a filtered excerpt browser paging
+50 at a time, excerpt detail with chunk, figure and parser/chunker locators,
+model runs, and a per-book JSON export (`?version=` for a retained version)
+whose sha256 travels in `X-Capy-Export-Sha256` so another reviewer can verify
+the bytes they were handed. Every query follows the book's current content
+unless a version is named; every query is bounded; no route mutates.
+
 `operator_audit_events` is the chronological record of accepted Ops mutations.
 Registry saves and manual reconciliation requests append an actor-role snapshot,
 target, outcome, request trace id, and safe summary in the same transaction as

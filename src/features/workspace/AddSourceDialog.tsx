@@ -76,7 +76,6 @@ import {
   useMicrosoftLoginHint,
   useProviderConnect,
 } from '@/lib/useProviderConnect';
-
 import {
   calculateParseCreditMicros,
   localSourceAnalysisInput,
@@ -102,6 +101,10 @@ import {
   waitForSourceImportWave,
   withSourceImportRequestRetry,
 } from './sourceImport';
+import {
+  createSourceInspectionGuard,
+  type SourceInspectionGuard,
+} from './sourceInspectionGuard';
 import {
   aggregateUploadPct,
   capSourceUploads,
@@ -317,25 +320,6 @@ function reportRejectedImports(rejected: { code: string; fileId: string }[]) {
 
 const NO_CHAPTER = '__none__';
 const CREATE_CHAPTER = '__create__';
-
-export interface SourceInspectionGuard {
-  begin: () => () => boolean;
-  invalidate: () => void;
-}
-
-export function createSourceInspectionGuard(): SourceInspectionGuard {
-  let generation = 0;
-  return {
-    begin: () => {
-      generation += 1;
-      const startedAt = generation;
-      return () => generation === startedAt;
-    },
-    invalidate: () => {
-      generation += 1;
-    },
-  };
-}
 
 export function ChapterSelect({
   chapters,
@@ -1615,6 +1599,7 @@ export function SourceDetailsDialog({
             }
             onClick={() => void handleSubmit()}
             size="lg"
+            variant="accent"
           >
             {sources.every((source) => source.origin === 'remote')
               ? m.action_import()

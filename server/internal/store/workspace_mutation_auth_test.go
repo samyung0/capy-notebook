@@ -20,7 +20,7 @@ func TestWorkspaceMutationRechecksCurrentEditorRole(t *testing.T) {
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_acl_owner")
 	editorID := newBlobTestUser(t, s, "u_acl_editor")
-	workspace, err := s.CreateWorkspace(ctx, ownerID, "ACL workspace", []TagRef{})
+	workspace, err := s.CreateWorkspace(ctx, ownerID, WorkspaceCreate{Name: "ACL workspace", Tags: []TagRef{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestUploadFinalizationRechecksCreatorMembership(t *testing.T) {
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_upload_acl_owner")
 	editorID := newBlobTestUser(t, s, "u_upload_acl_editor")
-	workspace, err := s.CreateWorkspace(ctx, ownerID, "Upload ACL", []TagRef{})
+	workspace, err := s.CreateWorkspace(ctx, ownerID, WorkspaceCreate{Name: "Upload ACL", Tags: []TagRef{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,12 +82,12 @@ func TestConversationFollowsEffectiveRole(t *testing.T) {
 	ownerID := newBlobTestUser(t, s, "u_chat_acl_owner")
 	editorID := newBlobTestUser(t, s, "u_chat_acl_editor")
 	visitorID := newBlobTestUser(t, s, "u_chat_acl_visitor")
-	workspace, err := s.CreateWorkspace(ctx, ownerID, "Chat ACL", []TagRef{})
+	workspace, err := s.CreateWorkspace(ctx, ownerID, WorkspaceCreate{Name: "Chat ACL", Tags: []TagRef{}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	addWorkspaceEditor(t, s, workspace.ID, editorID)
-	conversation, err := s.CreateConversation(ctx, editorID, workspace.ID, "Private chat")
+	conversation, err := s.CreateConversation(ctx, editorID, workspace.ID, "Private chat", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,13 +107,13 @@ func TestConversationFollowsEffectiveRole(t *testing.T) {
 		t.Fatalf("owner reading another user's thread error = %v, want not found", err)
 	}
 	// Non-members chat only while the workspace is link/public.
-	if _, err := s.CreateConversation(ctx, visitorID, workspace.ID, ""); !errors.Is(err, ErrNotFound) {
+	if _, err := s.CreateConversation(ctx, visitorID, workspace.ID, "", false); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("private workspace visitor chat error = %v, want not found", err)
 	}
 	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='link' WHERE id=$1`, workspace.ID); err != nil {
 		t.Fatal(err)
 	}
-	visitorConv, err := s.CreateConversation(ctx, visitorID, workspace.ID, "")
+	visitorConv, err := s.CreateConversation(ctx, visitorID, workspace.ID, "", false)
 	if err != nil {
 		t.Fatalf("link visitor chat error = %v", err)
 	}

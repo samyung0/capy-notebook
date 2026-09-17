@@ -12,7 +12,13 @@ function Popover({
 function PopoverTrigger({
   ...props
 }: React.ComponentProps<typeof PopoverPrimitive.Trigger>) {
-  return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />;
+  return (
+    <PopoverAnchor asChild>
+      <span className="inline-flex min-w-0 shrink-0">
+        <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />
+      </span>
+    </PopoverAnchor>
+  );
 }
 
 function PopoverContent({
@@ -29,7 +35,7 @@ function PopoverContent({
       <PopoverPrimitive.Content
         align={align}
         className={cn(
-          'motion-popup motion-blur-in data-[side=bottom]:slide-in-from-top-4 data-[side=left]:slide-in-from-right-4 data-[side=right]:slide-in-from-left-4 data-[side=top]:slide-in-from-bottom-4 z-50 flex w-72 flex-col gap-2.5 rounded-lg p-2.5 outline-hidden',
+          'motion-anchored-popup z-50 flex w-72 flex-col gap-2.5 rounded-lg p-2.5 outline-hidden',
           alignWidthToTrigger && 'w-(--radix-popover-trigger-width)!',
           className
         )}

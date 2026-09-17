@@ -226,7 +226,11 @@ function GeneralTab() {
   return (
     <>
       <Card className="flex items-center gap-5 p-5.5" radius="card-lg">
-        <Avatar name={me?.name} size={72} src={me?.avatarUrl} />
+        <Avatar
+          className="size-18 text-[28.8px]"
+          name={me?.name}
+          src={me?.avatarUrl}
+        />
         <div className="min-w-0">
           <p className="t-large-card-title">{me?.name ?? '—'}</p>
           <p>{me?.email}</p>

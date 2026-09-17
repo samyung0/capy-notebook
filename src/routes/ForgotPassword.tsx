@@ -5,7 +5,6 @@ import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/feedback';
-import { Icon } from '@/components/ui/Icon';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { AuthCard, AuthPage, FormAlert } from '@/features/auth/AuthLanding';
 import { clerkMessage } from '@/features/auth/clerk';
@@ -64,14 +63,21 @@ export default function ForgotPasswordPage() {
   if (email === null) {
     return (
       <AuthPage>
-        <Link
-          className="mb-4 inline-flex items-center text-fg-muted underline hover:text-fg"
-          search
-          to="/sign-in"
+        <Button
+          asChild
+          className="h-fit p-0"
+          iconLeft="navigationBack"
+          iconLeftClassName="mr-1 size-4.5"
+          variant="ghost-link"
         >
-          <Icon className="mr-1 inline-block" name="navigationBack" size={18} />
-          <span>{m.auth_back_to_signin()}</span>
-        </Link>
+          <Link
+            className="mb-5 flex items-center underline"
+            search
+            to="/sign-in"
+          >
+            <span>{m.auth_back_to_signin()}</span>
+          </Link>
+        </Button>
         <AuthCard hint={m.auth_reset_hint()} title={m.auth_reset_title()}>
           <form
             className="relative flex flex-col gap-2"
@@ -151,7 +157,9 @@ export default function ForgotPasswordPage() {
               return;
             }
             const { error: passwordError } =
-              await signIn.resetPasswordEmailCode.submitPassword({ password });
+              await signIn.resetPasswordEmailCode.submitPassword({
+                password,
+              });
             if (passwordError) {
               setFormError(clerkMessage(passwordError));
               return;

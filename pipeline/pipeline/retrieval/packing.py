@@ -32,7 +32,7 @@ from .chunking import (
     _as_list,
     _Block,
     _build,
-    _normalized,
+    _is_furniture,
     _push_heading,
     chunk_content_list,
     clean_inline,
@@ -400,14 +400,6 @@ def table_chunks(block: dict) -> list[Chunk]:
             [clean_inline(u) for u in units], "", budget=cfg.chunk_tokens
         )
     ]
-
-
-def _is_furniture(block: dict, furniture: frozenset[str]) -> bool:
-    return (
-        block.get("type") in {"text", "header", "page_footnote"}
-        and not block.get("text_level", 0)
-        and _normalized(clean_inline(block.get("text", ""))) in furniture
-    )
 
 
 def pack_blocks(blocks: list[dict], furniture: frozenset[str]) -> list[Chunk]:

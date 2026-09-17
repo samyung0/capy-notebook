@@ -1,0 +1,14 @@
+{
+  "model_provider": "deepseek",
+  "database_url": "postgresql://capy_kb:capy_kb_local_pilot@127.0.0.1:15436/capy_kb_pilot",
+  "parser_url": "http://127.0.0.1:18090/file_parse",
+  "parser_token": "capy-kb-local-parser",
+  "release_sha": "b79795b4d4c973f6792405123d7c50d2987c5581",
+  "spool_path": "data/knowledge-base-pilot/spool",
+  "parser_limits": {
+    "CAPY_PARSE_IMAGE_MAX_BYTES": 134217728,
+    "CAPY_PARSE_IMAGES_MAX_BYTES": 536870912,
+    "CAPY_PARSE_ARTIFACT_MAX_BYTES": 536870912,
+    "CAPY_PARSE_ARTIFACT_MAX_EXPANDED_BYTES": 1073741824
+  }
+}

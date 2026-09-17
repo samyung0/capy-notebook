@@ -258,3 +258,12 @@ write_active "$revision"
 cp "$pending/previous" "$state/previous"
 rm -rf "$pending"
 printf 'Activated %s ingest release %s.\n' "$environment" "$revision"
+# Every release tags a new image pair; once a base layer changes the old tags
+# stop sharing layers and hold gigabytes each. Keep the active and previous
+# (rollback) SHAs of this stack's images and drop the rest.
+keep=" $revision $(cat "$state/previous") "
+for image in "$project-parser" "$project-pipeline"; do
+  for tag in $(docker images "$image" --format '{{.Tag}}'); do
+    [[ "$keep" == *" $tag "* ]] || docker rmi "$image:$tag" >/dev/null || true
+  done
+done

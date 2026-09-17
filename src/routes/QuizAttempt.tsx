@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { userToast } from '@/components/ui/userToast';
+import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import {
   type Answer,
   emptyAnswer,
@@ -315,6 +316,7 @@ export default function QuizAttempt() {
             </Button>
           )}
         </div>
+        <MaterialAttributionFooter provenance={quiz.provenance} />
       </div>
     </PanelWithInvertedRadius>
   );

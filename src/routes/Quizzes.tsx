@@ -182,6 +182,7 @@ function AllQuizzes() {
                     to: '/quizzes/$quizId/attempt',
                   })
                 }
+                variant="accent"
               >
                 {m.quiz_start()}
               </Button>

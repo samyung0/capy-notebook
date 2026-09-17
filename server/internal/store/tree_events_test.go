@@ -14,7 +14,7 @@ func TestWorkspaceTreeNotifiesListVisibleWrites(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	ownerID := newBlobTestUser(t, s, "u_tree")
-	workspace, err := s.CreateWorkspace(ctx, ownerID, "Tree events", []TagRef{})
+	workspace, err := s.CreateWorkspace(ctx, ownerID, WorkspaceCreate{Name: "Tree events", Tags: []TagRef{}})
 	if err != nil {
 		t.Fatal(err)
 	}

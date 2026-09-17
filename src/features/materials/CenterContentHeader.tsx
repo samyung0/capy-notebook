@@ -29,11 +29,11 @@ import {
   type NoteEditorStatus,
   noteEditorStatusLabel,
 } from '@/features/notes/editorMode';
+import { ContentActions } from '@/features/workspace/ContentActions';
 import {
-  ContentActions,
   toFileActionTarget,
   toMaterialActionTarget,
-} from '@/features/workspace/ContentActions';
+} from '@/features/workspace/contentActionTarget';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
@@ -224,7 +224,7 @@ export function Header({
   return (
     <div className="flex h-14 items-center gap-3 border-divider border-b px-5 py-4">
       <div className="flex items-center gap-1">
-        <FileIcon name={icon} size={18} />
+        <FileIcon className="size-4.5" name={icon} />
         <h2 className="t-subtitle ml-1 min-w-0 flex-1 translate-y-px truncate">
           {title ?? '--'}
         </h2>

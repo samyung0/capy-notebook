@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 6,
   "operations": [
     "source.read",
     "material.read",
@@ -7,7 +7,8 @@
     "document.edit",
     "resource.trash",
     "trash.read",
-    "trash.restore"
+    "trash.restore",
+    "library.read"
   ],
   "outcomes": [
     "succeeded",
@@ -210,6 +211,201 @@
       "retention": "none"
     },
     {
+      "name": "search_knowledge",
+      "version": 1,
+      "description": "Search the shared knowledge library of verified textbook excerpts. One excerpt is one section of one book. `roles` filters what the excerpt teaches: introduction, formal, worked_example, exercise, summary, reference. `topics` takes topic ids from the catalog listed below. An empty result under a role filter reports what those topics do hold by role, so relax the filter on purpose instead of rewording.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "roles": {
+            "description": "Excerpt roles to restrict to.",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 6,
+            "type": "array"
+          },
+          "topics": {
+            "description": "Catalog topic ids to restrict to.",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 8,
+            "type": "array"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "mutates": false,
+      "usesEmbedding": true,
+      "concurrency": "read",
+      "allowedSlots": [
+        "chat"
+      ],
+      "requiredOperations": [
+        "library.read"
+      ],
+      "retention": "none"
+    },
+    {
+      "name": "browse_knowledge",
+      "version": 1,
+      "description": "List what the library holds for one catalog topic: verified excerpt counts by role and by book, then a page of excerpts with their section paths and synopses. Use it before searching to see whether the library covers the request at all.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "page": {
+            "default": 1,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "topic": {
+            "description": "Catalog topic id.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "topic"
+        ],
+        "type": "object"
+      },
+      "mutates": false,
+      "usesEmbedding": false,
+      "concurrency": "read",
+      "allowedSlots": [
+        "chat"
+      ],
+      "requiredOperations": [
+        "library.read"
+      ],
+      "retention": "none"
+    },
+    {
+      "name": "read_knowledge",
+      "version": 1,
+      "description": "Read a library excerpt in full, in order from a chunk index. Always read an excerpt before writing a material from it; a search hit is one chunk of it.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "excerpt_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "start": {
+            "default": 0,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "excerpt_id"
+        ],
+        "type": "object"
+      },
+      "mutates": false,
+      "usesEmbedding": false,
+      "concurrency": "read",
+      "allowedSlots": [
+        "chat"
+      ],
+      "requiredOperations": [
+        "library.read"
+      ],
+      "retention": "none"
+    },
+    {
+      "name": "capture_knowledge_page",
+      "version": 1,
+      "description": "Render one printed page of the book an excerpt comes from, or a boxed region of it, and read it directly as an image. Only pages the excerpt covers, or the page of one of its figures, can be captured. bbox is optional: [x0, y0, x1, y1] on a 0-1000 grid over the page, origin top-left, to zoom into a figure, table or formula. Use it when the text of an excerpt does not carry the layout the material needs.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "bbox": {
+            "description": "Region to zoom into on the 0-1000 page grid, top-left origin.",
+            "items": {
+              "maximum": 1000,
+              "minimum": 0,
+              "type": "number"
+            },
+            "maxItems": 4,
+            "minItems": 4,
+            "type": "array"
+          },
+          "excerpt_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "page": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "excerpt_id",
+          "page"
+        ],
+        "type": "object"
+      },
+      "mutates": false,
+      "usesEmbedding": false,
+      "concurrency": "read",
+      "allowedSlots": [
+        "chat"
+      ],
+      "requiredOperations": [
+        "library.read"
+      ],
+      "retention": "none"
+    },
+    {
+      "name": "create_ledger",
+      "version": 1,
+      "description": "Curate mode: write the turn's progress ledger before any material is written. `body` restates what the learner asked for; `todos` lists the materials or sections to produce, one short line each. The ledger is shown back on every response; create_material and edit_document mark a todo done through their `todo` id. One call per user message; it appends to the conversation's ledger, and open todos carry across messages.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "todos": {
+            "items": {
+              "maxLength": 200,
+              "type": "string"
+            },
+            "maxItems": 12,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "body",
+          "todos"
+        ],
+        "type": "object"
+      },
+      "mutates": false,
+      "usesEmbedding": false,
+      "concurrency": "read",
+      "allowedSlots": [
+        "chat"
+      ],
+      "requiredOperations": [
+        "library.read"
+      ],
+      "retention": "none"
+    },
+    {
       "name": "create_material",
       "version": 1,
       "description": "Create a study material in this workspace from content you already authored: a quiz, flashcard deck, mindmap, diagram or note. Only call this when the user asked for one. Ground the content in passages you already retrieved. Do not mix this call with retrieval tools in the same response.",
@@ -239,6 +435,15 @@
           "content": {
             "description": "mindmap/diagram/note only; markdown with a mermaid block",
             "type": "string"
+          },
+          "excerpt_ids": {
+            "description": "Library excerpt ids this material was written from. Required for every material built from the knowledge library; they become its attribution footer.",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 32,
+            "type": "array"
           },
           "kind": {
             "enum": [
@@ -282,6 +487,11 @@
           "title": {
             "maxLength": 120,
             "type": "string"
+          },
+          "todo": {
+            "description": "Curate mode: id of the ledger todo this write completes, as shown on the ledger.",
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [
@@ -677,6 +887,15 @@
             "minItems": 1,
             "type": "array"
           },
+          "excerpt_ids": {
+            "description": "Curate mode: library excerpt ids the appended content was written from; they join the material's attribution footer.",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 32,
+            "type": "array"
+          },
           "target": {
             "additionalProperties": false,
             "description": "The document to edit.",
@@ -698,6 +917,11 @@
               "id"
             ],
             "type": "object"
+          },
+          "todo": {
+            "description": "Curate mode: id of the ledger todo this write completes, as shown on the ledger.",
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [

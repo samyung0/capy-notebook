@@ -4,10 +4,8 @@ import {
   createRoute,
   createRouter,
   lazyRouteComponent,
-  Outlet,
   redirect,
 } from '@tanstack/react-router';
-import { TanStackRouterDevtools } from '@tanstack/react-router-devtools';
 import {
   allFilesQuery,
   attemptQuery,
@@ -37,14 +35,17 @@ import {
   workspacesQuery,
 } from '@/api/hooks';
 import { queryClient } from '@/api/queryClient';
-import { AnalyticsRoot } from '@/components/app/AnalyticsRoot';
 import {
   RouteErrorComponent,
   RouteNotFoundComponent,
   ShareRouteErrorComponent,
 } from '@/components/app/AppErrorBoundary';
-import { AppShell } from '@/components/app/AppShell';
-import { AuthGate } from '@/components/app/AuthProvider';
+import {
+  AuthShellRoute,
+  RootRoute,
+  SharedFlashcardsRoute,
+  SharedQuizRoute,
+} from '@/components/app/RouteComponents';
 import { parseWorkspaceOpenSearch } from '@/features/materials/openItem';
 import { parseSettingsSearch } from '@/features/settings/settingsSearch';
 import { features } from '@/lib/features';
@@ -63,21 +64,11 @@ type Loader = (args: {
 }) => void;
 
 const rootRoute = createRootRouteWithContext<RouterContext>()({
-  component: () => (
-    <>
-      <AnalyticsRoot />
-      <Outlet />
-      <TanStackRouterDevtools />
-    </>
-  ),
+  component: RootRoute,
 });
 
 const authShellRoute = createRoute({
-  component: () => (
-    <AuthGate>
-      <AppShell />
-    </AuthGate>
-  ),
+  component: AuthShellRoute,
   getParentRoute: () => rootRoute,
   id: 'auth-shell',
 });
@@ -94,10 +85,6 @@ const page = <const T extends string>(
     ...(loader ? { loader } : {}),
   });
 
-const SharedQuiz = lazyRouteComponent(() => import('@/routes/QuizAttempt'));
-const SharedFlashcards = lazyRouteComponent(
-  () => import('@/routes/FlashcardStudy')
-);
 const publicRoutes = [
   createRoute({
     component: lazyRouteComponent(
@@ -107,11 +94,7 @@ const publicRoutes = [
     path: '/workspace-invites/$token',
   }),
   createRoute({
-    component: () => (
-      <AuthGate>
-        <SharedQuiz />
-      </AuthGate>
-    ),
+    component: SharedQuizRoute,
     errorComponent: ShareRouteErrorComponent,
     getParentRoute: () => rootRoute,
     loader: ({ context: { queryClient: qc }, params }) =>
@@ -119,11 +102,7 @@ const publicRoutes = [
     path: '/share/quizzes/$quizId',
   }),
   createRoute({
-    component: () => (
-      <AuthGate>
-        <SharedFlashcards />
-      </AuthGate>
-    ),
+    component: SharedFlashcardsRoute,
     errorComponent: ShareRouteErrorComponent,
     getParentRoute: () => rootRoute,
     loader: ({ context: { queryClient: qc }, params }) => {
@@ -170,7 +149,7 @@ const appRoutes = [
     '/workspaces',
     () => import('@/routes/Workspaces'),
     ({ context: { queryClient: qc } }) =>
-      qc.prefetchQuery(workspacesQuery({ q: '', sort: 'accessed' }))
+      qc.prefetchQuery(workspacesQuery({ sort: 'accessed', tag: [] }))
   ),
   createRoute({
     component: lazyRouteComponent(() => import('@/routes/WorkspaceOpen')),

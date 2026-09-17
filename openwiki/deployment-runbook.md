@@ -873,6 +873,48 @@ copy does not fail the current job and creates no cache row. A job retains its
 verified source across capacity waits and retries, then deletes it after
 committed success or terminal failure.
 
+### 4.1 Knowledge-base bucket
+
+The shared knowledge library's book PDFs live in their own bucket, not a prefix
+of the app bucket, because the library is shared by UAT and production and its
+key is handed to the retrieval service and to the loader on the developer PC.
+
+1. Create the bucket `capy-notebook-knowledge-base`, **private**. It holds one
+   object per book at `books/<sha256>.pdf`; nothing else writes into it.
+2. One application key **scoped to that bucket only**, with `listBuckets`,
+   `listFiles`, `readFiles` and `writeFiles`. The retrieval service only
+   reads; the loader lists to confirm a book is present before publishing it,
+   and the books are uploaded by hand. The secret is shown once.
+3. Endpoint `https://s3.eu-central-003.backblazeb2.com`, region
+   `eu-central-003` — the same B2 region as the app bucket.
+4. No CORS rules and no lifecycle rule. The browser never touches this bucket:
+   `capture_knowledge_page` renders a page server-side and the books are
+   permanent.
+5. The five variables are **all or none**, enforced at import of
+   `pipeline.config`: set all five and `capture_knowledge_page` is offered;
+   set none and the tool is simply unoffered. A **partial set raises while the
+   module is imported**, so the retrieval service — the only service that
+   declares these five, under `retrieval` in both Compose files — fails to
+   start, which stops chat, generate and curate in that environment. The ingest
+   host's workers never receive them, so ingest keeps running. Paste all five in
+   one save, or none:
+
+   | Variable                     | Value                                        |
+   | ---------------------------- | -------------------------------------------- |
+   | `KNOWLEDGE_BASE_B2_ENDPOINT` | `https://s3.eu-central-003.backblazeb2.com`  |
+   | `KNOWLEDGE_BASE_B2_REGION`   | `eu-central-003`                             |
+   | `KNOWLEDGE_BASE_B2_BUCKET`   | `capy-notebook-knowledge-base`               |
+   | `KNOWLEDGE_BASE_B2_KEY_ID`   | the scoped key's id                          |
+   | `KNOWLEDGE_BASE_B2_APP_KEY`  | the scoped key's secret                      |
+
+   All five carry the manifest targets `coolify` and `local`; only
+   `KNOWLEDGE_BASE_B2_KEY_ID` and `KNOWLEDGE_BASE_B2_APP_KEY` are manifest
+   secrets, the other three are plain variables. Set them on
+   the retrieval service in the deployment's environment (Coolify for UAT and
+   production, `deploy/.env` for the local stack). The library builder and
+   loader on the developer PC read the same five names from the ignored
+   project-root `.env.local`. Nothing else in the stack needs them.
+
 ### Ingest worker replicas
 
 The dedicated-host Compose file defaults to four `worker` containers. Each
@@ -1078,6 +1120,11 @@ Each stack has its own checkout and durable release state:
 `config-<run-id-attempt>` directory. `pending` records its owner, candidate,
 previous SHA and snapshot links; `operation.lock` serializes mutations. The
 workflow never invents a previous SHA or prunes another stack's images/volumes.
+Every release builds a new `<project>-parser:<sha>` / `<project>-pipeline:<sha>`
+pair on the host; activation then removes this stack's other tags, keeping
+only `active` and `previous` (rollback). Removed tags stay in the BuildKit
+cache until `docker builder prune --keep-storage` trims least-recently-used
+entries; the ingest host's `daemon.json` sets `builder.gc` to 20 GB like the UAT host, so it trims itself after each build.
 Bootstrap only clones into an absent/empty checkout and records active after
 verification. A failed bootstrap stops candidate services and retains evidence.
 
@@ -1224,6 +1271,79 @@ retry. Exhaustion fails that job but creates no problematic-file marker, so a
 later operator/user re-ingest remains valid. A missing or corrupt handoff bundle
 is removed and sent through parsing once; a second invalid bundle is terminal
 to prevent a repair loop.
+
+### 7.3 Shared library database
+
+The knowledge library (pre-ingested open textbooks) lives in one dedicated
+pgvector Postgres on this host, `capy-library-db`, shared by UAT and
+production over WireGuard. It is separate from every app database and from
+the lab containers, and it is not part of the release workflows: it is a
+stateful service managed by hand from `/opt/capy-library-db`. It holds one
+live library that every environment reads: versions are per book, so a
+republished book swaps its own pointer atomically and the previous version
+stays retained behind it. Nothing is pinned per environment.
+
+1. Copy `deploy/docker-compose.library-db.yml` to
+   `/opt/capy-library-db/docker-compose.yml` together with
+   `deploy/library-db-init.sh` and `deploy/library-db-backup.sh`. Strip CR line
+   endings if copied from Windows and mark both scripts executable.
+2. Create `/opt/capy-library-db/.env` (mode 0600) from
+   `deploy/library-db.env.example`, generating both passwords on the host with
+   `openssl rand -hex 24`. `LIBRARY_DB_BIND_ADDRESS` is the host's WireGuard
+   address `10.77.0.2`; the port is `5433` so it never collides with an app
+   database. The container uses host networking like the parser, because the
+   host firewall drops forwarded traffic into Docker bridges; Postgres itself
+   listens on the WireGuard address and loopback, never the public interface.
+   Verify with `ss -tlnp | grep 5433` and a refused probe of the public
+   address from the host.
+3. `docker compose up -d`, then wait for `docker inspect --format
+   '{{.State.Health.Status}}' capy-library-db` to report `healthy`. The init
+   hook runs once on the empty volume: it creates the `vector` extension and
+   the read-only role `capy_library_reader`, with default privileges so every
+   table the owner creates later is readable without a second grant step.
+4. Roles and URLs. The owner `capy_library` belongs to the library loader and
+   is the only role that writes. App environments use the reader:
+   `postgres://capy_library_reader:<pw>@10.77.0.2:5433/library?sslmode=disable`
+   (WireGuard already encrypts the hop, matching the app database URLs). The
+   developer PC is not a WireGuard peer; it loads the library through an SSH
+   tunnel via this host:
+
+   ```bash
+   ssh -i ~/.ssh/capy_ingest_159_195_61_195 -N -L 15433:10.77.0.2:5433 root@159.195.61.195
+   ```
+
+   and then `postgres://capy_library:<pw>@localhost:15433/library?sslmode=disable`.
+   Read the passwords from the host's `.env`; they are never stored in the
+   repository or in chat.
+5. Backups. `/etc/cron.d/capy-library-db` runs `library-db-backup.sh` at
+   03:15 UTC: a custom-format `pg_dump` into `/opt/capy-library-db/backups`,
+   kept seven days. The library is rebuildable from its PDFs and builder
+   receipts, so local dumps are enough until it is not; add a B2 upload then.
+6. Sizing. The host has 15 GiB and the parser is capped at 6 GiB; the
+   container is capped at 3 GiB with `shared_buffers` 768 MB and
+   `maintenance_work_mem` 512 MB. Raise `LIBRARY_DB_MAINTENANCE_WORK_MEM` for
+   large HNSW builds and drop it back afterwards. Disk is on the root volume
+   (about 390 GB free at setup).
+7. Application access. The ops dashboard reads the library through
+   `OPS_LIBRARY_DATABASE_URL` (manifest secret, target `ops`, optional): put
+   the `capy_library_reader` URL there and restart ops to get the read-only
+   Library section; leave it empty and every `/api/ops/library` route answers
+   404 `library_unconfigured`. That pool skips the app role contract because
+   the library has its own schema and its own reader role. The retrieval
+   service reads the same database through `LIBRARY_DATABASE_URL` (manifest
+   secret, targets `coolify` and `local`); there is no pin variable, because
+   UAT and production read the same live books.
+8. Loading. The loader runs on the developer PC through the tunnel with the
+   owner URL: `schema` creates the schema as `LIBRARY_SCHEMA` writes it,
+   `publish --run <run> [--book <id>]` loads each book as its next version and
+   swaps its pointer, refusing a corpus identity the current version already
+   holds, `rollback --book --version` points a book back at a retained version,
+   `retire --book --version` drops a retained version's content rows while
+   keeping its version row and model-run receipts, and `status` lists the books
+   with their history. There is no migration path: a changed `LIBRARY_SCHEMA`
+   means dropping the `library` database, running `schema` again and
+   republishing every book. That costs one loader run and no model calls,
+   because the builder's output is on the developer PC.
 
 ---
 

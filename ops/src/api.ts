@@ -638,6 +638,181 @@ const apiErrorSchema = z.object({
   slot: z.string().optional(),
 });
 
+// Knowledge library, read only. The shapes follow LIBRARY_SCHEMA, owned by
+// pipeline/pipeline/retrieval/library.py.
+// The role vocabulary the library tags with, in the order a learner meets it.
+export const libraryRoles = [
+  'introduction',
+  'formal',
+  'worked_example',
+  'exercise',
+  'summary',
+  'reference',
+] as const;
+
+// The live library: one workspace, one file per book, each book at its own
+// version. Counts are the current version's.
+export const libraryOverviewSchema = z.object({
+  books: countSchema,
+  chunks: countSchema,
+  dataAsOf: dateTimeSchema,
+  excerpts: countSchema,
+  figures: countSchema,
+  topics: countSchema,
+});
+
+const libraryBookVersionSchema = z.object({
+  chunkerVersion: z.string(),
+  corpusIdentity: z.string(),
+  descriptor: z.string(),
+  note: z.string(),
+  objectKey: z.string(),
+  parserFingerprint: z.string(),
+  parserRelease: z.string(),
+  publishedAt: dateTimeSchema,
+  sourceRun: z.string(),
+  status: z.string(),
+  summary: z.string(),
+  version: countSchema,
+});
+
+export const libraryBooksSchema = z.array(
+  z.object({
+    attribution: z.string(),
+    authors: z.unknown(),
+    bytes: countSchema,
+    chunkCount: countSchema,
+    contentId: z.string(),
+    descriptor: z.string(),
+    downloadUrl: z.string(),
+    edition: z.string(),
+    excerptCount: countSchema,
+    figureCount: countSchema,
+    figureExclusions: z.unknown(),
+    firstContentPage: countSchema,
+    id: z.string().min(1),
+    license: z.string(),
+    licenseUrl: z.string(),
+    pages: countSchema,
+    rightsNotes: z.unknown(),
+    sha256: z.string(),
+    sourceUrl: z.string(),
+    summary: z.string(),
+    title: z.string(),
+    version: countSchema,
+    versions: z.array(libraryBookVersionSchema),
+  })
+);
+
+export const libraryTopicsSchema = z.array(
+  z.object({
+    aliases: z.unknown(),
+    byRole: z.record(z.string(), countSchema),
+    id: z.string().min(1),
+    label: z.string(),
+    retrievableByRole: z.record(z.string(), countSchema),
+    scope: z.string(),
+    sourceSections: z.string(),
+    verifiedByRole: z.record(z.string(), countSchema),
+  })
+);
+
+const libraryExcerptSchema = z.object({
+  bookId: z.string(),
+  bookTitle: z.string(),
+  chunkIds: z.array(z.string()),
+  confidence: z.number().nullable(),
+  evidenceVerified: z.boolean(),
+  figureIds: z.array(z.string()),
+  id: z.string().min(1),
+  pages: z.array(z.number().int()),
+  proposedTopic: z.string(),
+  reviewReasons: z.array(z.string()),
+  roles: z.array(z.string()),
+  sectionPath: z.string(),
+  synopsis: z.string(),
+  tagStatus: z.string(),
+  topicIds: z.array(z.string()),
+});
+
+export const libraryExcerptPageSchema = z.object({
+  items: z.array(libraryExcerptSchema),
+  page: z.number().int().positive(),
+  pageSize: z.number().int().positive(),
+  total: countSchema,
+});
+
+const libraryChunkSchema = z.object({
+  confidence: z.number().nullable(),
+  confidenceReasons: z.array(z.string()),
+  id: z.string(),
+  index: z.number().int().nonnegative(),
+  lang: z.string(),
+  pageEnd: z.number().int().nullable(),
+  pageStart: z.number().int().nullable(),
+  reference: z.boolean(),
+  regions: z.unknown(),
+  searchable: z.boolean(),
+  sectionPath: z.string(),
+  text: z.string(),
+});
+
+const libraryFigureSchema = z.object({
+  bbox: z.array(z.number().int()),
+  blockIndex: z.number().int(),
+  captionBbox: z.array(z.number().int()).nullable(),
+  capturePath: z.string(),
+  capturePixelSize: z.array(z.number().int()).nullable(),
+  excluded: z.boolean(),
+  exclusionEvidence: z.unknown(),
+  geometryKind: z.string(),
+  id: z.string(),
+  originalCaption: z.unknown(),
+  originalFootnote: z.unknown(),
+  page: z.number().int(),
+  sectionPath: z.string(),
+  space: z.string(),
+});
+
+export const libraryExcerptDetailSchema = z.object({
+  book: z.object({
+    chunkerVersion: z.string(),
+    downloadUrl: z.string(),
+    edition: z.string(),
+    firstContentPage: countSchema,
+    id: z.string(),
+    license: z.string(),
+    parserFingerprint: z.string(),
+    sha256: z.string(),
+    sourceUrl: z.string(),
+    title: z.string(),
+    version: countSchema,
+  }),
+  chunks: z.array(libraryChunkSchema),
+  evidence: z.string(),
+  excerpt: libraryExcerptSchema,
+  figures: z.array(libraryFigureSchema),
+  regions: z.unknown(),
+  text: z.string(),
+});
+
+export const libraryModelRunsSchema = z.array(
+  z.object({
+    approximateCostUsd: z.number().nullable(),
+    attempts: z.number().int().nonnegative(),
+    bookId: z.string(),
+    collection: z.unknown(),
+    model: z.string(),
+    requestEndUtc: z.string(),
+    requestStartUtc: z.string(),
+    resultsPath: z.string(),
+    stage: z.string(),
+    transport: z.string(),
+    usage: z.unknown(),
+    version: countSchema,
+  })
+);
+
 export const eliteLLMProviderSchema = z.object({
   byok: z.boolean(),
   name: z.string(),
@@ -669,6 +844,21 @@ export type CatalogConfig = z.infer<typeof catalogConfigSchema>;
 export type Registry = z.infer<typeof registrySchema>;
 export type DraftConfig = z.infer<typeof draftConfigSchema>;
 export type RegistrySaveRequest = z.infer<typeof registrySaveRequestSchema>;
+export type LibraryOverview = z.infer<typeof libraryOverviewSchema>;
+export type LibraryBook = z.infer<typeof libraryBooksSchema>[number];
+export type LibraryBookVersion = z.infer<typeof libraryBookVersionSchema>;
+export type LibraryTopic = z.infer<typeof libraryTopicsSchema>[number];
+export type LibraryExcerpt = z.infer<typeof libraryExcerptSchema>;
+export type LibraryExcerptPage = z.infer<typeof libraryExcerptPageSchema>;
+export type LibraryExcerptDetail = z.infer<typeof libraryExcerptDetailSchema>;
+export type LibraryModelRun = z.infer<typeof libraryModelRunsSchema>[number];
+export type LibraryExcerptFilters = {
+  book?: string;
+  page?: number;
+  review?: boolean;
+  role?: string;
+  topic?: string;
+};
 export type EliteLLMProvider = z.infer<typeof eliteLLMProviderSchema>;
 export type EliteLLMProviderPage = z.infer<typeof eliteLLMProviderPageSchema>;
 export type ThinkingLevel = z.infer<typeof thinkingLevelSchema>;
@@ -706,6 +896,13 @@ async function errorMessage(response: Response): Promise<string> {
   return `Request failed with status ${response.status}`;
 }
 
+const attachmentFileName = /filename="([^"]+)"/;
+
+export function fileNameFrom(disposition: string | null): string {
+  const match = disposition?.match(attachmentFileName);
+  return match ? match[1] : 'library-export.json';
+}
+
 export function createOpsApi({ getToken, fetcher = fetch }: ApiOptions) {
   async function request<T>(
     path: string,
@@ -736,6 +933,24 @@ export function createOpsApi({ getToken, fetcher = fetch }: ApiOptions) {
     return parsed.data;
   }
 
+  async function download(path: string) {
+    const token = await getToken();
+    if (!token) {
+      throw new OpsApiError(401, 'A Clerk session is required.');
+    }
+    const response = await fetcher(`/api/ops${path}`, {
+      headers: new Headers({ Authorization: `Bearer ${token}` }),
+    });
+    if (!response.ok) {
+      throw new OpsApiError(response.status, await errorMessage(response));
+    }
+    return {
+      blob: await response.blob(),
+      digest: response.headers.get('X-Capy-Export-Sha256') ?? '',
+      fileName: fileNameFrom(response.headers.get('Content-Disposition')),
+    };
+  }
+
   return {
     audit: (beforeId?: number) => {
       const search = new URLSearchParams({ limit: '100' });
@@ -759,6 +974,38 @@ export function createOpsApi({ getToken, fetcher = fetch }: ApiOptions) {
         `/ingest-host?${new URLSearchParams({ hours: String(hours) })}`,
         ingestHostMetricsSchema
       ),
+    libraryBooks: () => request('/library/books', libraryBooksSchema),
+    libraryExcerpt: (excerptId: string) =>
+      request(
+        `/library/excerpts/${encodeURIComponent(excerptId)}`,
+        libraryExcerptDetailSchema
+      ),
+    libraryExcerpts: (filters: LibraryExcerptFilters = {}) => {
+      const search = new URLSearchParams({ page: String(filters.page ?? 1) });
+      for (const [key, value] of [
+        ['book', filters.book],
+        ['topic', filters.topic],
+        ['role', filters.role],
+      ] as const) {
+        if (value) {
+          search.set(key, value);
+        }
+      }
+      if (filters.review) {
+        search.set('review', 'true');
+      }
+      return request(`/library/excerpts?${search}`, libraryExcerptPageSchema);
+    },
+    // The export is a file a reviewer keeps, so it stays raw bytes; the digest
+    // header travels with it. No version means the book's current one.
+    libraryExport: (bookId: string, version?: number) =>
+      download(
+        `/library/export/${encodeURIComponent(bookId)}${version ? `?version=${version}` : ''}`
+      ),
+    libraryModelRuns: () =>
+      request('/library/model-runs', libraryModelRunsSchema),
+    libraryOverview: () => request('/library', libraryOverviewSchema),
+    libraryTopics: () => request('/library/topics', libraryTopicsSchema),
     overview: () => request('/overview', overviewSchema),
     providers: () => request('/providers', eliteLLMProviderPageSchema),
     reconciliation: () =>

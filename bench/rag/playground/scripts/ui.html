@@ -29,8 +29,9 @@
     <div class="row"><label>Model <select id="models"></select></label></div>
     <div class="row"><label>Workspace <select id="workspaces"></select></label></div>
     <div class="row"><label>Quality file <span id="quality" class="muted">none</span></label></div>
+    <div class="row"><label><input type="checkbox" id="curate"> Curate mode</label> <span class="muted">library tools, curate prompt, progress ledger; materials are written as JSON files under the run</span></div>
     <textarea id="json" spellcheck="false"></textarea>
-    <div class="muted">Fields absent from the JSON use the defaults shown in the browser console (<code>defaults</code>). Tools: search_workspace, list_sources, describe_documents, read_document, capture_page. capture.mode: pixels | ocr | caption.</div>
+    <div class="muted">Fields absent from the JSON use the defaults shown in the browser console (<code>defaults</code>). Tools: search_workspace, list_sources, describe_documents, read_document, capture_page; curate adds search_knowledge, browse_knowledge, read_knowledge, capture_knowledge_page, create_ledger, create_material, edit_document. capture.mode: pixels | ocr | caption.</div>
     <details open><summary>Effective system prompt (what the turn sends)</summary>
       <textarea id="prompt" spellcheck="false" style="min-height:220px"></textarea>
       <div class="row"><button id="applyPrompt">Apply as system_prompt</button> <button id="resetPrompt">Back to production prompt</button>
@@ -45,6 +46,10 @@
     <div id="log"></div>
   </div>
   <div class="col">
+    <b>Progress ledger</b>
+    <div class="card" id="ledger"><span class="muted">curate turns only</span></div>
+    <b>Materials</b>
+    <div class="card" id="materials"><span class="muted">none yet</span></div>
     <b>Runs</b>
     <div class="runs" id="runs"></div>
   </div>
@@ -82,6 +87,9 @@ function setConfig(c) {
   const m = c.model || state.defaults.model;
   for (const o of $("models").options) { const [p, s, v] = JSON.parse(o.value); o.selected = p === m.provider_slug && s === m.model_slug && v === (m.version || 1); }
   $("workspaces").value = c.workspace_id || state.defaults.workspace_id;
+  $("curate").checked = !!c.curate;
+  // A config may carry the frozen request it was written for.
+  if (c.question && !$("question").value) $("question").value = c.question;
   $("quality").textContent = state.quality_files.includes(`${state.target}-${c.workspace_id}.json`) ? `${state.target}-${c.workspace_id}.json` : "none (run chunk_quality.py)";
   fetch("/api/prompt", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(c) }).then((r) => r.json()).then((p) => { $("prompt").value = p.prompt; $("toolsJson").textContent = JSON.stringify(p.tools, null, 2); });
   fetch(`/api/workspaces/${c.workspace_id}/files`).then((r) => r.json()).then((files) => {
@@ -105,7 +113,18 @@ $("models").onchange = () => {
   const c = currentConfig(); c.model = { provider_slug, model_slug, version, thinking: (c.model && c.model.thinking) || thinking || "instant" }; setConfig(c);
 };
 $("workspaces").onchange = () => { const c = currentConfig(); c.workspace_id = $("workspaces").value; setConfig(c); };
-$("clear").onclick = () => { if (active) active.abort(); active = null; history = []; checkpoint = null; log.innerHTML = ""; $("status").textContent = "idle"; };
+$("curate").onchange = () => {
+  const c = currentConfig(); c.curate = $("curate").checked;
+  // The switch alone changes nothing unless the curate tools are offered.
+  if (c.curate) c.tools = [...new Set([...(c.tools || []), "search_knowledge", "browse_knowledge", "read_knowledge", "capture_knowledge_page", "create_ledger", "create_material", "edit_document"])];
+  setConfig(c);
+};
+$("clear").onclick = () => { if (active) active.abort(); active = null; history = []; checkpoint = null; log.innerHTML = ""; resetPanels(); $("status").textContent = "idle"; };
+function resetPanels() {
+  for (const id of Object.keys(materials)) delete materials[id];
+  renderMaterials();
+  $("ledger").innerHTML = `<span class="muted">curate turns only</span>`;
+}
 $("json").onchange = () => { try { setConfig(currentConfig()); } catch (e) { $("status").textContent = "JSON: " + e.message; } };
 $("applyPrompt").onclick = () => { const c = currentConfig(); c.system_prompt = $("prompt").value; c.prompt_addon = ""; c.capture = { ...(c.capture || {}), addon: false }; setConfig(c); };
 $("resetPrompt").onclick = () => { const c = currentConfig(); c.system_prompt = null; setConfig(c); };
@@ -113,13 +132,31 @@ $("resetPrompt").onclick = () => { const c = currentConfig(); c.system_prompt = 
 function card(cls, html) { const d = document.createElement("div"); d.className = "card " + cls; d.innerHTML = html; log.appendChild(d); log.scrollTop = 1e9; return d; }
 const esc = (s) => String(s ?? "").replace(/[&<>]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[ch]));
 const tools = {};
+const materials = {};
+function renderLedger(l) {
+  const requests = l.requests || [];
+  if (!requests.length) { $("ledger").innerHTML = `<span class="muted">no ledger yet</span>`; return; }
+  const asked = requests.map((r) => `<div class="cite"><b>${esc(r)}</b></div>`).join("");
+  const todos = (l.todos || []).map((t) =>
+    `<div class="cite">${t.done ? "☑" : "☐"} ${t.id}. ${esc(t.text)}${t.materialId ? ` <span class="muted">→ ${esc(t.materialId)}</span>` : ""}</div>`).join("");
+  const mats = (l.materials || []).map((m) =>
+    `<div class="cite muted">${m.kind === "edit" ? `appended to ${esc(m.id)}` : `${esc(m.kind)} '${esc(m.title)}' (${esc(m.id)})`} · ${esc(m.size)}${m.todo == null ? "" : ` · todo ${m.todo}`}</div>`).join("");
+  const reads = (l.reads || []).length
+    ? `<details><summary class="muted">${l.reads.length} reads this turn</summary>${l.reads.map((r) => `<div class="cite muted">${esc(r.excerpt_id)} from ${r.start} · ${esc(r.section)}</div>`).join("")}</details>` : "";
+  $("ledger").innerHTML = asked + todos + (mats ? `<div class="muted">materials on the ledger</div>${mats}` : "") + reads;
+}
+function renderMaterials() {
+  $("materials").innerHTML = Object.values(materials).map((m) =>
+    `<div class="cite"><b>${esc(m.title)}</b> · ${esc(m.kind)} · ${esc(m.size)}<br><span class="muted">${esc(m.id)} · ${m.provenance ? esc(m.provenance.books.map((b) => b.title).join("; ")) : "no provenance"}${m.edits && m.edits.length ? ` · ${m.edits.length} edits` : ""}</span></div>`).join("")
+    || `<span class="muted">none yet</span>`;
+}
 function configCard(label, c, prompt) {
   const cap = (c.tools || []).includes("capture_page") ? ((c.capture && c.capture.mode) || "pixels") : "off";
   const q = c.quality && c.quality.show ? `notes below ${c.quality.only_below ?? 1.01}` : "no notes";
   const m = c.model || {};
   const via = m.transport && m.transport.url ? ` via ${esc(new URL(m.transport.url).host)}` : "";
-  const cit = (c.answer && c.answer.citations) || "as_is";
-  card("stat", `<b>${esc(label)}</b> · ${esc(m.provider_slug)}/${esc(m.model_slug)} (${esc(m.thinking || "")})${via} · ${esc(c.workspace_id)} · tools: ${esc((c.tools || []).join(", "))} · capture ${esc(cap)} · ${esc(q)} · citations ${esc(cit)}` +
+  const cit = c.curate ? "none (curate)" : (c.answer && c.answer.citations) || "as_is";
+  card("stat", `<b>${esc(label)}</b> · ${esc(m.provider_slug)}/${esc(m.model_slug)} (${esc(m.thinking || "")})${via} · ${esc(c.workspace_id)}${c.curate ? " · curate" : ""} · tools: ${esc((c.tools || []).join(", "))} · capture ${esc(cap)} · ${esc(q)} · citations ${esc(cit)}` +
     `<details><summary>config JSON</summary><pre>${esc(JSON.stringify(c, null, 2))}</pre></details>` +
     (prompt ? `<details><summary>system prompt sent</summary><pre>${esc(prompt)}</pre></details>` : ""));
 }
@@ -133,6 +170,9 @@ function render(ev, runId) {
   if (ev.type === "tool_end") { const d = tools[ev.callId]; if (!d) return; d.classList.add(ev.outcome); d.querySelector(".out").textContent = ev.outcome + (ev.error ? ` · ${ev.error.code}: ${ev.error.message}` : ""); return; }
   if (ev.type === "tool_text") { const d = tools[ev.callId]; if (!d) return; d.insertAdjacentHTML("beforeend", `<details><summary>text sent to the model (${ev.text.length} chars)</summary><pre>${esc(ev.text)}</pre></details>`); return; }
   if (ev.type === "capture") { const d = tools[ev.call_id] || card("tool", "<b>capture_page</b>"); d.insertAdjacentHTML("beforeend", `<div class="muted">${esc(ev.file_id)} p.${ev.page} ${JSON.stringify(ev.bbox)} · ${ev.mode} · ${(ev.image_bytes / 1024) | 0} KB · ${ev.image_px ? ev.image_px.join("×") + " px ≈ " + k(ev.est_image_tokens) + " image tokens" : ""}${ev.cited_as ? " · supports " + ev.cited_as.map((n) => `[${n}]`).join("") : " · new citation"}</div><img class="capture" src="${ev.url}">`); return; }
+  if (ev.type === "ledger") { renderLedger(ev); return; }
+  if (ev.type === "material") { materials[ev.id] = ev; renderMaterials(); return; }
+  if (ev.type === "stall") { card("stat", `<b>stall guard</b> call ${ev.call} runs with tools off · ${ev.todos_done}/${ev.todos} todos done`); return; }
   if (ev.type === "answer_rendered") { const d = [...log.children].reverse().find((x) => x.dataset.block === ev.blockId); if (!d) return; d.className = "card answer"; d.textContent = ev.text; if (ev.parse_failed) d.insertAdjacentHTML("afterbegin", `<div class="muted">structured answer did not parse${ev.repaired ? " (after one repair call)" : ""}; showing raw text</div>`); else if (ev.repaired) d.insertAdjacentHTML("afterbegin", `<div class="muted">rendered after one JSON repair call</div>`); return; }
   if (ev.type === "citations") { const d = card("", `<b>Citations${ev.final ? " (used by the answer, renumbered)" : ""}</b>` + ev.citations.map((c, i) => { const box = (c.regions && c.regions[0] && c.regions[0].bbox) || null; const href = `/api/page?file_id=${encodeURIComponent(c.fileId)}&page=${c.pageStart || 1}${box ? "&bbox=" + box.join(",") : ""}`; return `<div class="cite">[${i + 1}] ${esc(c.fileName)} p.${c.pageStart ?? "?"} <a target="_blank" href="${href}">view</a> <span class="muted">${esc((c.snippet || "").slice(0, 120))}</span></div>`; }).join("") + (ev.unused && ev.unused.length ? `<details><summary class="muted">${ev.unused.length} retrieved but not cited</summary>${ev.unused.map((c) => `<div class="cite muted">${esc(c.fileName)} p.${c.pageStart ?? "?"} ${esc((c.snippet || "").slice(0, 100))}</div>`).join("")}</details>` : "")); d.dataset.citations = "1"; const old = [...log.children].filter((x) => x.dataset.citations && x !== d); old.forEach((x) => x.remove()); return; }
   if (ev.type === "context") { const p = ev.parts; card("stat", `<b>call ${ev.call} context</b> reported ${k(ev.reported_input)} in${ev.cached_read ? ` (${k(ev.cached_read)} cached)` : ""} · estimated ${k(ev.estimated_total)} of limit ${k(ev.limit)} · system ${k(p.system)} · schemas ${k(p.schemas)} · memory ${k(p.memory)} · history ${k(p.history)} · query ${k(p.query)} · assistant ${k(p.assistant)} · tool results ${k(p.tool_results)} in ${ev.counts.tool_results} · images ${ev.counts.images} ≈ ${k(p.images_est)}`); return; }
@@ -171,7 +211,7 @@ $("run").onclick = async () => {
 $("runs").onclick = async (e) => {
   const id = e.target.dataset.run; if (!id) return; e.preventDefault();
   const run = await (await fetch(`/api/runs/${id}`)).json();
-  log.innerHTML = ""; history = [];
+  log.innerHTML = ""; history = []; resetPanels();
   configCard("run " + id, run.config, run.system_prompt);
   card("", `<b>You</b><br>${esc(run.question)}`);
   for (const ev of run.events) render(ev, id);

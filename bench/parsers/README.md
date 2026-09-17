@@ -38,6 +38,40 @@ source capture and structured citations. Set `CAPY_ODL_LOCAL_URL`,
 with that test path. Embeddings, summaries and object downloads are local
 substitutes; it does not measure model answers or drive the job supervisor.
 
+## Full-book recovery and selective transcription
+
+The [September 16 shared fix](reports/2026-09-16-odl-shared-fix.md) verifies
+five complete textbooks through local HTTP parsing and production packing.
+`verify_odl_textbook_fix.py` takes explicit `--manifest`, `--config`, `--run`;
+it reuses the pilot's parse-only stage without embeddings or database writes.
+`--pipeline-root` selects an archived baseline pipeline. Use separate run
+directories and matching parser identities. `score_odl_textbook_fix.py` binds
+frozen body witnesses to their own source page/box and checks heading ancestry.
+
+The [selective comparison](reports/2026-09-16-selective-recovery-comparison.md)
+uses `compare_selective_recovery.py` with 16 manually selected visual crops.
+The report records MinerU and Qwen commands, source licences, timing boundaries
+and language settings. Qwen now uses normal API calls with thinking disabled
+and strict JSON Schema; `normal --workers 4 --output PATH` runs prepared crops.
+Historical Batch collection remains available, with new submissions retired.
+The [normal API review](reports/2026-09-16-qwen-normal-recovery.md) separates
+schema validity, exact source mathematics and complete table associations.
+Downloaded PDFs and provider receipts stay under ignored local directories;
+fixtures retain source hashes and reviewed gold. Manual selection does not
+measure automatic crop recall.
+
+`compare_deepseek_recovery.py` runs the [bounded DeepSeek comparison](reports/2026-09-16-deepseek-comparison.md)
+on the same frozen crops, twelve selected tag requests and three summaries.
+Its offline `check` validates API message/image conversion, exact evidence,
+schema rejection, retained failed receipts, missing metrics and replay timing.
+Output-format arms and provider-specific controls remain explicit.
+The [page-prompt experiment](reports/2026-09-16-page-prompt-comparison.md) adds
+plain-text extraction with Epo's verbatim prompt on the same 16 crops and four
+full pages, plus a region-specific revision on those crops. Run `crops --mode
+page-prompt`, `pages --mode page-prompt`, or `crops --mode region-prompt` with
+the same script. Inputs and receipts are frozen separately; no production
+prompt is changed.
+
 ## Office fixtures
 
 `build_office_fixtures.py` creates deterministic DOCX, PPTX, and XLSX canaries
@@ -549,3 +583,22 @@ uv run --with pymupdf==1.28.2 --with pypdfium2==5.13.0 \
   --with 'pypdf[crypto]==6.18.0' \
   python bench/parsers/scripts/check_new_parser_corpus.py
 ```
+
+## Broader shared-fix verification
+
+The [broader source report](reports/2026-09-16-odl-broad-spectrum.md) compares
+the unchanged v4 fix against v3 on new textbook families and historical
+multilingual/layout/OCR controls. `verify_odl_textbook_fix.py` parses each
+explicit manifest through isolated local services. Use a fresh spool and
+release identity for each timed arm/pass, so artifact reuse cannot replace
+parsing. Baseline runtime archives belong under ignored `scripts/local/`,
+not executable files in `reports/`.
+
+`compare_odl_spectrum.py --baseline RUN --current RUN --manifest MANIFEST
+--output JSON` compares saved results; `--manifest` can be repeated.
+`compare_odl_spectrum.py --check` runs its small offline check. Execution time
+includes native ODL, repairs and selective OCR; Java-only and local postprocess
+time remain separate. Conservation checks cover selected raw fields and
+previously visible non-heading text blocks, not complete content or reading
+order. Consult the source-bound output review before treating generic role
+counts as correctness scores.

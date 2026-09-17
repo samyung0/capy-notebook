@@ -63,6 +63,9 @@ const TOOL_OUTCOMES: readonly ToolOutcome[] = [
 
 export interface ChatStreamBody {
   conversationId?: string;
+  /** Fixed for the thread: it opens a new chat in curate mode, and must match
+   * the stored value of an existing one. */
+  curate: boolean;
   text: string;
 }
 
@@ -76,6 +79,10 @@ function errorMessage(payload: unknown, fallback: string): string {
   };
   if (body.code === 'source_changed') return m.error_source_changed_body();
   if (body.code === 'agent_failed') return m.chat_failed();
+  if (body.code === 'curate_mismatch') return m.chat_curate_locked();
+  if (body.code === 'curate_requires_editor') {
+    return m.chat_curate_requires_editor();
+  }
   if (body.code === 'model_unavailable') return m.chat_model_unavailable();
   if (body.code === 'provider_busy') return m.error_provider_busy_body();
   if (body.code === 'invalid_llm_key' || body.code === 'invalid_key') {

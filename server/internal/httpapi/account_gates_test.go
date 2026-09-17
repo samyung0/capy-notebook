@@ -65,7 +65,7 @@ func overQuotaFixture(t *testing.T) quotaFixture {
 			E2EUserIDs: []string{"u_editor"},
 		})
 
-	ws, err := st.CreateWorkspace(ctx, userID, "Quota gate", nil)
+	ws, err := st.CreateWorkspace(ctx, userID, store.WorkspaceCreate{Name: "Quota gate", Tags: nil})
 	if err != nil {
 		t.Fatal(err)
 	}

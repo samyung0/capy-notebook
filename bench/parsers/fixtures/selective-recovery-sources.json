@@ -1,0 +1,48 @@
+{
+  "frozen_before_candidate_output": true,
+  "frozen_at": "2026-09-16",
+  "review_method": "Human-visible inspection of rendered original PDF pages; all page numbers are one-based PDF pages; boxes use PDF points.",
+  "sources": [
+    {
+      "id": "exo7-analyse",
+      "title": "Analyse: Cours de mathématiques, première année",
+      "family": "Exo7",
+      "path": "bench/parsers/fixtures/local/selective-recovery/exo7-analyse.pdf",
+      "url": "https://exo7.emath.fr/cours/livre-analyse-1.pdf",
+      "landing_url": "https://exo7.emath.fr/index.html",
+      "license": "CC BY-NC-SA 3.0 France, printed PDF page 204. Public download for this benchmark; no commercial redistribution claim.",
+      "sha256": "84c8f241a89865e737ca42d75982cbd111474f9ee8f8a433a2cd4352fe6943aa",
+      "pages": 207,
+      "checks": [
+        {"page":80,"role":"genuine_heading","text":"2. Calcul des dérivées"},
+        {"page":80,"role":"genuine_heading","text":"2.1. Somme, produit,..."},
+        {"page":80,"role":"genuine_heading","text":"2.2. Dérivée de fonctions usuelles"},
+        {"page":81,"role":"genuine_heading","text":"2.3. Composition"},
+        {"page":84,"role":"genuine_heading","text":"3. Extremum local, théorème de Rolle"},
+        {"page":84,"role":"genuine_heading","text":"3.1. Extremum local"},
+        {"pages":[80,81,84],"role":"running_banner","text":"DÉRIVÉE D’UNE FONCTION","bbox":[45,15,550,42],"must_not_parent":true},
+        {"page":80,"role":"table_header","text":"Fonction","bbox":[100,554,490,790],"must_preserve_body":true,"must_not_parent":true},
+        {"page":80,"role":"table_header","text":"Dérivée","bbox":[100,554,490,790],"must_preserve_body":true,"must_not_parent":true},
+        {"page":84,"role":"diagram_label","texts":["minimums locaux","maximum global","maximums locaux"],"bbox":[95,350,490,580],"must_preserve_body":true,"must_not_parent":true}
+      ]
+    },
+    {
+      "id":"hefferon-linear-algebra",
+      "title":"Linear Algebra, fourth edition",
+      "family":"Jim Hefferon",
+      "path":"bench/parsers/fixtures/local/selective-recovery/hefferon-linear-algebra.pdf",
+      "url":"https://jheffero.w3.uvm.edu/linearalgebra/book.pdf",
+      "landing_url":"https://hefferon.net/linearalgebra/",
+      "license":"CC BY-SA 3.0 US option at https://hefferon.net/source.html",
+      "sha256":"5240f2782e645bc6351ad9eba69d8c19500142a5cca9c90450c17b3765a1a400",
+      "pages":525,
+      "checks":[
+        {"page":175,"role":"genuine_heading","text":"Dimensional Analysis","bbox":[80,130,430,190]},
+        {"pages":[177,181],"role":"running_banner","text":"Topic: Dimensional Analysis","bbox":[80,25,445,50],"must_not_parent":true},
+        {"pages":[178,180],"role":"running_banner","text":"Chapter Two. Vector Spaces","bbox":[80,25,445,50],"must_not_parent":true},
+        {"pages":[177,178,180,181],"role":"repeated_interior_table_header","text":"quantity","must_preserve_body":true,"must_not_parent":true},
+        {"pages":[177,178,180,181],"role":"repeated_interior_table_header","text":"dimensional formula","must_preserve_body":true,"must_not_parent":true}
+      ]
+    }
+  ]
+}

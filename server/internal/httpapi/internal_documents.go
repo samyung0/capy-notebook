@@ -286,6 +286,10 @@ type internalDocumentsEditReq struct {
 	ToolCallID         string                 `json:"toolCallId"`
 	Target             agenttools.ResourceRef `json:"target"`
 	Commands           []json.RawMessage      `json:"commands"`
+	// Provenance is what this edit was written from, resolved by the retrieval
+	// service from the excerpt ids the model named. It is appended to the
+	// material's stored record; absent for a workspace edit.
+	Provenance *store.Provenance `json:"provenance"`
 }
 
 func (a *api) internalEditDocument(w http.ResponseWriter, r *http.Request) {
@@ -308,7 +312,9 @@ func (a *api) internalEditDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	opID := store.ChatOperationID(req.AssistantMessageID, req.ToolCallID)
-	hash, err := store.RequestHash(map[string]any{"target": req.Target, "commands": req.Commands})
+	hash, err := store.RequestHash(map[string]any{
+		"target": req.Target, "commands": req.Commands, "provenance": req.Provenance,
+	})
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -326,6 +332,10 @@ func (a *api) internalEditDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var normalized []json.RawMessage
+	// Provenance accumulates over the edits of a curated material: the stored
+	// record is merged with this edit's books before the authority writes it in
+	// the same transaction as the content.
+	var provenance *store.Provenance
 	switch req.Target.Kind {
 	case agenttools.KindMaterial:
 		mt, err := a.s.GetMaterial(ctx, req.Target.ID)
@@ -338,7 +348,21 @@ func (a *api) internalEditDocument(w http.ResponseWriter, r *http.Request) {
 			a.failDocument(w, err)
 			return
 		}
+		if req.Provenance != nil {
+			var code string
+			provenance, code, err = mergeProvenance(mt.Provenance, req.Provenance)
+			if err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"code": code, "message": err.Error()})
+				return
+			}
+		}
 	case agenttools.KindSourceFile:
+		if req.Provenance != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"code": "invalid_input", "message": "only study materials carry provenance",
+			})
+			return
+		}
 		file, err := a.s.GetFile(ctx, req.Target.ID)
 		if err != nil {
 			a.fail(w, err)
@@ -362,7 +386,7 @@ func (a *api) internalEditDocument(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": "unsupported target kind"})
 		return
 	}
-	receipt, err := a.s.EditDocument(ctx, req.UserID, store.DocumentTarget{Kind: req.Target.Kind, ID: req.Target.ID}, normalized, store.DocumentOperation{
+	receipt, err := a.s.EditDocument(ctx, req.UserID, store.DocumentTarget{Kind: req.Target.Kind, ID: req.Target.ID}, normalized, provenance, store.DocumentOperation{
 		ID: opID, RequestHash: hash, ToolVersion: 1, ConversationID: convID, MessageID: req.AssistantMessageID, CallID: req.ToolCallID,
 	})
 	if err != nil {

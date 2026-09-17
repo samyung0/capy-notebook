@@ -9,6 +9,7 @@ export interface Conversation {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   createdAt: string;
+  curate: boolean;
   id: string;
   title: string;
   updatedAt: string;

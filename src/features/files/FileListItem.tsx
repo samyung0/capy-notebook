@@ -2,10 +2,8 @@ import type { Chapter, SourceFile, UserColor } from '@/api/types';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { Spinner } from '@/components/ui/feedback';
 import { ProgressBar } from '@/components/ui/ProgressBar';
-import {
-  ContentActions,
-  toFileActionTarget,
-} from '@/features/workspace/ContentActions';
+import { ContentActions } from '@/features/workspace/ContentActions';
+import { toFileActionTarget } from '@/features/workspace/contentActionTarget';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { fileIconName } from '@/lib/fileIcons';
@@ -58,7 +56,7 @@ export function FileListItem({
           onClick={() => !ingesting && onOpen(file.id)}
           type="button"
         >
-          <FileIcon name={fileIconName(file)} size={15} />
+          <FileIcon className="size-3.75" name={fileIconName(file)} />
           <span
             className={cn(
               'line-clamp-1 flex-1 translate-y-px truncate',

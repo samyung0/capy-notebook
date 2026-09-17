@@ -4,6 +4,7 @@ import { Link } from '@tanstack/react-router';
 import {
   Activity,
   BarChart3,
+  BookOpen,
   ClipboardList,
   Cpu,
   Gauge,
@@ -45,6 +46,12 @@ const navItems = [
     label: 'Operator audit',
     permission: 'read_all',
     to: '/audit',
+  },
+  {
+    icon: BookOpen,
+    label: 'Library',
+    permission: 'read_all',
+    to: '/library',
   },
   {
     icon: Settings2,

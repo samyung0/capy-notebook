@@ -23,7 +23,7 @@ Raw run artifacts sit in a sibling `YYYY-MM-DD-<machine>/` directory.
 | [`parsers/`](parsers/)     | Ingest-host parser accuracy and capacity: OCR modes, concurrency, worker memory, OOM behavior    | `python bench/parsers/scripts/…` (needs VM) |
 | [`grading/`](grading/)     | Small local models against the production quiz-grading rubric, native and in-browser             | `python bench/grading/scripts/benchmark.py` |
 | [`rag/`](rag/scripts/)     | Retrieval and chat-agent quality: live diagnostic plus four frozen experiments                   | see below                                   |
-| [`rag/playground/`](rag/playground/) | Interactive agent-loop tuning against the lab or UAT index: prompt, tools, caps, model, `capture_page`, confidence notes | `python bench/rag/playground/scripts/playground.py` |
+| [`rag/playground/`](rag/playground/) | Interactive agent-loop tuning against the lab, UAT or local dev index: prompt, tools, caps, model, `capture_page`, confidence notes, and the whole curate loop (library tools, progress ledger, stall guard, material writes) against the live knowledge library | `python bench/rag/playground/scripts/playground.py --target lab, uat or local` |
 
 ### editor
 

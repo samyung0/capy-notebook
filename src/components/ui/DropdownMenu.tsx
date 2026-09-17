@@ -1,3 +1,4 @@
+import { Anchor as MenuAnchor } from '@radix-ui/react-menu';
 import { DropdownMenu as DropdownMenuPrimitive } from 'radix-ui';
 import * as React from 'react';
 import { cn } from '@/lib/cn';
@@ -8,25 +9,47 @@ import {
   useMenuOpenState,
 } from './menuOpenState';
 
+const useDropdownScope = DropdownMenuPrimitive.createDropdownMenuScope();
+const DropdownScopeContext = React.createContext<ReturnType<
+  typeof useDropdownScope
+> | null>(null);
+
+function useDropdownMenuScope() {
+  return React.useContext(DropdownScopeContext);
+}
+
 function DropdownMenu(
   props: React.ComponentProps<typeof DropdownMenuPrimitive.Root>
 ) {
   const [open, onOpenChange] = useMenuOpenState(props);
+  const scope = useDropdownScope(undefined);
   return (
-    <MenuOpenContext.Provider value={open}>
-      <DropdownMenuPrimitive.Root {...props} onOpenChange={onOpenChange} />
-    </MenuOpenContext.Provider>
+    <DropdownScopeContext.Provider value={scope}>
+      <MenuOpenContext.Provider value={open}>
+        <DropdownMenuPrimitive.Root
+          {...scope}
+          {...props}
+          onOpenChange={onOpenChange}
+        />
+      </MenuOpenContext.Provider>
+    </DropdownScopeContext.Provider>
   );
 }
 
 function DropdownMenuTrigger(
   props: React.ComponentProps<typeof DropdownMenuPrimitive.Trigger>
 ) {
+  const scope = useDropdownMenuScope();
   return (
-    <DropdownMenuPrimitive.Trigger
-      data-slot="dropdown-menu-trigger"
-      {...props}
-    />
+    <MenuAnchor asChild {...{ __scopeMenu: scope?.__scopeDropdownMenu }}>
+      <span className="inline-flex min-w-0" data-slot="dropdown-menu-anchor">
+        <DropdownMenuPrimitive.Trigger
+          {...scope}
+          data-slot="dropdown-menu-trigger"
+          {...props}
+        />
+      </span>
+    </MenuAnchor>
   );
 }
 
@@ -36,13 +59,15 @@ function DropdownMenuContent({
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
   const open = React.useContext(MenuOpenContext);
+  const scope = useDropdownMenuScope();
   return (
-    <DropdownMenuPrimitive.Portal>
+    <DropdownMenuPrimitive.Portal {...scope}>
       <DropdownMenuPrimitive.Content
+        {...scope}
         aria-hidden={!open || undefined}
         className={cn(
           'z-50 min-w-40 overflow-hidden rounded-card border border-line bg-surface p-1 text-fg shadow-pop outline-none',
-          'motion-fade',
+          'motion-anchored-popup',
           className
         )}
         data-slot="dropdown-menu-content"
@@ -58,7 +83,11 @@ function DropdownMenuGroup(
   props: React.ComponentProps<typeof DropdownMenuPrimitive.Group>
 ) {
   return (
-    <DropdownMenuPrimitive.Group data-slot="dropdown-menu-group" {...props} />
+    <DropdownMenuPrimitive.Group
+      {...useDropdownMenuScope()}
+      data-slot="dropdown-menu-group"
+      {...props}
+    />
   );
 }
 
@@ -71,6 +100,7 @@ function DropdownMenuItem({
 }) {
   return (
     <DropdownMenuPrimitive.Item
+      {...useDropdownMenuScope()}
       className={cn(
         'relative flex cursor-default select-none items-center gap-2 rounded-button px-2 py-1.5 text-sm outline-none',
         'focus:bg-surface-hover-bg data-[highlighted]:bg-surface-hover-bg',
@@ -93,6 +123,7 @@ function DropdownMenuCheckboxItem({
 }: React.ComponentProps<typeof DropdownMenuPrimitive.CheckboxItem>) {
   return (
     <DropdownMenuPrimitive.CheckboxItem
+      {...useDropdownMenuScope()}
       checked={checked}
       className={cn(
         'relative flex cursor-default select-none items-center rounded-button py-1.5 pr-2 pl-8 text-sm outline-none',
@@ -104,7 +135,7 @@ function DropdownMenuCheckboxItem({
       {...props}
     >
       <span className="pointer-events-none absolute left-2 flex size-4 items-center justify-center">
-        <DropdownMenuPrimitive.ItemIndicator>
+        <DropdownMenuPrimitive.ItemIndicator {...useDropdownMenuScope()}>
           <Icon className="size-4" name="check" />
         </DropdownMenuPrimitive.ItemIndicator>
       </span>
@@ -119,6 +150,7 @@ function DropdownMenuSeparator({
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Separator>) {
   return (
     <DropdownMenuPrimitive.Separator
+      {...useDropdownMenuScope()}
       className={cn('-mx-1 my-1 h-px bg-divider', className)}
       data-slot="dropdown-menu-separator"
       {...props}
@@ -133,7 +165,11 @@ function DropdownMenuSub(
   const [open, onOpenChange] = useMenuOpenState(props);
   return (
     <MenuOpenContext.Provider value={parentOpen && open}>
-      <DropdownMenuPrimitive.Sub {...props} onOpenChange={onOpenChange} />
+      <DropdownMenuPrimitive.Sub
+        {...useDropdownMenuScope()}
+        {...props}
+        onOpenChange={onOpenChange}
+      />
     </MenuOpenContext.Provider>
   );
 }
@@ -149,6 +185,7 @@ function DropdownMenuSubTrigger({
 }) {
   return (
     <DropdownMenuPrimitive.SubTrigger
+      {...useDropdownMenuScope()}
       className={cn(
         'flex cursor-default select-none items-center gap-2 rounded-button px-2 py-1.5 text-sm outline-none',
         'focus:bg-surface-hover-bg data-[highlighted]:bg-surface-hover-bg data-[state=open]:bg-surface-hover-bg',
@@ -176,12 +213,14 @@ function DropdownMenuSubContent({
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.SubContent>) {
   const open = React.useContext(MenuOpenContext);
+  const scope = useDropdownMenuScope();
   return (
-    <DropdownMenuPrimitive.Portal>
+    <DropdownMenuPrimitive.Portal {...scope}>
       <DropdownMenuPrimitive.SubContent
+        {...scope}
         aria-hidden={!open || undefined}
         className={cn(
-          'motion-popup motion-blur-in z-50 min-w-40 overflow-hidden rounded-card border border-line bg-surface p-1 text-fg shadow-pop outline-none',
+          'motion-anchored-popup z-50 min-w-40 overflow-hidden rounded-card border border-line bg-surface p-1 text-fg shadow-pop outline-none',
           className
         )}
         data-slot="dropdown-menu-sub-content"

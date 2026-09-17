@@ -35,7 +35,7 @@ func TestOfficeFileLinksPresignTheAuthorizedEditableSource(t *testing.T) {
 	})
 
 	workspace, err := st.CreateWorkspace(
-		ctx, "u_owner", "Preview authorization", []store.TagRef{},
+		ctx, "u_owner", store.WorkspaceCreate{Name: "Preview authorization", Tags: []store.TagRef{}},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -77,7 +77,7 @@ func TestPDFPreviewUsesTheOriginalSourceBlob(t *testing.T) {
 	st := openAccessTestStoreForPreview(t)
 	ctx := context.Background()
 	workspace, err := st.CreateWorkspace(
-		ctx, "u_owner", "PDF preview", []store.TagRef{},
+		ctx, "u_owner", store.WorkspaceCreate{Name: "PDF preview", Tags: []store.TagRef{}},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -131,7 +131,7 @@ func TestSourceSessionViewTrimsStateToUnpublishedEdits(t *testing.T) {
 		E2ESecret:    "e2e-test-secret",
 		E2EUserIDs:   []string{"u_owner"},
 	})
-	workspace, err := st.CreateWorkspace(ctx, "u_owner", "View trim", []store.TagRef{})
+	workspace, err := st.CreateWorkspace(ctx, "u_owner", store.WorkspaceCreate{Name: "View trim", Tags: []store.TagRef{}})
 	if err != nil {
 		t.Fatal(err)
 	}

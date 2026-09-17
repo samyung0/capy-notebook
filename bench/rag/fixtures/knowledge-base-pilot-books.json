@@ -1,0 +1,478 @@
+{
+  "schema_version": 1,
+  "subject": "introductory statistics",
+  "downloaded_on": "2026-09-16",
+  "catalog_origin": "Agent-authored from book tables of contents before retrieval evaluation; not independently reviewed. Topic catalog never reads the heldout request fixture.",
+  "books": [
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "authors": [
+        "David Diez",
+        "Mine Cetinkaya-Rundel",
+        "Christopher D. Barr"
+      ],
+      "edition": "4th edition, screen-reader PDF updated 2022-10-21",
+      "source_url": "https://www.openintro.org/book/os/",
+      "download_url": "https://www.openintro.org/go?id=os4_for_screen_reader",
+      "license": "CC BY-SA 3.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/3.0/",
+      "license_evidence_url": "https://www.openintro.org/license/",
+      "license_evidence_pdf_page": 2,
+      "attribution": "OpenIntro Statistics, David Diez, Mine Cetinkaya-Rundel, Christopher D. Barr, 4th edition, screen-reader PDF updated 2022-10-21. CC BY-SA 3.0. https://www.openintro.org/book/os/",
+      "pdf_path": "bench/rag/fixtures/local/2026-09-16-knowledge-base/os4.pdf",
+      "sha256": "e261e4aea0eb4f0fd2b9d340604918ee7145e1a98e00313575c88977b671cb40",
+      "bytes": 20947445,
+      "pages": 465,
+      "first_content_page": 9,
+      "figure_exclusions": [
+        {
+          "page": 1,
+          "reason": "Cover/front matter excluded from reusable instructional figures.",
+          "evidence_url": "https://www.openintro.org/license/"
+        }
+      ],
+      "rights_notes": [
+        "Author captions and source credits remain attached. PDF page 22 iris photo credits Ryan Claussen, http://flic.kr/p/6QTcuX, CC BY-SA 2.0.",
+        "Screen-reader PDF pagination differs from print; use this PDF page coordinate and section title.",
+        "OpenIntro title/logo must not brand derivative study materials as endorsed products."
+      ]
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "authors": [
+        "Leah Dorazio",
+        "David Diez",
+        "Mine Cetinkaya-Rundel",
+        "Christopher D. Barr"
+      ],
+      "edition": "4th edition, screen-reader PDF updated 2026-04-10",
+      "source_url": "https://www.openintro.org/book/ahss/",
+      "download_url": "https://www.openintro.org/go?id=ahss4_for_screen_reader",
+      "license": "CC BY-SA 3.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/3.0/",
+      "license_evidence_url": "https://www.openintro.org/license/",
+      "license_evidence_pdf_page": 2,
+      "attribution": "Advanced High School Statistics, Leah Dorazio, David Diez, Mine Cetinkaya-Rundel, Christopher D. Barr, 4th edition, screen-reader PDF updated 2026-04-10. CC BY-SA 3.0. https://www.openintro.org/book/ahss/",
+      "pdf_path": "bench/rag/fixtures/local/2026-09-16-knowledge-base/ahss4.pdf",
+      "sha256": "f3a19c74d914422ed5838478936abab11b87dafee0781b72cc7bf7cd2c46fda5",
+      "bytes": 13412441,
+      "pages": 514,
+      "first_content_page": 9,
+      "figure_exclusions": [
+        {
+          "page": 1,
+          "reason": "Cover/front matter excluded from reusable instructional figures.",
+          "evidence_url": "https://www.openintro.org/license/"
+        }
+      ],
+      "rights_notes": [
+        "Cover design and illustration by Meenal Patel have separate copyright and are excluded from generated material use. Front matter excluded from searchable instructional content.",
+        "PDF page 18 iris photo credits Ryan Claussen, http://flic.kr/p/6QTcuX, CC BY-SA 2.0.",
+        "Shares source lineage with OpenIntro Statistics; these are deliberately overlapping books, not independent corroboration.",
+        "Screen-reader PDF pagination differs from print; no AP exam alignment is targeted."
+      ]
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "authors": [
+        "Danielle J. Navarro",
+        "David R. Foxcroft"
+      ],
+      "edition": "2025, author-hosted PDF snapshot downloaded 2026-09-16",
+      "source_url": "https://davidfoxcroft.github.io/lsj-book/",
+      "download_url": "https://davidfoxcroft.github.io/lsj-book/lsj-free.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://davidfoxcroft.github.io/lsj-book/",
+      "license_evidence_pdf_page": 5,
+      "attribution": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis, Danielle J. Navarro, David R. Foxcroft, 2025, author-hosted PDF snapshot downloaded 2026-09-16. CC BY-SA 4.0. https://davidfoxcroft.github.io/lsj-book/",
+      "pdf_path": "bench/rag/fixtures/local/2026-09-16-knowledge-base/lsj.pdf",
+      "sha256": "90d44719e232e643b1cb7d5b1fbf7884f495a9ec7488084c12459bf005d695aa",
+      "bytes": 93792057,
+      "pages": 495,
+      "first_content_page": 20,
+      "figure_exclusions": [
+        {
+          "page": 1,
+          "reason": "Cover/front matter excluded from reusable instructional figures.",
+          "evidence_url": "https://davidfoxcroft.github.io/lsj-book/"
+        }
+      ],
+      "rights_notes": [
+        "Author-hosted latest build is pinned by SHA256; may differ from 2025 publisher PDF.",
+        "Preserve original figure credits; no generated image captions."
+      ]
+    }
+  ],
+  "topics": [
+    {
+      "id": "data-types",
+      "label": "Variables and measurement",
+      "aliases": [
+        "categorical",
+        "numerical",
+        "nominal",
+        "ordinal",
+        "interval",
+        "ratio"
+      ],
+      "scope": "Variable types, measurement scales and data matrices.",
+      "source_sections": "OS4 1.2; AHSS4 1.1; LSJ 2.1-2.2"
+    },
+    {
+      "id": "sampling",
+      "label": "Sampling and bias",
+      "aliases": [
+        "population",
+        "sample",
+        "random sample",
+        "stratified",
+        "cluster"
+      ],
+      "scope": "Sampling designs, representativeness and sampling bias.",
+      "source_sections": "OS4 1.3; AHSS4 1.6; LSJ 8.1"
+    },
+    {
+      "id": "experiments",
+      "label": "Experiments and causal inference",
+      "aliases": [
+        "random assignment",
+        "confounding",
+        "placebo",
+        "blinding"
+      ],
+      "scope": "Experimental design, observational studies and limits on causal claims.",
+      "source_sections": "OS4 1.4; AHSS4 1.5-1.7; LSJ 2.5-2.7"
+    },
+    {
+      "id": "center",
+      "label": "Measures of center",
+      "aliases": [
+        "mean",
+        "median",
+        "mode"
+      ],
+      "scope": "Measures of center and robustness to skew and outliers.",
+      "source_sections": "OS4 2.1; AHSS4 1.4.1; LSJ 4.1"
+    },
+    {
+      "id": "spread",
+      "label": "Measures of spread",
+      "aliases": [
+        "variance",
+        "standard deviation",
+        "IQR",
+        "range"
+      ],
+      "scope": "Dispersion, units and effects of transformations.",
+      "source_sections": "OS4 2.1; AHSS4 1.4.2-1.4.3; LSJ 4.2"
+    },
+    {
+      "id": "graphs",
+      "label": "Graphs of data",
+      "aliases": [
+        "histogram",
+        "box plot",
+        "bar chart",
+        "scatterplot"
+      ],
+      "scope": "Reading and choosing distribution and association graphs.",
+      "source_sections": "OS4 2.1-2.2; AHSS4 1.2-1.4; LSJ 5"
+    },
+    {
+      "id": "probability",
+      "label": "Probability rules",
+      "aliases": [
+        "sample space",
+        "event",
+        "complement",
+        "independence"
+      ],
+      "scope": "Events, unions, intersections, independence and mutually exclusive outcomes.",
+      "source_sections": "OS4 3.1; AHSS4 2.2; LSJ 7.1-7.2"
+    },
+    {
+      "id": "conditional",
+      "label": "Conditional probability",
+      "aliases": [
+        "Bayes rule",
+        "probability tree",
+        "conditional frequency"
+      ],
+      "scope": "Conditioning, tree diagrams and inverted conditional probabilities.",
+      "source_sections": "OS4 3.2; AHSS4 2.3; LSJ 16"
+    },
+    {
+      "id": "random-variables",
+      "label": "Random variables and expectation",
+      "aliases": [
+        "expected value",
+        "discrete",
+        "continuous"
+      ],
+      "scope": "Random-variable distributions, expectations and variance.",
+      "source_sections": "OS4 3.4-3.5; AHSS4 2.4; LSJ 7.3"
+    },
+    {
+      "id": "normal",
+      "label": "Normal distribution",
+      "aliases": [
+        "z-score",
+        "standard normal",
+        "68-95-99.7"
+      ],
+      "scope": "Normal models, standardization and tail areas.",
+      "source_sections": "OS4 4.1; AHSS4 2.6; LSJ 7.5"
+    },
+    {
+      "id": "binomial",
+      "label": "Binomial distribution",
+      "aliases": [
+        "Bernoulli",
+        "trials",
+        "successes"
+      ],
+      "scope": "Binomial assumptions, probabilities, mean and variance.",
+      "source_sections": "OS4 4.3; AHSS4 2.5; LSJ 7.4"
+    },
+    {
+      "id": "other-distributions",
+      "label": "Other probability distributions",
+      "aliases": [
+        "geometric",
+        "Poisson",
+        "negative binomial"
+      ],
+      "scope": "Geometric, Poisson and other distribution families beyond normal and binomial.",
+      "source_sections": "OS4 4.2,4.4,4.5; LSJ 7.6"
+    },
+    {
+      "id": "sampling-distributions",
+      "label": "Sampling distributions and central limit theorem",
+      "aliases": [
+        "CLT",
+        "standard error",
+        "sampling variability"
+      ],
+      "scope": "Repeated-sample distributions and central limit approximations.",
+      "source_sections": "OS4 5.1; AHSS4 2.7,3.2,4.1; LSJ 8.2"
+    },
+    {
+      "id": "estimation",
+      "label": "Point estimation",
+      "aliases": [
+        "estimator",
+        "bias",
+        "parameter"
+      ],
+      "scope": "Estimating unknown parameters and estimator properties.",
+      "source_sections": "OS4 5.1; AHSS4 3.1; LSJ 8.3"
+    },
+    {
+      "id": "confidence-intervals",
+      "label": "Confidence intervals",
+      "aliases": [
+        "confidence level",
+        "margin of error",
+        "interval estimate"
+      ],
+      "scope": "Interval construction, repeated-sampling interpretation and sample size.",
+      "source_sections": "OS4 5.2; AHSS4 3.3; LSJ 8.5"
+    },
+    {
+      "id": "hypothesis-tests",
+      "label": "Hypothesis tests and p-values",
+      "aliases": [
+        "null hypothesis",
+        "alternative",
+        "significance",
+        "p-value"
+      ],
+      "scope": "Testing framework, p-value interpretation and practical significance.",
+      "source_sections": "OS4 5.3; AHSS4 3.4; LSJ 9"
+    },
+    {
+      "id": "errors-power",
+      "label": "Decision errors and power",
+      "aliases": [
+        "type I",
+        "type II",
+        "false positive",
+        "power"
+      ],
+      "scope": "Error probabilities, significance levels, effect size and power.",
+      "source_sections": "OS4 5.3.3,7.4; AHSS4 3.4.7; LSJ 9.8"
+    },
+    {
+      "id": "proportions",
+      "label": "Inference for proportions",
+      "aliases": [
+        "one proportion",
+        "two proportions"
+      ],
+      "scope": "Tests and intervals for single and paired independent proportions.",
+      "source_sections": "OS4 6.1-6.2; AHSS4 3.2-3.8"
+    },
+    {
+      "id": "chi-square",
+      "label": "Categorical data and chi-square tests",
+      "aliases": [
+        "contingency table",
+        "goodness of fit",
+        "independence"
+      ],
+      "scope": "Categorical-data inference, expected counts and chi-square methods.",
+      "source_sections": "OS4 6.3-6.4; AHSS4 5; LSJ 10"
+    },
+    {
+      "id": "t-tests",
+      "label": "Comparing means and t-tests",
+      "aliases": [
+        "one sample",
+        "two sample",
+        "Welch",
+        "Student"
+      ],
+      "scope": "Inference for one mean or independent group means and assumptions.",
+      "source_sections": "OS4 7.1,7.3; AHSS4 4; LSJ 11"
+    },
+    {
+      "id": "paired-data",
+      "label": "Paired observations",
+      "aliases": [
+        "matched pairs",
+        "repeated measures"
+      ],
+      "scope": "Dependent pairs and inference on within-pair differences.",
+      "source_sections": "OS4 7.2; AHSS4 4; LSJ 11.7"
+    },
+    {
+      "id": "anova",
+      "label": "Analysis of variance",
+      "aliases": [
+        "ANOVA",
+        "F-test",
+        "multiple comparisons"
+      ],
+      "scope": "Comparing multiple means, F tests and post-hoc comparisons.",
+      "source_sections": "OS4 7.5; LSJ 13-14"
+    },
+    {
+      "id": "correlation",
+      "label": "Correlation",
+      "aliases": [
+        "Pearson",
+        "Spearman",
+        "association"
+      ],
+      "scope": "Strength and direction of association and interpretation limits.",
+      "source_sections": "OS4 8.1; AHSS4 6; LSJ 12.1-12.2"
+    },
+    {
+      "id": "linear-regression",
+      "label": "Linear regression",
+      "aliases": [
+        "least squares",
+        "slope",
+        "intercept",
+        "prediction"
+      ],
+      "scope": "Simple regression, fit and interpretation of coefficients.",
+      "source_sections": "OS4 8.2; AHSS4 6; LSJ 12.3"
+    },
+    {
+      "id": "regression-diagnostics",
+      "label": "Regression diagnostics",
+      "aliases": [
+        "residual",
+        "leverage",
+        "outlier",
+        "extrapolation"
+      ],
+      "scope": "Model assumptions, residual plots, influential observations and prediction limits.",
+      "source_sections": "OS4 8.3,9.3; AHSS4 6; LSJ 12.9-12.10"
+    },
+    {
+      "id": "multiple-regression",
+      "label": "Multiple regression",
+      "aliases": [
+        "adjusted R squared",
+        "model selection",
+        "covariate"
+      ],
+      "scope": "Several predictors, model selection and conditional coefficients.",
+      "source_sections": "OS4 9.1-9.4; LSJ 12.4-12.8"
+    },
+    {
+      "id": "logistic-regression",
+      "label": "Logistic regression",
+      "aliases": [
+        "odds",
+        "logit",
+        "binary response"
+      ],
+      "scope": "Modelling binary outcomes with logistic regression.",
+      "source_sections": "OS4 9.5"
+    },
+    {
+      "id": "factor-analysis",
+      "label": "Factor analysis",
+      "aliases": [
+        "PCA",
+        "EFA",
+        "CFA",
+        "latent factor"
+      ],
+      "scope": "Principal components, exploratory and confirmatory factor analysis.",
+      "source_sections": "LSJ 15"
+    },
+    {
+      "id": "bayesian-inference",
+      "label": "Bayesian inference",
+      "aliases": [
+        "prior",
+        "posterior",
+        "Bayes factor"
+      ],
+      "scope": "Bayesian estimation and comparison of hypotheses.",
+      "source_sections": "LSJ 16"
+    },
+    {
+      "id": "jamovi",
+      "label": "Using jamovi",
+      "aliases": [
+        "software",
+        "data import",
+        "spreadsheet",
+        "computed variables"
+      ],
+      "scope": "Software operation, data management and reproducible analysis in jamovi.",
+      "source_sections": "LSJ 3,6"
+    },
+    {
+      "id": "research-validity",
+      "label": "Reliability and validity",
+      "aliases": [
+        "measurement reliability",
+        "construct validity",
+        "internal validity"
+      ],
+      "scope": "Reliability of measurement and validity of research conclusions.",
+      "source_sections": "LSJ 2.3,2.6"
+    },
+    {
+      "id": "nonparametric",
+      "label": "Nonparametric tests",
+      "aliases": [
+        "Wilcoxon",
+        "Mann Whitney",
+        "rank test"
+      ],
+      "scope": "Rank-based alternatives to parametric tests.",
+      "source_sections": "LSJ 11,13"
+    }
+  ]
+}

@@ -1,0 +1,115 @@
+{
+  "frozen_before_candidate_output": true,
+  "description": "Existing historical controls fixed before this fresh full-document parse; not independent holdouts. Source/heading gold comes from the prior frozen textbook-recovery fixture.",
+  "sources": [
+    {
+      "id": "german-education",
+      "title": "german-education",
+      "family": "German report, rotated side tabs",
+      "role": "historical-control-not-new-holdout",
+      "path": "bench/rag/fixtures/local/2026-09-09-odl-agentic/pdfs/german-education.pdf",
+      "url": "local-evaluation:german-education",
+      "license": "Existing local evaluation copy; rights not reassessed; no new distribution.",
+      "sha256": "2608aecd1c675ee8dcd7de740bae4f87b497229f18889ae67454966176691dfd",
+      "pages": 32,
+      "checks": []
+    },
+    {
+      "id": "attention",
+      "title": "attention",
+      "family": "English multi-column scientific paper",
+      "role": "historical-control-not-new-holdout",
+      "path": "bench/rag/fixtures/local/2026-09-09-odl-agentic/pdfs/attention.pdf",
+      "url": "local-evaluation:attention",
+      "license": "Existing local evaluation copy; rights not reassessed; no new distribution.",
+      "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697",
+      "pages": 15,
+      "checks": []
+    },
+    {
+      "id": "japan-migration",
+      "title": "japan-migration",
+      "family": "Japanese numeric tables",
+      "role": "historical-control-not-new-holdout",
+      "path": "bench/rag/fixtures/local/2026-09-09-odl-agentic/pdfs/japan-migration.pdf",
+      "url": "local-evaluation:japan-migration",
+      "license": "Existing local evaluation copy; rights not reassessed; no new distribution.",
+      "sha256": "ff4812aac97b8fdfe1919bd7c04a446aa7326eebc56ca047a777081c64e80f4a",
+      "pages": 54,
+      "checks": []
+    },
+    {
+      "id": "taln-complexity",
+      "title": "taln-complexity",
+      "family": "French scientific paper",
+      "role": "historical-control-not-new-holdout",
+      "path": "bench/rag/fixtures/local/2026-09-09-odl-agentic/pdfs/taln-complexity.pdf",
+      "url": "local-evaluation:taln-complexity",
+      "license": "Existing local evaluation copy; rights not reassessed; no new distribution.",
+      "sha256": "bf082a428310d35390cc83cb475094f143642dd8cfc1c165a2144cca85215294",
+      "pages": 13,
+      "checks": []
+    },
+    {
+      "id": "hongkong-figures",
+      "title": "hongkong-figures",
+      "family": "Chinese-English statistical tables",
+      "role": "historical-control-not-new-holdout",
+      "path": "bench/rag/fixtures/local/2026-09-09-odl-agentic/pdfs/hongkong-figures.pdf",
+      "url": "local-evaluation:hongkong-figures",
+      "license": "Existing local evaluation copy; rights not reassessed; no new distribution.",
+      "sha256": "c3490cc7c1664ce8e75edcce55898be58dc21fceade53b3c1cbfd7f30411f2d9",
+      "pages": 53,
+      "checks": []
+    },
+    {
+      "id": "nist-shot",
+      "title": "nist-shot",
+      "family": "Scanned English technical report",
+      "role": "historical-control-not-new-holdout",
+      "path": "bench/rag/fixtures/local/2026-09-09-odl-agentic/pdfs/nist-shot.pdf",
+      "url": "local-evaluation:nist-shot",
+      "license": "Existing local evaluation copy; rights not reassessed; no new distribution.",
+      "sha256": "0bdb43c9e1be39acf0dbafe76d1aa3cbd69efd706425bfb27bba979b1fd36763",
+      "pages": 8,
+      "checks": []
+    },
+    {
+      "id": "spain-figures",
+      "title": "spain-figures",
+      "family": "Spanish figure-heavy report",
+      "role": "historical-control-not-new-holdout",
+      "path": "bench/rag/fixtures/local/2026-09-09-odl-agentic/pdfs/spain-figures.pdf",
+      "url": "local-evaluation:spain-figures",
+      "license": "Existing local evaluation copy; rights not reassessed; no new distribution.",
+      "sha256": "a27e7a5b5982fd5fbf27dc90044b94aedf7dab257f29788ebe2cd32364185867",
+      "pages": 60,
+      "checks": []
+    },
+    {
+      "id": "ccl-feedback",
+      "title": "ccl-feedback",
+      "family": "Chinese scientific paper",
+      "role": "historical-control-not-new-holdout",
+      "path": "bench/rag/fixtures/local/2026-09-09-odl-agentic/pdfs/ccl-feedback.pdf",
+      "url": "local-evaluation:ccl-feedback",
+      "license": "Existing local evaluation copy; rights not reassessed; no new distribution.",
+      "sha256": "6a67443bc89ae7d493464d1d2610f100b192745b6428909e8fc1fc889504b1a1",
+      "pages": 16,
+      "checks": []
+    },
+    {
+      "id": "rag__en__newspaper_scan",
+      "title": "Historical newspaper scan",
+      "family": "English raster-only two-column newspaper",
+      "role": "historical-control-not-new-holdout",
+      "path": "bench/rag/fixtures/local/2026-09-09-odl-agentic/pdfs/rag__en__newspaper_scan.pdf",
+      "url": "local-evaluation:rag__en__newspaper_scan",
+      "license": "Existing local evaluation copy; rights not reassessed; no new distribution.",
+      "sha256": "9a4d01e6b17f17d336eb4c56d8bcdd9be25f63d13c1cfdfab83c7d385d405ef1",
+      "pages": 2,
+      "checks": []
+    }
+  ],
+  "supplement": "Raster-only control added after eight-control run but before its own parser outputs; not an unseen-source claim."
+}

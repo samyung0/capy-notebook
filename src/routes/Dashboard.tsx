@@ -1,20 +1,18 @@
 import { Link } from '@tanstack/react-router';
 import { USE_MSW } from '@/api/auth';
 import { useMe, useWorkspaces } from '@/api/hooks';
-import { CloudConnectBanner } from '@/components/app/CloudConnectBanner';
 import { Panel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
 import DashboardDefaultBanner from '@/components/banners/DashboardDefaultBanner';
 import { Button } from '@/components/ui/Button';
+import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
-import {
-  WorkspaceCard,
-  WorkspaceCardSkeleton,
-} from '@/components/ui/WorkspaceCard';
+import { WorkspaceCard } from '@/components/ui/WorkspaceCard';
 import { OnboardingDialog } from '@/features/auth/OnboardingDialog';
 import { RecentItemsCard } from '@/features/dashboard/RecentItemsCard';
 import { m } from '@/i18n';
+import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
 const CLERK_ACTIVE = !USE_MSW && !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
@@ -44,11 +42,18 @@ function WorkspacesSection() {
   );
   const recent = data?.slice(0, DASHBOARD_WORKSPACE_LIMIT);
   const hasMore = (data?.length ?? 0) > DASHBOARD_WORKSPACE_LIMIT;
+  const revealRef = useLoadingReveal(isLoading);
   return (
     <section>
       <div className="mb-3 flex items-center justify-between">
         <h2 className="t-large-card-title">{m.dashboard_workspaces()}</h2>
-        <Button asChild size="xs" variant="ghost-link">
+        <Button
+          asChild
+          className="underline"
+          iconRight="navigationForward"
+          size="xs"
+          variant="ghost-link"
+        >
           <Link preload="intent" to="/workspaces">
             {m.action_go_workspaces()}
           </Link>
@@ -57,13 +62,12 @@ function WorkspacesSection() {
       {fetchStatus === 'paused' ? (
         <QueryPausedState />
       ) : isLoading ? (
-        <div className="grid w-full auto-rows-fr grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
-          {Array.from({ length: DASHBOARD_WORKSPACE_LIMIT }).map((_, i) => (
-            <WorkspaceCardSkeleton key={i} />
-          ))}
-        </div>
+        <SkeletonCardGrid count={6} />
       ) : !recent || recent.length === 0 ? (
-        <div className="mt-30 flex w-full items-center justify-center">
+        <div
+          className="mt-30 flex w-full items-center justify-center"
+          ref={revealRef}
+        >
           <p>
             {m.workspaces_empty()}{' '}
             <Link
@@ -76,7 +80,10 @@ function WorkspacesSection() {
           </p>
         </div>
       ) : (
-        <div className="grid w-full auto-rows-fr grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
+        <div
+          className="grid w-full auto-rows-fr grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4"
+          ref={revealRef}
+        >
           {recent?.map((w) => (
             <WorkspaceCard key={w.id} workspace={w} />
           ))}
@@ -106,17 +113,17 @@ export default function Dashboard() {
         sectionClassName="gap-5 2xl:gap-6 p-4 sm:p-6"
       >
         <StreakHeading />
-        <CloudConnectBanner />
+        {/* <CloudConnectBanner /> */}
         <DashboardDefaultBanner />
         <WorkspacesSection />
       </Panel>
       {CLERK_ACTIVE && <OnboardingDialog />}
 
-      <div className="order-first flex h-auto min-h-0 w-(--top-inset-bar-width) shrink-0 flex-col gap-2.5 overflow-visible lg:order-last lg:h-full lg:min-h-full lg:overflow-hidden">
+      <div className="order-first flex h-auto min-h-0 w-(--top-inset-bar-width) shrink-0 flex-col gap-2.5 overflow-visible lg:order-last lg:h-full lg:min-h-full">
         <TopInsetBar />
         <Panel
           className="hidden min-h-0 flex-1 lg:flex"
-          sectionClassName="min-h-0 flex-1 gap-2.5 p-5"
+          sectionClassName="min-h-0 flex-1 gap-2.5 px-2 py-5"
         >
           <RecentItemsCard />
         </Panel>

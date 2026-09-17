@@ -407,6 +407,7 @@ export function GenerateFormDialog({
             }
             iconLeft={pending ? undefined : 'sparkles'}
             onClick={run}
+            variant="accent"
           >
             {pending ? <Spinner /> : m.workspace_tab_generate()}
           </Button>

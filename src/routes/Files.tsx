@@ -97,7 +97,7 @@ function ActiveFiles() {
             radius="card-lg"
           >
             <span className="flex h-10 w-10 items-center justify-center rounded-card bg-surface-hover-bg text-fg-secondary">
-              <FileIcon name={fileIconName(f)} size={18} />
+              <FileIcon className="size-4.5" name={fileIconName(f)} />
             </span>
             <div className="min-w-0 flex-1">
               <p className="t-subtitle truncate">{f.name}</p>

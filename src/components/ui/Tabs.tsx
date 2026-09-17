@@ -22,8 +22,8 @@ export function Tabs({
   return (
     <div
       className={cn(
-        'flex w-full gap-1',
-        bottomBorder && 'border-divider border-b',
+        'flex w-full shrink-0 gap-1',
+        bottomBorder && 'inset-shadow-[0_-1px_var(--color-divider)]',
         className
       )}
     >
@@ -33,7 +33,7 @@ export function Tabs({
         return (
           <button
             className={cn(
-              '-mb-px px-3 py-2 font-semibold text-sm transition-colors',
+              'px-3 py-2 font-semibold text-sm transition-colors',
               bottomBorder && 'border-b-2',
               active
                 ? 'border-action font-bold text-fg'

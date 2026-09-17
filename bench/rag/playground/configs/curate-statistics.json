@@ -1,0 +1,48 @@
+{
+  "target": "uat",
+  "workspace_id": "REPLACE_WITH_A_UAT_WORKSPACE",
+  "curate": true,
+  "question": "I'm a high-school beginner, I want to learn linear regression and practise it",
+  "model": {
+    "provider_slug": "zai",
+    "model_slug": "glm-5.3-flash",
+    "version": 1,
+    "thinking": "low",
+    "transport": {
+      "url": "https://tokenhub.tencentcloudmaas.com/v1/chat/completions",
+      "key_env": "TOKENHUB",
+      "wire_model": "glm-5.3-flash",
+      "body": "zai"
+    }
+  },
+  "tools": [
+    "browse_knowledge",
+    "search_knowledge",
+    "read_knowledge",
+    "capture_knowledge_page",
+    "create_ledger",
+    "create_material",
+    "edit_document"
+  ],
+  "limits": {
+    "planning_responses": 24,
+    "tools_per_response": 4,
+    "tools_per_turn": 96,
+    "captures_per_turn": 4,
+    "knowledge_tools_per_response": 4,
+    "stall_responses": 4
+  },
+  "capture": {
+    "mode": "pixels",
+    "max_edge": 1568,
+    "addon": false
+  },
+  "quality": {
+    "show": false
+  },
+  "prompt_addon": "",
+  "system_prompt": null,
+  "answer": {
+    "citations": "as_is"
+  }
+}

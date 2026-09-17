@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/blob"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi"
 	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/pipeline"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
@@ -36,6 +38,15 @@ func openInternalHTTP(t *testing.T) (http.Handler, *store.Store) {
 
 func openInternalHTTPWithBlob(t *testing.T) (http.Handler, *store.Store, *blob.Memory) {
 	t.Helper()
+	h, st, mem, _ := openInternalHTTPWithPipeline(t, nil)
+	return h, st, mem
+}
+
+func openInternalHTTPWithPipeline(
+	t *testing.T,
+	pipe *pipeline.Client,
+) (http.Handler, *store.Store, *blob.Memory, *models.Registry) {
+	t.Helper()
 	dsn := testdb.URL(t)
 	ctx := context.Background()
 	st, err := store.New(ctx, dsn)
@@ -49,7 +60,7 @@ func openInternalHTTPWithBlob(t *testing.T) (http.Handler, *store.Store, *blob.M
 	}
 	st.SetModelRegistry(reg)
 	mem := blob.NewMemory()
-	h := httpapi.New(st, mem, nil, nil, "docling", httpapi.Config{
+	h := httpapi.New(st, mem, pipe, nil, "docling", httpapi.Config{
 		AuthDisabled:   true,
 		E2EAuth:        true,
 		E2ESecret:      "e2e-test-secret",
@@ -57,7 +68,7 @@ func openInternalHTTPWithBlob(t *testing.T) (http.Handler, *store.Store, *blob.M
 		ModelRegistry:  reg,
 		PipelineSecret: pipeSecret,
 	})
-	return h, st, mem
+	return h, st, mem, reg
 }
 
 func doInternal(
@@ -393,6 +404,141 @@ func TestInternalMaterialRejectsEmptyContent(t *testing.T) {
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("%s: status = %d body=%s", body["kind"], rec.Code, rec.Body.String())
 		}
+	}
+}
+
+// A curated material stores its attribution and takes the ShareAlike licence
+// of its sources; a mix of CC BY and CC BY-SA is CC BY-SA.
+func TestInternalMaterialStoresProvenanceAndShareAlikeLicense(t *testing.T) {
+	h, st := openInternalHTTP(t)
+	msgID := seedAssistantMessage(t, st, "u_editor", "ws_e2e_private")
+	body := noteBody(msgID, "call_prov", "Curated regression note", "# Regression\n\nA fitted line.")
+	body["provenance"] = map[string]any{
+		"books": []map[string]any{
+			{
+				"id": "openintro", "title": "OpenIntro Statistics", "authors": []string{"Diez"},
+				"license": "CC BY", "excerptIds": []string{"e_1"}, "version": 1,
+			},
+			{
+				"id": "ahss", "title": "Advanced High School Statistics", "authors": []string{},
+				"license": "CC BY-SA 4.0", "excerptIds": []string{"e_2", "e_3"}, "version": 2,
+			},
+		},
+		// A model-supplied licence must not survive: the server computes it.
+		"license": "WTFPL",
+	}
+	rec := doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	receipt := decodeReceipt(t, rec)
+	cleanupMaterial(t, st, receipt.Effect.Resource.ID)
+
+	stored, err := st.GetMaterial(context.Background(), receipt.Effect.Resource.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Provenance == nil || len(stored.Provenance.Books) != 2 {
+		t.Fatalf("provenance = %+v", stored.Provenance)
+	}
+	if stored.Provenance.License != "CC BY-SA 4.0" {
+		t.Fatalf("license = %q, want the ShareAlike licence", stored.Provenance.License)
+	}
+	if got := stored.Provenance.Books[1].ExcerptIDs; len(got) != 2 {
+		t.Fatalf("excerpt ids = %v", got)
+	}
+	if got := stored.Provenance.Books[1].Version; got != 2 {
+		t.Fatalf("book version = %d, want the version the excerpts were read from", got)
+	}
+
+	body["toolCallId"] = "call_prov_invalid"
+	body["title"] = "Unattributed"
+	body["provenance"] = map[string]any{
+		"books": []map[string]any{
+			{"id": "ahss", "title": "AHSS", "excerptIds": []string{}, "version": 1},
+		},
+	}
+	rec = doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, body)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("a book without excerpt ids: status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	body["toolCallId"] = "call_prov_unversioned"
+	body["title"] = "Unversioned"
+	body["provenance"] = map[string]any{
+		"books": []map[string]any{
+			{"id": "ahss", "title": "AHSS", "excerptIds": []string{"e_1"}},
+		},
+	}
+	rec = doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, body)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("a book without a version: status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// Two copyleft families have no single answer, so the material is refused
+// instead of being credited under whichever book came first. Two versions of
+// one family land on the newer one.
+func TestInternalMaterialRefusesTwoCopyleftFamilies(t *testing.T) {
+	h, st := openInternalHTTP(t)
+	msgID := seedAssistantMessage(t, st, "u_editor", "ws_e2e_private")
+	body := noteBody(msgID, "call_prov_mixed", "Mixed licences", "# Regression\n\nA fitted line.")
+	body["provenance"] = map[string]any{
+		"books": []map[string]any{
+			{
+				"id": "ahss", "title": "Advanced High School Statistics",
+				"license": "CC BY-SA 4.0", "excerptIds": []string{"e_1"}, "version": 1,
+			},
+			{
+				"id": "wiki", "title": "Wikibooks Statistics",
+				"license": "GFDL 1.3", "excerptIds": []string{"e_2"}, "version": 1,
+			},
+		},
+	}
+	rec := doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, body)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var payload struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Code != "lifecycle_rejected" ||
+		!strings.Contains(payload.Message, "CC BY-SA") ||
+		!strings.Contains(payload.Message, "GFDL") {
+		t.Fatalf("body = %s", rec.Body.String())
+	}
+
+	// One family at two versions licenses the material under the newer one.
+	body["toolCallId"] = "call_prov_same"
+	body["title"] = "One family"
+	body["provenance"] = map[string]any{
+		"books": []map[string]any{
+			{
+				"id": "osp", "title": "OpenStax Prealgebra",
+				"license": "CC BY-SA 3.0", "excerptIds": []string{"e_2"}, "version": 3,
+			},
+			{
+				"id": "ahss", "title": "Advanced High School Statistics",
+				"license": "CC BY-SA 4.0", "excerptIds": []string{"e_1"}, "version": 1,
+			},
+		},
+	}
+	rec = doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("one family status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	receipt := decodeReceipt(t, rec)
+	cleanupMaterial(t, st, receipt.Effect.Resource.ID)
+	stored, err := st.GetMaterial(context.Background(), receipt.Effect.Resource.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Provenance.License != "CC BY-SA 4.0" {
+		t.Fatalf("license = %q", stored.Provenance.License)
 	}
 }
 

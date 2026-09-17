@@ -75,8 +75,8 @@ export function AccountBar() {
               type="button"
             >
               <Avatar
+                className="size-7.5 text-xs"
                 name={user?.fullName ?? undefined}
-                size="sm"
                 src={user?.imageUrl}
               />
               <span>{user?.firstName}</span>

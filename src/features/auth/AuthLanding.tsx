@@ -9,7 +9,6 @@ import { ButtonCard } from '@/components/ui/ButtonCard';
 import { Card } from '@/components/ui/Card';
 import { ContentSwap } from '@/components/ui/ContentSwap';
 import { Spinner } from '@/components/ui/feedback';
-import { Icon } from '@/components/ui/Icon';
 import { Input, InputField } from '@/components/ui/Input';
 import { useAuth, useSignIn, useSignUp } from '@/features/auth/clerkHooks';
 import { m } from '@/i18n';
@@ -22,7 +21,7 @@ type Mode = 'signIn' | 'signUp';
 
 export function AuthPage({ children }: { children: React.ReactNode }) {
   return (
-    <main className="h-svh overflow-hidden p-1.5 sm:p-2.5">
+    <main className="h-dvh overflow-hidden p-1.5 sm:p-2.5">
       <Panel
         className="h-full w-full"
         sectionClassName="h-full w-full min-h-full flex flex-row"
@@ -62,7 +61,7 @@ function BrandColumn() {
             aria-hidden="true"
             className="h-0.5 w-11 flex-none bg-action-accent"
           />
-          <span>A wise man inspired from Metal Garden</span>
+          <span>Metal Garden Enthusiast</span>
         </figcaption>
       </figure>
     </Card>
@@ -73,20 +72,28 @@ export function AuthCard({
   title,
   hint,
   children,
+  className,
+  containerClassName,
 }: {
   title: string;
   hint?: string;
   children: React.ReactNode;
+  className?: string;
+  containerClassName?: string;
 }) {
   return (
-    <Card border="none" className="gap-0 p-0" radius="card-lg">
+    <Card
+      border="none"
+      className={cn('gap-1.5 p-0', containerClassName)}
+      radius="card-lg"
+    >
       <h2 className="t-page-title self-center xl:self-start">{title}</h2>
       {hint && (
-        <p className="t-card-title self-center text-fg-muted xl:self-start">
+        <p className="t-card-title self-center text-center text-fg-muted xl:self-start xl:text-left">
           {hint}
         </p>
       )}
-      <div className="mt-8">{children}</div>
+      <div className={cn('mt-7', className)}>{children}</div>
     </Card>
   );
 }
@@ -404,20 +411,19 @@ function SignUpCard() {
   if (step === 'code') {
     return (
       <>
-        <button
-          className={cn(
-            BASE_BUTTON_STYLE,
-            'mb-4 inline-flex items-center text-fg-muted underline hover:text-fg'
-          )}
+        <Button
+          className="mb-5 flex h-fit items-center p-0 underline"
+          iconLeft="navigationBack"
+          iconLeftClassName="mr-1 size-4.5"
           onClick={() => {
             setFormError(null);
             setStep('form');
           }}
           type="button"
+          variant="ghost-link"
         >
-          <Icon className="mr-1 inline-block" name="navigationBack" size={18} />
-          <span>{m.auth_code_back()}</span>
-        </button>
+          {m.auth_code_back()}
+        </Button>
         <AuthCard hint={m.auth_code_hint()} title={m.auth_code_title()}>
           <form
             className="relative flex flex-col gap-2"

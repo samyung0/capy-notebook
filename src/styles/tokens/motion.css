@@ -88,6 +88,10 @@
   --tw-enter-blur: var(--motion-blur-small);
 }
 
+@utility motion-anchored-popup {
+  @apply motion-popup motion-blur-in data-[side=bottom]:slide-in-from-top-4 data-[side=left]:slide-in-from-right-4 data-[side=right]:slide-in-from-left-4 data-[side=top]:slide-in-from-bottom-4;
+}
+
 @utility motion-tooltip {
   --tw-duration: var(--motion-duration-quick);
   --tw-ease: var(--motion-ease-out);

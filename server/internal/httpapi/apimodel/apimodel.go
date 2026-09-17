@@ -209,6 +209,9 @@ type Material struct {
 	IsOwner        bool                     `json:"isOwner"`
 	Role           *store.WorkspaceRole     `json:"role,omitempty"`
 	Capabilities   store.AccessCapabilities `json:"capabilities"`
+	// Attribution of a material written from the knowledge library; absent
+	// otherwise. The frontend renders it outside the editable document.
+	Provenance *store.Provenance `json:"provenance,omitempty"`
 }
 
 // MaterialUpdateResult is the lightweight acknowledgement returned by
@@ -242,6 +245,7 @@ func FromMaterial(m store.Material) (Material, error) {
 		Privacy: m.Privacy, Color: m.Color, CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt,
 		Revision: m.Revision,
 		IsOwner:  m.IsOwner, Role: m.Role, Capabilities: m.Capabilities,
+		Provenance: m.Provenance,
 	}, nil
 }
 
@@ -379,6 +383,8 @@ type Quiz struct {
 	CreatedAt     time.Time        `json:"createdAt"`
 	Privacy       store.Privacy    `json:"privacy"`
 	TimeLimitMin  *int             `json:"timeLimitMin,omitempty"`
+	// Provenance credits the library books the quiz was written from.
+	Provenance *store.Provenance `json:"provenance,omitempty"`
 	// IsOwner and CanEdit are request-scoped. Explicit workspace editors can
 	// edit while link/public visitors cannot.
 	IsOwner bool `json:"isOwner"`
@@ -389,7 +395,7 @@ func FromQuiz(q store.Quiz) Quiz {
 	out := Quiz{
 		ID: q.ID, Name: q.Name, WorkspaceID: q.WorkspaceID, WorkspaceName: q.WorkspaceName,
 		Chapters: q.Chapters, Questions: decodeQuestions(q.Questions), CreatedAt: q.CreatedAt,
-		Privacy: q.Privacy, TimeLimitMin: q.TimeLimitMin,
+		Privacy: q.Privacy, TimeLimitMin: q.TimeLimitMin, Provenance: q.Provenance,
 		IsOwner: q.IsOwner, CanEdit: q.CanEdit,
 	}
 	if out.Chapters == nil {

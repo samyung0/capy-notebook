@@ -1,0 +1,58 @@
+# Shared knowledge-library Postgres. Runs only on the ingest host, as its own
+# compose project under /opt/capy-library-db, outside the release workflows.
+# UAT and production read it over WireGuard; the developer PC loads it through
+# an SSH tunnel via this host. There is one live library: each book carries its
+# own versions, publishing a book swaps its pointer atomically and previous
+# versions stay retained, so both environments read the same live set with no
+# environment pin.
+#
+# Host networking, like the parser: the host firewall drops forwarded traffic
+# into Docker bridges, so Postgres itself listens on the WireGuard address.
+services:
+  library-db:
+    image: pgvector/pgvector:pg16
+    container_name: capy-library-db
+    network_mode: host
+    environment:
+      POSTGRES_USER: capy_library
+      POSTGRES_PASSWORD: ${LIBRARY_DB_PASSWORD:?set LIBRARY_DB_PASSWORD}
+      POSTGRES_DB: library
+      LIBRARY_DB_READER_PASSWORD: ${LIBRARY_DB_READER_PASSWORD:?set LIBRARY_DB_READER_PASSWORD}
+      # Client tools inside the container (psql, pg_dump, pg_isready) follow this.
+      PGPORT: ${LIBRARY_DB_PORT:-5433}
+    # Memory is sized against the parser's cap on the same host; raise
+    # maintenance_work_mem before building large HNSW indexes.
+    command:
+      - postgres
+      - -c
+      - listen_addresses=${LIBRARY_DB_BIND_ADDRESS:?set the WireGuard bind address},127.0.0.1
+      - -c
+      - port=${LIBRARY_DB_PORT:-5433}
+      - -c
+      - shared_buffers=${LIBRARY_DB_SHARED_BUFFERS:-768MB}
+      - -c
+      - effective_cache_size=${LIBRARY_DB_EFFECTIVE_CACHE:-2GB}
+      - -c
+      - maintenance_work_mem=${LIBRARY_DB_MAINTENANCE_WORK_MEM:-512MB}
+      - -c
+      - max_connections=${LIBRARY_DB_MAX_CONNECTIONS:-60}
+    volumes:
+      - library_pgdata:/var/lib/postgresql/data
+      - ./library-db-init.sh:/docker-entrypoint-initdb.d/10-library.sh:ro
+    shm_size: 512m
+    mem_limit: ${LIBRARY_DB_MEMORY_LIMIT:-3g}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U capy_library -d library"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+
+volumes:
+  library_pgdata:
+    name: capy_library_pgdata

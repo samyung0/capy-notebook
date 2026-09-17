@@ -1,0 +1,19 @@
+{
+  "version":1,
+  "source_review_before_output":true,
+  "source_gold_abstentions":[
+    {
+      "case":"lsj-formula-table",
+      "check":"exact attended? HTML rowspan",
+      "reason":"The unruled source prints attended? aligned with the first response row. Its meaning covers both responses, but the rendered PDF does not uniquely determine a rowspan=2 versus a label cell followed by a blank cell. Require the two row associations, abstain on exact rowspan encoding.",
+      "still_score":"read textbook spans the two data columns; no/yes header order; four beta expressions in their correct row/column positions"
+    },
+    {
+      "case":"ahss-source-typo",
+      "check":"neighbor anchor using 'family income is in $1000s'",
+      "reason":"Source crop actually reads 'family income are in $1000s'. The frozen anchor contains a review transcription error. Abstain on this anchor for both engines; do not count it as an output failure or revise the submitted gold after viewing output.",
+      "discovered":"During first MinerU output review; source PNG rechecked. All mathematical coefficient checks remain frozen."
+    }
+  ],
+  "format_equivalence":"LaTeX spacing, brace style, display delimiters, font styling and equivalent fraction commands are ignored. Mathematical signs, numbers, operands, hats, primes and scope are preserved. Prose typography and line-break hyphenation may normalize. Table row and column association remains mandatory."
+}

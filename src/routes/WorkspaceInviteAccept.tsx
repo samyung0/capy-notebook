@@ -14,7 +14,7 @@ export function isUnavailableWorkspaceInviteError(error: unknown): boolean {
 
 export default function WorkspaceInviteAccept() {
   return (
-    <main className="h-svh overflow-hidden p-1.5 sm:p-2.5">
+    <main className="h-dvh overflow-hidden p-1.5 sm:p-2.5">
       <Panel
         className="h-full w-full"
         sectionClassName="h-full w-full min-h-full flex items-center justify-center"

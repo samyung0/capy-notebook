@@ -203,6 +203,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	r.Post("/api/workspaces/{id}/ai/copilot", a.aiCopilot)
 	if cfg.PipelineSecret != "" {
 		r.Post("/api/internal/materials", a.internalCreateMaterial)
+		r.Post("/api/internal/conversations/ledger", a.internalWriteConversationLedger)
 		r.Post("/api/internal/source-changes/resolve", a.internalSourceAuthority)
 		r.Post("/api/internal/source-changes/caption", a.internalSourceCaption)
 		r.Post("/api/internal/source-refresh/publish", a.internalSourceAuthority)

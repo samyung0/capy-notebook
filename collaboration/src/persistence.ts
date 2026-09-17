@@ -80,6 +80,8 @@ export interface MaterialEditInput {
   /** Full state of the open live room, merged into the pre-state first. */
   liveState?: Uint8Array;
   operation: EditOperation;
+  /** Merged attribution record the gateway computed; stored with the edit. */
+  provenance?: unknown;
   room: string;
   undo?: {
     guards: GuardTarget[];
@@ -866,6 +868,14 @@ export class YjsDocumentStore {
          WHERE material_id=$1`,
         [materialId, Buffer.from(state), version]
       );
+      // The gateway merged this edit's books into the stored record; writing
+      // it here keeps the credit and the content in one transaction.
+      if (input.provenance) {
+        await client.query('UPDATE materials SET provenance=$2 WHERE id=$1', [
+          materialId,
+          JSON.stringify(input.provenance),
+        ]);
+      }
       const material = await client.query<{
         title: string;
         kind: string;

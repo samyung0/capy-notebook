@@ -66,9 +66,10 @@ function DialogContent({
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Content
-        // Keep the rendering layer stable to prevent a 1px snap when motion ends.
+        // Round centering to pixels; keep the layer stable when motion ends.
         className={cn(
-          'motion-modal motion-blur-in fixed top-1/2 left-1/2 z-50 grid max-h-[88dvh] w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 px-4 outline-none will-change-transform',
+          'motion-modal motion-blur-in fixed top-[var(--dialog-center,50%)] left-[var(--dialog-center,50%)] z-50 grid max-h-[88dvh] w-full max-w-2xl translate-x-[var(--dialog-offset,-50%)] translate-y-[var(--dialog-offset,-50%)] px-4 outline-none will-change-transform',
+          'supports-[top:round(50%,1px)]:[--dialog-center:round(50%,1px)] supports-[translate:round(-50%,1px)]:[--dialog-offset:round(-50%,1px)]',
           className
         )}
         data-slot="dialog-content"
@@ -95,7 +96,7 @@ function DialogContent({
         >
           <div
             className={cn(
-              'flex h-full max-h-[88dvh] w-full flex-col items-stretch gap-0 overflow-auto p-5.5',
+              'flex h-full max-h-[88dvh] w-full flex-col items-stretch gap-0 overflow-auto px-5.5 py-6.5',
               cardScrollContainerClassName
             )}
           >
@@ -169,10 +170,14 @@ function SimpleDialog({
   className,
   showCloseButton = true,
   onCloseAutoFocus,
+  onOpenAutoFocus,
   onPointerDownOutside,
   onInteractOutside,
   onEscapeKeyDown,
   onSubmit,
+  formClassName,
+  cardClassName,
+  cardScrollContainerClassName,
 }: {
   open: boolean;
   onClose: () => void;
@@ -181,10 +186,14 @@ function SimpleDialog({
   footer?: React.ReactNode;
   width?: number;
   className?: string;
+  formClassName?: string;
   showCloseButton?: boolean;
   onCloseAutoFocus?: React.ComponentProps<
     typeof DialogPrimitive.Content
   >['onCloseAutoFocus'];
+  onOpenAutoFocus?: React.ComponentProps<
+    typeof DialogPrimitive.Content
+  >['onOpenAutoFocus'];
   onPointerDownOutside?: React.ComponentProps<
     typeof DialogPrimitive.Content
   >['onPointerDownOutside'];
@@ -195,6 +204,8 @@ function SimpleDialog({
     typeof DialogPrimitive.Content
   >['onEscapeKeyDown'];
   onSubmit?: React.FormEventHandler<HTMLFormElement>;
+  cardClassName?: string;
+  cardScrollContainerClassName?: string;
 }) {
   const originalPathname = useRef<string | null>(null);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -212,9 +223,7 @@ function SimpleDialog({
 
   const body = (
     <>
-      {title != null && (
-        <DialogTitle className="pr-10 pb-4">{title}</DialogTitle>
-      )}
+      {title != null && <DialogTitle className="pb-2">{title}</DialogTitle>}
       {children}
       {footer && <DialogFooter className="mt-3">{footer}</DialogFooter>}
     </>
@@ -223,17 +232,23 @@ function SimpleDialog({
   return (
     <Dialog onOpenChange={(o) => !o && onClose()} open={open}>
       <DialogContent
+        cardClassName={cardClassName}
+        cardScrollContainerClassName={cardScrollContainerClassName}
         className={className}
         onCloseAutoFocus={onCloseAutoFocus}
         onEscapeKeyDown={onEscapeKeyDown}
         onInteractOutside={onInteractOutside}
+        onOpenAutoFocus={onOpenAutoFocus}
         onPointerDownOutside={onPointerDownOutside}
         showCloseButton={showCloseButton}
         style={width ? { maxWidth: width } : undefined}
       >
         {onSubmit ? (
           <form
-            className="flex h-full min-h-0 w-full flex-col items-stretch"
+            className={cn(
+              'flex h-full min-h-0 w-full flex-col items-stretch gap-4',
+              formClassName
+            )}
             onSubmit={onSubmit}
           >
             {body}

@@ -74,6 +74,13 @@ Success and failure responses use `Cache-Control: no-store`; no summary cache,
 queue, R2 or KV invalidation is involved. More than 1000 chapters or a projection
 larger than 256 KiB returns `422` rather than a truncated outline.
 
+Workspace POST accepts optional `iconId` and `description`, with the same catalog
+validation and 500-character description limit as PATCH. Omitting the icon keeps
+the persisted random Waves default; new workspaces remain private. Create and
+edit share the General form fields and SimpleDialog styling; settings embeds that form.
+Each frontend creation draft selects a random Waves icon when opened, preserves
+it while the draft is edited, and submits the previewed icon with the form.
+
 Owners edit an optional description through ordinary workspace PATCH. It accepts
 at most 500 characters; omission preserves the value and an empty string clears
 it. Clones copy the description. Existing name/tag and lifecycle

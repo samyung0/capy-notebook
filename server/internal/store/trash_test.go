@@ -14,7 +14,7 @@ func trashFixture(t *testing.T, s *Store) (ownerID, editorID string, ws Workspac
 	ownerID = newBlobTestUser(t, s, "u_trash_owner")
 	editorID = newBlobTestUser(t, s, "u_trash_editor")
 	var err error
-	ws, err = s.CreateWorkspace(ctx, ownerID, "Trash workspace", []TagRef{})
+	ws, err = s.CreateWorkspace(ctx, ownerID, WorkspaceCreate{Name: "Trash workspace", Tags: []TagRef{}})
 	if err != nil {
 		t.Fatal(err)
 	}

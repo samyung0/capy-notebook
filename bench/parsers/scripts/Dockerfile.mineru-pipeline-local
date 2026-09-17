@@ -1,0 +1,17 @@
+# Isolated benchmark runtime. The base is the locally built ODL pilot image;
+# record its image ID with each run. Separate Python environments prevent the
+# candidate's dependencies from changing the production ODL environment.
+ARG BASE_IMAGE=capy-kb-parser:pilot
+FROM ${BASE_IMAGE}
+USER root
+RUN python -m venv /opt/mineru \
+    && /opt/mineru/bin/pip install --no-cache-dir \
+        torch==2.8.0 torchvision==0.23.0 \
+        --index-url https://download.pytorch.org/whl/cpu \
+    && /opt/mineru/bin/pip install --no-cache-dir 'mineru[pipeline]==3.4.5' six==1.17.0
+ENV MINERU_MODEL_SOURCE=huggingface \
+    HF_HOME=/eval/models/huggingface \
+    OMP_NUM_THREADS=4 MKL_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4
+WORKDIR /eval
+ENTRYPOINT []
+CMD ["sleep", "infinity"]

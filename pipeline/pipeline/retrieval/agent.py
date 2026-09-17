@@ -18,9 +18,10 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 
-from .. import elitellm, obs
+from .. import elitellm, obs, registry
 from ..config import cfg
 from ..prompts import chat as chat_prompts
+from ..prompts import curate as curate_prompts
 from . import (
     accounting,
     capture,
@@ -28,6 +29,7 @@ from . import (
     compact,
     events,
     evidence,
+    library,
     models,
     pending,
     store,
@@ -35,10 +37,14 @@ from . import (
 )
 from .chunking import estimate_tokens
 from .limits import (
+    CURATE_MIN_CONTEXT_WINDOW_TOKENS,
+    CURATE_STALL_RESPONSES,
+    KNOWLEDGE_TOOLS_PER_RESPONSE,
     MAX_CONCURRENT,
     PLANNING_RESPONSES,
     STOP_ANSWER,
     STOP_CLIENT_GONE,
+    STOP_CURATE_STALL,
     STOP_ERROR,
     STOP_PLANNING_CAP,
     STOP_TURN_FAILED,
@@ -49,7 +55,7 @@ from .limits import (
 from .stream import AssembledResponse, StreamEvent, ToolCall
 from .structured import (
     JSON_OBJECT,
-    REPAIR_PROMPT,
+    PlainRenderer,
     StreamRenderer,
     parse_structured,
     render_structured,
@@ -70,8 +76,16 @@ def _parse_args(raw: str | None) -> dict[str, Any]:
 
 
 def _describe(name: str, args: dict[str, Any]) -> str:
-    if name == "search_workspace":
+    if name in ("search_workspace", "search_knowledge"):
         return str(args.get("query") or "")
+    if name == "browse_knowledge":
+        return str(args.get("topic") or "")
+    if name == "read_knowledge":
+        return str(args.get("excerpt_id") or "")
+    if name == "create_ledger":
+        return f"{len(args.get('todos') or [])} todos"
+    if name == "capture_knowledge_page":
+        return f"{args.get('excerpt_id') or ''} page {args.get('page')}"
     if name == "list_sources":
         return "listing sources"
     if name == "describe_documents":
@@ -186,6 +200,36 @@ async def run_agent(
     checkpoint: dict[str, Any] | None = None,
     client: ClientDrop | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
+    """The turn, plus the one piece of it that outlives the turn.
+
+    However the loop ends — the answer, the stall guard, a failure, a lost
+    client — a curate turn's ledger changes go back to the conversation.
+    """
+    try:
+        async for event in _run_turn(
+            query=query,
+            ctx=ctx,
+            history=history,
+            model=model,
+            locale=locale,
+            checkpoint=checkpoint,
+            client=client,
+        ):
+            yield event
+    finally:
+        await tools.store_ledger(ctx)
+
+
+async def _run_turn(
+    *,
+    query: str,
+    ctx: ToolContext,
+    history: list[dict[str, Any]] | None,
+    model: models.ModelConfig,
+    locale: str | None = None,
+    checkpoint: dict[str, Any] | None = None,
+    client: ClientDrop | None = None,
+) -> AsyncIterator[dict[str, Any]]:
     budget = TurnBudget()
     ctx.budget = budget
     spec = models._as_spec(model)
@@ -194,6 +238,17 @@ async def run_agent(
     answer = ""
     cited_order: list[int] = []
     block_n = 0
+
+    if ctx.curate:
+        reason = await _curate_unavailable(ctx, spec)
+        if reason:
+            log.warning("curate turn refused: %s", reason)
+            yield _with_usage(
+                events.error(
+                    "Curate mode is unavailable for this chat.", "model_unavailable"
+                )
+            )
+            return
 
     if ctx.file_ids is not None:
         active_scope = await tools.resolve_current_scope(ctx)
@@ -204,7 +259,11 @@ async def run_agent(
     ctx.pending_sources = await pending.load(ctx.workspace_id, ctx.file_ids)
     prior = await evidence.history_turns(history, ctx)
     messages = chat_prompts.chat_messages(
-        locale=locale, checkpoint=checkpoint, history=prior, query=query
+        locale=locale,
+        checkpoint=checkpoint,
+        history=prior,
+        query=query,
+        curate=ctx.curate,
     )
     query_msg = messages[-1]
 
@@ -255,14 +314,30 @@ async def run_agent(
         state and state.credits_exhausted and state.terminal_call_allowed
     )
     step = 0
+    # Curate has no planning ceiling; the stall guard is what ends a turn whose
+    # responses stop changing the ledger, and it is its own stop reason.
+    stalled = 0
+    stall_stop = False
 
-    while step < planning_cap or terminal_pending:
+    while ctx.curate or step < planning_cap or terminal_pending:
         if _client_gone(client):
             budget.stop_reason = STOP_CLIENT_GONE
             return
         terminal_call = terminal_pending
         terminal_pending = False
-        tools_off = terminal_call or step == planning_cap - 1
+        if ctx.curate:
+            tools_off = terminal_call or stalled >= CURATE_STALL_RESPONSES
+            if tools_off and not terminal_call:
+                stall_stop = True
+                log.warning(
+                    "curate stall guard: %d responses completed no todo; "
+                    "%d of %d ledger todos done",
+                    stalled,
+                    sum(1 for todo in ctx.ledger.todos if todo.done),
+                    len(ctx.ledger.todos),
+                )
+        else:
+            tools_off = terminal_call or step == planning_cap - 1
         active_schemas = None if tools_off else schemas
 
         yield events.phase("planning")
@@ -278,8 +353,13 @@ async def run_agent(
             # exchange over-counts its captures once; recompute inside compaction
             # if a turn ever fails on that margin.
             image_tokens = capture.image_tokens(ctx.captures, messages)
+            ledger_message = _ledger_message(ctx, query, final=tools_off)
+            ledger_tokens = (
+                estimate_tokens(str(ledger_message["content"])) if ledger_message else 0
+            )
+            outside = image_tokens + ledger_tokens
             pending_message, pending_reserve, omitted = pending.reserve(
-                messages, ctx.pending_sources, spec, active_schemas, extra=image_tokens
+                messages, ctx.pending_sources, spec, active_schemas, extra=outside
             )
             if omitted != pending_omitted:
                 pending_omitted = omitted
@@ -291,7 +371,7 @@ async def run_agent(
                 schemas=active_schemas,
                 protect_live_chain=True,
                 on_compact=_count,
-                extra=pending_reserve + image_tokens,
+                extra=pending_reserve + outside,
                 allow_summary=not terminal_call,
             )
             state = accounting.current()
@@ -310,13 +390,15 @@ async def run_agent(
                     schemas=active_schemas,
                     protect_live_chain=True,
                     allow_summary=False,
-                    extra=pending_reserve + image_tokens,
+                    extra=pending_reserve + outside,
                 )
             if _client_gone(client):
                 budget.stop_reason = STOP_CLIENT_GONE
                 return
             request_messages = capture.inject_images(
-                pending.inject(messages, pending_message),
+                _inject_ledger(
+                    pending.inject(messages, pending_message), ledger_message
+                ),
                 ctx.pending_images,
                 spec.provider_slug,
             )
@@ -349,7 +431,10 @@ async def run_agent(
                     ),
                     # With tools offered, json_object made GLM skip the search
                     # and invent an answer; the prompt rule carries the format.
-                    response_format=JSON_OBJECT if tools_off else None,
+                    # A curate answer is plain prose, so it never asks for JSON.
+                    response_format=(
+                        None if ctx.curate or not tools_off else JSON_OBJECT
+                    ),
                 )
             )
 
@@ -363,7 +448,11 @@ async def run_agent(
                     q.put_nowait(None)
 
             finisher = asyncio.create_task(_finish())
-            renderer = StreamRenderer(lambda: len(ctx.citations))
+            renderer = (
+                PlainRenderer()
+                if ctx.curate
+                else StreamRenderer(lambda: len(ctx.citations))
+            )
             # Text is held back until its shape is known: a JSON answer streams
             # as rendered prose from its first brace; plain prose (narration, or
             # an answer that ignored the format) is emitted once the response
@@ -458,7 +547,9 @@ async def run_agent(
         text = assembled.text.strip()
         state = accounting.current()
         exhausted = bool(state and state.credits_exhausted)
-        if terminal_call:
+        # A tools-off call ends the turn: curate has no planning ceiling, so a
+        # call the model emits anyway must not start another round.
+        if terminal_call or tools_off:
             calls = []
         if calls:
             tail = renderer.finish()
@@ -511,6 +602,9 @@ async def run_agent(
             if assembled.output_items:
                 assistant["output_items"] = assembled.output_items
             messages.append(assistant)
+            # Progress is the ledger's first creation or a completed todo;
+            # nothing else in a response counts against the stall guard.
+            progress_before = ctx.ledger.progress
             try:
                 async for event in _run_tools(calls, ctx, budget, messages):
                     if event.get("type") == "_tool_message":
@@ -527,6 +621,7 @@ async def run_agent(
                 yield _client_error(exc)
                 budget.stop_reason = STOP_TURN_FAILED
                 return
+            stalled = 0 if ctx.ledger.progress > progress_before else stalled + 1
             if exhausted and state and state.terminal_call_allowed:
                 terminal_pending = True
             continue
@@ -566,6 +661,12 @@ async def run_agent(
                 started = True
                 yield events.block_delta(block_id, answer)
             yield events.block_end(block_id, "answer")
+            if ctx.curate:
+                # No citations in curate mode: the attribution the user sees is
+                # the provenance footer on each created material. An answer the
+                # stall guard forced still reports the guard.
+                budget.stop_reason = STOP_CURATE_STALL if stall_stop else STOP_ANSWER
+                break
             final_citations = await citation_regions.refine(
                 ctx.workspace_id,
                 [
@@ -581,10 +682,22 @@ async def run_agent(
                 yield events.citations(final_citations, citation_version, final=True)
             budget.stop_reason = STOP_ANSWER
             break
-        budget.stop_reason = budget.stop_reason or STOP_PLANNING_CAP
+        # No text and no tool calls. In curate that is one wasted response, not
+        # the end of the turn: it completes no todo, so it counts against the
+        # stall guard and the loop asks again. Once tools are already off there
+        # is nothing left to ask for. Only the stall guard reports itself: a
+        # silent terminal call is a billing cutoff, and it reports what the same
+        # call reports outside curate.
+        if ctx.curate and not tools_off:
+            stalled += 1
+            continue
+        budget.stop_reason = budget.stop_reason or (
+            STOP_CURATE_STALL if stall_stop else STOP_PLANNING_CAP
+        )
         break
 
     if not budget.stop_reason:
+        # Only a non-curate turn can leave the loop: curate has no ceiling.
         budget.stop_reason = STOP_PLANNING_CAP
 
     await _record_searches(ctx, cited_order)
@@ -601,6 +714,51 @@ async def run_agent(
         done["usage"] = usage.as_dict()
         done["tokenCount"] = usage.input_tokens + usage.output_tokens
     yield done
+
+
+async def _curate_unavailable(ctx: ToolContext, spec: models.ModelConfig) -> str:
+    """Why this turn cannot run in curate mode, or empty when it can.
+
+    The topic catalog read is the check: a library that is configured but down
+    has to become a typed ``model_unavailable`` here rather than a generic
+    ``agent_failed`` from the first tool call.
+    """
+    if not library.enabled():
+        return "the knowledge library is not configured"
+    window = registry.context_window(spec)
+    if window < CURATE_MIN_CONTEXT_WINDOW_TOKENS:
+        return (
+            f"{spec.provider_slug}/{spec.model_slug} has a {window}-token window, "
+            f"below the {CURATE_MIN_CONTEXT_WINDOW_TOKENS} curate mode needs"
+        )
+    try:
+        await tools.load_library_catalog(ctx)
+    except Exception as exc:  # noqa: BLE001 - any failure to reach the library
+        return f"the knowledge library did not answer: {exc}"
+    if not ctx.library_catalog:
+        # No topics means nothing is published: every knowledge call would be
+        # refused for an unknown topic, which is not a workload the turn should
+        # spend its stall budget discovering.
+        return "the knowledge library has no published topics"
+    return ""
+
+
+def _ledger_message(
+    ctx: ToolContext, query: str, *, final: bool = False
+) -> dict[str, Any] | None:
+    if not ctx.curate:
+        return None
+    return curate_prompts.ledger_message(query, ctx.ledger, final=final)
+
+
+def _inject_ledger(
+    messages: list[dict[str, Any]], message: dict[str, Any] | None
+) -> list[dict[str, Any]]:
+    """Place the ledger right after the query, outside the message list."""
+    if message is None:
+        return messages
+    index = compact._current_query_index(messages)
+    return [*messages[: index + 1], message, *messages[index + 1 :]]
 
 
 def _ordered_citations(ctx: ToolContext, order: list[int]) -> list[dict[str, Any]]:
@@ -628,7 +786,7 @@ async def _repair_answer(
     repair = [
         *request_messages,
         {"role": "assistant", "content": raw},
-        {"role": "user", "content": REPAIR_PROMPT},
+        {"role": "user", "content": chat_prompts.REPAIR_PROMPT},
     ]
     budget.completion_calls += 1
     try:
@@ -698,7 +856,7 @@ def _activity(
         block["error"] = error
     if result.effects:
         block["effects"] = list(result.effects)
-    if ctx is not None and name == "capture_page":
+    if ctx is not None and name in ("capture_page", "capture_knowledge_page"):
         # "Looked at page 4": the frontend row; the image itself is not kept.
         for record in ctx.captures:
             if record["callId"] == call.id:
@@ -732,6 +890,7 @@ async def _run_tools(
             budget,
             len(accepted),
             search_used=any(name == "search_workspace" for _, _, name in accepted),
+            curate=ctx.curate,
         )
         if limit_text:
             result = tools._refused(limit_text, code="limit_reached")
@@ -826,12 +985,21 @@ def _limit_for(
     accepted_here: int,
     *,
     search_used: bool = False,
+    curate: bool = False,
 ) -> str | None:
     if call.name == "search_workspace" and search_used:
         return (
             "This response already used search_workspace. Use those passages, "
             "or search again in the next step."
         )
+    if curate:
+        # No per-turn count in curate mode: a whole set of materials is one turn.
+        if accepted_here >= KNOWLEDGE_TOOLS_PER_RESPONSE:
+            return (
+                f"This response already used its {KNOWLEDGE_TOOLS_PER_RESPONSE} "
+                "tool-call limit. Continue in the next step."
+            )
+        return None
     if accepted_here >= TOOLS_PER_RESPONSE:
         return (
             f"This response already used its {TOOLS_PER_RESPONSE} tool-call limit. "

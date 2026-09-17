@@ -32,6 +32,11 @@ data['calls'].append(args);save()
 if args[0]=='ps':
  if data.get('local_running'):print('local-container')
  sys.exit(0)
+if args[0]=='images':
+ for tag in data.get('images',{}).get(args[1],[]):print(tag)
+ sys.exit(0)
+if args[0]=='rmi':
+ image,tag=args[1].rsplit(':',1);data['images'][image].remove(tag);save();sys.exit(0)
 if args[0]=='inspect':
  service=args[-1];fmt=args[2]
  if 'Labels' in fmt:print(data['running'][service])
@@ -175,6 +180,25 @@ class ReleaseTest(unittest.TestCase):
         self.assertEqual(
             (self.state / "previous-config/uat.queue.env").read_text(),
             "DATABASE_URL=previous\n",
+        )
+
+    def test_activation_keeps_only_active_and_previous_images(self):
+        stale = "c" * 40
+        data = self.state_data()
+        data["images"] = {
+            "capy-ingest-nonprod-parser": [stale, PREVIOUS, CANDIDATE],
+            "capy-ingest-nonprod-pipeline": [stale, PREVIOUS, CANDIDATE],
+        }
+        (self.root / "mock.json").write_text(json.dumps(data))
+        self.run_phase("prepare")
+        self.assertIn(stale, self.state_data()["images"]["capy-ingest-nonprod-parser"])
+        self.run_phase("activate")
+        self.assertEqual(
+            self.state_data()["images"],
+            {
+                "capy-ingest-nonprod-parser": [PREVIOUS, CANDIDATE],
+                "capy-ingest-nonprod-pipeline": [PREVIOUS, CANDIDATE],
+            },
         )
 
     def test_rollback_restores_revision_and_configuration(self):

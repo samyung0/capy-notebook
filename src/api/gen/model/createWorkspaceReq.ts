@@ -10,6 +10,16 @@ export interface CreateWorkspaceReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   /**
+     * Optional workspace description
+     * @maxLength 500
+     */
+  description?: string;
+  /**
+     * @minLength 1
+     * @pattern ^$|^((sprouts|notionists)-(0[1-9]|1[0-2])|critters-(0[1-9]|1[0-6])|avataaars-(0[1-9]|1[0-9]|2[0-4])|waves-(0[1-9]|1[01]))$
+     */
+  iconId?: string;
+  /**
      * Workspace name
      * @minLength 1
      * @maxLength 80

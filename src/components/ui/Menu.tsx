@@ -12,7 +12,7 @@ import {
 import { Icon, type IconName } from './Icon';
 import { IconButton } from './IconButton';
 
-const menuVariants = cva('w-auto min-w-36 p-0', {
+const menuVariants = cva('w-auto min-w-40 p-0', {
   defaultVariants: {
     variant: 'default',
   },

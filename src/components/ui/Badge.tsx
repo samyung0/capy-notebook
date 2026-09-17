@@ -9,7 +9,7 @@ const badgeVariants = cva(
       size: {
         lg: 'px-3 py-2 text-sm',
         md: 'px-2.5 py-1.5 text-xs',
-        sm: 'px-2 py-0.5 text-xs',
+        sm: 'px-2.25 py-0.75 text-xs',
       },
       tone: {
         'accent-1': 'bg-tint-accent-1 text-tint-accent-1-fg',

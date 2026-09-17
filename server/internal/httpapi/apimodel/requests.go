@@ -20,8 +20,10 @@ type UpdateMeReq struct {
 // CreateWorkspaceReq is the body for POST /api/workspaces. New workspaces are
 // always private; visibility is configured later through the sharing endpoint.
 type CreateWorkspaceReq struct {
-	Name WorkspaceName `json:"name" minLength:"1" doc:"Workspace name"`
-	Tags []TagInput    `json:"tags,omitempty" maxItems:"5" doc:"Tags; at most 5; reuse existing by id or create new by value"`
+	Description *WorkspaceDescription `json:"description,omitempty" doc:"Optional workspace description"`
+	IconID      *IconID               `json:"iconId,omitempty" minLength:"1"`
+	Name        WorkspaceName         `json:"name" minLength:"1" doc:"Workspace name"`
+	Tags        []TagInput            `json:"tags,omitempty" maxItems:"5" doc:"Tags; at most 5; reuse existing by id or create new by value"`
 }
 
 // UpdateWorkspaceReq updates general workspace settings only.
@@ -312,6 +314,8 @@ type UpdateTaskReq struct {
 
 type CreateConversationReq struct {
 	Title ConversationTitle `json:"title,omitempty" doc:"Optional thread title"`
+	// Fixed for the thread's life; the chat stream rejects a disagreeing flag.
+	Curate bool `json:"curate,omitempty" doc:"Open the thread in curate mode (knowledge library)"`
 }
 
 type CreateCanvasReq struct {

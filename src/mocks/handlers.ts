@@ -708,6 +708,7 @@ export const handlers = [
       )
         results.push({
           href: `/workspaces/${w.id}`,
+          iconId: w.iconId,
           id: w.id,
           kind: 'workspace',
           subtitle: w.tags.map((t) => t.value).join(' · '),
@@ -717,7 +718,7 @@ export const handlers = [
       if (f.name.toLowerCase().includes(q)) {
         const ws = db.workspaces.find((w) => w.id === f.workspaceId);
         results.push({
-          color: 'purple',
+          fileKind: f.kind,
           href: `/workspaces/${f.workspaceId}?file=${f.id}`,
           id: f.id,
           kind: 'file',
@@ -892,10 +893,12 @@ export const handlers = [
       },
       chapterCount: 0,
       createdAt: new Date().toISOString(),
-      description: '',
+      description: body.description ?? '',
       fileCount: 0,
       filesLimit: PLAN_LIMITS.pro.filesPerWorkspace,
-      iconId: `waves-${String(Math.floor(Math.random() * 11) + 1).padStart(2, '0')}`,
+      iconId:
+        body.iconId ??
+        `waves-${String(Math.floor(Math.random() * 11) + 1).padStart(2, '0')}`,
       id: uid('ws'),
       isOwner: true,
       lastAccessedAt: new Date().toISOString(),
@@ -1798,11 +1801,13 @@ export const handlers = [
     '/api/workspaces/:id/conversations',
     async ({ params, request }) => {
       const body = (await request.json().catch(() => ({}))) as {
+        curate?: boolean;
         title?: string;
       };
       const now = new Date().toISOString();
       const conv = {
         createdAt: now,
+        curate: body.curate ?? false,
         id: uid('conv'),
         title: body.title ?? '',
         updatedAt: now,
@@ -1834,6 +1839,7 @@ export const handlers = [
   http.post('/api/workspaces/:id/chat/stream', async ({ params, request }) => {
     const body = (await request.json()) as {
       conversationId?: string;
+      curate?: boolean;
       text: string;
     };
     const now = new Date().toISOString();
@@ -1844,6 +1850,7 @@ export const handlers = [
     if (!conv) {
       conv = {
         createdAt: now,
+        curate: body.curate ?? false,
         id: uid('conv'),
         title: '',
         updatedAt: now,

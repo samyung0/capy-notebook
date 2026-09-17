@@ -6,6 +6,7 @@ import asyncio
 import io
 import json
 import re
+from dataclasses import replace
 
 import pytest
 from PIL import Image
@@ -75,10 +76,12 @@ def _call(name: str, arguments: str = "{}", call_id: str = "call_1") -> ToolCall
     return ToolCall(id=call_id, name=name, arguments=arguments)
 
 
-async def _collect(query: str, ctx: ToolContext, **kwargs) -> list[dict]:
+async def _collect(
+    query: str, ctx: ToolContext, *, model: ModelConfig | None = None, **kwargs
+) -> list[dict]:
     events = []
     async for event in agent.run_agent(
-        query=query, ctx=ctx, history=None, model=_model(), **kwargs
+        query=query, ctx=ctx, history=None, model=model or _model(), **kwargs
     ):
         events.append(event)
     return events
@@ -511,6 +514,241 @@ async def test_create_material_rejects_scope_without_indexed_content(monkeypatch
 
     assert result.refused
     assert "no indexed content" in result.text()
+
+
+def _library_ctx(monkeypatch) -> ToolContext:
+    """A curate context whose gateway is stubbed, with an empty workspace index."""
+    ctx = ToolContext(
+        workspace_id="ws_1",
+        user_id="u1",
+        operations=frozenset(contract.OPERATIONS),
+        assistant_message_id="m_1",
+        curate=True,
+    )
+    ctx._scope_outline = {
+        "chapters": [],
+        "files": [{"id": "f_1", "name": "one.pdf", "chapter_id": None, "chunks": 0}],
+    }
+    monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
+    monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
+    return ctx
+
+
+def _book(*excerpt_ids: str) -> dict:
+    return {
+        "id": "ahss",
+        "title": "Advanced High School Statistics",
+        "authors": ["Diez"],
+        "edition": "4e",
+        "license": "CC BY-SA 4.0",
+        "licenseUrl": "https://x",
+        "sourceUrl": "https://y",
+        "version": 2,
+        "excerptIds": list(excerpt_ids),
+    }
+
+
+def _gateway_receipt(monkeypatch, effect: dict) -> list[dict]:
+    """Record every gateway POST body and answer with one succeeded receipt."""
+    sent: list[dict] = []
+
+    class _Resp:
+        status_code = 200
+
+        def json(self):
+            return {"operationId": "op_x", "outcome": "succeeded", "effect": effect}
+
+    def _post(*_args, **kwargs):
+        sent.append(json.loads(kwargs["data"]))
+        return _Resp()
+
+    monkeypatch.setattr(tools.requests, "post", _post)
+    return sent
+
+
+def _created(rid: str, title: str, kind: str = "note") -> dict:
+    return {
+        "operation": "created",
+        "operationId": "op_x",
+        "resource": {
+            "kind": "material",
+            "id": rid,
+            "title": title,
+            "materialKind": kind,
+        },
+    }
+
+
+async def test_curated_material_sends_provenance_and_needs_no_indexed_scope(
+    monkeypatch,
+):
+    """A material written from the library is grounded in the library: the
+    workspace may hold nothing indexed, and the excerpt ids become its
+    attribution record."""
+    ctx = _library_ctx(monkeypatch)
+    books = [_book("e_1")]
+
+    async def _provenance(excerpt_ids):
+        assert excerpt_ids == ["e_1"]
+        return books
+
+    monkeypatch.setattr(tools.library, "provenance", _provenance)
+    sent = _gateway_receipt(monkeypatch, _created("mat_abc", "Regression"))
+    ctx.ledger.add("Teach regression", ["a note on line fitting"])
+    ctx.ledger.note_read("e_1", 0, "8.1")
+
+    result = await tools._create_material(
+        {
+            "kind": "note",
+            "title": "Regression",
+            "content": "body",
+            "excerpt_ids": ["e_1"],
+            "todo": 0,
+            "_tool_call_id": "call_1",
+        },
+        ctx,
+    )
+
+    assert not result.refused
+    assert sent[0]["provenance"] == {"books": books}
+    todo = ctx.ledger.todos[0]
+    assert (todo.done, todo.material_id) == (True, "mat_abc")
+    assert ctx.ledger.progress == 2, "creation of the ledger, then one todo"
+    material = ctx.ledger.materials[0]
+    assert (material.id, material.kind, material.todo) == ("mat_abc", "note", 0)
+
+
+async def test_two_materials_may_share_the_same_excerpts(monkeypatch):
+    """A note and the quiz drilling it are written from the same reads; the
+    second write is neither refused nor stripped of its attribution."""
+    ctx = _library_ctx(monkeypatch)
+    asked: list[list[str]] = []
+
+    async def _provenance(excerpt_ids):
+        asked.append(list(excerpt_ids))
+        return [_book(*excerpt_ids)]
+
+    monkeypatch.setattr(tools.library, "provenance", _provenance)
+    sent = _gateway_receipt(monkeypatch, _created("mat_note", "Regression"))
+    ctx.ledger.add("Teach regression", ["note", "quiz"])
+    ctx.ledger.note_read("e_1", 0, "8.1")
+    ctx.ledger.note_read("e_2", 0, "8.2")
+
+    note = await tools._create_material(
+        {
+            "kind": "note",
+            "title": "Regression",
+            "content": "body",
+            "excerpt_ids": ["e_1", "e_2"],
+            "todo": 0,
+            "_tool_call_id": "call_1",
+        },
+        ctx,
+    )
+    _gateway_receipt(monkeypatch, _created("mat_quiz", "Practice", "quiz"))
+    quiz = await tools._create_material(
+        {
+            "kind": "quiz",
+            "title": "Practice",
+            "questions": [{"prompt": "?"}],
+            "excerpt_ids": ["e_1", "e_2"],
+            "todo": 1,
+            "_tool_call_id": "call_2",
+        },
+        ctx,
+    )
+
+    assert not note.refused and not quiz.refused
+    assert asked == [["e_1", "e_2"], ["e_1", "e_2"]]
+    assert sent[0]["provenance"]["books"][0]["excerptIds"] == ["e_1", "e_2"]
+    assert [t.material_id for t in ctx.ledger.todos] == ["mat_note", "mat_quiz"]
+    assert [m.size for m in ctx.ledger.materials] == ["1 tokens", "1 questions"]
+
+
+async def test_curate_edit_sends_provenance_and_marks_its_todo(monkeypatch):
+    """Growing a note section by section: the appended section's excerpts join
+    the material's attribution, and Go merges them by book id."""
+    ctx = _library_ctx(monkeypatch)
+
+    async def _provenance(excerpt_ids):
+        return [_book(*excerpt_ids)]
+
+    monkeypatch.setattr(tools.library, "provenance", _provenance)
+    sent = _gateway_receipt(
+        monkeypatch,
+        {
+            "operation": "edited",
+            "operationId": "op_x",
+            "resource": {"kind": "material", "id": "mat_note", "title": "Regression"},
+        },
+    )
+    ctx.ledger.add("Teach regression", ["intro section", "residuals section"])
+    ctx.ledger.note_read("e_2", 0, "8.2")
+
+    result = await tools._edit_document(
+        {
+            "target": {"kind": "material", "id": "mat_note"},
+            "commands": [
+                {"type": "insert_block", "after_block_id": None, "text": "Residuals"}
+            ],
+            "excerpt_ids": ["e_2"],
+            "todo": 1,
+            "_tool_call_id": "call_9",
+        },
+        ctx,
+    )
+
+    assert not result.refused
+    assert sent[0]["provenance"]["books"][0]["excerptIds"] == ["e_2"]
+    assert ctx.ledger.todos[1].done and ctx.ledger.todos[1].material_id == "mat_note"
+    assert ctx.ledger.materials[0].kind == "edit"
+    assert ctx.ledger.materials[0].size == "1 edits"
+
+
+async def test_a_curate_write_before_the_ledger_is_refused(monkeypatch):
+    ctx = _library_ctx(monkeypatch)
+    _gateway_receipt(monkeypatch, _created("mat_abc", "Regression"))
+
+    result = await tools._create_material(
+        {"kind": "note", "content": "body", "_tool_call_id": "call_1"}, ctx
+    )
+
+    assert result.refused and "create_ledger" in result.text()
+
+
+async def test_a_curate_edit_of_a_source_file_carries_no_ledger_rules(monkeypatch):
+    """The learner's own file is not written from the library: the edit needs
+    no todo and no excerpt ids, and Go is sent no provenance for it."""
+    ctx = _library_ctx(monkeypatch)
+    sent = _gateway_receipt(
+        monkeypatch,
+        {
+            "operation": "edited",
+            "operationId": "op_x",
+            "resource": {"kind": "source_file", "id": "f_1", "title": "one.pdf"},
+        },
+    )
+
+    async def _load(_workspace_id, _file_ids):
+        return tools.pending.PendingSources()
+
+    monkeypatch.setattr(tools.pending, "load", _load)
+    ctx.ledger.add("Fix my notes and teach me regression", ["a note on regression"])
+    ctx.ledger.note_read("e_1", 0, "8.1")
+
+    result = await tools._edit_document(
+        {
+            "target": {"kind": "source_file", "id": "f_1"},
+            "commands": [{"type": "replace_text", "expected": "teh", "text": "the"}],
+            "_tool_call_id": "call_9",
+        },
+        ctx,
+    )
+
+    assert not result.refused, result.text()
+    assert "provenance" not in sent[0]
+    assert not ctx.ledger.materials, "a source edit is not a ledger material"
+    assert not ctx.ledger.todos[0].done
 
 
 async def test_block_deltas_emit_while_provider_stream_is_open(monkeypatch):
@@ -1959,7 +2197,7 @@ async def test_plain_prose_answer_is_repaired_once_in_json_mode(monkeypatch):
     assert repair_call["response_format"] == agent.JSON_OBJECT
     assert repair_call["messages"][-2:] == [
         {"role": "assistant", "content": prose},
-        {"role": "user", "content": agent.REPAIR_PROMPT},
+        {"role": "user", "content": agent.chat_prompts.REPAIR_PROMPT},
     ]
     final = [e for e in events if e["type"] == "citations"][-1]
     assert [c["chunkId"] for c in final["citations"]] == ["c2", "c1"]
@@ -2127,3 +2365,526 @@ async def test_quoted_passage_numbers_stream_like_integers(monkeypatch):
     assert events[-1]["answer"] == "Carbon is fixed. [1]"
     final = [e for e in events if e["type"] == "citations"][-1]
     assert [c["chunkId"] for c in final["citations"]] == ["c2"]
+
+
+# --------------------------------------------------------------- curate mode
+
+
+def _curate_model() -> ModelConfig:
+    model = _model()
+    return replace(model, context_window_tokens=250_000)
+
+
+def _curate_ctx(**kwargs) -> ToolContext:
+    # The catalog is set, so the turn does not open a library connection to read it.
+    kwargs.setdefault(
+        "library_catalog", [{"id": "regression", "label": "Regression", "scope": ""}]
+    )
+    return ToolContext(
+        workspace_id="ws_1",
+        user_id="u1",
+        operations=frozenset(contract.OPERATIONS),
+        assistant_message_id="m_1",
+        curate=True,
+        **kwargs,
+    )
+
+
+@pytest.fixture
+def library_on(monkeypatch):
+    monkeypatch.setattr(agent.library, "enabled", lambda: True)
+
+
+async def test_curate_needs_a_library_and_a_200k_window(monkeypatch, library_on):
+    monkeypatch.setattr(agent.library, "enabled", lambda: False)
+    events = await _collect("teach me regression", _curate_ctx(), model=_curate_model())
+    assert events[-1]["code"] == "model_unavailable"
+
+    monkeypatch.setattr(agent.library, "enabled", lambda: True)
+    # _model()'s window is 100k, below what a curate turn needs.
+    events = await _collect("teach me regression", _curate_ctx())
+    assert events[-1]["code"] == "model_unavailable"
+
+
+async def test_a_library_with_no_published_topics_is_model_unavailable(
+    monkeypatch, library_on, caplog
+):
+    """An empty topic catalog would refuse every knowledge call one by one; the
+    admission check treats it as a library that is not published."""
+    events = await _collect(
+        "teach me regression",
+        _curate_ctx(library_catalog=[]),
+        model=_curate_model(),
+    )
+
+    assert events[-1]["code"] == "model_unavailable"
+    assert "no published topics" in caplog.text
+
+
+async def test_a_library_that_does_not_answer_is_model_unavailable(
+    monkeypatch, library_on, caplog
+):
+    """The catalog read is the admission check, so a down library is typed
+    here instead of surfacing as a generic failure on the first tool call."""
+
+    async def _catalog(_ctx):
+        raise TimeoutError("pool timeout")
+
+    monkeypatch.setattr(agent.tools, "load_library_catalog", _catalog)
+    events = await _collect("teach me regression", _curate_ctx(), model=_curate_model())
+
+    assert events[-1]["code"] == "model_unavailable"
+    assert "pool timeout" in caplog.text, "the reason is logged, not shown"
+
+
+async def test_curate_ledger_follows_the_query_and_tracks_the_todos(
+    monkeypatch, library_on
+):
+    stream, seen = _script_stream(
+        [
+            _assembled(
+                "",
+                [
+                    _call(
+                        "create_ledger",
+                        '{"body":"Teach regression","todos":["a note","a quiz"]}',
+                        "k0",
+                    )
+                ],
+            ),
+            _assembled("", [_call("read_knowledge", '{"excerpt_id":"e_1"}', "k1")]),
+            _assembled(
+                "",
+                [
+                    _call(
+                        "create_material",
+                        '{"kind":"note","title":"Regression","excerpt_ids":["e_1"],"todo":0}',
+                        "k2",
+                    )
+                ],
+            ),
+            _assembled("I built one note from Advanced High School Statistics."),
+        ]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+
+    async def _run(name, args, ctx):
+        if name == "create_ledger":
+            ctx.ledger.add(args["body"], list(args["todos"]))
+            return ToolResult(text_parts=["Ledger created."])
+        if name == "read_knowledge":
+            ctx.ledger.note_read("e_1", 0, "8.1 Line fitting")
+            return ToolResult(text_parts=["excerpt text"])
+        ctx.ledger.note_material(
+            agent.tools.LedgerMaterial(
+                id="mat_1", kind="note", title="Regression", size="90 tokens", todo=0
+            )
+        )
+        return ToolResult(text_parts=["Created note."])
+
+    monkeypatch.setattr(agent.tools, "run", _run)
+    ctx = _curate_ctx()
+    events = await _collect("teach me regression", ctx, model=_curate_model())
+
+    def _ledger(messages):
+        return next(m for m in messages if m.get("_kind") == "ledger")
+
+    first = _script_messages(seen, 0)
+    assert agent.curate_prompts.NO_LEDGER in _ledger(first)["content"]
+    assert first.index(_ledger(first)) == first.index(_query(first)) + 1
+
+    second = _ledger(_script_messages(seen, 1))["content"]
+    assert "[ ] 0. a note" in second and "[ ] 1. a quiz" in second
+
+    third = _ledger(_script_messages(seen, 2))["content"]
+    assert "- e_1 8.1 Line fitting" in third
+
+    fourth = _ledger(_script_messages(seen, 3))["content"]
+    assert "[x] 0. a note → mat_1" in fourth
+    assert "created note 'Regression' (id mat_1, 90 tokens) (todo 0)" in fourth
+    # The ledger never becomes conversation history.
+    assert events[-1]["answer"].startswith("I built one note")
+
+
+def _script_messages(seen: list[dict], index: int) -> list[dict]:
+    return seen[index]["messages"]
+
+
+def _query(messages: list[dict]) -> dict:
+    return next(m for m in messages if m.get("_kind") == "query")
+
+
+async def test_curate_has_no_response_ceiling_while_todos_complete(
+    monkeypatch, library_on
+):
+    """Twenty responses, a todo finished every third one: nothing stops it.
+
+    The old ceiling was 8 planning responses; a set of materials needs more.
+    """
+    reading = _assembled("", [_call("read_knowledge", '{"excerpt_id":"e"}', "k")])
+    writing = _assembled(
+        "", [_call("create_material", '{"kind":"note","todo":0}', "w")]
+    )
+    script = [reading, reading, writing] * 6 + [reading, _assembled("Done.")]
+    total = len(script)
+    stream, seen = _script_stream(script)
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    written = 0
+
+    async def _run(name, _args, ctx):
+        nonlocal written
+        if name == "read_knowledge":
+            ctx.ledger.note_read(f"e_{len(ctx.ledger.reads)}", 0, "8.1")
+            return ToolResult(text_parts=["excerpt"])
+        ctx.ledger.note_material(
+            agent.tools.LedgerMaterial(
+                id=f"mat_{written}",
+                kind="note",
+                title="T",
+                size="9 tokens",
+                todo=written,
+            )
+        )
+        written += 1
+        return ToolResult(text_parts=["Created note."])
+
+    ctx = _curate_ctx()
+    ctx.ledger.add("Teach regression", [f"section {i}" for i in range(6)])
+    monkeypatch.setattr(agent.tools, "run", _run)
+    events = await _collect("teach me regression", ctx, model=_curate_model())
+
+    assert (len(seen), total) == (20, 20), "no planning ceiling in curate mode"
+    assert not any(call["tools"] is None for call in seen), "the guard never fired"
+    assert events[-1]["answer"] == "Done."
+
+
+async def test_curate_stall_guard_turns_tools_off_after_four_barren_responses(
+    monkeypatch, library_on, caplog
+):
+    reading = _assembled("", [_call("read_knowledge", '{"excerpt_id":"e_1"}', "k")])
+    stream, seen = _script_stream(
+        [reading] * 4 + [_assembled("The library has nothing usable.")]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+
+    async def _run(_name, _args, ctx):
+        # The same excerpt at the same position: a read the ledger already has.
+        ctx.ledger.note_read("e_1", 0, "8.1")
+        return ToolResult(text_parts=["excerpt"])
+
+    monkeypatch.setattr(agent.tools, "run", _run)
+    ctx = _curate_ctx()
+    ctx.ledger.add("Teach regression", ["one"])
+    events = await _collect("teach me regression", ctx, model=_curate_model())
+
+    assert [call["tools"] is None for call in seen] == [False] * 4 + [True]
+    assert events[-1]["answer"] == "The library has nothing usable."
+    # The guard, not a planning ceiling, is what ended this turn.
+    assert events[-1]["telemetry"]["stopReason"] == "curate_stall"
+    assert "0 of 1 ledger todos done" in caplog.text
+
+
+async def test_an_empty_curate_response_stalls_but_does_not_end_the_turn(
+    monkeypatch, library_on
+):
+    """No text and no tool calls is one wasted response, not the end of the
+    turn: curate has no planning ceiling for it to run into."""
+    stream, seen = _script_stream([_assembled(""), _assembled("I built one note.")])
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    ctx = _curate_ctx()
+    ctx.ledger.add("Teach regression", ["one"])
+
+    events = await _collect("teach me regression", ctx, model=_curate_model())
+
+    assert len(seen) == 2, "the empty response did not end the turn"
+    assert [call["tools"] is None for call in seen] == [False, False]
+    assert events[-1]["answer"] == "I built one note."
+    assert events[-1]["telemetry"]["stopReason"] == "answer"
+
+
+async def test_five_empty_curate_responses_end_the_turn_on_the_stall_guard(
+    monkeypatch, library_on
+):
+    """Counting them is the whole bound on a turn whose payer has no credit
+    cutoff: four empties turn the tools off, the fifth ends the turn."""
+    stream, seen = _script_stream([_assembled("")] * 5)
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    ctx = _curate_ctx()
+    ctx.ledger.add("Teach regression", ["one"])
+
+    events = await _collect("teach me regression", ctx, model=_curate_model())
+
+    assert [call["tools"] is None for call in seen] == [False] * 4 + [True]
+    assert not events[-1]["answer"]
+    assert events[-1]["telemetry"]["stopReason"] == "curate_stall"
+
+
+async def test_a_silent_terminal_call_in_curate_reports_the_credit_cutoff(
+    monkeypatch, library_on, caplog
+):
+    """Credits run out mid-turn, so the terminal call runs with tools off and
+    returns nothing. That is the billing cutoff, not the stall guard: it reports
+    what the same call reports outside curate, so counting curate_stall sizes
+    CURATE_STALL_RESPONSES rather than the credit guard."""
+    state = accounting.RequestAccounting(session_id="cr_1")
+    token = accounting._accounting.set(state)
+    stream, seen = _script_stream(
+        [
+            _assembled("", [_call("read_knowledge", '{"excerpt_id":"e_1"}', "k")]),
+            _assembled(""),
+        ]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+
+    async def _run(_name, _args, ctx):
+        state.credits_exhausted = True
+        state.terminal_call_allowed = True
+        ctx.ledger.note_read("e_1", 0, "8.1")
+        return ToolResult(text_parts=["excerpt"])
+
+    monkeypatch.setattr(agent.tools, "run", _run)
+    ctx = _curate_ctx()
+    ctx.ledger.add("Teach regression", ["one"])
+    try:
+        events = await _collect("teach me regression", ctx, model=_curate_model())
+    finally:
+        accounting._accounting.reset(token)
+
+    assert [call["tools"] is None for call in seen] == [False, True]
+    assert "curate stall guard" not in caplog.text, "the guard never fired"
+    assert events[-1]["telemetry"]["stopReason"] == "planning_cap"
+
+
+async def test_a_second_create_ledger_in_the_same_turn_is_refused(
+    monkeypatch, library_on
+):
+    planning = _assembled(
+        "", [_call("create_ledger", '{"body":"b","todos":["one"]}', "k")]
+    )
+    stream, seen = _script_stream([planning] * 5 + [_assembled("Nothing written.")])
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    outcomes: list[str] = []
+
+    async def _run(_name, args, ctx):
+        result = await agent.tools._create_ledger(args, ctx)
+        outcomes.append(result.outcome)
+        return result
+
+    monkeypatch.setattr(agent.tools, "run", _run)
+    ctx = _curate_ctx()
+    events = await _collect("teach me regression", ctx, model=_curate_model())
+
+    # The first call is the ledger's, so only the four refused ones stall.
+    assert outcomes == ["succeeded"] + ["refused"] * 4
+    assert len(ctx.ledger.todos) == 1, "a refused call adds nothing"
+    assert [call["tools"] is None for call in seen] == [False] * 5 + [True]
+    assert events[-1]["answer"] == "Nothing written."
+    assert events[-1]["telemetry"]["stopReason"] == "curate_stall"
+
+
+async def test_a_turn_starting_from_the_stored_ledger_completes_an_open_todo(
+    monkeypatch, library_on
+):
+    """The ledger belongs to the conversation: a later turn sees what is still
+    open and writes against it without planning again."""
+    stream, seen = _script_stream(
+        [
+            _assembled(
+                "",
+                [
+                    _call(
+                        "create_material",
+                        '{"kind":"quiz","title":"Practice","todo":1}',
+                        "k1",
+                    )
+                ],
+            ),
+            _assembled("I added the quiz."),
+        ]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+
+    async def _run(_name, args, ctx):
+        prepared = await agent.tools.curate_write(ctx, "create_material", args)
+        if isinstance(prepared, ToolResult):
+            return prepared
+        _books, todo = prepared
+        ctx.ledger.note_material(
+            agent.tools.LedgerMaterial(
+                id="mat_2", kind="quiz", title="Practice", size="9 questions", todo=todo
+            )
+        )
+        return ToolResult(text_parts=["Created quiz."])
+
+    monkeypatch.setattr(agent.tools, "run", _run)
+    stored = {
+        "requests": ["Teach me regression"],
+        "next_todo_id": 2,
+        # The note's todo was done when the last turn stored the ledger, so it
+        # is gone; the quiz keeps the id it was given then.
+        "todos": [{"id": 1, "text": "a quiz"}],
+        "materials": [
+            {
+                "id": "mat_1",
+                "kind": "note",
+                "title": "Regression",
+                "size": "900 tokens",
+                "todo": 0,
+            }
+        ],
+    }
+    ctx = _curate_ctx(ledger=agent.tools.Ledger.from_stored(stored))
+    events = await _collect("now the quiz please", ctx, model=_curate_model())
+
+    first = next(m for m in seen[0]["messages"] if m.get("_kind") == "ledger")
+    assert "[ ] 1. a quiz" in first["content"]
+    assert (
+        "created note 'Regression' (id mat_1, 900 tokens) (todo 0)"
+        in (first["content"])
+    )
+    assert ctx.ledger.todos[0].done and ctx.ledger.todos[0].material_id == "mat_2"
+    assert ctx.ledger.requests == ["Teach me regression"], "no new plan was needed"
+    assert events[-1]["answer"] == "I added the quiz."
+
+
+def _recorded_posts(monkeypatch) -> list[tuple[str, dict]]:
+    posted: list[tuple[str, dict]] = []
+
+    class _Resp:
+        status_code = 204
+
+        def json(self):
+            return {}
+
+    def _post(url, **kwargs):
+        posted.append((url, json.loads(kwargs["data"])))
+        return _Resp()
+
+    monkeypatch.setattr(tools.requests, "post", _post)
+    return posted
+
+
+async def test_a_curate_turn_stores_its_ledger_at_turn_end(monkeypatch, library_on):
+    """What the turn changed goes back to the conversation through the gateway."""
+    stream, _seen = _script_stream(
+        [
+            _assembled(
+                "",
+                [
+                    _call(
+                        "create_ledger",
+                        '{"body":"Teach regression","todos":["a note"]}',
+                        "k0",
+                    )
+                ],
+            ),
+            _assembled("I built one note."),
+        ]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+
+    async def _run(_name, args, ctx):
+        result = await agent.tools._create_ledger(args, ctx)
+        ctx.ledger.note_material(
+            agent.tools.LedgerMaterial(
+                id="mat_1", kind="note", title="Regression", size="90 tokens", todo=0
+            )
+        )
+        return result
+
+    monkeypatch.setattr(agent.tools, "run", _run)
+    monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
+    monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
+    posted = _recorded_posts(monkeypatch)
+
+    await _collect("teach me regression", _curate_ctx(), model=_curate_model())
+
+    assert [url for url, _ in posted] == ["http://gw/api/internal/conversations/ledger"]
+    assert posted[0][1] == {
+        "workspaceId": "ws_1",
+        "userId": "u1",
+        "assistantMessageId": "m_1",
+        "ledger": {
+            "requests": ["Teach regression"],
+            # The one todo is done, so it drops: the material entry is what the
+            # next turn needs, and it keeps the id of the todo it closed. The
+            # counter goes with it, so that id is never handed out again.
+            "next_todo_id": 1,
+            "todos": [],
+            "materials": [
+                {
+                    "id": "mat_1",
+                    "kind": "note",
+                    "title": "Regression",
+                    "size": "90 tokens",
+                    "todo": 0,
+                }
+            ],
+        },
+    }
+
+
+async def test_a_failed_ledger_write_does_not_fail_the_turn(
+    monkeypatch, library_on, caplog
+):
+    stream, _seen = _script_stream(
+        [
+            _assembled(
+                "", [_call("create_ledger", '{"body":"b","todos":["one"]}', "k0")]
+            ),
+            _assembled("I built one note."),
+        ]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+
+    async def _run(_name, args, ctx):
+        return await agent.tools._create_ledger(args, ctx)
+
+    monkeypatch.setattr(agent.tools, "run", _run)
+    monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
+    monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
+
+    def _post(*_args, **_kwargs):
+        raise tools.requests.ConnectionError("gateway is down")
+
+    monkeypatch.setattr(tools.requests, "post", _post)
+    events = await _collect("teach me regression", _curate_ctx(), model=_curate_model())
+
+    assert events[-1]["answer"] == "I built one note."
+    assert "curate ledger write failed" in caplog.text
+
+
+async def test_curate_answer_is_plain_prose_with_no_citations(monkeypatch, library_on):
+    stream, seen = _script_stream([_assembled("I created a note and a quiz.")])
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+
+    events = await _collect("teach me regression", _curate_ctx(), model=_curate_model())
+
+    system = seen[0]["messages"][0]["content"]
+    assert "builds learning materials" in system, "the curate prompt was not selected"
+    assert "JSON object" not in system, "no structured-answer rule in curate mode"
+    assert seen[0]["response_format"] is None, "curate never asks for the claims JSON"
+    assert not [e for e in events if e["type"] == "citations"]
+    assert events[-1]["answer"] == "I created a note and a quiz."
+    deltas = "".join(e["text"] for e in events if e["type"] == "block_delta")
+    assert deltas == "I created a note and a quiz."
+
+
+async def test_curate_allows_four_tool_calls_in_one_response(monkeypatch, library_on):
+    calls = [
+        _call("read_knowledge", f'{{"excerpt_id":"e_{n}"}}', f"k{n}") for n in range(5)
+    ]
+    stream, _seen = _script_stream(
+        [_assembled("", calls), _assembled("Read what the library holds.")]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+
+    async def _run(_name, args, ctx):
+        ctx.ledger.note_read(str(args["excerpt_id"]), 0, "8.1")
+        return ToolResult(text_parts=["excerpt"])
+
+    monkeypatch.setattr(agent.tools, "run", _run)
+    events = await _collect("teach me regression", _curate_ctx(), model=_curate_model())
+
+    outcomes = {e["callId"]: e["outcome"] for e in events if e["type"] == "tool_end"}
+    assert [outcomes[f"k{n}"] for n in range(5)] == ["succeeded"] * 4 + ["refused"]

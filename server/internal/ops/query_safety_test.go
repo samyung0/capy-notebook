@@ -43,6 +43,33 @@ func TestReadQuerySourceUsesBoundedRawUsageLedgerQueries(t *testing.T) {
 	}
 }
 
+func TestLibraryQuerySourceStaysBoundedAndReadOnly(t *testing.T) {
+	t.Parallel()
+	sourceBytes, err := os.ReadFile("library_store.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(sourceBytes)
+	// QueryRow returns one row by construction; every multi-row read needs a
+	// LIMIT before its error check.
+	for _, call := range strings.Split(source, "s.library.Query(ctx,")[1:] {
+		statement, _, _ := strings.Cut(call, "if err != nil")
+		if !strings.Contains(statement, "LIMIT") {
+			t.Fatalf("an unbounded library query was added: %.160s", statement)
+		}
+	}
+	for _, forbidden := range []string{
+		"INSERT", "UPDATE ", "DELETE", "TRUNCATE", "ALTER", "DROP",
+	} {
+		if strings.Contains(source, forbidden) {
+			t.Fatalf("the Library section is read-only, found %q", forbidden)
+		}
+	}
+	if libraryExcerptPage != 50 {
+		t.Fatal("the excerpt page size changed")
+	}
+}
+
 func TestReadStoreRejectsBoundsBeforeQuerying(t *testing.T) {
 	t.Parallel()
 	read := &ReadStore{}

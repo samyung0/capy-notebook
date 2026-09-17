@@ -1,6 +1,8 @@
 package ops
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -218,12 +220,148 @@ func NewHandler(
 			value, err := registry.Save(r.Context(), principal, request)
 			respond(w, value, err)
 		})
+		api.Route("/library", func(library chi.Router) {
+			library.Use(requireLibrary(read))
+			library.Get("/", func(w http.ResponseWriter, r *http.Request) {
+				value, err := read.LibraryOverview(r.Context())
+				respond(w, value, err)
+			})
+			library.Get("/books", func(w http.ResponseWriter, r *http.Request) {
+				value, err := read.LibraryBooks(r.Context())
+				respond(w, value, err)
+			})
+			library.Get("/topics", func(w http.ResponseWriter, r *http.Request) {
+				value, err := read.LibraryTopics(r.Context())
+				respond(w, value, err)
+			})
+			library.Get("/excerpts", func(w http.ResponseWriter, r *http.Request) {
+				filter, err := libraryExcerptFilter(r)
+				if err != nil {
+					respond(w, nil, err)
+					return
+				}
+				value, err := read.LibraryExcerpts(r.Context(), filter)
+				respond(w, value, err)
+			})
+			library.Get("/excerpts/{excerptID}", func(w http.ResponseWriter, r *http.Request) {
+				value, err := read.LibraryExcerpt(r.Context(), chi.URLParam(r, "excerptID"))
+				respond(w, value, err)
+			})
+			library.Get("/model-runs", func(w http.ResponseWriter, r *http.Request) {
+				value, err := read.LibraryModelRuns(r.Context())
+				respond(w, value, err)
+			})
+			// A retained version stays exportable; no version means the current one.
+			library.Get("/export/{bookID}", func(w http.ResponseWriter, r *http.Request) {
+				version, err := libraryExportVersion(r)
+				if err != nil {
+					respond(w, nil, err)
+					return
+				}
+				value, err := read.LibraryExport(
+					r.Context(), chi.URLParam(r, "bookID"), version,
+				)
+				if err != nil {
+					respond(w, nil, err)
+					return
+				}
+				writeLibraryExport(w, value)
+			})
+		})
 		api.NotFound(func(w http.ResponseWriter, _ *http.Request) {
 			writeError(w, http.StatusNotFound, "not_found", "route not found")
 		})
 	})
 	router.NotFound(spaHandler(config.StaticDir).ServeHTTP)
 	return router
+}
+
+// requireLibrary gates the read-only Library section: operators need read_all,
+// and a deployment without OPS_LIBRARY_DATABASE_URL has no section at all.
+func requireLibrary(read *ReadStore) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if _, ok := requirePermission(w, r, PermReadAll); !ok {
+				return
+			}
+			if !read.LibraryConfigured() {
+				writeError(
+					w, http.StatusNotFound, "library_unconfigured",
+					"the knowledge library database is not configured",
+				)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func libraryExcerptFilter(r *http.Request) (LibraryExcerptFilter, error) {
+	query := r.URL.Query()
+	filter := LibraryExcerptFilter{
+		Book:   query.Get("book"),
+		Topic:  query.Get("topic"),
+		Role:   query.Get("role"),
+		Review: query.Get("review") == "true",
+		Page:   1,
+	}
+	if raw := query.Get("page"); raw != "" {
+		page, err := strconv.Atoi(raw)
+		if err != nil {
+			return filter, validation("page must be an integer")
+		}
+		filter.Page = page
+	}
+	return filter, nil
+}
+
+func libraryExportVersion(r *http.Request) (int, error) {
+	raw := r.URL.Query().Get("version")
+	if raw == "" {
+		return 0, nil
+	}
+	version, err := strconv.Atoi(raw)
+	if err != nil || version < 1 {
+		return 0, validation("version must be a positive integer")
+	}
+	return version, nil
+}
+
+// writeLibraryExport hashes the whole export before sending it: the digest is
+// a header, so the body cannot be written first.
+func writeLibraryExport(w http.ResponseWriter, export LibraryExport) {
+	body, err := json.Marshal(export)
+	if err != nil {
+		respond(w, nil, err)
+		return
+	}
+	digest := sha256.Sum256(body)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("X-Capy-Export-Sha256", hex.EncodeToString(digest[:]))
+	w.Header().Set(
+		"Content-Disposition",
+		fmt.Sprintf(
+			`attachment; filename="%s"`,
+			exportFileName(export.Book.ID, export.Version),
+		),
+	)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
+}
+
+// exportFileName keeps identifiers out of the Content-Disposition grammar.
+func exportFileName(book string, version int) string {
+	name := []rune(fmt.Sprintf("library-%s-v%d.json", book, version))
+	for index, letter := range name {
+		safe := (letter >= 'a' && letter <= 'z') ||
+			(letter >= 'A' && letter <= 'Z') ||
+			(letter >= '0' && letter <= '9') ||
+			letter == '.' || letter == '-' || letter == '_'
+		if !safe {
+			name[index] = '-'
+		}
+	}
+	return string(name)
 }
 
 func auditPageParams(r *http.Request) (int64, int, error) {
@@ -338,6 +476,9 @@ func respond(w http.ResponseWriter, value any, err error) {
 			return
 		}
 		writeError(w, http.StatusConflict, "registry_conflict", err.Error())
+	case errors.Is(err, ErrLibraryUnavailable):
+		slog.Error("ops library unreachable", "error", err)
+		writeError(w, http.StatusServiceUnavailable, "library_unavailable", ErrLibraryUnavailable.Error())
 	case errors.Is(err, store.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "record not found")
 	case errors.Is(err, ErrForbidden):

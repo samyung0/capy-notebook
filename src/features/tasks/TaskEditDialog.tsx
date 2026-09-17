@@ -62,7 +62,12 @@ export function TaskEditDialog({
           >
             {m.action_cancel()}
           </Button>
-          <Button disabled={submitDisabled} size="lg" type="submit">
+          <Button
+            disabled={submitDisabled}
+            size="lg"
+            type="submit"
+            variant="accent"
+          >
             {!isSubmitting && <span>{m.action_save()}</span>}
             {isSubmitting && (
               <span>

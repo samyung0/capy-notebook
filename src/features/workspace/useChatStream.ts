@@ -144,7 +144,7 @@ export function useChatStream(workspaceId: string) {
   );
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, curate: boolean) => {
       const trimmed = text.trim();
       if (!trimmed || streaming) return;
 
@@ -203,7 +203,11 @@ export function useChatStream(workspaceId: string) {
       try {
         await streamChat(
           workspaceId,
-          { conversationId: conversationId ?? undefined, text: trimmed },
+          {
+            conversationId: conversationId ?? undefined,
+            curate,
+            text: trimmed,
+          },
           {
             onBlockDelta: (blockId, delta) =>
               setMessages((prev) =>

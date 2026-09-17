@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ..retrieval.structured import STRUCTURED_RULE
+from . import curate as curate_prompts
 from .locale import response_language_rule
 
 # The playground's ``structured-glm-tencent`` prompt (bench/rag/playground/configs),
@@ -69,6 +69,21 @@ FOLLOW_REFERENCES_RULE = (
     "does not establish that the workspace lacks it."
 )
 
+# The shape `retrieval/structured.py` parses and renders back into prose.
+STRUCTURED_RULE = (
+    "Final answer format: a response that calls no tools is the final answer "
+    'and must be only a JSON object {"answer": [{"text": "...", "passages": '
+    "[n, ...]}, ...]}. Each item is one claim or short paragraph of Markdown in "
+    "reading order. passages lists the numbers of the shown passages that "
+    "support that item, most direct first, or [] when the sources do not cover "
+    "it. Put no [n] markers inside text. Text that accompanies a tool call "
+    "stays plain prose."
+)
+REPAIR_PROMPT = (
+    "Rewrite your previous reply as the required JSON object with exactly the "
+    "same content and passage numbers. Output only the JSON."
+)
+
 
 def system_prompt(locale: str | None) -> str:
     return "\n- ".join(
@@ -104,14 +119,15 @@ def chat_messages(
     checkpoint: dict[str, Any] | None,
     history: list[dict[str, Any]],
     query: str,
+    curate: bool = False,
 ) -> list[dict[str, Any]]:
     """The whole chat request: system, folded memory, prior turns, this query.
 
-    ``history`` is already filtered to persisted user/assistant turns.
+    ``history`` is already filtered to persisted user/assistant turns. A curate
+    turn builds materials from the shared library and takes that prompt instead.
     """
-    messages: list[dict[str, Any]] = [
-        {"role": "system", "content": system_prompt(locale)}
-    ]
+    head = curate_prompts.system_prompt(locale) if curate else system_prompt(locale)
+    messages: list[dict[str, Any]] = [{"role": "system", "content": head}]
     summary = str((checkpoint or {}).get("summary") or "")
     if summary:
         messages.append(memory_message(summary))

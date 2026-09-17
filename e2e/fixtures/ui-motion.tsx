@@ -166,6 +166,7 @@ function MotionChecks() {
         }}
       />
       <Menu
+        alignWidthToTrigger
         items={[
           {
             label: 'Rename',
@@ -184,7 +185,7 @@ function MotionChecks() {
             },
           },
         ]}
-        trigger={<Button>Actions</Button>}
+        trigger={<Button className="w-64">Actions</Button>}
       />
       <output>{action}</output>
       <span data-testid="executions">{executions}</span>

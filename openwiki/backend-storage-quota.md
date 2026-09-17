@@ -74,6 +74,11 @@ Workspace-owned rows resolve the payer from `workspaces.user_id` into
 `files.user_id` / `editor_assets.user_id` / `materials.owner_user_id`. A
 standalone material sets `owner_user_id` from its creator.
 
+A curated material's `provenance` record is **never charged** — `size_bytes` is
+the content JSON alone — and its marshalled bytes are counted by `gateStorageTx`
+at material creation only, never on an `edit_document` merge and never on a
+clone.
+
 Storage limits are **100 MB** free and **1 GB** Pro. These use decimal bytes:
 100,000,000 and 1,000,000,000 respectively.
 

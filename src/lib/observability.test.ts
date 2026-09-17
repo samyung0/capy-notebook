@@ -32,15 +32,22 @@ vi.mock('@sentry/react', async (importOriginal) => {
 import { initErrorReporting, reportReactError } from './observability';
 
 it('reports caught React crashes once and leaves API failures with the server', async () => {
+  const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
   initErrorReporting();
   const crash = new Error('render failed');
   reportReactError(crash, { componentStack: '\n at BrokenComponent' });
+  expect(consoleError).toHaveBeenCalledWith(
+    'React error',
+    crash,
+    '\n at BrokenComponent'
+  );
   Sentry.captureException(crash);
   reportReactError(new ApiError(500, 'Internal Server Error'), {
     componentStack: '\n at QueryPage',
   });
   await Sentry.flush(1000);
   expect(probe.events).toHaveLength(1);
+  consoleError.mockRestore();
 });
 
 afterAll(async () => {

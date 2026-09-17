@@ -126,6 +126,15 @@ func main() {
 		}
 	}()
 	read.SetIngestSources(ingestSources)
+	// The library database is owned by the library loader, not by migrations:
+	// it has its own schema and its own read-only role, so the app role
+	// contract does not apply. It also lives on another host, so it opens
+	// lazily: an unreachable library fails its own routes and leaves the rest
+	// of the dashboard working.
+	if cfg.LibraryDatabaseURL != "" {
+		read.SetLibraryDSN(cfg.LibraryDatabaseURL)
+		defer read.CloseLibrary()
+	}
 	admin := ops.NewLazyAdminStore(cfg.AdminDatabaseURL)
 	if cfg.AllowOwnerDSN() {
 		admin.SkipRoleValidation()

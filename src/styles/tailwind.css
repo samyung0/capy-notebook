@@ -1,6 +1,6 @@
 /* Fustat — keep the CDN import for dev; swap to self-hosted @font-face later. */
 @import url("https://fonts.googleapis.com/css2?family=Fustat:wght@300;400;500;600;700;800&display=swap");
-@import "tailwindcss";
+@import "tailwindcss" source("../");
 @import "./tokens/themes/classroom.css";
 @import "./tokens/themes/notion.css";
 @import "./tokens/catppuccin.css";
@@ -229,8 +229,7 @@
         var(--top-inset-bar-inverted-radius-gap)
     ); /* vertical offset (no percentage) */
 
-    --_m: /calc(2 * var(--r)) calc(2 * var(--r))
-      radial-gradient(#000 70%, #0000 72%);
+    --_m: /calc(2 * var(--r)) calc(2 * var(--r)) radial-gradient(#000 70%, #0000 72%);
     --_g: conic-gradient(at calc(100% - var(--r)) var(--r), #0000 25%, #000 0);
     mask:
       calc(100% - var(--_d) - var(--x)) 0 var(--_m),
@@ -287,6 +286,14 @@
   ::file-selector-button {
     @apply t-body;
   }
+}
+
+:root {
+  --tag-dropdown-height: calc(var(--spacing) * 56);
+}
+
+.workspace-form [data-slot="dialog-footer"] {
+  margin-top: calc(var(--tag-dropdown-height) - var(--spacing) * 18);
 }
 
 @layer components {
@@ -382,7 +389,7 @@
   }
 
   .authBlockquote p {
-    font-size: clamp(28px, 1.8vw, 32px);
+    font-size: clamp(28px, 2vw, 32px);
     line-height: 1.42;
     letter-spacing: -0.01em;
     text-wrap: balance;
@@ -395,8 +402,7 @@
   *::before,
   *::after {
     animation: none !important;
-    transition-property:
-      background-color, border-color, color, opacity, fill, stroke !important;
+    transition-property: background-color, border-color, color, opacity, fill, stroke !important;
     /* or simply: transition: none and live with instant everything */
   }
 }

@@ -25,11 +25,20 @@ from .. import elitellm, obs, registry, use_compatible_event_loop
 from ..config import cfg
 from ..prompts import generate as generate_prompts
 from ..prompts import quiz as quiz_prompts
-from ..retrieval import accounting, compact, contract, models, pending, store, workflows
+from ..retrieval import (
+    accounting,
+    compact,
+    contract,
+    library,
+    models,
+    pending,
+    store,
+    workflows,
+)
 from ..retrieval.agent import CLIENT_ERROR, CLIENT_ERROR_CODE, ClientDrop, run_agent
 from ..retrieval.chunking import clip_to_tokens, estimate_tokens
 from ..retrieval.events import error as client_error
-from ..retrieval.tools import ToolContext
+from ..retrieval.tools import Ledger, ToolContext
 from . import quiz_grade as quiz_grade_mod
 from .ai_adapter import router as plate_ai_router
 
@@ -57,6 +66,7 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         await store.close_pool()
+        await library.close_pool()
 
 
 app = FastAPI(title="Capy Notebook retrieval", lifespan=lifespan)
@@ -228,6 +238,17 @@ class ChatStreamReq(LLMPin):
     spendSessionId: str
     # Account locale from the gateway (users.locale). Do not trust a browser field.
     locale: str | None = None
+    # Curate mode, fixed on the conversation row by the gateway: the turn reads
+    # the shared knowledge library and builds materials instead of answering.
+    curate: bool = False
+    # The conversation's stored progress ledger (conversations.ledger), null
+    # until its first curate turn writes one. The turn continues it and the
+    # pipeline stores it again at turn end.
+    ledger: dict | None = None
+    # Only for naming the conversation in a log line. The gateway identifies the
+    # turn by its assistant message, which resolves to the conversation, so this
+    # is whichever of the two it sends.
+    conversationId: str | None = None
 
 
 def _bind_accounting(session_id: str):
@@ -377,14 +398,21 @@ async def _chat_events(req: ChatStreamReq, request: Request):
     _bind_llm(req)
     accounting_token = None
     client = ClientDrop()
-    ctx = ToolContext(
-        workspace_id=req.workspaceId,
-        user_id=req.userId or "",
-        operations=frozenset(req.operations),
-        file_ids=None if req.fileIds is None else list(req.fileIds),
-        assistant_message_id=req.assistantMessageId or "",
-    )
     try:
+        # Inside the error handling: building the context reads the stored
+        # ledger, and anything raised before the first yield would leave the
+        # browser with a 200 and an empty body instead of a typed error.
+        ctx = ToolContext(
+            workspace_id=req.workspaceId,
+            user_id=req.userId or "",
+            operations=frozenset(req.operations),
+            file_ids=None if req.fileIds is None else list(req.fileIds),
+            assistant_message_id=req.assistantMessageId or "",
+            curate=req.curate,
+            ledger=Ledger.from_stored(
+                req.ledger, req.conversationId or req.assistantMessageId or ""
+            ),
+        )
         accounting_token = accounting.bind(req.spendSessionId)
         agen = run_agent(
             query=req.query,

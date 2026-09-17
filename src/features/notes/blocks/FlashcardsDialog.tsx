@@ -59,6 +59,7 @@ export function FlashcardsDialog({
           <Button
             disabled={!canSave}
             onClick={() => onSave(flashcardsFenceBody(clean))}
+            variant="accent"
           >
             {m.action_insert()}
           </Button>

@@ -126,6 +126,8 @@ export * from './pDFRect.ts';
 export * from './planTier.ts';
 export * from './privacy.ts';
 export * from './projectMaterialReq.ts';
+export * from './provenance.ts';
+export * from './provenanceBook.ts';
 export * from './publicFlashcardSet.ts';
 export * from './publicQuiz.ts';
 export * from './publicQuizQuestionsItem.ts';

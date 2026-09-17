@@ -27,6 +27,7 @@ type ReadStore struct {
 	app              *store.Store
 	db               *pgxpool.Pool
 	ingestSources    []IngestReadSource
+	library          *libraryDB
 	overviewMu       sync.Mutex
 	overviewCachedAt time.Time
 	overviewCache    Overview

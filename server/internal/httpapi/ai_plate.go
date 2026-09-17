@@ -125,8 +125,8 @@ func (req plateCommandReq) validate() error {
 	return nil
 }
 
-func decodeBoundedJSON(w http.ResponseWriter, r *http.Request, dst any) error {
-	r.Body = http.MaxBytesReader(w, r.Body, maxAIRequestBytes)
+func decodeBoundedJSON(w http.ResponseWriter, r *http.Request, dst any, limit int64) error {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(dst); err != nil {
 		return err
@@ -157,7 +157,7 @@ func (a *api) aiCommand(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req plateCommandReq
-	if err := decodeBoundedJSON(w, r, &req); err != nil {
+	if err := decodeBoundedJSON(w, r, &req, maxAIRequestBytes); err != nil {
 		writeAIError(w, http.StatusBadRequest, "invalid_request", "invalid AI request", false)
 		return
 	}
@@ -329,7 +329,7 @@ func (a *api) aiCopilot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req plateCopilotReq
-	if err := decodeBoundedJSON(w, r, &req); err != nil {
+	if err := decodeBoundedJSON(w, r, &req, maxAIRequestBytes); err != nil {
 		writeAIError(w, http.StatusBadRequest, "invalid_request", "invalid AI request", false)
 		return
 	}

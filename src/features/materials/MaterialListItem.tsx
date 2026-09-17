@@ -1,10 +1,8 @@
 import type { Chapter, MaterialRef, UserColor } from '@/api/types';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { Spinner } from '@/components/ui/feedback';
-import {
-  ContentActions,
-  toMaterialActionTarget,
-} from '@/features/workspace/ContentActions';
+import { ContentActions } from '@/features/workspace/ContentActions';
+import { toMaterialActionTarget } from '@/features/workspace/contentActionTarget';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { materialIconName } from '@/lib/fileIcons';
@@ -51,7 +49,7 @@ export function MaterialListItem({
         onClick={onOpen}
         type="button"
       >
-        <FileIcon name={materialIconName(matRef.type)} size={15} />
+        <FileIcon className="size-3.75" name={materialIconName(matRef.type)} />
         <span className="line-clamp-2 flex-1 translate-y-px">
           {matRef.title}
         </span>

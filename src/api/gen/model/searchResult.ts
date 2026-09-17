@@ -4,10 +4,13 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { FileKind } from './fileKind.ts';
 import type { SearchKind } from './searchKind.ts';
 
 export interface SearchResult {
+  fileKind?: FileKind;
   href: string;
+  iconId?: string;
   id: string;
   kind: SearchKind;
   subtitle?: string;

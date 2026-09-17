@@ -107,6 +107,8 @@ export const mockScenarioOptions = [
   { id: 'workspace-flaky', label: 'Workspace GET flaky (1 in 3)' },
   { id: 'chat-sse-error', label: 'Chat SSE error frame' },
   { id: 'chat-stream-close', label: 'Chat stream closes early' },
+  { id: 'chat-curate-mismatch', label: 'Chat curate flag disagrees' },
+  { id: 'chat-curate-requires-editor', label: 'Chat curate needs edit access' },
   { id: 'collaboration-token', label: 'Collaboration token 503' },
   { id: 'offline', label: 'Browser offline' },
 ] as const;
@@ -514,6 +516,24 @@ export function getMockScenarioHandlers(
               type: 'block_delta',
             },
           ])
+        ),
+      ];
+    // A chat's mode is fixed when it is created and only an editor may curate,
+    // so both refusals arrive before the stream opens.
+    case 'chat-curate-mismatch':
+    case 'chat-curate-requires-editor':
+      return [
+        http.post('/api/workspaces/:id/chat/stream', () =>
+          HttpResponse.json(
+            {
+              code:
+                scenario === 'chat-curate-mismatch'
+                  ? 'curate_mismatch'
+                  : 'curate_requires_editor',
+              message: 'Mock curate refusal.',
+            },
+            { status: 400 }
+          )
         ),
       ];
     case 'collaboration-token':

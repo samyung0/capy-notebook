@@ -5,6 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { MaterialRefType } from './materialRefType.ts';
+import type { Provenance } from './provenance.ts';
 
 export interface MaterialRef {
   /** @nullable */
@@ -14,6 +15,7 @@ export interface MaterialRef {
   maxDepth: number;
   nodeCount: number;
   position: number;
+  provenance?: Provenance;
   sizeBytes: number;
   title: string;
   type: MaterialRefType;

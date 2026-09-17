@@ -76,7 +76,12 @@ export function NameFormDialog({
           >
             {m.action_cancel()}
           </Button>
-          <Button disabled={submitDisabled} size="lg" type="submit">
+          <Button
+            disabled={submitDisabled}
+            size="lg"
+            type="submit"
+            variant="accent"
+          >
             {!isSubmitting && <span>{submitLabel ?? m.action_save()}</span>}
             {isSubmitting && (
               <span>

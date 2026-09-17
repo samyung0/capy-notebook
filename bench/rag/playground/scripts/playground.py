@@ -7,6 +7,9 @@ edited in the browser and saved under configs/. Read tools only; the search
 telemetry write is disabled. Every turn is recorded under local/runs/.
 
   uv run --with pymupdf==1.28.2 python bench/rag/playground/scripts/playground.py --target lab
+
+`--ledger local/runs/<id>/run.json` starts curate turns from that run's stored
+ledger, which is how a follow-up turn on the same conversation is tested.
 """
 
 from __future__ import annotations
@@ -14,6 +17,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import copy
+import hashlib
 import json
 import os
 import sys
@@ -28,11 +32,32 @@ from fastapi import FastAPI, HTTPException, Request  # noqa: E402
 from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse  # noqa: E402
 
 RUNS = LOCAL / "runs"
+# Curate turns read the shared library and write materials. Production derives
+# document.edit from the actor's role; the playground grants it so the prompt's
+# "grow the note with edit_document" rhythm is actually available.
+CURATE_OPERATIONS = frozenset(
+    {"source.read", "material.read", "material.create", "document.edit", "library.read"}
+)
+KNOWLEDGE_TOOLS = (
+    "search_knowledge", "browse_knowledge", "read_knowledge", "capture_knowledge_page",
+    "create_ledger",
+)
+ALLOWED_TOOLS = {
+    "search_workspace", "list_sources", "describe_documents", "read_document", "capture_page",
+    *KNOWLEDGE_TOOLS, "create_material", "edit_document",
+}
 DEFAULT_CONFIG: dict[str, Any] = {
     "target": "lab",
     "workspace_id": "odl_eval_odl",
     "scope_file_ids": None,
     "locale": "en",
+    # curate: run the real curate loop (library tools, curate prompt, progress
+    # ledger, stall guard) and write materials as files under the run directory.
+    "curate": False,
+    # ledger: path to a stored ledger (a previous run.json, or its `ledger`) the
+    # turn continues, the way the gateway hands one back on a follow-up turn.
+    # --ledger sets it for every config that does not carry its own.
+    "ledger": None,
     # transport: send this pin to another OpenAI-compatible endpoint instead of the
     # production route, e.g. {"url": ".../v1/chat/completions", "key_env": "TENCENT_API_KEY",
     # "wire_model": "glm-5.3-flash", "body": "zai"}. body picks the request builder.
@@ -41,7 +66,13 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "system_prompt": None,
     "prompt_addon": "",
     "tools": ["search_workspace", "list_sources", "describe_documents", "read_document"],
-    "limits": {"planning_responses": 12, "tools_per_response": 4, "tools_per_turn": 12, "captures_per_turn": 3},
+    # knowledge_tools_per_response and stall_responses are the curate caps
+    # (KNOWLEDGE_TOOLS_PER_RESPONSE, CURATE_STALL_RESPONSES); the other three
+    # bound ordinary chat, which curate ignores.
+    "limits": {
+        "planning_responses": 12, "tools_per_response": 4, "tools_per_turn": 12, "captures_per_turn": 3,
+        "knowledge_tools_per_response": 4, "stall_responses": 4,
+    },
     "search": {"top_k": 5, "per_file_cap": 4},
     "capture": {
         "mode": "pixels",
@@ -82,7 +113,7 @@ def merged(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 def load_config(name: str) -> dict[str, Any]:
-    return merged(json.loads((CONFIGS / f"{name}.json").read_text()))
+    return merged(json.loads((CONFIGS / f"{name}.json").read_text(encoding="utf-8")))
 
 
 def model_spec(model: dict[str, Any]):
@@ -109,24 +140,184 @@ def model_spec(model: dict[str, Any]):
 
 
 def effective_prompt(c: dict[str, Any], base: str | None = None) -> str:
-    """The exact system prompt a turn sends: production text (or the config's
-    replacement), then the addon, then the capture_page rule."""
+    """The exact system prompt a turn sends: production text (curate mode has its
+    own), or the config's replacement, then the addon, then the capture_page rule."""
     import capture
     import citations
     from pipeline.prompts import chat as chat_prompts
+    from pipeline.prompts import curate as curate_prompts
 
-    text = c["system_prompt"] or base or chat_prompts.system_prompt(c["locale"])
+    if base is None:
+        base = (curate_prompts if c["curate"] else chat_prompts).system_prompt(c["locale"])
+    text = c["system_prompt"] or base
     use_capture = capture.NAME in c["tools"] and c["capture"]["addon"]
-    structured = c["answer"]["citations"] == "structured"
+    # A curate answer is plain prose listing the materials; it has no citations.
+    structured = c["answer"]["citations"] == "structured" and not c["curate"]
     return (
         text + (c["prompt_addon"] or "") + (capture.ADDON if use_capture else "")
         + (citations.STRUCTURED_ADDON if structured else "")
     )
 
 
+def material_id(assistant_message_id: str, call_id: str) -> str:
+    """The deterministic id Go mints for a chat-created material."""
+    digest = hashlib.sha256(f"{assistant_message_id}\n{call_id}".encode()).hexdigest()
+    return "mat_" + digest[:16]
+
+
+def merge_books(existing: list[dict[str, Any]], incoming: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """What Go does with an edit's provenance: merge by book id, union the excerpts."""
+    merged = {book["id"]: dict(book) for book in existing}
+    for book in incoming:
+        current = merged.setdefault(book["id"], {**book, "excerptIds": []})
+        current["excerptIds"] = sorted(
+            {*current.get("excerptIds", []), *book.get("excerptIds", [])}
+        )
+    return list(merged.values())
+
+
+async def create_material_locally(args: dict[str, Any], ctx, state: dict[str, Any], message_id: str):
+    """create_material without a gateway: the material lands as JSON under the run
+    directory and the model gets the receipt the gateway would have returned.
+
+    The ledger rules (ledger first, an open todo id, only excerpts this turn
+    read) are the production helpers, not a copy of them."""
+    from pipeline.retrieval import tools
+
+    kind, call_id = str(args.get("kind") or ""), str(args.get("_tool_call_id") or "")
+    prepared = await tools.curate_write(ctx, "create_material", args)
+    if isinstance(prepared, tools.ToolResult):
+        return prepared
+    books, todo = prepared
+    rid, title = material_id(message_id, call_id), str(args.get("title") or "").strip()
+    record = {
+        "id": rid, "kind": kind, "title": title, "content": args.get("content") or "",
+        "cards": args.get("cards") or [], "questions": args.get("questions") or [],
+        "excerpt_ids": [str(e) for e in (args.get("excerpt_ids") or [])],
+        "provenance": {"books": books} if books else None,
+        "size": tools._material_size(kind, args), "edits": [],
+    }
+    state["materials"].append(record)
+    write_material(state, record)
+    result = tools._receipt_result({
+        "outcome": "succeeded",
+        "effect": {"operation": "created", "resource": {
+            "kind": "material", "id": rid, "title": title, "materialKind": kind}},
+    })
+    tools.note_created(ctx, result.effects[0], kind, args, todo)
+    return result
+
+
+async def edit_material_locally(args: dict[str, Any], ctx, state: dict[str, Any]):
+    """edit_document against a material this run created: the commands are appended
+    to its file and the appended section's provenance merges into the material's."""
+    from pipeline.retrieval import tools
+
+    target = args.get("target") or {}
+    rid = str(target.get("id") or "")
+    record = next((m for m in state["materials"] if m["id"] == rid), None)
+    if record is None or target.get("kind") != "material":
+        return tools._refused(
+            f"edit_document: {rid} is not a material this run created.",
+            code="unavailable_target",
+        )
+    prepared = await tools.curate_write(ctx, "edit_document", args)
+    if isinstance(prepared, tools.ToolResult):
+        return prepared
+    books, todo = prepared
+    commands = list(args.get("commands") or [])
+    record["edits"].extend(commands)
+    record["content"] = "\n".join(
+        part for part in [record["content"], *(str(c.get("text") or "") for c in commands)] if part
+    )
+    record["size"] = tools._material_size(record["kind"], record)
+    record["excerpt_ids"] = sorted(
+        {*record["excerpt_ids"], *(str(e) for e in (args.get("excerpt_ids") or []))}
+    )
+    if books:
+        existing = (record["provenance"] or {}).get("books") or []
+        record["provenance"] = {"books": merge_books(existing, books)}
+    write_material(state, record)
+    result = tools._receipt_result({
+        "outcome": "succeeded",
+        "effect": {"operation": "edited", "resource": {
+            "kind": "material", "id": rid, "title": record["title"], "materialKind": record["kind"]}},
+    })
+    tools.note_appended(ctx, rid, len(commands), todo)
+    return result
+
+
+def ledger_state(ledger) -> dict[str, Any]:
+    """The ledger two ways. The top level is the turn as the model sees it: every
+    todo with the id the rendered ledger shows, plus this turn's reads and
+    progress. `stored` is what the gateway would persist at turn end - the
+    newest 24 open todos, the last 5 requests and 50 materials - so watching it
+    shrink is how the bound is checked. `--ledger` and the config's `ledger`
+    field read `stored`, so a follow-up turn starts where a real one would."""
+    return {
+        "requests": list(ledger.requests),
+        "next_todo_id": ledger.next_todo_id,
+        "todos": [
+            {"id": t.id, "text": t.text, "done": t.done, "materialId": t.material_id}
+            for t in ledger.todos
+        ],
+        "materials": [
+            {"id": m.id, "kind": m.kind, "title": m.title, "size": m.size, "todo": m.todo}
+            for m in ledger.materials
+        ],
+        "progress": ledger.progress,
+        "reads": [
+            {"excerpt_id": r.excerpt_id, "start": r.start, "section": r.section}
+            for r in ledger.reads
+        ],
+        "stored": ledger.stored(),
+    }
+
+
+def starting_ledger(path: str | None):
+    """The ledger a run starts from: a previous run.json, or a bare stored
+    ledger. Without one the conversation starts with an empty ledger."""
+    from pipeline.retrieval import tools
+
+    if not path:
+        return tools.Ledger()
+    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    ledger = raw.get("ledger", raw)
+    return tools.Ledger.from_stored(ledger.get("stored", ledger))
+
+
+def save_knowledge_capture(state: dict[str, Any], ctx, call_id: str, run_id: str) -> dict[str, Any]:
+    """capture_knowledge_page renders through the production tool, which keeps its
+    JPEG on the ToolContext; put it on disk in the shape the page already renders."""
+    import base64
+
+    entry = next((cap for cap in ctx.captures if cap["callId"] == call_id), None)
+    label, url = ctx.pending_images.get(call_id, ("", ""))
+    if entry is None or not url:
+        return {"type": "capture_missing", "call_id": call_id}
+    n = len(state["captures"]) + 1
+    path = state["run_dir"] / "captures" / f"{n}.jpg"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(base64.b64decode(url.split(",", 1)[1]))
+    record = {
+        "n": n, "call_id": call_id, "file_id": entry["fileId"], "page": entry["page"],
+        "bbox": entry["bbox"], "mode": "pixels", "image": str(path.relative_to(LOCAL)),
+        "image_bytes": entry["bytes"], "image_px": entry["pixels"],
+        "est_image_tokens": entry["estimatedImageTokens"], "label": label, "text": "",
+    }
+    state["captures"].append(record)
+    return {"type": "capture", **record, "url": f"/api/runs/{run_id}/captures/{n}.jpg"}
+
+
+def write_material(state: dict[str, Any], record: dict[str, Any]) -> None:
+    path = state["run_dir"] / "materials" / f"{record['id']}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(record, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
 def load_quality(target: str, workspace_id: str) -> dict[str, Any]:
     path = LOCAL / "quality" / f"{target}-{workspace_id}.json"
-    return json.loads(path.read_text())["chunks"] if path.exists() else {}
+    return json.loads(path.read_text(encoding="utf-8"))["chunks"] if path.exists() else {}
 
 
 class Turn:
@@ -141,6 +332,7 @@ class Turn:
         self.state: dict[str, Any] = {
             "run_dir": self.run_dir, "captures": [], "images": {}, "calls": [],
             "provider_calls": [], "extra": [], "_result_call": {}, "compactions": [],
+            "materials": [], "ledger": {}, "stall_events": [],
         }
 
     async def events(self):
@@ -150,10 +342,12 @@ class Turn:
         from pipeline.config import cfg
         from pipeline.elitellm import client as llm_client
         from pipeline.prompts import chat as chat_prompts
+        from pipeline.prompts import curate as curate_prompts
         from pipeline.retrieval import agent, compact, models, search, store, tools
         from pipeline.retrieval.chunking import estimate_tokens
 
         c, state = self.config, self.state
+        curate = bool(c["curate"])
         spec = model_spec(c["model"])
         registry.bind_request_llm(thinking=c["model"]["thinking"])
         registry.set_job_pins(registry.JobPins(captioning=spec))
@@ -165,21 +359,27 @@ class Turn:
         quality = load_quality(c["target"], c["workspace_id"]) if c["quality"]["show"] else {}
         ctx = tools.ToolContext(
             workspace_id=c["workspace_id"],
-            operations=frozenset({"source.read", "material.read"}),
+            user_id="playground" if curate else "",
+            curate=curate,
+            operations=CURATE_OPERATIONS if curate else frozenset({"source.read", "material.read"}),
             file_ids=c["scope_file_ids"] or None,
             assistant_message_id=self.id,
+            ledger=starting_ledger(c["ledger"] if curate else None),
         )
         saved = {
-            "system_prompt": chat_prompts.system_prompt, "schemas_for": tools.schemas_for, "run": tools.run,
+            "system_prompt": chat_prompts.system_prompt, "curate_prompt": curate_prompts.system_prompt,
+            "schemas_for": tools.schemas_for, "run": tools.run, "store_ledger": tools.store_ledger,
             "mutates": tools.mutates, "render": tools.render_result, "stream": models.stream_agent_response,
             "record": store.record_search_events, "location": search.Passage.location, "llm_stream": elitellm.stream, "llm_complete": elitellm.complete,
             "usable_input_limit": compact.usable_input_limit, "summarize": compact.summarize_checkpoint,
             "agent_caps": (agent.PLANNING_RESPONSES, agent.TOOLS_PER_RESPONSE, agent.TOOLS_PER_TURN),
-            "cfg": (cfg.agent_max_steps, cfg.search_top_k, cfg.search_per_file_cap),
+            "curate_caps": (agent.KNOWLEDGE_TOOLS_PER_RESPONSE, agent.CURATE_STALL_RESPONSES),
+            "cfg": (cfg.agent_max_steps, cfg.search_top_k, cfg.search_per_file_cap, cfg.captures_per_turn),
         }
 
         def system_prompt(locale):
-            return effective_prompt(c, saved["system_prompt"](locale))
+            base = saved["curate_prompt" if curate else "system_prompt"](locale)
+            return effective_prompt(c, base)
 
         def schemas_for(ctx_):
             out = [s for s in saved["schemas_for"](ctx_) if s["function"]["name"] in offered]
@@ -192,6 +392,7 @@ class Turn:
             }
             state["calls"].append(record)
             started = time.perf_counter()
+            problem = tools.contract.validate_args(name, record["args"]) if name in tools.contract.DEFINITIONS else None
             if name not in offered:
                 result = tools._refused(f"{name} is not offered in this configuration.", code="unsupported_operation")
             elif name == capture.NAME:
@@ -199,14 +400,32 @@ class Turn:
                 if state["captures"] and state["captures"][-1]["call_id"] == record["call_id"]:
                     cap = state["captures"][-1]
                     state["extra"].append({"type": "capture", **cap, "url": f"/api/runs/{self.id}/captures/{cap['n']}.jpg"})
+            elif problem:
+                result = tools._refused(problem)
+            elif name == "create_material":
+                result = await create_material_locally(args, ctx_, state, self.id)
+            elif name == "edit_document":
+                result = await edit_material_locally(args, ctx_, state)
             else:
                 result = await saved["run"](name, args, ctx_)
+            if result.effects:
+                rid = (result.effects[0].get("resource") or {}).get("id")
+                written = next((m for m in state["materials"] if m["id"] == rid), None)
+                if written is not None:
+                    state["extra"].append({"type": "material", **written})
+            if name == "capture_knowledge_page" and not result.refused:
+                state["extra"].append(save_knowledge_capture(state, ctx_, record["call_id"], self.id))
             record.update(
                 elapsed_seconds=round(time.perf_counter() - started, 3), outcome=result.outcome,
                 error=result.error, passages=[p.chunk_id for p in result.passages],
             )
             state["_result_call"][id(result)] = record
             return result
+
+        async def store_ledger(ctx_):
+            """There is no gateway to store the ledger in: run.json is where a
+            follow-up run reads it back from (`--ledger`)."""
+            state["ledger"] = ledger_state(ctx_.ledger)
 
         def mutates(name):
             return False if name == capture.NAME else saved["mutates"](name)
@@ -314,7 +533,7 @@ class Turn:
                     counts["tool_results"] += 1
                 else:
                     parts["assistant" if after_query else "history"] += tokens
-            attached = {cid for cid in state["images"]}
+            attached = set(state["images"]) | set(ctx.pending_images)
             parts["images_est"] = sum(cap.get("est_image_tokens", 0) for cap in state["captures"] if cap["call_id"] in attached)
             measured = models.measure_request_context(messages, model=spec, tools=tools)
             parts["schemas"] = measured.tool_tokens
@@ -329,6 +548,21 @@ class Turn:
             state["last_messages"] = list(messages)
             request = capture.inject_images(messages, state["images"], spec.provider_slug, c["capture"]["detail"])
             context = context_breakdown(request, kw.get("tools"))
+            call = len(state["provider_calls"]) + 1
+            if curate:
+                state["ledger"] = ledger_state(ctx.ledger)
+                state["extra"].append({"type": "ledger", "call": call, **state["ledger"]})
+                if kw.get("tools") is None:
+                    # In curate the only way tools go off is the stall guard (or
+                    # the terminal call after credits run out).
+                    stall = {
+                        "call": call,
+                        "progress": ctx.ledger.progress,
+                        "todos_done": sum(1 for t in ctx.ledger.todos if t.done),
+                        "todos": len(ctx.ledger.todos),
+                    }
+                    state["stall_events"].append(stall)
+                    state["extra"].append({"type": "stall", **stall})
             try:
                 assembled = await saved["stream"](request, **kw)
             except Exception as exc:
@@ -359,19 +593,24 @@ class Turn:
                 base += c["quality"]["template"].format(score=q["score"], reasons="; ".join(q["reasons"]) or "no issue found")
             return base
 
-        chat_prompts.system_prompt, tools.schemas_for, tools.run = system_prompt, schemas_for, run
+        chat_prompts.system_prompt = curate_prompts.system_prompt = system_prompt
+        tools.schemas_for, tools.run, tools.store_ledger = schemas_for, run, store_ledger
         tools.mutates, tools.render_result, models.stream_agent_response = mutates, render_result, stream
         store.record_search_events, search.Passage.location = record_search_events, location
         elitellm.stream, elitellm.complete = llm_stream, llm_complete
         compact.usable_input_limit, compact.summarize_checkpoint = usable_input_limit, summarize_checkpoint
         agent.PLANNING_RESPONSES, agent.TOOLS_PER_RESPONSE, agent.TOOLS_PER_TURN = (
             c["limits"]["planning_responses"], c["limits"]["tools_per_response"], c["limits"]["tools_per_turn"])
-        cfg.agent_max_steps, cfg.search_top_k, cfg.search_per_file_cap = (
-            c["limits"]["planning_responses"], c["search"]["top_k"], c["search"]["per_file_cap"])
+        agent.KNOWLEDGE_TOOLS_PER_RESPONSE, agent.CURATE_STALL_RESPONSES = (
+            c["limits"]["knowledge_tools_per_response"], c["limits"]["stall_responses"])
+        cfg.agent_max_steps, cfg.search_top_k, cfg.search_per_file_cap, cfg.captures_per_turn = (
+            c["limits"]["planning_responses"], c["search"]["top_k"], c["search"]["per_file_cap"],
+            c["limits"]["captures_per_turn"])
         self.run_dir.mkdir(parents=True, exist_ok=True)
         started = time.perf_counter()
         recorded: list[dict[str, Any]] = []
-        mode = c["answer"]["citations"]
+        # A curate turn carries no citations at all.
+        mode = "as_is" if curate else c["answer"]["citations"]
         blocks: dict[str, str] = {}
         renum: citations.Renumberer | None = None
         version = 0
@@ -466,13 +705,15 @@ class Turn:
             recorded.append(event)
             yield event
         finally:
-            chat_prompts.system_prompt, tools.schemas_for, tools.run = saved["system_prompt"], saved["schemas_for"], saved["run"]
+            chat_prompts.system_prompt, curate_prompts.system_prompt = saved["system_prompt"], saved["curate_prompt"]
+            tools.schemas_for, tools.run, tools.store_ledger = saved["schemas_for"], saved["run"], saved["store_ledger"]
             tools.mutates, tools.render_result, models.stream_agent_response = saved["mutates"], saved["render"], saved["stream"]
             store.record_search_events, search.Passage.location = saved["record"], saved["location"]
             elitellm.stream, elitellm.complete = saved["llm_stream"], saved["llm_complete"]
             compact.usable_input_limit, compact.summarize_checkpoint = saved["usable_input_limit"], saved["summarize"]
             agent.PLANNING_RESPONSES, agent.TOOLS_PER_RESPONSE, agent.TOOLS_PER_TURN = saved["agent_caps"]
-            cfg.agent_max_steps, cfg.search_top_k, cfg.search_per_file_cap = saved["cfg"]
+            agent.KNOWLEDGE_TOOLS_PER_RESPONSE, agent.CURATE_STALL_RESPONSES = saved["curate_caps"]
+            cfg.agent_max_steps, cfg.search_top_k, cfg.search_per_file_cap, cfg.captures_per_turn = saved["cfg"]
             registry.set_job_pins(None)
         done = next((e for e in reversed(recorded) if e.get("type") == "done"), {})
         usage = obs.current_usage()
@@ -486,21 +727,35 @@ class Turn:
             "usage": usage.as_dict() if usage is not None else None, "provider_calls": state["provider_calls"],
             "calls": state["calls"], "captures": state["captures"], "compactions": state["compactions"],
             "checkpoint_in": self.checkpoint, "events": recorded,
+            # Curate: what the loop read and wrote. Materials carry their own
+            # provenance books, which is the attribution a real material keeps.
+            "curate": curate, "ledger": ledger_state(ctx.ledger),
+            "stall_events": state["stall_events"], "materials": state["materials"],
         }
-        (self.run_dir / "run.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1))
+        (self.run_dir / "run.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1), encoding="utf-8")
         yield {"type": "run_saved", "id": self.id, "elapsed_seconds": summary["elapsed_seconds"], "usage": summary["usage"]}
 
 
 def build_app(target: str):
-    from pipeline.retrieval import store
+    from pipeline.config import cfg
+    from pipeline.retrieval import library, store
 
+    # There is no gateway here: create_material and edit_document are handled in
+    # process and write files. This only makes tool admission decide as it does
+    # in production, so the offered tools match what a real turn would see.
+    cfg.gateway_url = cfg.gateway_url or "http://playground.invalid"
+    cfg.pipeline_secret = cfg.pipeline_secret or "playground"
     app = FastAPI(title="Capy agentic playground")
     resolver = PdfResolver(target)
     turn_lock = asyncio.Lock()
 
+    @app.on_event("shutdown")
+    async def close_library():
+        await library.close_pool()
+
     @app.get("/", response_class=HTMLResponse)
     def index():
-        return (ROOT / "scripts/ui.html").read_text()
+        return (ROOT / "scripts/ui.html").read_text(encoding="utf-8")
 
     @app.get("/api/state")
     async def state():
@@ -533,7 +788,7 @@ def build_app(target: str):
         path = CONFIGS / f"{name}.json"
         if not path.exists():
             raise HTTPException(404)
-        return {"raw": json.loads(path.read_text()), "effective": load_config(name)}
+        return {"raw": json.loads(path.read_text(encoding="utf-8")), "effective": load_config(name)}
 
     @app.put("/api/configs/{name}")
     async def put_config(name: str, request: Request):
@@ -541,17 +796,29 @@ def build_app(target: str):
             raise HTTPException(400, "config names are letters, digits, - and _")
         raw = await request.json()
         merged(raw)
-        (CONFIGS / f"{name}.json").write_text(json.dumps(raw, ensure_ascii=False, indent=2) + "\n")
+        (CONFIGS / f"{name}.json").write_text(
+            json.dumps(raw, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
         return {"saved": name}
 
     @app.post("/api/prompt")
     async def prompt(request: Request):
         """The two layers a turn sends: the system prompt and the tools array."""
         import capture
-        from pipeline.retrieval import contract
+        from pipeline.retrieval import contract, tools
 
         c = merged(await request.json())
-        schemas = [contract.model_schema(name) for name in c["tools"] if name in contract.DEFINITIONS]
+        if c["curate"]:
+            # The pinned version's topic catalog rides in the knowledge tool
+            # descriptions, so this reads the library exactly as a turn does.
+            ctx = tools.ToolContext(
+                workspace_id=c["workspace_id"], user_id="playground",
+                curate=True, operations=CURATE_OPERATIONS,
+            )
+            await tools.load_library_catalog(ctx)
+            schemas = [s for s in tools.schemas_for(ctx) if s["function"]["name"] in c["tools"]]
+        else:
+            schemas = [contract.model_schema(name) for name in c["tools"] if name in contract.DEFINITIONS]
         if capture.NAME in c["tools"]:
             schemas.append(capture.SCHEMA)
         return {"prompt": effective_prompt(c), "tools": schemas}
@@ -602,12 +869,19 @@ def build_app(target: str):
 def check() -> None:
     assert merged({"limits": {"tools_per_turn": 3}})["limits"] == {**DEFAULT_CONFIG["limits"], "tools_per_turn": 3}
     assert merged({"system_prompt": "x"})["system_prompt"] == "x"
+    assert material_id("m_1", "call_1") == material_id("m_1", "call_1") != material_id("m_1", "call_2")
     for path in CONFIGS.glob("*.json"):
-        c = merged(json.loads(path.read_text()))
+        c = merged(json.loads(path.read_text(encoding="utf-8")))
         assert c["target"] in TARGETS and c["capture"]["mode"] in ("pixels", "ocr", "caption"), path
         assert c["answer"]["citations"] in ("as_is", "renumber", "structured"), path
         assert c["capture"]["citation"] in ("page", "new"), path
-        assert set(c["tools"]) <= {"search_workspace", "list_sources", "describe_documents", "read_document", "capture_page"}, path
+        assert set(c["tools"]) <= ALLOWED_TOOLS, path
+        assert c["ledger"] is None or isinstance(c["ledger"], str), path
+        knowledge = set(c["tools"]) & set(KNOWLEDGE_TOOLS)
+        assert c["curate"] or not knowledge, f"{path}: knowledge tools need curate"
+        assert not c["curate"] or knowledge, f"{path}: a curate config offers no knowledge tool"
+        # Without create_ledger a curate turn cannot write anything at all.
+        assert not c["curate"] or "create_ledger" in c["tools"], f"{path}: no create_ledger"
     print("playground checks passed")
 
 
@@ -616,10 +890,17 @@ def main() -> None:
     parser.add_argument("--target", choices=sorted(TARGETS), default="lab")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--check", action="store_true")
+    parser.add_argument(
+        "--ledger",
+        help="start curate turns from this stored ledger (a previous run.json), "
+        "for configs that do not set `ledger` themselves",
+    )
     args = parser.parse_args()
     if args.check:
         check()
         return
+    if args.ledger:
+        DEFAULT_CONFIG["ledger"] = args.ledger
     dsn = prepare_environment(args.target)
     sys.path.insert(0, str(REPO / "pipeline"))
     import uvicorn
@@ -628,7 +909,12 @@ def main() -> None:
 
     registry.registry.start()
     print(f"target={args.target} dsn={dsn.split('@')[-1]} http://127.0.0.1:{args.port}", flush=True)
-    uvicorn.run(build_app(args.target), host="127.0.0.1", port=args.port, log_level="warning")
+    if sys.platform == "win32":
+        # psycopg's async pool refuses the Proactor loop that uvicorn installs on
+        # Windows, so serve on a selector loop of our own.
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    config = uvicorn.Config(build_app(args.target), host="127.0.0.1", port=args.port, log_level="warning", loop="none")
+    asyncio.run(uvicorn.Server(config).serve())
 
 
 if __name__ == "__main__":

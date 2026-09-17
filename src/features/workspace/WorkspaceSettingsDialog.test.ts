@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { sourcePercentages } from './WorkspaceSettingsDialog';
+import { sourcePercentages } from './sourcePercentages';
 
 it('rounds disjoint source categories to exactly 100 percent and leaves an empty workspace empty', () => {
   expect(sourcePercentages([1, 1, 1])).toEqual([34, 33, 33]);

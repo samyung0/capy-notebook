@@ -881,12 +881,12 @@ WITH scoped_files AS (
 ),
 vec AS (
     SELECT c.id, v.embedding <=> %(vector)s::halfvec AS dist,
-           row_number() OVER (ORDER BY v.embedding <=> %(vector)s::halfvec) AS rank
+           row_number() OVER (ORDER BY v.embedding <=> %(vector)s::halfvec, c.id) AS rank
         FROM {vector_table} v
         JOIN rag_chunks c ON c.id = v.chunk_id
         JOIN scoped_files sf ON sf.content_id = c.content_id
-        WHERE v.workspace_id = %(ws)s
-    ORDER BY v.embedding <=> %(vector)s::halfvec
+        WHERE v.workspace_id = %(ws)s{chunk_filter}
+    ORDER BY v.embedding <=> %(vector)s::halfvec, c.id
     LIMIT %(candidates)s
 ),
 q AS (
@@ -904,15 +904,15 @@ lex AS (
     SELECT c.id,
            row_number() OVER (
                ORDER BY (c.search @@ q.all_of) DESC,
-                        ts_rank_cd(c.search, q.any_of) DESC
+                        ts_rank_cd(c.search, q.any_of) DESC, c.id
            ) AS rank,
            (c.search @@ q.all_of AND q.lookup) AS exact
         FROM rag_chunks c
         JOIN scoped_files sf ON sf.content_id = c.content_id
         JOIN q ON q.lang = c.lang
-    WHERE c.workspace_id = %(ws)s
+    WHERE c.workspace_id = %(ws)s{chunk_filter}
       AND c.search @@ q.any_of
-    ORDER BY (c.search @@ q.all_of) DESC, ts_rank_cd(c.search, q.any_of) DESC
+    ORDER BY (c.search @@ q.all_of) DESC, ts_rank_cd(c.search, q.any_of) DESC, c.id
     LIMIT %(candidates)s
 ),
 fused AS (
@@ -937,7 +937,7 @@ JOIN rag_chunks c ON c.id = fused.id
 JOIN scoped_files sf ON sf.content_id = c.content_id
 LEFT JOIN vec ON vec.id = fused.id
 LEFT JOIN lex ON lex.id = fused.id
-ORDER BY fused.score DESC
+ORDER BY fused.score DESC, c.id
 LIMIT %(candidates)s
 """
 
@@ -949,8 +949,16 @@ async def hybrid_search(
     terms: QueryTerms,
     file_ids: list[str] | None,
     candidates: int,
+    pin: dict[str, Any] | None = None,
+    conn: Any | None = None,
+    chunk_filter: str = "",
+    chunk_filter_params: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Vector + lexical search fused with reciprocal rank fusion.
+
+    ``pin``, ``conn`` and ``chunk_filter`` exist for the knowledge library,
+    which runs this same statement against its own database with a
+    predicate on excerpt tags; workspace search never sets them.
 
     RRF rather than a weighted score sum because the two scales are not
     comparable and never will be: cosine distance and ts_rank_cd have no shared
@@ -967,34 +975,44 @@ async def hybrid_search(
     to ts_rank_cd against a frequent one. The AND tier is what makes the
     lexical leg earn its place for identifiers, names, and codes.
 
+    Every ordering ends on the chunk id: lexical scores tie constantly (35 of
+    44 adjacent candidates on a pilot question), and without it the cut and
+    the order inside a tied block followed physical row order.
+
     Rows carry the per-leg evidence (``vec_rank``, ``vec_dist``, ``lex_rank``)
     and ``flat_score``, the fusion with every lexical row at half weight, so
     the caller can tell which hits the exact tier put there.
     """
-    pin = await workspace_embedding_pin(workspace_id)
+    pin = pin or await workspace_embedding_pin(workspace_id)
+    sql = _SEARCH_SQL_TEMPLATE.format(
+        vector_table=vector_table_for_pin(pin), chunk_filter=chunk_filter
+    )
+    params = dict(chunk_filter_params or {})
+    params.update(
+        {
+            "ws": workspace_id,
+            "vector": vector_literal(vector),
+            "any_of": terms.any_of,
+            "all_of": terms.all_of,
+            "latin": terms.latin,
+            "terms": terms.terms,
+            "lookup_min": _LOOKUP_TERMS[0],
+            "lookup_max": _LOOKUP_TERMS[1],
+            "langs": list(TS_CONFIG),
+            "cfgs": list(TS_CONFIG.values()),
+            "file_ids": list(file_ids or []),
+            "no_filter": not file_ids,
+            "candidates": candidates,
+            "rrf_k": _RRF_K,
+            "lex_weight": _LEX_WEIGHT,
+        }
+    )
+    if conn is not None:
+        cur = await conn.execute(sql, params)
+        return [dict(row) for row in await cur.fetchall()]
     db = await pool()
-    sql = _SEARCH_SQL_TEMPLATE.format(vector_table=vector_table_for_pin(pin))
-    async with db.connection() as conn:
-        cur = await conn.execute(
-            sql,
-            {
-                "ws": workspace_id,
-                "vector": vector_literal(vector),
-                "any_of": terms.any_of,
-                "all_of": terms.all_of,
-                "latin": terms.latin,
-                "terms": terms.terms,
-                "lookup_min": _LOOKUP_TERMS[0],
-                "lookup_max": _LOOKUP_TERMS[1],
-                "langs": list(TS_CONFIG),
-                "cfgs": list(TS_CONFIG.values()),
-                "file_ids": list(file_ids or []),
-                "no_filter": not file_ids,
-                "candidates": candidates,
-                "rrf_k": _RRF_K,
-                "lex_weight": _LEX_WEIGHT,
-            },
-        )
+    async with db.connection() as pooled:
+        cur = await pooled.execute(sql, params)
         return [dict(row) for row in await cur.fetchall()]
 
 

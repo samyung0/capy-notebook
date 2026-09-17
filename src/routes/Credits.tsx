@@ -22,7 +22,7 @@ export default function Credits() {
               <section className="flex items-start gap-4 py-5" key={credit.id}>
                 {credit.id === 'catppuccin' ? (
                   <span className="flex size-14 shrink-0 items-center justify-center rounded-card bg-surface-hover-bg">
-                    <FileIcon name="markdown" size={28} />
+                    <FileIcon className="size-7" name="markdown" />
                   </span>
                 ) : (
                   <img

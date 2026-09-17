@@ -35,3 +35,4 @@
 
 - Developer Epo approved (2026-09-13) fixing Sentry reporting with one event per causal failure across service relays, preserving expected-error and retry exclusions and separately reporting independent cleanup failures. server/internal/obs/sentry.go pipeline/pipeline/obs.py collaboration/src/observability.ts src/lib/observability.ts
 - Developer Epo decided (2026-09-13) automatic save/projection retries report the first failure until recovery; a later failure after success reports again. collaboration/src/failedStoreRetry.ts collaboration/src/projection.ts server/internal/obs/sentry.go
+- Developer approved (2026-09-17) development-only console logging of React exceptions and component stacks through the existing Sentry React error handler, preserving Sentry reporting. src/lib/observability.ts

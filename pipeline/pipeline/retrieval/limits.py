@@ -1,7 +1,8 @@
 """Workload limits and telemetry for the chat agent.
 
 These are workload limits, not billing. Platform-paid and BYOK turns share
-the same planning and tool caps. Provider-call, query-embedding, and cumulative
+the same planning and tool caps; the credit guard is a platform-paid billing
+cutoff and bounds nothing else. Provider-call, query-embedding, and cumulative
 input counts are measurements. The pinned model input budget bounds each call.
 """
 
@@ -17,8 +18,21 @@ TOOLS_PER_RESPONSE = 2
 TOOLS_PER_TURN = PLANNING_RESPONSES * TOOLS_PER_RESPONSE
 MAX_CONCURRENT = 4
 
+# Curate mode builds materials instead of answering, so it has no planning
+# ceiling for any payer and no per-turn tool count. The stall guard is the
+# workload bound: it ends a turn whose responses stop completing ledger todos.
+KNOWLEDGE_TOOLS_PER_RESPONSE = 4
+CURATE_STALL_RESPONSES = 4
+# A learner's request has to fit the library evidence of a whole turn.
+CURATE_MIN_CONTEXT_WINDOW_TOKENS = 200_000
+
 STOP_ANSWER = "answer"
 STOP_PLANNING_CAP = "planning_cap"
+# Curate only: the stall guard ran the last response with tools off, whether or
+# not that response answered. The credit guard's terminal call is not this: a
+# silent one reports planning_cap, the same as outside curate, so operators
+# sizing CURATE_STALL_RESPONSES do not read billing cutoffs as stalls.
+STOP_CURATE_STALL = "curate_stall"
 STOP_ERROR = "error"
 STOP_TURN_FAILED = "turn_failed"
 STOP_CLIENT_GONE = "client_gone"

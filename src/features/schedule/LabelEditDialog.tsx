@@ -59,7 +59,7 @@ export function LabelEditDialog({
           <Button onClick={onClose} type="button" variant="ghost">
             {m.action_cancel()}
           </Button>
-          <Button disabled={submitDisabled} type="submit">
+          <Button disabled={submitDisabled} type="submit" variant="accent">
             {!isSubmitting && <span>{m.action_save()}</span>}
             {isSubmitting && (
               <span>

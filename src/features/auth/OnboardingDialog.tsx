@@ -160,68 +160,68 @@ export function OnboardingDialog() {
       open={open}
       showCloseButton={false}
       title={m.onboarding_title()}
-      width={440}
     >
-      <p className="t-meta -mt-2 mb-5 text-fg-muted">{m.onboarding_hint()}</p>
       {formError && (
         <p
-          className="mb-3 rounded-button bg-tint-error px-3 py-2 text-sm text-tint-error-fg"
+          className="rounded-button bg-tint-error px-3 py-2 text-sm text-tint-error-fg"
           role="alert"
         >
           {formError}
         </p>
       )}
-      <div className="mb-5 flex items-center gap-4">
-        <Avatar
-          name={me.name}
-          size={72}
-          src={preview ?? (avatarIconId ? iconUrl(avatarIconId) : me.avatarUrl)}
-        />
-        <div>
-          <div className="flex flex-wrap gap-2">
-            <Controller
-              control={control}
-              name="avatarIconId"
-              render={({ field }) => (
-                <IconPicker
-                  disabled={busy}
-                  onChange={(id) => {
-                    field.onChange(id);
-                    setFile(null);
-                    setFileError(null);
-                    if (inputRef.current) inputRef.current.value = '';
-                  }}
-                  value={field.value}
-                />
-              )}
-            />
-            <Button
-              disabled={busy}
-              iconLeft="upload"
-              onClick={() => inputRef.current?.click()}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              {m.onboarding_upload()}
-            </Button>
-          </div>
-          <p className="t-meta mt-1.5 text-fg-muted">
-            {m.onboarding_upload_hint()}
-          </p>
-          {fileError && <InputError errors={[{ message: fileError }]} />}
-          <input
-            accept={PROFILE_PHOTO_ACCEPT}
-            disabled={busy}
-            hidden
-            onChange={(event) => {
-              pickFile(event.target.files?.[0] ?? null);
-              event.target.value = '';
-            }}
-            ref={inputRef}
-            type="file"
+      <div>
+        <div className="mb-5 flex items-center gap-7">
+          <Avatar
+            className="size-20"
+            name={me.name}
+            src={
+              preview ?? (avatarIconId ? iconUrl(avatarIconId) : me.avatarUrl)
+            }
           />
+          <div className="translate-y-1">
+            <div className="flex flex-wrap gap-2">
+              <Controller
+                control={control}
+                name="avatarIconId"
+                render={({ field }) => (
+                  <IconPicker
+                    disabled={busy}
+                    onChange={(id) => {
+                      field.onChange(id);
+                      setFile(null);
+                      setFileError(null);
+                      if (inputRef.current) inputRef.current.value = '';
+                    }}
+                    value={field.value}
+                  />
+                )}
+              />
+              <Button
+                disabled={busy}
+                iconLeft="upload"
+                onClick={() => inputRef.current?.click()}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                {m.onboarding_upload()}
+              </Button>
+            </div>
+            <p className="mt-1.5 text-fg-muted">{m.onboarding_upload_hint()}</p>
+            <input
+              accept={PROFILE_PHOTO_ACCEPT}
+              disabled={busy}
+              hidden
+              onChange={(event) => {
+                pickFile(event.target.files?.[0] ?? null);
+                event.target.value = '';
+              }}
+              ref={inputRef}
+              type="file"
+            />
+          </div>
         </div>
+        {fileError && <InputError errors={[{ message: fileError }]} />}
       </div>
       <Controller
         control={control}

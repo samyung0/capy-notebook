@@ -10,7 +10,6 @@ import type {
   Citation,
   ResourceEffect,
   ResourceRef,
-  ToolError,
   UndoStatus,
   UserColor,
 } from '@/api/types';
@@ -25,6 +24,7 @@ import { Spinner } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { Input } from '@/components/ui/Input';
+import { Switch } from '@/components/ui/Switch';
 import {
   Tooltip,
   TooltipContent,
@@ -33,6 +33,8 @@ import {
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { userColorPairDark } from '@/lib/userColor';
+import { curateToggleDisabled, curateToggleVisible } from './curateToggle';
+import { toolErrorMessage } from './toolErrorMessage';
 import { toChatMessage, useChatStream } from './useChatStream';
 
 /** Page label for a citation, absent for sources with no page model (txt/md
@@ -90,32 +92,6 @@ function PlanningHint({ visible }: { visible: boolean }) {
       {m.chat_planning_next_step()}
     </p>
   );
-}
-
-/** Localized copy for a stable tool error code; the code itself never changes. */
-export function toolErrorMessage(error: ToolError | undefined): string {
-  switch (error?.code) {
-    case 'unsupported_format':
-      return m.chat_tool_error_unsupported_format();
-    case 'unsupported_operation':
-      return m.chat_tool_error_unsupported_operation();
-    case 'invalid_input':
-      return m.chat_tool_error_invalid_input();
-    case 'unavailable_target':
-      return m.chat_tool_error_unavailable_target();
-    case 'stale_target':
-      return m.chat_tool_error_stale_target();
-    case 'quota_rejected':
-      return m.chat_tool_error_quota_rejected();
-    case 'lifecycle_rejected':
-      return m.chat_tool_error_lifecycle_rejected();
-    case 'outcome_unknown':
-      return m.chat_tool_error_outcome_unknown();
-    case 'limit_reached':
-      return m.chat_tool_error_limit_reached();
-    default:
-      return m.chat_tool_failed();
-  }
 }
 
 function effectLabel(operation: ResourceEffect['operation']): string {
@@ -405,6 +381,7 @@ export function ChatPanel({
   workspaceId,
   color,
   canReprocess,
+  readOnly,
   onOpenCitation,
   onOpenResource,
 }: {
@@ -412,6 +389,8 @@ export function ChatPanel({
   color?: UserColor;
   /** Owner-only: shows the process-changes button under the pending notice. */
   canReprocess?: boolean;
+  /** Hides the curate switch: a visitor who cannot write cannot curate. */
+  readOnly?: boolean;
   /** Opens and highlights a cited source in the center pane. */
   onOpenCitation?: (citation: Citation) => void;
   /** Opens a resource a tool created, edited or restored, in the center pane. */
@@ -443,6 +422,9 @@ export function ChatPanel({
   const [text, setText] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
   const [selectId, setSelectId] = useState<string | null>(null);
+  // A chat is curate or ordinary for its whole life; the toggle only opens a
+  // new one, and an opened chat shows its stored mode.
+  const [curate, setCurate] = useState(false);
   const { data: history } = useMessages(selectId, { errorBoundary: false });
   const hydratedRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -466,14 +448,23 @@ export function ChatPanel({
     const trimmed = text.trim();
     if (!trimmed || streaming) return;
     setText('');
-    void send(trimmed);
+    void send(trimmed, curate);
   }
 
   function openNew() {
     hydratedRef.current = null;
     setSelectId(null);
+    setCurate(false);
     startNew();
   }
+
+  // A selected thread's stored mode arrives with its messages; until then the
+  // switch must not be flipped.
+  const curateDisabled = curateToggleDisabled({
+    hydrating: selectId !== null && history === undefined,
+    messageCount: messages.length,
+    streaming,
+  });
 
   return (
     <div
@@ -485,7 +476,36 @@ export function ChatPanel({
         } as React.CSSProperties
       }
     >
-      <div className="flex items-center justify-end pt-1.5 pb-3 pl-3">
+      <div className="flex items-center justify-between gap-3 pt-1.5 pb-3 pl-3">
+        {curateToggleVisible({ readOnly }) ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <label
+                  className={cn(
+                    'flex min-w-0 items-center gap-2 text-sm',
+                    curateDisabled && 'text-fg-muted'
+                  )}
+                >
+                  <Switch
+                    checked={curate}
+                    disabled={curateDisabled}
+                    onCheckedChange={setCurate}
+                    size="sm"
+                  />
+                  <span className="truncate">{m.chat_curate()}</span>
+                </label>
+              }
+            />
+            <TooltipContent>
+              {messages.length > 0
+                ? m.chat_curate_locked()
+                : m.chat_curate_hint()}
+            </TooltipContent>
+          </Tooltip>
+        ) : (
+          <span />
+        )}
         <div className="flex grow-0 items-center">
           <Dialog onOpenChange={setHistoryOpen} open={historyOpen}>
             <Tooltip>
@@ -525,6 +545,7 @@ export function ChatPanel({
                       onClick={() => {
                         hydratedRef.current = null;
                         setSelectId(c.id);
+                        setCurate(c.curate);
                         setHistoryOpen(false);
                       }}
                       type="button"
@@ -533,6 +554,11 @@ export function ChatPanel({
                       <span className="wrap-anywhere min-w-0 flex-1 whitespace-normal">
                         {c.title || m.chat_untitled()}
                       </span>
+                      {c.curate && (
+                        <span className="shrink-0 rounded-full bg-tint-info px-2 py-0.5 text-[11px] text-tint-info-fg">
+                          {m.chat_curate()}
+                        </span>
+                      )}
                       {c.id === conversationId && (
                         <Icon name="check" size={16} />
                       )}

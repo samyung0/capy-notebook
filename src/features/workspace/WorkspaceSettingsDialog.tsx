@@ -1,7 +1,5 @@
-import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import {
-  useCloneWorkspace,
   useUpdateWorkspace,
   useUpdateWorkspaceSharing,
   useWorkspaceStats,
@@ -14,24 +12,9 @@ import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Switch } from '@/components/ui/Switch';
 import { Tabs } from '@/components/ui/Tabs';
 import { m } from '@/i18n';
-import { toastCloneError } from '@/lib/authToasts';
-import { trackItemCloned } from '@/lib/observability';
 import { ShareDialog } from './ShareDialog';
+import { sourcePercentages } from './sourcePercentages';
 import { WorkspaceFormEditDialog } from './WorkspaceFormEditDialog';
-
-// Largest remainders keep the displayed disjoint shares at exactly 100%.
-export function sourcePercentages(counts: readonly number[]): number[] {
-  const total = counts.reduce((sum, count) => sum + count, 0);
-  if (!total) return counts.map(() => 0);
-  const exact = counts.map((count) => (count * 100) / total);
-  const result = exact.map(Math.floor);
-  const order = exact
-    .map((value, index) => ({ fraction: value - result[index], index }))
-    .sort((a, b) => b.fraction - a.fraction);
-  const remainder = 100 - result.reduce((sum, value) => sum + value, 0);
-  for (let i = 0; i < remainder; i++) result[order[i].index]++;
-  return result;
-}
 
 export function WorkspaceSettingsDialog({
   workspace,
@@ -48,8 +31,6 @@ export function WorkspaceSettingsDialog({
   const { mutateAsync: update, isPending: saving } = useUpdateWorkspace();
   const { mutateAsync: updateSharing, isPending: sharing } =
     useUpdateWorkspaceSharing();
-  const { isPending: cloning, mutate: cloneWorkspace } = useCloneWorkspace();
-  const navigate = useNavigate();
   const {
     data: stats,
     isPending,
@@ -67,9 +48,15 @@ export function WorkspaceSettingsDialog({
   ];
   const tones = ['green', 'amber', 'graphite'] as const;
   return (
-    <SimpleDialog onClose={onClose} open={open} title={m.workspace_settings()}>
+    <SimpleDialog
+      cardClassName="h-full"
+      className="flex h-[88dvh] flex-col gap-0"
+      onClose={onClose}
+      open={open}
+      title={m.workspace_settings()}
+    >
       <Tabs
-        className="mt-4 overflow-x-auto whitespace-nowrap"
+        className="mt-2.5 overflow-x-auto whitespace-nowrap"
         onChange={setTab}
         tabs={[
           { label: m.workspace_general(), value: 'general' },
@@ -79,41 +66,15 @@ export function WorkspaceSettingsDialog({
         ]}
         value={tab}
       />
-      <div className="min-h-[360px] py-5">
+      <div className="h-full flex-1 px-1 py-5">
         {tab === 'general' && (
-          <>
-            <WorkspaceFormEditDialog
-              embedded
-              onSubmit={(values) => update({ ...values, id: workspace.id })}
-              open={open}
-              setOpen={onClose}
-              workspace={workspace}
-            />
-            {workspace.canClone && (
-              <Button
-                className="mt-4"
-                disabled={cloning}
-                iconLeft="plus"
-                onClick={() =>
-                  cloneWorkspace(workspace.id, {
-                    onError: (err) => toastCloneError(err, 'workspace'),
-                    onSuccess: ({ workspace: cloned }) => {
-                      trackItemCloned('workspace');
-                      onClose();
-                      navigate({
-                        params: { workspaceId: cloned.id },
-                        to: '/workspaces/$workspaceId',
-                      });
-                    },
-                  })
-                }
-                size="sm"
-                variant="outline"
-              >
-                {cloning ? m.action_cloning() : m.action_clone_workspace()}
-              </Button>
-            )}
-          </>
+          <WorkspaceFormEditDialog
+            embedded
+            onSubmit={(values) => update({ ...values, id: workspace.id })}
+            open={open}
+            setOpen={onClose}
+            workspace={workspace}
+          />
         )}
         {tab === 'sharing' && (
           <ShareDialog

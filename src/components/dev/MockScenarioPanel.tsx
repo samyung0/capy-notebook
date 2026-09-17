@@ -12,10 +12,8 @@ import {
 } from '@/mocks/scenarios';
 import { toastErrors } from '@/mocks/toastErrors';
 import { router } from '@/router';
-import MockDialogPreview, {
-  type MockDialogId,
-  mockDialogOptions,
-} from './MockDialogPreview';
+import MockDialogPreview from './MockDialogPreview';
+import { type MockDialogId, mockDialogOptions } from './mockDialogOptions';
 
 const MOCKS_ENABLED =
   import.meta.env.DEV && import.meta.env.VITE_USE_MSW !== 'false';

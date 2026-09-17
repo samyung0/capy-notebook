@@ -67,7 +67,7 @@ func TestWorkspaceCloneRejectsAPathReapedAfterItsSnapshot(t *testing.T) {
 	defer cancel()
 	ownerID := newBlobTestUser(t, s, "u_clone_blob_fence_source")
 	targetID := newBlobTestUser(t, s, "u_clone_blob_fence_target")
-	source, err := s.CreateWorkspace(ctx, ownerID, "Blob fence", nil)
+	source, err := s.CreateWorkspace(ctx, ownerID, WorkspaceCreate{Name: "Blob fence", Tags: nil})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +228,7 @@ func TestMaterialDeleteTakesCloneFenceBeforeAccountLock(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	ownerID := newBlobTestUser(t, s, "u_material_delete_lock_order")
-	workspace, err := s.CreateWorkspace(ctx, ownerID, "Material hierarchy", nil)
+	workspace, err := s.CreateWorkspace(ctx, ownerID, WorkspaceCreate{Name: "Material hierarchy", Tags: nil})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +276,7 @@ func TestWorkspaceDeleteTakesCloneFenceBeforeAccountLock(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	ownerID := newBlobTestUser(t, s, "u_workspace_delete_lock_order")
-	source, err := s.CreateWorkspace(ctx, ownerID, "Delete lock order", nil)
+	source, err := s.CreateWorkspace(ctx, ownerID, WorkspaceCreate{Name: "Delete lock order", Tags: nil})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -519,7 +519,7 @@ func TestConcurrentWorkspaceClonesBothComplete(t *testing.T) {
 		newBlobTestUser(t, s, "u_workspace_clone_lock_target_3"),
 		newBlobTestUser(t, s, "u_workspace_clone_lock_target_4"),
 	}
-	source, err := s.CreateWorkspace(ctx, ownerID, "Concurrent workspace clone", nil)
+	source, err := s.CreateWorkspace(ctx, ownerID, WorkspaceCreate{Name: "Concurrent workspace clone", Tags: nil})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -554,7 +554,7 @@ func TestWorkspaceCloneDoesNotWaitForSourceRow(t *testing.T) {
 	defer cancel()
 	ownerID := newBlobTestUser(t, s, "u_clone_unlocked_workspace_source")
 	targetID := newBlobTestUser(t, s, "u_clone_unlocked_workspace_target")
-	source, err := s.CreateWorkspace(ctx, ownerID, "Unlocked workspace clone", nil)
+	source, err := s.CreateWorkspace(ctx, ownerID, WorkspaceCreate{Name: "Unlocked workspace clone", Tags: nil})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -596,7 +596,7 @@ func TestSuspendedSourceOwnerDoesNotHideSharedCloneSources(t *testing.T) {
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_clone_suspended_source")
 	targetID := newBlobTestUser(t, s, "u_clone_suspended_target")
-	workspace, err := s.CreateWorkspace(ctx, ownerID, "Suspended source", nil)
+	workspace, err := s.CreateWorkspace(ctx, ownerID, WorkspaceCreate{Name: "Suspended source", Tags: nil})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -746,7 +746,7 @@ func TestCloneMaterialUsesProjectionAndRehomesReferencedAssets(t *testing.T) {
 			[]string{sourceUserID, targetUserID})
 	})
 
-	workspace, err := s.CreateWorkspace(ctx, sourceUserID, "Shared media", nil)
+	workspace, err := s.CreateWorkspace(ctx, sourceUserID, WorkspaceCreate{Name: "Shared media", Tags: nil})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -816,5 +816,82 @@ func TestCloneMaterialUsesProjectionAndRehomesReferencedAssets(t *testing.T) {
 	}
 	if clonedYjs {
 		t.Fatal("clone eagerly created durable Yjs state")
+	}
+}
+
+// Attribution travels with every copy, for files as well as materials: a clone
+// that dropped it would strip the source books' licence credit.
+func TestCloneCarriesProvenanceThroughBothPaths(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx := context.Background()
+	ownerID := newBlobTestUser(t, s, "u_clone_prov_source")
+	targetID := newBlobTestUser(t, s, "u_clone_prov_target")
+	workspace, err := s.CreateWorkspace(ctx, ownerID, WorkspaceCreate{Name: "Curated source", Tags: nil})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx,
+		`UPDATE workspaces SET privacy='public', share_role='editor' WHERE id=$1`, workspace.ID); err != nil {
+		t.Fatal(err)
+	}
+	content, err := materialdoc.Marshal(materialdoc.Empty())
+	if err != nil {
+		t.Fatal(err)
+	}
+	provenance := &Provenance{
+		Books: []ProvenanceBook{{
+			ID: "ahss", Title: "Advanced High School Statistics", Authors: []string{"Diez"},
+			Version: 2, License: "CC BY-SA 4.0", ExcerptIDs: []string{"e_1"},
+		}},
+		License: "CC BY-SA 4.0",
+	}
+	source, err := s.CreateMaterial(ctx, Material{
+		CreatedBy: ownerID, WorkspaceID: workspace.ID, WorkspaceName: workspace.Name,
+		Kind: "note", Title: "Curated note", Content: content, Provenance: provenance,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(provenance)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO files
+		(id, workspace_id, user_id, created_by, name, status, size_bytes, provenance)
+		VALUES ($1,$2,$3,$3,'curated.md','ready',10,$4)`,
+		uid("f"), workspace.ID, ownerID, encoded); err != nil {
+		t.Fatal(err)
+	}
+
+	materialClone, err := s.CloneMaterial(ctx, targetID, source.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if materialClone.Provenance == nil || len(materialClone.Provenance.Books) != 1 ||
+		materialClone.Provenance.Books[0].ID != "ahss" ||
+		materialClone.Provenance.License != "CC BY-SA 4.0" {
+		t.Fatalf("material clone provenance = %+v", materialClone.Provenance)
+	}
+
+	workspaceClone, err := s.CloneWorkspace(ctx, targetID, workspace.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refs, err := s.ListMaterialRefs(ctx, workspaceClone.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(refs) != 1 || refs[0].Provenance == nil ||
+		refs[0].Provenance.Books[0].ID != "ahss" {
+		t.Fatalf("workspace clone material provenance = %+v", refs)
+	}
+	files, err := s.ListFiles(ctx, "", workspaceClone.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 1 || files[0].Provenance == nil ||
+		files[0].Provenance.Books[0].ID != "ahss" ||
+		files[0].Provenance.License != "CC BY-SA 4.0" {
+		t.Fatalf("workspace clone file provenance = %+v", files)
 	}
 }

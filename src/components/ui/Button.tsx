@@ -44,22 +44,27 @@ export interface ButtonProps
   asChild?: boolean;
   fullWidth?: boolean;
   iconLeft?: IconName;
+  iconLeftClassName?: string;
   iconRight?: IconName;
+  iconRightClassName?: string;
 }
 
 const InlineIcon = ({
   name,
   size,
+  className,
 }: {
   name: IconName;
   size: VariantProps<typeof buttonVariants>['size'];
+  className: string;
 }) => (
   <Icon
     className={cn(
       'pointer-events-none shrink-0 -translate-y-px',
       size === 'sm' && 'size-3.75',
       size === 'md' && 'size-4',
-      size === 'lg' && 'size-4.5'
+      size === 'lg' && 'size-4.5',
+      className
     )}
     name={name}
   />
@@ -73,30 +78,15 @@ export function Button({
   iconRight,
   fullWidth,
   className,
+  iconLeftClassName,
+  iconRightClassName,
   asChild = false,
   ...rest
 }: ButtonProps) {
-  if (asChild) {
-    return (
-      <Slot.Root
-        className={cn(
-          cn(buttonVariants({ size, variant })),
-          fullWidth && 'w-full',
-          className
-        )}
-        data-size={size}
-        data-slot="button"
-        data-variant={variant}
-        {...rest}
-      >
-        {iconLeft && <InlineIcon name={iconLeft} size={size} />}
-        {children}
-        {iconRight && <InlineIcon name={iconRight} size={size} />}
-      </Slot.Root>
-    );
-  }
+  const Component = asChild ? Slot.Root : 'button';
+
   return (
-    <button
+    <Component
       className={cn(
         buttonVariants({ size, variant }),
         fullWidth && 'w-full',
@@ -107,9 +97,27 @@ export function Button({
       data-variant={variant}
       {...rest}
     >
-      {iconLeft && <InlineIcon name={iconLeft} size={size} />}
-      {children}
-      {iconRight && <InlineIcon name={iconRight} size={size} />}
-    </button>
+      <Slot.Slottable child={children}>
+        {(content) => (
+          <>
+            {iconLeft && (
+              <InlineIcon
+                className={iconLeftClassName}
+                name={iconLeft}
+                size={size}
+              />
+            )}
+            {content}
+            {iconRight && (
+              <InlineIcon
+                className={iconRightClassName}
+                name={iconRight}
+                size={size}
+              />
+            )}
+          </>
+        )}
+      </Slot.Slottable>
+    </Component>
   );
 }

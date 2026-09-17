@@ -1,0 +1,3 @@
+# library_schema.sql must stay byte-identical to LIBRARY_SCHEMA in
+# pipeline/pipeline/retrieval/library.py, line endings included.
+* -text

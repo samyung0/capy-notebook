@@ -1,0 +1,413 @@
+{
+  "frozen_before_candidate_output": true,
+  "frozen_at": "2026-09-16T11:38:41.858549+00:00",
+  "review_method": "Agent visual inspection of rendered original PDF pages. PyMuPDF source-text search only located the pages and PDF coordinates. No ODL or candidate output was read or generated for these sources before each source freeze. Page numbers are one-based PDF pages; bounding boxes are PDF points. Grouped pages are multiple observations within one check. Per-page bboxes override bbox.",
+  "sources": [
+    {
+      "id": "osu-cell-biology",
+      "title": "Fundamentals of Cell Biology",
+      "family": "Oregon State University / Dalton and Young",
+      "path": "bench/parsers/fixtures/local/odl-broad-spectrum/osu-cell-biology.pdf",
+      "url": "https://files.znu.edu.ua/files/Bibliobooks/Inshi83/0062535.pdf",
+      "landing_url": "https://open.oregonstate.education/cellbiology/",
+      "license": "CC BY-NC 4.0, except where otherwise noted; original PDF page 4. Figure 01-01 is credited as used with permission; retain the intact source and local review only, with no blanket figure-redistribution claim.",
+      "sha256": "3165af33b3a972bb3b8b367a6da3c34126afab2167613cc757bfa1ab372c590b",
+      "pages": 347,
+      "bytes": 59791153,
+      "frozen_at": "2026-09-16T11:38:41.842517+00:00",
+      "checks": [
+        {
+          "id": "bio-chapter-heading",
+          "page": 11,
+          "role": "genuine_heading",
+          "text": "VISUALIZING CELLS THROUGH MICROSCOPY",
+          "bbox": [
+            55,
+            85,
+            348,
+            106
+          ],
+          "negative_control": "A real all-caps chapter title must remain a heading."
+        },
+        {
+          "id": "bio-repeated-real-heading",
+          "pages": [
+            28,
+            68
+          ],
+          "role": "genuine_heading",
+          "text": "CHAPTER SUMMARY",
+          "bboxes": {
+            "28": [
+              55,
+              639,
+              180,
+              658
+            ],
+            "68": [
+              55,
+              172,
+              180,
+              190
+            ]
+          },
+          "negative_control": "Repeated all-caps titles genuinely introduce distinct chapter-summary sections; recurrence alone must not demote them."
+        },
+        {
+          "id": "bio-running-footer",
+          "pages": [
+            11,
+            31,
+            151
+          ],
+          "role": "running_banner",
+          "text": "FUNDAMENTALS OF CELL BIOLOGY",
+          "bbox": [
+            400,
+            749,
+            557,
+            764
+          ],
+          "must_not_parent": true,
+          "note": "Bottom running footer plus changing printed folio, not a body title."
+        },
+        {
+          "id": "bio-table-heading",
+          "page": 52,
+          "role": "table_header",
+          "texts": [
+            "INTEGRAL VS. PERIPHERAL MEMBRANE PROTEINS",
+            "Integral proteins",
+            "Peripheral proteins"
+          ],
+          "bbox": [
+            55,
+            594,
+            557,
+            724
+          ],
+          "must_preserve_body": true,
+          "must_not_parent": true,
+          "note": "Title and column labels belong to Table 02-01. Preserve the table, including its row and column associations."
+        },
+        {
+          "id": "bio-repeated-table-cell",
+          "page": 151,
+          "role": "table_header",
+          "text": "Included in coat",
+          "bbox": [
+            55,
+            195,
+            525,
+            309
+          ],
+          "must_preserve_body": true,
+          "must_not_parent": true,
+          "expected_occurrences": 3,
+          "note": "Table body label repeated in three cells: COPI adaptor and scission protein, COPII scission protein. Role name follows existing scorer; these are body cells, not column headings."
+        },
+        {
+          "id": "bio-original-caption",
+          "page": 12,
+          "role": "figure_caption",
+          "text": "Figure 01-01: Examples of the four different types of microscopy",
+          "bbox": [
+            130,
+            458,
+            484,
+            537
+          ],
+          "must_preserve_body": true,
+          "must_not_parent": true,
+          "note": "Original six-line caption immediately below the microscopy plate; inspect preservation, do not generate a caption."
+        }
+      ],
+      "acquisition_notes": [
+        "Publisher landing and publisher PDF link https://open.oregonstate.education/cellbiology/open/download?type=pdf returned HTTP 403 to local download. Used the intact openly reachable PDF from the ZNU academic library mirror. This is a pinned mirror version; byte identity to the current publisher export is not asserted."
+      ]
+    },
+    {
+      "id": "curtis-irvine-microeconomics",
+      "title": "Principles of Microeconomics, Version 2021 Revision A",
+      "family": "Lyryx Learning / Curtis and Irvine",
+      "path": "bench/parsers/fixtures/local/odl-broad-spectrum/curtis-irvine-microeconomics.pdf",
+      "url": "https://openlibrary-repo.ecampusontario.ca/jspui/bitstream/123456789/895/3/CI-Principles-of-Microeconomics-2021A.pdf",
+      "landing_url": "https://lyryx.com/subjects/economics/principles-of-microeconomics/",
+      "license": "CC BY-NC-SA 3.0; original PDF page 5, including the text, art and illustrations.",
+      "sha256": "5cf8ec9a3989fdeda86c7241105f85cadf42044214558adbec5a2e20b4546aaa",
+      "pages": 478,
+      "bytes": 4750605,
+      "frozen_at": "2026-09-16T11:38:41.857549+00:00",
+      "checks": [
+        {
+          "id": "econ-chapter-heading",
+          "page": 25,
+          "role": "genuine_heading",
+          "text": "Introduction to key ideas",
+          "bbox": [
+            317,
+            124,
+            539,
+            146
+          ],
+          "negative_control": "The real chapter title also occurs as a running banner on other pages."
+        },
+        {
+          "id": "econ-shared-banner-real-heading",
+          "page": 32,
+          "role": "genuine_heading",
+          "text": "A model of exchange and specialization",
+          "bbox": [
+            71,
+            72,
+            389,
+            94
+          ],
+          "negative_control": "The same section title is a running banner on page 33; this occurrence must remain a real heading."
+        },
+        {
+          "id": "econ-running-banner",
+          "page": 33,
+          "role": "running_banner",
+          "text": "A model of exchange and specialization",
+          "bbox": [
+            301,
+            35,
+            542,
+            53
+          ],
+          "must_not_parent": true,
+          "note": "Top running banner with section prefix 1.4 and printed folio 13. Page 32 has the real body heading."
+        },
+        {
+          "id": "econ-repeated-axis-labels",
+          "pages": [
+            33,
+            34
+          ],
+          "role": "diagram_label",
+          "texts": [
+            "Vegetable",
+            "Fish"
+          ],
+          "bboxes": {
+            "33": [
+              156,
+              94,
+              454,
+              299
+            ],
+            "34": [
+              156,
+              455,
+              454,
+              656
+            ]
+          },
+          "must_preserve_body": true,
+          "must_not_parent": true,
+          "note": "Repeated axis labels in the two production/consumption plots, not section titles."
+        },
+        {
+          "id": "econ-table-rows",
+          "page": 32,
+          "role": "table_header",
+          "texts": [
+            "Amanda",
+            "Zoe"
+          ],
+          "bbox": [
+            71,
+            280,
+            541,
+            363
+          ],
+          "must_preserve_body": true,
+          "must_not_parent": true,
+          "expected_table": [
+            [
+              "",
+              "Hours/fish",
+              "Hours/vegetable",
+              "Fish specialization",
+              "Vegetable specialization"
+            ],
+            [
+              "Amanda",
+              "3",
+              "2",
+              "12",
+              "18"
+            ],
+            [
+              "Zoe",
+              "2",
+              "4",
+              "18",
+              "9"
+            ]
+          ],
+          "note": "Row labels in Table 1.1, plus manually frozen cell associations for later exact table adjudication. Role name follows existing scorer; these are body row labels."
+        },
+        {
+          "id": "econ-original-caption",
+          "page": 33,
+          "role": "figure_caption",
+          "text": "Figure 1.1: Absolute advantage",
+          "bbox": [
+            188,
+            70,
+            423,
+            88
+          ],
+          "must_preserve_body": true,
+          "must_not_parent": true,
+          "full_visible_caption": "Figure 1.1: Absolute advantage – production",
+          "note": "Original caption above the plot; the short exact anchor avoids dash normalization deciding the structural result."
+        }
+      ],
+      "acquisition_notes": [
+        "Initially considered LMU Principles of Economics, but its download returned HTTP 403. Selected this different family before viewing any parser output. Acquired the intact publisher-attributed PDF from the eCampusOntario academic OER repository."
+      ]
+    },
+    {
+      "id": "crowell-simple-nature",
+      "title": "Simple Nature: An Introduction to Physics for Engineering and Physical Science Students, revision May 16, 2020",
+      "family": "Benjamin Crowell / Light and Matter",
+      "path": "bench/parsers/fixtures/local/odl-broad-spectrum/crowell-simple-nature.pdf",
+      "url": "https://archive.org/download/simple_nature/simple.pdf",
+      "download_final_url": "https://dn720005.ca.archive.org/0/items/simple_nature/simple.pdf",
+      "landing_url": "https://www.lightandmatter.com/area1sn.html",
+      "author_linked_archive": "https://archive.org/details/simple_nature",
+      "license": "CC BY-SA for the text and illustrations by Benjamin Crowell, visually checked on PDF page 4; the PDF does not name a CC licence version. Other illustrations carry individual credits. An optional GNU Free Documentation License 1.2 grant also appears on page 4.",
+      "sha256": "02843c96c28f06face06a144c89da57f5ae865a8b7ba470c760098377b0db396",
+      "pages": 1106,
+      "bytes": 68974604,
+      "frozen_at": "2026-09-16T11:47:31.903564+00:00",
+      "checks": [
+        {
+          "id": "physics-chapter-heading",
+          "page": 73,
+          "role": "genuine_heading",
+          "text": "Conservation of Energy",
+          "bbox": [
+            90,
+            128,
+            375,
+            161
+          ],
+          "negative_control": "Real chapter title; identical words recur in bottom running furniture on pages 78 and 80."
+        },
+        {
+          "id": "physics-numbered-heading",
+          "page": 80,
+          "role": "genuine_heading",
+          "text": "2.1.4 Power",
+          "bbox": [
+            203,
+            332,
+            272,
+            349
+          ],
+          "negative_control": "Numbered subsection inside the body, amid equations and example panels, must remain a heading."
+        },
+        {
+          "id": "physics-running-footer",
+          "pages": [
+            78,
+            80
+          ],
+          "role": "running_banner",
+          "text": "Conservation of Energy",
+          "bbox": [
+            30,
+            746,
+            285,
+            762
+          ],
+          "must_not_parent": true,
+          "note": "Bottom running footer with Chapter 2 and changing page number; compare genuine chapter title on page 73."
+        },
+        {
+          "id": "physics-repeated-table-headers",
+          "pages": [
+            24,
+            27
+          ],
+          "role": "repeated_interior_table_header",
+          "texts": [
+            "prefix",
+            "meaning",
+            "example"
+          ],
+          "bboxes": {
+            "24": [
+              222,
+              315,
+              528,
+              382
+            ],
+            "27": [
+              93,
+              114,
+              413,
+              180
+            ]
+          },
+          "must_preserve_body": true,
+          "must_not_parent": true,
+          "expected_powers_by_prefix": {
+            "kilo-": "10^3",
+            "centi-": "10^{-2}",
+            "milli-": "10^{-3}",
+            "mega-": "10^6",
+            "micro-": "10^{-6}",
+            "nano-": "10^{-9}"
+          },
+          "note": "Three repeated native table headers on different pages. The visual source has superscript powers including minus signs, recorded for separate exact math-in-table adjudication; anchor survival alone does not test these powers. Unruled header spans are not scored."
+        },
+        {
+          "id": "physics-original-caption",
+          "page": 78,
+          "role": "figure_caption",
+          "text": "A realistic drawing of",
+          "bbox": [
+            203,
+            206,
+            528,
+            290
+          ],
+          "must_preserve_body": true,
+          "must_not_parent": true,
+          "full_visible_caption_start": "f / A realistic drawing of Joule’s apparatus, based on the illustration in his original paper.",
+          "note": "Original caption below the apparatus drawing; letter f and slash are a figure label, not a section heading."
+        },
+        {
+          "id": "physics-body-formula",
+          "page": 77,
+          "role": "body_formula",
+          "texts": [
+            "K = 1",
+            "2mv2",
+            "kinetic energy"
+          ],
+          "bbox": [
+            174,
+            306,
+            329,
+            339
+          ],
+          "must_preserve_body": true,
+          "must_not_parent": true,
+          "expected_latex": "K = \\frac{1}{2} m v^2",
+          "note": "Source-reviewed kinetic-energy equation with true fraction 1/2 and superscript 2. The texts are native source-text anchors only, not a correct formula transcription. Do not call flattened K=12mv2 mathematically correct merely because all anchors survive; exact equation accuracy requires the expected_latex or visual adjudication."
+        }
+      ],
+      "acquisition_notes": [
+        "The retired author PDF path https://www.lightandmatter.com/sn/sn.pdf returned HTTP 404. Followed the current author landing page Read or download link to the author-associated Internet Archive item. Initial download timed out; HTTP range resume completed with final HTTP 206 and exact expected 68,974,604 bytes. PDF opens without repair and the last index page is readable."
+      ]
+    }
+  ],
+  "scope": "Source controls only. Biology/economics were frozen and released before their parsing; physics was appended after its own independent visual review and before its parsing. The first two source entries remain unchanged.",
+  "physics_appended_at": "2026-09-16T11:47:31.903564+00:00"
+}

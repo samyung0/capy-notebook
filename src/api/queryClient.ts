@@ -38,7 +38,7 @@ export const queryClient = new QueryClient({
     queries: {
       refetchOnWindowFocus: false,
       retry: shouldRetry,
-      staleTime: 30_000,
+      staleTime: 5 * 60 * 1000,
       throwOnError: (error, query) =>
         query.state.data === undefined &&
         query.meta?.errorBoundary !== false &&

@@ -195,6 +195,25 @@ class Config:
     # A passage header carries its extraction confidence and reasons when the
     # chunk's score is below this; the chat prompt ties capture_page to it.
     confidence_note_below: float = float(_env("CAPY_CONFIDENCE_NOTE_BELOW", "0.9"))
+    # ---- knowledge library ------------------------------------------------
+    # The shared textbook library lives in its own database (deploy/
+    # docker-compose.library-db.yml). Unset leaves curate-mode library tools
+    # unavailable. Every environment reads the same live library; books carry
+    # their own versions, so there is nothing to pin.
+    library_dsn: str = _env("LIBRARY_DATABASE_URL", "")
+    # Tags below this confidence, or whose evidence quote was not found in the
+    # excerpt body, never act as filters.
+    library_tag_min_confidence: float = float(
+        _env("CAPY_LIBRARY_TAG_MIN_CONFIDENCE", "0.8")
+    )
+    # The library's source PDFs live in their own private bucket with their own
+    # restricted key, not a prefix of the app bucket. Unset leaves
+    # capture_knowledge_page unoffered.
+    knowledge_base_b2_endpoint: str = _env("KNOWLEDGE_BASE_B2_ENDPOINT", "")
+    knowledge_base_b2_region: str = _env("KNOWLEDGE_BASE_B2_REGION", "")
+    knowledge_base_b2_bucket: str = _env("KNOWLEDGE_BASE_B2_BUCKET", "")
+    knowledge_base_b2_key_id: str = _env("KNOWLEDGE_BASE_B2_KEY_ID", "")
+    knowledge_base_b2_app_key: str = _env("KNOWLEDGE_BASE_B2_APP_KEY", "")
     # capture_page renders from a retrieval-host copy of the source PDF, kept
     # by source SHA and evicted by size.
     capture_cache_dir: str = _env("CAPY_CAPTURE_CACHE_DIR", "/tmp/capy-capture-cache")
@@ -226,6 +245,25 @@ class Config:
 
 
 cfg = Config()
+
+
+def require_all_or_none(group: str, values: dict[str, str]) -> None:
+    """A credential set is useless half-configured; say which name is missing."""
+    missing = sorted(name for name, value in values.items() if not value)
+    if missing and len(missing) != len(values):
+        raise ValueError(f"{group} must be fully set or fully unset; missing {missing}")
+
+
+require_all_or_none(
+    "KNOWLEDGE_BASE_B2_*",
+    {
+        "KNOWLEDGE_BASE_B2_ENDPOINT": cfg.knowledge_base_b2_endpoint,
+        "KNOWLEDGE_BASE_B2_REGION": cfg.knowledge_base_b2_region,
+        "KNOWLEDGE_BASE_B2_BUCKET": cfg.knowledge_base_b2_bucket,
+        "KNOWLEDGE_BASE_B2_KEY_ID": cfg.knowledge_base_b2_key_id,
+        "KNOWLEDGE_BASE_B2_APP_KEY": cfg.knowledge_base_b2_app_key,
+    },
+)
 
 
 for key, value in (
@@ -275,6 +313,9 @@ if cfg.shared_capacity_lock_dir and not os.path.isabs(cfg.shared_capacity_lock_d
 
 if not cfg.parser_timeout < cfg.parse_job_timeout:
     raise ValueError("PARSER_TIMEOUT must be below CAPY_PARSE_JOB_TIMEOUT")
+
+if not 0 < cfg.library_tag_min_confidence <= 1:
+    raise ValueError("CAPY_LIBRARY_TAG_MIN_CONFIDENCE must be in (0, 1]")
 
 if not 0 < cfg.confidence_note_below <= 1:
     raise ValueError("CAPY_CONFIDENCE_NOTE_BELOW must be in (0, 1]")

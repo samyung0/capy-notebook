@@ -22,6 +22,11 @@ const AuditPage = lazy(() =>
 const HealthPage = lazy(() =>
   import('@/pages/health').then((module) => ({ default: module.HealthPage }))
 );
+const LibraryPage = lazy(() =>
+  import('@/pages/library').then((module) => ({
+    default: module.LibraryPage,
+  }))
+);
 const OverviewPage = lazy(() =>
   import('@/pages/overview').then((module) => ({
     default: module.OverviewPage,
@@ -240,6 +245,15 @@ const auditRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: '/audit',
 });
+const libraryRoute = createRoute({
+  component: () => (
+    <PageBoundary>
+      <LibraryPage />
+    </PageBoundary>
+  ),
+  getParentRoute: () => authenticatedRoute,
+  path: '/library',
+});
 const registryRoute = createRoute({
   component: RegistryRoutePage,
   getParentRoute: () => authenticatedRoute,
@@ -257,6 +271,7 @@ const routeTree = rootRoute.addChildren([
     userDetailRoute,
     costsRoute,
     auditRoute,
+    libraryRoute,
     registryRoute,
   ]),
 ]);

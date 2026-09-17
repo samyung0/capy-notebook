@@ -1,0 +1,12 @@
+{
+  "reviewed_on": "2026-09-16",
+  "reviewer": "Codex source-page visual inspection; not independent human validation",
+  "source_manifest": "bench/rag/fixtures/knowledge-base-pilot-books.json",
+  "witnesses": [
+    {"book": "os4", "block_index": 2878, "page": 198, "text": "n = 50 n = 100 n = 250", "source_role": "Figure 5.5 column labels"},
+    {"book": "ahss4", "block_index": 2894, "page": 214, "text": "n = 50 n = 100 n = 250", "source_role": "Figure 3.6 column labels"},
+    {"book": "ahss4", "block_index": 1757, "page": 134, "text": "Event Garage full", "source_role": "Tree diagram column labels in Example 2.39"},
+    {"book": "lsj", "block_index": 2983, "page": 369, "text": "attended? no 𝛽0 𝛽0 + 𝛽2 yes 𝛽0 + 𝛽1 𝛽0 + 𝛽1 + 𝛽2", "source_role": "Table 14.9 body and row labels"},
+    {"book": "lsj", "block_index": 3315, "page": 412, "text": "Figure 15.13. The jamovi CFA analysis window", "source_role": "Figure 15.13 caption"}
+  ]
+}

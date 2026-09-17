@@ -141,7 +141,11 @@ export function WorkspaceMemberManager({
       <div className="mt-4 flex flex-col gap-1.5">
         {membersData?.map((member) => (
           <div className="flex items-center gap-2 py-1" key={member.userId}>
-            <Avatar name={member.name} size="sm" src={member.avatarUrl} />
+            <Avatar
+              className="size-7.5 text-xs"
+              name={member.name}
+              src={member.avatarUrl}
+            />
             <div className="min-w-0 flex-1">
               <p className="truncate font-medium text-fg text-sm">
                 {member.name}

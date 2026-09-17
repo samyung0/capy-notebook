@@ -7,8 +7,9 @@ like a quality problem rather than a bug.
 
 from __future__ import annotations
 
+from pipeline.prompts import curate as curate_prompts
 from pipeline.registry import ModelConfig
-from pipeline.retrieval import contract, models, tools, workflows
+from pipeline.retrieval import contract, library, models, tools, workflows
 from pipeline.retrieval.search import Passage, _cap_per_file, _mark_tier_only, search
 from pipeline.retrieval.tools import ToolContext
 
@@ -144,6 +145,545 @@ def test_restricted_empty_scope_stays_empty():
     )
     assert isinstance(resolved, tools.ResolvedScope)
     assert resolved.file_ids == []
+
+
+# ------------------------------------------------------- knowledge library
+
+_CURATE = _READ | {"library.read"}
+
+
+def _names(ctx: ToolContext) -> list[str]:
+    return [s["function"]["name"] for s in tools.schemas_for(ctx)]
+
+
+def _excerpt(**kwargs) -> library.Excerpt:
+    return library.Excerpt(
+        id=kwargs.pop("id", "e_1"),
+        book_id="ahss",
+        book_title="Advanced High School Statistics",
+        section_path="8.1 Line fitting",
+        roles=kwargs.pop("roles", ["introduction"]),
+        topic_ids=["linear-regression"],
+        confidence=0.9,
+        synopsis="Fitting a line by least squares.",
+        pages=[338, 339],
+        figure_ids=kwargs.pop("figure_ids", ["fig_8_1"]),
+        chunk_ids=["c_1", "c_2"],
+        **kwargs,
+    )
+
+
+def test_knowledge_tools_need_curate_a_library_and_the_operation(monkeypatch):
+    monkeypatch.setattr(tools.library, "enabled", lambda: True)
+    ctx = ToolContext(workspace_id="ws", user_id="u_1", operations=_CURATE)
+
+    assert "search_knowledge" not in _names(ctx), "ordinary chat never sees them"
+    ctx.curate = True
+    assert set(tools.KNOWLEDGE_TOOLS) <= set(_names(ctx))
+    # Workspace reads stay available to a learner in curate mode.
+    assert "search_workspace" in _names(ctx)
+
+    monkeypatch.setattr(tools.library, "enabled", lambda: False)
+    assert "search_knowledge" not in _names(ctx), "no library configured"
+    monkeypatch.setattr(tools.library, "enabled", lambda: True)
+    ctx.operations = _READ
+    assert "search_knowledge" not in _names(ctx), "library.read was not granted"
+
+
+def test_knowledge_capture_also_needs_the_knowledge_base_bucket(monkeypatch):
+    monkeypatch.setattr(tools.library, "enabled", lambda: True)
+    monkeypatch.setattr(tools.cfg, "knowledge_base_b2_bucket", "")
+    ctx = ToolContext(workspace_id="ws", user_id="u_1", operations=_CURATE, curate=True)
+
+    assert tools.KNOWLEDGE_CAPTURE not in _names(ctx), "no bucket, nothing to render"
+    monkeypatch.setattr(tools.cfg, "knowledge_base_b2_bucket", "capy-knowledge-base")
+    assert tools.KNOWLEDGE_CAPTURE in _names(ctx)
+    ctx.curate = False
+    assert tools.KNOWLEDGE_CAPTURE not in _names(ctx)
+
+
+def test_topic_catalog_rides_on_browse_knowledge_only(monkeypatch):
+    monkeypatch.setattr(tools.library, "enabled", lambda: True)
+    ctx = ToolContext(
+        workspace_id="ws",
+        user_id="u_1",
+        operations=_CURATE,
+        curate=True,
+        library_catalog=[
+            {
+                "id": "linear-regression",
+                "label": "Linear regression",
+                "aliases": ["least squares"],
+                "scope": "Fitting lines",
+            }
+        ],
+    )
+
+    described = {
+        s["function"]["name"]: s["function"]["description"]
+        for s in tools.schemas_for(ctx)
+    }
+
+    assert "linear-regression: Linear regression" in described["browse_knowledge"]
+    assert "least squares" in described["browse_knowledge"]
+    assert "linear-regression" not in described["search_knowledge"], (
+        "the catalog is long; it is listed once"
+    )
+    assert "browse_knowledge description" in described["search_knowledge"]
+    assert "linear-regression" not in described["read_knowledge"]
+    assert (
+        "linear-regression"
+        not in contract.DEFINITIONS["browse_knowledge"]["description"]
+    )
+
+
+def test_curate_replaces_the_write_tool_descriptions(monkeypatch):
+    """create_material means something else here, so the prompt package owns it."""
+    monkeypatch.setattr(tools.library, "enabled", lambda: True)
+    monkeypatch.setattr(tools.cfg, "gateway_url", "http://gateway")
+    monkeypatch.setattr(tools.cfg, "pipeline_secret", "secret")
+    ctx = ToolContext(
+        workspace_id="ws", user_id="u_1", operations=_CURATE | _EDITOR, curate=True
+    )
+
+    described = {
+        s["function"]["name"]: s["function"]["description"]
+        for s in tools.schemas_for(ctx)
+    }
+
+    assert (
+        described["create_material"]
+        == curate_prompts.TOOL_DESCRIPTIONS["create_material"]
+    )
+    assert "Materials are the output of this mode" in described["create_material"]
+    assert "section by section" in described["edit_document"]
+    ctx.curate = False
+    plain = {
+        s["function"]["name"]: s["function"]["description"]
+        for s in tools.schemas_for(ctx)
+    }
+    assert (
+        plain["create_material"]
+        == contract.DEFINITIONS["create_material"]["description"]
+    )
+
+
+async def test_search_knowledge_renders_excerpts_and_refuses_unknown_topics(
+    monkeypatch,
+):
+    ctx = ToolContext(
+        workspace_id="ws",
+        user_id="u_1",
+        operations=_CURATE,
+        curate=True,
+        library_catalog=[
+            {"id": "linear-regression", "label": "L", "aliases": [], "scope": ""}
+        ],
+    )
+    excerpt = _excerpt()
+    excerpt.hit_text = "The least squares line minimises the sum of squared residuals."
+
+    async def _search(query, *, topics=None, roles=None, **_kwargs):
+        assert (query, topics, roles) == (
+            "least squares",
+            ["linear-regression"],
+            ["introduction"],
+        )
+        return library.SearchResult([excerpt], topics, roles)
+
+    monkeypatch.setattr(tools.library, "search", _search)
+    result = await tools._search_knowledge(
+        {
+            "query": "least squares",
+            "topics": ["linear-regression"],
+            "roles": ["introduction"],
+        },
+        ctx,
+    )
+    text = result.text()
+
+    assert (
+        "[e_1] Advanced High School Statistics — 8.1 Line fitting (pages 338, 339)"
+        in text
+    )
+    assert "roles: introduction" in text and "figures: fig_8_1" in text
+    assert "least squares line" in text and "Fitting a line" in text
+
+    refused = await tools._search_knowledge({"query": "x", "topics": ["algebra"]}, ctx)
+    assert refused.refused and "algebra" in refused.text()
+
+
+async def test_empty_result_reports_role_counts_only_under_a_topic_filter(monkeypatch):
+    ctx = ToolContext(
+        workspace_id="ws",
+        operations=_CURATE,
+        curate=True,
+        library_catalog=[
+            {"id": "linear-regression", "label": "L", "aliases": [], "scope": ""}
+        ],
+    )
+    available: dict[str, int] | None = {"introduction": 3, "exercise": 1}
+
+    async def _search(_query, *, topics=None, roles=None, **_kwargs):
+        return library.SearchResult(
+            [], topics or [], roles or [], available if topics else None
+        )
+
+    monkeypatch.setattr(tools.library, "search", _search)
+    filtered = await tools._search_knowledge(
+        {"query": "proofs", "topics": ["linear-regression"], "roles": ["formal"]}, ctx
+    )
+
+    assert "No verified excerpt matches roles formal" in filtered.text()
+    assert "Those topics hold: introduction 3, exercise 1" in filtered.text()
+
+    # Without topics the same counts would be the whole library's.
+    unfiltered = await tools._search_knowledge(
+        {"query": "proofs", "roles": ["formal"]}, ctx
+    )
+    assert "no topic filter" in unfiltered.text()
+    assert "introduction 3" not in unfiltered.text()
+
+
+async def test_browse_labels_the_role_numbers_as_assignments(monkeypatch):
+    """They do not sum to the total: an excerpt counts once per role it carries."""
+    ctx = ToolContext(
+        workspace_id="ws",
+        operations=_CURATE,
+        curate=True,
+        library_catalog=[
+            {"id": "linear-regression", "label": "L", "aliases": [], "scope": "S"}
+        ],
+    )
+
+    async def _browse(topic, *, page=1, **_kwargs):
+        return library.BrowseResult(
+            topic={"id": topic, "label": "Linear regression", "scope": "Fitting lines"},
+            by_role={"introduction": 2, "formal": 2},
+            by_book={"ahss": 3},
+            total=3,
+            page=page,
+            page_size=20,
+            items=[_excerpt()],
+        )
+
+    monkeypatch.setattr(tools.library, "browse", _browse)
+    result = await tools._browse_knowledge({"topic": "linear-regression"}, ctx)
+    text = result.text()
+
+    assert "3 verified excerpts. By book: ahss 3." in text
+    assert "Role assignments (an excerpt counts once per role it carries)" in text
+    assert "introduction 2, formal 2" in text
+    assert "[e_1] Advanced High School Statistics" in text
+
+
+def _read_result(**kwargs) -> library.ExcerptRead:
+    return library.ExcerptRead(
+        excerpt=_excerpt(),
+        start=kwargs.pop("start", 0),
+        chunks=kwargs.pop("chunks", []),
+        next_start=kwargs.pop("next_start", None),
+        first=kwargs.pop("first", 40),
+        last=kwargs.pop("last", 44),
+    )
+
+
+async def test_read_knowledge_pages_in_chunk_units_and_records_the_read(monkeypatch):
+    ctx = ToolContext(workspace_id="ws", operations=_CURATE, curate=True)
+
+    async def _read(excerpt_id, *, start=0, **_kwargs):
+        assert (excerpt_id, start) == ("e_1", 42)
+        return _read_result(
+            start=start,
+            chunks=[{"chunk_idx": 42, "text": "Residuals are the vertical distances."}],
+            next_start=43,
+        )
+
+    monkeypatch.setattr(tools.library, "read_excerpt", _read)
+    result = await tools._read_knowledge({"excerpt_id": "e_1", "start": 42}, ctx)
+
+    assert "(chunk 42) Residuals" in result.text()
+    assert "chunks 40-44 of this excerpt, from 42" in result.text()
+    assert "(next start = 43)" in result.text(), "next start is the last chunk plus one"
+    assert [(r.excerpt_id, r.start) for r in ctx.ledger.reads] == [("e_1", 42)]
+    assert ctx.ledger.reads[0].section == "8.1 Line fitting"
+
+    # A repeat of the same position returns the text and adds nothing.
+    again = await tools._read_knowledge({"excerpt_id": "e_1", "start": 42}, ctx)
+    assert "(chunk 42) Residuals" in again.text()
+    assert len(ctx.ledger.reads) == 1
+    assert ctx.ledger.progress == 0, "reading is never progress"
+
+
+# --------------------------------------------------------------- the ledger
+
+
+def _curate_ctx() -> ToolContext:
+    return ToolContext(
+        workspace_id="ws",
+        user_id="u_1",
+        operations=_CURATE | _EDITOR,
+        assistant_message_id="m_1",
+        curate=True,
+    )
+
+
+async def test_create_ledger_appends_this_turn_and_refuses_a_second_call():
+    ctx = _curate_ctx()
+
+    first = await tools._create_ledger(
+        {"body": "Teach linear regression", "todos": ["note", "quiz"]}, ctx
+    )
+
+    assert "Added 2 todos to the ledger" in first.text()
+    assert ctx.ledger.exists and ctx.ledger.progress == 1
+    ctx.ledger.note_material(
+        tools.LedgerMaterial(
+            id="mat_1", kind="note", title="T", size="9 tokens", todo=0
+        )
+    )
+    assert ctx.ledger.progress == 2
+
+    again = await tools._create_ledger(
+        {"body": "Teach it differently", "todos": ["flashcards"]}, ctx
+    )
+
+    assert again.refused and "already exists" in again.text()
+    assert [t.done for t in ctx.ledger.todos] == [True, False], "nothing was reset"
+    assert ctx.ledger.progress == 2, "the refused call is not progress"
+
+    empty = await tools._create_ledger({"body": "", "todos": ["x"]}, ctx)
+    assert empty.refused
+
+
+async def test_a_later_turn_continues_the_stored_ledger():
+    """The ledger is the conversation's: a new turn sees what is still open and
+    its own create_ledger adds to it rather than replacing it. The done todo of
+    the earlier turn is gone, and the open one keeps the id it always had."""
+    first = tools.Ledger()
+    first.add("Teach linear regression", ["note", "quiz"])
+    first.note_material(
+        tools.LedgerMaterial(
+            id="mat_1", kind="note", title="T", size="9 tokens", todo=0
+        )
+    )
+    ctx = _curate_ctx()
+    ctx.ledger = tools.Ledger.from_stored(first.stored())
+
+    assert ctx.ledger.open_todos() == [1]
+    added = await tools._create_ledger(
+        {"body": "Now flashcards too", "todos": ["flashcards"]}, ctx
+    )
+
+    assert "[ ] 2. flashcards" in added.text(), "ids continue the conversation"
+    assert await tools.curate_write(ctx, "create_material", {"todo": 1}) == ([], 1)
+    ctx.ledger.note_material(
+        tools.LedgerMaterial(
+            id="mat_2", kind="quiz", title="Q", size="9 questions", todo=1
+        )
+    )
+
+    out = ctx.ledger.stored()
+    assert out["requests"] == ["Teach linear regression", "Now flashcards too"]
+    assert out["todos"] == [{"id": 2, "text": "flashcards"}]
+    assert [m["id"] for m in out["materials"]] == ["mat_1", "mat_2"]
+    assert [m["todo"] for m in out["materials"]] == [0, 1], "the ids they closed"
+    assert out["next_todo_id"] == 3
+    assert "reads" not in out, "reads are this turn's only"
+
+
+def test_the_stored_ledger_keeps_only_what_the_next_turn_needs():
+    """The gateway refuses a ledger over 64 KiB and the model pays for every
+    rendered line, so storing it drops the done todos and keeps the tail."""
+    ledger = tools.Ledger(
+        requests=[f"request {i}" for i in range(8)],
+        todos=[
+            tools.LedgerTodo(id=0, text="first done", done=True, material_id="mat_0"),
+            tools.LedgerTodo(id=1, text="first open"),
+            tools.LedgerTodo(id=2, text="second done", done=True, material_id="mat_1"),
+            tools.LedgerTodo(id=3, text="second open"),
+        ],
+        next_todo_id=4,
+        materials=[
+            tools.LedgerMaterial(
+                id=f"mat_{i}", kind="note", title="T", size="9 tokens", todo=0
+            )
+            for i in range(60)
+        ],
+    )
+
+    out = ledger.stored()
+
+    assert out["requests"] == [f"request {i}" for i in range(3, 8)]
+    assert [m["id"] for m in out["materials"]] == [f"mat_{i}" for i in range(10, 60)]
+    assert out["todos"] == [
+        {"id": 1, "text": "first open"},
+        {"id": 3, "text": "second open"},
+    ]
+    assert tools.Ledger.from_stored(out).open_todos() == [1, 3], "ids never move"
+    assert {m["todo"] for m in out["materials"]} == {0}, "the todo each one closed"
+
+
+def test_the_stored_ledger_keeps_the_newest_open_todos_only():
+    """Open todos are the array a term-long conversation grows without end, so
+    the oldest go: the newest 24 are the ones the learner is still waiting on."""
+    ledger = tools.Ledger()
+    ledger.add("Teach me everything", [f"todo {i}" for i in range(30)])
+
+    out = ledger.stored()
+
+    assert len(out["todos"]) == tools.STORED_TODOS
+    assert [t["id"] for t in out["todos"]] == list(range(6, 30)), "the oldest 6 go"
+    assert out["next_todo_id"] == 30, "the counter does not follow the drop"
+
+
+def test_a_malformed_stored_ledger_is_logged_and_the_turn_starts_empty(caplog):
+    """The row is read again on every turn, so a shape this code cannot parse
+    has to start the turn from nothing instead of breaking the conversation.
+    A shape that could be coerced into something (a dict read as its keys, a
+    todo id the counter has already handed out) is malformed too."""
+    plain_todos = {"requests": ["r"], "todos": ["note"], "materials": []}
+    material_todo_is_text = {
+        "requests": ["r"],
+        "materials": [
+            {"id": "m", "kind": "note", "title": "T", "size": "9", "todo": "first"}
+        ],
+    }
+    requests_is_a_dict = {"requests": {"a": 1}}
+    materials_is_a_string = {"requests": ["r"], "materials": "mat_1"}
+    todo_without_an_id = {"requests": ["r"], "todos": [{"text": "note"}]}
+    id_the_counter_already_passed = {
+        "requests": ["r"],
+        "next_todo_id": 1,
+        "todos": [{"id": 1, "text": "note"}],
+    }
+    malformed = (
+        plain_todos,
+        material_todo_is_text,
+        requests_is_a_dict,
+        materials_is_a_string,
+        todo_without_an_id,
+        id_the_counter_already_passed,
+    )
+
+    for stored in malformed:
+        ledger = tools.Ledger.from_stored(stored, "conv_1")
+        assert not ledger.exists and not ledger.todos and not ledger.materials
+
+    assert caplog.text.count("stored curate ledger is malformed") == len(malformed)
+    assert "conversation=conv_1" in caplog.text
+    assert tools.Ledger.from_stored(None).requests == [], "no ledger is not an error"
+    assert tools.Ledger.from_stored("a ledger").requests == [], "nor is a string"
+
+
+async def test_curate_writes_need_a_ledger_an_open_todo_and_excerpts_that_were_read():
+    ctx = _curate_ctx()
+
+    no_ledger = await tools.curate_write(ctx, "create_material", {})
+    assert isinstance(no_ledger, tools.ToolResult) and "create_ledger" in (
+        no_ledger.text()
+    )
+
+    await tools._create_ledger({"body": "b", "todos": ["one", "two"]}, ctx)
+    no_todo = await tools.curate_write(ctx, "create_material", {})
+    assert isinstance(no_todo, tools.ToolResult)
+    assert "needs todo" in no_todo.text() and "Open todos: 0, 1" in no_todo.text()
+
+    unknown_id = await tools.curate_write(ctx, "create_material", {"todo": 2})
+    assert isinstance(unknown_id, tools.ToolResult)
+    assert "not on the ledger" in unknown_id.text()
+    assert "Open todos: 0, 1" in unknown_id.text()
+
+    ctx.ledger.todos[0].done = True
+    done = await tools.curate_write(ctx, "create_material", {"todo": 0})
+    assert isinstance(done, tools.ToolResult)
+    assert "already done" in done.text() and "Open todos: 1" in done.text()
+
+    # No library read yet: a material from workspace files alone is allowed.
+    assert await tools.curate_write(ctx, "create_material", {"todo": 1}) == ([], 1)
+
+    ctx.ledger.note_read("e_1", 0, "8.1")
+    missing = await tools.curate_write(ctx, "create_material", {"todo": 1})
+    assert isinstance(missing, tools.ToolResult) and "needs excerpt_ids" in (
+        missing.text()
+    )
+
+    unread = await tools.curate_write(
+        ctx, "edit_document", {"todo": 1, "excerpt_ids": ["e_1", "e_9"]}
+    )
+    assert isinstance(unread, tools.ToolResult)
+    assert "'e_9'" in unread.text() and "read_knowledge" in unread.text()
+
+
+async def test_a_curate_edit_of_a_source_file_carries_no_ledger_rules():
+    """The ledger governs library work. The user's own file is not written from
+    the library, so it needs no todo, no excerpts and no provenance."""
+    ctx = _curate_ctx()
+    ctx.ledger.note_read("e_1", 0, "8.1")
+
+    assert await tools.curate_write(ctx, "edit_document", {}, material=False) == (
+        [],
+        None,
+    )
+
+    refused = await tools.curate_write(
+        ctx, "edit_document", {"excerpt_ids": ["e_1"]}, material=False
+    )
+    assert isinstance(refused, tools.ToolResult)
+    assert "carries no provenance" in refused.text()
+
+    # Ignoring the todo would leave the model believing it closed one.
+    with_todo = await tools.curate_write(
+        ctx, "edit_document", {"todo": 0}, material=False
+    )
+    assert isinstance(with_todo, tools.ToolResult)
+    assert "completes no ledger todo" in with_todo.text()
+
+
+async def test_a_write_with_every_todo_done_is_told_to_finish_the_turn():
+    """The refusal has to name the only move left: a second create_ledger is
+    refused too, so the turn ends with the answer."""
+    ctx = _curate_ctx()
+    await tools._create_ledger({"body": "b", "todos": ["one"]}, ctx)
+    ctx.ledger.todos[0].done = True
+
+    refused = await tools.curate_write(ctx, "create_material", {"todo": 0})
+
+    assert isinstance(refused, tools.ToolResult) and refused.refused
+    assert "Every todo on the ledger is done" in refused.text()
+    assert "list of materials you created" in refused.text()
+    assert "next message" in refused.text()
+
+
+def test_ledger_renders_the_requests_todos_materials_and_inputs():
+    ctx = _curate_ctx()
+    ctx.ledger.add("Teach linear regression to a beginner", ["note", "quiz"])
+    ctx.ledger.note_read("e_1", 0, "Ch 8 > 8.1 Line fitting")
+    ctx.ledger.note_read("e_1", 12, "Ch 8 > 8.1 Line fitting")
+    ctx.ledger.note_read("e_2", 0, "Ch 8 > 8.2 Residuals")
+    ctx.ledger.note_material(
+        tools.LedgerMaterial(
+            id="mat_1", kind="note", title="Regression", size="900 tokens", todo=0
+        )
+    )
+
+    rendered = curate_prompts.ledger_message("teach me regression", ctx.ledger)
+    body = rendered["content"]
+
+    assert rendered["_kind"] == "ledger"
+    assert "request: teach me regression" in body
+    assert "- Teach linear regression to a beginner" in body
+    assert "[x] 0. note → mat_1" in body
+    assert "[ ] 1. quiz" in body
+    # Done todos leave the ledger at the end of the message, but the id of one
+    # that stays open is the same id next message.
+    assert "ids never change" in body
+    assert "created note 'Regression' (id mat_1, 900 tokens) (todo 0)" in body
+    assert body.count("- e_1 ") == 1, "one line per excerpt, not per read"
+    assert "- e_2 Ch 8 > 8.2 Residuals" in body
+
+    empty = curate_prompts.ledger_message("teach me regression", tools.Ledger())
+    assert curate_prompts.NO_LEDGER in empty["content"]
 
 
 # --------------------------------------------------------------- citations

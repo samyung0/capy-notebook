@@ -590,6 +590,20 @@ export const ExploreFlashcardSetsResponseItem = zod.object({
   "knownPct": zod.int(),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -609,6 +623,20 @@ export const ExploreQuizzesResponseItem = zod.object({
   "isOwner": zod.boolean(),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "timeLimitMin": zod.int().optional(),
   "workspaceId": zod.string(),
@@ -672,6 +700,20 @@ export const ListAllFilesResponseItem = zod.object({
   "name": zod.string(),
   "position": zod.int(),
   "previewUrl": zod.string().optional(),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
   "revision": zod.int(),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
@@ -716,6 +758,20 @@ export const GetFileResponse = zod.object({
   "name": zod.string(),
   "position": zod.int(),
   "previewUrl": zod.string().optional(),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
   "revision": zod.int(),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
@@ -750,6 +806,20 @@ export const UpdateFileResponse = zod.object({
   "name": zod.string(),
   "position": zod.int(),
   "previewUrl": zod.string().optional(),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
   "revision": zod.int(),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
@@ -1034,6 +1104,20 @@ export const ListFlashcardSetsResponseItem = zod.object({
   "knownPct": zod.int(),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -1065,6 +1149,20 @@ export const CreateFlashcardSetResponse = zod.object({
   "knownPct": zod.int(),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -1183,6 +1281,20 @@ export const GetFlashcardSetResponse = zod.object({
   "knownPct": zod.int(),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -1276,6 +1388,20 @@ export const CloneFlashcardSetResponse = zod.object({
   "knownPct": zod.int(),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -1308,6 +1434,20 @@ export const UpdateFlashcardSetResponse = zod.object({
   "knownPct": zod.int(),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -1335,6 +1475,20 @@ export const UpdateFlashcardSetSharingResponse = zod.object({
   "knownPct": zod.int(),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -1475,6 +1629,20 @@ export const GetMaterialResponse = zod.object({
   "nodeCount": zod.int(),
   "position": zod.int(),
   "privacy": zod.enum(['private', 'public', 'link']),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
   "revision": zod.int(),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "scopeChapters": zod.array(zod.string()),
@@ -1515,6 +1683,20 @@ export const CloneMaterialResponse = zod.object({
   "nodeCount": zod.int(),
   "position": zod.int(),
   "privacy": zod.enum(['private', 'public', 'link']),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
   "revision": zod.int(),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "scopeChapters": zod.array(zod.string()),
@@ -1707,6 +1889,20 @@ export const UpdateMaterialSharingResponse = zod.object({
   "nodeCount": zod.int(),
   "position": zod.int(),
   "privacy": zod.enum(['private', 'public', 'link']),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
   "revision": zod.int(),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "scopeChapters": zod.array(zod.string()),
@@ -1884,6 +2080,20 @@ export const GetMistakesResponse = zod.object({
   "isOwner": zod.boolean(),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "timeLimitMin": zod.int().optional(),
   "workspaceId": zod.string(),
@@ -2085,6 +2295,20 @@ export const ListQuizzesResponseItem = zod.object({
   "isOwner": zod.boolean(),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "timeLimitMin": zod.int().optional(),
   "workspaceId": zod.string(),
@@ -2120,6 +2344,20 @@ export const CreateQuizResponse = zod.object({
   "isOwner": zod.boolean(),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "timeLimitMin": zod.int().optional(),
   "workspaceId": zod.string(),
@@ -2161,6 +2399,20 @@ export const GetQuizResponse = zod.object({
   "isOwner": zod.boolean(),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "timeLimitMin": zod.int().optional(),
   "workspaceId": zod.string(),
@@ -2219,6 +2471,20 @@ export const CloneQuizResponse = zod.object({
   "isOwner": zod.boolean(),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "timeLimitMin": zod.int().optional(),
   "workspaceId": zod.string(),
@@ -2251,6 +2517,20 @@ export const UpdateQuizContentResponse = zod.object({
   "isOwner": zod.boolean(),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "timeLimitMin": zod.int().optional(),
   "workspaceId": zod.string(),
@@ -2283,6 +2563,20 @@ export const UpdateQuizMetadataResponse = zod.object({
   "isOwner": zod.boolean(),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "timeLimitMin": zod.int().optional(),
   "workspaceId": zod.string(),
@@ -2310,6 +2604,20 @@ export const UpdateQuizSharingResponse = zod.object({
   "isOwner": zod.boolean(),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "timeLimitMin": zod.int().optional(),
   "workspaceId": zod.string(),
@@ -2325,7 +2633,9 @@ export const SearchQueryParams = zod.object({
 })
 
 export const SearchResponseItem = zod.object({
+  "fileKind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']).optional(),
   "href": zod.string(),
+  "iconId": zod.string().optional(),
   "id": zod.string(),
   "kind": zod.enum(['workspace', 'file', 'event', 'flashcards', 'thinking']),
   "subtitle": zod.string().optional(),
@@ -2743,6 +3053,11 @@ export const ListWorkspacesResponse = zod.array(ListWorkspacesResponseItem)
 /**
  * @summary Create a workspace
  */
+export const createWorkspaceBodyDescriptionMax = 500;
+
+
+
+export const createWorkspaceBodyIconIdRegExp = new RegExp('^$|^((sprouts|notionists)-(0[1-9]|1[0-2])|critters-(0[1-9]|1[0-6])|avataaars-(0[1-9]|1[0-9]|2[0-4])|waves-(0[1-9]|1[01]))$');
 export const createWorkspaceBodyNameMax = 80;
 
 export const createWorkspaceBodyTagsItemValueMax = 35;
@@ -2752,6 +3067,8 @@ export const createWorkspaceBodyTagsMax = 5;
 
 
 export const CreateWorkspaceBody = zod.object({
+  "description": zod.string().max(createWorkspaceBodyDescriptionMax).optional().describe('Optional workspace description'),
+  "iconId": zod.string().min(1).regex(createWorkspaceBodyIconIdRegExp).optional(),
   "name": zod.string().min(1).max(createWorkspaceBodyNameMax).describe('Workspace name'),
   "tags": zod.array(zod.object({
   "id": zod.string().optional(),
@@ -3069,6 +3386,7 @@ export const ListConversationsParams = zod.object({
 export const ListConversationsResponseItem = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "createdAt": zod.iso.datetime({"offset":true}),
+  "curate": zod.boolean(),
   "id": zod.string(),
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
@@ -3089,12 +3407,14 @@ export const createConversationBodyTitleMax = 60;
 
 
 export const CreateConversationBody = zod.object({
+  "curate": zod.boolean().optional().describe('Open the thread in curate mode (knowledge library)'),
   "title": zod.string().max(createConversationBodyTitleMax).optional().describe('Optional thread title')
 })
 
 export const CreateConversationResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "createdAt": zod.iso.datetime({"offset":true}),
+  "curate": zod.boolean(),
   "id": zod.string(),
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
@@ -3120,6 +3440,20 @@ export const ListWorkspaceFilesResponseItem = zod.object({
   "name": zod.string(),
   "position": zod.int(),
   "previewUrl": zod.string().optional(),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
   "revision": zod.int(),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
@@ -3198,6 +3532,20 @@ export const ListMaterialsResponseItem = zod.object({
   "maxDepth": zod.int(),
   "nodeCount": zod.int(),
   "position": zod.int(),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
   "sizeBytes": zod.int(),
   "title": zod.string(),
   "type": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note'])
@@ -3249,6 +3597,20 @@ export const CreateMaterialResponse = zod.object({
   "nodeCount": zod.int(),
   "position": zod.int(),
   "privacy": zod.enum(['private', 'public', 'link']),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
   "revision": zod.int(),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "scopeChapters": zod.array(zod.string()),
@@ -3381,6 +3743,20 @@ export const UploadSourceResponse = zod.object({
   "name": zod.string(),
   "position": zod.int(),
   "previewUrl": zod.string().optional(),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
   "revision": zod.int(),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
@@ -3536,6 +3912,20 @@ export const CompleteSourceUploadResponse = zod.object({
   "name": zod.string(),
   "position": zod.int(),
   "previewUrl": zod.string().optional(),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
   "revision": zod.int(),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),

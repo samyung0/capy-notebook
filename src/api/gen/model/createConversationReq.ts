@@ -8,6 +8,8 @@
 export interface CreateConversationReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  /** Open the thread in curate mode (knowledge library) */
+  curate?: boolean;
   /**
      * Optional thread title
      * @maxLength 60

@@ -9,13 +9,10 @@ export function QueryPausedState({
 }) {
   return (
     <div
-      className={cn(
-        'flex items-center justify-center gap-2 text-fg-muted',
-        className
-      )}
+      className={cn('flex items-center justify-center gap-2', className)}
       role="status"
     >
-      <Icon className="size-5" name="warning" />
+      <Icon className="size-5 -translate-y-px" name="wifiError" />
       <p>{m.connection_waiting()}</p>
     </div>
   );

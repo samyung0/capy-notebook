@@ -493,6 +493,130 @@ describe('live collaboration authorization', () => {
     expect(client.query).toHaveBeenCalledWith('ROLLBACK');
   });
 
+  // The gateway merges the edit's books into the stored record and hands the
+  // authority the result; the credit must land in the same transaction as the
+  // content, so an edit that commits can never be uncredited.
+  it('writes provenance beside the content, and only when the edit carries it', async () => {
+    async function editWith(provenance?: unknown) {
+      const durable = new Y.Doc({ gc: true });
+      durable
+        .get('content', Y.XmlText)
+        .applyDelta(
+          slateNodesToInsertDelta([
+            { children: [{ text: 'first' }], id: 'block_1', type: 'p' },
+          ] as never)
+        );
+      const state = Buffer.from(Y.encodeStateAsUpdate(durable));
+      durable.destroy();
+      const statements: string[] = [];
+      const client = {
+        query: vi.fn(async (sql: string) => {
+          statements.push(sql);
+          if (sql.includes('FROM agent_operations WHERE id=$1')) {
+            return { rowCount: 0, rows: [] };
+          }
+          if (
+            sql.includes(
+              'SELECT owner_user_id, workspace_id, kind FROM materials'
+            ) ||
+            sql.includes(
+              'FROM materials WHERE id=$1 AND trashed_at IS NULL FOR SHARE'
+            )
+          ) {
+            return {
+              rowCount: 1,
+              rows: [
+                { kind: 'note', owner_user_id: 'u_owner', workspace_id: null },
+              ],
+            };
+          }
+          if (sql.includes('FROM users u') && sql.includes('FOR SHARE OF u')) {
+            return {
+              rowCount: 2,
+              rows: ['u_editor', 'u_owner'].map((id) => ({
+                deleted_at: null,
+                deletion_requested_at: null,
+                id,
+                over_quota: false,
+                suspended_at: null,
+              })),
+            };
+          }
+          if (sql.includes('JOIN users owner')) {
+            return { rowCount: 1, rows: [liveRow({ workspace_id: null })] };
+          }
+          if (sql.includes('SELECT state, room_schema, stored_version')) {
+            return {
+              rowCount: 1,
+              rows: [{ room_schema: 1, state, stored_version: '3' }],
+            };
+          }
+          if (sql.includes('SELECT title, kind, workspace_id FROM materials')) {
+            return {
+              rowCount: 1,
+              rows: [{ kind: 'note', title: 'Note', workspace_id: null }],
+            };
+          }
+          return { rowCount: 1, rows: [] };
+        }),
+        release: vi.fn(),
+      };
+      const store = new YjsDocumentStore({
+        connect: vi.fn().mockResolvedValue(client),
+      } as unknown as Pool);
+      await expect(
+        store.applyMaterialEdit({
+          actorUserId: 'u_editor',
+          commands: [
+            {
+              afterBlockId: 'block_1',
+              blocks: [
+                { children: [{ text: 'second' }], id: 'block_2', type: 'p' },
+              ],
+              type: 'insert_block',
+            },
+          ],
+          operation: { id: 'op_1', requestHash: 'hash_1' },
+          provenance,
+          room: 'material:mat_1:schema:1',
+        })
+      ).resolves.toMatchObject({ version: 4 });
+      return { client, statements };
+    }
+
+    const credited = await editWith({
+      books: [{ excerptIds: ['e_1'], id: 'ahss', title: 'AHSS' }],
+      license: 'CC BY-SA 4.0',
+    });
+    expect(credited.client.query).toHaveBeenCalledWith(
+      'UPDATE materials SET provenance=$2 WHERE id=$1',
+      [
+        'mat_1',
+        JSON.stringify({
+          books: [{ excerptIds: ['e_1'], id: 'ahss', title: 'AHSS' }],
+          license: 'CC BY-SA 4.0',
+        }),
+      ]
+    );
+    const content = credited.statements.findIndex((sql) =>
+      sql.includes('UPDATE material_yjs_documents')
+    );
+    const provenance = credited.statements.findIndex((sql) =>
+      sql.includes('UPDATE materials SET provenance')
+    );
+    expect(content).toBeGreaterThan(credited.statements.indexOf('BEGIN'));
+    expect(provenance).toBeGreaterThan(content);
+    expect(credited.statements.indexOf('COMMIT')).toBeGreaterThan(provenance);
+    expect(credited.statements).not.toContain('ROLLBACK');
+
+    const uncredited = await editWith();
+    expect(
+      uncredited.statements.some((sql) =>
+        sql.includes('UPDATE materials SET provenance')
+      )
+    ).toBe(false);
+  });
+
   it('rechecks every editor represented by one debounced snapshot', async () => {
     const checkedActors: string[] = [];
     const client = {

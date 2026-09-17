@@ -13,20 +13,9 @@ import {
 import { WorkspaceTransferDialog } from '@/features/workspace/WorkspaceMemberManager';
 import { WorkspaceSettingsDialog } from '@/features/workspace/WorkspaceSettingsDialog';
 import { tasks, workspaces } from '@/mocks/db';
-import { dialogFiles, dialogSourceFile } from '@/mocks/dialogFiles';
+import { dialogSourceFile } from '@/mocks/dialogFiles';
 import { sourceUploadPolicy } from '@/mocks/sourceUploadPolicy';
-
-export const mockDialogOptions = [
-  { id: 'workspace-stats', label: 'Workspace statistics' },
-  { id: 'ownership-transfer', label: 'Transfer ownership confirmation' },
-  { id: 'task-edit', label: 'Task editor' },
-  ...dialogFiles.map(({ id, name }) => ({ id, label: name })),
-  { id: 'onboarding', label: 'Onboarding' },
-  { id: 'source-chooser', label: 'Add sources' },
-  { id: 'source-details', label: 'Import details with dummy files' },
-  { id: 'source-analysis-error', label: 'Import analysis error' },
-] as const;
-export type MockDialogId = (typeof mockDialogOptions)[number]['id'];
+import type { MockDialogId } from './mockDialogOptions';
 
 const source: PendingSource = {
   analysisStatus: 'ready',

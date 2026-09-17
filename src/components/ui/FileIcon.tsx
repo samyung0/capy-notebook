@@ -95,13 +95,11 @@ export type FileIconName = (typeof FILE_ICON_NAMES)[number];
  * and inherit `strokeWidth` and the `--ctp-*` palette from the page. */
 export function FileIcon({
   name,
-  size = 16,
   strokeWidth = 1.3,
   className,
   style,
 }: {
   name: FileIconName;
-  size?: number;
   strokeWidth?: number;
   className?: string;
   style?: CSSProperties;
@@ -110,11 +108,9 @@ export function FileIcon({
     <svg
       aria-hidden
       className={className}
-      height={size}
       strokeWidth={strokeWidth}
       style={{ display: 'block', flex: '0 0 auto', ...style }}
       viewBox="0 0 16 16"
-      width={size}
     >
       <use href={`${sprite}#${name}`} />
     </svg>

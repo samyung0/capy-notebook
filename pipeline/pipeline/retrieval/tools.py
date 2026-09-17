@@ -27,7 +27,8 @@ import requests
 from .. import obs
 from ..config import cfg
 from ..generated import MATERIAL_TITLE_MAX
-from . import capture, contract, pending, store
+from ..prompts import curate as curate_prompts
+from . import capture, contract, library, pending, store
 from .chunking import clip_to_tokens, estimate_tokens
 from .limits import TurnBudget
 from .search import Passage, SearchStats, search
@@ -70,10 +71,239 @@ class ToolResult:
         return "\n\n".join(part for part in self.text_parts if part)
 
 
+# What a stored ledger keeps of a long conversation. The gateway refuses a
+# ledger over 64 KiB, and the model pays for every rendered line on every call,
+# so the tail is what a later turn can still act on.
+STORED_MATERIALS = 50
+STORED_REQUESTS = 5
+STORED_TODOS = 24
+
+
+@dataclass
+class LedgerTodo:
+    """One material or section the turn promised to produce.
+
+    ``id`` comes from the conversation's own counter and never changes, so the
+    number the model writes down in one message still names this todo in the
+    next one. ``done`` and ``material_id`` live for the turn that completes it:
+    a done todo leaves the ledger when it is stored.
+    """
+
+    id: int
+    text: str
+    done: bool = False
+    material_id: str = ""
+
+
+@dataclass
+class LedgerMaterial:
+    """A material created, or a section appended to one (``kind`` "edit")."""
+
+    id: str
+    kind: str
+    title: str
+    size: str
+    todo: int | None = None
+
+
+@dataclass
+class LedgerRead:
+    """One library excerpt this turn read, at one chunk position."""
+
+    excerpt_id: str
+    start: int
+    section: str
+
+
+def _stored_list(stored: dict[str, Any], key: str) -> list[Any]:
+    """One array of a stored ledger. Raised into ``from_stored``'s log."""
+    value = stored.get(key) or []
+    if not isinstance(value, list):
+        raise TypeError(f"{key} is {type(value).__name__}, not a list")
+    return value
+
+
+def _stored_objects(stored: dict[str, Any], key: str) -> list[dict[str, Any]]:
+    """One array of a stored ledger whose entries are objects."""
+    entries = _stored_list(stored, key)
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise TypeError(f"{key} holds a {type(entry).__name__}, not an object")
+    return entries
+
+
+@dataclass
+class Ledger:
+    """One curate conversation's progress ledger.
+
+    It belongs to the conversation, not the turn: the requests the learner has
+    made, the todos they were broken into and the materials produced all carry
+    across turns through ``conversations.ledger``. A turn loads it, adds its own
+    request and todos with ``create_ledger``, marks todos done as the writes
+    land, and stores it again at turn end. Excerpt reads are this turn's only.
+
+    It rides right after the query on every call and is never part of the
+    message history, so it is the one place the model sees what it has done.
+    """
+
+    requests: list[str] = field(default_factory=list)
+    todos: list[LedgerTodo] = field(default_factory=list)
+    materials: list[LedgerMaterial] = field(default_factory=list)
+    # The conversation's todo counter: the next id ``add`` hands out. It is
+    # stored, so an id is never reused after its todo leaves the ledger.
+    next_todo_id: int = 0
+    # This turn only, and never stored: what the model read to write with.
+    reads: list[LedgerRead] = field(default_factory=list)
+    # create_ledger already ran this turn, so a second call is refused.
+    written: bool = False
+    # Something this turn changed has to be written back at turn end.
+    dirty: bool = False
+    # Monotonic count of this turn's real progress: its create_ledger call, then
+    # each completed todo. The stall guard compares it across a response, so a
+    # repeated read leaves it alone.
+    progress: int = 0
+
+    @classmethod
+    def from_stored(cls, stored: Any, conversation: str = "") -> Ledger:
+        """The conversation's stored ledger, or an empty one.
+
+        Total: the row is read again on every turn, so a shape this code does
+        not understand would otherwise break the conversation for good. It is
+        logged against the conversation and the turn starts from nothing. A
+        shape that is not the one ``stored`` writes is malformed rather than
+        something to coerce: a dict where a list belongs would otherwise read
+        as its keys, and a todo id the counter has already handed out would
+        let two todos answer to the same number.
+        """
+        if stored is None:
+            return cls()
+        try:
+            if not isinstance(stored, dict):
+                raise TypeError(f"ledger is {type(stored).__name__}, not an object")
+            ledger = cls(
+                requests=[str(request) for request in _stored_list(stored, "requests")],
+                next_todo_id=int(stored.get("next_todo_id") or 0),
+                todos=[
+                    LedgerTodo(id=int(todo.get("id")), text=str(todo.get("text") or ""))
+                    for todo in _stored_objects(stored, "todos")
+                ],
+                materials=[
+                    LedgerMaterial(
+                        id=str(material.get("id") or ""),
+                        kind=str(material.get("kind") or ""),
+                        title=str(material.get("title") or ""),
+                        size=str(material.get("size") or ""),
+                        todo=None
+                        if material.get("todo") is None
+                        else int(material["todo"]),
+                    )
+                    for material in _stored_objects(stored, "materials")
+                ],
+            )
+            if any(todo.id >= ledger.next_todo_id for todo in ledger.todos):
+                raise ValueError("next_todo_id is not past every stored todo id")
+            return ledger
+        except (AttributeError, TypeError, ValueError) as exc:
+            log.error(
+                "stored curate ledger is malformed (%s); starting this turn from "
+                "an empty ledger. conversation=%s",
+                exc,
+                conversation or "unknown",
+            )
+            return cls()
+
+    def stored(self) -> dict[str, Any]:
+        """The ledger as the gateway persists it, bounded so a long conversation
+        stays under the gateway's 64 KiB cap.
+
+        Only what the next turn still needs: the newest ``STORED_TODOS`` open
+        todos, the last ``STORED_MATERIALS`` materials and the last
+        ``STORED_REQUESTS`` requests. Done todos drop because the material
+        entry records what they produced, and it keeps the id of the todo it
+        completed even when that todo has dropped. Ids never move, so nothing
+        here is renumbered. Reads are this turn's only and are never stored.
+        """
+        return {
+            "requests": self.requests[-STORED_REQUESTS:],
+            "next_todo_id": self.next_todo_id,
+            "todos": [
+                {"id": todo.id, "text": todo.text}
+                for todo in self.todos
+                if not todo.done
+            ][-STORED_TODOS:],
+            "materials": [
+                {
+                    "id": material.id,
+                    "kind": material.kind,
+                    "title": material.title,
+                    "size": material.size,
+                    "todo": material.todo,
+                }
+                for material in self.materials[-STORED_MATERIALS:]
+            ],
+        }
+
+    @property
+    def exists(self) -> bool:
+        return bool(self.requests)
+
+    def add(self, request: str, todos: list[str]) -> list[LedgerTodo]:
+        """Add this turn's request and its todos, each with a fresh id."""
+        self.requests.append(request)
+        added = [
+            LedgerTodo(id=self.next_todo_id + n, text=text)
+            for n, text in enumerate(todos)
+        ]
+        self.next_todo_id += len(added)
+        self.todos.extend(added)
+        self.written = True
+        self.dirty = True
+        self.progress += 1
+        return added
+
+    def open_todos(self) -> list[int]:
+        """The ids the write tools accept right now."""
+        return [todo.id for todo in self.todos if not todo.done]
+
+    def todo(self, todo_id: int) -> LedgerTodo | None:
+        return next((todo for todo in self.todos if todo.id == todo_id), None)
+
+    def note_read(self, excerpt_id: str, start: int, section: str) -> bool:
+        """Record one read. False when this exact position was already read."""
+        if any(r.excerpt_id == excerpt_id and r.start == start for r in self.reads):
+            return False
+        self.reads.append(
+            LedgerRead(excerpt_id=excerpt_id, start=start, section=section)
+        )
+        return True
+
+    def read_ids(self) -> set[str]:
+        return {read.excerpt_id for read in self.reads}
+
+    def note_material(self, material: LedgerMaterial) -> None:
+        self.materials.append(material)
+        self.dirty = True
+        todo = None if material.todo is None else self.todo(material.todo)
+        if todo is None:
+            return
+        if not todo.done:
+            todo.done = True
+            self.progress += 1
+        todo.material_id = material.id
+
+
 @dataclass
 class ToolContext:
     workspace_id: str
     user_id: str = ""
+    # Curate mode: the library tools are offered, materials carry library
+    # provenance, and the conversation keeps a progress ledger instead of
+    # citations. The ledger is loaded from the chat request at turn start.
+    curate: bool = False
+    ledger: Ledger = field(default_factory=Ledger)
+    # The library's topic catalog, fetched once per turn for the knowledge
+    # tool descriptions.
+    library_catalog: list[dict[str, Any]] | None = None
     # Resource operations the gateway granted this actor for the turn
     # (contract.OPERATIONS names). Tools whose required operations are not all
     # present are neither offered nor dispatched.
@@ -463,7 +693,9 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     browse the document by pixels, and a capture adds no citation of its own:
     the tool result names the numbers already covering that page.
     """
-    if len(ctx.captures) >= cfg.captures_per_turn:
+    # No per-turn cap in curate mode: a capture is dropped when its exchange
+    # folds into the turn note anyway, and a whole set of materials is one turn.
+    if not ctx.curate and len(ctx.captures) >= cfg.captures_per_turn:
         return _refused(
             f"This turn already used its {cfg.captures_per_turn} capture_page calls. "
             "Answer from what you have seen.",
@@ -516,6 +748,274 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         f"Captured {label}. The rendered image is attached to the next message; "
         "read it directly. This page is already in the evidence as "
         f"{numbers}; cite those numbers for what the capture shows."
+    )
+
+
+# ------------------------------------------------ knowledge library tools
+
+
+async def load_library_catalog(ctx: ToolContext) -> None:
+    """Read the library's topic catalog once, for the tool descriptions."""
+    if not ctx.curate or ctx.library_catalog is not None or not library.enabled():
+        return
+    db = await library.pool()
+    async with db.connection() as conn:
+        ctx.library_catalog = await library.catalog(conn)
+
+
+def _catalog_lines(catalog: list[dict[str, Any]]) -> str:
+    lines = []
+    for topic in catalog:
+        aliases = ", ".join(str(a) for a in (topic.get("aliases") or []))
+        scope = str(topic.get("scope") or "")
+        lines.append(
+            f"- {topic['id']}: {topic['label']}"
+            + (f" (also: {aliases})" if aliases else "")
+            + (f" — {scope}" if scope else "")
+        )
+    return "\n".join(lines)
+
+
+def _unknown_topics(ctx: ToolContext, topics: list[str]) -> list[str]:
+    known = {str(topic["id"]) for topic in ctx.library_catalog or []}
+    return [topic for topic in topics if topic not in known]
+
+
+def _facets(args: dict[str, Any]) -> tuple[list[str], list[str]]:
+    topics = [str(t) for t in (args.get("topics") or [])]
+    roles = [str(r) for r in (args.get("roles") or [])]
+    return topics, roles
+
+
+def _excerpt_head(excerpt: library.Excerpt) -> str:
+    pages = ", ".join(str(p) for p in excerpt.pages)
+    return f"[{excerpt.id}] {excerpt.book_title} — {excerpt.section_path}" + (
+        f" (pages {pages})" if pages else ""
+    )
+
+
+def _excerpt_facets(excerpt: library.Excerpt) -> str:
+    parts = [
+        f"roles: {', '.join(excerpt.roles)}",
+        f"topics: {', '.join(excerpt.topic_ids)}",
+    ]
+    if excerpt.figure_ids:
+        parts.append(f"figures: {', '.join(excerpt.figure_ids)}")
+    return " | ".join(parts)
+
+
+def _no_excerpts(
+    topics: list[str], roles: list[str], available: dict[str, int] | None
+) -> str:
+    """What an empty search means. Counts only say something under topics.
+
+    Without a topic filter the by-role numbers are the whole library's and
+    carry no information about the query, so the model is pointed at the
+    filter it did not use instead.
+    """
+    head = (
+        f"No verified excerpt matches roles {', '.join(roles) or 'any'} on topics "
+        f"{', '.join(topics) or 'any'}."
+    )
+    if not topics:
+        return (
+            f"{head} This search had no topic filter. Pass topics from the "
+            "catalog in the browse_knowledge description to see what the "
+            "library holds for them by role."
+        )
+    held = ", ".join(f"{role} {count}" for role, count in (available or {}).items())
+    if held:
+        return f"{head} Those topics hold: {held}."
+    return f"{head} Browse one of those topics to see what it does hold."
+
+
+async def _search_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    query = str(args.get("query") or "").strip()
+    if not query:
+        return _refused("search_knowledge needs a query.")
+    topics, roles = _facets(args)
+    unknown = _unknown_topics(ctx, topics)
+    if unknown:
+        return _refused(
+            f"Unknown topic ids {unknown}. Use the topic ids from the catalog in "
+            "the browse_knowledge description."
+        )
+    if ctx.budget is not None:
+        ctx.budget.embedding_calls += 1
+    try:
+        result = await library.search(query, topics=topics, roles=roles)
+    except ValueError as exc:
+        return _refused(f"search_knowledge: {exc}")
+    if not result.excerpts:
+        return _result(_no_excerpts(topics, roles, result.available_roles))
+    blocks = []
+    for excerpt in result.excerpts:
+        blocks.append(
+            "\n".join(
+                [
+                    _excerpt_head(excerpt),
+                    _excerpt_facets(excerpt),
+                    f"synopsis: {excerpt.synopsis}",
+                    excerpt.hit_text,
+                ]
+            )
+        )
+    return _result(
+        "\n\n".join(blocks)
+        + "\n\nRead an excerpt in full with read_knowledge before writing from it."
+    )
+
+
+async def _browse_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    topic = str(args.get("topic") or "").strip()
+    if _unknown_topics(ctx, [topic]):
+        return _refused(
+            f"Unknown topic id {topic!r}. Use the topic ids from the catalog in this "
+            "tool's description."
+        )
+    try:
+        result = await library.browse(topic, page=int(args.get("page") or 1))
+    except ValueError as exc:
+        return _refused(f"browse_knowledge: {exc}")
+    by_role = ", ".join(f"{role} {count}" for role, count in result.by_role.items())
+    by_book = ", ".join(f"{book} {count}" for book, count in result.by_book.items())
+    counts = (
+        f"{result.total} verified excerpts. By book: {by_book or 'none'}. "
+        "Role assignments (an excerpt counts once per role it carries): "
+        f"{by_role or 'none'}."
+    )
+    head = [
+        f"{result.topic['id']}: {result.topic['label']} — {result.topic['scope']}",
+        counts,
+    ]
+    items = [
+        f"{_excerpt_head(excerpt)}\n{_excerpt_facets(excerpt)}\nsynopsis: {excerpt.synopsis}"
+        for excerpt in result.items
+    ]
+    tail = ""
+    if result.page * result.page_size < result.total:
+        tail = f"\n\n(next page = {result.page + 1})"
+    return _result("\n".join(head) + "\n\n" + "\n\n".join(items) + tail)
+
+
+def _short_section(section_path: str) -> str:
+    """The last one or two segments of a section path, for a ledger line."""
+    parts = [
+        part.strip()
+        for part in section_path.replace("›", ">").split(">")
+        if part.strip()
+    ]
+    return " > ".join(parts[-2:])[:120] if parts else ""
+
+
+async def _read_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    excerpt_id = str(args.get("excerpt_id") or "").strip()
+    start = max(0, int(args.get("start") or 0))
+    try:
+        read = await library.read_excerpt(excerpt_id, start=start)
+    except ValueError as exc:
+        return _refused(f"read_knowledge: {exc}")
+    if not read.chunks:
+        return _result(f"Excerpt {excerpt_id} has no text at chunk {start}.")
+    body = "\n\n".join(
+        f"(chunk {chunk['chunk_idx']}) {chunk['text']}" for chunk in read.chunks
+    )
+    tail = (
+        f"\n\n(next start = {read.next_start})"
+        if read.next_start is not None
+        else "\n\n(end of excerpt)"
+    )
+    ctx.ledger.note_read(
+        read.excerpt.id, start, _short_section(read.excerpt.section_path)
+    )
+    return _result(
+        _excerpt_head(read.excerpt)
+        + "\n"
+        + _excerpt_facets(read.excerpt)
+        + f"\nchunks {read.first}-{read.last} of this excerpt, from {start}"
+        + "\n\n"
+        + body
+        + tail
+    )
+
+
+async def _create_ledger(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    """Add this turn's request and its todos to the conversation's ledger.
+
+    One call per user message, before any write. Todos are completed through
+    the write tools, so a second call has nothing to do and is refused.
+    """
+    body = str(args.get("body") or "").strip()
+    todos = [
+        str(todo).strip() for todo in (args.get("todos") or []) if str(todo).strip()
+    ]
+    if not body or not todos:
+        return _refused("create_ledger needs a body and at least one todo.")
+    if ctx.ledger.written:
+        return _refused(
+            "The ledger for this message already exists. Todos are completed by "
+            "passing their id to create_material or edit_document, not by "
+            "calling create_ledger again."
+        )
+    added = ctx.ledger.add(body, todos)
+    listing = "\n".join(f"[ ] {todo.id}. {todo.text}" for todo in added)
+    return _result(
+        f"Added {len(added)} todos to the ledger:\n{listing}\n\n"
+        "Read the excerpts one todo needs, then write it with create_material or "
+        "edit_document, passing that todo's id."
+    )
+
+
+async def _capture_knowledge_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    """Render a page of the book behind a library excerpt.
+
+    The excerpt is the unit the model works in, so only its own pages and the
+    pages of its figures can be captured. Like ``capture_page`` it adds no
+    citation: a curate turn has none, and the attribution lives on the material.
+    Curate mode has no per-turn capture cap.
+    """
+    excerpt_id, page, bbox = args["excerpt_id"], args["page"], args.get("bbox")
+    try:
+        target = await library.capture_target(excerpt_id)
+    except ValueError as exc:
+        return _refused(f"capture_knowledge_page: {exc}")
+    if page not in target.pages:
+        pages = ", ".join(str(p) for p in target.pages) or "none"
+        return _refused(
+            f"Excerpt {excerpt_id} covers pages {pages}; capture one of those."
+        )
+    started = time.perf_counter()
+    try:
+        jpeg, box, size = await capture.render_knowledge(
+            target.object_key, target.bytes, page, bbox, cfg.capture_max_edge
+        )
+    except capture.CaptureUnavailable as exc:
+        return _refused(f"capture_knowledge_page: {exc}", code=exc.code)
+    except ValueError as exc:
+        return _refused(f"capture_knowledge_page: {exc}")
+    call_id = str(args.get("_tool_call_id") or "")
+    n = len(ctx.captures) + 1
+    label = f"{target.book_title} page {page}" + (
+        f" region {[int(v) for v in box]}" if bbox else ""
+    )
+    ctx.captures.append(
+        capture.record(
+            call_id=call_id,
+            file_id=target.excerpt_id,
+            page=page,
+            box=box,
+            jpeg=jpeg,
+            size=size,
+            started=started,
+        )
+    )
+    ctx.pending_images[call_id] = (
+        f"capture_knowledge_page result {n}: {label}",
+        capture.data_url(jpeg),
+    )
+    return _result(
+        f"Captured {label}. The rendered image is attached to the next message; "
+        "read it directly."
     )
 
 
@@ -589,10 +1089,16 @@ async def _create_material(args: dict[str, Any], ctx: ToolContext) -> ToolResult
     call_id = str(args.get("_tool_call_id") or "")
     if not call_id:
         return _refused("create_material is missing its tool-call id.")
+    prepared = await curate_write(ctx, "create_material", args)
+    if isinstance(prepared, ToolResult):
+        return prepared
+    books, todo = prepared
     resolved = await _resolve_scope(ctx, args.get("scope", _MISSING))
     if isinstance(resolved, ToolResult):
         return resolved
-    if not resolved.indexed:
+    # A material written from the library is grounded in the library, so it
+    # does not need indexed workspace content.
+    if not resolved.indexed and not books:
         return _refused(
             "The requested scope has no indexed content.", code="unavailable_target"
         )
@@ -612,11 +1118,190 @@ async def _create_material(args: dict[str, Any], ctx: ToolContext) -> ToolResult
         "fileIds": resolved.file_ids,
         "chapterIds": resolved.chapter_ids,
     }
+    if books:
+        # Go validates the shape and computes the material's own licence.
+        payload["provenance"] = {"books": books}
 
     await ctx.pending_sources.validate()
-    return await _post_operation(
+    result = await _post_operation(
         "/api/internal/materials", payload, op_id, ctx, failure=f"create the {kind}"
     )
+    if ctx.curate and result.effects:
+        note_created(ctx, result.effects[0], kind, args, todo)
+    return result
+
+
+def _material_size(kind: str, args: dict[str, Any]) -> str:
+    if kind == "quiz":
+        return f"{len(args.get('questions') or [])} questions"
+    if kind == "flashcards":
+        return f"{len(args.get('cards') or [])} cards"
+    return f"{estimate_tokens(str(args.get('content') or ''))} tokens"
+
+
+# ------------------------------------------------------- curate-mode writes
+
+
+def _next_move(ledger: Ledger) -> str:
+    """What a refused write should do instead: pick an open todo, or stop.
+
+    A ledger with nothing open has no next write in it. Declaring more work is
+    refused too (one create_ledger per message), so the only move left is to
+    finish the turn.
+    """
+    listing = ", ".join(str(todo_id) for todo_id in ledger.open_todos())
+    if not listing:
+        return (
+            "Every todo on the ledger is done. Finish this turn by replying with "
+            "the list of materials you created; more work needs the learner's "
+            "next message."
+        )
+    return f"Open todos: {listing}."
+
+
+async def curate_write(
+    ctx: ToolContext,
+    tool: str,
+    args: dict[str, Any],
+    *,
+    material: bool = True,
+) -> tuple[list[dict[str, Any]], int | None] | ToolResult:
+    """Check a curate write and resolve its provenance, or refuse it.
+
+    Returns the provenance books (one entry per source book) and the ledger
+    todo this write completes. Shared with the playground's local write stubs,
+    so the rules have one implementation. ``material`` is false for an edit of
+    the user's own source file, which carries no provenance and no todo.
+    """
+    excerpt_ids = [str(e) for e in (args.get("excerpt_ids") or [])]
+    if not ctx.curate:
+        if excerpt_ids:
+            return _refused("excerpt_ids are only available in curate mode.")
+        return [], None
+    if not material:
+        # Provenance is what a work was written from; a workspace source file is
+        # the user's own text, so the ledger rules do not reach it. Both are
+        # refused rather than ignored: a silently dropped todo would leave the
+        # model believing it closed one.
+        if excerpt_ids:
+            return _refused(
+                "excerpt_ids belong to a study material written from the "
+                "library; a source file carries no provenance."
+            )
+        if args.get("todo") is not None:
+            return _refused(
+                "Editing one of the user's own source files completes no ledger "
+                "todo, so it takes no todo. Call it again without one."
+            )
+        return [], None
+    if not ctx.ledger.exists:
+        return _refused(
+            f"There is no ledger yet. Call create_ledger with the plan before {tool}."
+        )
+    raw_todo = args.get("todo")
+    if raw_todo is None:
+        return _refused(
+            f"{tool} needs todo, the id of the ledger todo it completes. "
+            f"{_next_move(ctx.ledger)}"
+        )
+    todo = int(raw_todo)
+    entry = ctx.ledger.todo(todo)
+    if entry is None:
+        return _refused(f"todo {todo} is not on the ledger. {_next_move(ctx.ledger)}")
+    if entry.done:
+        return _refused(f"todo {todo} is already done. {_next_move(ctx.ledger)}")
+    read = ctx.ledger.read_ids()
+    if read and not excerpt_ids:
+        return _refused(
+            f"{tool} needs excerpt_ids naming the library excerpts this content "
+            "was written from."
+        )
+    unread = [e for e in excerpt_ids if e not in read]
+    if unread:
+        return _refused(
+            f"Excerpts {unread} were not read in this turn. read_knowledge each "
+            "of them before writing from it."
+        )
+    if not excerpt_ids:
+        return [], todo
+    try:
+        return await library.provenance(excerpt_ids), todo
+    except ValueError as exc:
+        return _refused(f"{tool}: {exc}")
+
+
+def note_created(
+    ctx: ToolContext,
+    effect: dict[str, Any],
+    kind: str,
+    args: dict[str, Any],
+    todo: int | None,
+) -> None:
+    """Record a created material on the ledger and mark the todo it completes."""
+    resource = effect.get("resource") or {}
+    ctx.ledger.note_material(
+        LedgerMaterial(
+            id=str(resource.get("id") or ""),
+            kind=kind,
+            title=str(resource.get("title") or ""),
+            size=_material_size(kind, args),
+            todo=todo,
+        )
+    )
+
+
+def note_appended(ctx: ToolContext, rid: str, commands: int, todo: int | None) -> None:
+    """Record an appended section on the ledger and mark the todo it completes."""
+    ctx.ledger.note_material(
+        LedgerMaterial(
+            id=rid,
+            kind="edit",
+            title="",
+            size=f"{commands} edits",
+            todo=todo,
+        )
+    )
+
+
+async def store_ledger(ctx: ToolContext) -> None:
+    """Write the conversation ledger back through the gateway at turn end.
+
+    The ledger is the conversation's memory of what is still open, so it is
+    stored whenever this turn changed it, including when the turn ended on the
+    stall guard or an error. A failed write loses the turn's ledger changes,
+    not the turn: the materials themselves are already durable.
+    """
+    if not ctx.curate or not ctx.ledger.dirty:
+        return
+    if not _gateway_ready() or not ctx.user_id or not ctx.assistant_message_id:
+        log.warning("curate ledger not stored: no gateway route for this turn")
+        return
+    payload = {
+        "workspaceId": ctx.workspace_id,
+        "userId": ctx.user_id,
+        "assistantMessageId": ctx.assistant_message_id,
+        "ledger": ctx.ledger.stored(),
+    }
+
+    def _post() -> requests.Response:
+        return requests.post(
+            _material_url("/api/internal/conversations/ledger"),
+            headers=_material_headers(),
+            data=json.dumps(payload),
+            timeout=10,
+        )
+
+    try:
+        resp = await asyncio.to_thread(_post)
+    except requests.RequestException as exc:
+        log.warning("curate ledger write failed: %s", exc)
+        return
+    if resp.status_code >= 300:
+        log.warning(
+            "curate ledger write failed: %s %s",
+            resp.status_code,
+            _response_detail(resp),
+        )
 
 
 async def _post_operation(
@@ -966,19 +1651,30 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         )
     call_id = str(args.get("_tool_call_id") or "")
     kind, rid = _target(args)
+    prepared = await curate_write(
+        ctx, "edit_document", args, material=kind == "material"
+    )
+    if isinstance(prepared, ToolResult):
+        return prepared
+    books, todo = prepared
     if kind == "source_file":
         resolved = await _resolve_scope(ctx, {"file_ids": [rid]})
         if isinstance(resolved, ToolResult):
             return resolved
         # Detect unrelated publications first; the acknowledged edit re-baselines after.
         await ctx.pending_sources.validate()
+    commands = list(args.get("commands") or [])
+    payload = {
+        **_chat_context(ctx, call_id),
+        "target": {"kind": kind, "id": rid},
+        "commands": commands,
+    }
+    if books:
+        # Go merges these books into the target's existing provenance by id.
+        payload["provenance"] = {"books": books}
     result = await _post_operation(
         "/api/internal/documents/edit",
-        {
-            **_chat_context(ctx, call_id),
-            "target": {"kind": kind, "id": rid},
-            "commands": list(args.get("commands") or []),
-        },
+        payload,
         operation_id(ctx.assistant_message_id, call_id),
         ctx,
         failure="edit the document",
@@ -989,6 +1685,8 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         ctx._scope_outline = None
         if kind == "source_file":
             ctx.pending_sources = await pending.load(ctx.workspace_id, ctx.file_ids)
+        elif ctx.curate:
+            note_appended(ctx, rid, len(commands), todo)
     return result
 
 
@@ -1003,6 +1701,11 @@ def _register(name: str, handler: Handler) -> None:
 
 
 _register("search_workspace", _search_workspace)
+_register("search_knowledge", _search_knowledge)
+_register("browse_knowledge", _browse_knowledge)
+_register("read_knowledge", _read_knowledge)
+_register("create_ledger", _create_ledger)
+_register("capture_knowledge_page", _capture_knowledge_page)
 _register("list_sources", _list_sources)
 _register("describe_documents", _describe_documents)
 _register("read_document", _read_document)
@@ -1016,12 +1719,28 @@ _register("list_trashed_files", _list_trashed_files)
 _register("restore_file", _restore_file)
 
 
+# Offered only in a curate turn against a configured library. create_ledger is
+# here too: the ledger only exists in curate mode.
+KNOWLEDGE_TOOLS = (
+    "search_knowledge",
+    "browse_knowledge",
+    "read_knowledge",
+    "create_ledger",
+)
+KNOWLEDGE_CAPTURE = "capture_knowledge_page"
+
+
 def _offered(spec: ToolSpec, ctx: ToolContext) -> bool:
     definition = spec.definition
     if not set(definition["requiredOperations"]) <= ctx.operations:
         return False
     if definition["mutates"] and not (_gateway_ready() and ctx.user_id):
         return False
+    if spec.name == KNOWLEDGE_CAPTURE:
+        # Without the knowledge-base bucket there is nothing to render.
+        return ctx.curate and library.enabled() and bool(cfg.knowledge_base_b2_bucket)
+    if spec.name in KNOWLEDGE_TOOLS:
+        return ctx.curate and library.enabled()
     if spec.name != "resolve_source_change":
         return True
     return bool(
@@ -1036,11 +1755,30 @@ def _offered(spec: ToolSpec, ctx: ToolContext) -> bool:
 
 
 def schemas_for(ctx: ToolContext) -> list[dict[str, Any]]:
-    return [
+    schemas = [
         contract.model_schema(spec.name)
         for spec in REGISTRY.values()
         if _offered(spec, ctx)
     ]
+    if not ctx.curate:
+        return schemas
+    # Curate changes what several tools mean, so the prompt package owns their
+    # descriptions here; the shared contract text stays the ordinary-chat one.
+    for schema in schemas:
+        override = curate_prompts.TOOL_DESCRIPTIONS.get(schema["function"]["name"])
+        if override:
+            schema["function"]["description"] = override
+    if not ctx.library_catalog:
+        return schemas
+    # The model maps the learner's words onto topic ids. The catalog is long,
+    # so it rides on browse_knowledge only and search_knowledge points there.
+    catalog = "\n\nTopic catalog of this library:\n" + _catalog_lines(
+        ctx.library_catalog
+    )
+    for schema in schemas:
+        if schema["function"]["name"] == "browse_knowledge":
+            schema["function"]["description"] += catalog
+    return schemas
 
 
 def spec_for(name: str) -> ToolSpec | None:

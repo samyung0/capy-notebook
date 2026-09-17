@@ -1,0 +1,564 @@
+{
+  "version": 1,
+  "selection": "All 16 crops are manually source-selected. This does not validate automatic routing or crop recall.",
+  "gold_frozen_before_candidates": true,
+  "new_source_manifest": "bench/parsers/fixtures/selective-recovery-sources.json",
+  "scoring": "Source-reviewed semantic LaTeX equivalence, preserving symbols, signs, scope, matrix order and table associations. Formatting differences are allowed; silent source corrections fail. Neighbor checks only cover explicitly named visible anchors, not complete prose accuracy.",
+  "cases": [
+    {
+      "id": "os4-sd",
+      "source": "bench/rag/fixtures/local/2026-09-16-knowledge-base/os4.pdf",
+      "page": 54,
+      "bbox": [
+        85,
+        438,
+        530,
+        474
+      ],
+      "group": "prior-known",
+      "kind": "formula",
+      "math": [
+        "s=\\sqrt{25.52}=5.05"
+      ],
+      "neighbors": [
+        "The standard deviation is defined as the square root of the variance:"
+      ]
+    },
+    {
+      "id": "os4-se",
+      "source": "bench/rag/fixtures/local/2026-09-16-knowledge-base/os4.pdf",
+      "page": 193,
+      "bbox": [
+        85,
+        555,
+        530,
+        631
+      ],
+      "group": "prior-known",
+      "kind": "formula",
+      "math": [
+        "SE_{\\hat{p}}=\\sqrt{\\frac{p(1-p)}{n}}=\\sqrt{\\frac{0.88(1-0.88)}{1000}}=0.010"
+      ],
+      "neighbors": [
+        "The calculation of the standard error",
+        "EXAMPLE 5.3 HAS ENDED."
+      ]
+    },
+    {
+      "id": "os4-fraction-27-212",
+      "source": "bench/rag/fixtures/local/2026-09-16-knowledge-base/os4.pdf",
+      "page": 431,
+      "bbox": [
+        86,
+        654,
+        306,
+        703
+      ],
+      "group": "prior-known",
+      "kind": "formula",
+      "math": [
+        "\\hat{p}=\\frac{27}{212}=0.127"
+      ],
+      "neighbors": [
+        "The fraction of computer chips manufactured",
+        "Standard error"
+      ]
+    },
+    {
+      "id": "os4-se-appendix",
+      "source": "bench/rag/fixtures/local/2026-09-16-knowledge-base/os4.pdf",
+      "page": 431,
+      "bbox": [
+        307,
+        452,
+        531,
+        508
+      ],
+      "group": "prior-known",
+      "kind": "formula",
+      "math": [
+        "SE\\approx\\sqrt{\\frac{\\hat{p}(1-\\hat{p})}{n}}=\\sqrt{\\frac{0.127(1-0.127)}{212}}=0.023"
+      ],
+      "neighbors": [
+        "standard error is the standard deviation"
+      ]
+    },
+    {
+      "id": "ahss-bayes",
+      "source": "bench/rag/fixtures/local/2026-09-16-knowledge-base/ahss4.pdf",
+      "page": 134,
+      "bbox": [
+        85,
+        408,
+        531,
+        560
+      ],
+      "group": "prior-known",
+      "kind": "formula",
+      "math": [
+        "P(\\mathrm{sporting\\ event}\\mid\\mathrm{garage\\ full})=\\frac{P(\\mathrm{sporting\\ event\\ and\\ garage\\ full})}{P(\\mathrm{garage\\ full})}",
+        "\\frac{0.20\\times0.7}{0.35\\times0.25+0.20\\times0.7+0.45\\times0.05}",
+        "\\frac{0.14}{0.0875+0.14+0.0225}=0.56"
+      ],
+      "neighbors": [
+        "We want to find the probability",
+        "If the garage is full, there is a 56% probability that there is a sporting event."
+      ]
+    },
+    {
+      "id": "ahss-source-typo",
+      "source": "bench/rag/fixtures/local/2026-09-16-knowledge-base/ahss4.pdf",
+      "page": 461,
+      "bbox": [
+        86,
+        307,
+        531,
+        407
+      ],
+      "group": "prior-known",
+      "kind": "formula",
+      "math": [
+        "\\widehat{aid}=24.3-0.0431\\times family\\_income",
+        "\\widehat{aid}=24.3-0.431(1000)=-18.8"
+      ],
+      "neighbors": [
+        "Recall that the units of family income is in $1000s",
+        "Elmhurst College cannot"
+      ],
+      "source_error": "Second equation prints 0.431, despite prior slope 0.0431. Exact transcription must retain 0.431; no correction."
+    },
+    {
+      "id": "lsj-formula-table",
+      "source": "bench/rag/fixtures/local/2026-09-16-knowledge-base/lsj.pdf",
+      "page": 369,
+      "bbox": [
+        105,
+        289,
+        490,
+        411
+      ],
+      "group": "prior-known",
+      "kind": "table",
+      "math": [
+        "\\beta_0",
+        "\\beta_0+\\beta_2",
+        "\\beta_0+\\beta_1",
+        "\\beta_0+\\beta_1+\\beta_2"
+      ],
+      "table": {
+        "headers": [
+          "read textbook",
+          "attended?",
+          "no",
+          "yes"
+        ],
+        "rows": [
+          [
+            "no",
+            "\\beta_0",
+            "\\beta_0+\\beta_2"
+          ],
+          [
+            "yes",
+            "\\beta_0+\\beta_1",
+            "\\beta_0+\\beta_1+\\beta_2"
+          ]
+        ],
+        "spans": [
+          "read textbook spans two data columns",
+          "attended? spans the two response rows"
+        ],
+        "span_note": "Source has no cell grid. Require equivalent association and explicit HTML spanning header; blank corner layout may differ."
+      },
+      "neighbors": [
+        "Table 14.9. Expected grades from the regression model",
+        "As you can see, the intercept term"
+      ]
+    },
+    {
+      "id": "exo7-derivative-table",
+      "source": "bench/parsers/fixtures/local/selective-recovery/exo7-analyse.pdf",
+      "page": 80,
+      "bbox": [
+        107,
+        557,
+        265,
+        784
+      ],
+      "group": "new-family-held-out",
+      "kind": "table",
+      "math": [
+        "nx^{n-1}",
+        "-\\frac{1}{x^2}",
+        "\\frac12\\frac1{\\sqrt{x}}",
+        "\\alpha x^{\\alpha-1}",
+        "e^x",
+        "\\frac1x",
+        "-\\sin x",
+        "\\cos x",
+        "1+\\tan^2x=\\frac1{\\cos^2x}"
+      ],
+      "table": {
+        "headers": [
+          "Fonction",
+          "Dérivée"
+        ],
+        "rows": [
+          [
+            "x^n",
+            "nx^{n-1} (n\\in\\mathbb{Z})"
+          ],
+          [
+            "\\frac1x",
+            "-\\frac1{x^2}"
+          ],
+          [
+            "\\sqrt{x}",
+            "\\frac12\\frac1{\\sqrt{x}}"
+          ],
+          [
+            "x^\\alpha",
+            "\\alpha x^{\\alpha-1} (\\alpha\\in\\mathbb{R})"
+          ],
+          [
+            "e^x",
+            "e^x"
+          ],
+          [
+            "\\ln x",
+            "\\frac1x"
+          ],
+          [
+            "\\cos x",
+            "-\\sin x"
+          ],
+          [
+            "\\sin x",
+            "\\cos x"
+          ],
+          [
+            "\\tan x",
+            "1+\\tan^2x=\\frac1{\\cos^2x}"
+          ]
+        ],
+        "spans": []
+      },
+      "neighbors": []
+    },
+    {
+      "id": "exo7-composite-table",
+      "source": "bench/parsers/fixtures/local/selective-recovery/exo7-analyse.pdf",
+      "page": 80,
+      "bbox": [
+        315,
+        557,
+        487,
+        784
+      ],
+      "group": "new-family-held-out",
+      "kind": "table",
+      "math": [
+        "nu'u^{n-1}",
+        "-\\frac{u'}{u^2}",
+        "\\frac12\\frac{u'}{\\sqrt{u}}",
+        "\\alpha u'u^{\\alpha-1}",
+        "u'e^u",
+        "\\frac{u'}u",
+        "-u'\\sin u",
+        "u'\\cos u",
+        "u'(1+\\tan^2u)=\\frac{u'}{\\cos^2u}"
+      ],
+      "table": {
+        "headers": [
+          "Fonction",
+          "Dérivée"
+        ],
+        "rows": [
+          [
+            "u^n",
+            "nu'u^{n-1} (n\\in\\mathbb{Z})"
+          ],
+          [
+            "\\frac1u",
+            "-\\frac{u'}{u^2}"
+          ],
+          [
+            "\\sqrt u",
+            "\\frac12\\frac{u'}{\\sqrt u}"
+          ],
+          [
+            "u^\\alpha",
+            "\\alpha u'u^{\\alpha-1} (\\alpha\\in\\mathbb{R})"
+          ],
+          [
+            "e^u",
+            "u'e^u"
+          ],
+          [
+            "\\ln u",
+            "\\frac{u'}u"
+          ],
+          [
+            "\\cos u",
+            "-u'\\sin u"
+          ],
+          [
+            "\\sin u",
+            "u'\\cos u"
+          ],
+          [
+            "\\tan u",
+            "u'(1+\\tan^2u)=\\frac{u'}{\\cos^2u}"
+          ]
+        ],
+        "spans": []
+      },
+      "neighbors": []
+    },
+    {
+      "id": "exo7-quotient",
+      "source": "bench/parsers/fixtures/local/selective-recovery/exo7-analyse.pdf",
+      "page": 80,
+      "bbox": [
+        53,
+        250,
+        543,
+        366
+      ],
+      "group": "new-family-held-out",
+      "kind": "formula",
+      "math": [
+        "(f+g)'=f'+g'",
+        "(\\lambda f)'=\\lambda f'",
+        "(f\\times g)'=f'g+fg'",
+        "(1/f)'=-\\frac{f'}{f^2}",
+        "(f/g)'=\\frac{f'g-fg'}{g^2}"
+      ],
+      "neighbors": [
+        "Remarque.",
+        "Il est plus facile de mémoriser les égalités de fonctions :"
+      ]
+    },
+    {
+      "id": "exo7-inverse",
+      "source": "bench/parsers/fixtures/local/selective-recovery/exo7-analyse.pdf",
+      "page": 81,
+      "bbox": [
+        52,
+        497,
+        545,
+        601
+      ],
+      "group": "new-family-held-out",
+      "kind": "formula",
+      "math": [
+        "(f^{-1})'(x)=\\frac1{f'(f^{-1}(x))}"
+      ],
+      "neighbors": [
+        "Corollaire 1.",
+        "Soit I un intervalle ouvert.",
+        "réciproque."
+      ]
+    },
+    {
+      "id": "exo7-extremum-inequalities",
+      "source": "bench/parsers/fixtures/local/selective-recovery/exo7-analyse.pdf",
+      "page": 84,
+      "bbox": [
+        51,
+        174,
+        545,
+        313
+      ],
+      "group": "new-family-held-out",
+      "kind": "formula",
+      "math": [
+        "f'(x_0)=0",
+        "x\\in I\\cap J",
+        "f(x)\\le f(x_0)",
+        "f(x)\\ge f(x_0)"
+      ],
+      "neighbors": [
+        "Définition 3.",
+        "maximum local",
+        "minimum local",
+        "extremum local"
+      ]
+    },
+    {
+      "id": "hefferon-pendulum-table",
+      "source": "bench/parsers/fixtures/local/selective-recovery/hefferon-linear-algebra.pdf",
+      "page": 177,
+      "bbox": [
+        82,
+        328,
+        434,
+        484
+      ],
+      "group": "new-family-held-out",
+      "kind": "table",
+      "math": [
+        "L^0M^0T^1",
+        "L^1M^0T^0",
+        "L^0M^1T^0",
+        "L^1M^0T^{-2}",
+        "L^0M^0T^0"
+      ],
+      "table": {
+        "headers": [
+          "quantity",
+          "dimensional formula"
+        ],
+        "rows": [
+          [
+            "period p",
+            "L^0M^0T^1"
+          ],
+          [
+            "length of string \\ell",
+            "L^1M^0T^0"
+          ],
+          [
+            "mass of bob m",
+            "L^0M^1T^0"
+          ],
+          [
+            "acceleration due to gravity g",
+            "L^1M^0T^{-2}"
+          ],
+          [
+            "arc of swing \\theta",
+            "L^0M^0T^0"
+          ]
+        ],
+        "spans": []
+      },
+      "neighbors": [
+        "For example, again consider the formula for a pendulum’s period.",
+        "By the first fact cited above"
+      ]
+    },
+    {
+      "id": "hefferon-orbit-table",
+      "source": "bench/parsers/fixtures/local/selective-recovery/hefferon-linear-algebra.pdf",
+      "page": 178,
+      "bbox": [
+        106,
+        435,
+        457,
+        594
+      ],
+      "group": "new-family-held-out",
+      "kind": "table",
+      "math": [
+        "L^0M^0T^1",
+        "L^1M^0T^0",
+        "L^0M^1T^0",
+        "L^0M^1T^0",
+        "L^3M^{-1}T^{-2}"
+      ],
+      "table": {
+        "headers": [
+          "quantity",
+          "dimensional formula"
+        ],
+        "rows": [
+          [
+            "period p",
+            "L^0M^0T^1"
+          ],
+          [
+            "mean separation r",
+            "L^1M^0T^0"
+          ],
+          [
+            "first mass m_1",
+            "L^0M^1T^0"
+          ],
+          [
+            "second mass m_2",
+            "L^0M^1T^0"
+          ],
+          [
+            "gravitational constant G",
+            "L^3M^{-1}T^{-2}"
+          ]
+        ],
+        "spans": []
+      },
+      "neighbors": [
+        "For the next example we try to determine the period of revolution",
+        "To get the complete set of dimensionless products"
+      ]
+    },
+    {
+      "id": "hefferon-wave-table",
+      "source": "bench/parsers/fixtures/local/selective-recovery/hefferon-linear-algebra.pdf",
+      "page": 180,
+      "bbox": [
+        82,
+        61,
+        434,
+        163
+      ],
+      "group": "new-family-held-out",
+      "kind": "table",
+      "math": [
+        "L^1M^0T^{-1}",
+        "L^{-3}M^1T^0",
+        "L^1M^0T^{-2}",
+        "L^1M^0T^0"
+      ],
+      "table": {
+        "headers": [
+          "quantity",
+          "dimensional formula"
+        ],
+        "rows": [
+          [
+            "velocity of the wave v",
+            "L^1M^0T^{-1}"
+          ],
+          [
+            "density of the water d",
+            "L^{-3}M^1T^0"
+          ],
+          [
+            "acceleration due to gravity g",
+            "L^1M^0T^{-2}"
+          ],
+          [
+            "wavelength \\lambda",
+            "L^1M^0T^0"
+          ]
+        ],
+        "spans": []
+      },
+      "neighbors": [
+        "The equation"
+      ]
+    },
+    {
+      "id": "hefferon-pendulum-formula",
+      "source": "bench/parsers/fixtures/local/selective-recovery/hefferon-linear-algebra.pdf",
+      "page": 178,
+      "bbox": [
+        106,
+        304,
+        457,
+        384
+      ],
+      "group": "new-family-held-out",
+      "kind": "formula",
+      "math": [
+        "p=\\ell^{1/2}g^{-1/2}\\cdot\\hat{f}(\\theta)=\\sqrt{\\ell/g}\\cdot\\hat{f}(\\theta)",
+        "\\hat{f}(\\theta)=2\\pi"
+      ],
+      "neighbors": [
+        "Buckingham’s Theorem says that",
+        "is a function that we cannot determine from this analysis"
+      ]
+    }
+  ],
+  "crop_qa": "r1 images were visually reviewed before any new-family candidate output. Final r2 removes clipped edge glyphs and corrects neighbor anchors to actual included source. No candidate-based edits."
+}

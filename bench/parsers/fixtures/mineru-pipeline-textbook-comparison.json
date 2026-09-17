@@ -1,0 +1,31 @@
+{
+  "description": "Frozen before fresh candidate outputs. Diagnostic pages from known textbook failures plus older paper and scan controls; not a random sample or new-family holdout. Both engines receive byte-identical derived PDFs. Source page maps retain original citations; slicing can remove PDF structure trees and full-book recurrence/context.",
+  "book_manifest": "bench/rag/fixtures/knowledge-base-pilot-books.json",
+  "legacy_manifest": "bench/rag/fixtures/local/2026-09-09-odl-agentic/sources.json",
+  "cases": [
+    {"id": "os4-math", "source": "os4", "pages": [53, 54, 55, 192, 193, 194, 430, 431, 432], "language": "en"},
+    {"id": "os4-figure", "source": "os4", "pages": [197, 198, 199], "language": "en"},
+    {"id": "ahss-tree", "source": "ahss4", "pages": [133, 134, 135], "language": "en"},
+    {"id": "ahss-regression", "source": "ahss4", "pages": [460, 461, 462], "language": "en"},
+    {"id": "jamovi-table", "source": "lsj", "pages": [368, 369, 370], "language": "en"},
+    {"id": "bert-tables", "source": "bert", "pages": [6, 7], "language": "en"},
+    {"id": "japanese-tables", "source": "japan-migration", "pages": [49, 50, 51], "language": "japan"},
+    {"id": "nist-scan", "source": "nist-accelerometers", "pages": [4, 5], "language": "en"}
+  ],
+  "source_checks": [
+    {"id": "standard-deviation", "case": "os4-math", "page": 54, "kind": "formula", "expected": "s = sqrt(25.52) = 5.05; root scope and variable must survive."},
+    {"id": "proportion-standard-error", "case": "os4-math", "page": 193, "kind": "formula", "expected": "SE_p-hat = sqrt(p(1-p)/n) = sqrt(0.88(1-0.88)/1000) = 0.010; all terms, fractions and root scope."},
+    {"id": "answer-key-proportion", "case": "os4-math", "page": 431, "kind": "formula", "expected": "p-hat = 27/212 = 0.127; numerator and denominator must remain distinguishable."},
+    {"id": "answer-key-standard-error", "case": "os4-math", "page": 431, "kind": "formula", "expected": "SE approximately sqrt(p-hat(1-p-hat)/n) = sqrt(0.127(1-0.127)/212) = 0.023; denominator and root scope."},
+    {"id": "bayes-tree-formula", "case": "ahss-tree", "page": 134, "kind": "formula", "expected": "P(sporting event | garage full) = P(sporting event and garage full)/P(garage full) = (0.2*0.7)/(0.35*0.25+0.20*0.7+0.45*0.05) = 0.14/(0.0875+0.14+0.0225) = 0.56."},
+    {"id": "regression-literal-erratum", "case": "ahss-regression", "page": 461, "kind": "source-fidelity", "expected": "Preserve the source's 0.0431 slope in its definition and printed 0.431(1000) typo in Example 5.22 separately; do not silently repair source arithmetic."},
+    {"id": "jamovi-table-14-9", "case": "jamovi-table", "page": 369, "kind": "table", "expected": "Columns read textbook: no, yes. Rows attended?: no, yes. Cells beta0, beta0+beta2; beta0+beta1, beta0+beta1+beta2. Retain title and associations."},
+    {"id": "bert-table-1", "case": "bert-tables", "page": 6, "kind": "table", "expected_fixture": "bench/parsers/fixtures/odl-independent-checks.json#bert-table-1", "expected": "Complete header scopes, all five numeric rows, training counts/metric notes and caption; separately report literal row survival."},
+    {"id": "japanese-header-49", "case": "japanese-tables", "page": 49, "kind": "table-header", "expected": "Retain within-prefecture / between-prefecture parent headers and count versus year-on-year percentage fields by sex. Existing source review: 2026-09-09-odl-mineru-table-comparison/no-footer-r1/japanese-header-source-review.json."},
+    {"id": "japanese-header-51", "case": "japanese-tables", "page": 51, "kind": "table-header", "expected": "Retain the real multi-level continuation table headers and title; do not remove as page furniture. Same earlier source-review reference."},
+    {"id": "figure-role", "case": "os4-figure", "page": 198, "kind": "heading-role", "expected": "n=50, n=100, n=250 belong to Figure 5.5 columns, not section ancestry; the original caption remains available."},
+    {"id": "tree-role", "case": "ahss-tree", "page": 134, "kind": "heading-role", "expected": "Event and Garage full are diagram labels, not section ancestry; preserve the Bayes worked example context."},
+    {"id": "table-role", "case": "jamovi-table", "page": 369, "kind": "heading-role", "expected": "Table 14.9 row labels and cells must not become section ancestry."},
+    {"id": "nist-source-review", "case": "nist-scan", "page": 4, "kind": "scan-control", "expected": "Qualitative source review of scan prose, formulas and table structure on original pages 4-5, using earlier NIST report as context; no automatic whole-page accuracy claim."}
+  ]
+}

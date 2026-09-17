@@ -6,6 +6,7 @@
  */
 import type { FileKind } from './fileKind.ts';
 import type { FileStatus } from './fileStatus.ts';
+import type { Provenance } from './provenance.ts';
 
 export interface File {
   /** A URL to the JSON Schema for this object. */
@@ -20,6 +21,7 @@ export interface File {
   name: string;
   position: number;
   previewUrl?: string;
+  provenance?: Provenance;
   revision: number;
   sizeBytes: number;
   status?: FileStatus;

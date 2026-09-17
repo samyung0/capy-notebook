@@ -35,48 +35,21 @@ def test_packer_reproduces_the_lab_chunks_for_a_refined_bundle() -> None:
     """hongkong-figures: 14 recovered tables, 69 native tables, and two
     furniture texts that only recur three times *before* table replacement."""
     blocks = _gz("content_list.json.gz")
-    lab = _gz("chunks.json.gz")
+    expected = _gz("interior-chunks.json.gz")
     furniture = frozenset(
-        json.loads((FIXTURE / "refinement.json").read_text())["furniture"]
+        json.loads((FIXTURE / "refinement.json").read_text(encoding="utf-8"))[
+            "furniture"
+        ]
     )
 
     chunks = packing.pack_blocks(blocks, furniture)
     chunks = retain_headings(blocks, FIXTURE / "source.pdf", chunks)
 
-    ours = [
-        {
-            **{k: v for k, v in asdict(c).items() if k in lab[0]},
-            "indexed_text": c.indexed_text(),
-        }
-        for c in chunks
-    ]
-    # Keep the golden intact; two page-45 chunks carried stale overlap across
-    # intervening oversized tables. Only those duplicate prefixes are removed.
-    expected = [dict(c) for c in lab]
-    for index, prefix_blocks in ((165, 1), (168, 2)):
-        old = lab[index]
-        parts = old["text"].split("\n\n", prefix_blocks)
-        prefix, remainder = "\n\n".join(parts[:-1]), parts[-1]
-        assert old["page_start"] == old["page_end"] == 45
-        assert any(prefix in c["text"] for c in ours[:index])
-        expected[index] = {
-            **old,
-            "text": remainder,
-            "indexed_text": old["section_path"] + "\n\n" + remainder,
-            "regions": old["regions"][prefix_blocks:],
-        }
-    # The short source heading and exclusion note now survive on their own.
-    extra = [c for c in ours if c not in expected]
-    assert [(c["text"], c["page_start"], c["regions"]) for c in extra] == [
-        ("性別 Sex", 13, [{"page": 13, "bbox": [78.857, 162.408, 233.866, 175.041]}]),
-        (
-            "數字不包括被拒入境者及司機。",
-            45,
-            [{"page": 45, "bbox": [123.608, 420.595, 309.86, 430.002]}],
-        ),
-    ]
-    assert len(ours) == 202 and len(lab) == 200
-    assert [c for c in ours if c not in extra] == expected
+    # This expected output was frozen by the recovery experiment before the
+    # production fix. It includes 76 restored interior occurrences; the original
+    # 200-chunk lab golden stays intact as historical evidence.
+    assert [asdict(c) for c in chunks] == expected
+    assert len(chunks) == 204
     # Both departures from plain chunk_content_list are live on this source:
     # recurrence re-inferred on the replaced list loses two furniture texts and
     # changes the chunks, and native tables carry their caption as section path.

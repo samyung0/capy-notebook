@@ -23,19 +23,6 @@ MARKER = re.compile(r"\[(\d{1,3}(?:\s*,\s*\d{1,3})*)\]")
 PARTIAL = re.compile(r"\[[\d,\s]*$")
 FENCE = re.compile(r"^\s*```(?:json)?\s*|\s*```\s*$")
 
-STRUCTURED_RULE = (
-    "Final answer format: a response that calls no tools is the final answer "
-    'and must be only a JSON object {"answer": [{"text": "...", "passages": '
-    "[n, ...]}, ...]}. Each item is one claim or short paragraph of Markdown in "
-    "reading order. passages lists the numbers of the shown passages that "
-    "support that item, most direct first, or [] when the sources do not cover "
-    "it. Put no [n] markers inside text. Text that accompanies a tool call "
-    "stays plain prose."
-)
-REPAIR_PROMPT = (
-    "Rewrite your previous reply as the required JSON object with exactly the "
-    "same content and passage numbers. Output only the JSON."
-)
 JSON_OBJECT = {"type": "json_object"}
 
 
@@ -124,6 +111,31 @@ def render_structured(items: list[dict], known: int) -> tuple[str, list[int]]:
         )
         parts.append(f"{text} {marks}".strip() if marks else text)
     return "\n\n".join(p for p in parts if p), r.order
+
+
+class PlainRenderer:
+    """Pass-through renderer for a mode whose answer is prose, not claims.
+
+    Curate turns cite nothing (attribution lives on the created materials), so
+    the deltas stream as they arrive and ``order`` stays empty. It presents the
+    same surface as :class:`StreamRenderer` so the agent loop has one path.
+    """
+
+    def __init__(self) -> None:
+        self.raw = ""
+        self.text = ""
+        self.json_shaped = True
+        self.complete = True
+        self.invalid = False
+        self.order: list[int] = []
+
+    def push(self, delta: str) -> str:
+        self.raw += delta
+        self.text += delta
+        return delta
+
+    def finish(self) -> str:
+        return ""
 
 
 _ESCAPES = {

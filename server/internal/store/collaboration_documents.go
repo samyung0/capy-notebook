@@ -49,6 +49,9 @@ type documentRequest struct {
 	Inverse     json.RawMessage    `json:"inverse,omitempty"`
 	Guards      json.RawMessage    `json:"guards,omitempty"`
 	StudyState  json.RawMessage    `json:"studyState,omitempty"`
+	// Provenance is the merged attribution record the authority writes onto the
+	// material in the edit's own transaction.
+	Provenance *Provenance `json:"provenance,omitempty"`
 }
 
 // MaterialInspection is the authority's editable view of a material.
@@ -140,9 +143,13 @@ func (s *Store) InspectSourceDocument(ctx context.Context, actorID, fileID strin
 }
 
 // EditDocument applies normalized commands through the authority, which
-// commits state, receipt and inverse together and returns the receipt.
-func (s *Store) EditDocument(ctx context.Context, actorID string, target DocumentTarget, commands []json.RawMessage, op DocumentOperation) (AgentOperation, error) {
-	req := documentRequest{Target: target, ActorUserID: actorID, Commands: commands, Operation: &op}
+// commits state, receipt, inverse and the merged provenance together and
+// returns the receipt.
+func (s *Store) EditDocument(ctx context.Context, actorID string, target DocumentTarget, commands []json.RawMessage, provenance *Provenance, op DocumentOperation) (AgentOperation, error) {
+	req := documentRequest{
+		Target: target, ActorUserID: actorID, Commands: commands,
+		Provenance: provenance, Operation: &op,
+	}
 	if target.Kind == agenttools.KindMaterial {
 		room, err := s.MaterialRoom(ctx, target.ID)
 		if err != nil {
@@ -158,6 +165,9 @@ func (s *Store) EditDocument(ctx context.Context, actorID string, target Documen
 // UndoDocumentEdit reverses one committed edit through the authority using the
 // stored inverse and guards; the authority validates the guards against the
 // durable pre-state and consumes the Undo eligibility in the same transaction.
+// It carries no provenance: an undo restores the text only, because provenance
+// only grows — over-crediting a source is harmless and under-crediting one is
+// the licence risk.
 func (s *Store) UndoDocumentEdit(ctx context.Context, actorID string, inv EditInverse, op DocumentOperation) (AgentOperation, error) {
 	var payload struct {
 		Commands   json.RawMessage `json:"commands"`

@@ -493,6 +493,30 @@
       "kind": "variable",
       "targets": ["workflow", "quality"]
     },
+    "KNOWLEDGE_BASE_B2_APP_KEY": {
+      "kind": "secret",
+      "targets": ["coolify", "local"]
+    },
+    "KNOWLEDGE_BASE_B2_BUCKET": {
+      "kind": "variable",
+      "targets": ["coolify", "local"]
+    },
+    "KNOWLEDGE_BASE_B2_ENDPOINT": {
+      "kind": "variable",
+      "targets": ["coolify", "local"]
+    },
+    "KNOWLEDGE_BASE_B2_KEY_ID": {
+      "kind": "secret",
+      "targets": ["coolify", "local"]
+    },
+    "KNOWLEDGE_BASE_B2_REGION": {
+      "kind": "variable",
+      "targets": ["coolify", "local"]
+    },
+    "LIBRARY_DATABASE_URL": {
+      "kind": "secret",
+      "targets": ["coolify", "local"]
+    },
     "LLM_API_KEY": {
       "kind": "variable",
       "targets": ["local"]
@@ -565,6 +589,10 @@
       "required_for": ["ops"]
     },
     "OPS_INGEST_UAT_DATABASE_URL": {
+      "kind": "secret",
+      "targets": ["ops"]
+    },
+    "OPS_LIBRARY_DATABASE_URL": {
       "kind": "secret",
       "targets": ["ops"]
     },

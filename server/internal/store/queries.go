@@ -30,6 +30,13 @@ type WorkspacePatch struct {
 	IconID      *string   `json:"iconId"`
 	Tags        *[]TagRef `json:"tags"`
 }
+
+type WorkspaceCreate struct {
+	Name        string
+	Tags        []TagRef
+	Description *string
+	IconID      *string
+}
 type ChapterPatch struct {
 	Name  *string `json:"name"`
 	Order *int    `json:"order"`
@@ -78,7 +85,7 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 	out := []SearchResult{}
 	like := "%" + strings.ToLower(q) + "%"
 
-	rows, err := s.pool.Query(ctx, `SELECT w.id, w.name,
+	rows, err := s.pool.Query(ctx, `SELECT w.id, w.name, w.icon_id,
 			COALESCE((SELECT array_agg(t.name) FROM entity_tags et JOIN tags t ON t.id=et.tag_id
 				WHERE et.workspace_id=w.id), '{}')
 		FROM workspaces w
@@ -92,26 +99,27 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 		return nil, err
 	}
 	for rows.Next() {
-		var id, name string
+		var id, name, iconID string
 		var tags []string
-		if err := rows.Scan(&id, &name, &tags); err != nil {
+		if err := rows.Scan(&id, &name, &iconID, &tags); err != nil {
 			return nil, err
 		}
-		out = append(out, SearchResult{ID: id, Kind: "workspace", Title: name, Subtitle: strings.Join(tags, " · "), Href: "/workspaces/" + id})
+		out = append(out, SearchResult{ID: id, Kind: "workspace", IconID: iconID, Title: name, Subtitle: strings.Join(tags, " · "), Href: "/workspaces/" + id})
 	}
 	rows.Close()
 
-	rows, err = s.pool.Query(ctx, `SELECT f.id, f.name, f.workspace_id, w.name FROM files f
+	rows, err = s.pool.Query(ctx, `SELECT f.id, f.name, f.workspace_id, w.name, f.kind FROM files f
 		JOIN workspaces w ON w.id=f.workspace_id WHERE w.user_id=$2 AND f.trashed_at IS NULL AND lower(f.name) LIKE $1`, like, userID)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
 		var id, name, wsID, wsName string
-		if err := rows.Scan(&id, &name, &wsID, &wsName); err != nil {
+		var fileKind FileKind
+		if err := rows.Scan(&id, &name, &wsID, &wsName, &fileKind); err != nil {
 			return nil, err
 		}
-		out = append(out, SearchResult{ID: id, Kind: "file", Title: name, Subtitle: wsName, Href: "/workspaces/" + wsID + "?file=" + id})
+		out = append(out, SearchResult{ID: id, Kind: "file", FileKind: fileKind, Title: name, Subtitle: wsName, Href: "/workspaces/" + wsID + "?file=" + id})
 	}
 	rows.Close()
 
@@ -343,7 +351,10 @@ func (s *Store) newWorkspaceEmbedding(ctx context.Context) (workspaceEmbedding, 
 	return workspaceEmbedding{Pin: cfg.Pin(), Dim: dim}, nil
 }
 
-func (s *Store) CreateWorkspace(ctx context.Context, userID, name string, tags []TagRef) (Workspace, error) {
+func (s *Store) CreateWorkspace(ctx context.Context, userID string, input WorkspaceCreate) (Workspace, error) {
+	if input.IconID != nil && !ValidIconID(*input.IconID) {
+		return Workspace{}, ErrNotFound
+	}
 	id := uid("ws")
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -368,8 +379,14 @@ func (s *Store) CreateWorkspace(ctx context.Context, userID, name string, tags [
 	if err != nil {
 		return Workspace{}, err
 	}
-	if err := s.insertWorkspaceTx(ctx, tx, id, userID, name, tags, embed); err != nil {
+	if err := s.insertWorkspaceTx(ctx, tx, id, userID, input.Name, input.Tags, embed); err != nil {
 		return Workspace{}, err
+	}
+	if input.IconID != nil || input.Description != nil {
+		if _, err := tx.Exec(ctx, `UPDATE workspaces SET icon_id=COALESCE($2,icon_id), description=COALESCE($3,description) WHERE id=$1`,
+			id, input.IconID, input.Description); err != nil {
+			return Workspace{}, err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return Workspace{}, err
@@ -923,18 +940,34 @@ func (s *Store) DeleteChapter(ctx context.Context, actorID, id string) error {
 const fileCols = `id, workspace_id, chapter_id, position, name, kind, size_bytes, added_at, status, indexed, COALESCE(blob_path, '') <> '',
 	CASE WHEN status='ready' AND (kind='pdf' AND blob_path IS NOT NULL)
 		THEN '/api/files/' || id || '/preview' END,
-	revision`
+	revision, provenance`
 
 // fileListCols is fileCols qualified for joins.
 const fileListCols = `f.id, f.workspace_id, f.chapter_id, f.position, f.name, f.kind, f.size_bytes, f.added_at, f.status, f.indexed, COALESCE(f.blob_path, '') <> '',
 	CASE WHEN f.status='ready' AND (f.kind='pdf' AND f.blob_path IS NOT NULL)
 		THEN '/api/files/' || f.id || '/preview' END,
-	f.revision`
+	f.revision, f.provenance`
 
 func scanFile(row pgx.Row) (File, error) {
 	var f File
-	err := row.Scan(&f.ID, &f.WorkspaceID, &f.ChapterID, &f.Position, &f.Name, &f.Kind, &f.SizeBytes, &f.AddedAt, &f.Status, &f.Indexed, &f.HasBytes, &f.PreviewURL, &f.Revision)
+	var provenance []byte
+	err := row.Scan(&f.ID, &f.WorkspaceID, &f.ChapterID, &f.Position, &f.Name, &f.Kind, &f.SizeBytes, &f.AddedAt, &f.Status, &f.Indexed, &f.HasBytes, &f.PreviewURL, &f.Revision, &provenance)
+	if err == nil {
+		f.Provenance, err = decodeProvenance(provenance)
+	}
 	return f, err
+}
+
+// decodeProvenance reads the stored jsonb; absent provenance stays nil.
+func decodeProvenance(raw []byte) (*Provenance, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	var record Provenance
+	if err := json.Unmarshal(raw, &record); err != nil {
+		return nil, err
+	}
+	return &record, nil
 }
 
 func (s *Store) ListFiles(ctx context.Context, userID, wsID string) ([]File, error) {
@@ -1050,17 +1083,21 @@ func (s *Store) UpdateFile(ctx context.Context, actorID, id string, p FilePatch)
 
 /* ------------------------------------------------------------- materials */
 
-const materialCols = `id, COALESCE(created_by,''), owner_user_id, COALESCE(workspace_id,''), workspace_name, kind, title, content, chapter_id, position, scope_chapters, scope_file_names, privacy, color, created_at, updated_at, revision, size_bytes, node_count, max_depth`
-const materialColsM = `m.id, COALESCE(m.created_by,''), m.owner_user_id, COALESCE(m.workspace_id,''), m.workspace_name, m.kind, m.title, m.content, m.chapter_id, m.position, m.scope_chapters, m.scope_file_names, m.privacy, m.color, m.created_at, m.updated_at, m.revision, m.size_bytes, m.node_count, m.max_depth`
+const materialCols = `id, COALESCE(created_by,''), owner_user_id, COALESCE(workspace_id,''), workspace_name, kind, title, content, chapter_id, position, scope_chapters, scope_file_names, privacy, color, created_at, updated_at, revision, size_bytes, node_count, max_depth, provenance`
+const materialColsM = `m.id, COALESCE(m.created_by,''), m.owner_user_id, COALESCE(m.workspace_id,''), m.workspace_name, m.kind, m.title, m.content, m.chapter_id, m.position, m.scope_chapters, m.scope_file_names, m.privacy, m.color, m.created_at, m.updated_at, m.revision, m.size_bytes, m.node_count, m.max_depth, m.provenance`
 
 func scanMaterial(row pgx.Row) (Material, error) {
 	var mt Material
-	err := row.Scan(&mt.ID, &mt.CreatedBy, &mt.OwnerUserID, &mt.WorkspaceID, &mt.WorkspaceName, &mt.Kind, &mt.Title, &mt.Content, &mt.ChapterID, &mt.Position, &mt.ScopeChapters, &mt.ScopeFileNames, &mt.Privacy, &mt.Color, &mt.CreatedAt, &mt.UpdatedAt, &mt.Revision, &mt.SizeBytes, &mt.NodeCount, &mt.MaxDepth)
+	var provenance []byte
+	err := row.Scan(&mt.ID, &mt.CreatedBy, &mt.OwnerUserID, &mt.WorkspaceID, &mt.WorkspaceName, &mt.Kind, &mt.Title, &mt.Content, &mt.ChapterID, &mt.Position, &mt.ScopeChapters, &mt.ScopeFileNames, &mt.Privacy, &mt.Color, &mt.CreatedAt, &mt.UpdatedAt, &mt.Revision, &mt.SizeBytes, &mt.NodeCount, &mt.MaxDepth, &provenance)
 	if mt.ScopeChapters == nil {
 		mt.ScopeChapters = []string{}
 	}
 	if mt.ScopeFileNames == nil {
 		mt.ScopeFileNames = []string{}
+	}
+	if err == nil {
+		mt.Provenance, err = decodeProvenance(provenance)
 	}
 	return mt, err
 }
@@ -1159,16 +1196,26 @@ func (s *Store) createMaterialTx(ctx context.Context, tx pgx.Tx, mt Material) (s
 	if err != nil {
 		return "", err
 	}
-	if err := s.gateStorageTx(ctx, tx, ownerID, storedSize); err != nil {
+	var provenance []byte
+	if mt.Provenance != nil {
+		provenance, err = json.Marshal(mt.Provenance)
+		if err != nil {
+			return "", err
+		}
+	}
+	// The attribution record is stored alongside the content, so the quota
+	// gate has to see both.
+	if err := s.gateStorageTx(ctx, tx, ownerID, storedSize+int64(len(provenance))); err != nil {
 		return "", err
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO materials
 		(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
-		 chapter_id, scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+		 chapter_id, scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_by, provenance)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
 		mt.ID, creatorID, ownerID, nullStr(mt.WorkspaceID), mt.WorkspaceName, mt.Kind,
 		mt.Title, json.RawMessage(mt.Content), mt.ChapterID, mt.ScopeChapters,
-		mt.ScopeFileNames, mt.Privacy, mt.Color, metrics.NodeCount, metrics.MaxDepth, creatorID)
+		mt.ScopeFileNames, mt.Privacy, mt.Color, metrics.NodeCount, metrics.MaxDepth, creatorID,
+		provenance)
 	if err != nil {
 		if uniqueConstraintName(err) == "materials_pkey" {
 			return "", ErrMaterialIDTaken
@@ -1210,6 +1257,8 @@ type MaterialDraft struct {
 	ScopeChapters  []string
 	ScopeFileNames []string
 	Color          UserColor
+	// Library attribution; nil for a material built from workspace sources.
+	Provenance *Provenance
 }
 
 // material builds the validated Plate document for the draft's kind. Empty
@@ -1219,7 +1268,7 @@ func (d MaterialDraft) material() (Material, error) {
 	mt := Material{
 		ID: d.ID, CreatedBy: d.ActorUserID, WorkspaceID: d.WorkspaceID, WorkspaceName: d.WorkspaceName,
 		Kind: d.Kind, Title: d.Title, ScopeChapters: d.ScopeChapters, ScopeFileNames: d.ScopeFileNames,
-		Privacy: "private", Color: d.Color,
+		Privacy: "private", Color: d.Color, Provenance: d.Provenance,
 	}
 	switch d.Kind {
 	case "quiz":
@@ -1683,7 +1732,7 @@ func (s *Store) MaterialIDsOwnedByUser(ctx context.Context, userID string) ([]st
 // Plate materials, newest first.
 func (s *Store) ListMaterialRefs(ctx context.Context, wsID string) ([]MaterialRef, error) {
 	out := []MaterialRef{}
-	rows, err := s.pool.Query(ctx, `SELECT id, kind, title, chapter_id, position, created_at, size_bytes, node_count, max_depth
+	rows, err := s.pool.Query(ctx, `SELECT id, kind, title, chapter_id, position, created_at, size_bytes, node_count, max_depth, provenance
 		FROM materials WHERE workspace_id=$1 AND trashed_at IS NULL ORDER BY position, created_at DESC`, wsID)
 	if err != nil {
 		return nil, err
@@ -1692,6 +1741,7 @@ func (s *Store) ListMaterialRefs(ctx context.Context, wsID string) ([]MaterialRe
 	for rows.Next() {
 		var r MaterialRef
 		var kind MaterialKind
+		var provenance []byte
 		if err := rows.Scan(
 			&r.ID,
 			&kind,
@@ -1702,7 +1752,11 @@ func (s *Store) ListMaterialRefs(ctx context.Context, wsID string) ([]MaterialRe
 			&r.SizeBytes,
 			&r.NodeCount,
 			&r.MaxDepth,
+			&provenance,
 		); err != nil {
+			return nil, err
+		}
+		if r.Provenance, err = decodeProvenance(provenance); err != nil {
 			return nil, err
 		}
 		r.Type = kind.RefType()
@@ -1730,7 +1784,7 @@ func quizFromMaterial(mt Material) (Quiz, error) {
 	return Quiz{
 		ID: mt.ID, Name: mt.Title, WorkspaceID: mt.WorkspaceID, WorkspaceName: mt.WorkspaceName,
 		Chapters: chapters, ScopeFileNames: mt.ScopeFileNames, Questions: questions, CreatedAt: mt.CreatedAt,
-		Privacy: mt.Privacy, TimeLimitMin: timeLimit,
+		Privacy: mt.Privacy, TimeLimitMin: timeLimit, Provenance: mt.Provenance,
 		IsOwner: mt.IsOwner, CanEdit: mt.Capabilities.CanEdit,
 	}, nil
 }
@@ -1972,9 +2026,21 @@ const flashcardSetStatsExpr = `
 	COALESCE((SELECT round(100.0*count(*) FILTER (WHERE cs.known)/NULLIF(count(*),0))::int FROM card_stats cs WHERE cs.material_id=m.id), 0),
 	(SELECT count(*) FROM card_stats cs WHERE cs.material_id=m.id AND (cs.srs->>'due')::timestamptz <= now())`
 
-func scanFlashcardSet(row pgx.Row) (FlashcardSet, error) {
+// flashcardSetCols is the shared column list every flashcard-set read starts
+// with; callers append their own request-scoped columns after it.
+const flashcardSetCols = `m.id, m.title, COALESCE(m.workspace_id,''), m.workspace_name, m.color, m.privacy,` +
+	flashcardSetStatsExpr + `, m.provenance`
+
+// scanFlashcardSetRow reads flashcardSetCols plus the caller's extra columns.
+func scanFlashcardSetRow(row pgx.Row, extra ...any) (FlashcardSet, error) {
 	var d FlashcardSet
-	err := row.Scan(&d.ID, &d.Name, &d.WorkspaceID, &d.WorkspaceName, &d.Color, &d.Privacy, &d.CardCount, &d.KnownPct, &d.DueCount)
+	var provenance []byte
+	dest := append([]any{&d.ID, &d.Name, &d.WorkspaceID, &d.WorkspaceName, &d.Color,
+		&d.Privacy, &d.CardCount, &d.KnownPct, &d.DueCount, &provenance}, extra...)
+	err := row.Scan(dest...)
+	if err == nil {
+		d.Provenance, err = decodeProvenance(provenance)
+	}
 	return d, err
 }
 
@@ -1983,7 +2049,7 @@ func scanFlashcardSet(row pgx.Row) (FlashcardSet, error) {
 // assumed — a member seeing owner-only affordances would be offered actions the
 // API then refuses.
 func (s *Store) ListFlashcardSets(ctx context.Context, userID string) ([]FlashcardSet, error) {
-	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, COALESCE(m.workspace_id,''), m.workspace_name, m.color, m.privacy,`+flashcardSetStatsExpr+`,
+	rows, err := s.pool.Query(ctx, `SELECT `+flashcardSetCols+`,
 		(m.owner_user_id=$1),
 		(m.owner_user_id=$1 OR EXISTS (
 			SELECT 1 FROM workspace_members editor
@@ -2005,18 +2071,19 @@ func (s *Store) ListFlashcardSets(ctx context.Context, userID string) ([]Flashca
 	defer rows.Close()
 	out := []FlashcardSet{}
 	for rows.Next() {
-		var d FlashcardSet
-		if err := rows.Scan(&d.ID, &d.Name, &d.WorkspaceID, &d.WorkspaceName, &d.Color,
-			&d.Privacy, &d.CardCount, &d.KnownPct, &d.DueCount, &d.IsOwner, &d.CanEdit); err != nil {
+		var isOwner, canEdit bool
+		d, err := scanFlashcardSetRow(rows, &isOwner, &canEdit)
+		if err != nil {
 			return nil, err
 		}
+		d.IsOwner, d.CanEdit = isOwner, canEdit
 		out = append(out, d)
 	}
 	return out, rows.Err()
 }
 
 func (s *Store) GetFlashcardSet(ctx context.Context, id string) (FlashcardSet, error) {
-	d, err := scanFlashcardSet(s.pool.QueryRow(ctx, `SELECT m.id, m.title, COALESCE(m.workspace_id,''), m.workspace_name, m.color, m.privacy,`+flashcardSetStatsExpr+`
+	d, err := scanFlashcardSetRow(s.pool.QueryRow(ctx, `SELECT `+flashcardSetCols+`
 		FROM materials m WHERE m.id=$1 AND m.kind='flashcards' AND m.trashed_at IS NULL`, id))
 	if isNoRows(err) {
 		return d, ErrNotFound

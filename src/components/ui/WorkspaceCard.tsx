@@ -50,7 +50,7 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
       ? [
           {
             disabled: cloneIsPending,
-            icon: 'plus' as const,
+            icon: 'clone' as const,
             label: m.action_clone_workspace(),
             onClick: () =>
               cloneWorkspace(workspace.id, {
@@ -107,7 +107,7 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
                 files: String(workspace.fileCount),
               })}
             </p>
-            <div className="mt-3 flex flex-wrap gap-1">
+            <div className="mt-3 -ml-1 flex flex-wrap gap-1">
               {workspace.tags.map((t) => (
                 <Badge key={t.value} size="sm">
                   # {t.value}
@@ -129,7 +129,7 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
       </Link>
       {menuItems.length > 0 && (
         <div className="absolute top-3 right-3 z-50">
-          <Menu items={menuItems} />
+          <Menu align="start" items={menuItems} />
         </div>
       )}
       {editOpen && canSettings && (

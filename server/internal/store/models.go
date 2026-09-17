@@ -122,6 +122,9 @@ type File struct {
 	// It is absent until ingest has finished.
 	PreviewURL *string `json:"previewUrl,omitempty"`
 	Revision   int64   `json:"revision"`
+	// Provenance credits the library books a generated file was written from;
+	// nil for an upload.
+	Provenance *Provenance `json:"provenance,omitempty"`
 }
 
 type Quiz struct {
@@ -136,6 +139,9 @@ type Quiz struct {
 	CreatedAt      time.Time       `json:"createdAt"`
 	Privacy        Privacy         `json:"privacy"`
 	TimeLimitMin   *int            `json:"timeLimitMin,omitempty"`
+	// Provenance is the source material's attribution record; the attempt page
+	// renders it as a footer.
+	Provenance *Provenance `json:"provenance,omitempty"`
 	// IsOwner and CanEdit are request-scoped capabilities, not persisted quiz
 	// attributes. Explicit workspace editors can edit without owning it.
 	IsOwner bool `json:"isOwner"`
@@ -176,6 +182,9 @@ type FlashcardSet struct {
 	CardCount     int       `json:"cardCount"`
 	KnownPct      int       `json:"knownPct"`
 	DueCount      int       `json:"dueCount"`
+	// Provenance is the source material's attribution record; the study page
+	// renders it as a footer.
+	Provenance *Provenance `json:"provenance,omitempty"`
 	// IsOwner and CanEdit are request-scoped capabilities. Explicit workspace
 	// editors can edit without owning it; link/public visitors cannot.
 	IsOwner bool `json:"isOwner"`
@@ -225,11 +234,39 @@ type Material struct {
 	SizeBytes      int64     `json:"-"`
 	NodeCount      int       `json:"-"`
 	MaxDepth       int       `json:"-"`
+	// Provenance is the attribution record of a material written from the
+	// shared knowledge library; nil for everything else. Written at creation,
+	// appended by curate edits, and rendered outside the editable document.
+	Provenance *Provenance `json:"provenance,omitempty"`
 	// IsOwner is request-scoped (not persisted): true when the requester owns
 	// the parent workspace, false for link/public shared reads.
 	IsOwner      bool               `json:"isOwner"`
 	Role         *WorkspaceRole     `json:"role,omitempty"`
 	Capabilities AccessCapabilities `json:"capabilities"`
+}
+
+// Provenance is what a curated material or generated file was written from:
+// one entry per source book, plus the work's own licence when a source is
+// copyleft.
+type Provenance struct {
+	Books []ProvenanceBook `json:"books" nullable:"false"`
+	// License is computed by the server from the books, never supplied.
+	License string `json:"license,omitempty"`
+}
+
+// ProvenanceBook is one source book with the excerpts the material used.
+type ProvenanceBook struct {
+	ID      string   `json:"id"`
+	Title   string   `json:"title"`
+	Authors []string `json:"authors" nullable:"false"`
+	Edition string   `json:"edition,omitempty"`
+	// Version is the book version the excerpts were read from: a later publish
+	// of the same book does not change what this material was written from.
+	Version    int      `json:"version"`
+	License    string   `json:"license,omitempty"`
+	LicenseURL string   `json:"licenseUrl,omitempty"`
+	SourceURL  string   `json:"sourceUrl,omitempty"`
+	ExcerptIDs []string `json:"excerptIds" nullable:"false"`
 }
 
 // MarshalJSON exposes the stored jsonb bytes as a Plate envelope object rather
@@ -344,6 +381,8 @@ type MaterialRef struct {
 	SizeBytes int64 `json:"sizeBytes"`
 	NodeCount int   `json:"nodeCount"`
 	MaxDepth  int   `json:"maxDepth"`
+	// Provenance credits the library books a curated material was written from.
+	Provenance *Provenance `json:"provenance,omitempty"`
 }
 
 type ContentOrderItem struct {
@@ -405,6 +444,8 @@ type Canvas struct {
 type SearchResult struct {
 	ID       string     `json:"id"`
 	Kind     SearchKind `json:"kind"`
+	FileKind FileKind   `json:"fileKind,omitempty"`
+	IconID   string     `json:"iconId,omitempty"`
 	Title    string     `json:"title"`
 	Subtitle string     `json:"subtitle,omitempty"`
 	Href     string     `json:"href"`

@@ -1,5 +1,5 @@
 import { Link, useParams } from '@tanstack/react-router';
-import { useAttempt } from '@/api/hooks';
+import { useAttempt, useQuiz } from '@/api/hooks';
 import { ErrorState } from '@/components/app/ErrorState';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
+import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import {
   type Answer,
   emptyAnswer,
@@ -30,6 +31,13 @@ export default function AttemptResult() {
     isLoading,
     isError,
   } = useAttempt(attemptId, {
+    errorBoundary: false,
+  });
+  // The attempt snapshot carries no provenance; the quiz it was taken from
+  // does, and the credit has to survive onto the result page. The query is
+  // disabled until the attempt names its material, and a deleted quiz simply
+  // renders no footer.
+  const { data: quiz } = useQuiz(attempt?.materialId ?? '', {
     errorBoundary: false,
   });
 
@@ -165,6 +173,7 @@ export default function AttemptResult() {
             <Button iconLeft="chevronLeft">{m.quiz_back()}</Button>
           </Link>
         </div>
+        <MaterialAttributionFooter provenance={quiz?.provenance} />
       </div>
     </PanelWithInvertedRadius>
   );

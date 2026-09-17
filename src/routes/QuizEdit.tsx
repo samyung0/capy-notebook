@@ -10,6 +10,7 @@ import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
+import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { QuizForm } from '@/features/quizzes/QuizForm';
 import { m } from '@/i18n';
 
@@ -88,6 +89,7 @@ export default function QuizEdit() {
               onQuestionsChange={setQuestions}
               questions={questions}
             />
+            <MaterialAttributionFooter provenance={quiz.provenance} />
           </div>
         ) : (
           <p className="py-8 text-center text-fg-muted">{m.quiz_not_found()}</p>

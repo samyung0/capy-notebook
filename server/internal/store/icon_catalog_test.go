@@ -135,7 +135,7 @@ func TestWorkspaceIconPersistsAndClonesWithMemberPermissions(t *testing.T) {
 	owner := newBlobTestUser(t, s, "icon_owner")
 	editor := newBlobTestUser(t, s, "icon_editor")
 	visitor := newBlobTestUser(t, s, "icon_visitor")
-	ws, err := s.CreateWorkspace(ctx, owner, "Icons", nil)
+	ws, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Icons", Tags: nil})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -122,6 +122,7 @@ export function IconPicker({
               }
             }}
             type="button"
+            variant="accent"
           >
             {m.icon_use()}
           </Button>

@@ -866,6 +866,27 @@ async def _write(
 # ------------------------------------------------------------------- search
 
 
+async def test_hybrid_search_breaks_ties_by_chunk_id(workspace):
+    """Identical passages tie on both legs; the cut and the order must follow
+    the chunk id, not physical row order, so two calls agree exactly."""
+    file_id = workspace.add_file("dup.txt")
+    await _write(workspace, file_id, ["Chlorophyll absorbs red light"] * 6)
+
+    async def search():
+        rows = await store.hybrid_search(
+            workspace_id=workspace.id,
+            vector=_unit_vector(999),
+            terms=search_query_terms("chlorophyll absorbs"),
+            file_ids=None,
+            candidates=4,
+        )
+        return [row["id"] for row in rows]
+
+    first = await search()
+    assert first == [f"{file_id}_c{i}" for i in range(4)]
+    assert await search() == first
+
+
 async def test_lexical_half_matches_without_a_useful_vector(workspace):
     file_id = workspace.add_file("bio.txt")
     await _write(

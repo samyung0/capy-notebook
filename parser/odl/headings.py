@@ -6,12 +6,141 @@ from __future__ import annotations
 import copy
 import json
 import re
+import unicodedata
 from collections import Counter, defaultdict
+from itertools import pairwise
 from pathlib import Path
 
 import pymupdf
 
 from .order import normal, repair_page
+
+
+def _literal(text: str) -> str:
+    return "".join(unicodedata.normalize("NFKC", text).casefold().split())
+
+
+def _outline_title(text: str) -> str:
+    return _literal(
+        re.sub(r"^(?:chapter\s+)?\d+(?:\.\d+)*[.\s]+", "", text, flags=re.IGNORECASE)
+    )
+
+
+def correct_roles(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
+    """Keep literal source text while correcting supported non-section roles.
+
+    Running banners require repeated geometry/style and a stable folio offset.
+    Captions and widely separated diagram labels remain body text. Ambiguous
+    source boxes and headings present in the PDF outline retain their old role.
+    """
+    outline = {
+        (page - 1, _outline_title(text))
+        for _, text, page in document.get_toc()
+        if page > 0
+    }
+    pages: dict[int, list[dict]] = {}
+    banners: dict[tuple, list[tuple[int, int]]] = defaultdict(list)
+    roles: dict[int, str] = {}
+    for index, block in enumerate(blocks):
+        box, page_index = block.get("bbox", []), block.get("page_idx")
+        if (
+            block.get("type") != "text"
+            or not block.get("text_level")
+            or len(box) != 4
+            or type(page_index) is not int
+            or not 0 <= page_index < len(document)
+            or (page_index, _outline_title(block.get("text", ""))) in outline
+        ):
+            continue
+        page = document[page_index]
+        if page.rotation:
+            continue
+        if page_index not in pages:
+            pages[page_index] = [
+                span
+                for group in page.get_text(
+                    "dict", flags=pymupdf.TEXTFLAGS_DICT & ~pymupdf.TEXT_PRESERVE_IMAGES
+                )["blocks"]
+                for line in group.get("lines", [])
+                if abs(line["dir"][0] - 1) < 0.01
+                for span in line["spans"]
+                if span["text"].strip()
+            ]
+        rect = pymupdf.Rect(
+            box[0] * page.rect.width / 1000,
+            box[1] * page.rect.height / 1000,
+            box[2] * page.rect.width / 1000,
+            box[3] * page.rect.height / 1000,
+        )
+        spans = [
+            s
+            for s in pages[page_index]
+            if rect.contains(
+                pymupdf.Point(
+                    (s["bbox"][0] + s["bbox"][2]) / 2,
+                    (s["bbox"][1] + s["bbox"][3]) / 2,
+                )
+            )
+        ]
+        text = block.get("text", "")
+        if not spans or _literal(text) != _literal(" ".join(s["text"] for s in spans)):
+            continue
+        margin = 0 <= box[1] < box[3] <= 65 or 935 <= box[1] < box[3] <= 1000
+        if margin:
+            value = " ".join(unicodedata.normalize("NFKC", text).casefold().split())
+            leading = re.fullmatch(r"(\d{1,4})\s+(.+)", value)
+            trailing = re.fullmatch(r"(.+?)\s+(\d{1,4})", value)
+            title, folio = (
+                (leading[2], leading[1])
+                if leading
+                else ((trailing[1], trailing[2]) if trailing else ("", ""))
+            )
+            if any(c.isalpha() for c in title):
+                style = max(spans, key=lambda s: len(s["text"]))
+                key = (
+                    title,
+                    int(folio) - page_index,
+                    box[3] <= 65,
+                    round(box[1] / 10),
+                    style["font"],
+                    round(style["size"]),
+                )
+                banners[key].append((index, page_index))
+            continue
+        if re.match(
+            r"^(?:figure|fig\.|table)\s+\d+(?:[.\-]\d+)*(?:[.:\s])", text.casefold()
+        ):
+            roles[index] = "numbered-caption"
+            continue
+        if (
+            len(spans) < 2
+            or re.match(
+                r"^\s*(?:\d+[.)\s]|[IVXLCDMivxlcdm]+[.)]?\s|[A-Za-z][.)]\s"
+                r"|\((?:\d+|[IVXLCDMivxlcdm]+|[A-Za-z])\)\s)",
+                text,
+            )
+            or any(s["flags"] & 16 for s in spans)
+        ):
+            continue
+        size = max(s["size"] for s in spans)
+        if (
+            max(s["origin"][1] for s in spans) - min(s["origin"][1] for s in spans)
+            > 0.3 * size
+        ):
+            continue
+        ordered = sorted(spans, key=lambda s: s["bbox"][0])
+        if any(b["bbox"][0] - a["bbox"][2] >= 4 * size for a, b in pairwise(ordered)):
+            roles[index] = "diagram-label"
+    for group in banners.values():
+        if len({page for _, page in group}) >= 3:
+            roles.update((index, "running-banner") for index, _ in group)
+    result = list(blocks)
+    for index, role in roles.items():
+        result[index] = {**blocks[index], "_source_role": role}
+        result[index].pop("text_level", None)
+        if role == "running-banner":
+            result[index]["type"] = "discarded"
+    return result
 
 
 def source_headings(blocks: list[dict], pdf: Path) -> dict[int, dict]:

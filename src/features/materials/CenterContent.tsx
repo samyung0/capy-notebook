@@ -19,6 +19,7 @@ import { cn } from '@/lib/cn';
 import { Header } from './CenterContentHeader';
 import { HeavyMaterialGate } from './HeavyMaterialGate';
 import { type HeavyMaterialChoice, heavyMaterial } from './heavyDocument';
+import { MaterialAttributionFooter } from './MaterialAttributionFooter';
 import {
   isInteractiveMaterialMode,
   type MaterialMode,
@@ -233,32 +234,35 @@ function MaterialContent({
   const activeMode = forceReadOnly ? 'view' : resolveMaterialMode(mode, policy);
 
   return (
-    <div className="h-full min-h-0">
-      {activeMode === 'view' && (
-        <div className="h-full min-h-0 overflow-auto">
-          <Suspense fallback={<FileLoading />}>
-            <MaterialPreview
-              content={material.content}
-              isStandalone={!material.workspaceId}
-              kind={material.kind}
-              title={material.title}
-            />
-          </Suspense>
-        </div>
-      )}
-      {isInteractiveMaterialMode(activeMode) && (
-        <AppErrorBoundary resetKeys={[materialId, activeMode]}>
-          <Suspense fallback={<FileLoading />}>
-            <NoteEditor
-              allowExternalAssets={allowExternalAssets}
-              key={`${materialId}:${activeMode}`}
-              materialId={materialId}
-              mode={activeMode}
-              onEditorStatusChange={onEditorStatusChange}
-            />
-          </Suspense>
-        </AppErrorBoundary>
-      )}
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="min-h-0 flex-1">
+        {activeMode === 'view' && (
+          <div className="h-full min-h-0 overflow-auto">
+            <Suspense fallback={<FileLoading />}>
+              <MaterialPreview
+                content={material.content}
+                isStandalone={!material.workspaceId}
+                kind={material.kind}
+                title={material.title}
+              />
+            </Suspense>
+          </div>
+        )}
+        {isInteractiveMaterialMode(activeMode) && (
+          <AppErrorBoundary resetKeys={[materialId, activeMode]}>
+            <Suspense fallback={<FileLoading />}>
+              <NoteEditor
+                allowExternalAssets={allowExternalAssets}
+                key={`${materialId}:${activeMode}`}
+                materialId={materialId}
+                mode={activeMode}
+                onEditorStatusChange={onEditorStatusChange}
+              />
+            </Suspense>
+          </AppErrorBoundary>
+        )}
+      </div>
+      <MaterialAttributionFooter provenance={material.provenance} />
     </div>
   );
 }

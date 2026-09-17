@@ -1,7 +1,8 @@
 """Running page furniture, decided once before source-geometry table recovery.
 
 A running header or footer is a non-heading text block whose text recurs on
-three or more pages. The chunker drops it. The decision has to be made on the
+three or more pages. The chunker protects occurrences inside the page body and
+applies these keys elsewhere. The key set has to be made on the
 block list *before* ``tables.recover_tables`` replaces covered blocks, or a
 header that sat inside one recovered region would fall below the threshold on
 the remaining pages (and vice versa); the frozen texts travel to the ingest

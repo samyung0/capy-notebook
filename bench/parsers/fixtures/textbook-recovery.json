@@ -1,0 +1,393 @@
+{
+  "frozen_before_candidate_run": true,
+  "rules": "margin/style recurrence; source-matched folio banners; source-matched numbered captions; unbold same-baseline labels separated by four em; PDF outline protects real headings",
+  "cases": [
+    {
+      "id": "os4",
+      "role": "known-textbook-development",
+      "source": "bench/rag/fixtures/local/2026-09-16-knowledge-base/os4.pdf",
+      "blocks": "data\\knowledge-base-pilot\\run\\books\\os4\\parsed\\content_list.json",
+      "refinement": "data\\knowledge-base-pilot\\run\\books\\os4\\parsed\\refinement.json",
+      "saved": "data\\knowledge-base-pilot\\run\\books\\os4\\corpus.json",
+      "witnesses": [
+        {
+          "book": "os4",
+          "block_index": 2878,
+          "page": 198,
+          "text": "n = 50 n = 100 n = 250",
+          "source_role": "Figure 5.5 column labels"
+        },
+        {
+          "page": 54,
+          "text": "√",
+          "source_role": "math-fragment"
+        },
+        {
+          "page": 193,
+          "text": "SEpˆ =",
+          "source_role": "math-fragment"
+        },
+        {
+          "page": 193,
+          "text": "p(1 − p) n",
+          "source_role": "math-fragment"
+        },
+        {
+          "page": 193,
+          "text": "= 0.010",
+          "source_role": "math-fragment"
+        }
+      ],
+      "hashes": {
+        "source": "e261e4aea0eb4f0fd2b9d340604918ee7145e1a98e00313575c88977b671cb40",
+        "blocks": "d92c12749a72e8b5c3d5f9302e01652f0356bc1c8a6cf0762947615c687c2072",
+        "refinement": "d9ed829b277017eb2c811c589cb0761850b83e1cd1eaeb33a759c60a07465895",
+        "saved": "c01819548ee4f8b1550aa1a6b6cb7046346091ffa422cb1a53c3d5ec22be0251"
+      }
+    },
+    {
+      "id": "ahss4",
+      "role": "known-textbook-development",
+      "source": "bench/rag/fixtures/local/2026-09-16-knowledge-base/ahss4.pdf",
+      "blocks": "data\\knowledge-base-pilot\\run\\books\\ahss4\\parsed\\content_list.json",
+      "refinement": "data\\knowledge-base-pilot\\run\\books\\ahss4\\parsed\\refinement.json",
+      "saved": "data\\knowledge-base-pilot\\run\\books\\ahss4\\corpus.json",
+      "witnesses": [
+        {
+          "book": "ahss4",
+          "block_index": 2894,
+          "page": 214,
+          "text": "n = 50 n = 100 n = 250",
+          "source_role": "Figure 3.6 column labels"
+        },
+        {
+          "book": "ahss4",
+          "block_index": 1757,
+          "page": 134,
+          "text": "Event Garage full",
+          "source_role": "Tree diagram column labels in Example 2.39"
+        }
+      ],
+      "hashes": {
+        "source": "f3a19c74d914422ed5838478936abab11b87dafee0781b72cc7bf7cd2c46fda5",
+        "blocks": "8d907a581358eaa7c2cfd0cb716801e5494daa092d5f93705343c6b1205404eb",
+        "refinement": "4b8b2e0f6f30ea742be894f432d4d8c3f4cb55609b0f6f3fd71dcb5f4d0d2dec",
+        "saved": "80c54f44ea8c25a1fa07be823f1836374f95a72c310cb2387936759ca46adf57"
+      }
+    },
+    {
+      "id": "lsj",
+      "role": "known-textbook-development",
+      "source": "bench/rag/fixtures/local/2026-09-16-knowledge-base/lsj.pdf",
+      "blocks": "data\\knowledge-base-pilot\\run\\books\\lsj\\parsed\\content_list.json",
+      "refinement": "data\\knowledge-base-pilot\\run\\books\\lsj\\parsed\\refinement.json",
+      "saved": "data\\knowledge-base-pilot\\run\\books\\lsj\\corpus.json",
+      "witnesses": [
+        {
+          "book": "lsj",
+          "block_index": 2983,
+          "page": 369,
+          "text": "attended? no 𝛽0 𝛽0 + 𝛽2 yes 𝛽0 + 𝛽1 𝛽0 + 𝛽1 + 𝛽2",
+          "source_role": "Table 14.9 body and row labels"
+        },
+        {
+          "book": "lsj",
+          "block_index": 3315,
+          "page": 412,
+          "text": "Figure 15.13. The jamovi CFA analysis window",
+          "source_role": "Figure 15.13 caption"
+        },
+        {
+          "page": 243,
+          "text": "𝑡 =",
+          "source_role": "math-fragment"
+        }
+      ],
+      "hashes": {
+        "source": "90d44719e232e643b1cb7d5b1fbf7884f495a9ec7488084c12459bf005d695aa",
+        "blocks": "bec548c20b45adbd1f1b7d18fbd40fa650f595509f063e183aa0386cbfd08179",
+        "refinement": "8b06576f86e908d0ba73122d7e214614b243498294d015e355efd30d58fe0677",
+        "saved": "2fb78ebd34db1410ea9c5c8299a5df9b88652e177823db32d588b2ce691c644b"
+      }
+    },
+    {
+      "id": "german-education",
+      "role": "historical-regression-not-new-holdout",
+      "source": "bench\\rag\\fixtures\\local\\2026-09-09-odl-agentic\\pdfs\\german-education.pdf",
+      "blocks": "bench\\parsers\\reports\\local\\2026-09-09-odl-third-pass\\refined-final-r1\\german-education\\content_list.json",
+      "refinement": "bench\\parsers\\reports\\local\\2026-09-09-odl-third-pass\\refined-final-r1\\german-education\\refinement.json",
+      "saved": "bench\\parsers\\reports\\local\\2026-09-09-odl-third-pass\\refined-final-r1\\german-education\\chunks.json",
+      "witnesses": [],
+      "hashes": {
+        "source": "2608aecd1c675ee8dcd7de740bae4f87b497229f18889ae67454966176691dfd",
+        "blocks": "f4a07a6397a773d30f8dc35fa044718f3b4eac51965ce7740c8d7c26cc7e51fc",
+        "refinement": "4cc1713d437dc98a85a8353ebff32e6b355d833370d302b65614f96ad757b7b3",
+        "saved": "005ef7c24f1e02d82a09af4b6d2a06b5207ba50e78efb06caa11b591c8c64509"
+      }
+    },
+    {
+      "id": "attention",
+      "role": "historical-regression-not-new-holdout",
+      "source": "bench\\rag\\fixtures\\local\\2026-09-09-odl-agentic\\pdfs\\attention.pdf",
+      "blocks": "bench\\parsers\\reports\\local\\2026-09-09-odl-third-pass\\refined-final-r1\\attention\\content_list.json",
+      "refinement": "bench\\parsers\\reports\\local\\2026-09-09-odl-third-pass\\refined-final-r1\\attention\\refinement.json",
+      "saved": "bench\\parsers\\reports\\local\\2026-09-09-odl-third-pass\\refined-final-r1\\attention\\chunks.json",
+      "witnesses": [],
+      "hashes": {
+        "source": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697",
+        "blocks": "f43eb108621557c95630833d4c243a85797ea3a7c7061fee82f09f3c9aa67d98",
+        "refinement": "758cfd637e49cb7894fcc3efdc52b5e7c52614cb5dfcab599fc44ee4ab1e9503",
+        "saved": "dbf3f404bdbd3f3db23791defa66e7188f0b0127f3a1456e196f0043749c7635"
+      }
+    },
+    {
+      "id": "japan-migration",
+      "role": "historical-regression-not-new-holdout",
+      "source": "bench\\rag\\fixtures\\local\\2026-09-09-odl-agentic\\pdfs\\japan-migration.pdf",
+      "blocks": "bench\\parsers\\reports\\local\\2026-09-09-odl-third-pass\\refined-final-r1\\japan-migration\\content_list.json",
+      "refinement": "bench\\parsers\\reports\\local\\2026-09-09-odl-third-pass\\refined-final-r1\\japan-migration\\refinement.json",
+      "saved": "bench\\parsers\\reports\\local\\2026-09-09-odl-third-pass\\refined-final-r1\\japan-migration\\chunks.json",
+      "witnesses": [],
+      "hashes": {
+        "source": "ff4812aac97b8fdfe1919bd7c04a446aa7326eebc56ca047a777081c64e80f4a",
+        "blocks": "af98b3883d8cbeef89e5d0792cc4a4079cdd186c7ee7aacb6ea865b0cc109895",
+        "refinement": "8be3a53d9734f56719d2cea01f464c39800e5780298a3d28b31d9f294f486cc0",
+        "saved": "d3ac525ce94a2a65f6eb2c0831604ff1131e45db1606a287da26a96e0cc66640"
+      }
+    },
+    {
+      "id": "taln-complexity",
+      "role": "historical-regression-not-new-holdout",
+      "source": "bench\\rag\\fixtures\\local\\2026-09-09-odl-agentic\\pdfs\\taln-complexity.pdf",
+      "blocks": "bench\\parsers\\reports\\local\\2026-09-09-odl-third-pass\\refined-final-r1\\taln-complexity\\content_list.json",
+      "refinement": "bench\\parsers\\reports\\local\\2026-09-09-odl-third-pass\\refined-final-r1\\taln-complexity\\refinement.json",
+      "saved": "bench\\parsers\\reports\\local\\2026-09-09-odl-third-pass\\refined-final-r1\\taln-complexity\\chunks.json",
+      "witnesses": [],
+      "hashes": {
+        "source": "bf082a428310d35390cc83cb475094f143642dd8cfc1c165a2144cca85215294",
+        "blocks": "3ffbd6111bf7afe136a5495f1861d885c459b3f6fe1fcc2d9d4dcfb9649630e3",
+        "refinement": "8094a1fc6f3441aa138a1ceb0cb03f4a6f9576e03e86dca8343387044a4d4d0c",
+        "saved": "c724448b49b7f5604a01c7d82eadb37579bacc5d2ea41eee26a6f1d636e1eda4"
+      }
+    },
+    {
+      "id": "hongkong-figures",
+      "role": "historical-regression-not-new-holdout",
+      "source": "bench\\rag\\fixtures\\local\\2026-09-09-odl-agentic\\pdfs\\hongkong-figures.pdf",
+      "blocks": "bench\\parsers\\reports\\local\\2026-09-09-odl-third-pass\\refined-final-r1\\hongkong-figures\\content_list.json",
+      "refinement": "bench\\parsers\\reports\\local\\2026-09-09-odl-third-pass\\refined-final-r1\\hongkong-figures\\refinement.json",
+      "saved": "bench\\parsers\\reports\\local\\2026-09-09-odl-third-pass\\refined-final-r1\\hongkong-figures\\chunks.json",
+      "witnesses": [],
+      "hashes": {
+        "source": "c3490cc7c1664ce8e75edcce55898be58dc21fceade53b3c1cbfd7f30411f2d9",
+        "blocks": "6d43218dc7794979122231ecc6ea5cd8e2ce0e9c1531efdf41246462f4b94967",
+        "refinement": "a81044e706bceaf68569660b1e8977ee8b0a6099f448fed807094d6e5444860a",
+        "saved": "ea18022643060807cd48bb4f084c22187bdf7fa126abb9c9e183540572c8ca0d"
+      }
+    },
+    {
+      "id": "nist-shot",
+      "role": "historical-regression-not-new-holdout",
+      "source": "bench\\rag\\fixtures\\local\\2026-09-09-odl-agentic\\pdfs\\nist-shot.pdf",
+      "blocks": "bench\\parsers\\reports\\local\\2026-09-09-odl-third-pass\\refined-final-r1\\nist-shot\\content_list.json",
+      "refinement": "bench\\parsers\\reports\\local\\2026-09-09-odl-third-pass\\refined-final-r1\\nist-shot\\refinement.json",
+      "saved": "bench\\parsers\\reports\\local\\2026-09-09-odl-third-pass\\refined-final-r1\\nist-shot\\chunks.json",
+      "witnesses": [],
+      "hashes": {
+        "source": "0bdb43c9e1be39acf0dbafe76d1aa3cbd69efd706425bfb27bba979b1fd36763",
+        "blocks": "2352002e6b218cf1d0e06c858991fe3edb2b91e16c7d7e609f76dcc479969e86",
+        "refinement": "99502ddc93f2ad23e3c47884f0d46f0fe6f20b326df559c65ece47c465ce6f43",
+        "saved": "c6747e6d06ad3a8d936a5035a6eee9dda15a01c2668ab509e15095164c0d7b7c"
+      }
+    }
+  ],
+  "historical_checks": [
+    {
+      "id": "de-introduction",
+      "case": "german-education",
+      "page": 3,
+      "anchor": "Mit diesem breiten Ansatz",
+      "require": [
+        "Einleitung"
+      ],
+      "forbid": [],
+      "role": "development",
+      "no_numeric_section": true,
+      "source_image_sha256": "683f1aae1812dad35942e8a60e72ee9867e27816281e8de3ab6846f2731a96bb"
+    },
+    {
+      "id": "de-social",
+      "case": "german-education",
+      "page": 23,
+      "anchor": "Fortbestehende soziale Disparitäten",
+      "require": [
+        "Trends und Problemlagen"
+      ],
+      "forbid": [
+        "Wachsende Heterogenität",
+        "Im Überblick"
+      ],
+      "root": "Trends und Problemlagen",
+      "role": "development",
+      "no_numeric_section": true,
+      "source_image_sha256": "f8e81640732fee3584ab73d7b5e23484335574f3a0ee438f7a197b382bf8b553"
+    },
+    {
+      "id": "de-regional",
+      "case": "german-education",
+      "page": 23,
+      "anchor": "Fortbestehende regionale Disparitäten",
+      "require": [
+        "Trends und Problemlagen"
+      ],
+      "forbid": [
+        "Wachsende Heterogenität",
+        "Im Überblick"
+      ],
+      "root": "Trends und Problemlagen",
+      "role": "development",
+      "no_numeric_section": true,
+      "source_image_sha256": "f8e81640732fee3584ab73d7b5e23484335574f3a0ee438f7a197b382bf8b553"
+    },
+    {
+      "id": "de-governance",
+      "case": "german-education",
+      "page": 29,
+      "anchor": "Die Zuständigkeiten",
+      "require": [
+        "Herausforderungen",
+        "Kontinuierliche Austausch"
+      ],
+      "forbid": [
+        "Erfassung von individuellen"
+      ],
+      "root": "Herausforderungen",
+      "role": "development",
+      "no_numeric_section": true,
+      "source_image_sha256": "c8f1f0ac4df30b64ad129272ab61ea24d7dbbf9dda04a9500285529531676b95"
+    },
+    {
+      "id": "de-monitoring",
+      "case": "german-education",
+      "page": 29,
+      "anchor": "Die Systementwicklung sowohl",
+      "require": [
+        "Herausforderungen",
+        "Erfassung von individuellen"
+      ],
+      "forbid": [
+        "Kontinuierliche Austausch"
+      ],
+      "root": "Herausforderungen",
+      "role": "development",
+      "no_numeric_section": true,
+      "source_image_sha256": "c8f1f0ac4df30b64ad129272ab61ea24d7dbbf9dda04a9500285529531676b95"
+    },
+    {
+      "id": "en-architecture-continuation",
+      "case": "attention",
+      "page": 3,
+      "anchor": "The Transformer follows this overall architecture",
+      "require": [
+        "3 Model Architecture"
+      ],
+      "forbid": [
+        "2 Background"
+      ],
+      "role": "transfer",
+      "no_numeric_section": true,
+      "source_image_sha256": "6721fb850f22fa83b3e269217e7660a123267389e97572a3b3de6dfa420567ac"
+    },
+    {
+      "id": "en-multihead-continuation",
+      "case": "attention",
+      "page": 5,
+      "anchor": "output values. These are concatenated",
+      "require": [
+        "3 Model Architecture",
+        "3.2.2 Multi-Head Attention"
+      ],
+      "forbid": [
+        "3.3 Position"
+      ],
+      "role": "transfer",
+      "no_numeric_section": true,
+      "source_image_sha256": "ac19adf71e787e672ec99f735c4f0ad1720b2b46e46ba9c2a2deb9bbdc62d04c"
+    },
+    {
+      "id": "fr-corpus-continuation",
+      "case": "taln-complexity",
+      "page": 3,
+      "anchor": "souligne la difficulté",
+      "require": [
+        "2 Un corpus de compréhension"
+      ],
+      "forbid": [
+        "1 Introduction"
+      ],
+      "role": "transfer",
+      "no_numeric_section": true,
+      "source_image_sha256": "84786384eaae763b21be5d4d65b66c471efae02074fb828fa895cb735730f8ed"
+    },
+    {
+      "id": "fr-models-continuation",
+      "case": "taln-complexity",
+      "page": 5,
+      "anchor": "Dans l’ensemble, les performances",
+      "require": [
+        "3 Modèles de langage"
+      ],
+      "forbid": [
+        "2 Un corpus"
+      ],
+      "role": "transfer",
+      "no_numeric_section": true,
+      "source_image_sha256": "8ba3e4827b1aeb54436b047b70fad2735af58d195bfb39ae36c80b1a7ad46366"
+    },
+    {
+      "id": "ja-main-title",
+      "case": "japan-migration",
+      "page": 9,
+      "anchor": "市区町村間移動者数は519万548人",
+      "require": [
+        "日本人及び外国人の移動状況",
+        "国内の移動者数及び国外との移動状況"
+      ],
+      "forbid": [],
+      "role": "transfer",
+      "no_numeric_section": true,
+      "source_image_sha256": "ee73295ee91b06a018f13ad08fd293f904db826040abe69e275a109316dfe763"
+    },
+    {
+      "id": "ja-table-title",
+      "case": "japan-migration",
+      "page": 11,
+      "anchor": "451,843",
+      "require": [
+        "表２ 都道府県別社会増減数"
+      ],
+      "forbid": [
+        "図２"
+      ],
+      "role": "transfer",
+      "no_numeric_section": true,
+      "source_image_sha256": "f26600e3a4e474db8239abfa4fcac9786e0b4286443342eddbbdd4c3d14f129e"
+    },
+    {
+      "id": "de-monitoring-next-page",
+      "case": "german-education",
+      "page": 30,
+      "anchor": "stehende Diagnose- und Förderinstrumente",
+      "require": [
+        "Erfassung von individuellen Lernverläufen"
+      ],
+      "forbid": [
+        "Gemeinsames Verständnis"
+      ],
+      "root": "Herausforderungen",
+      "no_numeric_section": true,
+      "role": "supplementary_transfer",
+      "source_image_sha256": "060962a0bfb13216fe10979fbb06140b46553187425de5b934a40e9a58d5f5cf"
+    }
+  ]
+}

@@ -42,7 +42,7 @@ func TestEventStreamCarriesNotificationsAndTreeChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _, _ = st.Pool().Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID) })
-	ws, err := st.CreateWorkspace(ctx, userID, "Events", nil)
+	ws, err := st.CreateWorkspace(ctx, userID, store.WorkspaceCreate{Name: "Events", Tags: nil})
 	if err != nil {
 		t.Fatal(err)
 	}

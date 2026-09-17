@@ -34,7 +34,7 @@ func TestTransferMovesOwnershipAndTheStorageBill(t *testing.T) {
 	senderID := newTransferTestUser(t, s, "u_sender")
 	recipientID := newTransferTestUser(t, s, "u_recipient")
 
-	ws, err := s.CreateWorkspace(ctx, senderID, "Handover", []TagRef{})
+	ws, err := s.CreateWorkspace(ctx, senderID, WorkspaceCreate{Name: "Handover", Tags: []TagRef{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func TestTransferRefusedWhenRecipientCannotAffordIt(t *testing.T) {
 	senderID := newTransferTestUser(t, s, "u_bigsender")
 	recipientID := newTransferTestUser(t, s, "u_smallrecipient")
 
-	ws, err := s.CreateWorkspace(ctx, senderID, "Too big", []TagRef{})
+	ws, err := s.CreateWorkspace(ctx, senderID, WorkspaceCreate{Name: "Too big", Tags: []TagRef{}})
 	if err != nil {
 		t.Fatal(err)
 	}

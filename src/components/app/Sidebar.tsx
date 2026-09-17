@@ -164,12 +164,8 @@ export function Sidebar({
       <nav>
         <div className="flex items-center justify-between px-2 pt-1 pb-6">
           <div className="flex items-center gap-3">
-            <LogoMark size={36} />
-            <h1
-              className={cn(
-                't-card-title translate-y-px font-extrabold tracking-tight'
-              )}
-            >
+            {/* <LogoMark size={36} /> */}
+            <h1 className={cn('t-card-title font-extrabold tracking-tight')}>
               {m.app_name()}
             </h1>
           </div>

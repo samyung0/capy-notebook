@@ -32,7 +32,10 @@ func TestDefinitionsAreClosedObjects(t *testing.T) {
 		}
 		assertClosed(t, def.Name, def.InputSchema)
 	}
-	for _, name := range []string{"search_workspace", "create_material", "trash_file"} {
+	for _, name := range []string{
+		"search_workspace", "create_material", "trash_file",
+		"search_knowledge", "browse_knowledge", "read_knowledge", "capture_knowledge_page",
+	} {
 		if !seen[name] {
 			t.Fatalf("missing tool %s", name)
 		}
@@ -88,6 +91,13 @@ func TestOperationsForRole(t *testing.T) {
 	}
 	if OperationsForRole("") != nil {
 		t.Fatal("no role grants nothing")
+	}
+	// The library is not a workspace resource: curate mode grants library.read
+	// per turn, no role ever does.
+	for _, ops := range [][]Operation{owner, editor, viewer} {
+		if has(ops, OpLibraryRead) {
+			t.Fatalf("library.read must not be role-derived: %v", ops)
+		}
 	}
 }
 

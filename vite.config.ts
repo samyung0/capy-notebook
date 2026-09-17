@@ -1,3 +1,4 @@
+import type { Stats } from 'node:fs';
 import path from 'node:path';
 import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import { sentryVitePlugin } from '@sentry/vite-plugin';
@@ -8,9 +9,18 @@ import { summaryVitePlugin } from './src/summary/vite';
 import { llmRuntimePlugin } from './vite-llm-runtime';
 
 const BETTEROFFICE_DOCX_SUBPATH = /^@betteroffice\/docx\/(.+)$/;
+const DEV_ENV_FILE = /^deploy\/\.env(?:\.[^/]+)?$/;
 
 // Every component reads deploy/.env; see deploy/.env.example.
 const ENV_DIR = path.resolve(import.meta.dirname, 'deploy');
+const WATCH_DIRECTORIES = [
+  'src',
+  'public',
+  'messages',
+  'project.inlang',
+  'vendor/betteroffice/packages',
+  'workers/site',
+];
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, ENV_DIR, '');
@@ -272,12 +282,25 @@ export default defineConfig(({ mode }) => {
       // Playwright is the difference between passing and timing out.
       warmup: { clientFiles: ['./src/features/notes/NoteEditor.tsx'] },
       watch: {
-        ignored: [
-          '**/pipeline/**',
-          '**/old-pipeline/**',
-          '**/server/**',
-          '**/dist/**',
-        ],
+        // chokidar hands the predicate a second `stats` argument that its
+        // anymatch type does not declare, so it stays optional here.
+        ignored: (file: string, stats?: Stats) => {
+          const relative = path
+            .relative(import.meta.dirname, file)
+            .split(path.sep)
+            .join('/');
+          // Keep ancestors traversable and root config/HTML files watchable.
+          if (!relative || relative.startsWith('../')) return false;
+          if (!relative.includes('/') && !stats?.isDirectory()) return false;
+          if (relative === 'deploy' || DEV_ENV_FILE.test(relative))
+            return false;
+          return !WATCH_DIRECTORIES.some(
+            (directory) =>
+              relative === directory ||
+              relative.startsWith(`${directory}/`) ||
+              directory.startsWith(`${relative}/`)
+          );
+        },
       },
     },
     // The source-analysis worker imports PDF.js's own worker URL. ES workers

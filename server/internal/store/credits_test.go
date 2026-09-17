@@ -936,7 +936,7 @@ func TestCreateSourceWithJobTakesIngestLease(t *testing.T) {
 	}
 	s.SetModelRegistry(reg)
 	owner := newBlobTestUser(t, s, "u_ingest_lease")
-	ws, err := s.CreateWorkspace(ctx, owner, "Ingest lease", []TagRef{})
+	ws, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Ingest lease", Tags: []TagRef{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -996,7 +996,7 @@ func TestCreateSourceWithJobWithoutRegistryLeavesNoLease(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "u_ingest_noreg")
-	ws, err := s.CreateWorkspace(ctx, owner, "No registry", []TagRef{})
+	ws, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "No registry", Tags: []TagRef{}})
 	if err != nil {
 		t.Fatal(err)
 	}

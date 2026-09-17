@@ -97,7 +97,7 @@ export default function Explore() {
                       <Button
                         className="mt-3"
                         disabled={cloneWorkspaceIsPending}
-                        iconLeft="plus"
+                        iconLeft="clone"
                         onClick={() =>
                           cloneWorkspace(w.id, {
                             onSuccess: ({ workspace }) => {

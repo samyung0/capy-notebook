@@ -234,7 +234,7 @@ func newSourceImportTestJob(
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "u_import")
 	ws, err := s.CreateWorkspace(
-		ctx, owner, "Import jobs", []TagRef{},
+		ctx, owner, WorkspaceCreate{Name: "Import jobs", Tags: []TagRef{}},
 	)
 	if err != nil {
 		t.Fatal(err)

@@ -106,6 +106,9 @@ type generateOpts struct {
 	DiagramType  string
 	TimeLimitMin *int
 	Title        string
+	// AllowUnindexed skips the indexed-content requirement for a material whose
+	// grounding is outside the workspace (the knowledge library).
+	AllowUnindexed bool
 }
 
 func generateOptsFrom(req apimodel.GenerateReq, title string) generateOpts {
@@ -204,7 +207,7 @@ func (a *api) resolveScope(ctx context.Context, wsID string, opts *generateOpts)
 		fileNames = append(fileNames, fileNamesByID[id])
 		hasIndexed = hasIndexed || indexedByID[id]
 	}
-	if !hasIndexed {
+	if !hasIndexed && !opts.AllowUnindexed {
 		return nil, nil, nil, errScopeNoIndexedContent
 	}
 	return fileIDs, fileNames, chapterNames, nil

@@ -6,6 +6,9 @@ the stored object's path) and renders with PyMuPDF. Office sources convert tempo
 page model and refuse. The JPEG rides in a user message placed after the tool
 results of its step, because chat-completions tool messages carry text only.
 Images live on the turn's ``ToolContext`` and are never persisted.
+
+``capture_knowledge_page`` renders a library book the same way, from the
+knowledge-base bucket and keyed in the same cache by its object key.
 """
 
 from __future__ import annotations
@@ -71,12 +74,14 @@ def _evict(cache: Path, budget: int) -> None:
             log.debug("could not evict capture cache file %s", path, exc_info=True)
 
 
-def _download(blob_path: str, target: Path, max_bytes: int) -> None:
+def _download(blob_path: str, target: Path, max_bytes: int, download=None) -> None:
     cache = target.parent
     fd, temporary = tempfile.mkstemp(prefix=".", suffix=".part", dir=cache)
     os.close(fd)
     try:
-        downloaded = blobstore.download_file(blob_path, temporary, max_bytes)
+        downloaded = (download or blobstore.download_file)(
+            blob_path, temporary, max_bytes
+        )
         if downloaded is None:
             raise CaptureUnavailable(
                 "the source object is missing", "unavailable_target"
@@ -113,6 +118,30 @@ async def pdf_path(workspace_id: str, file_id: str) -> Path:
     max_bytes = int(row.get("size_bytes") or 0)
     await asyncio.to_thread(_download, blob, target, max_bytes)
     return target
+
+
+async def knowledge_pdf_path(object_key: str, max_bytes: int) -> Path:
+    """The local copy of a library book, downloaded once per object key."""
+    if not object_key:
+        raise CaptureUnavailable(
+            "this book has no stored PDF in the knowledge-base bucket",
+            "unavailable_target",
+        )
+    target = _cache_dir() / cache_name(object_key)
+    if target.is_file():
+        os.utime(target)
+        return target
+    await asyncio.to_thread(
+        _download, object_key, target, max_bytes, blobstore.library_download_file
+    )
+    return target
+
+
+async def render_knowledge(
+    object_key: str, max_bytes: int, page: int, bbox: list[float] | None, max_edge: int
+) -> tuple[bytes, list[float], tuple[int, int]]:
+    pdf = await knowledge_pdf_path(object_key, max_bytes)
+    return await asyncio.to_thread(render, pdf, page, bbox, max_edge)
 
 
 def _office_capture(

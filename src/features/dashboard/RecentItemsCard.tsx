@@ -56,8 +56,8 @@ export function RecentItemsCard() {
     (filesLoading && !files) || (workspacesLoading && !workspaces);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <h3 className="t-card-title">{m.dashboard_recent()}</h3>
+    <div className="flex flex-col gap-3">
+      <h3 className="t-card-title px-4">{m.dashboard_recent()}</h3>
       {paused ? (
         <QueryPausedState />
       ) : isLoading ? (
@@ -67,7 +67,7 @@ export function RecentItemsCard() {
           {m.dashboard_recent_empty()}
         </p>
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
+        <div className="flex -translate-x-0.5 flex-col gap-1 px-2">
           {items.map((item) => (
             <Link
               className="flex items-start gap-3 rounded-button px-1 py-2 hover:bg-surface-hover-bg"
@@ -81,14 +81,14 @@ export function RecentItemsCard() {
               }
               to="/workspaces/$workspaceId"
             >
-              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-button bg-surface-hover-bg text-fg-secondary">
+              <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-button">
                 <FileIcon
+                  className="size-5"
                   name={
                     item.kind === 'file'
                       ? fileIconName({ kind: item.fileKind, name: item.title })
                       : materialIconName(item.type)
                   }
-                  size={16}
                 />
               </span>
               <span className="min-w-0 flex-1">

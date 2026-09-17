@@ -14,15 +14,27 @@ The CSS recipes share timing while keeping component semantics separate:
   `MenuRow` to preserve editor/command focus when the menu closes.
   Shared command-menu content becomes inert during its retained exit, including
   submenus, so keyboard activation cannot execute a closing item again.
-- Dialogs and Popovers get a short 2px entrance blur. Tooltips and plain menu
-  fades stay crisp. Drawer blur belongs to its inner content, separate from the
+  Dropdown triggers retain their button semantics and press animation inside a
+  stationary MenuAnchor. A shared Radix scope connects that anchor to dropdown
+  content, including trigger-width matching; submenu triggers retain their own anchors.
+  Shared PopoverTrigger owns a stationary PopoverAnchor wrapper, including for
+  Workspaces Filter and the notification bell. Triggerless editor popovers keep
+  their explicit anchors. The motion browser suite samples Filter positioning through
+  repeated opening animations at desktop and mobile widths.
+- Popovers, dropdowns and dropdown submenus share `motion-anchored-popup`: fade,
+  97% entry scale, 2px entry blur and a directional 16px entry slide; exit fades
+  and shrinks to 99%. Dialogs also get a short 2px entrance blur. Tooltips stay
+  crisp. Drawer blur belongs to its inner content, separate from the
   root's nested-drawer brightness filter.
   Its entrance filter follows `data-starting-style` and stays clear after
   cancelled or nested swipes.
 - Shared `DialogContent` uses `will-change: transform` while mounted to keep
   its rendering layer stable at animation completion. Without it, Chromium can
   paint body controls 1px higher on the final frame while the title stays fixed,
-  despite unchanged layout positions. Scale, blur and timing remain unchanged.
+  despite unchanged layout positions. Center offsets and translations round to
+  CSS pixels so settled text avoids fractional translation. Feature queries enable
+  rounded centering variables only when supported; otherwise the offsets stay at
+  50% and translations at -50%. Scale, blur and timing remain unchanged.
   Share dialog member content follows the dialog's mount lifetime, so closing
   does not remove the member section before the exit animation finishes.
 - `PopupMotion` keeps custom popup content mounted through its CSS exit, freezes

@@ -446,6 +446,7 @@ export function CollaborationProvider({
             <Button
               disabled={!comment.trim() || createDiscussionIsPending}
               onClick={() => void submitNewComment()}
+              variant="accent"
             >
               {m.editor_add_comment()}
             </Button>

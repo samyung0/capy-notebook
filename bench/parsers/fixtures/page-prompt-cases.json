@@ -1,0 +1,29 @@
+{
+  "description": "Full-page supplement selected before responses to the user's verbatim page-description prompt. Page numbers are one-based PDF pages. Existing 16 crop gold checks remain unchanged.",
+  "cases": [
+    {
+      "id": "os4-toc-page",
+      "source": "bench/rag/fixtures/local/2026-09-16-knowledge-base/os4.pdf",
+      "page": 3,
+      "checks": ["Preserve the complete visible TOC entries, order, heading levels and page-number associations", "1.2 Data basics 14; 1.2.1 Observations, variables, and data matrices 14; 1.2.2 Types of variables 17", "No inferred chapter explanations"]
+    },
+    {
+      "id": "lsj-formula-table-page",
+      "source": "bench/rag/fixtures/local/2026-09-16-knowledge-base/lsj.pdf",
+      "page": 369,
+      "checks": ["Preserve Table 14.9 no/yes columns and all four beta expressions in the correct row and column", "Preserve surrounding text, the displayed prediction equation and all model assumptions", "Use the existing LSJ rowspan abstention"]
+    },
+    {
+      "id": "exo7-derivatives-page",
+      "source": "bench/parsers/fixtures/local/selective-recovery/exo7-analyse.pdf",
+      "page": 80,
+      "checks": ["Preserve both derivative tables including primes, conditions and all cell associations", "Preserve the sum, product, reciprocal and quotient rules and headings", "No mathematical simplification or correction"]
+    },
+    {
+      "id": "exo7-extrema-figure-page",
+      "source": "bench/parsers/fixtures/local/selective-recovery/exo7-analyse.pdf",
+      "page": 84,
+      "checks": ["Preserve all local and global extremum inequalities and quantifiers", "Briefly caption the drawn curve and marked extrema without invented numerical coordinates", "Preserve source labels and paragraph qualifications about interval I"]
+    }
+  ]
+}

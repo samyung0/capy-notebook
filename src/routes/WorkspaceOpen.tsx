@@ -517,7 +517,7 @@ export default function WorkspaceOpen() {
                 <Button
                   className="mt-4 h-fit w-full py-2"
                   disabled={cloneWorkspaceIsPending}
-                  iconLeft="plus"
+                  iconLeft="clone"
                   onClick={() =>
                     cloneWorkspace(workspaceId, {
                       onError: (err) => toastCloneError(err, 'workspace'),
@@ -653,8 +653,8 @@ export default function WorkspaceOpen() {
                               type="button"
                             >
                               <FileIcon
+                                className="size-3.75"
                                 name={expanded ? '_folder_open' : '_folder'}
-                                size={15}
                               />
                               <span className="line-clamp-1 translate-y-px truncate font-semibold">
                                 {ch.name}
@@ -843,6 +843,7 @@ export default function WorkspaceOpen() {
                             : { id: ref.id, kind: 'file' }
                         )
                       }
+                      readOnly={readOnly}
                       workspaceId={workspaceId}
                     />
                   </AppErrorBoundary>

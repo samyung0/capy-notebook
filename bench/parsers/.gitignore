@@ -3,6 +3,10 @@
 # publicly available documents. Anything dropped there must be safe to commit —
 # that check is the developer's, not this file's.
 reports/local/
+scripts/local/
+fixtures/local/selective-recovery/*.pdf
+fixtures/local/odl-broad-spectrum/*.pdf
+fixtures/local/odl-broad-spectrum/source-review/
 .tar.gz
 .DS_Store
 *.failure.log

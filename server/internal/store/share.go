@@ -364,7 +364,7 @@ func (s *Store) ListPublicWorkspaces(ctx context.Context, userID string) ([]Publ
 }
 
 func (s *Store) ListPublicQuizzes(ctx context.Context) ([]PublicQuiz, error) {
-	rows, err := s.pool.Query(ctx, `SELECT m.id, COALESCE(m.workspace_id,''), m.workspace_name, m.kind, m.title, m.content, m.chapter_id, m.scope_chapters, m.scope_file_names, m.privacy, m.color, m.created_at,
+	rows, err := s.pool.Query(ctx, `SELECT m.id, COALESCE(m.workspace_id,''), m.workspace_name, m.kind, m.title, m.content, m.chapter_id, m.scope_chapters, m.scope_file_names, m.privacy, m.color, m.created_at, m.provenance,
 			COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0)
 		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=m.owner_user_id
 		LEFT JOIN material_clone_counts cc ON cc.material_id=m.id
@@ -381,7 +381,11 @@ func (s *Store) ListPublicQuizzes(ctx context.Context) ([]PublicQuiz, error) {
 		var mt Material
 		var author string
 		var clones int
-		if err := rows.Scan(&mt.ID, &mt.WorkspaceID, &mt.WorkspaceName, &mt.Kind, &mt.Title, &mt.Content, &mt.ChapterID, &mt.ScopeChapters, &mt.ScopeFileNames, &mt.Privacy, &mt.Color, &mt.CreatedAt, &author, &clones); err != nil {
+		var provenance []byte
+		if err := rows.Scan(&mt.ID, &mt.WorkspaceID, &mt.WorkspaceName, &mt.Kind, &mt.Title, &mt.Content, &mt.ChapterID, &mt.ScopeChapters, &mt.ScopeFileNames, &mt.Privacy, &mt.Color, &mt.CreatedAt, &provenance, &author, &clones); err != nil {
+			return nil, err
+		}
+		if mt.Provenance, err = decodeProvenance(provenance); err != nil {
 			return nil, err
 		}
 		q, err := quizFromMaterial(mt)
@@ -394,7 +398,7 @@ func (s *Store) ListPublicQuizzes(ctx context.Context) ([]PublicQuiz, error) {
 }
 
 func (s *Store) ListPublicFlashcardSets(ctx context.Context) ([]PublicFlashcardSet, error) {
-	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, COALESCE(m.workspace_id,''), m.workspace_name, m.color, m.privacy,`+flashcardSetStatsExpr+`,
+	rows, err := s.pool.Query(ctx, `SELECT `+flashcardSetCols+`,
 			COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0)
 		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=m.owner_user_id
 		LEFT JOIN material_clone_counts cc ON cc.material_id=m.id
@@ -408,11 +412,13 @@ func (s *Store) ListPublicFlashcardSets(ctx context.Context) ([]PublicFlashcardS
 	defer rows.Close()
 	out := []PublicFlashcardSet{}
 	for rows.Next() {
-		var d PublicFlashcardSet
-		if err := rows.Scan(&d.ID, &d.Name, &d.WorkspaceID, &d.WorkspaceName, &d.Color, &d.Privacy, &d.CardCount, &d.KnownPct, &d.DueCount, &d.Author, &d.Clones); err != nil {
+		var item PublicFlashcardSet
+		set, err := scanFlashcardSetRow(rows, &item.Author, &item.Clones)
+		if err != nil {
 			return nil, err
 		}
-		out = append(out, d)
+		item.FlashcardSet = set
+		out = append(out, item)
 	}
 	return out, rows.Err()
 }
@@ -503,6 +509,7 @@ type workspaceCloneFile struct {
 	position                        int64
 	indexed, everParsed             bool
 	parseMode                       string
+	provenance                      []byte
 }
 
 type workspaceCloneAsset struct {
@@ -658,7 +665,8 @@ func (s *Store) snapshotWorkspaceForClone(
 			)),
 			parser, blob_path,
 			parsed_fingerprint, parsed_parser_version, source_etag,
-			content_hash, source_sha256, parse_mode, ever_parsed_successfully
+			content_hash, source_sha256, parse_mode, ever_parsed_successfully,
+			provenance
 		 FROM files
 		 WHERE workspace_id=$1 AND status='ready' AND trashed_at IS NULL
 		 ORDER BY added_at`,
@@ -687,6 +695,7 @@ func (s *Store) snapshotWorkspaceForClone(
 			&file.sourceSHA256,
 			&file.parseMode,
 			&file.everParsed,
+			&file.provenance,
 		); err != nil {
 			rows.Close()
 			return workspaceCloneSnapshot{}, err
@@ -952,12 +961,13 @@ func (s *Store) cloneWorkspaceOnce(
 					chapterID = &mapped
 				}
 			}
+			// Attribution travels with the copy, as it does for materials.
 			if _, err := tx.Exec(ctx, `INSERT INTO files
 				(id, workspace_id, user_id, created_by, chapter_id, position, name, kind, size_bytes, added_at, status, indexed, parser, blob_path,
-				 parsed_fingerprint, parsed_parser_version, source_etag, content_hash, source_sha256, parse_mode, ever_parsed_successfully)
-				VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+				 parsed_fingerprint, parsed_parser_version, source_etag, content_hash, source_sha256, parse_mode, ever_parsed_successfully, provenance)
+				VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
 				nid, newID, userID, chapterID, f.position, f.name, f.kind, f.sizeBytes, time.Now().UTC(), f.status, f.indexed, f.parser, f.blobPath,
-				f.parsedFingerprint, f.parsedParserVersion, f.sourceETag, f.contentHash, f.sourceSHA256, f.parseMode, f.everParsed); err != nil {
+				f.parsedFingerprint, f.parsedParserVersion, f.sourceETag, f.contentHash, f.sourceSHA256, f.parseMode, f.everParsed, f.provenance); err != nil {
 				return Workspace{}, err
 			}
 		}
@@ -1006,13 +1016,22 @@ func (s *Store) cloneWorkspaceOnce(
 			content := materialSnapshot.content
 			metrics := materialSnapshot.metrics
 			createdAt := time.Now().UTC()
+			// The attribution footer travels with the copy: dropping it would
+			// strip the source books' licence credit.
+			var provenance []byte
+			if mt.Provenance != nil {
+				provenance, err = json.Marshal(mt.Provenance)
+				if err != nil {
+					return Workspace{}, err
+				}
+			}
 			if _, err := tx.Exec(ctx, `INSERT INTO materials
 				(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
-					 chapter_id, position, scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_at, revision, updated_by)
-				VALUES ($1,$2,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'private',$12,$13,$14,$15,$16,$2)`,
+					 chapter_id, position, scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_at, revision, updated_by, provenance)
+				VALUES ($1,$2,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'private',$12,$13,$14,$15,$16,$2,$17)`,
 				nid, userID, newID, name, mt.Kind, mt.Title, json.RawMessage(content), chapterID,
 				mt.Position, mt.ScopeChapters, mt.ScopeFileNames, mt.Color, metrics.NodeCount,
-				metrics.MaxDepth, createdAt, mt.Revision); err != nil {
+				metrics.MaxDepth, createdAt, mt.Revision, provenance); err != nil {
 				return Workspace{}, err
 			}
 			for _, cid := range materialSnapshot.cardIDs {
@@ -1274,12 +1293,20 @@ func (s *Store) cloneMaterialKindOnce(
 	}
 
 	nid := uid("mat")
+	// Attribution travels with the copy; see the workspace clone above.
+	var provenance []byte
+	if src.Provenance != nil {
+		if provenance, err = json.Marshal(src.Provenance); err != nil {
+			return Material{}, err
+		}
+	}
 	if _, err := tx.Exec(ctx, `INSERT INTO materials
 		(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
-		 scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_at, revision, updated_by)
-		VALUES ($1,$2,$2,NULL,'',$3,$4,$5,$6,'{}','private',$7,$8,$9,$10,$11,$2)`,
+		 scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_at, revision, updated_by, provenance)
+		VALUES ($1,$2,$2,NULL,'',$3,$4,$5,$6,'{}','private',$7,$8,$9,$10,$11,$2,$12)`,
 		nid, userID, src.Kind, src.Title, json.RawMessage(content), src.ScopeChapters,
-		src.Color, metrics.NodeCount, metrics.MaxDepth, src.UpdatedAt, src.Revision); err != nil {
+		src.Color, metrics.NodeCount, metrics.MaxDepth, src.UpdatedAt, src.Revision,
+		provenance); err != nil {
 		return Material{}, err
 	}
 	for _, asset := range assets {

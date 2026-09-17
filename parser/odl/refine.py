@@ -125,6 +125,7 @@ def parse_pdf(data: bytes, work_dir: Path, *, java_timeout_s: float) -> ParseOut
         }
         blocks = hidden.recover_hidden_ocr_order(blocks, eligible)
         blocks = headings.rewrite(blocks, headings.source_headings(blocks, pdf))
+        blocks = headings.correct_roles(blocks, document)
         phases["structure"] = time.perf_counter() - started
 
         started = time.perf_counter()

@@ -8,6 +8,7 @@ import type { AccessCapabilities } from './accessCapabilities.ts';
 import type { Envelope } from './envelope.ts';
 import type { MaterialKind } from './materialKind.ts';
 import type { Privacy } from './privacy.ts';
+import type { Provenance } from './provenance.ts';
 import type { UserColor } from './userColor.ts';
 import type { WorkspaceRole } from './workspaceRole.ts';
 
@@ -29,6 +30,7 @@ export interface Material {
   nodeCount: number;
   position: number;
   privacy: Privacy;
+  provenance?: Provenance;
   revision: number;
   role?: WorkspaceRole;
   scopeChapters: string[];

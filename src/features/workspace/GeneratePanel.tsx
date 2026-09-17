@@ -117,7 +117,7 @@ export function GeneratePanel({
           <ButtonCard
             buttonText={tileLabel(k)}
             componentBeforeText={
-              <FileIcon name={materialIconName(k)} size={22} />
+              <FileIcon className="size-5.5" name={materialIconName(k)} />
             }
             disabled={generateIsPending}
             key={k}

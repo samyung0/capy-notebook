@@ -5,6 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { Privacy } from './privacy.ts';
+import type { Provenance } from './provenance.ts';
 import type { QuizQuestionsItem } from './quizQuestionsItem.ts';
 
 export interface Quiz {
@@ -17,6 +18,7 @@ export interface Quiz {
   isOwner: boolean;
   name: string;
   privacy: Privacy;
+  provenance?: Provenance;
   questions: QuizQuestionsItem[];
   timeLimitMin?: number;
   workspaceId: string;

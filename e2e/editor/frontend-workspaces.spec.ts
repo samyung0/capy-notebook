@@ -1,5 +1,73 @@
 import { expect, test } from '@playwright/test';
 
+test('workspace creation and editing share icon and description fields', async ({
+  page,
+}) => {
+  await page.goto('/workspaces');
+  await page
+    .getByRole('button', { exact: true, name: 'New workspace' })
+    .click();
+  const create = page.getByRole('dialog', {
+    exact: true,
+    name: 'Create workspace',
+  });
+  await expect(create.getByPlaceholder('Workspace name')).toBeFocused();
+  await create.getByPlaceholder('Workspace name').fill('Metadata workspace');
+  await create
+    .getByRole('textbox', { exact: true, name: 'Description' })
+    .fill('Study with a chosen icon');
+  await expect(
+    create.getByRole('textbox', { exact: true, name: 'Description' })
+  ).toHaveAttribute('maxlength', '500');
+  await create
+    .getByRole('button', { exact: true, name: 'Choose icon' })
+    .click();
+  const picker = page.getByRole('dialog', { exact: true, name: 'Choose icon' });
+  await picker.getByRole('button', { exact: true, name: 'Waves' }).click();
+  await picker.getByRole('button', { exact: true, name: 'waves-03' }).click();
+  await picker.getByRole('button', { exact: true, name: 'Use icon' }).click();
+  await expect(create.locator('img').first()).toHaveAttribute(
+    'src',
+    '/icons/waves-03.svg'
+  );
+  await page.setViewportSize({ height: 844, width: 390 });
+  await page.screenshot({
+    path: test.info().outputPath('workspace-create-mobile.png'),
+  });
+  await create.getByRole('button', { exact: true, name: 'Create' }).click();
+  await expect(create).toHaveCount(0);
+  const card = page
+    .getByRole('link', { name: /Metadata workspace/ })
+    .locator('..');
+  await card.getByRole('button', { name: 'Open menu' }).click();
+  await page.getByRole('menuitem', { name: 'Workspace settings' }).click();
+  const edit = page.getByRole('dialog', {
+    exact: true,
+    name: 'Workspace settings',
+  });
+  await expect(
+    edit.getByRole('textbox', { exact: true, name: 'Description' })
+  ).toHaveValue('Study with a chosen icon');
+  await expect(edit.locator('img').first()).toHaveAttribute(
+    'src',
+    '/icons/waves-03.svg'
+  );
+  await edit
+    .getByRole('textbox', { exact: true, name: 'Description' })
+    .fill('Updated study description');
+  await edit.getByRole('button', { exact: true, name: 'Save' }).click();
+  await expect(
+    edit.getByRole('button', { exact: true, name: 'Save' })
+  ).toBeEnabled();
+  await page.keyboard.press('Escape');
+  await expect(edit).toHaveCount(0);
+  await card.getByRole('button', { name: 'Open menu' }).click();
+  await page.getByRole('menuitem', { name: 'Workspace settings' }).click();
+  await expect(
+    edit.getByRole('textbox', { exact: true, name: 'Description' })
+  ).toHaveValue('Updated study description');
+});
+
 test('signup resend has a cooldown and a failed resend remains retryable', async ({
   page,
 }) => {

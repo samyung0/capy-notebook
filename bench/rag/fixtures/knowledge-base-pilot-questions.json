@@ -1,0 +1,371 @@
+{
+  "schema_version": 1,
+  "frozen_on": "2026-09-16 before any retrieval/generation run",
+  "provenance": "Agent-authored before first retrieval run; no human validation. Expected labels and source_check are scoring-only and must never enter tag construction, retrieval or generation prompts.",
+  "questions": [
+    {
+      "id": "stat-01",
+      "query": "I'm a high-school beginner. I want to learn why the median can describe skewed incomes better than the mean. Give a small worked example.",
+      "split": "dev",
+      "expected_topics": [
+        "center"
+      ],
+      "expected_roles": [
+        "worked_example"
+      ],
+      "unanswerable": false,
+      "figure_dependent": false,
+      "learner_level": "high-school",
+      "source_check": "Explain sensitivity to extreme values without claiming the median is always superior."
+    },
+    {
+      "id": "stat-02",
+      "query": "I'm taking an introductory undergraduate statistics course. I want to learn standard deviation and variance, including their units and what happens if every measurement is doubled.",
+      "split": "dev",
+      "expected_topics": [
+        "spread"
+      ],
+      "expected_roles": [
+        "formal"
+      ],
+      "unanswerable": false,
+      "figure_dependent": false,
+      "learner_level": "undergraduate",
+      "source_check": "Distinguish standard deviation scaling by 2 from variance scaling by 4."
+    },
+    {
+      "id": "stat-03",
+      "query": "I'm a high-school beginner. Teach me how random sampling differs from random assignment, and which permits a causal conclusion.",
+      "split": "dev",
+      "expected_topics": [
+        "sampling",
+        "experiments"
+      ],
+      "expected_roles": [
+        "introduction"
+      ],
+      "unanswerable": false,
+      "figure_dependent": false,
+      "learner_level": "high-school",
+      "source_check": "Separate generalization to a population from causal inference under experimental assumptions."
+    },
+    {
+      "id": "stat-04",
+      "query": "I'm a high-school beginner. I want to read histograms. Use a figure from a book to explain skew, shape, and an outlier.",
+      "split": "dev",
+      "expected_topics": [
+        "graphs",
+        "center"
+      ],
+      "expected_roles": [
+        "introduction"
+      ],
+      "unanswerable": false,
+      "figure_dependent": true,
+      "learner_level": "high-school",
+      "source_check": "A linked histogram must support described shape and values; do not invent plotted data."
+    },
+    {
+      "id": "stat-05",
+      "query": "I'm a high-school beginner. I want to learn conditional probability with a two-way table and a worked calculation.",
+      "split": "dev",
+      "expected_topics": [
+        "conditional"
+      ],
+      "expected_roles": [
+        "worked_example"
+      ],
+      "unanswerable": false,
+      "figure_dependent": false,
+      "learner_level": "high-school",
+      "source_check": "Correctly choose the conditioning denominator."
+    },
+    {
+      "id": "stat-06",
+      "query": "I'm a high-school beginner. Help me distinguish mutually exclusive events from independent events, with a counterexample.",
+      "split": "dev",
+      "expected_topics": [
+        "probability"
+      ],
+      "expected_roles": [
+        "worked_example"
+      ],
+      "unanswerable": false,
+      "figure_dependent": false,
+      "learner_level": "high-school",
+      "source_check": "Explain why disjoint events with positive probabilities cannot be independent."
+    },
+    {
+      "id": "stat-07",
+      "query": "I'm a high-school beginner. I want to learn when a binomial model is appropriate and solve a short example.",
+      "split": "dev",
+      "expected_topics": [
+        "binomial"
+      ],
+      "expected_roles": [
+        "worked_example"
+      ],
+      "unanswerable": false,
+      "figure_dependent": false,
+      "learner_level": "high-school",
+      "source_check": "Check fixed trials, independence, two outcomes and a common probability."
+    },
+    {
+      "id": "stat-08",
+      "query": "I'm taking an introductory undergraduate statistics course. Explain the central limit theorem and why it does not make the raw data normally distributed.",
+      "split": "dev",
+      "expected_topics": [
+        "sampling-distributions"
+      ],
+      "expected_roles": [
+        "formal"
+      ],
+      "unanswerable": false,
+      "figure_dependent": false,
+      "learner_level": "undergraduate",
+      "source_check": "Identify the sampling distribution and applicable assumptions."
+    },
+    {
+      "id": "stat-09",
+      "query": "I'm taking an introductory undergraduate statistics course. Teach me how to interpret a 95 percent confidence interval, including a common incorrect interpretation.",
+      "split": "dev",
+      "expected_topics": [
+        "confidence-intervals"
+      ],
+      "expected_roles": [
+        "introduction"
+      ],
+      "unanswerable": false,
+      "figure_dependent": false,
+      "learner_level": "undergraduate",
+      "source_check": "Use repeated-sampling coverage, not a post-data probability about a fixed parameter."
+    },
+    {
+      "id": "stat-10",
+      "query": "I'm taking an introductory undergraduate statistics course. I want to understand a p-value. Does p = 0.03 mean the null hypothesis has a 3 percent chance of being true?",
+      "split": "dev",
+      "expected_topics": [
+        "hypothesis-tests"
+      ],
+      "expected_roles": [
+        "introduction"
+      ],
+      "unanswerable": false,
+      "figure_dependent": false,
+      "learner_level": "undergraduate",
+      "source_check": "Condition on the null and assumptions; reject posterior interpretation."
+    },
+    {
+      "id": "stat-11",
+      "query": "I'm taking an introductory undergraduate statistics course. Teach me type I error, type II error and power using one consistent example.",
+      "split": "dev",
+      "expected_topics": [
+        "errors-power"
+      ],
+      "expected_roles": [
+        "worked_example"
+      ],
+      "unanswerable": false,
+      "figure_dependent": false,
+      "learner_level": "undergraduate",
+      "source_check": "Keep the same null, alternative and decision definitions throughout."
+    },
+    {
+      "id": "stat-12",
+      "query": "I'm taking an introductory undergraduate statistics course. I want to choose between a paired t-test and an independent samples t-test for before-and-after observations.",
+      "split": "dev",
+      "expected_topics": [
+        "paired-data",
+        "t-tests"
+      ],
+      "expected_roles": [
+        "worked_example"
+      ],
+      "unanswerable": false,
+      "figure_dependent": false,
+      "learner_level": "undergraduate",
+      "source_check": "Use differences within pairs, with appropriate assumptions."
+    },
+    {
+      "id": "stat-13",
+      "query": "I'm taking an introductory undergraduate statistics course. I want to learn why running many t-tests is risky and what an ANOVA tells me.",
+      "split": "dev",
+      "expected_topics": [
+        "anova"
+      ],
+      "expected_roles": [
+        "introduction"
+      ],
+      "unanswerable": false,
+      "figure_dependent": false,
+      "learner_level": "undergraduate",
+      "source_check": "Explain multiplicity and omnibus versus pairwise conclusions."
+    },
+    {
+      "id": "stat-14",
+      "query": "I'm a high-school beginner. Use a scatterplot from the textbooks to explain correlation without implying causation.",
+      "split": "dev",
+      "expected_topics": [
+        "correlation",
+        "graphs"
+      ],
+      "expected_roles": [
+        "introduction"
+      ],
+      "unanswerable": false,
+      "figure_dependent": true,
+      "learner_level": "high-school",
+      "source_check": "Inspect the selected plot; distinguish association, confounding and causal design."
+    },
+    {
+      "id": "stat-15",
+      "query": "I'm taking an introductory undergraduate statistics course. I want a worked example interpreting a regression slope and intercept, and why extrapolation is dangerous.",
+      "split": "dev",
+      "expected_topics": [
+        "linear-regression",
+        "regression-diagnostics"
+      ],
+      "expected_roles": [
+        "worked_example"
+      ],
+      "unanswerable": false,
+      "figure_dependent": false,
+      "learner_level": "undergraduate",
+      "source_check": "Use consistent units, observed range and one primary source example."
+    },
+    {
+      "id": "stat-16",
+      "query": "I'm taking an introductory undergraduate statistics course. Teach me the molecular steps of CRISPR gene editing from these books.",
+      "split": "dev",
+      "expected_topics": [],
+      "expected_roles": [
+        "introduction"
+      ],
+      "unanswerable": true,
+      "figure_dependent": false,
+      "learner_level": "undergraduate",
+      "source_check": "State missing biology coverage and do not invent textbook support."
+    },
+    {
+      "id": "stat-17",
+      "query": "I'm taking an introductory undergraduate statistics course. I keep mixing up standard error and standard deviation. Build three exercises that reveal the difference.",
+      "split": "heldout",
+      "expected_topics": [
+        "sampling-distributions",
+        "spread"
+      ],
+      "expected_roles": [
+        "exercise"
+      ],
+      "unanswerable": false,
+      "figure_dependent": false,
+      "learner_level": "undergraduate",
+      "source_check": "Separate spread of observations from variability of an estimator."
+    },
+    {
+      "id": "stat-18",
+      "query": "I'm a high-school beginner. I want to learn how to read a box plot using an actual textbook figure, including the whiskers and outliers.",
+      "split": "heldout",
+      "expected_topics": [
+        "graphs",
+        "spread"
+      ],
+      "expected_roles": [
+        "introduction"
+      ],
+      "unanswerable": false,
+      "figure_dependent": true,
+      "learner_level": "high-school",
+      "source_check": "Follow the displayed source convention for whiskers; do not assume they always mean min and max."
+    },
+    {
+      "id": "stat-19",
+      "query": "I'm taking an introductory undergraduate statistics course. Explain why a screening test with high sensitivity can still produce many false positives when prevalence is low.",
+      "split": "heldout",
+      "expected_topics": [
+        "conditional"
+      ],
+      "expected_roles": [
+        "worked_example"
+      ],
+      "unanswerable": false,
+      "figure_dependent": false,
+      "learner_level": "undergraduate",
+      "source_check": "Apply Bayes rule or a frequency table, keeping sensitivity distinct from positive predictive value."
+    },
+    {
+      "id": "stat-20",
+      "query": "I'm taking an introductory undergraduate statistics course. Teach me how a residual plot can reveal that a straight-line model is inappropriate. Use a textbook plot.",
+      "split": "heldout",
+      "expected_topics": [
+        "regression-diagnostics"
+      ],
+      "expected_roles": [
+        "introduction"
+      ],
+      "unanswerable": false,
+      "figure_dependent": true,
+      "learner_level": "undergraduate",
+      "source_check": "Inspect the plot for systematic pattern rather than assert good fit from a large correlation."
+    },
+    {
+      "id": "stat-21",
+      "query": "I'm taking an introductory undergraduate statistics course. I want to learn why a small p-value does not establish a large or useful effect.",
+      "split": "heldout",
+      "expected_topics": [
+        "hypothesis-tests",
+        "errors-power"
+      ],
+      "expected_roles": [
+        "introduction"
+      ],
+      "unanswerable": false,
+      "figure_dependent": false,
+      "learner_level": "undergraduate",
+      "source_check": "Distinguish statistical from practical significance with sample-size context."
+    },
+    {
+      "id": "stat-22",
+      "query": "I'm taking an introductory undergraduate statistics course. Teach me how prior information and new data combine in Bayesian inference, then give a short exercise.",
+      "split": "heldout",
+      "expected_topics": [
+        "bayesian-inference"
+      ],
+      "expected_roles": [
+        "exercise"
+      ],
+      "unanswerable": false,
+      "figure_dependent": false,
+      "learner_level": "undergraduate",
+      "source_check": "Keep Bayesian posterior language separate from frequentist confidence coverage."
+    },
+    {
+      "id": "stat-23",
+      "query": "I'm a high-school beginner. Help me distinguish nominal, ordinal, interval and ratio measurements with examples and a self-check.",
+      "split": "heldout",
+      "expected_topics": [
+        "data-types"
+      ],
+      "expected_roles": [
+        "exercise"
+      ],
+      "unanswerable": false,
+      "figure_dependent": false,
+      "learner_level": "high-school",
+      "source_check": "Explain ordered categories, equal intervals and meaningful zero."
+    },
+    {
+      "id": "stat-24",
+      "query": "I'm studying advanced mathematics. I want a rigorous proof of the spectral theorem for unbounded self-adjoint operators from these textbooks.",
+      "split": "heldout",
+      "expected_topics": [],
+      "expected_roles": [
+        "formal"
+      ],
+      "unanswerable": true,
+      "figure_dependent": false,
+      "learner_level": "advanced",
+      "source_check": "State absent scope; incidental eigenvalue or factor-analysis mentions are insufficient."
+    }
+  ]
+}

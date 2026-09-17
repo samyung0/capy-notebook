@@ -27,6 +27,9 @@ type Config struct {
 	IngestPrimaryEnv       string
 	IngestUATDatabaseURL   string
 	IngestLocalDatabaseURL string
+	// LibraryDatabaseURL reaches the shared knowledge library on the ingest
+	// host. Optional: without it the Library section answers 404.
+	LibraryDatabaseURL string
 }
 
 // ClerkFrontendAPI is the https origin Clerk serves its browser bundle from.
@@ -70,6 +73,7 @@ func ConfigFromEnv() Config {
 		IngestPrimaryEnv:       envOr("OPS_INGEST_PRIMARY_ENVIRONMENT", "production"),
 		IngestUATDatabaseURL:   os.Getenv("OPS_INGEST_UAT_DATABASE_URL"),
 		IngestLocalDatabaseURL: os.Getenv("OPS_INGEST_LOCAL_DATABASE_URL"),
+		LibraryDatabaseURL:     os.Getenv("OPS_LIBRARY_DATABASE_URL"),
 	}
 }
 

@@ -114,7 +114,7 @@ describe('mock user scenarios', () => {
     server.use(...getMockScenarioHandlers('chat-pending-sources'));
     await streamChat(
       'ws_bio',
-      { text: 'Preview' },
+      { curate: false, text: 'Preview' },
       { onBlockDelta, onError, onPendingSources }
     );
     expect(onPendingSources).toHaveBeenCalledWith({
@@ -126,7 +126,11 @@ describe('mock user scenarios', () => {
       'This answer uses the previous indexed source.'
     );
     server.use(...getMockScenarioHandlers('chat-undo-refused'));
-    await streamChat('ws_bio', { text: 'Preview' }, { onError, onToolEnd });
+    await streamChat(
+      'ws_bio',
+      { curate: false, text: 'Preview' },
+      { onError, onToolEnd }
+    );
     expect(onToolEnd).toHaveBeenCalledWith(
       'mock_edit',
       expect.objectContaining({
@@ -139,6 +143,28 @@ describe('mock user scenarios', () => {
       })
     );
     expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('turns each curate refusal into its own chat message', async () => {
+    for (const [scenario, message] of [
+      [
+        'chat-curate-mismatch',
+        "This chat's mode was set when it started. Start a new chat to change it.",
+      ],
+      [
+        'chat-curate-requires-editor',
+        'Curating from the library needs edit access to this workspace.',
+      ],
+    ] as const) {
+      const onError = vi.fn();
+      server.use(...getMockScenarioHandlers(scenario));
+      await streamChat(
+        'ws_bio',
+        { curate: true, text: 'Teach me' },
+        { onError }
+      );
+      expect(onError).toHaveBeenCalledWith(message);
+    }
   });
 
   it('builds the Huma coded envelope consumed by the API client', () => {

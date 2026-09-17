@@ -455,6 +455,10 @@ export type Material = Omit<GenMaterial, 'content'> & {
   content: import('@/features/materials/document').MaterialDocument;
 };
 
+/* Attribution of a material or file written from the shared knowledge library,
+   rendered outside the editable document so a user cannot delete the credit. */
+export type { Provenance, ProvenanceBook } from './gen/model';
+
 /* ---------------- Plate collaboration ---------------- */
 export type MaterialComment = Omit<GenComment, 'contentRich' | 'replies'> & {
   contentRich: import('@/features/materials/document').MaterialValue | null;

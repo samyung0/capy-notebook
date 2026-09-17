@@ -41,6 +41,40 @@ test('custom popup preserves its anchor on exit and survives rapid reopen', asyn
   await expect(tool).toHaveCount(0);
 });
 
+test('menu anchor stays fixed while its trigger scales on press', async ({
+  page,
+}) => {
+  const trigger = page.getByRole('button', { exact: true, name: 'Actions' });
+  const bounds = await trigger.boundingBox();
+  if (!bounds) throw new Error('Missing menu trigger bounds');
+  await page.mouse.move(
+    bounds.x + bounds.width / 2,
+    bounds.y + bounds.height / 2
+  );
+  await page.mouse.down();
+  const menu = page.getByRole('menu');
+  await expect(menu).toBeVisible();
+  await expect
+    .poll(async () => (await trigger.boundingBox())!.width)
+    .toBeLessThan(bounds.width - 1);
+  const pressed = await menu.evaluate((node) =>
+    node.parentElement!.getBoundingClientRect().toJSON()
+  );
+  if (!pressed) throw new Error('Missing menu bounds');
+  expect(pressed.y).toBeCloseTo(bounds.y + bounds.height + 4, 0);
+  expect(pressed.width).toBeCloseTo(bounds.width, 0);
+  await page.mouse.up();
+  await expect
+    .poll(async () => (await trigger.boundingBox())!.width)
+    .toBeCloseTo(bounds.width, 0);
+  const released = await menu.evaluate((node) =>
+    node.parentElement!.getBoundingClientRect().toJSON()
+  );
+  expect(released).toEqual(pressed);
+  await page.keyboard.press('Escape');
+  await expect(trigger).toBeFocused();
+});
+
 test('menu keyboard navigation skips disabled items and executes once', async ({
   page,
 }) => {
@@ -54,6 +88,53 @@ test('menu keyboard navigation skips disabled items and executes once', async ({
   await expect(page.locator('output')).toHaveText('delete');
   await expect(page.getByRole('menu')).toHaveCount(0);
   await expect(trigger).toBeFocused();
+});
+
+test('workspace filter anchor stays fixed throughout its opening animation', async ({
+  page,
+}) => {
+  await page.goto('/workspaces');
+  const trigger = page.getByRole('button', { exact: true, name: 'Filter' });
+  await expect(trigger).toBeVisible();
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ height: 844, width });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const frames = page.evaluate(async () => {
+        const samples: { x: number; y: number; width: number }[] = [];
+        await new Promise<void>((resolve) =>
+          document.addEventListener('pointerdown', () => resolve(), {
+            once: true,
+          })
+        );
+        const start = performance.now();
+        while (performance.now() - start < 650) {
+          await new Promise(requestAnimationFrame);
+          const menu = document.querySelector(
+            '[data-slot="popover-content"][data-state="open"]'
+          );
+          if (!menu || Number(getComputedStyle(menu).opacity) === 0) continue;
+          const rect = menu.parentElement!.getBoundingClientRect();
+          if (rect.y < 0) continue;
+          samples.push({ width: rect.width, x: rect.x, y: rect.y });
+        }
+        return samples;
+      });
+      await trigger.click({ delay: 80 });
+      const samples = await frames;
+      expect(samples.length).toBeGreaterThan(5);
+      for (const dimension of ['x', 'y', 'width'] as const) {
+        const values = samples.map((sample) => sample[dimension]);
+        expect(
+          Math.max(...values) - Math.min(...values),
+          JSON.stringify(samples)
+        ).toBeLessThan(0.6);
+      }
+      await page.keyboard.press('Escape');
+      await expect(page.locator('[data-slot="popover-content"]')).toHaveCount(
+        0
+      );
+    }
+  }
 });
 
 test('text swaps keep outgoing copy hidden from accessibility and read emphasis does not replay', async ({
@@ -77,6 +158,53 @@ test('text swaps keep outgoing copy hidden from accessibility and read emphasis 
   ).toBe(0);
   await page.getByRole('button', { name: 'Change copy' }).click();
   await expect(page.locator('[aria-hidden].motion-copy-out')).toHaveCount(2);
+});
+
+test('dropdown and popover share entry motion and a quieter exit', async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 1600, width: 1280 });
+  const entries: Record<
+    'blur' | 'duration' | 'easing' | 'scale' | 'slide',
+    string
+  >[] = [];
+  for (const name of ['Open popover', 'Actions']) {
+    await page.getByRole('button', { exact: true, name }).click();
+    const popup = page.locator(
+      '[data-slot="popover-content"], [data-slot="menu"]'
+    );
+    await expect(popup).toHaveAttribute('data-side', 'bottom');
+    entries.push(
+      await popup.evaluate((node) => {
+        const style = getComputedStyle(node);
+        return {
+          blur: style.getPropertyValue('--tw-enter-blur').trim(),
+          duration: style.animationDuration,
+          easing: style.animationTimingFunction,
+          scale: style.getPropertyValue('--tw-enter-scale').trim(),
+          slide: style.getPropertyValue('--tw-enter-translate-y').trim(),
+        };
+      })
+    );
+    await page.keyboard.press('Escape');
+    await expect(popup).toHaveAttribute('data-state', 'closed');
+    expect(
+      await popup.evaluate((node) => ({
+        duration: getComputedStyle(node).animationDuration,
+        scale: getComputedStyle(node)
+          .getPropertyValue('--tw-exit-scale')
+          .trim(),
+      }))
+    ).toEqual({ duration: '0.15s', scale: '0.99' });
+    await expect(popup).toHaveCount(0);
+  }
+  expect(entries[0]).toMatchObject({
+    blur: '2px',
+    duration: '0.25s',
+    scale: '0.97',
+  });
+  expect(entries[0].slide).not.toBe('0');
+  expect(entries[1]).toEqual(entries[0]);
 });
 
 test('shared primitives use asymmetric popup and drawer tokens', async ({
@@ -302,7 +430,92 @@ test('command palette rapid reopen keeps typing in its search field', async ({
   await expect(paragraph).toHaveText(EDITOR_NOTE.firstParagraph);
 });
 
-test('workspace creation opens with a fresh form after cancellation', async ({
+test('workspace settings tabs fit vertically and dialogs settle on whole pixels', async ({
+  page,
+}) => {
+  await page.goto('/workspaces');
+  await page
+    .getByRole('button', { exact: true, name: 'Open menu' })
+    .first()
+    .click();
+  await page
+    .getByRole('menuitem', { exact: true, name: 'Workspace settings' })
+    .click();
+  const dialog = page.getByRole('dialog', {
+    exact: true,
+    name: 'Workspace settings',
+  });
+  for (const viewport of [
+    { height: 801, width: 1281 },
+    { height: 722, width: 390 },
+  ]) {
+    await page.setViewportSize(viewport);
+    for (const name of [
+      'General',
+      'Sharing',
+      'Indexing',
+      'Workspace statistics',
+    ]) {
+      const button = dialog.getByRole('button', { exact: true, name });
+      await button.click();
+      const overflow = await button.evaluate((node) => {
+        const row = node.parentElement!;
+        return {
+          client: row.clientHeight,
+          scroll: row.scrollHeight,
+          scrollWidth: row.scrollWidth,
+          width: row.clientWidth,
+        };
+      });
+      expect(overflow.scroll).toBe(overflow.client);
+      if (viewport.width === 390)
+        expect(overflow.scrollWidth).toBeGreaterThan(overflow.width);
+      await dialog.evaluate(async (node) => {
+        await Promise.allSettled(
+          node.getAnimations().map((animation) => animation.finished)
+        );
+      });
+      const settled = await dialog.evaluate((node) => {
+        const { x, y } = node.getBoundingClientRect();
+        const style = getComputedStyle(node);
+        return { filter: style.filter, willChange: style.willChange, x, y };
+      });
+      expect(settled.x).toBe(Math.round(settled.x));
+      expect(settled.y).toBe(Math.round(settled.y));
+      expect(settled.filter).toBe('none');
+      expect(settled.willChange).toBe('transform');
+    }
+  }
+  // Simulate the feature-query rules not applying in an older browser.
+  const fallback = await dialog.evaluate((node) => {
+    node.classList.remove(
+      ...Array.from(node.classList).filter((name) =>
+        name.startsWith('supports-')
+      )
+    );
+    const { x, y, width, height } = node.getBoundingClientRect();
+    return {
+      height,
+      translate: getComputedStyle(node).translate,
+      viewportHeight: innerHeight,
+      viewportWidth: innerWidth,
+      width,
+      x,
+      y,
+    };
+  });
+  expect(fallback.translate).toBe('-50% -50%');
+  expect(fallback.x + fallback.width / 2).toBeCloseTo(
+    fallback.viewportWidth / 2,
+    1
+  );
+  expect(fallback.y + fallback.height / 2).toBeCloseTo(
+    fallback.viewportHeight / 2,
+    1
+  );
+});
+
+test('workspace creation resets cancelled drafts and saves the previewed default icon', async ({
   page,
 }) => {
   await page.goto('/workspaces');
@@ -312,8 +525,15 @@ test('workspace creation opens with a fresh form after cancellation', async ({
   });
   await create.click();
   const dialog = page.getByRole('dialog', { name: 'Create workspace' });
+  const icon = dialog.locator('img').first();
+  await expect(icon).toHaveAttribute('src', /\/icons\/waves-\d{2}\.svg$/);
+  const initialIcon = await icon.getAttribute('src');
   const name = dialog.getByPlaceholder('Workspace name');
   await name.fill('Cancelled draft');
+  await dialog
+    .getByRole('textbox', { exact: true, name: 'Description' })
+    .fill('Cancelled description');
+  await expect(icon).toHaveAttribute('src', initialIcon!);
   await expect(
     dialog.getByRole('button', { exact: true, name: 'Create' })
   ).toBeEnabled();
@@ -322,6 +542,17 @@ test('workspace creation opens with a fresh form after cancellation', async ({
   await create.click();
   await expect(name).toHaveValue('');
   await expect(
+    dialog.getByRole('textbox', { exact: true, name: 'Description' })
+  ).toHaveValue('');
+  await expect(
     dialog.getByRole('button', { exact: true, name: 'Create' })
   ).toBeDisabled();
+  await expect(icon).toHaveAttribute('src', /\/icons\/waves-\d{2}\.svg$/);
+  const savedIcon = await icon.getAttribute('src');
+  await name.fill('Default icon workspace');
+  await dialog.getByRole('button', { exact: true, name: 'Create' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    page.getByRole('link', { name: /Default icon workspace/ }).locator('img')
+  ).toHaveAttribute('src', savedIcon!);
 });

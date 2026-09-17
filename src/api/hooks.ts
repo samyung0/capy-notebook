@@ -289,6 +289,7 @@ export const useNotifications = (options?: QueryUiOptions) =>
     },
     queryKey: qk.notifications,
     refetchOnWindowFocus: true,
+    staleTime: 5000,
   });
 
 export const useUnreadNotificationCount = (options?: QueryUiOptions) =>
@@ -793,6 +794,7 @@ export const chaptersQuery = (wsId: string) =>
     enabled: !!wsId,
     queryFn: () => api.get<Chapter[]>(`/workspaces/${wsId}/chapters`),
     queryKey: qk.chapters(wsId),
+    staleTime: 5000,
   });
 export const useChapters = (wsId: string, options?: QueryUiOptions) =>
   useQuery({
@@ -830,6 +832,7 @@ export const filesQuery = (wsId: string) =>
       return files;
     },
     queryKey: qk.files(wsId),
+    staleTime: 5000,
   });
 export const useFiles = (wsId: string, options?: QueryUiOptions) =>
   useQuery({
@@ -844,6 +847,7 @@ export const useFile = (id: string | null, options?: QueryUiOptions) =>
     meta: queryMeta(options),
     queryFn: () => api.get<SourceFile>(`/files/${id}`),
     queryKey: qk.file(id ?? ''),
+    staleTime: 5000,
   });
 
 export const allFilesQuery = () =>
@@ -1345,6 +1349,7 @@ export const materialsQuery = (wsId: string) =>
     enabled: !!wsId,
     queryFn: () => api.get<MaterialRef[]>(`/workspaces/${wsId}/materials`),
     queryKey: qk.materials(wsId),
+    staleTime: 5000,
   });
 export const useMaterials = (wsId: string, options?: QueryUiOptions) =>
   useQuery({
@@ -1358,6 +1363,7 @@ export const materialQuery = (id: string | null) =>
     enabled: !!id,
     queryFn: () => api.get<Material>(`/materials/${id}`),
     queryKey: qk.material(id ?? ''),
+    staleTime: 5000,
   });
 export const useMaterial = (id: string | null, options?: QueryUiOptions) =>
   useQuery({ ...materialQuery(id), meta: queryMeta(options) });

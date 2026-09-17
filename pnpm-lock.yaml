@@ -126,6 +126,9 @@ importers:
       '@platejs/yjs':
         specifier: 53.2.0
         version: 53.2.0(@hocuspocus/provider@3.4.4(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31))(platejs@53.3.3(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8)))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(slate@0.126.0)(y-webrtc@10.3.0(supports-color@10.2.2)(yjs@13.6.31))
+      '@radix-ui/react-menu':
+        specifier: 2.1.24
+        version: 2.1.24(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@sentry/react':
         specifier: ^10.70.0
         version: 10.70.0(react@19.2.8)

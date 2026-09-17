@@ -7,6 +7,10 @@ parser container reads the same local file.
 
 ``fetch_local`` is synchronous (boto3 + file IO block); the worker calls it via
 ``asyncio.to_thread`` so the event loop is never blocked.
+
+The knowledge library's source PDFs live in a second private bucket with its own
+restricted key (``KNOWLEDGE_BASE_B2_*``); it reuses the same client factory and
+the same bounded download, parameterized by bucket and client.
 """
 
 from __future__ import annotations
@@ -26,22 +30,44 @@ from ..config import cfg
 log = logging.getLogger("capy.blob")
 
 _client = None
+_library_client = None
 _WRITE_ATTEMPTS = 3
+
+
+def _make_client(endpoint: str, region: str, key_id: str, app_key: str):
+    import boto3  # imported lazily to defer client initialization
+
+    return boto3.client(
+        "s3",
+        endpoint_url=endpoint or None,
+        region_name=region or None,
+        aws_access_key_id=key_id or None,
+        aws_secret_access_key=app_key or None,
+    )
 
 
 def _s3_client():
     global _client
     if _client is None:
-        import boto3  # imported lazily to defer client initialization
-
-        _client = boto3.client(
-            "s3",
-            endpoint_url=cfg.b2_endpoint or None,
-            region_name=cfg.b2_region or None,
-            aws_access_key_id=cfg.b2_key_id or None,
-            aws_secret_access_key=cfg.b2_app_key or None,
+        _client = _make_client(
+            cfg.b2_endpoint, cfg.b2_region, cfg.b2_key_id, cfg.b2_app_key
         )
     return _client
+
+
+def library_client():
+    """Client for the knowledge-base bucket: its own endpoint and restricted key."""
+    global _library_client
+    if not cfg.knowledge_base_b2_bucket:
+        raise ValueError("KNOWLEDGE_BASE_B2_* is not configured")
+    if _library_client is None:
+        _library_client = _make_client(
+            cfg.knowledge_base_b2_endpoint,
+            cfg.knowledge_base_b2_region,
+            cfg.knowledge_base_b2_key_id,
+            cfg.knowledge_base_b2_app_key,
+        )
+    return _library_client
 
 
 def fetch_local_hashed(
@@ -254,13 +280,24 @@ def write_file(blob_path: str, local_path: str, content_type: str) -> None:
 
 
 def download_file(
-    blob_path: str, local_path: str, max_bytes: int
+    blob_path: str,
+    local_path: str,
+    max_bytes: int,
+    *,
+    bucket: str = "",
+    client=None,
 ) -> tuple[int, str] | None:
-    """Download a bounded cache object and return its size and SHA-256."""
+    """Download a bounded cache object and return its size and SHA-256.
+
+    ``bucket`` and ``client`` default to the app bucket; the knowledge-base
+    bucket passes its own so there is one download implementation.
+    """
     from botocore.exceptions import ClientError
 
     try:
-        out = _s3_client().get_object(Bucket=cfg.b2_bucket, Key=blob_path)
+        out = (client or _s3_client()).get_object(
+            Bucket=bucket or cfg.b2_bucket, Key=blob_path
+        )
     except ClientError as exc:
         code = str(exc.response.get("Error", {}).get("Code", ""))
         if code in {"404", "NoSuchKey", "NotFound"}:
@@ -288,6 +325,35 @@ def download_file(
         _safe_unlink(local_path)
         raise ValueError("B2 cache object is empty")
     return size, digest.hexdigest()
+
+
+def library_download_file(
+    object_key: str, local_path: str, max_bytes: int
+) -> tuple[int, str] | None:
+    """Download one library source PDF from the knowledge-base bucket."""
+    return download_file(
+        object_key,
+        local_path,
+        max_bytes,
+        bucket=cfg.knowledge_base_b2_bucket,
+        client=library_client(),
+    )
+
+
+def library_object_info(object_key: str) -> dict | None:
+    """Head one knowledge-base object; None when it is not there."""
+    from botocore.exceptions import ClientError
+
+    try:
+        out = library_client().head_object(
+            Bucket=cfg.knowledge_base_b2_bucket, Key=object_key
+        )
+    except ClientError as exc:
+        code = str(exc.response.get("Error", {}).get("Code", ""))
+        if code in {"404", "NoSuchKey", "NotFound"}:
+            return None
+        raise
+    return _object_info_from_head(out)
 
 
 def delete(blob_path: str) -> None:

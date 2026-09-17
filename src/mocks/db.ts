@@ -1309,6 +1309,7 @@ for (const note of seedNotes) {
 export const conversations: Conversation[] = [
   {
     createdAt: days(1),
+    curate: false,
     id: 'conv_seed1',
     title: 'What is a cell?',
     updatedAt: hours(3),

@@ -1,13 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-
 import { sourceUploadPolicy } from '@/mocks/sourceUploadPolicy';
-
-import {
-  ChapterSelect,
-  createSourceInspectionGuard,
-  ParseModeSelect,
-} from './AddSourceDialog';
+import { ChapterSelect, ParseModeSelect } from './AddSourceDialog';
+import { createSourceInspectionGuard } from './sourceInspectionGuard';
 
 const pendingPdf = {
   analysisStatus: 'idle' as const,

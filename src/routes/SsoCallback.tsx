@@ -10,7 +10,7 @@ export default function SsoCallbackPage() {
   return (
     <main
       aria-label={m.a11y_loading()}
-      className="h-svh overflow-hidden p-1.5 sm:p-2.5"
+      className="h-dvh overflow-hidden p-1.5 sm:p-2.5"
       role="status"
     >
       <Panel

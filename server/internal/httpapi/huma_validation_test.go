@@ -75,6 +75,18 @@ func TestRequestBodyValidation(t *testing.T) {
 			body:   `{"name":""}`,
 		},
 		{
+			name: "create workspace description too long", method: http.MethodPost, path: "/api/workspaces",
+			body: `{"name":"ok","description":"` + strings.Repeat("a", fieldlimits.WorkspaceDescription+1) + `"}`,
+		},
+		{
+			name: "create workspace invalid icon", method: http.MethodPost, path: "/api/workspaces",
+			body: `{"name":"ok","iconId":"missing-icon"}`,
+		},
+		{
+			name: "create workspace empty icon", method: http.MethodPost, path: "/api/workspaces",
+			body: `{"name":"ok","iconId":""}`,
+		},
+		{
 			name:   "create workspace too many tags",
 			method: http.MethodPost,
 			path:   "/api/workspaces",

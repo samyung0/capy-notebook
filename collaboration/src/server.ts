@@ -1120,6 +1120,7 @@ async function handleDocumentRequest(
         commands: (body.commands ?? []) as never,
         liveState: live ? Y.encodeStateAsUpdate(live) : undefined,
         operation: body.operation,
+        provenance: body.provenance,
         room: body.room,
         undo,
       });
@@ -1225,6 +1226,7 @@ interface DocumentRequest {
     requestHash: string;
     toolVersion?: number;
   };
+  provenance?: unknown;
   room?: string;
   studyState?: Array<{ cardId: string; known: boolean; srs: unknown }>;
   target: { id: string; kind: 'material' | 'source_file' };
