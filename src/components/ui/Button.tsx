@@ -56,7 +56,7 @@ const InlineIcon = ({
 }: {
   name: IconName;
   size: VariantProps<typeof buttonVariants>['size'];
-  className: string;
+  className?: string;
 }) => (
   <Icon
     className={cn(
