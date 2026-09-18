@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 import { useTags } from '@/api/hooks';
 import type { Tag, TagInput } from '@/api/types';
 import { m } from '@/i18n';
@@ -6,7 +6,7 @@ import { cn } from '@/lib/cn';
 import { Badge } from './Badge';
 import { Icon } from './Icon';
 import { IconButton } from './IconButton';
-import { PopupMotion } from './PopupMotion';
+import { Popover, PopoverAnchor, PopoverContent } from './Popover';
 
 type Option =
   | { type: 'create'; value: string }
@@ -43,6 +43,8 @@ export function TagSelect({
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const listId = useId();
 
   const selected = value ?? [];
   const atMax = max != null && selected.length >= max;
@@ -96,12 +98,14 @@ export function TagSelect({
     switch (e.key) {
       case 'Enter':
         e.preventDefault();
-        if (options.length) commit(options[activeIdx]);
+        if (showList) commit(options[activeIdx]);
         break;
       case 'ArrowDown':
         e.preventDefault();
         setOpen(true);
-        setActive((a) => Math.min(a + 1, options.length - 1));
+        setActive((a) =>
+          open ? Math.max(0, Math.min(a + 1, options.length - 1)) : 0
+        );
         break;
       case 'ArrowUp':
         e.preventDefault();
@@ -111,84 +115,124 @@ export function TagSelect({
         if (query === '' && selected.length) removeAt(selected.length - 1);
         break;
       case 'Escape':
+        if (showList) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
         setOpen(false);
         break;
     }
   }
 
   return (
-    <div className="relative">
-      <div
-        className={cn(
-          'flex flex-wrap items-center gap-1.5 rounded-input border border-line bg-surface px-1.5 py-1.5 transition-colors duration-150 focus-within:border-line-strong',
-          invalid && 'motion-error-shake border-solid-error'
-        )}
-        onClick={() => inputRef.current?.focus()}
-      >
-        {selected.map((t, i) => (
-          <Badge key={`${t.id ?? 'new'}:${t.value}:${i}`} size="md">
-            # {t.value}
-            <IconButton
-              aria-label={m.tag_remove({ name: t.value })}
-              className="-translate-y-px p-0.5"
-              icon="x"
-              onClick={(e) => {
-                e.stopPropagation();
-                removeAt(i);
+    <Popover onOpenChange={setOpen} open={showList}>
+      <PopoverAnchor asChild>
+        <div
+          className={cn(
+            'flex flex-wrap items-center gap-1.5 rounded-input border border-line bg-surface px-1.5 py-1.5 transition-colors duration-150 focus-within:border-line-strong',
+            invalid && 'motion-error-shake border-solid-error'
+          )}
+          onClick={() => {
+            inputRef.current?.focus();
+            setOpen(true);
+          }}
+          ref={anchorRef}
+        >
+          {selected.map((t, i) => (
+            <Badge key={`${t.id ?? 'new'}:${t.value}:${i}`} size="md">
+              # {t.value}
+              <IconButton
+                aria-label={m.tag_remove({ name: t.value })}
+                className="-translate-y-px p-0.5"
+                icon="x"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeAt(i);
+                }}
+                size="xs"
+                type="button"
+                variant="ghost"
+              />
+            </Badge>
+          ))}
+          {!atMax && (
+            <input
+              aria-activedescendant={
+                showList ? `${listId}-${activeIdx}` : undefined
+              }
+              aria-autocomplete="list"
+              aria-controls={showList ? listId : undefined}
+              aria-expanded={showList}
+              aria-invalid={invalid}
+              aria-label={m.common_tags()}
+              autoComplete="off"
+              className="t-body min-w-32 flex-1 border-none bg-transparent px-2 py-1.5 outline-none placeholder:text-placeholder"
+              onBlur={() => setOpen(false)}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setOpen(true);
+                setActive(0);
               }}
-              size="xs"
-              type="button"
-              variant="ghost"
+              onFocus={() => setOpen(true)}
+              onKeyDown={onKeyDown}
+              placeholder={
+                selected.length
+                  ? ''
+                  : (placeholder ?? m.tag_search_placeholder())
+              }
+              ref={inputRef}
+              role="combobox"
+              value={query}
             />
-          </Badge>
-        ))}
-        {!atMax && (
-          <input
-            aria-invalid={invalid}
-            autoComplete="off"
-            className="t-body min-w-32 flex-1 border-none bg-transparent px-2 py-1.5 outline-none placeholder:text-placeholder"
-            onBlur={() => setOpen(false)}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setOpen(true);
-              setActive(0);
-            }}
-            onFocus={() => setOpen(true)}
-            onKeyDown={onKeyDown}
-            placeholder={
-              selected.length ? '' : (placeholder ?? m.tag_search_placeholder())
-            }
-            ref={inputRef}
-            value={query}
-          />
-        )}
-      </div>
-
-      <PopupMotion
-        className="max-h-(--tag-dropdown-height) overflow-auto rounded-lg border border-line bg-surface p-1 shadow-lg"
-        open={showList}
-        positionClassName="absolute z-50 mt-1.5 w-full"
+          )}
+        </div>
+      </PopoverAnchor>
+      <PopoverContent
+        align="start"
+        alignWidthToTrigger
+        aria-hidden={!showList || undefined}
+        aria-label={m.common_tags()}
+        className="max-h-(--tag-dropdown-height) overflow-auto border border-line bg-surface p-1 shadow-lg"
+        id={listId}
+        inert={!showList}
+        onCloseAutoFocus={(event) => event.preventDefault()}
+        onInteractOutside={(event) => {
+          if (
+            event.target instanceof Node &&
+            anchorRef.current?.contains(event.target)
+          ) {
+            event.preventDefault();
+          }
+        }}
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        role="listbox"
+        sideOffset={6}
       >
         <ul
           // Keep focus in the input so a click commits before blur closes the list.
           onMouseDown={(e) => {
             e.preventDefault();
           }}
+          role="presentation"
         >
           {options.map((opt, i) => {
             const isActive = i === activeIdx;
             const key = opt.type === 'create' ? '__create__' : opt.tag.id;
             return (
-              <li key={key}>
+              <li key={key} role="presentation">
                 <button
+                  aria-selected={isActive}
                   className={cn(
                     'flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm',
                     isActive
                       ? 'bg-surface-hover-bg'
                       : 'hover:bg-surface-hover-bg'
                   )}
+                  id={`${listId}-${i}`}
                   onClick={() => commit(opt)}
                   onMouseEnter={() => setActive(i)}
+                  role="option"
+                  tabIndex={-1}
                   type="button"
                 >
                   {opt.type === 'create' ? (
@@ -213,7 +257,7 @@ export function TagSelect({
             );
           })}
         </ul>
-      </PopupMotion>
-    </div>
+      </PopoverContent>
+    </Popover>
   );
 }

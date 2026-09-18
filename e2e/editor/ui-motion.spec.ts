@@ -41,6 +41,79 @@ test('custom popup preserves its anchor on exit and survives rapid reopen', asyn
   await expect(tool).toHaveCount(0);
 });
 
+for (const mode of ['create', 'edit'] as const) {
+  test(`workspace ${mode} tags support autocomplete and close without flashing`, async ({
+    page,
+  }) => {
+    await page.goto('/workspaces');
+    if (mode === 'create') {
+      await page
+        .getByRole('button', { exact: true, name: 'New workspace' })
+        .click();
+    } else {
+      await page
+        .getByRole('button', { exact: true, name: 'Open menu' })
+        .first()
+        .click();
+      await page
+        .getByRole('menuitem', { exact: true, name: 'Workspace settings' })
+        .click();
+    }
+    const dialog = page.getByRole('dialog');
+    const input = dialog.getByRole('combobox', { name: 'Tags' });
+    await input.click();
+    const popup = page.locator('[data-slot="popover-content"]');
+    await expect(input).toBeFocused();
+    await page.getByRole('option', { exact: true, name: '# Essays' }).click();
+    await expect(
+      dialog.getByRole('button', { name: 'Remove Essays' })
+    ).toBeVisible();
+    await expect(input).toBeFocused();
+    await input.fill('New study tag');
+    await input.press('Enter');
+    await expect(
+      dialog.getByRole('button', { name: 'Remove New study tag' })
+    ).toBeVisible();
+    await expect(input).toHaveValue('');
+    await input.press('ArrowDown');
+    const activeId = await input.getAttribute('aria-activedescendant');
+    await expect(page.getByRole('option', { selected: true })).toHaveAttribute(
+      'id',
+      activeId!
+    );
+    await input.press('Escape');
+    await expect(popup).toHaveCount(0);
+    await expect(dialog).toBeVisible();
+    await expect(input).toBeFocused();
+    await input.click();
+    await expect(popup).toHaveAttribute('data-state', 'open');
+    await input.press('Tab');
+    await expect(popup).toHaveCount(0);
+    await input.click();
+    await expect(popup).toHaveAttribute('data-state', 'open');
+    await popup.evaluate(async (node) => {
+      await Promise.allSettled(
+        node.getAnimations().map((animation) => animation.finished)
+      );
+    });
+    const [opacity] = await Promise.all([
+      popup.evaluate(
+        (node) =>
+          new Promise<string>((resolve) => {
+            node.addEventListener(
+              'animationend',
+              () => resolve(getComputedStyle(node).opacity),
+              { once: true }
+            );
+          })
+      ),
+      dialog.getByRole('textbox', { exact: true, name: 'Description' }).click(),
+    ]);
+    expect(opacity).toBe('0');
+    await expect(popup).toHaveCount(0);
+  });
+}
+
 test('menu anchor stays fixed while its trigger scales on press', async ({
   page,
 }) => {

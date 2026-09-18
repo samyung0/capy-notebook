@@ -66,7 +66,10 @@ export function PopupMotion({
     >
       <div
         {...props}
-        className={cn('motion-popup motion-blur-in', className)}
+        className={cn(
+          'motion-popup motion-blur-in data-[state=closed]:[animation-fill-mode:forwards]',
+          className
+        )}
         data-state={open ? 'open' : 'closed'}
         ref={animationRef}
       >

@@ -84,7 +84,7 @@ export const FILE_ICON_NAMES = [
   'binary',
   'svg',
   'stackblitz',
-  'mjml',
+  'java-enum',
   'forgejo',
   'drawio',
 ] as const;

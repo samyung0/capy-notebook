@@ -38,7 +38,9 @@ The CSS recipes share timing while keeping component semantics separate:
   Share dialog member content follows the dialog's mount lifetime, so closing
   does not remove the member section before the exit animation finishes.
 - `PopupMotion` keeps custom popup content mounted through its CSS exit, freezes
-  the last open position/content, and makes it inert immediately. Positioning
+  the last open position/content, and makes it inert immediately.
+  The exit animation retains its final transparent frame until React removes the
+  node, preventing a full-opacity flash after the animation finishes. Positioning
   belongs to the outer node; animation belongs to the inner node. Changes to
   query results, selection, copy or stream state do not remount the animation.
   AI and command-palette inputs focus on open, since retained nodes do not
@@ -52,6 +54,10 @@ The CSS recipes share timing while keeping component semantics separate:
   existing messages, pagination and ordinary refetches do not stagger the list.
 - `useLoadingReveal` runs once after an initial skeleton resolves and applies
   blur/opacity only to visible rows/cards, never the full scroll container.
+
+The workspace tag picker uses the shared Popover anchored to its input container.
+Focus stays in the combobox input while its listbox handles pointer selection;
+Radix owns positioning, outside dismissal and exit lifetime.
 
 The workspace creation form stays mounted to preserve dismissal motion. It resets
 on a closed-to-open transition, independently of autofocus; failed submissions

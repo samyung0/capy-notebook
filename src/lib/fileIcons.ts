@@ -134,7 +134,7 @@ const EXTENSION_ICON: Record<string, FileIconName> = {
 
 const MATERIAL_ICON: Record<MaterialRefType, FileIconName> = {
   diagram: 'drawio',
-  flashcards: 'mjml',
+  flashcards: 'java-enum',
   mindmap: 'forgejo',
   note: 'markdown',
   quiz: 'stackblitz',
