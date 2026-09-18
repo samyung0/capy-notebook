@@ -102,7 +102,7 @@ export default function QuizAttempt() {
       <PanelWithInvertedRadius>
         <div className="mx-auto flex h-full max-w-2xl flex-col items-center justify-center gap-4 px-6 text-center">
           <span className="flex h-16 w-16 items-center justify-center rounded-card-lg bg-tint-success text-tint-success-fg">
-            <Icon name="check" size={30} />
+            <Icon className="non-scaling-svg" name="check" size={30} />
           </span>
           <p className="t-large-card-title">{m.quiz_no_questions()}</p>
           <Link preload="intent" to="/quizzes">
@@ -181,7 +181,7 @@ export default function QuizAttempt() {
       <PanelWithInvertedRadius>
         <div className="mx-auto flex h-full max-w-2xl flex-col items-center justify-center gap-5 px-6 text-center">
           <span className="flex h-16 w-16 items-center justify-center rounded-card-lg bg-tint-accent-1 text-tint-accent-1-fg">
-            <Icon name="quiz" size={30} />
+            <Icon className="non-scaling-svg" name="quiz" size={30} />
           </span>
           <p className="t-page-title">
             {formatPoints(score.awarded)} / {formatPoints(score.max)}

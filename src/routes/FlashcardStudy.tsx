@@ -242,7 +242,7 @@ export default function FlashcardStudy() {
           {header}
           <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
             <span className="flex h-16 w-16 items-center justify-center rounded-card-lg bg-tint-success text-tint-success-fg">
-              <Icon name="check" size={30} />
+              <Icon className="non-scaling-svg" name="check" size={30} />
             </span>
             <h2 className="t-large-card-title">
               {cards.length === 0

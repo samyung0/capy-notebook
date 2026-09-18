@@ -276,7 +276,7 @@ function EmptyCenter() {
       </div>
       <div className="grid flex-1 place-items-center p-6">
         <div className="flex flex-col items-center gap-3">
-          <Icon className="size-8" name="files" />
+          <Icon className="non-scaling-svg size-8" name="files" />
           <p>{m.material_select()}</p>
         </div>
       </div>
@@ -317,7 +317,7 @@ function FileBody({
     return (
       <div className="grid h-full place-items-center">
         <div className="flex w-64 -translate-y-1/2 flex-col items-center gap-3">
-          <Icon className="size-7" name="sparkles" />
+          <Icon className="non-scaling-svg size-7" name="sparkles" />
           <p>
             {waiting
               ? m.files_pending_named({ name: file.name })

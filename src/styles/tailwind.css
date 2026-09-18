@@ -9,10 +9,6 @@
 
 @custom-variant dark (&:is(.dark *));
 
-svg[data-icon] * {
-  vector-effect: non-scaling-stroke;
-}
-
 /* ============================================================
    Tailwind bridge — semantic roles → utilities.
    `inline` keeps the var() reference so utilities re-theme at
@@ -197,6 +193,12 @@ svg[data-icon] * {
   line-height: var(--meta-line-height);
 }
 
+@utility non-scaling-svg {
+  & * {
+    vector-effect: non-scaling-stroke;
+  }
+}
+
 @layer components {
   .inverted-radius-large-panel-container {
     position: relative;
@@ -233,7 +235,8 @@ svg[data-icon] * {
         var(--top-inset-bar-inverted-radius-gap)
     ); /* vertical offset (no percentage) */
 
-    --_m: /calc(2 * var(--r)) calc(2 * var(--r)) radial-gradient(#000 70%, #0000 72%);
+    --_m: /calc(2 * var(--r)) calc(2 * var(--r))
+      radial-gradient(#000 70%, #0000 72%);
     --_g: conic-gradient(at calc(100% - var(--r)) var(--r), #0000 25%, #000 0);
     mask:
       calc(100% - var(--_d) - var(--x)) 0 var(--_m),
@@ -406,7 +409,8 @@ svg[data-icon] * {
   *::before,
   *::after {
     animation: none !important;
-    transition-property: background-color, border-color, color, opacity, fill, stroke !important;
+    transition-property:
+      background-color, border-color, color, opacity, fill, stroke !important;
     /* or simply: transition: none and live with instant everything */
   }
 }

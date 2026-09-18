@@ -39,7 +39,7 @@ export function ErrorState({
         )}
       >
         <Icon
-          className={variant === 'page' ? 'size-7' : 'size-6.5'}
+          className={variant === 'page' ? 'non-scaling-svg size-7' : 'size-6.5'}
           name={icon}
         />
       </span>

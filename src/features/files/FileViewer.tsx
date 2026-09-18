@@ -89,7 +89,7 @@ function UnsupportedPreview({ file }: { file: ViewableFile }) {
   return (
     <div className="grid h-full place-items-center">
       <div className="flex max-w-sm flex-col items-center gap-2 text-center">
-        <Icon className="size-8" name="files" />
+        <Icon className="non-scaling-svg size-8" name="files" />
         <p className="t-subtitle">{m.files_preview_unavailable()}</p>
         <p className="t-meta text-fg-muted">
           {ext
@@ -148,7 +148,7 @@ function FileViewerContent({
     return (
       <div className="grid h-full place-items-center">
         <div className="flex flex-col items-center gap-2">
-          <Icon name="files" size={32} />
+          <Icon className="non-scaling-svg" name="files" size={32} />
           <p>{m.files_select_to_read()}</p>
         </div>
       </div>

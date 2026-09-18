@@ -17,7 +17,7 @@ export default function DefaultBanner() {
         </p>
       </div>
       <Icon
-        className="absolute -top-3 -right-4 text-tint-accent-1-fg/15"
+        className="non-scaling-svg absolute -top-3 -right-4 text-tint-accent-1-fg/15"
         name="sparkles"
         size={120}
         strokeWidth={1.5}

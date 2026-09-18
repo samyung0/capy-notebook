@@ -61,7 +61,7 @@ export default function Thinking() {
                           : 'var(--note-green-fg)',
                     }}
                   >
-                    <Icon name="write" size={28} />
+                    <Icon className="non-scaling-svg" name="write" size={28} />
                   </div>
                   <div className="p-4">
                     <p className="t-subtitle truncate">{c.name}</p>

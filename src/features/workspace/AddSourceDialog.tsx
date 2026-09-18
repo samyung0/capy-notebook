@@ -846,7 +846,7 @@ function SourceChooser({
               onClick={() => inputRef.current?.click()}
               type="button"
             >
-              <Icon className="size-7" name="upload" />
+              <Icon className="non-scaling-svg size-7" name="upload" />
               <p className="t-subtitle">{m.source_upload_computer()}</p>
               <p className="t-meta text-fg-muted">{m.source_upload_hint()}</p>
             </button>
