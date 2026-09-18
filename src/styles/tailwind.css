@@ -9,6 +9,10 @@
 
 @custom-variant dark (&:is(.dark *));
 
+svg[data-icon] * {
+  vector-effect: non-scaling-stroke;
+}
+
 /* ============================================================
    Tailwind bridge — semantic roles → utilities.
    `inline` keeps the var() reference so utilities re-theme at

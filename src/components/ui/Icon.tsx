@@ -286,6 +286,7 @@ export function Icon({
       <svg
         aria-hidden
         className={className}
+        data-icon
         fill="none"
         height={size}
         stroke="currentColor"
@@ -308,6 +309,7 @@ export function Icon({
       aria-hidden
       className={className}
       color="currentColor"
+      data-icon
       fill="none"
       height={size}
       icon={el as IconSvgElement}
