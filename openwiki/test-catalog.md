@@ -417,7 +417,7 @@ material-mode specs fail even though the flows complete. Use `pnpm e2e:slow`
 | [`e2e/sharing/material-modes.spec.ts`](../e2e/sharing/material-modes.spec.ts)             | Static viewer rendering, share-editor comment mode, anonymous summary-only access, room tokens, and comment APIs.                                                        |
 | [`e2e/sharing/quiz-sharing.spec.ts`](../e2e/sharing/quiz-sharing.spec.ts)                 | New quiz creates a blank question through the real API and opens the editor; anonymous full-read/clone/attempt 401, signed-in public/link reading and cloning, private non-member 404, and Explore visibility.                                                                                           |
 | [`e2e/sharing/workspace-membership.spec.ts`](../e2e/sharing/workspace-membership.spec.ts) | Private exact-identifier workspace invite is visible only to its recipient; roster carries no email.                                                        |
-| [`e2e/sharing/workspace-sharing.spec.ts`](../e2e/sharing/workspace-sharing.spec.ts)       | Workspace privacy roles, Explore, member-only clone, share-editor content authority vs settings, role raise, mention redaction.                             |
+| [`e2e/sharing/workspace-sharing.spec.ts`](../e2e/sharing/workspace-sharing.spec.ts)       | Workspace privacy roles, Explore, member-only clone through the workspace dropdown, share-editor content authority vs settings, role raise, mention redaction.                             |
 
 ---
 

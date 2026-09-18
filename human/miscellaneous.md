@@ -42,3 +42,4 @@
 - Developer requested (2026-09-18) workspace sort trigger and dropdown descriptions show the direction; selecting an option keeps the menu open, and selecting the active option reverses its order. src/routes/Workspaces.tsx src/components/ui/Menu.tsx
 - Developer Epo requested (2026-09-18) applying and checking thinner default scrollbars locally, using the proposed 6px native CSS scrollbar styling. src/styles/tailwind.css
 - Developer requested (2026-09-18) removing the empty viewer's Browse files button, commented JSX and onBrowseFiles prop wiring. src/features/materials/CenterContent.tsx src/routes/WorkspaceOpen.tsx
+- Developer requested (2026-09-18) LF line endings for the local Capy Notebook and BetterOffice checkouts; configure both repositories with core.autocrlf=input and core.eol=lf.

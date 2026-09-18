@@ -8,3 +8,4 @@
 - Developer Epo decided (2026-09-14) UAT reuses the existing Resend key after upgrading its permissions and uses the new Sentry token for both SENTRY_AUTH_TOKEN and UAT_SENTRY_TOKEN. e2e/uat/journeys/setup-status.md
 - Developer Epo requested (2026-09-16) critical-path coverage for a signed-out workspace invitation, sign-in return, browser acceptance and persisted membership. e2e/uat/journeys/invitations.spec.ts
 - Developer Epo approved (2026-09-16) a 30-second PDF error assertion timeout matching the editor-loading allowance after CI exceeded five seconds. e2e/editor/frontend-workspaces.spec.ts
+- Developer approved (2026-09-18) excluding design artifacts from Biome checks and updating the workspace clone E2E test to select the action from the workspace dropdown. biome.jsonc e2e/sharing/workspace-sharing.spec.ts

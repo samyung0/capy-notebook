@@ -193,7 +193,8 @@ test.describe('workspace sharing', () => {
       apiEndsWith(`/api/workspaces/${seed.privateWorkspace.id}/clone`, 'POST')
     );
     await viewerPage.goto(`/workspaces/${seed.privateWorkspace.id}`);
-    await viewerPage.getByRole('button', { name: 'Clone workspace' }).click();
+    await viewerPage.getByTitle('Switch workspace', { exact: true }).click();
+    await viewerPage.getByRole('menuitem', { name: 'Clone workspace' }).click();
     const cloneRes = await clonePromise;
     expect(cloneRes.status()).toBe(201);
     const cloned = await cloneRes.json();

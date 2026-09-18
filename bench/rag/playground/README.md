@@ -17,6 +17,27 @@ carries `rag-playground-uat`, which starts this server against UAT on port
 18765 with `uv` invoked by its full path. The server opens its own SSH tunnel
 without `ssh -f`, which Windows OpenSSH ignores, and polls the forwards instead.
 
+## Access from another device
+
+`https://playground.capynotebook.com` routes through the dedicated
+`capy-playground` Cloudflare Tunnel to this developer PC's `127.0.0.1:18765`.
+The `Capy agentic playground` Access application allows only
+`yungchinpang999@gmail.com`, using an emailed login code. Both the playground
+and the tunnel must be running, and the PC must remain awake and online.
+Neither process currently starts automatically after a reboot.
+
+To restart on this Windows PC, run these commands in separate PowerShell
+terminals, from the repository root:
+
+```powershell
+& "$env:USERPROFILE\.local\bin\uv.exe" run --project pipeline --with pymupdf==1.28.2 python bench/rag/playground/scripts/playground.py --target uat --port 18765
+& "$env:USERPROFILE\.local\bin\cloudflared.exe" tunnel --no-autoupdate run --token-file "$env:USERPROFILE\.cloudflared\capy-playground.token"
+```
+
+The tunnel token stays outside the repository with access limited to the
+Windows user and SYSTEM. Keep Cloudflare Access attached to the entire hostname,
+including `/api/*`. Quick Tunnels do not support the playground's SSE streaming.
+
 ## Targets
 
 | Target | Index | How it is reached |
