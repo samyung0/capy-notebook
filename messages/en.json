@@ -706,7 +706,7 @@
   "material_attribution_source": "Source",
   "material_attribution_version": "version {version}",
   "material_rename": "Rename material",
-  "material_select": "Pick a file from Files to get started.",
+  "material_select": "Pick a file to get started.",
   "material_browse_files": "Browse files",
   "material_fullscreen": "Full screen",
   "material_fullscreen_exit": "Exit full screen",

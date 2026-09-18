@@ -310,29 +310,33 @@ export default function WorkspaceOpen() {
           item={openItem}
           leading={
             <>
-              <IconButton
-                className="text-fg-muted"
-                icon="navigationBack"
-                label={m.workspace_back_to()}
-                onClick={() => navigate({ to: '/workspaces' })}
-                size="sm"
-                tooltip
-                variant="ghost-hover"
-              />
-              {xl && (
+              <div className="mr-1 flex items-center gap-1">
                 <IconButton
-                  aria-pressed={pinned}
-                  className="text-fg-muted"
-                  icon="panelLeft"
-                  label={
-                    pinned ? m.workspace_unpin_files() : m.workspace_pin_files()
-                  }
-                  onClick={togglePinned}
+                  className="px-1 text-fg-muted"
+                  icon="navigationBack"
+                  label={m.workspace_back_to()}
+                  onClick={() => navigate({ to: '/workspaces' })}
                   size="sm"
                   tooltip
                   variant="ghost-hover"
                 />
-              )}
+                {xl && (
+                  <IconButton
+                    aria-pressed={pinned}
+                    className="px-1 text-fg-muted"
+                    icon="panelLeft"
+                    label={
+                      pinned
+                        ? m.workspace_unpin_files()
+                        : m.workspace_pin_files()
+                    }
+                    onClick={togglePinned}
+                    size="sm"
+                    tooltip
+                    variant="ghost-hover"
+                  />
+                )}
+              </div>
               <WorkspaceMenu
                 cloning={cloneWorkspaceIsPending}
                 onClone={
@@ -358,9 +362,6 @@ export default function WorkspaceOpen() {
                 workspace={ws}
               />
             </>
-          }
-          onBrowseFiles={
-            layout === 'three' ? undefined : () => showTab('files')
           }
           onDeleted={() => setOpenItem(null)}
           onFileViewerDirtyChange={setOfficeEditDirty}

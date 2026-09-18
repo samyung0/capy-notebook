@@ -61,6 +61,8 @@
   --color-tint-error-fg: var(--tint-error-fg);
   --color-tint-accent-1: var(--tint-accent-1-bg);
   --color-tint-accent-1-fg: var(--tint-accent-1-fg);
+  --color-tint-accent-dark: var(--tint-accent-dark-bg);
+  --color-tint-accent-dark-fg: var(--tint-accent-dark-fg);
   --color-tint-accent-2: var(--tint-accent-2-bg);
   --color-tint-accent-2-fg: var(--tint-accent-2-fg);
   --color-solid-success: var(--solid-success);
@@ -314,6 +316,22 @@
     box-sizing: border-box;
     margin: 0;
     scrollbar-width: thin;
+  }
+  @supports selector(::-webkit-scrollbar) {
+    * {
+      scrollbar-width: auto;
+    }
+    *::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    *::-webkit-scrollbar-thumb {
+      background-color: var(--text-muted);
+      border-radius: 999px;
+    }
+    *::-webkit-scrollbar-track {
+      background-color: transparent;
+    }
   }
   ::selection {
     color: var(--text-primary);

@@ -1,0 +1,309 @@
+
+diff --git a/messages/en.json b/messages/en.json
+index 3a13795..99adfd7 100644
+--- a/messages/en.json
++++ b/messages/en.json
+@@ -706,7 +706,7 @@
+   "material_attribution_source": "Source",
+   "material_attribution_version": "version {version}",
+   "material_rename": "Rename material",
+-  "material_select": "Pick a file from Files to get started.",
++  "material_select": "Pick a file to get started.",
+   "material_browse_files": "Browse files",
+   "material_fullscreen": "Full screen",
+   "material_fullscreen_exit": "Exit full screen",
+diff --git a/src/components/ui/Tooltip.tsx b/src/components/ui/Tooltip.tsx
+index 1075cd0..23f463b 100644
+--- a/src/components/ui/Tooltip.tsx
++++ b/src/components/ui/Tooltip.tsx
+@@ -47,14 +47,14 @@ function TooltipContent({
+       >
+         <TooltipPrimitive.Popup
+           className={cn(
+-            'motion-tooltip data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 z-50 inline-flex w-fit max-w-xs origin-(--transform-origin) items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-background text-xs has-data-[slot=kbd]:pr-1.5 **:data-[slot=kbd]:relative **:data-[slot=kbd]:isolate **:data-[slot=kbd]:z-50 **:data-[slot=kbd]:rounded-sm',
++            'motion-tooltip data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 z-50 inline-flex w-fit max-w-xs origin-(--transform-origin) items-center gap-1.5 rounded-md bg-tint-accent-dark/95 px-3 py-1.5 text-tint-accent-dark-fg text-xs font-medium has-data-[slot=kbd]:pr-1.5 **:data-[slot=kbd]:relative **:data-[slot=kbd]:isolate **:data-[slot=kbd]:z-50 **:data-[slot=kbd]:rounded-sm',
+             className
+           )}
+           data-slot="tooltip-content"
+           {...props}
+         >
+           {children}
+-          <TooltipPrimitive.Arrow className="z-50 size-2.5 translate-y-[calc(-50%-2px)] rotate-45 rounded-[2px] bg-foreground fill-foreground data-[side=bottom]:top-1 data-[side=inline-end]:top-1/2! data-[side=inline-start]:top-1/2! data-[side=left]:top-1/2! data-[side=right]:top-1/2! data-[side=inline-start]:-right-1 data-[side=left]:-right-1 data-[side=top]:-bottom-2.5 data-[side=inline-end]:-left-1 data-[side=right]:-left-1 data-[side=inline-end]:-translate-y-1/2 data-[side=inline-start]:-translate-y-1/2 data-[side=left]:-translate-y-1/2 data-[side=right]:-translate-y-1/2" />
++          <TooltipPrimitive.Arrow className="z-50 size-2.5 translate-y-[calc(-50%-2px)] rotate-45 rounded-[2px] bg-tint-accent-dark/95 fill-tint-accent-dark/95 data-[side=bottom]:top-1 data-[side=inline-end]:top-1/2! data-[side=inline-start]:top-1/2! data-[side=left]:top-1/2! data-[side=right]:top-1/2! data-[side=inline-start]:-right-1 data-[side=left]:-right-1 data-[side=top]:-bottom-2.5 data-[side=inline-end]:-left-1 data-[side=right]:-left-1 data-[side=inline-end]:-translate-y-1/2 data-[side=inline-start]:-translate-y-1/2 data-[side=left]:-translate-y-1/2 data-[side=right]:-translate-y-1/2" />
+         </TooltipPrimitive.Popup>
+       </TooltipPrimitive.Positioner>
+     </TooltipPrimitive.Portal>
+@@ -65,7 +65,7 @@ function Kbd({ className, ...props }: React.ComponentProps<'kbd'>) {
+   return (
+     <kbd
+       className={cn(
+-        'pointer-events-none inline-flex h-5 min-w-5 items-center justify-center rounded-sm bg-background/20 px-1 font-medium font-sans text-[11px] text-background',
++        'pointer-events-none inline-flex h-5 min-w-5 items-center justify-center rounded-sm bg-background/20 px-1 font-medium font-sans text-[11px] text-primary',
+         className
+       )}
+       data-slot="kbd"
+diff --git a/src/features/auth/AuthLanding.tsx b/src/features/auth/AuthLanding.tsx
+index 0d377ae..a6974b0 100644
+--- a/src/features/auth/AuthLanding.tsx
++++ b/src/features/auth/AuthLanding.tsx
+@@ -43,7 +43,7 @@ function BrandColumn() {
+   return (
+     <Card
+       className={cn(
+-        'relative flex h-full flex-1 flex-col items-center justify-center gap-10 bg-[#322a5c] p-11 text-[#f7f7f7]'
++        'relative flex h-full flex-1 flex-col items-center justify-center gap-10 bg-tint-accent-dark p-11 text-tint-accent-dark-fg'
+       )}
+       radius="card"
+       theme="surface-dark"
+diff --git a/src/features/files/FileStates.tsx b/src/features/files/FileStates.tsx
+index 6827352..d73aa3b 100644
+--- a/src/features/files/FileStates.tsx
++++ b/src/features/files/FileStates.tsx
+@@ -34,7 +34,7 @@ export function FileError({
+     <ErrorState
+       action={
+         onRetry && (
+-          <Button onClick={onRetry} variant="ghost">
++          <Button onClick={onRetry} variant="ghost-hover" className="font-bold">
+             {m.error_action_retry()}
+           </Button>
+         )
+diff --git a/src/features/materials/CenterContent.tsx b/src/features/materials/CenterContent.tsx
+index 4b8155b..1b77d49 100644
+--- a/src/features/materials/CenterContent.tsx
++++ b/src/features/materials/CenterContent.tsx
+@@ -296,7 +296,7 @@ function EmptyCenter({
+         <div className="flex flex-col items-center gap-3">
+           <Icon className="non-scaling-svg size-8" name="files" />
+           <p>{m.material_select()}</p>
+-          {onBrowseFiles && (
++          {/* {onBrowseFiles && (
+             <Button
+               iconLeft="files"
+               onClick={onBrowseFiles}
+@@ -305,7 +305,7 @@ function EmptyCenter({
+             >
+               {m.material_browse_files()}
+             </Button>
+-          )}
++          )} */}
+         </div>
+       </div>
+     </>
+diff --git a/src/features/workspace/FilesPanel.tsx b/src/features/workspace/FilesPanel.tsx
+index 0301de9..9d4fbe6 100644
+--- a/src/features/workspace/FilesPanel.tsx
++++ b/src/features/workspace/FilesPanel.tsx
+@@ -378,7 +378,7 @@ export function FilesPanel({
+   return (
+     <div className="flex h-full min-h-0 flex-col">
+       {renderTabRow(actions)}
+-      <div className="min-h-0 flex-1 overflow-auto px-2.5 pt-1.5 pb-2">
++      <div className="min-h-0 flex-1 overflow-auto px-2.5 pb-2">
+         {!chapters && (
+           <SkeletonList className="px-1.5 py-2" count={5} rowHeight={36} />
+         )}
+diff --git a/src/features/workspace/PanelTabRow.tsx b/src/features/workspace/PanelTabRow.tsx
+index 008a328..4709434 100644
+--- a/src/features/workspace/PanelTabRow.tsx
++++ b/src/features/workspace/PanelTabRow.tsx
+@@ -71,32 +71,31 @@ export function PanelTabRow({
+         ]
+       : []),
+   ];
+-  const iconButton = 'text-fg-muted';
+   return (
+     <div
+       className={cn(
+-        'inset-shadow-[0_-1px_var(--color-divider)] flex shrink-0 gap-1 pr-2.5',
+-        title ? 'h-12 items-center pl-4.5' : 'items-end pt-1.5 pl-3'
++        'flex shrink-0 gap-1 pr-3 pl-4.5 pt-2.5 items-center',
++        title && 'h-12',
+       )}
+     >
+       {title ? (
+-        <h2 className="t-card-title min-w-0 flex-1 truncate">{title}</h2>
++        <h2 className="t-subtitle ml-1 min-w-0 flex-1 truncate">{title}</h2>
+       ) : (
+         tabs
+       )}
+       <div
+-        className={cn('flex shrink-0 items-center gap-0.5', !title && 'mb-1.5')}
++        className={cn('flex shrink-0 items-center gap-[3px]', !title && 'mb-1.5')}
+       >
+         {!compact &&
+           actions.map((action) => (
+             <IconButton
+-              className={iconButton}
++              className={'text-fg-muted'}
+               disabled={action.disabled}
+               icon={action.icon}
+               key={action.label}
+               label={action.label}
+               onClick={action.onClick}
+-              size="sm"
++              size="xs"
+               tooltip
+               variant="ghost-hover"
+             />
+@@ -106,10 +105,10 @@ export function PanelTabRow({
+             items={addItems}
+             trigger={
+               <IconButton
+-                className={iconButton}
++                className={'text-fg-muted'}
+                 icon="plusCircle"
+                 label={m.action_add_file()}
+-                size="sm"
++                size="xs"
+                 variant="ghost-hover"
+               />
+             }
+@@ -121,10 +120,10 @@ export function PanelTabRow({
+                 items={folded}
+                 trigger={
+                   <IconButton
+-                    className={iconButton}
++                    className={'text-fg-muted'}
+                     icon="moreVertical"
+                     label={m.a11y_more_actions()}
+-                    size="sm"
++                    size="xs"
+                     variant="ghost-hover"
+                   />
+                 }
+@@ -132,11 +131,11 @@ export function PanelTabRow({
+             )
+           : onOpenSettings && (
+               <IconButton
+-                className={iconButton}
++                className={'text-fg-muted'}
+                 icon="settings"
+                 label={m.workspace_settings()}
+                 onClick={onOpenSettings}
+-                size="sm"
++                size="xs"
+                 tooltip
+                 variant="ghost-hover"
+               />
+diff --git a/src/features/workspace/WorkspaceMenu.tsx b/src/features/workspace/WorkspaceMenu.tsx
+index b4f83ef..3306fa8 100644
+--- a/src/features/workspace/WorkspaceMenu.tsx
++++ b/src/features/workspace/WorkspaceMenu.tsx
+@@ -14,11 +14,6 @@ import { m } from '@/i18n';
+ import { cn } from '@/lib/cn';
+ import { iconUrl } from '@/lib/icon-catalog';
+ 
+-const FOOTER_ITEM = cn(
+-  BASE_BUTTON_STYLE,
+-  'h-7.5 w-fit cursor-pointer justify-start gap-1.75 px-2.5 text-fg hover:bg-surface-hover-bg/80 data-[highlighted]:bg-surface-hover-bg/80'
+-);
+-
+ function FooterItem({
+   icon,
+   label,
+@@ -32,7 +27,10 @@ function FooterItem({
+ }) {
+   return (
+     <DropdownMenuItem
+-      className={FOOTER_ITEM}
++      className={cn(
++  BASE_BUTTON_STYLE,
++  'h-7.5 w-full cursor-pointer justify-start gap-1.75 px-2.5 text-fg hover:bg-surface-hover-bg/80 data-[highlighted]:bg-surface-hover-bg/80'
++)}
+       disabled={disabled}
+       onSelect={onSelect}
+     >
+@@ -70,7 +68,7 @@ export function WorkspaceMenu({
+     <DropdownMenu modal={false}>
+       <DropdownMenuTrigger asChild>
+         <Button
+-          className="h-9 min-w-0 gap-1.5 px-1.5 pr-2 text-[15px]"
++          className="h-9 flex items-center min-w-0 gap-3 px-1.5 pr-2"
+           iconRight="chevronDown"
+           iconRightClassName="text-fg-muted"
+           title={m.workspace_switch()}
+@@ -78,10 +76,10 @@ export function WorkspaceMenu({
+         >
+           <img
+             alt=""
+-            className="size-6 shrink-0 rounded-md"
++            className="size-7 shrink-0 rounded-md -translate-y-px"
+             src={iconUrl(workspace.iconId)}
+           />
+-          <span className="min-w-0 truncate font-extrabold">
++          <span className="min-w-0 truncate font-semibold t-body">
+             {workspace.name}
+           </span>
+         </Button>
+diff --git a/src/routes/WorkspaceOpen.tsx b/src/routes/WorkspaceOpen.tsx
+index d43ea03..4fb94f9 100644
+--- a/src/routes/WorkspaceOpen.tsx
++++ b/src/routes/WorkspaceOpen.tsx
+@@ -310,8 +310,9 @@ export default function WorkspaceOpen() {
+           item={openItem}
+           leading={
+             <>
++            <div className="flex items-center gap-1 mr-1">
+               <IconButton
+-                className="text-fg-muted"
++                className="text-fg-muted px-1"
+                 icon="navigationBack"
+                 label={m.workspace_back_to()}
+                 onClick={() => navigate({ to: '/workspaces' })}
+@@ -322,7 +323,7 @@ export default function WorkspaceOpen() {
+               {xl && (
+                 <IconButton
+                   aria-pressed={pinned}
+-                  className="text-fg-muted"
++                  className="text-fg-muted px-1"
+                   icon="panelLeft"
+                   label={
+                     pinned ? m.workspace_unpin_files() : m.workspace_pin_files()
+@@ -333,6 +334,7 @@ export default function WorkspaceOpen() {
+                   variant="ghost-hover"
+                 />
+               )}
++            </div>
+               <WorkspaceMenu
+                 cloning={cloneWorkspaceIsPending}
+                 onClone={
+diff --git a/src/styles/tailwind.css b/src/styles/tailwind.css
+index 135ba5b..19841af 100644
+--- a/src/styles/tailwind.css
++++ b/src/styles/tailwind.css
+@@ -61,6 +61,8 @@
+   --color-tint-error-fg: var(--tint-error-fg);
+   --color-tint-accent-1: var(--tint-accent-1-bg);
+   --color-tint-accent-1-fg: var(--tint-accent-1-fg);
++  --color-tint-accent-dark: var(--tint-accent-dark-bg);
++  --color-tint-accent-dark-fg: var(--tint-accent-dark-fg);
+   --color-tint-accent-2: var(--tint-accent-2-bg);
+   --color-tint-accent-2-fg: var(--tint-accent-2-fg);
+   --color-solid-success: var(--solid-success);
+@@ -313,7 +315,11 @@
+   * {
+     box-sizing: border-box;
+     margin: 0;
+-    scrollbar-width: thin;
++    scrollbar-width: auto;
++  }
++  *::-webkit-scrollbar {
++    width: 6px;
++    height: 6px;
+   }
+   ::selection {
+     color: var(--text-primary);
+diff --git a/src/styles/tokens/themes/classroom.css b/src/styles/tokens/themes/classroom.css
+index bbb0a3f..d3adeff 100644
+--- a/src/styles/tokens/themes/classroom.css
++++ b/src/styles/tokens/themes/classroom.css
+@@ -110,6 +110,8 @@
+   --tint-error-fg: #b8475a;
+   --tint-accent-1-bg: #ece6f6;
+   --tint-accent-1-fg: #5b4aa8;
++  --tint-accent-dark-bg: #322a5c;
++  --tint-accent-dark-fg: #f7f7f7;
+   --tint-accent-2-bg: #e7f6ee;
+   --tint-accent-2-fg: #2f7d56;
+   --solid-accent-1: #8c7bd9;

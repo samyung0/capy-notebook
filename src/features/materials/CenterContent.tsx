@@ -3,7 +3,6 @@ import { isMaterialContentUnreadable } from '@/api/client';
 import { useFile, useMaterial, useMaterials } from '@/api/hooks';
 import type { Chapter, Region, UserColor } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
-import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import {
@@ -57,13 +56,10 @@ export function CenterContent({
   requestedMode = null,
   workspaceId,
   leading,
-  onBrowseFiles,
 }: {
   beforeFileDelete?: () => boolean;
   /** Workspace chrome drawn before the file name in the header. */
   leading?: ReactNode;
-  /** Empty state: jump to the Files tab. */
-  onBrowseFiles?: () => void;
   chapters: Chapter[];
   item: OpenItem | null;
   readOnly?: boolean;
@@ -95,7 +91,7 @@ export function CenterContent({
   };
 
   if (!item) {
-    return <EmptyCenter leading={leading} onBrowseFiles={onBrowseFiles} />;
+    return <EmptyCenter leading={leading} />;
   }
   return (
     <div
@@ -275,13 +271,7 @@ function MaterialContent({
   );
 }
 
-function EmptyCenter({
-  leading,
-  onBrowseFiles,
-}: {
-  leading?: ReactNode;
-  onBrowseFiles?: () => void;
-}) {
+function EmptyCenter({ leading }: { leading?: ReactNode }) {
   return (
     <>
       <div className="flex h-14 items-center gap-2 border-divider border-b px-4 py-4">
@@ -296,16 +286,6 @@ function EmptyCenter({
         <div className="flex flex-col items-center gap-3">
           <Icon className="non-scaling-svg size-8" name="files" />
           <p>{m.material_select()}</p>
-          {onBrowseFiles && (
-            <Button
-              iconLeft="files"
-              onClick={onBrowseFiles}
-              size="sm"
-              variant="outline"
-            >
-              {m.material_browse_files()}
-            </Button>
-          )}
         </div>
       </div>
     </>

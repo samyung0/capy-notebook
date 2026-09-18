@@ -34,7 +34,7 @@ export function FileError({
     <ErrorState
       action={
         onRetry && (
-          <Button onClick={onRetry} variant="ghost">
+          <Button className="font-bold" onClick={onRetry} variant="ghost-hover">
             {m.error_action_retry()}
           </Button>
         )

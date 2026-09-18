@@ -43,7 +43,7 @@ function BrandColumn() {
   return (
     <Card
       className={cn(
-        'relative flex h-full flex-1 flex-col items-center justify-center gap-10 bg-[#322a5c] p-11 text-[#f7f7f7]'
+        'relative flex h-full flex-1 flex-col items-center justify-center gap-10 bg-tint-accent-dark p-11 text-tint-accent-dark-fg'
       )}
       radius="card"
       theme="surface-dark"

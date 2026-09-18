@@ -378,7 +378,7 @@ export function FilesPanel({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {renderTabRow(actions)}
-      <div className="min-h-0 flex-1 overflow-auto px-2.5 pt-1.5 pb-2">
+      <div className="min-h-0 flex-1 overflow-auto px-2.5 pb-2">
         {!chapters && (
           <SkeletonList className="px-1.5 py-2" count={5} rowHeight={36} />
         )}

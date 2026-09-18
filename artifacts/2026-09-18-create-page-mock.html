@@ -1,0 +1,1640 @@
+<title>Create page mock</title>
+<link
+  href="https://fonts.googleapis.com/css2?family=Fustat:wght@400;500;600;700;800&display=swap"
+  rel="stylesheet"
+>
+<style>
+:root {
+  --page: #f7f7f7;
+  --page-hover: #e6e9ea;
+  --surface: #fff;
+  --surface-hover: #f2f3f3;
+  --surface-dark: #e6e9ea;
+  --fg: #222;
+  --fg-2: #4b4b4b;
+  --fg-muted: #6b6b6b;
+  --link: #5b4aa8;
+  --line: #d6d6d6;
+  --line-strong: #afafaf;
+  --divider: #e6e6e6;
+  --action: #222;
+  --action-fg: #fff;
+  --accent: #8c7bd9;
+  --accent-fg: #fff;
+  --tint-accent: #ece6f6;
+  --tint-accent-fg: #5b4aa8;
+  --tint-info: #e4ecf8;
+  --tint-info-fg: #2e6bb0;
+  --tint-success: #e3f3e6;
+  --tint-success-fg: #2f7d3f;
+  --tint-warn: #fbefd9;
+  --tint-warn-fg: #9a6408;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.05);
+  --shadow-pop: 0 10px 34px rgba(0, 0, 0, 0.14);
+  --c-quiz: #df8e1d;
+  --c-quiz-bg: #fbeed6;
+  --c-cards: #fe640b;
+  --c-cards-bg: #ffe6d6;
+  --c-note: #1e66f5;
+  --c-note-bg: #dfe8fd;
+  --c-map: #ea76cb;
+  --c-map-bg: #fbe3f4;
+  --c-diag: #40a02b;
+  --c-diag-bg: #e2f2dd;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #121513;
+    --page-hover: #20241f;
+    --surface: #1c201e;
+    --surface-hover: #262b28;
+    --surface-dark: #2b302c;
+    --fg: #f1f3f0;
+    --fg-2: #b4b8b3;
+    --fg-muted: #888d88;
+    --link: #b3a6ea;
+    --line: #2c302d;
+    --line-strong: #3a403c;
+    --divider: #262b28;
+    --action: #f1f3f0;
+    --action-fg: #1c201e;
+    --accent: #9d8ee0;
+    --accent-fg: #1a1626;
+    --tint-accent: #322a5c;
+    --tint-accent-fg: #cfc4f2;
+    --tint-info: #142634;
+    --tint-info-fg: #9bcdf6;
+    --tint-success: #16301c;
+    --tint-success-fg: #9fdcaa;
+    --tint-warn: #382a10;
+    --tint-warn-fg: #f2c87c;
+    --shadow-card:
+      0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.45);
+    --shadow-pop: 0 10px 34px rgba(0, 0, 0, 0.6);
+    --c-quiz: #f9e2af;
+    --c-quiz-bg: #3a3320;
+    --c-cards: #fab387;
+    --c-cards-bg: #3b2a20;
+    --c-note: #89b4fa;
+    --c-note-bg: #1f2a3f;
+    --c-map: #f5c2e7;
+    --c-map-bg: #382a36;
+    --c-diag: #a6e3a1;
+    --c-diag-bg: #213424;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #121513;
+  --page-hover: #20241f;
+  --surface: #1c201e;
+  --surface-hover: #262b28;
+  --surface-dark: #2b302c;
+  --fg: #f1f3f0;
+  --fg-2: #b4b8b3;
+  --fg-muted: #888d88;
+  --link: #b3a6ea;
+  --line: #2c302d;
+  --line-strong: #3a403c;
+  --divider: #262b28;
+  --action: #f1f3f0;
+  --action-fg: #1c201e;
+  --accent: #9d8ee0;
+  --accent-fg: #1a1626;
+  --tint-accent: #322a5c;
+  --tint-accent-fg: #cfc4f2;
+  --tint-info: #142634;
+  --tint-info-fg: #9bcdf6;
+  --tint-success: #16301c;
+  --tint-success-fg: #9fdcaa;
+  --tint-warn: #382a10;
+  --tint-warn-fg: #f2c87c;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.45);
+  --shadow-pop: 0 10px 34px rgba(0, 0, 0, 0.6);
+  --c-quiz: #f9e2af;
+  --c-quiz-bg: #3a3320;
+  --c-cards: #fab387;
+  --c-cards-bg: #3b2a20;
+  --c-note: #89b4fa;
+  --c-note-bg: #1f2a3f;
+  --c-map: #f5c2e7;
+  --c-map-bg: #382a36;
+  --c-diag: #a6e3a1;
+  --c-diag-bg: #213424;
+}
+
+* {
+  box-sizing: border-box;
+}
+html {
+  background: var(--page);
+}
+body {
+  margin: 0;
+  font-family: Fustat, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.45;
+  color: var(--fg);
+  background: var(--page);
+}
+svg {
+  display: block;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+button {
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+button:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.wrap {
+  max-width: 1180px;
+  padding-block: 28px 80px;
+  padding-inline: 16px;
+  margin: 0 auto;
+}
+h1 {
+  margin: 0 0 6px;
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.intro {
+  max-width: 68ch;
+  margin: 0 0 8px;
+  color: var(--fg-2);
+}
+.top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+.themeswitch {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  background: var(--surface-dark);
+  border-radius: 12px;
+}
+.themeswitch button {
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--fg-muted);
+  border-radius: 9px;
+}
+.themeswitch button.on {
+  color: var(--fg);
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+/* ---------- app panel ---------- */
+.panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 720px;
+  overflow: hidden;
+  background: var(--surface);
+  border-radius: 28px;
+  box-shadow: var(--shadow-card);
+}
+.phead {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22px 24px 6px;
+}
+.phead h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.tabs {
+  display: flex;
+  gap: 2px;
+  margin: 4px 24px 0;
+  border-bottom: 1px solid var(--divider);
+}
+.tabs button {
+  padding: 8px 10px;
+  margin-bottom: -1px;
+  font-weight: 600;
+  color: var(--fg-muted);
+  border-bottom: 2px solid transparent;
+}
+.tabs button.on {
+  color: var(--fg);
+  border-bottom-color: var(--fg);
+}
+.btn {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 7px 10px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  border-radius: 10px;
+}
+.btn svg {
+  width: 16px;
+  height: 16px;
+}
+.btn.ghost {
+  color: var(--fg);
+}
+.btn.ghost:hover {
+  background: var(--surface-hover);
+}
+.btn.ghost .sub {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--fg-muted);
+}
+.btn.link {
+  font-weight: 700;
+  color: var(--link);
+  border-radius: 12px;
+}
+.btn.link:hover {
+  background: var(--surface-hover);
+}
+.btn.dark {
+  color: var(--action-fg);
+  background: var(--action);
+}
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 20px 4px;
+}
+.toolbar .left,
+.toolbar .right {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--surface-dark);
+  border-radius: 10px;
+}
+.seg button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 26px;
+  color: var(--fg-muted);
+  border-radius: 8px;
+}
+.seg button svg {
+  width: 16px;
+  height: 16px;
+}
+.seg button.on {
+  color: var(--fg);
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+/* popovers */
+.pop-anchor {
+  position: relative;
+}
+.pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  min-width: 240px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-pop);
+}
+.pop[hidden] {
+  display: none;
+}
+.pop.filter {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 300px;
+  padding: 14px;
+}
+.pop.filter[hidden] {
+  display: none;
+}
+.pop.filter section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pop.filter section > p {
+  margin: 0;
+  font-weight: 600;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chip {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--fg-2);
+  background: var(--page);
+  border-radius: 999px;
+  transition: background 0.12s;
+}
+.chip:hover {
+  background: var(--surface-dark);
+}
+.chip.on {
+  color: var(--action-fg);
+  background: var(--action);
+}
+.chip svg {
+  width: 12px;
+  height: 12px;
+}
+.pop .reset {
+  align-self: center;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg-muted);
+  border-radius: 8px;
+}
+.pop .reset:hover {
+  background: var(--surface-hover);
+}
+.pop .reset:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.mi {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 8px 10px;
+  text-align: left;
+  border-radius: 9px;
+}
+.mi:hover {
+  background: var(--surface-hover);
+}
+.mi svg {
+  width: 16px;
+  height: 16px;
+  color: var(--fg-muted);
+}
+.mi .d {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.mi.on .d {
+  color: var(--link);
+}
+.mi span {
+  display: block;
+}
+
+/* ---------- content ---------- */
+.content {
+  flex: 1;
+  min-height: 0;
+  padding: 10px 24px 24px;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(212px, 1fr));
+  gap: 12px;
+}
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 148px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
+}
+.card:hover {
+  background: var(--surface-hover);
+  border-color: var(--line-strong);
+}
+.card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.kicon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+}
+.kicon svg {
+  width: 18px;
+  height: 18px;
+}
+.kicon.quiz {
+  color: var(--c-quiz);
+  background: var(--c-quiz-bg);
+}
+.kicon.flashcards {
+  color: var(--c-cards);
+  background: var(--c-cards-bg);
+}
+.kicon.note {
+  color: var(--c-note);
+  background: var(--c-note-bg);
+}
+.kicon.mindmap {
+  color: var(--c-map);
+  background: var(--c-map-bg);
+}
+.kicon.diagram {
+  color: var(--c-diag);
+  background: var(--c-diag-bg);
+}
+.kicon .wsb {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  font-size: 11px;
+  line-height: 1;
+  background: var(--surface);
+  border: 1.5px solid var(--surface);
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px var(--line);
+}
+.kicon .wsb.noteb {
+  color: var(--fg-2);
+}
+.kicon .wsb.noteb svg {
+  width: 11px;
+  height: 11px;
+}
+.dots {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  color: var(--fg-muted);
+  border-radius: 8px;
+  opacity: 0;
+}
+.card:hover .dots,
+.row:hover .dots,
+.dots:focus-visible {
+  opacity: 1;
+}
+.dots:hover {
+  color: var(--fg);
+  background: var(--surface-dark);
+}
+.dots svg {
+  width: 16px;
+  height: 16px;
+}
+.title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  margin: 4px 0 0;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.loc {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  min-width: 0;
+  margin: 0;
+  font-size: 12px;
+  color: var(--fg-2);
+}
+.loc svg {
+  width: 12px;
+  height: 12px;
+  color: var(--fg-muted);
+}
+.loc .t {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.loc .sep {
+  color: var(--fg-muted);
+}
+.loc.standalone {
+  color: var(--fg-muted);
+}
+.meta {
+  margin: 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+}
+.card .foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-top: 4px;
+  margin-top: auto;
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--fg-2);
+  background: var(--page);
+  border-radius: 999px;
+}
+.badge.accent {
+  color: var(--tint-accent-fg);
+  background: var(--tint-accent);
+}
+.badge.info {
+  color: var(--tint-info-fg);
+  background: var(--tint-info);
+}
+.badge.success {
+  color: var(--tint-success-fg);
+  background: var(--tint-success);
+}
+.badge.warn {
+  color: var(--tint-warn-fg);
+  background: var(--tint-warn);
+}
+.badge.kind {
+  gap: 4px;
+}
+.badge.kind svg {
+  width: 11px;
+  height: 11px;
+}
+.badge.kind.quiz {
+  color: var(--c-quiz);
+  background: var(--c-quiz-bg);
+}
+.badge.kind.flashcards {
+  color: var(--c-cards);
+  background: var(--c-cards-bg);
+}
+.badge.kind.note {
+  color: var(--c-note);
+  background: var(--c-note-bg);
+}
+.badge.kind.mindmap {
+  color: var(--c-map);
+  background: var(--c-map-bg);
+}
+.badge.kind.diagram {
+  color: var(--c-diag);
+  background: var(--c-diag-bg);
+}
+.progress {
+  height: 4px;
+  margin-top: 2px;
+  overflow: hidden;
+  background: var(--surface-dark);
+  border-radius: 999px;
+}
+.progress i {
+  display: block;
+  height: 100%;
+  background: var(--c-diag);
+  border-radius: 999px;
+}
+
+/* list */
+.list {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+.lhead,
+.row {
+  display: grid;
+  grid-template-columns: minmax(200px, 2.4fr) 1.1fr minmax(160px, 2fr) 1.5fr 1fr 36px;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 14px;
+}
+.lhead {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: var(--surface-hover);
+}
+.row {
+  border-top: 1px solid var(--divider);
+}
+.row:hover {
+  background: var(--surface-hover);
+}
+.row .name {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+}
+.row .name .kicon {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+}
+.row .name .kicon svg {
+  width: 15px;
+  height: 15px;
+}
+.row .name .kicon .wsb {
+  right: -5px;
+  bottom: -5px;
+  width: 16px;
+  height: 16px;
+  font-size: 10px;
+}
+.row .name b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.row .meta {
+  font-size: 13px;
+}
+.row .when {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+}
+.row .dots {
+  justify-self: end;
+}
+.empty {
+  padding: 48px 0;
+  color: var(--fg-muted);
+  text-align: center;
+}
+@media (max-width: 760px) {
+  .lhead {
+    display: none;
+  }
+  .row {
+    grid-template-rows: auto auto;
+    grid-template-columns: 1fr 36px;
+    row-gap: 4px;
+  }
+  .row .name {
+    grid-column: 1;
+  }
+  .row .dots {
+    grid-row: 1;
+    grid-column: 2;
+    opacity: 1;
+  }
+  .row .kb,
+  .row .loc,
+  .row .meta,
+  .row .when {
+    grid-column: 1;
+  }
+  .row .kb {
+    display: none;
+  }
+  .panel {
+    border-radius: 20px;
+  }
+  .phead,
+  .content {
+    padding-inline: 16px;
+  }
+  .tabs {
+    margin-inline: 16px;
+  }
+  .toolbar {
+    padding-inline: 12px;
+  }
+}
+
+/* legend / notes below */
+h3 {
+  margin: 34px 0 8px;
+  font-size: 16px;
+  font-weight: 700;
+}
+.notes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px 22px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.notes li {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  color: var(--fg-2);
+}
+.notes b {
+  color: var(--fg);
+}
+.notes .kicon {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+}
+.notes .kicon svg {
+  width: 15px;
+  height: 15px;
+}
+.notes .kicon .wsb {
+  right: -5px;
+  bottom: -5px;
+  width: 16px;
+  height: 16px;
+  font-size: 10px;
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}
+</style>
+
+<svg
+  aria-hidden="true"
+  style="position:absolute;width:0;height:0;overflow:hidden"
+>
+  <symbol id="i-note" viewBox="0 0 24 24">
+    <path d="M6 3h9l5 5v13H6z" />
+    <path d="M14 3v6h6M9 13h7M9 17h7" />
+  </symbol>
+  <symbol id="i-quiz" viewBox="0 0 24 24">
+    <rect height="16" rx="3" width="16" x="4" y="4" />
+    <path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .8-1 1.5M12 16.5h.01" />
+  </symbol>
+  <symbol id="i-cards" viewBox="0 0 24 24">
+    <rect height="12" rx="2" width="14" x="3" y="7" />
+    <path d="M7 5h12a2 2 0 0 1 2 2v10" />
+    <path d="M7 13h6" />
+  </symbol>
+  <symbol id="i-map" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="2.5" />
+    <circle cx="4.5" cy="6" r="1.8" />
+    <circle cx="19.5" cy="6" r="1.8" />
+    <circle cx="4.5" cy="18" r="1.8" />
+    <circle cx="19.5" cy="18" r="1.8" />
+    <path d="M10 11 6 7.3M14 11l4-3.7M10 13l-4 3.7M14 13l4 3.7" />
+  </symbol>
+  <symbol id="i-diag" viewBox="0 0 24 24">
+    <rect height="5" rx="1.5" width="7" x="3" y="4" />
+    <rect height="5" rx="1.5" width="7" x="14" y="4" />
+    <rect height="5" rx="1.5" width="7" x="8.5" y="15" />
+    <path d="M6.5 9v3h11V9M12 12v3" />
+  </symbol>
+  <symbol id="i-book" viewBox="0 0 24 24">
+    <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z" />
+    <path d="M4 20.5V5.5M20 18v3H6.5" />
+  </symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24">
+    <rect height="6.5" rx="1.5" width="6.5" x="4" y="4" />
+    <rect height="6.5" rx="1.5" width="6.5" x="13.5" y="4" />
+    <rect height="6.5" rx="1.5" width="6.5" x="4" y="13.5" />
+    <rect height="6.5" rx="1.5" width="6.5" x="13.5" y="13.5" />
+  </symbol>
+  <symbol id="i-list" viewBox="0 0 24 24">
+    <path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" />
+  </symbol>
+  <symbol id="i-filter" viewBox="0 0 24 24">
+    <path d="M4 5h16l-6.5 8v5l-3 2v-7z" />
+  </symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5" /></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></symbol>
+  <symbol id="i-dots" viewBox="0 0 24 24">
+    <circle cx="6" cy="12" r="1.2" />
+    <circle cx="12" cy="12" r="1.2" />
+    <circle cx="18" cy="12" r="1.2" />
+  </symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M12 7.5V12l3 2" />
+  </symbol>
+  <symbol id="i-cal" viewBox="0 0 24 24">
+    <rect height="15" rx="2.5" width="16" x="4" y="5" />
+    <path d="M4 10h16M8 3v4M16 3v4" />
+  </symbol>
+  <symbol id="i-az" viewBox="0 0 24 24">
+    <path d="M4 18h16M6 14l3-8 3 8M7 12h4M15 6h5l-5 6h5" />
+  </symbol>
+  <symbol id="i-kind" viewBox="0 0 24 24">
+    <path d="M4 7h7M4 12h11M4 17h16" />
+  </symbol>
+  <symbol id="i-person" viewBox="0 0 24 24">
+    <circle cx="12" cy="8" r="3.5" />
+    <path d="M5 20a7 7 0 0 1 14 0" />
+  </symbol>
+</svg>
+
+<div class="wrap">
+  <div class="top">
+    <div>
+      <h1>Create page mock</h1>
+      <p class="intro">
+        Replaces the Quizzes and Flashcards pages. One list of every material
+        the user owns or reaches through a workspace: notes, quizzes, flashcard
+        sets, mindmaps and diagrams, whether standalone, a file in a workspace,
+        or embedded in a note. Sort, filter and view toggle follow the
+        Workspaces page pattern. Everything below is interactive on sample data.
+      </p>
+    </div>
+    <div aria-label="Theme" class="themeswitch" role="group">
+      <button class="on" id="th-light" type="button">Latte</button>
+      <button id="th-dark" type="button">Mocha</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="phead">
+      <h2>Create</h2>
+      <div class="pop-anchor">
+        <button
+          aria-expanded="false"
+          aria-haspopup="menu"
+          class="btn dark"
+          id="new-btn"
+          type="button"
+        >
+          <svg><use href="#i-plus" /></svg>New<svg><use href="#i-chev" /></svg>
+        </button>
+        <div class="pop" hidden id="new-pop" style="left:auto;right:0">
+          <button class="mi" type="button">
+            <svg><use href="#i-note" /></svg><span>Note</span>
+          </button>
+          <button class="mi" type="button">
+            <svg><use href="#i-quiz" /></svg><span>Quiz</span>
+          </button>
+          <button class="mi" type="button">
+            <svg><use href="#i-cards" /></svg><span>Flashcards</span>
+          </button>
+          <button class="mi" type="button">
+            <svg><use href="#i-map" /></svg><span>Mindmap</span>
+          </button>
+          <button class="mi" type="button">
+            <svg><use href="#i-diag" /></svg><span>Diagram</span>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="tabs" role="tablist">
+      <button aria-selected="true" class="on" role="tab" type="button">
+        Materials
+      </button>
+      <button
+        aria-selected="false"
+        role="tab"
+        title="Not mocked: existing attempts table and Review mistakes move here"
+        type="button"
+      >
+        Quiz attempts
+      </button>
+    </div>
+
+    <div class="toolbar">
+      <div class="left">
+        <div class="pop-anchor">
+          <button
+            aria-expanded="false"
+            aria-haspopup="menu"
+            class="btn ghost"
+            id="sort-btn"
+            type="button"
+          >
+            <span>Sort: <span id="sort-label">Updated</span></span
+            ><span class="sub" id="sort-sub">newest first</span
+            ><svg><use href="#i-chev" /></svg>
+          </button>
+          <div class="pop" hidden id="sort-pop"></div>
+        </div>
+        <div class="pop-anchor">
+          <button
+            aria-expanded="false"
+            aria-haspopup="dialog"
+            class="btn ghost"
+            id="filter-btn"
+            type="button"
+          >
+            <svg><use href="#i-filter" /></svg
+            ><span id="filter-label">Filter</span
+            ><svg><use href="#i-chev" /></svg>
+          </button>
+          <div class="pop filter" hidden id="filter-pop">
+            <section>
+              <p>Kind</p>
+              <div class="chips" id="chips-kind"></div>
+            </section>
+            <section>
+              <p>Location</p>
+              <div class="chips" id="chips-loc"></div>
+            </section>
+            <section>
+              <p>Workspace</p>
+              <div class="chips" id="chips-ws"></div>
+            </section>
+            <button class="reset" disabled id="filter-reset" type="button">
+              Reset filters
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="right">
+        <div aria-label="View" class="seg" role="group">
+          <button
+            aria-label="Grid view"
+            class="on"
+            id="view-grid"
+            title="Grid"
+            type="button"
+          >
+            <svg><use href="#i-grid" /></svg>
+          </button>
+          <button
+            aria-label="List view"
+            id="view-list"
+            title="List"
+            type="button"
+          >
+            <svg><use href="#i-list" /></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="content" id="content"></div>
+  </div>
+
+  <h3>How origin is shown</h3>
+  <ul class="notes">
+    <li>
+      <span class="kicon quiz"
+        ><svg><use href="#i-quiz" /></svg><span class="wsb">🧬</span></span
+      ><span
+        ><b>In a workspace.</b>
+        The workspace icon sits on the corner of the kind icon, and the location
+        line reads workspace › chapter. Embedded blocks read "in ‹note title›"
+        instead of a chapter.</span
+      >
+    </li>
+    <li>
+      <span class="kicon quiz"
+        ><svg><use href="#i-quiz" /></svg
+        ><span class="wsb noteb"
+          ><svg><use href="#i-note" /></svg></span
+        ></span
+      ><span
+        ><b>Embedded in a standalone note.</b>
+        A note glyph replaces the workspace icon. Only relevant if standalone
+        notes may embed materials.</span
+      >
+    </li>
+    <li>
+      <span class="kicon quiz"
+        ><svg><use href="#i-quiz" /></svg></span
+      ><span
+        ><b>Standalone.</b>
+        No corner badge, location line says Standalone in muted text. Shared or
+        public shows as a badge, as on workspace cards.</span
+      >
+    </li>
+  </ul>
+
+  <h3>Not in this mock</h3>
+  <ul class="notes">
+    <li>
+      <span>•</span
+      ><span
+        >The card menu contents per kind (open, study, edit, share, clone,
+        delete) and where the open action lands for a standalone note, mindmap
+        or diagram, which have no route today.</span
+      >
+    </li>
+    <li>
+      <span>•</span
+      ><span
+        >The Quiz attempts tab: it would carry the existing attempts table and
+        the Review mistakes card unchanged.</span
+      >
+    </li>
+    <li>
+      <span>•</span
+      ><span
+        >Empty state, skeletons and the paused-query state, which reuse the
+        Workspaces page components.</span
+      >
+    </li>
+  </ul>
+</div>
+
+<script>
+'use strict';
+(() => {
+  var KINDS = [
+    { icon: 'i-note', k: 'note', label: 'Note' },
+    { icon: 'i-quiz', k: 'quiz', label: 'Quiz' },
+    { icon: 'i-cards', k: 'flashcards', label: 'Flashcards' },
+    { icon: 'i-map', k: 'mindmap', label: 'Mindmap' },
+    { icon: 'i-diag', k: 'diagram', label: 'Diagram' },
+  ];
+  var LOCS = [
+    { label: 'Workspace file', v: 'workspace' },
+    { label: 'Embedded in note', v: 'embedded' },
+    { label: 'Standalone', v: 'standalone' },
+  ];
+  var WS = {
+    bio: { icon: '🧬', name: 'Biology 101' },
+    ds: { icon: '🛰️', name: 'Distributed systems' },
+    hist: { icon: '🏛️', name: 'World History' },
+    math: { icon: '📐', name: 'Math 2A' },
+  };
+  var H = 3600e3,
+    D = 24 * H;
+  var NOW = Date.parse('2026-09-18T15:00:00Z');
+  var DATA = [
+    {
+      chapter: 'Chapter 3',
+      created: NOW - 9 * D,
+      detail: '12 questions · 20 min',
+      id: 1,
+      kind: 'quiz',
+      loc: 'workspace',
+      title: 'Cell respiration checkpoint',
+      updated: NOW - 2 * H,
+      ws: 'bio',
+    },
+    {
+      chapter: 'Chapter 3',
+      created: NOW - 12 * D,
+      detail: '40 cards · 62% known',
+      due: 8,
+      id: 2,
+      kind: 'flashcards',
+      known: 62,
+      loc: 'workspace',
+      title: 'Krebs cycle cards',
+      updated: NOW - 5 * H,
+      ws: 'bio',
+    },
+    {
+      chapter: 'Chapter 2',
+      created: NOW - 20 * D,
+      detail: '1.8k words',
+      id: 3,
+      kind: 'note',
+      loc: 'workspace',
+      title: 'Lecture 4 notes',
+      updated: NOW - 26 * H,
+      ws: 'bio',
+    },
+    {
+      created: NOW - 6 * D,
+      detail: '5 questions',
+      id: 4,
+      kind: 'quiz',
+      loc: 'embedded',
+      note: 'Lecture 4 notes',
+      title: 'Glycolysis quick check',
+      updated: NOW - 26 * H,
+      ws: 'bio',
+    },
+    {
+      created: NOW - 6 * D,
+      detail: '18 cards · 33% known',
+      due: 12,
+      id: 5,
+      kind: 'flashcards',
+      known: 33,
+      loc: 'embedded',
+      note: 'Lecture 4 notes',
+      title: 'Enzyme vocabulary',
+      updated: NOW - 3 * D,
+      ws: 'bio',
+    },
+    {
+      chapter: 'Chapter 1',
+      created: NOW - 30 * D,
+      detail: '24 nodes',
+      id: 6,
+      kind: 'mindmap',
+      loc: 'workspace',
+      title: 'Photosynthesis overview',
+      updated: NOW - 4 * D,
+      ws: 'bio',
+    },
+    {
+      created: NOW - 45 * D,
+      detail: '3.2k words',
+      id: 7,
+      kind: 'note',
+      loc: 'standalone',
+      privacy: 'link',
+      title: 'IELTS writing task 2 drafts',
+      updated: NOW - 40 * 60e3,
+    },
+    {
+      created: NOW - 15 * D,
+      detail: '8 questions',
+      id: 8,
+      kind: 'quiz',
+      loc: 'embedded',
+      note: 'IELTS writing task 2 drafts',
+      title: 'Vocabulary check',
+      updated: NOW - 2 * D,
+    },
+    {
+      created: NOW - 90 * D,
+      detail: '120 cards · 88% known',
+      due: 0,
+      id: 9,
+      kind: 'flashcards',
+      known: 88,
+      loc: 'standalone',
+      title: 'Irregular verbs',
+      updated: NOW - 6 * D,
+    },
+    {
+      created: NOW - 60 * D,
+      detail: '30 questions · 45 min',
+      id: 10,
+      kind: 'quiz',
+      loc: 'standalone',
+      privacy: 'public',
+      title: 'Mock exam 1',
+      updated: NOW - 8 * D,
+    },
+    {
+      chapter: 'Week 6',
+      created: NOW - 14 * D,
+      detail: '31 nodes',
+      id: 11,
+      kind: 'mindmap',
+      loc: 'workspace',
+      title: 'Eigenvalues and eigenvectors',
+      updated: NOW - 11 * D,
+      ws: 'math',
+    },
+    {
+      chapter: 'Unfiled',
+      created: NOW - 13 * D,
+      detail: 'Sequence diagram',
+      id: 12,
+      kind: 'diagram',
+      loc: 'workspace',
+      title: 'Request lifecycle',
+      updated: NOW - 13 * D,
+      ws: 'ds',
+    },
+    {
+      created: NOW - 33 * D,
+      detail: 'Flowchart',
+      id: 13,
+      kind: 'diagram',
+      loc: 'standalone',
+      title: 'Raft leader election',
+      updated: NOW - 21 * D,
+    },
+    {
+      chapter: 'Early modern',
+      created: NOW - 27 * D,
+      detail: '900 words',
+      id: 14,
+      kind: 'note',
+      loc: 'workspace',
+      title: 'Treaty of Westphalia summary',
+      updated: NOW - 27 * D,
+      ws: 'hist',
+    },
+    {
+      created: NOW - 120 * D,
+      detail: '640 words',
+      id: 15,
+      kind: 'note',
+      loc: 'standalone',
+      title: 'Capy roadmap',
+      updated: NOW - 35 * D,
+    },
+  ];
+  var SORTS = [
+    { icon: 'i-clock', kind: 'time', label: 'Updated', v: 'updated' },
+    { icon: 'i-cal', kind: 'time', label: 'Created', v: 'created' },
+    { icon: 'i-az', kind: 'name', label: 'Name', v: 'title' },
+    { icon: 'i-kind', kind: 'name', label: 'Kind', v: 'kind' },
+  ];
+  var state = {
+    asc: false,
+    kinds: {},
+    locs: {},
+    sort: 'updated',
+    view: 'grid',
+    ws: {},
+  };
+  var $ = (id) => document.getElementById(id);
+  var esc = (s) =>
+    String(s).replace(
+      /[&<>"]/g,
+      (c) => ({ '"': '&quot;', '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]
+    );
+  function kindOf(k) {
+    for (var i = 0; i < KINDS.length; i++)
+      if (KINDS[i].k === k) return KINDS[i];
+  }
+  function ago(t) {
+    var d = NOW - t;
+    if (d < H) return Math.round(d / 60e3) + ' min ago';
+    if (d < D) return Math.round(d / H) + ' h ago';
+    if (d < 14 * D) return Math.round(d / D) + ' d ago';
+    return new Date(t).toLocaleDateString(undefined, {
+      day: 'numeric',
+      month: 'short',
+    });
+  }
+  function cornerBadge(m) {
+    if (m.ws)
+      return (
+        '<span class="wsb" title="' +
+        esc(WS[m.ws].name) +
+        '">' +
+        WS[m.ws].icon +
+        '</span>'
+      );
+    if (m.loc === 'embedded')
+      return '<span class="wsb noteb" title="Embedded in a standalone note"><svg><use href="#i-note"/></svg></span>';
+    return '';
+  }
+  function kicon(m) {
+    return (
+      '<span class="kicon ' +
+      m.kind +
+      '"><svg><use href="#' +
+      kindOf(m.kind).icon +
+      '"/></svg>' +
+      cornerBadge(m) +
+      '</span>'
+    );
+  }
+  function locLine(m) {
+    if (m.loc === 'standalone')
+      return '<p class="loc standalone"><svg><use href="#i-person"/></svg><span class="t">Standalone</span></p>';
+    if (m.loc === 'embedded') {
+      var tail = m.ws
+        ? '<span class="sep">›</span><span class="t">' +
+          esc(WS[m.ws].name) +
+          '</span>'
+        : '';
+      return (
+        '<p class="loc"><svg><use href="#i-note"/></svg><span class="t">in ' +
+        esc(m.note) +
+        '</span>' +
+        tail +
+        '</p>'
+      );
+    }
+    return (
+      '<p class="loc"><svg><use href="#i-book"/></svg><span class="t">' +
+      esc(WS[m.ws].name) +
+      '</span><span class="sep">›</span><span class="t">' +
+      esc(m.chapter) +
+      '</span></p>'
+    );
+  }
+  function badges(m) {
+    var out = [];
+    if (m.due) out.push('<span class="badge accent">' + m.due + ' due</span>');
+    if (m.privacy === 'link')
+      out.push('<span class="badge info">Shared</span>');
+    if (m.privacy === 'public')
+      out.push('<span class="badge success">Public</span>');
+    return out.join('');
+  }
+  function card(m) {
+    var prog =
+      m.known == null
+        ? ''
+        : '<div class="progress"><i style="width:' + m.known + '%"></i></div>';
+    return (
+      '<article class="card" tabindex="0">' +
+      '<div class="card-top">' +
+      kicon(m) +
+      '<button class="dots" type="button" aria-label="Actions"><svg><use href="#i-dots"/></svg></button></div>' +
+      '<h3 class="title">' +
+      esc(m.title) +
+      '</h3>' +
+      locLine(m) +
+      '<p class="meta">' +
+      esc(m.detail) +
+      ' · ' +
+      ago(m.updated) +
+      '</p>' +
+      prog +
+      (badges(m) ? '<div class="foot">' + badges(m) + '</div>' : '') +
+      '</article>'
+    );
+  }
+  function row(m) {
+    var kd = kindOf(m.kind);
+    return (
+      '<div class="row" tabindex="0">' +
+      '<div class="name">' +
+      kicon(m) +
+      '<b>' +
+      esc(m.title) +
+      '</b></div>' +
+      '<div class="kb"><span class="badge kind ' +
+      m.kind +
+      '"><svg><use href="#' +
+      kd.icon +
+      '"/></svg>' +
+      kd.label +
+      '</span></div>' +
+      locLine(m) +
+      '<div class="meta">' +
+      esc(m.detail) +
+      (badges(m) ? ' ' + badges(m) : '') +
+      '</div>' +
+      '<div class="when">' +
+      ago(m.updated) +
+      '</div>' +
+      '<button class="dots" type="button" aria-label="Actions"><svg><use href="#i-dots"/></svg></button>' +
+      '</div>'
+    );
+  }
+  function any(o) {
+    for (var k in o) if (o[k]) return true;
+    return false;
+  }
+  function filtered() {
+    var ks = any(state.kinds),
+      ls = any(state.locs),
+      ws = any(state.ws);
+    var out = DATA.filter((m) => {
+      if (ks && !state.kinds[m.kind]) return false;
+      if (ls && !state.locs[m.loc]) return false;
+      if (ws && !(m.ws && state.ws[m.ws])) return false;
+      return true;
+    });
+    var s = state.sort;
+    out.sort((a, b) => {
+      var r =
+        s === 'title'
+          ? a.title.localeCompare(b.title)
+          : s === 'kind'
+            ? a.kind.localeCompare(b.kind) || a.title.localeCompare(b.title)
+            : b[s] - a[s];
+      return state.asc ? -r : r;
+    });
+    return out;
+  }
+  function render() {
+    var items = filtered(),
+      c = $('content');
+    if (!items.length) {
+      c.innerHTML = '<p class="empty">No materials match these filters.</p>';
+      return;
+    }
+    if (state.view === 'grid')
+      c.innerHTML = '<div class="grid">' + items.map(card).join('') + '</div>';
+    else
+      c.innerHTML =
+        '<div class="list"><div class="lhead"><div>Name</div><div>Kind</div><div>Location</div><div>Details</div><div>Updated</div><div></div></div>' +
+        items.map(row).join('') +
+        '</div>';
+    $('view-grid').classList.toggle('on', state.view === 'grid');
+    $('view-list').classList.toggle('on', state.view === 'list');
+    renderFilterLabel();
+  }
+  function chips(el, items, bag, key, labelKey) {
+    el.innerHTML = items
+      .map((it) => {
+        var v = it[key];
+        return (
+          '<button type="button" class="chip' +
+          (bag[v] ? ' on' : '') +
+          '" data-v="' +
+          v +
+          '">' +
+          (it.icon ? '<svg><use href="#' + it.icon + '"/></svg>' : '') +
+          esc(it[labelKey]) +
+          '</button>'
+        );
+      })
+      .join('');
+    Array.prototype.forEach.call(el.querySelectorAll('.chip'), (b) => {
+      b.addEventListener('click', () => {
+        bag[b.dataset.v] = !bag[b.dataset.v];
+        renderChips();
+        render();
+      });
+    });
+  }
+  function renderChips() {
+    chips($('chips-kind'), KINDS, state.kinds, 'k', 'label');
+    chips($('chips-loc'), LOCS, state.locs, 'v', 'label');
+    var wsItems = Object.keys(WS).map((id) => ({
+      id,
+      label: WS[id].icon + ' ' + WS[id].name,
+    }));
+    chips($('chips-ws'), wsItems, state.ws, 'id', 'label');
+    $('filter-reset').disabled = !(
+      any(state.kinds) ||
+      any(state.locs) ||
+      any(state.ws)
+    );
+  }
+  function renderFilterLabel() {
+    var parts = [];
+    KINDS.forEach((k) => {
+      if (state.kinds[k.k]) parts.push(k.label);
+    });
+    LOCS.forEach((l) => {
+      if (state.locs[l.v]) parts.push(l.label);
+    });
+    Object.keys(WS).forEach((id) => {
+      if (state.ws[id]) parts.push(WS[id].name);
+    });
+    $('filter-label').textContent = parts.length
+      ? parts.length <= 2
+        ? parts.join(' · ')
+        : parts.slice(0, 2).join(' · ') + ' +' + (parts.length - 2)
+      : 'Filter';
+  }
+  function sortDesc(s) {
+    var a = state.sort === s.v && state.asc;
+    return s.kind === 'time'
+      ? a
+        ? 'oldest first'
+        : 'newest first'
+      : a
+        ? 'Z to A'
+        : 'A to Z';
+  }
+  function renderSort() {
+    var cur = SORTS.filter((s) => s.v === state.sort)[0];
+    $('sort-label').textContent = cur.label;
+    $('sort-sub').textContent = sortDesc(cur);
+    $('sort-pop').innerHTML = SORTS.map(
+      (s) =>
+        '<button type="button" class="mi' +
+        (s.v === state.sort ? ' on' : '') +
+        '" data-v="' +
+        s.v +
+        '"><svg><use href="#' +
+        s.icon +
+        '"/></svg><span><span>' +
+        s.label +
+        '</span><span class="d">' +
+        sortDesc(s) +
+        '</span></span></button>'
+    ).join('');
+    Array.prototype.forEach.call($('sort-pop').querySelectorAll('.mi'), (b) => {
+      b.addEventListener('click', () => {
+        var v = b.dataset.v;
+        state.asc = v === state.sort ? !state.asc : false;
+        state.sort = v;
+        renderSort();
+        render();
+      });
+    });
+  }
+  function popover(btnId, popId) {
+    var btn = $(btnId),
+      pop = $(popId);
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      var open = pop.hidden;
+      closeAll();
+      pop.hidden = !open;
+      btn.setAttribute('aria-expanded', String(open));
+    });
+    pop.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+  }
+  function closeAll() {
+    ['new-pop', 'sort-pop', 'filter-pop'].forEach((id) => {
+      $(id).hidden = true;
+    });
+    ['new-btn', 'sort-btn', 'filter-btn'].forEach((id) => {
+      $(id).setAttribute('aria-expanded', 'false');
+    });
+  }
+  document.addEventListener('click', closeAll);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeAll();
+  });
+  popover('new-btn', 'new-pop');
+  popover('sort-btn', 'sort-pop');
+  popover('filter-btn', 'filter-pop');
+  $('filter-reset').addEventListener('click', () => {
+    state.kinds = {};
+    state.locs = {};
+    state.ws = {};
+    renderChips();
+    render();
+  });
+  $('view-grid').addEventListener('click', () => {
+    state.view = 'grid';
+    render();
+  });
+  $('view-list').addEventListener('click', () => {
+    state.view = 'list';
+    render();
+  });
+  function theme(t) {
+    document.documentElement.setAttribute('data-theme', t);
+    $('th-light').classList.toggle('on', t === 'light');
+    $('th-dark').classList.toggle('on', t === 'dark');
+    try {
+      localStorage.setItem('create-mock-theme', t);
+    } catch (e) {}
+  }
+  $('th-light').addEventListener('click', () => {
+    theme('light');
+  });
+  $('th-dark').addEventListener('click', () => {
+    theme('dark');
+  });
+  var saved = null;
+  try {
+    saved = localStorage.getItem('create-mock-theme');
+  } catch (e) {}
+  if (saved === 'light' || saved === 'dark') theme(saved);
+  else if (
+    window.matchMedia &&
+    window.matchMedia('(prefers-color-scheme: dark)').matches
+  ) {
+    $('th-light').classList.remove('on');
+    $('th-dark').classList.add('on');
+  }
+  renderChips();
+  renderSort();
+  render();
+})();
+</script>

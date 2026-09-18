@@ -14,11 +14,6 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { iconUrl } from '@/lib/icon-catalog';
 
-const FOOTER_ITEM = cn(
-  BASE_BUTTON_STYLE,
-  'h-7.5 w-fit cursor-pointer justify-start gap-1.75 px-2.5 text-fg hover:bg-surface-hover-bg/80 data-[highlighted]:bg-surface-hover-bg/80'
-);
-
 function FooterItem({
   icon,
   label,
@@ -32,7 +27,10 @@ function FooterItem({
 }) {
   return (
     <DropdownMenuItem
-      className={FOOTER_ITEM}
+      className={cn(
+        BASE_BUTTON_STYLE,
+        'h-7.5 w-full cursor-pointer justify-start gap-1.75 px-2.5 text-fg hover:bg-surface-hover-bg/80 data-[highlighted]:bg-surface-hover-bg/80'
+      )}
       disabled={disabled}
       onSelect={onSelect}
     >
@@ -70,7 +68,7 @@ export function WorkspaceMenu({
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
         <Button
-          className="h-9 min-w-0 gap-1.5 px-1.5 pr-2 text-[15px]"
+          className="flex h-9 min-w-0 items-center gap-3 px-1.5 pr-2"
           iconRight="chevronDown"
           iconRightClassName="text-fg-muted"
           title={m.workspace_switch()}
@@ -78,10 +76,10 @@ export function WorkspaceMenu({
         >
           <img
             alt=""
-            className="size-6 shrink-0 rounded-md"
+            className="size-7 shrink-0 -translate-y-px rounded-md"
             src={iconUrl(workspace.iconId)}
           />
-          <span className="min-w-0 truncate font-extrabold">
+          <span className="t-body min-w-0 truncate font-semibold">
             {workspace.name}
           </span>
         </Button>
