@@ -1,8 +1,9 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, type ReactNode, Suspense, useEffect, useState } from 'react';
 import { isMaterialContentUnreadable } from '@/api/client';
 import { useFile, useMaterial, useMaterials } from '@/api/hooks';
 import type { Chapter, Region, UserColor } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
+import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import {
@@ -55,8 +56,14 @@ export function CenterContent({
   onFileViewerDirtyChange,
   requestedMode = null,
   workspaceId,
+  leading,
+  onBrowseFiles,
 }: {
   beforeFileDelete?: () => boolean;
+  /** Workspace chrome drawn before the file name in the header. */
+  leading?: ReactNode;
+  /** Empty state: jump to the Files tab. */
+  onBrowseFiles?: () => void;
   chapters: Chapter[];
   item: OpenItem | null;
   readOnly?: boolean;
@@ -88,7 +95,7 @@ export function CenterContent({
   };
 
   if (!item) {
-    return <EmptyCenter />;
+    return <EmptyCenter leading={leading} onBrowseFiles={onBrowseFiles} />;
   }
   return (
     <div
@@ -105,6 +112,7 @@ export function CenterContent({
         imageZoom={imageZoom}
         isFullscreen={isFullscreen}
         item={item}
+        leading={leading}
         materialMode={materialMode}
         onDeleted={onDeleted}
         onImageZoomChange={setImageZoom}
@@ -267,17 +275,37 @@ function MaterialContent({
   );
 }
 
-function EmptyCenter() {
+function EmptyCenter({
+  leading,
+  onBrowseFiles,
+}: {
+  leading?: ReactNode;
+  onBrowseFiles?: () => void;
+}) {
   return (
     <>
-      <div className="flex items-center gap-3 border-divider border-b px-5 py-4">
-        <Icon className="size-5.5" name="files" />
-        <h2 className="t-subtitle translate-y-px truncate">--</h2>
+      <div className="flex h-14 items-center gap-2 border-divider border-b px-4 py-4">
+        {leading ?? (
+          <>
+            <Icon className="size-5.5" name="files" />
+            <h2 className="t-subtitle translate-y-px truncate">--</h2>
+          </>
+        )}
       </div>
       <div className="grid flex-1 place-items-center p-6">
         <div className="flex flex-col items-center gap-3">
           <Icon className="non-scaling-svg size-8" name="files" />
           <p>{m.material_select()}</p>
+          {onBrowseFiles && (
+            <Button
+              iconLeft="files"
+              onClick={onBrowseFiles}
+              size="sm"
+              variant="outline"
+            >
+              {m.material_browse_files()}
+            </Button>
+          )}
         </div>
       </div>
     </>

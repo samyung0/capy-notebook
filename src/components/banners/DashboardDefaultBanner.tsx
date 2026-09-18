@@ -17,10 +17,10 @@ export default function DefaultBanner() {
         </p>
       </div>
       <Icon
-        className="non-scaling-svg absolute -top-3 -right-4 text-tint-accent-1-fg/15"
+        className="absolute -top-3 -right-4 text-tint-accent-1-fg/15"
         name="sparkles"
         size={120}
-        strokeWidth={1.5}
+        strokeWidth={1.3}
       />
     </Card>
   );

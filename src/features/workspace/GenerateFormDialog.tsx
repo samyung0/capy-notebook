@@ -394,6 +394,7 @@ export function GenerateFormDialog({
           <Button
             disabled={pending}
             onClick={() => setOpen(false)}
+            size="lg"
             variant="ghost"
           >
             {m.action_cancel()}
@@ -407,6 +408,7 @@ export function GenerateFormDialog({
             }
             iconLeft={pending ? undefined : 'sparkles'}
             onClick={run}
+            size="lg"
             variant="accent"
           >
             {pending ? <Spinner /> : m.workspace_tab_generate()}

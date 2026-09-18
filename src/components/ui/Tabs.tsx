@@ -22,7 +22,7 @@ export function Tabs({
   return (
     <div
       className={cn(
-        'flex w-full shrink-0 gap-1',
+        'scroll-fade-x flex w-full shrink-0 gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
         bottomBorder && 'inset-shadow-[0_-1px_var(--color-divider)]',
         className
       )}
@@ -33,7 +33,7 @@ export function Tabs({
         return (
           <button
             className={cn(
-              'px-3 py-2 font-semibold text-sm transition-colors',
+              'shrink-0 px-3 py-2 font-semibold text-sm transition-colors',
               bottomBorder && 'border-b-2',
               active
                 ? 'border-action font-bold text-fg'

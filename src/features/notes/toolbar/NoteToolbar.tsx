@@ -534,12 +534,18 @@ export function NoteToolbar({ className }: { className?: string }) {
             <DialogFooter>
               <Button
                 onClick={() => setLinkOpen(false)}
+                size="lg"
                 type="button"
                 variant="ghost-hover"
               >
                 {m.action_cancel()}
               </Button>
-              <Button disabled={!linkUrl.trim()} type="submit" variant="accent">
+              <Button
+                disabled={!linkUrl.trim()}
+                size="lg"
+                type="submit"
+                variant="accent"
+              >
                 {editingLink ? m.action_save() : m.action_apply()}
               </Button>
             </DialogFooter>

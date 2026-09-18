@@ -463,6 +463,8 @@ function localRows(
   });
 }
 
+export type AddSourceMode = 'upload' | 'import' | 'create';
+
 function SourceChooser({
   open,
   onClose,
@@ -473,6 +475,7 @@ function SourceChooser({
   filesLimit,
   filesUsed,
   uploadPolicy,
+  initialMode,
 }: {
   open: boolean;
   onClose: () => void;
@@ -483,8 +486,9 @@ function SourceChooser({
   filesLimit: number;
   filesUsed: number;
   uploadPolicy?: SourceUploadPolicy;
+  initialMode: AddSourceMode;
 }) {
-  const [mode, setMode] = useState('upload');
+  const [mode, setMode] = useState<string>(initialMode);
   const [isPicking, setIsPicking] = useState(false);
   const [googlePickerOpen, setGooglePickerOpen] = useState(false);
   const pickerBusy = useRef(false);
@@ -1615,10 +1619,13 @@ export function AddSourceDialog({
   open,
   onClose,
   workspaceId,
+  initialMode = 'upload',
 }: {
   open: boolean;
   onClose: () => void;
   workspaceId: string;
+  /** Tab to open on: the plus menu lands New file on `create`. */
+  initialMode?: AddSourceMode;
 }) {
   const { data: workspace } = useWorkspace(workspaceId, {
     errorBoundary: false,
@@ -1642,6 +1649,7 @@ export function AddSourceDialog({
         <SourceChooser
           filesLimit={filesLimit}
           filesUsed={filesUsed}
+          initialMode={initialMode}
           inspectionGuard={inspectionGuard}
           onClose={closeAll}
           onSelected={setSelectedSources}

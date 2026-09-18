@@ -439,6 +439,7 @@ export function CollaborationProvider({
                 commentSelection.current = null;
                 setDialogOpen(false);
               }}
+              size="lg"
               variant="ghost-hover"
             >
               {m.action_cancel()}
@@ -446,6 +447,7 @@ export function CollaborationProvider({
             <Button
               disabled={!comment.trim() || createDiscussionIsPending}
               onClick={() => void submitNewComment()}
+              size="lg"
               variant="accent"
             >
               {m.editor_add_comment()}

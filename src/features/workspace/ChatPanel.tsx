@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
 import type React from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Streamdown } from 'streamdown';
 import { api, isApiError } from '@/api/client';
 import { useConversations, useMessages, useUndoEdit } from '@/api/hooks';
@@ -14,17 +14,11 @@ import type {
   UserColor,
 } from '@/api/types';
 import { Button } from '@/components/ui/Button';
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/Dialog';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
-import { Input } from '@/components/ui/Input';
-import { Switch } from '@/components/ui/Switch';
+import { Textarea } from '@/components/ui/TextArea';
 import {
   Tooltip,
   TooltipContent,
@@ -34,6 +28,7 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { userColorPairDark } from '@/lib/userColor';
 import { curateToggleDisabled, curateToggleVisible } from './curateToggle';
+import type { TabAction } from './PanelTabRow';
 import { toolErrorMessage } from './toolErrorMessage';
 import { toChatMessage, useChatStream } from './useChatStream';
 
@@ -384,9 +379,12 @@ export function ChatPanel({
   readOnly,
   onOpenCitation,
   onOpenResource,
+  renderTabRow,
 }: {
   workspaceId: string;
   color?: UserColor;
+  /** Draws the panel's tab row with this chat's own actions (history, new chat). */
+  renderTabRow: (actions: TabAction[]) => ReactNode;
   /** Owner-only: shows the process-changes button under the pending notice. */
   canReprocess?: boolean;
   /** Hides the curate switch: a visitor who cannot write cannot curate. */
@@ -476,115 +474,61 @@ export function ChatPanel({
         } as React.CSSProperties
       }
     >
-      <div className="flex items-center justify-between gap-3 pt-1.5 pb-3 pl-3">
-        {curateToggleVisible({ readOnly }) ? (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <label
+      {renderTabRow([
+        {
+          icon: 'clock',
+          label: m.chat_history(),
+          onClick: () => setHistoryOpen(true),
+        },
+        {
+          disabled: !conversationId,
+          icon: 'newChat',
+          label: m.chat_new(),
+          onClick: openNew,
+        },
+      ])}
+      <Dialog onOpenChange={setHistoryOpen} open={historyOpen}>
+        <DialogContent aria-describedby={undefined} className="max-w-lg">
+          <DialogTitle className="pr-10 pb-4">{m.chat_history()}</DialogTitle>
+          <div className="flex max-h-[60dvh] flex-col gap-1 overflow-y-auto p-1">
+            {conversations?.length ? (
+              conversations.map((c) => (
+                <Button
+                  aria-current={c.id === conversationId ? 'true' : undefined}
                   className={cn(
-                    'flex min-w-0 items-center gap-2 text-sm',
-                    curateDisabled && 'text-fg-muted'
+                    'h-auto w-full shrink-0 justify-start rounded-card px-3 py-3 text-left font-normal',
+                    c.id === conversationId && 'bg-surface-hover-bg'
                   )}
+                  iconLeft="message"
+                  key={c.id}
+                  onClick={() => {
+                    hydratedRef.current = null;
+                    setSelectId(c.id);
+                    setCurate(c.curate);
+                    setHistoryOpen(false);
+                  }}
+                  type="button"
+                  variant="ghost-hover"
                 >
-                  <Switch
-                    checked={curate}
-                    disabled={curateDisabled}
-                    onCheckedChange={setCurate}
-                    size="sm"
-                  />
-                  <span className="truncate">{m.chat_curate()}</span>
-                </label>
-              }
-            />
-            <TooltipContent>
-              {messages.length > 0
-                ? m.chat_curate_locked()
-                : m.chat_curate_hint()}
-            </TooltipContent>
-          </Tooltip>
-        ) : (
-          <span />
-        )}
-        <div className="flex grow-0 items-center">
-          <Dialog onOpenChange={setHistoryOpen} open={historyOpen}>
-            <Tooltip>
-              <DialogTrigger asChild>
-                <TooltipTrigger
-                  render={
-                    <IconButton
-                      className="translate-x-px rounded-r-none bg-(--temp-btn-bg) py-1.5 pl-3.5 text-(--temp-btn-fg) hover:bg-(--temp-btn-bg) hover:brightness-97 disabled:opacity-30"
-                      icon="clock"
-                      label={m.chat_history()}
-                      size="sm"
-                      strokeWidth={1.5}
-                      variant="accent-light"
-                    />
-                  }
-                />
-              </DialogTrigger>
-              <TooltipContent>{m.chat_history()}</TooltipContent>
-            </Tooltip>
-            <DialogContent aria-describedby={undefined} className="max-w-lg">
-              <DialogTitle className="pr-10 pb-4">
-                {m.chat_history()}
-              </DialogTitle>
-              <div className="flex max-h-[60dvh] flex-col gap-1 overflow-y-auto p-1">
-                {conversations?.length ? (
-                  conversations.map((c) => (
-                    <Button
-                      aria-current={
-                        c.id === conversationId ? 'true' : undefined
-                      }
-                      className={cn(
-                        'h-auto w-full shrink-0 justify-start rounded-card px-3 py-3 text-left font-normal',
-                        c.id === conversationId && 'bg-surface-hover-bg'
-                      )}
-                      iconLeft="message"
-                      key={c.id}
-                      onClick={() => {
-                        hydratedRef.current = null;
-                        setSelectId(c.id);
-                        setCurate(c.curate);
-                        setHistoryOpen(false);
-                      }}
-                      type="button"
-                      variant="ghost-hover"
-                    >
-                      <span className="wrap-anywhere min-w-0 flex-1 whitespace-normal">
-                        {c.title || m.chat_untitled()}
-                      </span>
-                      {c.curate && (
-                        <span className="shrink-0 rounded-full bg-tint-info px-2 py-0.5 text-[11px] text-tint-info-fg">
-                          {m.chat_curate()}
-                        </span>
-                      )}
-                      {c.id === conversationId && (
-                        <Icon name="check" size={16} />
-                      )}
-                    </Button>
-                  ))
-                ) : (
-                  <p className="py-8 text-center text-fg-muted text-sm">
-                    {m.chat_no_conversations()}
-                  </p>
-                )}
-              </div>
-            </DialogContent>
-          </Dialog>
-          <IconButton
-            className="rounded-l-none bg-(--temp-btn-bg) py-1.5 pr-2.5 text-(--temp-btn-fg) hover:bg-(--temp-btn-bg) hover:brightness-97 disabled:opacity-30"
-            disabled={!conversationId}
-            icon="plus"
-            label={m.chat_new()}
-            onClick={openNew}
-            size="sm"
-            strokeWidth={1.5}
-            tooltip
-            variant="accent-light"
-          />
-        </div>
-      </div>
+                  <span className="wrap-anywhere min-w-0 flex-1 whitespace-normal">
+                    {c.title || m.chat_untitled()}
+                  </span>
+                  {c.curate && (
+                    <span className="shrink-0 rounded-full bg-tint-info px-2 py-0.5 text-[11px] text-tint-info-fg">
+                      {m.chat_curate()}
+                    </span>
+                  )}
+                  {c.id === conversationId && <Icon name="check" size={16} />}
+                </Button>
+              ))
+            ) : (
+              <p className="py-8 text-center text-fg-muted text-sm">
+                {m.chat_no_conversations()}
+              </p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <div
         className="flex flex-1 flex-col gap-4 self-stretch overflow-auto p-4"
@@ -592,7 +536,10 @@ export function ChatPanel({
       >
         {!messages.length && (
           <div className="m-auto max-w-[80%] text-center">
-            <Icon className="mx-auto mb-2 size-6.5" name="message" />
+            <Icon
+              className="non-scaling-svg mx-auto mb-2 size-6.5"
+              name="message"
+            />
             <p>{m.chat_empty()}</p>
           </div>
         )}
@@ -636,27 +583,67 @@ export function ChatPanel({
       </div>
 
       <div className="grow-0 p-3">
-        {/* TODO: use form? */}
-        <Input
-          actionCallback={streaming ? stop : submit}
-          actionClassName="bg-(--temp-btn-bg) text-(--temp-btn-fg) hover:bg-(--temp-btn-bg) hover:opacity-85"
-          actionIcon={streaming ? 'x' : 'send'}
-          actionLabel={streaming ? m.chat_stop() : m.chat_send()}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              submit();
+        <div className="flex flex-col gap-2 rounded-input border border-line bg-surface px-3 pt-2.5 pb-2 transition-colors focus-within:border-action-accent">
+          <Textarea
+            aria-label={m.chat_placeholder()}
+            className="min-h-6 resize-none rounded-none border-0 bg-transparent px-0 py-0 text-fg placeholder:text-placeholder focus:border-0"
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                submit();
+              }
+            }}
+            placeholder={
+              curate ? m.chat_curate_placeholder() : m.chat_placeholder()
             }
-          }}
-          placeholder={m.chat_placeholder()}
-          size="lg"
-          value={text}
-          // className="min-w-0 flex-1 border-none bg-transparent text-sm text-fg outline-none placeholder:text-placeholder"
-        />
+            rows={1}
+            value={text}
+          />
+          <div className="flex items-center gap-2">
+            {curateToggleVisible({ readOnly }) && (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <span className="inline-flex">
+                      <Button
+                        aria-pressed={curate}
+                        className={cn(
+                          'h-7.5 rounded-full px-2.5 font-semibold text-[13px]',
+                          curate &&
+                            'border-transparent bg-tint-accent-1 text-tint-accent-1-fg hover:bg-tint-accent-1'
+                        )}
+                        disabled={curateDisabled}
+                        iconLeft={curateDisabled ? 'lock' : 'book'}
+                        onClick={() => setCurate((value) => !value)}
+                        size="sm"
+                        variant="outline"
+                      >
+                        {m.chat_curate()}
+                      </Button>
+                    </span>
+                  }
+                />
+                <TooltipContent>
+                  {messages.length > 0
+                    ? m.chat_curate_locked()
+                    : m.chat_curate_hint()}
+                </TooltipContent>
+              </Tooltip>
+            )}
+            <IconButton
+              className="ml-auto bg-(--temp-btn-bg) text-(--temp-btn-fg) hover:bg-(--temp-btn-bg) hover:opacity-85"
+              icon={streaming ? 'x' : 'send'}
+              label={streaming ? m.chat_stop() : m.chat_send()}
+              onClick={streaming ? stop : submit}
+              size="sm"
+              variant="ghost-hover"
+            />
+          </div>
+        </div>
         {/* TODO: update workdings to sth like answer generated may not be accurate etc  */}
         <p className="mt-2 text-center text-[11px] text-fg-muted">
-          {m.chat_grounded()}
+          {curate ? m.chat_curate_grounded() : m.chat_grounded()}
         </p>
       </div>
     </div>

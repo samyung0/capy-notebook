@@ -1,0 +1,2263 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1" name="viewport">
+    <title>Chapter icons · C and D refinements</title>
+    <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      font:
+        14px / 1.5 system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+      color: #24242b;
+      background: #f5f5f3;
+    }
+    main {
+      max-width: 1160px;
+      padding: 28px 22px 40px;
+      margin: auto;
+    }
+    h1 {
+      margin: 0 0 6px;
+      font-size: 23px;
+      letter-spacing: -0.5px;
+    }
+    p {
+      margin: 0 0 16px;
+      color: #60616b;
+    }
+    h2 {
+      display: flex;
+      gap: 9px;
+      align-items: center;
+      margin: 0;
+      font-size: 16px;
+    }
+    .letter {
+      display: inline-grid;
+      place-items: center;
+      width: 25px;
+      height: 25px;
+      font-size: 12px;
+      border: 1px solid #d4d4da;
+      border-radius: 5px;
+    }
+    .tag {
+      padding: 3px 7px;
+      margin-left: auto;
+      font-size: 11px;
+      font-weight: 500;
+      color: #654096;
+      background: #f0e8fb;
+      border-radius: 4px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .card {
+      min-width: 0;
+      padding: 17px;
+      background: white;
+      border: 1px solid #d9d9df;
+      border-radius: 10px;
+    }
+    .card p {
+      min-height: 36px;
+      margin: 10px 0 12px;
+      font-size: 12px;
+    }
+    .specimens {
+      display: flex;
+      gap: 24px;
+      align-items: end;
+      padding: 8px 0 16px;
+    }
+    .sample {
+      display: grid;
+      gap: 6px;
+      justify-items: center;
+      font-size: 10px;
+      color: #666672;
+    }
+    .sample .icon {
+      color: #4c4f69;
+    }
+    .icon {
+      display: block;
+      flex-shrink: 0;
+      width: 16px;
+      height: 16px;
+    }
+    .sample.s24 .icon {
+      width: 24px;
+      height: 24px;
+    }
+    .sample.s40 .icon {
+      width: 40px;
+      height: 40px;
+    }
+    .swatches {
+      display: grid;
+      gap: 9px;
+    }
+    .tree {
+      --ctp-text: #4c4f69;
+      --ctp-red: #d20f39;
+      --ctp-blue: #1e66f5;
+      --ctp-peach: #fe640b;
+      --ctp-mauve: #8839ef;
+      padding: 10px;
+      font-size: 13px;
+      color: var(--ctp-text);
+      background: #eff1f5;
+      border: 1px solid #dce0e8;
+      border-radius: 6px;
+    }
+    .tree.dark {
+      --ctp-text: #cdd6f4;
+      --ctp-red: #f38ba8;
+      --ctp-blue: #89b4fa;
+      --ctp-peach: #fab387;
+      --ctp-mauve: #cba6f7;
+      background: #1e1e2e;
+      border-color: #313244;
+    }
+    .tree-title {
+      display: flex;
+      justify-content: space-between;
+      margin: 0 4px 8px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .tree-title span {
+      font-size: 10px;
+      font-weight: 400;
+      opacity: 0.75;
+    }
+    summary {
+      display: flex;
+      gap: 5px;
+      align-items: center;
+      padding: 6px 4px;
+      font-weight: 600;
+      cursor: pointer;
+      list-style: none;
+      border-radius: 4px;
+    }
+    summary::-webkit-details-marker {
+      display: none;
+    }
+    summary:hover {
+      background: #8882;
+    }
+    summary:focus-visible {
+      outline: 2px solid var(--ctp-mauve);
+      outline-offset: 1px;
+    }
+    summary small {
+      margin-left: auto;
+      font-size: 10px;
+      font-weight: 400;
+      opacity: 0.75;
+    }
+    summary > span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .chevron {
+      flex-shrink: 0;
+      width: 10px;
+      height: 10px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.3;
+    }
+    details[open] > summary .chevron {
+      transform: rotate(90deg);
+    }
+    .children {
+      padding-left: 15px;
+      margin: 0 0 3px 14px;
+      border-left: 1px solid #8884;
+    }
+    .file {
+      display: flex;
+      gap: 7px;
+      align-items: center;
+      min-width: 0;
+      padding: 5px 0;
+      font-size: 12px;
+    }
+    .file span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .opened {
+      display: none;
+    }
+    details[open] > summary .opened {
+      display: block;
+    }
+    details[open] > summary .closed {
+      display: none;
+    }
+    .note {
+      margin: 18px 0 0;
+      font-size: 12px;
+    }
+    footer {
+      margin-top: 20px;
+      font-size: 11px;
+      color: #71717d;
+    }
+    @media (min-width: 1000px) {
+      .swatches {
+        grid-template-columns: 1fr 1fr;
+      }
+      .children {
+        padding-left: 9px;
+        margin-left: 9px;
+      }
+      .file {
+        font-size: 11px;
+      }
+    }
+    @media (max-width: 680px) {
+      main {
+        padding: 20px 14px;
+      }
+      .grid {
+        grid-template-columns: 1fr;
+      }
+      .card p {
+        min-height: 0;
+      }
+    }
+
+    main {
+      max-width: 1200px;
+    }
+    .family {
+      margin: 26px 0 12px;
+      font-size: 18px;
+    }
+    .grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .swatches {
+      grid-template-columns: 1fr;
+    }
+    .letter {
+      flex-shrink: 0;
+      width: 30px;
+    }
+    .specimens {
+      gap: 18px;
+      justify-content: space-between;
+    }
+    .pair {
+      display: flex;
+      gap: 14px;
+    }
+    .pair-label {
+      margin: 0 0 7px;
+      font-size: 10px;
+      color: #70707b;
+    }
+    .sample.s32 .icon {
+      width: 32px;
+      height: 32px;
+    }
+    .sample .icon {
+      --accent: #8839ef;
+    }
+    .tree {
+      --accent: var(--ctp-mauve);
+    }
+    .card h2 {
+      flex-wrap: wrap;
+      font-size: 14px;
+    }
+    .tag {
+      margin-left: 0;
+    }
+    .card p {
+      min-height: 54px;
+    }
+    .reference {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin: 12px 0;
+      font-size: 12px;
+      color: #60616b;
+    }
+    .reference .icon {
+      width: 20px;
+      height: 20px;
+    }
+    .children {
+      padding-left: 15px;
+      margin-left: 14px;
+    }
+    .file {
+      font-size: 12px;
+    }
+    .note {
+      max-width: 850px;
+    }
+    summary {
+      min-height: 31px;
+    }
+    .selected {
+      border-color: #a99bbf;
+    }
+    .reference span {
+      margin-right: 10px;
+    }
+    @media (max-width: 950px) {
+      .grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+    @media (max-width: 640px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+      .card p {
+        min-height: 0;
+      }
+      .specimens {
+        gap: 32px;
+        justify-content: flex-start;
+      }
+    }
+    </style>
+  </head>
+  <body>
+    <svg
+      aria-hidden="true"
+      height="0"
+      style="position:absolute"
+      width="0"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <defs>
+        <symbol id="pdf" viewBox="0 0 16 16">
+          <path
+            d="M2.8 14.34c1.81-1.25 3.02-3.16 3.91-5.5.9-2.33 1.86-4.33 1.44-6.63-.06-.36-.57-.73-.83-.7-1.02.06-.95 1.21-.85 1.9.24 1.71 1.56 3.7 2.84 5.56 1.27 1.87 2.32 2.16 3.78 2.26.5.03 1.25-.14 1.37-.58.77-2.8-9.02-.54-12.28 2.08-.4.33-.86 1-.6 1.46.2.36.87.4 1.23.15h0Z"
+            fill="none"
+            stroke="var(--ctp-red)"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </symbol>
+        <symbol id="markdown" viewBox="0 0 16 16">
+          <path
+            d="m9.25 8.25 2.25 2.25 2.25-2.25M3.5 11V5.5l2.04 3 1.96-3V11m4-.5V5M1.65 2.5h12.7c.59 0 1.15.49 1.15 1v9c0 .51-.56 1-1.15 1H1.65c-.59 0-1.15-.49-1.15-1V3.58c0-.5.56-1.08 1.15-1.08"
+            fill="none"
+            stroke="var(--ctp-sapphire)"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </symbol>
+        <symbol id="ms-powerpoint" viewBox="0 0 16 16">
+          <g
+            fill="none"
+            stroke="var(--ctp-peach)"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path
+              d="M2.5 3.13c0-.77.86-1.63 1.62-1.63h9.76c.76 0 1.62.86 1.62 1.63v9.75c0 .76-.86 1.62-1.62 1.62H4.13c-.77 0-1.63-.86-1.63-1.62"
+            />
+            <path
+              d="M7.5 5.8 11.88 8 7.5 10.2zm-7-.3v5m0-2H2a1.5 1.5 0 000-3H.5"
+            />
+          </g>
+        </symbol>
+        <symbol id="C" viewBox="0 0 16 16">
+          <path
+            d="M8 4v10 M8 4C6 2.5 3.5 2 1.5 2.5v10C4 12 6 12.5 8 14c2-1.5 4-2 6.5-1.5v-10C12.5 2 10 2.5 8 4"
+            fill="none"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </symbol>
+        <symbol id="D" viewBox="0 0 16 16">
+          <path
+            d="M3 2.5v10 M3 4h3 M3 8h3 M3 12h3 M8.5 4h5 M8.5 8h5 M8.5 12h5"
+            fill="none"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </symbol>
+        <symbol id="C1-closed" viewBox="0 0 16 16">
+          <g
+            fill="none"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path
+              d="M12.5 13.5H4a1.5 1.5 0 0 1-1.5-1.5V3A1.5 1.5 0 0 1 4 1.5h8.5v12 M2.5 11.5H12.5"
+            />
+            <path d="M8 1.5v5l1.5-1L11 6.5v-5" />
+          </g>
+        </symbol>
+        <symbol id="C1-open" viewBox="0 0 16 16">
+          <g
+            fill="none"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path
+              d="M8 4v10 M8 4C6 2.7 3.5 2.2 1.5 2.5v10C4 12.2 6 12.7 8 14c2-1.3 4-1.8 6.5-1.5v-10C12.5 2.2 10 2.7 8 4"
+            />
+            <path d="M10.5 3v5l1.25-1L13 8V2.5" />
+          </g>
+        </symbol>
+        <symbol id="C2-closed" viewBox="0 0 16 16">
+          <g
+            fill="none"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path
+              d="M12.5 13.5H4a1.5 1.5 0 0 1-1.5-1.5V3A1.5 1.5 0 0 1 4 1.5h8.5v12 M2.5 11.5H12.5"
+            />
+            <path d="M5 8h3" />
+            <path
+              d="M8 1.5v5l1.5-1L11 6.5v-5"
+              stroke="var(--accent,currentColor)"
+            />
+          </g>
+        </symbol>
+        <symbol id="C2-open" viewBox="0 0 16 16">
+          <g
+            fill="none"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path
+              d="M8 4v10 M8 4C6 2.7 3.5 2.2 1.5 2.5v10C4 12.2 6 12.7 8 14c2-1.3 4-1.8 6.5-1.5v-10C12.5 2.2 10 2.7 8 4"
+            />
+            <path d="M3.5 6l2.5.6 M3.5 9l2.5.6" />
+            <path
+              d="M10.5 3v5l1.25-1L13 8V2.5"
+              stroke="var(--accent,currentColor)"
+            />
+          </g>
+        </symbol>
+        <symbol id="C3-closed" viewBox="0 0 16 16">
+          <g
+            fill="none"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path
+              d="M12.5 11.5H4A1.5 1.5 0 0 1 2.5 10V2.5A1.5 1.5 0 0 1 4 1h8.5v10.5 M2.5 9.5h10 M5 3v4 M8 9.5v5l1.5-1 1.5 1v-5"
+            />
+          </g>
+        </symbol>
+        <symbol id="C3-open" viewBox="0 0 16 16">
+          <g
+            fill="none"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path
+              d="M8 3.5v9 M8 3.5C6 2.2 3.5 1.7 1.5 2v9C4 10.7 6 11.2 8 12.5 M8 3.5c2-1.3 4.5-1.8 6.5-1.5v9H13 M10 10v4.5l1.5-1 1.5 1V10"
+            />
+          </g>
+        </symbol>
+        <symbol id="D1-closed" viewBox="0 0 16 16">
+          <g
+            fill="none"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M2.5 3v8 M2.5 5h11 M2.5 8h8 M2.5 11h10" />
+          </g>
+        </symbol>
+        <symbol id="D1-open" viewBox="0 0 16 16">
+          <g
+            fill="none"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M2.5 1.5v12 M2.5 3.5h11 M2.5 8.5h8 M2.5 13.5h10" />
+          </g>
+        </symbol>
+        <symbol id="D2-closed" viewBox="0 0 16 16">
+          <g
+            fill="none"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M2 2.5v9 M2 4.5h4 M2 10.5h4 M6 3h7.5v3H6z M6 9h7.5v3H6z" />
+          </g>
+        </symbol>
+        <symbol id="D2-open" viewBox="0 0 16 16">
+          <g
+            fill="none"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path
+              d="M2 1.5v11 M2 3h4 M2 8h4 M2 13h4 M6 1.5h7.5v3H6z M6 6.5h7.5v3H6z M6 11.5h7.5v3H6z"
+            />
+          </g>
+        </symbol>
+        <symbol id="D3-closed" viewBox="0 0 16 16">
+          <g
+            fill="none"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path
+              d="M4.5 3H3a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h1.5 M2 4h11.5 M5 7h8.5 M5 10h6"
+            />
+          </g>
+        </symbol>
+        <symbol id="D3-open" viewBox="0 0 16 16">
+          <g
+            fill="none"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path
+              d="M4.5 1.5H3a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h1.5 M2 3h11.5 M5 8h8.5 M5 12h6"
+            />
+          </g>
+        </symbol>
+      </defs>
+    </svg>
+    <main>
+      <h1>Chapter icons · C and D refinements</h1>
+      <p>
+        Three bookmarked books and three tighter outlines. Each has an open and
+        closed drawing. Click a chapter row to compare the states.
+      </p>
+      <div class="reference">
+        <svg
+          aria-hidden="true"
+          class="icon "
+          stroke-width="1.3"
+          viewBox="0 0 16 16"
+        >
+          <use href="#C" />
+        </svg><span>Original C</span
+        ><svg
+          aria-hidden="true"
+          class="icon "
+          stroke-width="1.3"
+          viewBox="0 0 16 16"
+        >
+          <use href="#D" />
+        </svg><span>Original D</span>
+      </div>
+      <h2 class="family">C · Books with bookmarks</h2>
+      <p>
+        Closed cover → open spread. The book itself shows the state, matching
+        the current single-icon toggle.
+      </p>
+      <div class="grid">
+        <section class="card selected">
+          <h2><span class="letter">C1</span>Ribbon bookmark</h2>
+          <p>
+            A plain cover opens into a spread. A small ribbon stays on the right
+            page in both states.
+          </p>
+          <div class="specimens">
+            <div>
+              <div class="pair-label">16px</div>
+              <div class="pair">
+                <div class="sample s16">
+                  <svg
+                    aria-hidden="true"
+                    class="icon "
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C1-closed" />
+                  </svg><span>Closed</span>
+                </div>
+                <div class="sample s16">
+                  <svg
+                    aria-hidden="true"
+                    class="icon "
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C1-open" />
+                  </svg><span>Open</span>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div class="pair-label">32px</div>
+              <div class="pair">
+                <div class="sample s32">
+                  <svg
+                    aria-hidden="true"
+                    class="icon "
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C1-closed" />
+                  </svg><span>Closed</span>
+                </div>
+                <div class="sample s32">
+                  <svg
+                    aria-hidden="true"
+                    class="icon "
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C1-open" />
+                  </svg><span>Open</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="swatches">
+            <div class="tree light">
+              <div class="tree-title">Files <span>Latte</span></div>
+              <details open>
+                <summary>
+                  <svg
+                    aria-hidden="true"
+                    class="icon closed"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C1-closed" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon opened"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C1-open" />
+                  </svg><span>Cell biology</span><small>3</small>
+                </summary>
+                <div class="children">
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#pdf" />
+                    </svg><span>Lecture slides.pdf</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#markdown" />
+                    </svg><span>Key ideas</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#ms-powerpoint" />
+                    </svg><span>Practice questions.pptx</span>
+                  </div>
+                </div>
+              </details>
+              <details>
+                <summary>
+                  <svg
+                    aria-hidden="true"
+                    class="icon closed"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C1-closed" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon opened"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C1-open" />
+                  </svg><span>Genetics</span><small>3</small>
+                </summary>
+                <div class="children">
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#pdf" />
+                    </svg><span>Lecture slides.pdf</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#markdown" />
+                    </svg><span>Key ideas</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#ms-powerpoint" />
+                    </svg><span>Practice questions.pptx</span>
+                  </div>
+                </div>
+              </details>
+            </div>
+            <div class="tree dark">
+              <div class="tree-title">Files <span>Mocha</span></div>
+              <details open>
+                <summary>
+                  <svg
+                    aria-hidden="true"
+                    class="icon closed"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C1-closed" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon opened"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C1-open" />
+                  </svg><span>Cell biology</span><small>3</small>
+                </summary>
+                <div class="children">
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#pdf" />
+                    </svg><span>Lecture slides.pdf</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#markdown" />
+                    </svg><span>Key ideas</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#ms-powerpoint" />
+                    </svg><span>Practice questions.pptx</span>
+                  </div>
+                </div>
+              </details>
+              <details>
+                <summary>
+                  <svg
+                    aria-hidden="true"
+                    class="icon closed"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C1-closed" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon opened"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C1-open" />
+                  </svg><span>Genetics</span><small>3</small>
+                </summary>
+                <div class="children">
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#pdf" />
+                    </svg><span>Lecture slides.pdf</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#markdown" />
+                    </svg><span>Key ideas</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#ms-powerpoint" />
+                    </svg><span>Practice questions.pptx</span>
+                  </div>
+                </div>
+              </details>
+            </div>
+          </div>
+          <div class="note"><span class="tag">My pick</span></div>
+        </section>
+        <section class="card ">
+          <h2><span class="letter">C2</span>Bookmark accent</h2>
+          <p>
+            A colored ribbon is easier to separate from the book outline at
+            16px. The cover includes a short title line.
+          </p>
+          <div class="specimens">
+            <div>
+              <div class="pair-label">16px</div>
+              <div class="pair">
+                <div class="sample s16">
+                  <svg
+                    aria-hidden="true"
+                    class="icon "
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C2-closed" />
+                  </svg><span>Closed</span>
+                </div>
+                <div class="sample s16">
+                  <svg
+                    aria-hidden="true"
+                    class="icon "
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C2-open" />
+                  </svg><span>Open</span>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div class="pair-label">32px</div>
+              <div class="pair">
+                <div class="sample s32">
+                  <svg
+                    aria-hidden="true"
+                    class="icon "
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C2-closed" />
+                  </svg><span>Closed</span>
+                </div>
+                <div class="sample s32">
+                  <svg
+                    aria-hidden="true"
+                    class="icon "
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C2-open" />
+                  </svg><span>Open</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="swatches">
+            <div class="tree light">
+              <div class="tree-title">Files <span>Latte</span></div>
+              <details open>
+                <summary>
+                  <svg
+                    aria-hidden="true"
+                    class="icon closed"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C2-closed" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon opened"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C2-open" />
+                  </svg><span>Cell biology</span><small>3</small>
+                </summary>
+                <div class="children">
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#pdf" />
+                    </svg><span>Lecture slides.pdf</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#markdown" />
+                    </svg><span>Key ideas</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#ms-powerpoint" />
+                    </svg><span>Practice questions.pptx</span>
+                  </div>
+                </div>
+              </details>
+              <details>
+                <summary>
+                  <svg
+                    aria-hidden="true"
+                    class="icon closed"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C2-closed" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon opened"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C2-open" />
+                  </svg><span>Genetics</span><small>3</small>
+                </summary>
+                <div class="children">
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#pdf" />
+                    </svg><span>Lecture slides.pdf</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#markdown" />
+                    </svg><span>Key ideas</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#ms-powerpoint" />
+                    </svg><span>Practice questions.pptx</span>
+                  </div>
+                </div>
+              </details>
+            </div>
+            <div class="tree dark">
+              <div class="tree-title">Files <span>Mocha</span></div>
+              <details open>
+                <summary>
+                  <svg
+                    aria-hidden="true"
+                    class="icon closed"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C2-closed" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon opened"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C2-open" />
+                  </svg><span>Cell biology</span><small>3</small>
+                </summary>
+                <div class="children">
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#pdf" />
+                    </svg><span>Lecture slides.pdf</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#markdown" />
+                    </svg><span>Key ideas</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#ms-powerpoint" />
+                    </svg><span>Practice questions.pptx</span>
+                  </div>
+                </div>
+              </details>
+              <details>
+                <summary>
+                  <svg
+                    aria-hidden="true"
+                    class="icon closed"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C2-closed" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon opened"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C2-open" />
+                  </svg><span>Genetics</span><small>3</small>
+                </summary>
+                <div class="children">
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#pdf" />
+                    </svg><span>Lecture slides.pdf</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#markdown" />
+                    </svg><span>Key ideas</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#ms-powerpoint" />
+                    </svg><span>Practice questions.pptx</span>
+                  </div>
+                </div>
+              </details>
+            </div>
+          </div>
+        </section>
+        <section class="card ">
+          <h2><span class="letter">C3</span>Bookmark tail</h2>
+          <p>
+            The ribbon hangs below the pages. A simpler mark inside the book,
+            but the tail makes the silhouette taller.
+          </p>
+          <div class="specimens">
+            <div>
+              <div class="pair-label">16px</div>
+              <div class="pair">
+                <div class="sample s16">
+                  <svg
+                    aria-hidden="true"
+                    class="icon "
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C3-closed" />
+                  </svg><span>Closed</span>
+                </div>
+                <div class="sample s16">
+                  <svg
+                    aria-hidden="true"
+                    class="icon "
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C3-open" />
+                  </svg><span>Open</span>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div class="pair-label">32px</div>
+              <div class="pair">
+                <div class="sample s32">
+                  <svg
+                    aria-hidden="true"
+                    class="icon "
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C3-closed" />
+                  </svg><span>Closed</span>
+                </div>
+                <div class="sample s32">
+                  <svg
+                    aria-hidden="true"
+                    class="icon "
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C3-open" />
+                  </svg><span>Open</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="swatches">
+            <div class="tree light">
+              <div class="tree-title">Files <span>Latte</span></div>
+              <details open>
+                <summary>
+                  <svg
+                    aria-hidden="true"
+                    class="icon closed"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C3-closed" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon opened"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C3-open" />
+                  </svg><span>Cell biology</span><small>3</small>
+                </summary>
+                <div class="children">
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#pdf" />
+                    </svg><span>Lecture slides.pdf</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#markdown" />
+                    </svg><span>Key ideas</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#ms-powerpoint" />
+                    </svg><span>Practice questions.pptx</span>
+                  </div>
+                </div>
+              </details>
+              <details>
+                <summary>
+                  <svg
+                    aria-hidden="true"
+                    class="icon closed"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C3-closed" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon opened"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C3-open" />
+                  </svg><span>Genetics</span><small>3</small>
+                </summary>
+                <div class="children">
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#pdf" />
+                    </svg><span>Lecture slides.pdf</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#markdown" />
+                    </svg><span>Key ideas</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#ms-powerpoint" />
+                    </svg><span>Practice questions.pptx</span>
+                  </div>
+                </div>
+              </details>
+            </div>
+            <div class="tree dark">
+              <div class="tree-title">Files <span>Mocha</span></div>
+              <details open>
+                <summary>
+                  <svg
+                    aria-hidden="true"
+                    class="icon closed"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C3-closed" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon opened"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C3-open" />
+                  </svg><span>Cell biology</span><small>3</small>
+                </summary>
+                <div class="children">
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#pdf" />
+                    </svg><span>Lecture slides.pdf</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#markdown" />
+                    </svg><span>Key ideas</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#ms-powerpoint" />
+                    </svg><span>Practice questions.pptx</span>
+                  </div>
+                </div>
+              </details>
+              <details>
+                <summary>
+                  <svg
+                    aria-hidden="true"
+                    class="icon closed"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C3-closed" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon opened"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#C3-open" />
+                  </svg><span>Genetics</span><small>3</small>
+                </summary>
+                <div class="children">
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#pdf" />
+                    </svg><span>Lecture slides.pdf</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#markdown" />
+                    </svg><span>Key ideas</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#ms-powerpoint" />
+                    </svg><span>Practice questions.pptx</span>
+                  </div>
+                </div>
+              </details>
+            </div>
+          </div>
+        </section>
+      </div>
+      <h2 class="family">D · Connected outlines</h2>
+      <p>
+        The center gap is gone. A chevron shows expansion alongside the changing
+        outline.
+      </p>
+      <div class="grid">
+        <section class="card selected">
+          <h2><span class="letter">D1</span>Continuous branches</h2>
+          <p>
+            Closes the empty gap from D. Every entry connects directly to the
+            spine; expanded rows spread apart.
+          </p>
+          <div class="specimens">
+            <div>
+              <div class="pair-label">16px</div>
+              <div class="pair">
+                <div class="sample s16">
+                  <svg
+                    aria-hidden="true"
+                    class="icon "
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D1-closed" />
+                  </svg><span>Closed</span>
+                </div>
+                <div class="sample s16">
+                  <svg
+                    aria-hidden="true"
+                    class="icon "
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D1-open" />
+                  </svg><span>Open</span>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div class="pair-label">32px</div>
+              <div class="pair">
+                <div class="sample s32">
+                  <svg
+                    aria-hidden="true"
+                    class="icon "
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D1-closed" />
+                  </svg><span>Closed</span>
+                </div>
+                <div class="sample s32">
+                  <svg
+                    aria-hidden="true"
+                    class="icon "
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D1-open" />
+                  </svg><span>Open</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="swatches">
+            <div class="tree light">
+              <div class="tree-title">Files <span>Latte</span></div>
+              <details open>
+                <summary>
+                  <svg aria-hidden="true" class="chevron" viewBox="0 0 12 12">
+                    <path d="m4 2 4 4-4 4" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon closed"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D1-closed" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon opened"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D1-open" />
+                  </svg><span>Cell biology</span><small>3</small>
+                </summary>
+                <div class="children">
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#pdf" />
+                    </svg><span>Lecture slides.pdf</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#markdown" />
+                    </svg><span>Key ideas</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#ms-powerpoint" />
+                    </svg><span>Practice questions.pptx</span>
+                  </div>
+                </div>
+              </details>
+              <details>
+                <summary>
+                  <svg aria-hidden="true" class="chevron" viewBox="0 0 12 12">
+                    <path d="m4 2 4 4-4 4" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon closed"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D1-closed" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon opened"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D1-open" />
+                  </svg><span>Genetics</span><small>3</small>
+                </summary>
+                <div class="children">
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#pdf" />
+                    </svg><span>Lecture slides.pdf</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#markdown" />
+                    </svg><span>Key ideas</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#ms-powerpoint" />
+                    </svg><span>Practice questions.pptx</span>
+                  </div>
+                </div>
+              </details>
+            </div>
+            <div class="tree dark">
+              <div class="tree-title">Files <span>Mocha</span></div>
+              <details open>
+                <summary>
+                  <svg aria-hidden="true" class="chevron" viewBox="0 0 12 12">
+                    <path d="m4 2 4 4-4 4" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon closed"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D1-closed" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon opened"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D1-open" />
+                  </svg><span>Cell biology</span><small>3</small>
+                </summary>
+                <div class="children">
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#pdf" />
+                    </svg><span>Lecture slides.pdf</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#markdown" />
+                    </svg><span>Key ideas</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#ms-powerpoint" />
+                    </svg><span>Practice questions.pptx</span>
+                  </div>
+                </div>
+              </details>
+              <details>
+                <summary>
+                  <svg aria-hidden="true" class="chevron" viewBox="0 0 12 12">
+                    <path d="m4 2 4 4-4 4" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon closed"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D1-closed" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon opened"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D1-open" />
+                  </svg><span>Genetics</span><small>3</small>
+                </summary>
+                <div class="children">
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#pdf" />
+                    </svg><span>Lecture slides.pdf</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#markdown" />
+                    </svg><span>Key ideas</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#ms-powerpoint" />
+                    </svg><span>Practice questions.pptx</span>
+                  </div>
+                </div>
+              </details>
+            </div>
+          </div>
+          <div class="note"><span class="tag">D pick</span></div>
+        </section>
+        <section class="card ">
+          <h2><span class="letter">D2</span>Connected entries</h2>
+          <p>
+            Short branches end in compact bars. More visibly a group of items,
+            with a busier outline at small sizes.
+          </p>
+          <div class="specimens">
+            <div>
+              <div class="pair-label">16px</div>
+              <div class="pair">
+                <div class="sample s16">
+                  <svg
+                    aria-hidden="true"
+                    class="icon "
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D2-closed" />
+                  </svg><span>Closed</span>
+                </div>
+                <div class="sample s16">
+                  <svg
+                    aria-hidden="true"
+                    class="icon "
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D2-open" />
+                  </svg><span>Open</span>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div class="pair-label">32px</div>
+              <div class="pair">
+                <div class="sample s32">
+                  <svg
+                    aria-hidden="true"
+                    class="icon "
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D2-closed" />
+                  </svg><span>Closed</span>
+                </div>
+                <div class="sample s32">
+                  <svg
+                    aria-hidden="true"
+                    class="icon "
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D2-open" />
+                  </svg><span>Open</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="swatches">
+            <div class="tree light">
+              <div class="tree-title">Files <span>Latte</span></div>
+              <details open>
+                <summary>
+                  <svg aria-hidden="true" class="chevron" viewBox="0 0 12 12">
+                    <path d="m4 2 4 4-4 4" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon closed"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D2-closed" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon opened"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D2-open" />
+                  </svg><span>Cell biology</span><small>3</small>
+                </summary>
+                <div class="children">
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#pdf" />
+                    </svg><span>Lecture slides.pdf</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#markdown" />
+                    </svg><span>Key ideas</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#ms-powerpoint" />
+                    </svg><span>Practice questions.pptx</span>
+                  </div>
+                </div>
+              </details>
+              <details>
+                <summary>
+                  <svg aria-hidden="true" class="chevron" viewBox="0 0 12 12">
+                    <path d="m4 2 4 4-4 4" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon closed"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D2-closed" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon opened"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D2-open" />
+                  </svg><span>Genetics</span><small>3</small>
+                </summary>
+                <div class="children">
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#pdf" />
+                    </svg><span>Lecture slides.pdf</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#markdown" />
+                    </svg><span>Key ideas</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#ms-powerpoint" />
+                    </svg><span>Practice questions.pptx</span>
+                  </div>
+                </div>
+              </details>
+            </div>
+            <div class="tree dark">
+              <div class="tree-title">Files <span>Mocha</span></div>
+              <details open>
+                <summary>
+                  <svg aria-hidden="true" class="chevron" viewBox="0 0 12 12">
+                    <path d="m4 2 4 4-4 4" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon closed"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D2-closed" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon opened"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D2-open" />
+                  </svg><span>Cell biology</span><small>3</small>
+                </summary>
+                <div class="children">
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#pdf" />
+                    </svg><span>Lecture slides.pdf</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#markdown" />
+                    </svg><span>Key ideas</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#ms-powerpoint" />
+                    </svg><span>Practice questions.pptx</span>
+                  </div>
+                </div>
+              </details>
+              <details>
+                <summary>
+                  <svg aria-hidden="true" class="chevron" viewBox="0 0 12 12">
+                    <path d="m4 2 4 4-4 4" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon closed"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D2-closed" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon opened"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D2-open" />
+                  </svg><span>Genetics</span><small>3</small>
+                </summary>
+                <div class="children">
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#pdf" />
+                    </svg><span>Lecture slides.pdf</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#markdown" />
+                    </svg><span>Key ideas</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#ms-powerpoint" />
+                    </svg><span>Practice questions.pptx</span>
+                  </div>
+                </div>
+              </details>
+            </div>
+          </div>
+        </section>
+        <section class="card ">
+          <h2><span class="letter">D3</span>Section spine</h2>
+          <p>
+            A rounded spine holds a heading and two indented lines. Less like a
+            wiring diagram, closer to a chapter outline.
+          </p>
+          <div class="specimens">
+            <div>
+              <div class="pair-label">16px</div>
+              <div class="pair">
+                <div class="sample s16">
+                  <svg
+                    aria-hidden="true"
+                    class="icon "
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D3-closed" />
+                  </svg><span>Closed</span>
+                </div>
+                <div class="sample s16">
+                  <svg
+                    aria-hidden="true"
+                    class="icon "
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D3-open" />
+                  </svg><span>Open</span>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div class="pair-label">32px</div>
+              <div class="pair">
+                <div class="sample s32">
+                  <svg
+                    aria-hidden="true"
+                    class="icon "
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D3-closed" />
+                  </svg><span>Closed</span>
+                </div>
+                <div class="sample s32">
+                  <svg
+                    aria-hidden="true"
+                    class="icon "
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D3-open" />
+                  </svg><span>Open</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="swatches">
+            <div class="tree light">
+              <div class="tree-title">Files <span>Latte</span></div>
+              <details open>
+                <summary>
+                  <svg aria-hidden="true" class="chevron" viewBox="0 0 12 12">
+                    <path d="m4 2 4 4-4 4" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon closed"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D3-closed" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon opened"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D3-open" />
+                  </svg><span>Cell biology</span><small>3</small>
+                </summary>
+                <div class="children">
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#pdf" />
+                    </svg><span>Lecture slides.pdf</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#markdown" />
+                    </svg><span>Key ideas</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#ms-powerpoint" />
+                    </svg><span>Practice questions.pptx</span>
+                  </div>
+                </div>
+              </details>
+              <details>
+                <summary>
+                  <svg aria-hidden="true" class="chevron" viewBox="0 0 12 12">
+                    <path d="m4 2 4 4-4 4" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon closed"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D3-closed" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon opened"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D3-open" />
+                  </svg><span>Genetics</span><small>3</small>
+                </summary>
+                <div class="children">
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#pdf" />
+                    </svg><span>Lecture slides.pdf</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#markdown" />
+                    </svg><span>Key ideas</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#ms-powerpoint" />
+                    </svg><span>Practice questions.pptx</span>
+                  </div>
+                </div>
+              </details>
+            </div>
+            <div class="tree dark">
+              <div class="tree-title">Files <span>Mocha</span></div>
+              <details open>
+                <summary>
+                  <svg aria-hidden="true" class="chevron" viewBox="0 0 12 12">
+                    <path d="m4 2 4 4-4 4" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon closed"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D3-closed" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon opened"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D3-open" />
+                  </svg><span>Cell biology</span><small>3</small>
+                </summary>
+                <div class="children">
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#pdf" />
+                    </svg><span>Lecture slides.pdf</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#markdown" />
+                    </svg><span>Key ideas</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#ms-powerpoint" />
+                    </svg><span>Practice questions.pptx</span>
+                  </div>
+                </div>
+              </details>
+              <details>
+                <summary>
+                  <svg aria-hidden="true" class="chevron" viewBox="0 0 12 12">
+                    <path d="m4 2 4 4-4 4" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon closed"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D3-closed" />
+                  </svg><svg
+                    aria-hidden="true"
+                    class="icon opened"
+                    stroke-width="1.3"
+                    viewBox="0 0 16 16"
+                  >
+                    <use href="#D3-open" />
+                  </svg><span>Genetics</span><small>3</small>
+                </summary>
+                <div class="children">
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#pdf" />
+                    </svg><span>Lecture slides.pdf</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#markdown" />
+                    </svg><span>Key ideas</span>
+                  </div>
+                  <div class="file">
+                    <svg
+                      aria-hidden="true"
+                      class="icon "
+                      stroke-width="1.3"
+                      viewBox="0 0 16 16"
+                    >
+                      <use href="#ms-powerpoint" />
+                    </svg><span>Practice questions.pptx</span>
+                  </div>
+                </div>
+              </details>
+            </div>
+          </div>
+        </section>
+      </div>
+      <p class="note">
+        I favor C1 for the reading association and D1 for clarity at small
+        sizes. C2 adds a useful color cue if C1's bookmark gets lost. All icons
+        use a 16 × 16 grid and a 1.3 stroke; enlarged pairs show the drawing
+        details.
+      </p>
+      <footer>
+        Original chapter SVG drawings. Existing file glyphs are Catppuccin
+        vscode-icons, MIT, © Catppuccin. Comparison only; no application
+        changes.
+      </footer>
+    </main>
+  </body>
+</html>

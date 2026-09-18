@@ -43,7 +43,9 @@ const menuItemVariants = cva(
 );
 
 export interface MenuItem {
+  closeOnSelect?: boolean;
   danger?: boolean;
+  description?: string;
   disabled?: boolean;
   icon?: IconName;
   label: string;
@@ -100,10 +102,20 @@ export function Menu({
             className={menuItemVariants({ danger: it.danger })}
             disabled={it.disabled}
             key={i}
-            onSelect={() => it.onClick?.()}
+            onSelect={(event) => {
+              if (it.closeOnSelect === false) event.preventDefault();
+              it.onClick?.();
+            }}
           >
             {it.icon && <Icon className="-translate-y-px" name={it.icon} />}
-            <span>{it.label}</span>
+            <span className="flex flex-col items-start">
+              <span>{it.label}</span>
+              {it.description && (
+                <span className="font-normal text-fg-muted text-xs">
+                  {it.description}
+                </span>
+              )}
+            </span>
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

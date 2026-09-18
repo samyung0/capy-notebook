@@ -1,0 +1,3767 @@
+<!doctype html>
+<html data-theme="latte" lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta content="width=device-width,initial-scale=1" name="viewport">
+    <title>Workspace page: two-column layout mocks</title>
+    <style>
+    :root {
+      --page: #f7f7f7;
+      --page-hover: #e6e9ea;
+      --canvas: #e9ebec;
+      --surface: #fff;
+      --surface-hover: #f2f3f3;
+      --surface-dark: #e6e9ea;
+      --strip: #eff0f1;
+      --fg: #222;
+      --fg-2: #4b4b4b;
+      --fg-muted: #6b6b6b;
+      --placeholder: #7a7a7a;
+      --link: #5b4aa8;
+      --line: #d6d6d6;
+      --line-strong: #afafaf;
+      --divider: #e6e6e6;
+      --action: #222;
+      --action-fg: #fff;
+      --accent: #8c7bd9;
+      --accent-fg: #fff;
+      --tint-accent: #ece6f6;
+      --tint-accent-fg: #5b4aa8;
+      --tint-info: #e4ecf8;
+      --tint-info-fg: #2e6bb0;
+      --shadow-card:
+        0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.05);
+      --shadow-pop: 0 10px 34px rgba(0, 0, 0, 0.14);
+      --c-pdf: #d20f39;
+      --c-md: #1e66f5;
+      --c-txt: #6c6f85;
+      --c-png: #8839ef;
+      --c-aud: #ea76cb;
+      --c-ppt: #fe640b;
+      --c-quiz: #df8e1d;
+      --c-map: #ea76cb;
+      --c-note: #1e66f5;
+      --c-cards: #fe640b;
+      --c-diag: #40a02b;
+    }
+    [data-theme="mocha"] {
+      --page: #121513;
+      --page-hover: #20241f;
+      --canvas: #171a18;
+      --surface: #1c201e;
+      --surface-hover: #262b28;
+      --surface-dark: #2b302c;
+      --strip: #232725;
+      --fg: #f1f3f0;
+      --fg-2: #b4b8b3;
+      --fg-muted: #888d88;
+      --placeholder: #6a6f6a;
+      --link: #b3a6ea;
+      --line: #2c302d;
+      --line-strong: #3a403c;
+      --divider: #262b28;
+      --action: #f1f3f0;
+      --action-fg: #1c201e;
+      --accent: #9d8ee0;
+      --accent-fg: #1a1626;
+      --tint-accent: #322a5c;
+      --tint-accent-fg: #cfc4f2;
+      --tint-info: #142634;
+      --tint-info-fg: #9bcdf6;
+      --shadow-card:
+        0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.45);
+      --shadow-pop: 0 10px 34px rgba(0, 0, 0, 0.6);
+      --c-pdf: #f38ba8;
+      --c-md: #89b4fa;
+      --c-txt: #a6adc8;
+      --c-png: #cba6f7;
+      --c-aud: #f5c2e7;
+      --c-ppt: #fab387;
+      --c-quiz: #f9e2af;
+      --c-map: #f5c2e7;
+      --c-note: #89b4fa;
+      --c-cards: #fab387;
+      --c-diag: #a6e3a1;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    html {
+      background: var(--page);
+    }
+    body {
+      margin: 0;
+      font-family:
+        Fustat, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-size: 15px;
+      font-weight: 500;
+      -webkit-font-smoothing: antialiased;
+      line-height: 1.5;
+      color: var(--fg);
+      background: var(--page);
+    }
+    svg {
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .wrap {
+      max-width: 1152px;
+      padding: 28px 16px 80px;
+      margin: 0 auto;
+    }
+    h1 {
+      margin: 0 0 6px;
+      font-size: 28px;
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+    }
+    h2 {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin: 44px 0 8px;
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+    h3 {
+      margin: 22px 0 6px;
+      font-size: 16px;
+      font-weight: 700;
+    }
+    p {
+      margin: 0 0 10px;
+      color: var(--fg-2);
+    }
+    ul,
+    ol {
+      padding-left: 20px;
+      margin: 0 0 10px;
+      color: var(--fg-2);
+    }
+    li {
+      margin: 3px 0;
+    }
+    b,
+    strong {
+      color: var(--fg);
+    }
+    .meta {
+      margin-bottom: 14px;
+      font-size: 13px;
+      color: var(--fg-muted);
+    }
+    .top {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      align-items: flex-start;
+      justify-content: space-between;
+    }
+    table {
+      width: 100%;
+      margin: 6px 0 10px;
+      font-size: 14px;
+      border-collapse: collapse;
+    }
+    td,
+    th {
+      padding: 6px 10px;
+      vertical-align: top;
+      color: var(--fg-2);
+      text-align: left;
+      border-bottom: 1px solid var(--divider);
+    }
+    th {
+      font-weight: 700;
+      color: var(--fg);
+    }
+    .letter {
+      display: inline-grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--action-fg);
+      background: var(--action);
+      border-radius: 11px;
+    }
+    .verdict {
+      padding: 2px 0 2px 12px;
+      margin: 12px 0 0;
+      color: var(--fg-2);
+      border-left: 3px solid var(--accent);
+    }
+    .switch,
+    .themeswitch {
+      display: inline-flex;
+      gap: 3px;
+      padding: 3px;
+      background: var(--surface-dark);
+      border-radius: 12px;
+    }
+    .switch button,
+    .themeswitch button {
+      padding: 8px 12px;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      line-height: 1;
+      color: var(--fg-muted);
+      cursor: pointer;
+      background: transparent;
+      border: 0;
+      border-radius: 9px;
+    }
+    .switch button.on,
+    .themeswitch button.on {
+      color: var(--fg);
+      background: var(--surface);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+    }
+    .switch {
+      margin: 10px 0 10px;
+    }
+    .themeswitch {
+      display: none;
+    }
+    .js .themeswitch {
+      display: inline-flex;
+    }
+    .state {
+      margin: 0 0 14px;
+    }
+    .state figcaption {
+      margin: 6px 0 6px;
+      font-size: 13px;
+      color: var(--fg-muted);
+    }
+    .js .state figcaption {
+      display: none;
+    }
+    .js .state[hidden] {
+      display: none;
+    }
+    .frame-wrap {
+      --s: 0.7778;
+      position: relative;
+      width: 100%;
+      aspect-ratio: 1440 / 900;
+      overflow: hidden;
+      background: var(--page);
+      border-radius: 14px;
+      box-shadow: inset 0 0 0 1px var(--line);
+    }
+    .legend {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 6px 22px;
+      padding: 0;
+      margin: 8px 0 0;
+      list-style: none;
+    }
+    .legend li {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      font-size: 14px;
+      color: var(--fg-2);
+    }
+    .legend b {
+      flex: none;
+      width: 22px;
+      height: 22px;
+      font-family: system-ui, sans-serif;
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 22px;
+      color: var(--action-fg);
+      text-align: center;
+      background: var(--action);
+      border-radius: 50%;
+    }
+    .states {
+      margin-top: 6px;
+    }
+    .detail {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin: 8px 0;
+    }
+    .detail figure {
+      min-width: 0;
+      padding: 14px 0 0;
+      margin: 0;
+      background: var(--surface);
+      border-radius: 18px;
+      box-shadow: var(--shadow-card);
+    }
+    .detail figcaption {
+      padding: 0 16px 10px;
+      font-size: 13px;
+      color: var(--fg-muted);
+    }
+    .detail .composer {
+      margin: 0 12px 6px;
+    }
+    .detail .menu {
+      position: static;
+      margin: 0 12px 12px;
+      border: 1px solid var(--line);
+      box-shadow: none;
+    }
+    .detail .tree {
+      padding: 0 12px 12px;
+    }
+    .detail figure.pbox {
+      display: flex;
+      flex-direction: column;
+      height: 210px;
+      padding: 0;
+      overflow: hidden;
+      border-radius: 28px;
+    }
+    .detail figure.pbox .tree {
+      flex: 1;
+      padding: 8px 12px;
+    }
+    .detail figure.pbox .msgs {
+      padding: 14px 16px 0;
+    }
+    .detail figure.pbox figcaption {
+      padding: 8px 16px 12px;
+      margin-top: auto;
+    }
+    .bp-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      align-items: flex-start;
+      margin: 10px 0 4px;
+    }
+    .bp-row figure {
+      flex: 1 1 300px;
+      min-width: 0;
+      margin: 0;
+    }
+    .bp-row figcaption {
+      margin: 6px 0 0;
+      font-size: 13px;
+      color: var(--fg-muted);
+    }
+    details.aside {
+      margin-top: 44px;
+    }
+    details.aside summary {
+      padding: 8px 0;
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--fg-muted);
+      cursor: pointer;
+    }
+    details.aside h2 {
+      margin-top: 12px;
+    }
+    /* inside the frames */
+    .frame,
+    .detail {
+      font-family:
+        Fustat, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-size: 14px;
+      font-weight: 500;
+      line-height: 1.45;
+      color: var(--fg);
+    }
+    .frame {
+      position: absolute;
+      top: 0;
+      left: 0;
+      display: flex;
+      gap: 6px;
+      width: var(--w, 1440px);
+      height: var(--h, 900px);
+      padding: 10px;
+      background: var(--page);
+      transform: scale(var(--s));
+      transform-origin: 0 0;
+    }
+    .frame.one {
+      flex-direction: column;
+      gap: 10px;
+    }
+    .frame.tight {
+      gap: 8px;
+      padding: 6px;
+    }
+    .frame.one .bar {
+      width: 100%;
+      border-radius: 24px;
+    }
+    .frame.tight .bar {
+      padding: 6px 8px 6px 10px;
+    }
+    .frame svg,
+    .detail svg {
+      display: block;
+      flex: none;
+    }
+    .col {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-width: 0;
+      min-height: 0;
+    }
+    .hrow {
+      display: flex;
+      flex: 1;
+      gap: 6px;
+      min-width: 0;
+      min-height: 0;
+    }
+    .grow {
+      flex: 1;
+      min-width: 0;
+      min-height: 0;
+    }
+    .panel {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+      background: var(--surface);
+      border-radius: 28px;
+      box-shadow: var(--shadow-card);
+    }
+    .bar {
+      display: flex;
+      flex: none;
+      gap: 10px;
+      align-items: center;
+      height: 60px;
+      padding: 6px 12px 6px 16px;
+      background: var(--surface-dark);
+      border-radius: 28px;
+    }
+    .ib {
+      position: relative;
+      display: grid;
+      flex: none;
+      place-items: center;
+      width: 40px;
+      height: 40px;
+      color: var(--fg);
+      border-radius: 12px;
+    }
+    .ib svg {
+      width: 20px;
+      height: 20px;
+    }
+    .ib.sm {
+      width: 34px;
+      height: 34px;
+    }
+    .ib.sm svg {
+      width: 17px;
+      height: 17px;
+    }
+    .ib.dark {
+      color: var(--action-fg);
+      background: var(--action);
+    }
+    .ib.muted {
+      color: var(--fg-muted);
+    }
+    .ib .dot {
+      position: absolute;
+      top: 9px;
+      right: 9px;
+      width: 7px;
+      height: 7px;
+      background: var(--accent);
+      border-radius: 50%;
+    }
+    .pill-user {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      padding: 4px 12px 4px 4px;
+      margin-left: auto;
+      font-weight: 700;
+      white-space: nowrap;
+      background: var(--surface);
+      border-radius: 999px;
+    }
+    .pill-user svg {
+      width: 16px;
+      height: 16px;
+      color: var(--fg-muted);
+    }
+    .avatar {
+      display: grid;
+      place-items: center;
+      width: 38px;
+      height: 38px;
+      font-size: 15px;
+      font-weight: 800;
+      color: #222;
+      background: #f4c878;
+      border-radius: 50%;
+    }
+    .vh {
+      display: flex;
+      flex: none;
+      gap: 8px;
+      align-items: center;
+      height: 56px;
+      padding: 0 20px;
+      border-bottom: 1px solid var(--divider);
+    }
+    .vh h2 {
+      display: block;
+      margin: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: 0;
+      white-space: nowrap;
+    }
+    .fi {
+      flex: none;
+      width: 16px;
+      height: 16px;
+    }
+    .c-pdf {
+      color: var(--c-pdf);
+    }
+    .c-md {
+      color: var(--c-md);
+    }
+    .c-txt {
+      color: var(--c-txt);
+    }
+    .c-png {
+      color: var(--c-png);
+    }
+    .c-aud {
+      color: var(--c-aud);
+    }
+    .c-ppt {
+      color: var(--c-ppt);
+    }
+    .c-quiz {
+      color: var(--c-quiz);
+    }
+    .c-map {
+      color: var(--c-map);
+    }
+    .c-note {
+      color: var(--c-note);
+    }
+    .c-cards {
+      color: var(--c-cards);
+    }
+    .c-diag {
+      color: var(--c-diag);
+    }
+    .vbody {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+    }
+    .canvas {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 28px 32px 60px;
+      background: var(--canvas);
+    }
+    .slide {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 3%;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      padding: 4.5% 6%;
+      overflow: hidden;
+      color: #222;
+      background: #fff;
+      border-radius: 4px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.14);
+    }
+    .s-title {
+      font-size: 2.5em;
+      font-weight: 800;
+      line-height: 1.15;
+      color: #2b2540;
+      letter-spacing: -0.02em;
+    }
+    .frame.one .s-title {
+      font-size: 2em;
+    }
+    .s-cols {
+      display: flex;
+      flex: 1;
+      gap: 6%;
+      min-height: 0;
+    }
+    .s-text {
+      display: flex;
+      flex: 1;
+      flex-direction: column;
+      gap: 14px;
+      padding-top: 10px;
+    }
+    .s-text i {
+      display: block;
+      height: 12px;
+      background: #dcd8ea;
+      border-radius: 6px;
+    }
+    .s-text i.short {
+      width: 60%;
+    }
+    .s-fig {
+      display: grid;
+      flex: 1;
+      place-items: center;
+      background: linear-gradient(135deg, #ece6f6, #cfc4f2);
+      border-radius: 16px;
+    }
+    .cellpic {
+      width: 58%;
+      aspect-ratio: 1;
+      background: radial-gradient(
+        circle at 42% 42%,
+        #fff 0 17%,
+        #b3a6ea 18% 22%,
+        #e7f6ee 23% 60%,
+        #8c7bd9 61% 65%,
+        transparent 66%
+      );
+      border-radius: 50%;
+    }
+    .s-foot {
+      display: flex;
+      justify-content: space-between;
+      font-size: 1em;
+      color: #8a869a;
+    }
+    .slidenav {
+      position: absolute;
+      bottom: 16px;
+      left: 50%;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      padding: 6px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      background: var(--surface);
+      border-radius: 999px;
+      box-shadow: var(--shadow-card);
+      transform: translateX(-50%);
+    }
+    .slidenav svg {
+      width: 16px;
+      height: 16px;
+    }
+    .wsmenu {
+      display: inline-flex;
+      flex: none;
+      gap: 7px;
+      align-items: center;
+      height: 36px;
+      padding: 0 8px 0 6px;
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+      white-space: nowrap;
+      border-radius: 12px;
+    }
+    .wsmenu.open {
+      background: var(--surface-hover);
+    }
+    .wsmenu .ws {
+      width: 24px;
+      height: 24px;
+    }
+    .wsmenu svg.chev {
+      width: 14px;
+      height: 14px;
+      color: var(--fg-muted);
+    }
+    .sep {
+      padding: 0 2px;
+      font-weight: 600;
+      color: var(--line-strong);
+    }
+    .ws {
+      flex: none;
+      width: 28px;
+      height: 28px;
+    }
+    .h1 {
+      filter: hue-rotate(70deg);
+    }
+    .h2 {
+      filter: hue-rotate(140deg);
+    }
+    .h3 {
+      filter: hue-rotate(200deg);
+    }
+    .h4 {
+      filter: hue-rotate(300deg);
+    }
+    .tabrow {
+      display: flex;
+      flex: none;
+      align-items: center;
+      padding: 8px 12px 0 12px;
+      box-shadow: inset 0 -1px var(--divider);
+    }
+    .tabs {
+      display: flex;
+      flex: 1;
+      gap: 4px;
+      min-width: 0;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .tabs::-webkit-scrollbar {
+      display: none;
+    }
+    .tabs.fade {
+      -webkit-mask-image: linear-gradient(
+        to right,
+        #000 calc(100% - 28px),
+        transparent
+      );
+      mask-image: linear-gradient(
+        to right,
+        #000 calc(100% - 28px),
+        transparent
+      );
+    }
+    .tabs > span {
+      flex: none;
+    }
+    .tabs > span {
+      padding: 8px 12px 9px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--fg-muted);
+      border-bottom: 2px solid transparent;
+    }
+    .tabs > span.on {
+      font-weight: 700;
+      color: var(--fg);
+      border-color: var(--action);
+    }
+    .acts {
+      display: flex;
+      flex: none;
+      gap: 2px;
+      align-items: center;
+    }
+    .tabrow .acts {
+      margin-bottom: 6px;
+    }
+    .tabrow.hdr {
+      align-items: center;
+      height: 48px;
+      padding: 0 12px;
+    }
+    .tabrow.hdr .acts {
+      margin-bottom: 0;
+    }
+    .ttl {
+      padding-left: 6px;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    .tstrip {
+      display: flex;
+      flex: none;
+      gap: 4px;
+      align-items: flex-end;
+      height: 50px;
+      padding: 0 12px 0 16px;
+      background: var(--strip);
+      box-shadow: inset 0 -1px var(--divider);
+    }
+    .ftab {
+      position: relative;
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      height: 36px;
+      padding: 0 13px;
+      font-weight: 700;
+      color: var(--fg-muted);
+      white-space: nowrap;
+      background: var(--surface);
+      border-radius: 12px 12px 0 0;
+      box-shadow: inset 0 -1px var(--divider);
+    }
+    .ftab svg {
+      width: 18px;
+      height: 18px;
+    }
+    .ftab.on {
+      z-index: 1;
+      height: 44px;
+      padding: 0 18px 0 16px;
+      margin: 0 10px 0 0;
+      color: var(--fg);
+      box-shadow: none;
+    }
+    .ftab.on::before,
+    .ftab.on::after {
+      position: absolute;
+      bottom: 0;
+      width: 12px;
+      height: 12px;
+      content: "";
+    }
+    .ftab.on::before {
+      left: -12px;
+      background: radial-gradient(
+        circle at 0 0,
+        transparent 12px,
+        var(--surface) 12.5px
+      );
+    }
+    .ftab.on::after {
+      right: -12px;
+      background: radial-gradient(
+        circle at 100% 0,
+        transparent 12px,
+        var(--surface) 12.5px
+      );
+    }
+    .tstrip .acts {
+      margin-bottom: 8px;
+    }
+    .label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--fg-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .tree {
+      display: flex;
+      flex: 1;
+      flex-direction: column;
+      min-height: 0;
+      padding: 8px 12px;
+      overflow: hidden;
+    }
+    .tree .label {
+      padding: 12px 8px 6px;
+    }
+    .ch {
+      display: flex;
+      gap: 7px;
+      align-items: center;
+      padding: 6px 6px;
+      font-weight: 700;
+      border-radius: 12px;
+    }
+    .ch .fi {
+      width: 15px;
+      height: 15px;
+    }
+    .ch .fi.cv {
+      width: 13px;
+      height: 13px;
+    }
+    .chap {
+      color: var(--fg-2);
+    }
+    .cv {
+      color: var(--fg-muted);
+    }
+    .cnt {
+      padding-right: 4px;
+      margin-left: auto;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--fg-muted);
+    }
+    .row {
+      display: flex;
+      gap: 7px;
+      align-items: center;
+      padding: 6px 8px;
+      margin-left: 18px;
+      border-radius: 12px;
+    }
+    .row span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .row.active {
+      font-weight: 700;
+      background: var(--surface-hover);
+    }
+    .row .fi {
+      width: 15px;
+      height: 15px;
+    }
+    .btn {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      height: 34px;
+      padding: 0 12px;
+      font-size: 13.5px;
+      font-weight: 600;
+      white-space: nowrap;
+      border-radius: 12px;
+    }
+    .btn svg {
+      width: 16px;
+      height: 16px;
+    }
+    .btn.dark {
+      color: var(--action-fg);
+      background: var(--action);
+    }
+    .btn.outline {
+      color: var(--fg);
+      border: 1px solid var(--line);
+    }
+    .btn.ghost {
+      color: var(--fg);
+    }
+    .btn.sm {
+      gap: 8px;
+      height: 32px;
+      padding: 0 10px;
+      font-size: 13px;
+    }
+    .btn.xs {
+      height: 30px;
+      padding: 0 10px;
+      font-size: 12.5px;
+    }
+    .menu {
+      position: absolute;
+      z-index: 6;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 6px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: var(--shadow-pop);
+    }
+    .mi {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      padding: 8px 10px;
+      font-weight: 600;
+      white-space: nowrap;
+      border-radius: 12px;
+    }
+    .mi svg {
+      width: 16px;
+      height: 16px;
+      color: var(--fg-muted);
+    }
+    .mi .ws {
+      width: 22px;
+      height: 22px;
+    }
+    .mi.cur {
+      background: var(--surface-hover);
+    }
+    .mi .chk {
+      margin-left: auto;
+      color: var(--fg);
+    }
+    .mdiv {
+      height: 1px;
+      margin: 4px 6px;
+      background: var(--divider);
+    }
+    .mfoot {
+      display: flex;
+      align-items: center;
+      padding: 2px 0 0;
+    }
+    .msgs {
+      display: flex;
+      flex: 1;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
+      padding: 16px;
+      overflow: hidden;
+    }
+    .mu {
+      max-width: 85%;
+      padding: 10px 14px;
+      margin-left: auto;
+      background: var(--page);
+      border-radius: 14px 4px 14px 14px;
+    }
+    .ma {
+      max-width: 92%;
+      padding: 10px 14px 4px;
+      margin-right: auto;
+    }
+    .cites {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .cite {
+      display: inline-flex;
+      gap: 4px;
+      align-items: center;
+      padding: 2px 8px;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--tint-info-fg);
+      background: var(--tint-info);
+      border-radius: 999px;
+    }
+    .cite svg {
+      width: 12px;
+      height: 12px;
+    }
+    .cite em {
+      font-style: normal;
+      opacity: 0.7;
+    }
+    .mdl {
+      margin-top: 6px;
+      font-size: 11px;
+      color: var(--fg-muted);
+    }
+    .chat-empty {
+      max-width: 80%;
+      margin: auto;
+      text-align: center;
+    }
+    .chat-empty svg {
+      width: 26px;
+      height: 26px;
+      margin: 0 auto 8px;
+    }
+    .composer {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 12px 12px 10px;
+      margin: 0 12px 8px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+    }
+    .composer .ph {
+      min-height: 24px;
+      color: var(--placeholder);
+    }
+    .composer .tools {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .pill {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      height: 30px;
+      padding: 0 10px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--fg-2);
+      white-space: nowrap;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+    }
+    .pill svg {
+      width: 15px;
+      height: 15px;
+    }
+    .pill.on {
+      color: var(--tint-accent-fg);
+      background: var(--tint-accent);
+      border-color: transparent;
+    }
+    .pill.locked {
+      opacity: 0.5;
+    }
+    .send {
+      display: grid;
+      flex: none;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      margin-left: auto;
+      color: var(--tint-accent-fg);
+      background: var(--tint-accent);
+      border-radius: 12px;
+    }
+    .send svg {
+      width: 16px;
+      height: 16px;
+    }
+    .fine {
+      padding: 0 12px 12px;
+      margin: 0;
+      font-size: 11px;
+      color: var(--fg-muted);
+      text-align: center;
+    }
+    .tiles {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      padding: 16px;
+    }
+    .tile {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: center;
+      justify-content: center;
+      height: 100px;
+      font-weight: 600;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+    }
+    .tile svg {
+      width: 22px;
+      height: 22px;
+    }
+    .toolpill {
+      position: absolute;
+      bottom: 16px;
+      left: 50%;
+      z-index: 2;
+      display: flex;
+      gap: 2px;
+      padding: 4px;
+      white-space: nowrap;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      box-shadow: var(--shadow-pop);
+      transform: translateX(-50%);
+    }
+    .toolpill span {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      height: 38px;
+      padding: 0 14px;
+      font-weight: 700;
+      border-radius: 999px;
+    }
+    .toolpill svg {
+      width: 17px;
+      height: 17px;
+    }
+    .scrim {
+      position: absolute;
+      inset: 0;
+      z-index: 3;
+      background: rgba(0, 0, 0, 0.38);
+    }
+    .drawer {
+      position: absolute;
+      right: 8px;
+      bottom: 8px;
+      left: 8px;
+      z-index: 4;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--surface);
+      border-radius: 24px;
+      box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.2);
+    }
+    .handle {
+      display: grid;
+      flex: none;
+      place-items: center;
+      height: 16px;
+    }
+    .handle i {
+      display: block;
+      width: 100px;
+      height: 6px;
+      background: var(--line);
+      border-radius: 999px;
+    }
+    .co {
+      position: absolute;
+      z-index: 7;
+      width: 26px;
+      height: 26px;
+      font-family: system-ui, sans-serif;
+      font-size: 13px;
+      font-weight: 800;
+      line-height: 26px;
+      color: var(--action-fg);
+      text-align: center;
+      background: var(--action);
+      border-radius: 50%;
+      box-shadow: 0 0 0 3px var(--page);
+    }
+    @media (max-width: 640px) {
+      .wrap {
+        padding: 20px 12px 60px;
+      }
+      h1 {
+        font-size: 24px;
+      }
+      h2 {
+        font-size: 20px;
+      }
+    }
+    </style>
+  </head>
+  <body>
+    <svg
+      aria-hidden="true"
+      style="position:absolute;width:0;height:0;overflow:hidden"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <defs>
+        <linearGradient id="wg" x1="0" x2="1" y1="0" y2="1">
+          <stop offset="0" stop-color="#cfc4f2" />
+          <stop offset="1" stop-color="#5b4aa8" />
+        </linearGradient>
+      </defs>
+      <symbol id="i-archive" viewBox="0 0 24 24">
+        <path
+          d="M10.0001 17V7C10.0001 5.11438 10.0001 4.17157 9.41427 3.58579C8.82849 3 7.88568 3 6.00005 3C4.11444 3 3.17163 3 2.58584 3.58578C2.00006 4.17157 2.00005 5.11437 2.00004 6.99998L2 17C1.99999 18.8856 1.99999 19.8284 2.58577 20.4142C3.17156 21 4.11438 21 6.00003 21C7.88567 21 8.82849 21 9.41427 20.4142C10.0001 19.8284 10.0001 18.8856 10.0001 17Z"
+        />
+        <path
+          d="M21.4558 15.7091L19.0473 7.19224C18.572 5.51165 18.3343 4.67135 17.6838 4.2617C17.6312 4.22861 17.5772 4.19796 17.5218 4.16986C16.8358 3.82199 15.9877 4.04691 14.2916 4.49674C12.5529 4.95783 11.6836 5.18838 11.2632 5.84738C11.2293 5.90053 11.198 5.95524 11.1693 6.01134C10.8134 6.70684 11.057 7.5682 11.5442 9.2909L13.9527 17.8078C14.428 19.4884 14.6657 20.3287 15.3162 20.7383C15.3688 20.7714 15.4228 20.802 15.4782 20.8301C16.1642 21.178 17.0123 20.9531 18.7084 20.5033C20.4471 20.0422 21.3164 19.8116 21.7368 19.1526C21.7707 19.0995 21.802 19.0448 21.8307 18.9887C22.1866 18.2932 21.943 17.4318 21.4558 15.7091Z"
+        />
+        <path d="M2 7H10" />
+        <path d="M12 9.00019L19 7" />
+        <path
+          d="M6.125 17H6M6.25 17C6.25 17.1381 6.13807 17.25 6 17.25C5.86193 17.25 5.75 17.1381 5.75 17C5.75 16.8619 5.86193 16.75 6 16.75C6.13807 16.75 6.25 16.8619 6.25 17Z"
+        />
+        <path
+          d="M17.7307 16.75H17.6057M17.8557 16.75C17.8557 16.8881 17.7437 17 17.6057 17C17.4676 17 17.3557 16.8881 17.3557 16.75C17.3557 16.6119 17.4676 16.5 17.6057 16.5C17.7437 16.5 17.8557 16.6119 17.8557 16.75Z"
+        />
+      </symbol>
+      <symbol id="i-panel-left" viewBox="0 0 24 24">
+        <path
+          d="M13 3H11C7.22876 3 5.34315 3 4.17157 4.17157C3 5.34315 3 7.22876 3 11V13C3 16.7712 3 18.6569 4.17157 19.8284C5.34315 21 7.22876 21 11 21H13C16.7712 21 18.6569 21 19.8284 19.8284C21 18.6569 21 16.7712 21 13V11C21 7.22876 21 5.34315 19.8284 4.17157C18.6569 3 16.7712 3 13 3Z"
+        />
+        <path d="M9 3V21" />
+      </symbol>
+      <symbol id="i-down" viewBox="0 0 24 24">
+        <path d="M18 9.00005C18 9.00005 13.5811 15 12 15C10.4188 15 6 9 6 9" />
+      </symbol>
+      <symbol id="i-right" viewBox="0 0 24 24">
+        <path d="M9.00005 18C9.00005 18 15 13.5811 15 12C15 10.4188 9 6 9 6" />
+      </symbol>
+      <symbol id="i-back" viewBox="0 0 24 24">
+        <path d="M15 18C15 18 9.00001 13.5811 9 12C8.99999 10.4188 15 6 15 6" />
+      </symbol>
+      <symbol id="i-collapse" viewBox="0 0 24 24">
+        <path
+          d="M15 6.00002C15 6.00002 17.2095 8.99999 18 9C18.7906 9.00001 21 6 21 6"
+        />
+        <path d="M15 18C15 18 17.2095 15 18 15C18.7906 15 21 18 21 18" />
+        <path d="M11 6H3" />
+        <path d="M11 12H3" />
+        <path d="M11 18H3" />
+      </symbol>
+      <symbol id="i-plus-circle" viewBox="0 0 24 24">
+        <path d="M12 8V16M16 12H8" />
+        <circle cx="12" cy="12" r="10" />
+      </symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24">
+        <path d="M12 4V20M20 12H4" />
+      </symbol>
+      <symbol id="i-gear" viewBox="0 0 24 24">
+        <path
+          d="M21.3175 7.14139L20.8239 6.28479C20.4506 5.63696 20.264 5.31305 19.9464 5.18388C19.6288 5.05472 19.2696 5.15664 18.5513 5.36048L17.3311 5.70418C16.8725 5.80994 16.3913 5.74994 15.9726 5.53479L15.6357 5.34042C15.2766 5.11043 15.0004 4.77133 14.8475 4.37274L14.5136 3.37536C14.294 2.71534 14.1842 2.38533 13.9228 2.19657C13.6615 2.00781 13.3143 2.00781 12.6199 2.00781H11.5051C10.8108 2.00781 10.4636 2.00781 10.2022 2.19657C9.94085 2.38533 9.83106 2.71534 9.61149 3.37536L9.27753 4.37274C9.12465 4.77133 8.84845 5.11043 8.48937 5.34042L8.15249 5.53479C7.73374 5.74994 7.25259 5.80994 6.79398 5.70418L5.57375 5.36048C4.85541 5.15664 4.49625 5.05472 4.17867 5.18388C3.86109 5.31305 3.67445 5.63696 3.30115 6.28479L2.80757 7.14139C2.45766 7.74864 2.2827 8.05227 2.31666 8.37549C2.35061 8.69871 2.58483 8.95918 3.05326 9.48012L4.0843 10.6328C4.3363 10.9518 4.51521 11.5078 4.51521 12.0077C4.51521 12.5078 4.33636 13.0636 4.08433 13.3827L3.05326 14.5354C2.58483 15.0564 2.35062 15.3168 2.31666 15.6401C2.2827 15.9633 2.45766 16.2669 2.80757 16.8741L3.30114 17.7307C3.67443 18.3785 3.86109 18.7025 4.17867 18.8316C4.49625 18.9608 4.85542 18.8589 5.57377 18.655L6.79394 18.3113C7.25263 18.2055 7.73387 18.2656 8.15267 18.4808L8.4895 18.6752C8.84851 18.9052 9.12464 19.2442 9.2775 19.6428L9.61149 20.6403C9.83106 21.3003 9.94085 21.6303 10.2022 21.8191C10.4636 22.0078 10.8108 22.0078 11.5051 22.0078H12.6199C13.3143 22.0078 13.6615 22.0078 13.9228 21.8191C14.1842 21.6303 14.294 21.3003 14.5136 20.6403L14.8476 19.6428C15.0004 19.2442 15.2765 18.9052 15.6356 18.6752L15.9724 18.4808C16.3912 18.2656 16.8724 18.2055 17.3311 18.3113L18.5513 18.655C19.2696 18.8589 19.6288 18.9608 19.9464 18.8316C20.264 18.7025 20.4506 18.3785 20.8239 17.7307L21.3175 16.8741C21.6674 16.2669 21.8423 15.9633 21.8084 15.6401C21.7744 15.3168 21.5402 15.0564 21.0718 14.5354L20.0407 13.3827C19.7887 13.0636 19.6098 12.5078 19.6098 12.0077C19.6098 11.5078 19.7888 10.9518 20.0407 10.6328L21.0718 9.48012C21.5402 8.95918 21.7744 8.69871 21.8084 8.37549C21.8423 8.05227 21.6674 7.74864 21.3175 7.14139Z"
+        />
+        <path
+          d="M15.5195 12C15.5195 13.933 13.9525 15.5 12.0195 15.5C10.0865 15.5 8.51953 13.933 8.51953 12C8.51953 10.067 10.0865 8.5 12.0195 8.5C13.9525 8.5 15.5195 10.067 15.5195 12Z"
+        />
+      </symbol>
+      <symbol id="i-search" viewBox="0 0 24 24">
+        <path d="M17 17L21 21" />
+        <path
+          d="M19 11C19 6.58172 15.4183 3 11 3C6.58172 3 3 6.58172 3 11C3 15.4183 6.58172 19 11 19C15.4183 19 19 15.4183 19 11Z"
+        />
+      </symbol>
+      <symbol id="i-bell" viewBox="0 0 24 24">
+        <path
+          d="M16 18C16 20.2091 14.2091 22 12 22C9.79086 22 8 20.2091 8 18"
+        />
+        <path
+          d="M4.43654 18H19.5625C20.2903 18 20.6542 18 20.8648 17.8951C21.274 17.6913 21.4929 17.2359 21.3964 16.789C21.3468 16.559 21.1194 16.2749 20.6648 15.7066L20.4951 15.4944C20.0392 14.9246 19.8113 14.6397 19.6184 14.3409C19.0187 13.4119 18.6477 12.354 18.5356 11.254C18.4995 10.9002 18.4995 10.5353 18.4995 9.8056V8.5C18.4995 8.03572 18.4995 7.80358 18.4867 7.60758C18.2898 4.60304 15.8965 2.20977 12.892 2.01285C12.696 2 12.4638 2 11.9995 2C11.5353 2 11.3031 2 11.1071 2.01285C8.10258 2.20977 5.70931 4.60304 5.51239 7.60758C5.49954 7.80358 5.49954 8.03572 5.49954 8.5V9.8056C5.49954 10.5353 5.49954 10.9002 5.46349 11.254C5.35143 12.354 4.98035 13.4119 4.38067 14.3409C4.18779 14.6397 3.95985 14.9246 3.50401 15.4944L3.33427 15.7066C2.87964 16.2749 2.65233 16.559 2.60268 16.789C2.50621 17.2359 2.72509 17.6913 3.13431 17.8951C3.3449 18 3.70878 18 4.43654 18Z"
+        />
+      </symbol>
+      <symbol id="i-chat" viewBox="0 0 24 24">
+        <path d="M8.5 14.5H15.5M8.5 9.5H12" />
+        <path
+          d="M14.1706 20.8905C18.3536 20.6125 21.6856 17.2332 21.9598 12.9909C22.0134 12.1607 22.0134 11.3009 21.9598 10.4707C21.6856 6.22838 18.3536 2.84913 14.1706 2.57107C12.7435 2.47621 11.2536 2.47641 9.8294 2.57107C5.64639 2.84913 2.31441 6.22838 2.04024 10.4707C1.98659 11.3009 1.98659 12.1607 2.04024 12.9909C2.1401 14.536 2.82343 15.9666 3.62791 17.1746C4.09501 18.0203 3.78674 19.0758 3.30021 19.9978C2.94941 20.6626 2.77401 20.995 2.91484 21.2351C3.05568 21.4752 3.37026 21.4829 3.99943 21.4982C5.24367 21.5285 6.08268 21.1757 6.74868 20.6846C7.1264 20.4061 7.31527 20.2668 7.44544 20.2508C7.5756 20.2348 7.83177 20.3403 8.34401 20.5513C8.8044 20.7409 9.33896 20.8579 9.8294 20.8905C11.2536 20.9852 12.7435 20.9854 14.1706 20.8905Z"
+        />
+      </symbol>
+      <symbol id="i-spark" viewBox="0 0 24 24">
+        <path
+          d="M15 2L15.5387 4.39157C15.9957 6.42015 17.5798 8.00431 19.6084 8.46127L22 9L19.6084 9.53873C17.5798 9.99569 15.9957 11.5798 15.5387 13.6084L15 16L14.4613 13.6084C14.0043 11.5798 12.4202 9.99569 10.3916 9.53873L8 9L10.3916 8.46127C12.4201 8.00431 14.0043 6.42015 14.4613 4.39158L15 2Z"
+        />
+        <path
+          d="M7 12L7.38481 13.7083C7.71121 15.1572 8.84275 16.2888 10.2917 16.6152L12 17L10.2917 17.3848C8.84275 17.7112 7.71121 18.8427 7.38481 20.2917L7 22L6.61519 20.2917C6.28879 18.8427 5.15725 17.7112 3.70827 17.3848L2 17L3.70827 16.6152C5.15725 16.2888 6.28879 15.1573 6.61519 13.7083L7 12Z"
+        />
+      </symbol>
+      <symbol id="i-files" viewBox="0 0 24 24">
+        <path
+          d="M13 2.5V3C13 5.82843 13 7.24264 13.8787 8.12132C14.7574 9 16.1716 9 19 9H19.5M20 10.6569V14C20 17.7712 20 19.6569 18.8284 20.8284C17.6569 22 15.7712 22 12 22C8.22876 22 6.34315 22 5.17157 20.8284C4 19.6569 4 17.7712 4 14V9.45584C4 6.21082 4 4.58831 4.88607 3.48933C5.06508 3.26731 5.26731 3.06508 5.48933 2.88607C6.58831 2 8.21082 2 11.4558 2C12.1614 2 12.5141 2 12.8372 2.11401C12.9044 2.13772 12.9702 2.165 13.0345 2.19575C13.3436 2.34355 13.593 2.593 14.0919 3.09188L18.8284 7.82843C19.4065 8.40649 19.6955 8.69552 19.8478 9.06306C20 9.4306 20 9.83935 20 10.6569Z"
+        />
+      </symbol>
+      <symbol id="i-file" viewBox="0 0 24 24">
+        <path
+          d="M13 2.5V3C13 5.82843 13 7.24264 13.8787 8.12132C14.7574 9 16.1716 9 19 9H19.5M20 10.6569V14C20 17.7712 20 19.6569 18.8284 20.8284C17.6569 22 15.7712 22 12 22C8.22876 22 6.34315 22 5.17157 20.8284C4 19.6569 4 17.7712 4 14V9.45584C4 6.21082 4 4.58831 4.88607 3.48933C5.06508 3.26731 5.26731 3.06508 5.48933 2.88607C6.58831 2 8.21082 2 11.4558 2C12.1614 2 12.5141 2 12.8372 2.11401C12.9044 2.13772 12.9702 2.165 13.0345 2.19575C13.3436 2.34355 13.593 2.593 14.0919 3.09188L18.8284 7.82843C19.4065 8.40649 19.6955 8.69552 19.8478 9.06306C20 9.4306 20 9.83935 20 10.6569Z"
+        />
+      </symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="10" />
+        <path d="M12 8V12L14 14" />
+      </symbol>
+      <symbol id="i-max" viewBox="0 0 24 24">
+        <path
+          d="M16.4999 3.26621C17.3443 3.25421 20.1408 2.67328 20.7337 3.26621C21.3266 3.85913 20.7457 6.65559 20.7337 7.5M20.5059 3.49097L13.5021 10.4961"
+        />
+        <path
+          d="M3.26636 16.5001C3.25436 17.3445 2.67343 20.141 3.26636 20.7339C3.85928 21.3268 6.65574 20.7459 7.50015 20.7339M10.502 13.4976L3.49824 20.5027"
+        />
+      </symbol>
+      <symbol id="i-dots-v" viewBox="0 0 24 24">
+        <path
+          d="M11.9967 12.5V12M11.9967 6.5V6M11.9967 18.5V18M12.9967 12.5C12.9967 11.9477 12.549 11.5 11.9967 11.5C11.4444 11.5 10.9967 11.9477 10.9967 12.5C10.9967 13.0523 11.4444 13.5 11.9967 13.5C12.549 13.5 12.9967 13.0523 12.9967 12.5ZM12.9967 6.5C12.9967 5.94772 12.549 5.5 11.9967 5.5C11.4444 5.5 10.9967 5.94772 10.9967 6.5C10.9967 7.05228 11.4444 7.5 11.9967 7.5C12.549 7.5 12.9967 7.05228 12.9967 6.5ZM12.9967 18.5C12.9967 17.9477 12.549 17.5 11.9967 17.5C11.4444 17.5 10.9967 17.9477 10.9967 18.5C10.9967 19.0523 11.4444 19.5 11.9967 19.5C12.549 19.5 12.9967 19.0523 12.9967 18.5Z"
+        />
+      </symbol>
+      <symbol id="i-note" viewBox="0 0 24 24">
+        <path
+          d="M16.4249 4.60509L17.4149 3.6151C18.2351 2.79497 19.5648 2.79497 20.3849 3.6151C21.205 4.43524 21.205 5.76493 20.3849 6.58507L19.3949 7.57506M16.4249 4.60509L9.76558 11.2644C9.25807 11.772 8.89804 12.4078 8.72397 13.1041L8 16L10.8959 15.276C11.5922 15.102 12.228 14.7419 12.7356 14.2344L19.3949 7.57506M16.4249 4.60509L19.3949 7.57506"
+        />
+        <path
+          d="M18.9999 13.5C18.9999 16.7875 18.9999 18.4312 18.092 19.5376C17.9258 19.7401 17.7401 19.9258 17.5375 20.092C16.4312 21 14.7874 21 11.4999 21H11C7.22876 21 5.34316 21 4.17159 19.8284C3.00003 18.6569 3 16.7712 3 13V12.5C3 9.21252 3 7.56879 3.90794 6.46244C4.07417 6.2599 4.2599 6.07417 4.46244 5.90794C5.56879 5 7.21252 5 10.5 5"
+        />
+      </symbol>
+      <symbol id="i-file-plus" viewBox="0 0 24 24">
+        <path
+          d="M13 20.8268V22H14.1734C14.5827 22 14.7874 22 14.9715 21.9238C15.1555 21.8475 15.3003 21.7028 15.5897 21.4134L20.4133 16.5894C20.6864 16.3164 20.8229 16.1799 20.8959 16.0327C21.0347 15.7525 21.0347 15.4236 20.8959 15.1434C20.8229 14.9961 20.6864 14.8596 20.4133 14.5866C20.1403 14.3136 20.0038 14.1771 19.8565 14.1041C19.5763 13.9653 19.2473 13.9653 18.9671 14.1041C18.8198 14.1771 18.6833 14.3136 18.4103 14.5866L18.4103 14.5866L13.5867 19.4106C13.2972 19.7 13.1525 19.8447 13.0762 20.0287C13 20.2128 13 20.4174 13 20.8268Z"
+        />
+        <path
+          d="M19 11C19 11 19 9.4306 18.8478 9.06306C18.6955 8.69552 18.4065 8.40649 17.8284 7.82843L13.0919 3.09188C12.593 2.593 12.3436 2.34355 12.0345 2.19575C11.9702 2.165 11.9044 2.13772 11.8372 2.11401C11.5141 2 11.1614 2 10.4558 2C7.21082 2 5.58831 2 4.48933 2.88607C4.26731 3.06508 4.06508 3.26731 3.88607 3.48933C3 4.58831 3 6.21082 3 9.45584V14C3 17.7712 3 19.6569 4.17157 20.8284C5.23467 21.8915 6.8857 21.99 10 21.9991M12 2.5V3C12 5.82843 12 7.24264 12.8787 8.12132C13.7574 9 15.1716 9 18 9H18.5"
+        />
+      </symbol>
+      <symbol id="i-upload" viewBox="0 0 24 24">
+        <path
+          d="M2.99994 17C2.99994 17.93 2.99994 18.395 3.10216 18.7765C3.37956 19.8117 4.18821 20.6204 5.22348 20.8978C5.60498 21 6.06997 21 6.99994 21L16.9999 21C17.9299 21 18.3949 21 18.7764 20.8978C19.8117 20.6204 20.6203 19.8117 20.8977 18.7765C20.9999 18.395 20.9999 17.93 20.9999 17"
+        />
+        <path
+          d="M16.5 7.49993C16.5 7.49993 13.1858 2.99997 12 2.99996C10.8141 2.99995 7.50002 7.49996 7.50002 7.49996M12 3.99996V16"
+        />
+      </symbol>
+      <symbol id="i-book" viewBox="0 0 24 24">
+        <path
+          d="M5.33333 3.00001C7.79379 2.99657 10.1685 3.88709 12 5.5V21C10.1685 19.3871 7.79379 18.4966 5.33333 18.5C3.77132 18.5 2.99032 18.5 2.64526 18.2792C2.4381 18.1466 2.35346 18.0619 2.22086 17.8547C2 17.5097 2 16.8941 2 15.6629V6.40322C2 4.97543 2 4.26154 2.54874 3.68286C3.09748 3.10418 3.65923 3.07432 4.78272 3.0146C4.965 3.00491 5.14858 3.00001 5.33333 3.00001Z"
+        />
+        <path
+          d="M18.6667 3.00001C16.2062 2.99657 13.8315 3.88709 12 5.5V21C13.8315 19.3871 16.2062 18.4966 18.6667 18.5C20.2287 18.5 21.0097 18.5 21.3547 18.2792C21.5619 18.1466 21.6465 18.0619 21.7791 17.8547C22 17.5097 22 16.8941 22 15.6629V6.40322C22 4.97543 22 4.26154 21.4513 3.68286C20.9025 3.10418 20.3408 3.07432 19.2173 3.0146C19.035 3.00491 18.8514 3.00001 18.6667 3.00001Z"
+        />
+      </symbol>
+      <symbol id="i-lock" viewBox="0 0 24 24">
+        <path d="M12 16.5V14.5" />
+        <path
+          d="M4.2678 18.8447C4.49268 20.515 5.87612 21.8235 7.55965 21.9009C8.97627 21.966 10.4153 22 12 22C13.5847 22 15.0237 21.966 16.4403 21.9009C18.1239 21.8235 19.5073 20.515 19.7322 18.8447C19.8789 17.7547 20 16.6376 20 15.5C20 14.3624 19.8789 13.2453 19.7322 12.1553C19.5073 10.485 18.1239 9.17649 16.4403 9.09909C15.0237 9.03397 13.5847 9 12 9C10.4153 9 8.97627 9.03397 7.55965 9.09909C5.87612 9.17649 4.49268 10.485 4.2678 12.1553C4.12104 13.2453 3.99999 14.3624 3.99999 15.5C3.99999 16.6376 4.12104 17.7547 4.2678 18.8447Z"
+        />
+        <path
+          d="M7.5 9V6.5C7.5 4.01472 9.51472 2 12 2C14.4853 2 16.5 4.01472 16.5 6.5V9"
+        />
+      </symbol>
+      <symbol id="i-check" viewBox="0 0 24 24">
+        <path d="M5 14L8.5 17.5L19 6.5" />
+      </symbol>
+      <symbol id="i-menu" viewBox="0 0 24 24">
+        <path d="M4 5L20 5" />
+        <path d="M4 12L20 12" />
+        <path d="M4 19L20 19" />
+      </symbol>
+      <symbol id="i-send" viewBox="0 0 24 24">
+        <path d="m22 2-7 20-4-9-9-4z" />
+        <path d="M22 2 11 13" />
+      </symbol>
+      <symbol id="i-newchat" viewBox="0 0 24 24">
+        <path d="M21 12v3a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h8" />
+        <path d="M18 2v6M15 5h6" />
+      </symbol>
+      <symbol id="i-cards" viewBox="0 0 24 24">
+        <rect height="12" rx="2" width="15" x="2" y="7" />
+        <path d="M6 7V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-3" />
+      </symbol>
+      <symbol id="i-quiz" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7" />
+        <path d="M12 17h.01" />
+      </symbol>
+      <symbol id="i-map" viewBox="0 0 24 24">
+        <circle cx="5" cy="6" r="2.5" />
+        <circle cx="19" cy="6" r="2.5" />
+        <circle cx="12" cy="18" r="2.5" />
+        <path d="M7 7.5 10.5 16M17 7.5 13.5 16" />
+      </symbol>
+      <symbol id="i-diagram" viewBox="0 0 24 24">
+        <rect height="7" rx="1.5" width="7" x="3" y="3" />
+        <circle cx="17.5" cy="17.5" r="3.5" />
+        <path d="M6.5 10v4a2 2 0 0 0 2 2H14" />
+      </symbol>
+      <symbol id="i-audio" viewBox="0 0 24 24">
+        <path d="M9 18V6l12-2v12" />
+        <circle cx="6" cy="18" r="3" />
+        <circle cx="18" cy="16" r="3" />
+      </symbol>
+      <symbol id="i-image" viewBox="0 0 24 24">
+        <rect height="18" rx="3" width="18" x="3" y="3" />
+        <circle cx="9" cy="9" r="2" />
+        <path d="m21 15-5-5L5 21" />
+      </symbol>
+      <symbol id="i-waves" viewBox="0 0 24 24">
+        <rect fill="url(#wg)" height="24" rx="7" stroke="none" width="24" />
+        <path
+          d="M0 13c3-3 6 3 9 0s6-3 9 0 6 0 6 0v11H0z"
+          fill="rgba(255,255,255,.26)"
+          stroke="none"
+        />
+        <path
+          d="M0 17c3-3 6 3 9 0s6-3 9 0 6 0 6 0v7H0z"
+          fill="rgba(255,255,255,.34)"
+          stroke="none"
+        />
+      </symbol>
+    </svg>
+
+    <div class="wrap">
+      <div class="top">
+        <div>
+          <h1>Workspace page: two columns</h1>
+          <div class="meta">
+            Capy Notebook · 18 Sep 2026 · static mocks, scaled to fit · your
+            system font stands in for Fustat · glyphs are the real hugeicons
+            paths
+          </div>
+        </div>
+        <div aria-label="Theme" class="themeswitch" role="group">
+          <button data-set-theme="latte" type="button">Latte</button
+          ><button data-set-theme="mocha" type="button">Mocha</button>
+        </div>
+      </div>
+
+      <p>
+        Underline tabs are the pick. This round fixes the pinned Files header,
+        swaps in the real hugeicons glyphs (Archive01 for chapters, PanelLeft
+        for the toggle, and the rest of the chrome), and draws the page at each
+        Tailwind breakpoint, including the one-column version. E is folded away
+        at the bottom for later.
+      </p>
+
+      <h3>What is fixed now</h3>
+      <ul>
+        <li>
+          <b>Viewer full height on the left.</b>
+          Its header starts with the layout toggle, then the workspace menu,
+          then the open file.
+        </li>
+        <li>
+          <b>Workspace menu.</b>
+          A ghost-hover trigger on the name, no resting background. The dropdown
+          lists the other workspaces with the current one checked, and ends with
+          a left-aligned ghost-hover Workspace settings button, size sm. No back
+          link, no All workspaces. The purple card is gone.
+        </li>
+        <li>
+          <b>Layout toggle</b>
+          is the PanelLeft glyph with no active styling; the extra column makes
+          the state obvious. Shown from xl up only.
+        </li>
+        <li>
+          <b>Tabs</b>
+          are the underline Tabs component with Files added. When Files is
+          pinned to the left, its panel gets a card-title header instead of a
+          lone tab.
+        </li>
+        <li>
+          <b>Action icons, B style, always at their full width.</b>
+          From lg up the tab row ends with the active tab's own actions
+          (collapse chapters on Files, history and new chat on Chat), then a
+          circled plus and a settings gear. The plus opens Upload or import, New
+          file, New chapter; New file opens the Add source dialog on its Create
+          tab, a placeholder today. The icons never shrink: when the row is
+          narrow the tabs scroll instead, scrollbar hidden, with a fade at the
+          far edge like shadcn's scroll-fade. Below lg the actions fold into a
+          dots menu next to the plus.
+        </li>
+        <li>
+          <b>Chapter rows.</b>
+          A chevron at the far left shows open or collapsed, then Archive01,
+          then the name; a collapsed chapter shows its item count.
+        </li>
+        <li><b>Composer pill</b> reads Curate mode.</li>
+        <li>
+          Unchanged from round one: top inset bar, one panel at a time, three
+          columns pins Files left, layout remembered per browser, panel opens on
+          Files when nothing is open.
+        </li>
+      </ul>
+
+      <h2 id="d"><span class="letter">D</span>Underline tabs, at 1440</h2>
+      <p>
+        The Tabs component the page already uses, with Files added. Labels for
+        every tab, the actions at the row's end.
+      </p>
+      <div class="states">
+        <figure class="state" data-label="Files, plus menu open">
+          <figcaption>Files tab with the plus menu open</figcaption>
+          <div
+            class="frame-wrap"
+            data-h="900"
+            data-w="1440"
+            style="aspect-ratio:1440/900;max-width:1440px"
+          >
+            <div class="frame" style="--w:1440px;--h:900px">
+              <div class="col grow">
+                <div class="panel grow">
+                  <div class="vh">
+                    <span class="ib sm"
+                      ><svg><use href="#i-panel-left" /></svg></span
+                    ><span class="wsmenu"
+                      ><svg class="ws"><use href="#i-waves" /></svg>Biology 101<svg
+                        class="chev"
+                      >
+                        <use href="#i-down" />
+                      </svg></span
+                    ><span class="sep">/</span
+                    ><svg class="fi c-ppt"><use href="#i-file" /></svg>
+                    <h2>Cell structure.pptx</h2>
+                    <span class="grow"></span
+                    ><span class="ib sm"
+                      ><svg><use href="#i-max" /></svg></span
+                    ><span class="ib sm"
+                      ><svg><use href="#i-dots-v" /></svg></span
+                    >
+                  </div>
+                  <div class="vbody">
+                    <div class="canvas">
+                      <div class="slide">
+                        <div class="s-title">
+                          The cell: structure and organelles
+                        </div>
+                        <div class="s-cols">
+                          <div class="s-text">
+                            <i></i><i></i><i></i><i class="short"></i><i></i
+                            ><i class="short"></i>
+                          </div>
+                          <div class="s-fig"><span class="cellpic"></span></div>
+                        </div>
+                        <div class="s-foot">
+                          <span>Biology 101 · Week 2</span><span>3</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="slidenav">
+                      <svg><use href="#i-back" /></svg><span>3 / 24</span
+                      ><svg><use href="#i-right" /></svg>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="col" style="width:400px;flex:none">
+                <div class="bar">
+                  <span class="ib dark"
+                    ><svg><use href="#i-search" /></svg></span
+                  ><span class="ib"
+                    ><svg><use href="#i-bell" /></svg><i class="dot"></i></span
+                  ><span class="pill-user"
+                    ><span class="avatar">KM</span>Kate Malone<svg>
+                      <use href="#i-down" />
+                    </svg></span
+                  >
+                </div>
+                <div class="panel grow">
+                  <div class="tabrow">
+                    <div class="tabs">
+                      <span class="on">Files</span><span>Chat</span
+                      ><span>Generate</span>
+                    </div>
+                    <span class="acts"
+                      ><span class="ib sm muted"
+                        ><svg><use href="#i-collapse" /></svg></span
+                      ><span
+                        class="ib sm muted"
+                        style="background:var(--surface-hover);color:var(--fg)"
+                        ><svg><use href="#i-plus-circle" /></svg></span
+                      ><span class="ib sm muted"
+                        ><svg><use href="#i-gear" /></svg></span
+                      ></span
+                    >
+                  </div>
+                  <div class="menu" style="right:46px;top:52px;width:226px">
+                    <div class="mi">
+                      <svg><use href="#i-upload" /></svg>Upload or import
+                    </div>
+                    <div class="mi">
+                      <svg><use href="#i-file-plus" /></svg>New file
+                    </div>
+                    <div class="mi">
+                      <svg><use href="#i-archive" /></svg>New chapter
+                    </div>
+                  </div>
+                  <div class="tree">
+                    <div class="ch">
+                      <svg class="fi cv"><use href="#i-down" /></svg
+                      ><svg class="fi chap"><use href="#i-archive" /></svg>Cell
+                      structure
+                    </div>
+                    <div class="row active">
+                      <svg class="fi c-ppt"><use href="#i-file" /></svg
+                      ><span>Cell structure.pptx</span>
+                    </div>
+                    <div class="row">
+                      <svg class="fi c-pdf"><use href="#i-file" /></svg
+                      ><span>Cell structure.pdf</span>
+                    </div>
+                    <div class="row">
+                      <svg class="fi c-md"><use href="#i-file" /></svg
+                      ><span>Organelles cheatsheet.md</span>
+                    </div>
+                    <div class="row">
+                      <svg class="fi c-map"><use href="#i-map" /></svg
+                      ><span>Cell biology mindmap</span>
+                    </div>
+                    <div class="row">
+                      <svg class="fi c-note"><use href="#i-note" /></svg
+                      ><span>Lecture notes: the cell</span>
+                    </div>
+                    <div class="ch">
+                      <svg class="fi cv"><use href="#i-down" /></svg
+                      ><svg class="fi chap">
+                        <use href="#i-archive" />
+                      </svg>Membranes &amp; transport
+                    </div>
+                    <div class="row">
+                      <svg class="fi c-txt"><use href="#i-file" /></svg
+                      ><span>Osmosis notes.txt</span>
+                    </div>
+                    <div class="row">
+                      <svg class="fi c-note"><use href="#i-note" /></svg
+                      ><span>Membranes &amp; transport cheatsheet</span>
+                    </div>
+                    <div class="ch">
+                      <svg class="fi cv"><use href="#i-right" /></svg
+                      ><svg class="fi chap">
+                        <use href="#i-archive" />
+                      </svg>Genetics<span class="cnt">2</span>
+                    </div>
+                    <div class="label">Others</div>
+                    <div class="row">
+                      <svg class="fi c-aud"><use href="#i-audio" /></svg
+                      ><span>dummy_audio.wav</span>
+                    </div>
+                    <div class="row">
+                      <svg class="fi c-quiz"><use href="#i-quiz" /></svg
+                      ><span>Week 3 quiz</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <span class="co" style="left:24px;top:64px">1</span
+              ><span class="co" style="left:212px;top:64px">2</span
+              ><span class="co" style="left:1018px;top:96px">3</span
+              ><span class="co" style="left:1276px;top:122px">4</span
+              ><span class="co" style="left:1142px;top:190px">5</span>
+            </div>
+          </div>
+        </figure>
+        <figure class="state" data-label="Chat">
+          <figcaption>Chat tab</figcaption>
+          <div
+            class="frame-wrap"
+            data-h="900"
+            data-w="1440"
+            style="aspect-ratio:1440/900;max-width:1440px"
+          >
+            <div class="frame" style="--w:1440px;--h:900px">
+              <div class="col grow">
+                <div class="panel grow">
+                  <div class="vh">
+                    <span class="ib sm"
+                      ><svg><use href="#i-panel-left" /></svg></span
+                    ><span class="wsmenu"
+                      ><svg class="ws"><use href="#i-waves" /></svg>Biology 101<svg
+                        class="chev"
+                      >
+                        <use href="#i-down" />
+                      </svg></span
+                    ><span class="sep">/</span
+                    ><svg class="fi c-ppt"><use href="#i-file" /></svg>
+                    <h2>Cell structure.pptx</h2>
+                    <span class="grow"></span
+                    ><span class="ib sm"
+                      ><svg><use href="#i-max" /></svg></span
+                    ><span class="ib sm"
+                      ><svg><use href="#i-dots-v" /></svg></span
+                    >
+                  </div>
+                  <div class="vbody">
+                    <div class="canvas">
+                      <div class="slide">
+                        <div class="s-title">
+                          The cell: structure and organelles
+                        </div>
+                        <div class="s-cols">
+                          <div class="s-text">
+                            <i></i><i></i><i></i><i class="short"></i><i></i
+                            ><i class="short"></i>
+                          </div>
+                          <div class="s-fig"><span class="cellpic"></span></div>
+                        </div>
+                        <div class="s-foot">
+                          <span>Biology 101 · Week 2</span><span>3</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="slidenav">
+                      <svg><use href="#i-back" /></svg><span>3 / 24</span
+                      ><svg><use href="#i-right" /></svg>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="col" style="width:400px;flex:none">
+                <div class="bar">
+                  <span class="ib dark"
+                    ><svg><use href="#i-search" /></svg></span
+                  ><span class="ib"
+                    ><svg><use href="#i-bell" /></svg><i class="dot"></i></span
+                  ><span class="pill-user"
+                    ><span class="avatar">KM</span>Kate Malone<svg>
+                      <use href="#i-down" />
+                    </svg></span
+                  >
+                </div>
+                <div class="panel grow">
+                  <div class="tabrow">
+                    <div class="tabs">
+                      <span>Files</span><span class="on">Chat</span
+                      ><span>Generate</span>
+                    </div>
+                    <span class="acts"
+                      ><span class="ib sm muted"
+                        ><svg><use href="#i-clock" /></svg></span
+                      ><span class="ib sm muted"
+                        ><svg><use href="#i-newchat" /></svg></span
+                      ><span class="ib sm muted"
+                        ><svg><use href="#i-plus-circle" /></svg></span
+                      ><span class="ib sm muted"
+                        ><svg><use href="#i-gear" /></svg></span
+                      ></span
+                    >
+                  </div>
+                  <div class="msgs">
+                    <div class="mu">
+                      What does the mitochondrion actually do besides
+                      "powerhouse"?
+                    </div>
+                    <div class="ma">
+                      It runs oxidative phosphorylation. The electron transport
+                      chain on the inner membrane pumps protons into the
+                      intermembrane space, and ATP synthase lets them back
+                      through to make ATP. The cristae folds exist to fit more
+                      chain complexes into the same organelle.
+                      <div class="mdl">GLM 4.6</div>
+                      <div class="cites">
+                        <span class="cite"
+                          >[1] <svg><use href="#i-file" /></svg>Cell
+                          structure.pdf <em>p. 4</em></span
+                        ><span class="cite"
+                          >[2] <svg><use href="#i-file" /></svg>Organelles
+                          cheatsheet.md</span
+                        >
+                      </div>
+                    </div>
+                    <div class="mu">
+                      And why is the matrix so protein dense?
+                    </div>
+                  </div>
+                  <div class="composer">
+                    <div class="ph">Ask about your sources…</div>
+                    <div class="tools">
+                      <span class="pill locked"
+                        ><svg><use href="#i-lock" /></svg>Curate mode</span
+                      ><span class="send"
+                        ><svg><use href="#i-send" /></svg></span
+                      >
+                    </div>
+                  </div>
+                  <p class="fine">
+                    Answers grounded in this workspace's sources
+                  </p>
+                </div>
+              </div>
+              <span class="co" style="left:1242px;top:122px">4</span>
+            </div>
+          </div>
+        </figure>
+        <figure class="state" data-label="Generate">
+          <figcaption>Generate tab</figcaption>
+          <div
+            class="frame-wrap"
+            data-h="900"
+            data-w="1440"
+            style="aspect-ratio:1440/900;max-width:1440px"
+          >
+            <div class="frame" style="--w:1440px;--h:900px">
+              <div class="col grow">
+                <div class="panel grow">
+                  <div class="vh">
+                    <span class="ib sm"
+                      ><svg><use href="#i-panel-left" /></svg></span
+                    ><span class="wsmenu"
+                      ><svg class="ws"><use href="#i-waves" /></svg>Biology 101<svg
+                        class="chev"
+                      >
+                        <use href="#i-down" />
+                      </svg></span
+                    ><span class="sep">/</span
+                    ><svg class="fi c-ppt"><use href="#i-file" /></svg>
+                    <h2>Cell structure.pptx</h2>
+                    <span class="grow"></span
+                    ><span class="ib sm"
+                      ><svg><use href="#i-max" /></svg></span
+                    ><span class="ib sm"
+                      ><svg><use href="#i-dots-v" /></svg></span
+                    >
+                  </div>
+                  <div class="vbody">
+                    <div class="canvas">
+                      <div class="slide">
+                        <div class="s-title">
+                          The cell: structure and organelles
+                        </div>
+                        <div class="s-cols">
+                          <div class="s-text">
+                            <i></i><i></i><i></i><i class="short"></i><i></i
+                            ><i class="short"></i>
+                          </div>
+                          <div class="s-fig"><span class="cellpic"></span></div>
+                        </div>
+                        <div class="s-foot">
+                          <span>Biology 101 · Week 2</span><span>3</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="slidenav">
+                      <svg><use href="#i-back" /></svg><span>3 / 24</span
+                      ><svg><use href="#i-right" /></svg>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="col" style="width:400px;flex:none">
+                <div class="bar">
+                  <span class="ib dark"
+                    ><svg><use href="#i-search" /></svg></span
+                  ><span class="ib"
+                    ><svg><use href="#i-bell" /></svg><i class="dot"></i></span
+                  ><span class="pill-user"
+                    ><span class="avatar">KM</span>Kate Malone<svg>
+                      <use href="#i-down" />
+                    </svg></span
+                  >
+                </div>
+                <div class="panel grow">
+                  <div class="tabrow">
+                    <div class="tabs">
+                      <span>Files</span><span>Chat</span
+                      ><span class="on">Generate</span>
+                    </div>
+                    <span class="acts"
+                      ><span class="ib sm muted"
+                        ><svg><use href="#i-plus-circle" /></svg></span
+                      ><span class="ib sm muted"
+                        ><svg><use href="#i-gear" /></svg></span
+                      ></span
+                    >
+                  </div>
+                  <div class="tiles">
+                    <div class="tile">
+                      <svg class="c-cards">
+                        <use href="#i-cards" />
+                      </svg>Flashcards
+                    </div>
+                    <div class="tile">
+                      <svg class="c-quiz"><use href="#i-quiz" /></svg>Quiz
+                    </div>
+                    <div class="tile">
+                      <svg class="c-map"><use href="#i-map" /></svg>Mindmap
+                    </div>
+                    <div class="tile">
+                      <svg class="c-diag"><use href="#i-diagram" /></svg>Diagram
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </figure>
+        <figure class="state" data-label="Three columns">
+          <figcaption>Three columns: Files pinned to the left</figcaption>
+          <div
+            class="frame-wrap"
+            data-h="900"
+            data-w="1440"
+            style="aspect-ratio:1440/900;max-width:1440px"
+          >
+            <div class="frame" style="--w:1440px;--h:900px">
+              <div class="col" style="width:270px;flex:none">
+                <div class="panel grow">
+                  <div class="tabrow hdr">
+                    <span class="ttl">Files</span><span class="grow"></span
+                    ><span class="acts"
+                      ><span class="ib sm muted"
+                        ><svg><use href="#i-collapse" /></svg></span
+                      ><span class="ib sm muted"
+                        ><svg><use href="#i-plus-circle" /></svg></span
+                      ><span class="ib sm muted"
+                        ><svg><use href="#i-gear" /></svg></span
+                      ></span
+                    >
+                  </div>
+                  <div class="tree">
+                    <div class="ch">
+                      <svg class="fi cv"><use href="#i-down" /></svg
+                      ><svg class="fi chap"><use href="#i-archive" /></svg>Cell
+                      structure
+                    </div>
+                    <div class="row active">
+                      <svg class="fi c-ppt"><use href="#i-file" /></svg
+                      ><span>Cell structure.pptx</span>
+                    </div>
+                    <div class="row">
+                      <svg class="fi c-pdf"><use href="#i-file" /></svg
+                      ><span>Cell structure.pdf</span>
+                    </div>
+                    <div class="row">
+                      <svg class="fi c-md"><use href="#i-file" /></svg
+                      ><span>Organelles cheatsheet.md</span>
+                    </div>
+                    <div class="row">
+                      <svg class="fi c-map"><use href="#i-map" /></svg
+                      ><span>Cell biology mindmap</span>
+                    </div>
+                    <div class="row">
+                      <svg class="fi c-note"><use href="#i-note" /></svg
+                      ><span>Lecture notes: the cell</span>
+                    </div>
+                    <div class="ch">
+                      <svg class="fi cv"><use href="#i-down" /></svg
+                      ><svg class="fi chap">
+                        <use href="#i-archive" />
+                      </svg>Membranes &amp; transport
+                    </div>
+                    <div class="row">
+                      <svg class="fi c-txt"><use href="#i-file" /></svg
+                      ><span>Osmosis notes.txt</span>
+                    </div>
+                    <div class="row">
+                      <svg class="fi c-note"><use href="#i-note" /></svg
+                      ><span>Membranes &amp; transport cheatsheet</span>
+                    </div>
+                    <div class="ch">
+                      <svg class="fi cv"><use href="#i-right" /></svg
+                      ><svg class="fi chap">
+                        <use href="#i-archive" />
+                      </svg>Genetics<span class="cnt">2</span>
+                    </div>
+                    <div class="label">Others</div>
+                    <div class="row">
+                      <svg class="fi c-aud"><use href="#i-audio" /></svg
+                      ><span>dummy_audio.wav</span>
+                    </div>
+                    <div class="row">
+                      <svg class="fi c-quiz"><use href="#i-quiz" /></svg
+                      ><span>Week 3 quiz</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="col grow">
+                <div class="panel grow">
+                  <div class="vh">
+                    <span class="ib sm"
+                      ><svg><use href="#i-panel-left" /></svg></span
+                    ><span class="wsmenu"
+                      ><svg class="ws"><use href="#i-waves" /></svg>Biology 101<svg
+                        class="chev"
+                      >
+                        <use href="#i-down" />
+                      </svg></span
+                    ><span class="sep">/</span
+                    ><svg class="fi c-ppt"><use href="#i-file" /></svg>
+                    <h2>Cell structure.pptx</h2>
+                    <span class="grow"></span
+                    ><span class="ib sm"
+                      ><svg><use href="#i-max" /></svg></span
+                    ><span class="ib sm"
+                      ><svg><use href="#i-dots-v" /></svg></span
+                    >
+                  </div>
+                  <div class="vbody">
+                    <div class="canvas">
+                      <div class="slide">
+                        <div class="s-title">
+                          The cell: structure and organelles
+                        </div>
+                        <div class="s-cols">
+                          <div class="s-text">
+                            <i></i><i></i><i></i><i class="short"></i><i></i
+                            ><i class="short"></i>
+                          </div>
+                          <div class="s-fig"><span class="cellpic"></span></div>
+                        </div>
+                        <div class="s-foot">
+                          <span>Biology 101 · Week 2</span><span>3</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="slidenav">
+                      <svg><use href="#i-back" /></svg><span>3 / 24</span
+                      ><svg><use href="#i-right" /></svg>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="col" style="width:380px;flex:none">
+                <div class="bar">
+                  <span class="ib dark"
+                    ><svg><use href="#i-search" /></svg></span
+                  ><span class="ib"
+                    ><svg><use href="#i-bell" /></svg><i class="dot"></i></span
+                  ><span class="pill-user"
+                    ><span class="avatar">KM</span>Kate Malone<svg>
+                      <use href="#i-down" />
+                    </svg></span
+                  >
+                </div>
+                <div class="panel grow">
+                  <div class="tabrow">
+                    <div class="tabs">
+                      <span class="on">Chat</span><span>Generate</span>
+                    </div>
+                    <span class="acts"
+                      ><span class="ib sm muted"
+                        ><svg><use href="#i-clock" /></svg></span
+                      ><span class="ib sm muted"
+                        ><svg><use href="#i-newchat" /></svg></span
+                      ><span class="ib sm muted"
+                        ><svg><use href="#i-gear" /></svg></span
+                      ></span
+                    >
+                  </div>
+                  <div class="msgs">
+                    <div class="chat-empty">
+                      <svg><use href="#i-chat" /></svg>
+                      <div>Ask anything about your sources.</div>
+                    </div>
+                  </div>
+                  <div class="composer">
+                    <div class="ph">Ask about your sources…</div>
+                    <div class="tools">
+                      <span class="pill"
+                        ><svg><use href="#i-book" /></svg>Curate mode</span
+                      ><span class="send"
+                        ><svg><use href="#i-send" /></svg></span
+                      >
+                    </div>
+                  </div>
+                  <p class="fine">
+                    Answers grounded in this workspace's sources
+                  </p>
+                </div>
+              </div>
+              <span class="co" style="left:22px;top:846px">6</span
+              ><span class="co" style="left:284px;top:64px">1</span>
+            </div>
+          </div>
+        </figure>
+      </div>
+      <ol class="legend">
+        <li>
+          <b>1</b>Layout toggle: the PanelLeft glyph, same look in both modes.
+        </li>
+        <li>
+          <b>2</b>Workspace menu on the name, a ghost-hover button. The open
+          list is drawn at the bottom of the page.
+        </li>
+        <li><b>3</b>Underline tabs as today, Files added.</li>
+        <li>
+          <b>4</b>The active tab's own actions (collapse chapters on Files,
+          history and new chat on Chat) sit left of the plus and the gear.
+        </li>
+        <li><b>5</b>Plus menu: Upload or import, New file, New chapter.</li>
+        <li>
+          <b>6</b>Pinned: Files pulls out to the left under a card-title header,
+          no tab and no underline, and takes the plus with it; the right panel
+          keeps Chat and Generate with their own actions and the gear.
+        </li>
+      </ol>
+      <p class="verdict">
+        Nothing new to build for the switch itself. The icons keep their width
+        at every size; when the rail is narrow, as at lg with Chat active, the
+        tabs scroll under a fade instead. Below lg the actions fold into a dots
+        menu.
+      </p>
+
+      <h2 id="breakpoints">Breakpoints</h2>
+      <p>
+        Tailwind defaults: sm 640, md 768, lg 1024, xl 1280, 2xl 1536. Three
+        layouts cover them. The top inset bar already goes full width below lg
+        on the other pages, with the nav hamburger inside it, so the one-column
+        page reuses that instead of inventing a mobile header.
+      </p>
+      <table>
+        <tr>
+          <th>Width</th>
+          <th>Layout</th>
+          <th>Right panel</th>
+          <th>Notes</th>
+        </tr>
+        <tr>
+          <td>xl and 2xl, 1280 and up</td>
+          <td>Two columns, three on the toggle</td>
+          <td>400 px, resizable 320 to 600</td>
+          <td>
+            As drawn in D. At 2xl the same widths, the viewer just gets more.
+          </td>
+        </tr>
+        <tr>
+          <td>lg, 1024 to 1279</td>
+          <td>Two columns</td>
+          <td>340 px, resizable 300 to 420</td>
+          <td>
+            Toggle hidden. Icons stay inline at full width; with Chat active the
+            tabs scroll under a fade.
+          </td>
+        </tr>
+        <tr>
+          <td>sm and md, 640 to 1023</td>
+          <td>One column</td>
+          <td>Bottom drawer</td>
+          <td>
+            Top inset bar full width above the viewer. A floating pill at the
+            viewer's bottom opens Files, Chat or Generate in the app's Drawer
+            with the same tab row, where the actions fold into a dots menu next
+            to the plus; drag down or tap the scrim to close.
+          </td>
+        </tr>
+        <tr>
+          <td>Below sm, under 640</td>
+          <td>One column</td>
+          <td>Bottom drawer, taller</td>
+          <td>
+            6 px page padding instead of 10, maximize hidden, file name
+            truncates.
+          </td>
+        </tr>
+      </table>
+      <ul>
+        <li>
+          <b>Drawer rules.</b>
+          Opens at about 80% height, drag up for full. Picking a file in Files
+          closes it so the file shows; tapping a citation in Chat does the same.
+          It remembers the last tab, and the composer sits at its bottom, above
+          the keyboard.
+        </li>
+        <li>
+          <b>Nothing is lost on small screens.</b>
+          Workspace menu, plus menu and the composer pill are the same
+          components; only the container changes, and the actions fold into a
+          dots menu.
+        </li>
+      </ul>
+
+      <h3>lg, 1024 × 768: two columns, Chat active, icons inline, tabs fade</h3>
+      <div class="bp-row">
+        <figure>
+          <div
+            class="frame-wrap"
+            data-h="768"
+            data-w="1024"
+            style="aspect-ratio:1024/768;max-width:1024px"
+          >
+            <div class="frame" style="--w:1024px;--h:768px">
+              <div class="col grow">
+                <div class="panel grow">
+                  <div class="vh">
+                    <span class="wsmenu"
+                      ><svg class="ws"><use href="#i-waves" /></svg>Biology 101<svg
+                        class="chev"
+                      >
+                        <use href="#i-down" />
+                      </svg></span
+                    ><span class="sep">/</span
+                    ><svg class="fi c-ppt"><use href="#i-file" /></svg>
+                    <h2>Cell structure.pptx</h2>
+                    <span class="grow"></span
+                    ><span class="ib sm"
+                      ><svg><use href="#i-max" /></svg></span
+                    ><span class="ib sm"
+                      ><svg><use href="#i-dots-v" /></svg></span
+                    >
+                  </div>
+                  <div class="vbody">
+                    <div class="canvas">
+                      <div class="slide">
+                        <div class="s-title">
+                          The cell: structure and organelles
+                        </div>
+                        <div class="s-cols">
+                          <div class="s-text">
+                            <i></i><i></i><i></i><i class="short"></i><i></i
+                            ><i class="short"></i>
+                          </div>
+                          <div class="s-fig"><span class="cellpic"></span></div>
+                        </div>
+                        <div class="s-foot">
+                          <span>Biology 101 · Week 2</span><span>3</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="slidenav">
+                      <svg><use href="#i-back" /></svg><span>3 / 24</span
+                      ><svg><use href="#i-right" /></svg>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="col" style="width:340px;flex:none">
+                <div class="bar">
+                  <span class="ib dark"
+                    ><svg><use href="#i-search" /></svg></span
+                  ><span class="ib"
+                    ><svg><use href="#i-bell" /></svg><i class="dot"></i></span
+                  ><span class="pill-user"
+                    ><span class="avatar">KM</span>Kate Malone<svg>
+                      <use href="#i-down" />
+                    </svg></span
+                  >
+                </div>
+                <div class="panel grow">
+                  <div class="tabrow">
+                    <div class="tabs fade">
+                      <span>Files</span><span class="on">Chat</span
+                      ><span>Generate</span>
+                    </div>
+                    <span class="acts"
+                      ><span class="ib sm muted"
+                        ><svg><use href="#i-clock" /></svg></span
+                      ><span class="ib sm muted"
+                        ><svg><use href="#i-newchat" /></svg></span
+                      ><span class="ib sm muted"
+                        ><svg><use href="#i-plus-circle" /></svg></span
+                      ><span class="ib sm muted"
+                        ><svg><use href="#i-gear" /></svg></span
+                      ></span
+                    >
+                  </div>
+                  <div class="msgs">
+                    <div class="mu">
+                      What does the mitochondrion actually do besides
+                      "powerhouse"?
+                    </div>
+                    <div class="ma">
+                      It runs oxidative phosphorylation. The electron transport
+                      chain on the inner membrane pumps protons into the
+                      intermembrane space, and ATP synthase lets them back
+                      through to make ATP. The cristae folds exist to fit more
+                      chain complexes into the same organelle.
+                      <div class="mdl">GLM 4.6</div>
+                      <div class="cites">
+                        <span class="cite"
+                          >[1] <svg><use href="#i-file" /></svg>Cell
+                          structure.pdf <em>p. 4</em></span
+                        ><span class="cite"
+                          >[2] <svg><use href="#i-file" /></svg>Organelles
+                          cheatsheet.md</span
+                        >
+                      </div>
+                    </div>
+                    <div class="mu">
+                      And why is the matrix so protein dense?
+                    </div>
+                  </div>
+                  <div class="composer">
+                    <div class="ph">Ask about your sources…</div>
+                    <div class="tools">
+                      <span class="pill locked"
+                        ><svg><use href="#i-lock" /></svg>Curate mode</span
+                      ><span class="send"
+                        ><svg><use href="#i-send" /></svg></span
+                      >
+                    </div>
+                  </div>
+                  <p class="fine">
+                    Answers grounded in this workspace's sources
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <figcaption>
+            Four icons keep their width in 340 px, so the tab labels scroll and
+            fade at the right edge.
+          </figcaption>
+        </figure>
+      </div>
+
+      <h3>md, 768 × 1024: one column, drawer closed and open</h3>
+      <div class="bp-row">
+        <figure>
+          <div
+            class="frame-wrap"
+            data-h="1024"
+            data-w="768"
+            style="aspect-ratio:768/1024;max-width:552px"
+          >
+            <div class="frame one" style="--w:768px;--h:1024px">
+              <div class="bar">
+                <span class="ib"
+                  ><svg><use href="#i-menu" /></svg></span
+                ><span class="ib"
+                  ><svg><use href="#i-bell" /></svg><i class="dot"></i></span
+                ><span class="pill-user"
+                  ><span class="avatar">KM</span>Kate Malone<svg>
+                    <use href="#i-down" />
+                  </svg></span
+                >
+              </div>
+              <div class="panel grow">
+                <div class="vh">
+                  <span class="wsmenu"
+                    ><svg class="ws"><use href="#i-waves" /></svg>Biology 101<svg
+                      class="chev"
+                    >
+                      <use href="#i-down" />
+                    </svg></span
+                  ><span class="sep">/</span
+                  ><svg class="fi c-ppt"><use href="#i-file" /></svg>
+                  <h2>Cell structure.pptx</h2>
+                  <span class="grow"></span
+                  ><span class="ib sm"
+                    ><svg><use href="#i-max" /></svg></span
+                  ><span class="ib sm"
+                    ><svg><use href="#i-dots-v" /></svg></span
+                  >
+                </div>
+                <div class="vbody">
+                  <div class="canvas" style="padding:24px 24px 96px">
+                    <div class="slide">
+                      <div class="s-title">
+                        The cell: structure and organelles
+                      </div>
+                      <div class="s-cols">
+                        <div class="s-text">
+                          <i></i><i></i><i></i><i class="short"></i><i></i
+                          ><i class="short"></i>
+                        </div>
+                        <div class="s-fig"><span class="cellpic"></span></div>
+                      </div>
+                      <div class="s-foot">
+                        <span>Biology 101 · Week 2</span><span>3</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="toolpill">
+                    <span
+                      ><svg><use href="#i-files" /></svg>Files</span
+                    ><span
+                      ><svg><use href="#i-chat" /></svg>Chat</span
+                    ><span
+                      ><svg><use href="#i-spark" /></svg>Generate</span
+                    >
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <figcaption>
+            Floating pill at the bottom of the viewer; the slide gets the full
+            width.
+          </figcaption>
+        </figure>
+        <figure>
+          <div
+            class="frame-wrap"
+            data-h="1024"
+            data-w="768"
+            style="aspect-ratio:768/1024;max-width:552px"
+          >
+            <div class="frame one" style="--w:768px;--h:1024px">
+              <div class="bar">
+                <span class="ib"
+                  ><svg><use href="#i-menu" /></svg></span
+                ><span class="ib"
+                  ><svg><use href="#i-bell" /></svg><i class="dot"></i></span
+                ><span class="pill-user"
+                  ><span class="avatar">KM</span>Kate Malone<svg>
+                    <use href="#i-down" />
+                  </svg></span
+                >
+              </div>
+              <div class="panel grow">
+                <div class="vh">
+                  <span class="wsmenu"
+                    ><svg class="ws"><use href="#i-waves" /></svg>Biology 101<svg
+                      class="chev"
+                    >
+                      <use href="#i-down" />
+                    </svg></span
+                  ><span class="sep">/</span
+                  ><svg class="fi c-ppt"><use href="#i-file" /></svg>
+                  <h2>Cell structure.pptx</h2>
+                  <span class="grow"></span
+                  ><span class="ib sm"
+                    ><svg><use href="#i-max" /></svg></span
+                  ><span class="ib sm"
+                    ><svg><use href="#i-dots-v" /></svg></span
+                  >
+                </div>
+                <div class="vbody">
+                  <div class="canvas" style="padding:24px 24px 96px">
+                    <div class="slide">
+                      <div class="s-title">
+                        The cell: structure and organelles
+                      </div>
+                      <div class="s-cols">
+                        <div class="s-text">
+                          <i></i><i></i><i></i><i class="short"></i><i></i
+                          ><i class="short"></i>
+                        </div>
+                        <div class="s-fig"><span class="cellpic"></span></div>
+                      </div>
+                      <div class="s-foot">
+                        <span>Biology 101 · Week 2</span><span>3</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="toolpill">
+                    <span
+                      ><svg><use href="#i-files" /></svg>Files</span
+                    ><span
+                      ><svg><use href="#i-chat" /></svg>Chat</span
+                    ><span
+                      ><svg><use href="#i-spark" /></svg>Generate</span
+                    >
+                  </div>
+                </div>
+              </div>
+              <div class="scrim"></div>
+              <div
+                class="drawer"
+                style="height:78%;left:8px;right:8px;bottom:8px"
+              >
+                <div class="handle"><i></i></div>
+                <div class="tabrow">
+                  <div class="tabs">
+                    <span>Files</span><span class="on">Chat</span
+                    ><span>Generate</span>
+                  </div>
+                  <span class="acts"
+                    ><span class="ib sm muted"
+                      ><svg><use href="#i-plus-circle" /></svg></span
+                    ><span class="ib sm muted"
+                      ><svg><use href="#i-dots-v" /></svg></span
+                    ></span
+                  >
+                </div>
+                <div class="msgs">
+                  <div class="mu">
+                    What does the mitochondrion actually do besides
+                    "powerhouse"?
+                  </div>
+                  <div class="ma">
+                    It runs oxidative phosphorylation. The electron transport
+                    chain on the inner membrane pumps protons into the
+                    intermembrane space, and ATP synthase lets them back through
+                    to make ATP. The cristae folds exist to fit more chain
+                    complexes into the same organelle.
+                    <div class="mdl">GLM 4.6</div>
+                    <div class="cites">
+                      <span class="cite"
+                        >[1] <svg><use href="#i-file" /></svg>Cell structure.pdf
+                        <em>p. 4</em></span
+                      ><span class="cite"
+                        >[2] <svg><use href="#i-file" /></svg>Organelles
+                        cheatsheet.md</span
+                      >
+                    </div>
+                  </div>
+                  <div class="mu">And why is the matrix so protein dense?</div>
+                </div>
+                <div class="composer">
+                  <div class="ph">Ask about your sources…</div>
+                  <div class="tools">
+                    <span class="pill locked"
+                      ><svg><use href="#i-lock" /></svg>Curate mode</span
+                    ><span class="send"
+                      ><svg><use href="#i-send" /></svg></span
+                    >
+                  </div>
+                </div>
+                <p class="fine">Answers grounded in this workspace's sources</p>
+              </div>
+            </div>
+          </div>
+          <figcaption>
+            Chat in the bottom drawer, same tab row and composer; actions folded
+            into the dots menu.
+          </figcaption>
+        </figure>
+      </div>
+
+      <h3>Below sm, 390 × 844: one column, phone</h3>
+      <div class="bp-row">
+        <figure>
+          <div
+            class="frame-wrap"
+            data-h="844"
+            data-w="390"
+            style="aspect-ratio:390/844;max-width:390px"
+          >
+            <div class="frame one tight" style="--w:390px;--h:844px">
+              <div class="bar">
+                <span class="ib"
+                  ><svg><use href="#i-menu" /></svg></span
+                ><span class="ib"
+                  ><svg><use href="#i-bell" /></svg><i class="dot"></i></span
+                ><span class="pill-user"
+                  ><span class="avatar">KM</span>Kate Malone<svg>
+                    <use href="#i-down" />
+                  </svg></span
+                >
+              </div>
+              <div class="panel grow">
+                <div class="vh" style="padding:0 12px 0 10px">
+                  <span class="wsmenu"
+                    ><svg class="ws"><use href="#i-waves" /></svg>Biology 101<svg
+                      class="chev"
+                    >
+                      <use href="#i-down" />
+                    </svg></span
+                  ><span class="sep">/</span
+                  ><svg class="fi c-ppt"><use href="#i-file" /></svg>
+                  <h2>Cell structure.pptx</h2>
+                  <span class="grow"></span
+                  ><span class="ib sm"
+                    ><svg><use href="#i-dots-v" /></svg></span
+                  >
+                </div>
+                <div class="vbody">
+                  <div class="canvas" style="padding:16px 16px 90px">
+                    <div class="slide">
+                      <div class="s-title">
+                        The cell: structure and organelles
+                      </div>
+                      <div class="s-cols">
+                        <div class="s-text">
+                          <i></i><i></i><i></i><i class="short"></i><i></i
+                          ><i class="short"></i>
+                        </div>
+                        <div class="s-fig"><span class="cellpic"></span></div>
+                      </div>
+                      <div class="s-foot">
+                        <span>Biology 101 · Week 2</span><span>3</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="toolpill">
+                    <span
+                      ><svg><use href="#i-files" /></svg>Files</span
+                    ><span
+                      ><svg><use href="#i-chat" /></svg>Chat</span
+                    ><span
+                      ><svg><use href="#i-spark" /></svg>Generate</span
+                    >
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <figcaption>
+            6 px padding, no maximize, file name truncates.
+          </figcaption>
+        </figure>
+        <figure>
+          <div
+            class="frame-wrap"
+            data-h="844"
+            data-w="390"
+            style="aspect-ratio:390/844;max-width:390px"
+          >
+            <div class="frame one tight" style="--w:390px;--h:844px">
+              <div class="bar">
+                <span class="ib"
+                  ><svg><use href="#i-menu" /></svg></span
+                ><span class="ib"
+                  ><svg><use href="#i-bell" /></svg><i class="dot"></i></span
+                ><span class="pill-user"
+                  ><span class="avatar">KM</span>Kate Malone<svg>
+                    <use href="#i-down" />
+                  </svg></span
+                >
+              </div>
+              <div class="panel grow">
+                <div class="vh" style="padding:0 12px 0 10px">
+                  <span class="wsmenu"
+                    ><svg class="ws"><use href="#i-waves" /></svg>Biology 101<svg
+                      class="chev"
+                    >
+                      <use href="#i-down" />
+                    </svg></span
+                  ><span class="sep">/</span
+                  ><svg class="fi c-ppt"><use href="#i-file" /></svg>
+                  <h2>Cell structure.pptx</h2>
+                  <span class="grow"></span
+                  ><span class="ib sm"
+                    ><svg><use href="#i-dots-v" /></svg></span
+                  >
+                </div>
+                <div class="vbody">
+                  <div class="canvas" style="padding:16px 16px 90px">
+                    <div class="slide">
+                      <div class="s-title">
+                        The cell: structure and organelles
+                      </div>
+                      <div class="s-cols">
+                        <div class="s-text">
+                          <i></i><i></i><i></i><i class="short"></i><i></i
+                          ><i class="short"></i>
+                        </div>
+                        <div class="s-fig"><span class="cellpic"></span></div>
+                      </div>
+                      <div class="s-foot">
+                        <span>Biology 101 · Week 2</span><span>3</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="toolpill">
+                    <span
+                      ><svg><use href="#i-files" /></svg>Files</span
+                    ><span
+                      ><svg><use href="#i-chat" /></svg>Chat</span
+                    ><span
+                      ><svg><use href="#i-spark" /></svg>Generate</span
+                    >
+                  </div>
+                </div>
+              </div>
+              <div class="scrim"></div>
+              <div
+                class="drawer"
+                style="height:84%;left:6px;right:6px;bottom:6px"
+              >
+                <div class="handle"><i></i></div>
+                <div class="tabrow">
+                  <div class="tabs">
+                    <span class="on">Files</span><span>Chat</span
+                    ><span>Generate</span>
+                  </div>
+                  <span class="acts"
+                    ><span class="ib sm muted"
+                      ><svg><use href="#i-plus-circle" /></svg></span
+                    ><span class="ib sm muted"
+                      ><svg><use href="#i-dots-v" /></svg></span
+                    ></span
+                  >
+                </div>
+                <div class="tree">
+                  <div class="ch">
+                    <svg class="fi cv"><use href="#i-down" /></svg
+                    ><svg class="fi chap"><use href="#i-archive" /></svg>Cell
+                    structure
+                  </div>
+                  <div class="row active">
+                    <svg class="fi c-ppt"><use href="#i-file" /></svg
+                    ><span>Cell structure.pptx</span>
+                  </div>
+                  <div class="row">
+                    <svg class="fi c-pdf"><use href="#i-file" /></svg
+                    ><span>Cell structure.pdf</span>
+                  </div>
+                  <div class="row">
+                    <svg class="fi c-md"><use href="#i-file" /></svg
+                    ><span>Organelles cheatsheet.md</span>
+                  </div>
+                  <div class="row">
+                    <svg class="fi c-map"><use href="#i-map" /></svg
+                    ><span>Cell biology mindmap</span>
+                  </div>
+                  <div class="row">
+                    <svg class="fi c-note"><use href="#i-note" /></svg
+                    ><span>Lecture notes: the cell</span>
+                  </div>
+                  <div class="ch">
+                    <svg class="fi cv"><use href="#i-down" /></svg
+                    ><svg class="fi chap">
+                      <use href="#i-archive" />
+                    </svg>Membranes &amp; transport
+                  </div>
+                  <div class="row">
+                    <svg class="fi c-txt"><use href="#i-file" /></svg
+                    ><span>Osmosis notes.txt</span>
+                  </div>
+                  <div class="row">
+                    <svg class="fi c-note"><use href="#i-note" /></svg
+                    ><span>Membranes &amp; transport cheatsheet</span>
+                  </div>
+                  <div class="ch">
+                    <svg class="fi cv"><use href="#i-right" /></svg
+                    ><svg class="fi chap">
+                      <use href="#i-archive" />
+                    </svg>Genetics<span class="cnt">2</span>
+                  </div>
+                  <div class="label">Others</div>
+                  <div class="row">
+                    <svg class="fi c-aud"><use href="#i-audio" /></svg
+                    ><span>dummy_audio.wav</span>
+                  </div>
+                  <div class="row">
+                    <svg class="fi c-quiz"><use href="#i-quiz" /></svg
+                    ><span>Week 3 quiz</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <figcaption>Files in the drawer, taller on a phone.</figcaption>
+        </figure>
+      </div>
+
+      <h2 id="details">Menus at full size</h2>
+      <div class="detail">
+        <figure>
+          <figcaption>
+            Workspace menu, on the name in the viewer header
+          </figcaption>
+          <div class="menu" style="width:auto">
+            <div class="mi cur">
+              <svg class="ws"><use href="#i-waves" /></svg>Biology 101<svg
+                class="chk"
+              >
+                <use href="#i-check" />
+              </svg>
+            </div>
+            <div class="mi">
+              <svg class="ws h1"><use href="#i-waves" /></svg>Calculus II
+            </div>
+            <div class="mi">
+              <svg class="ws h2"><use href="#i-waves" /></svg>World History
+            </div>
+            <div class="mi">
+              <svg class="ws h3"><use href="#i-waves" /></svg>Organic Chemistry
+            </div>
+            <div class="mi">
+              <svg class="ws h4"><use href="#i-waves" /></svg>English Literature
+            </div>
+            <div class="mdiv"></div>
+            <div class="mfoot">
+              <span class="btn ghost sm"
+                ><svg><use href="#i-gear" /></svg>Workspace settings</span
+              >
+            </div>
+          </div>
+        </figure>
+        <figure>
+          <figcaption>
+            Plus menu, on the circled plus at the end of the tab row
+          </figcaption>
+          <div class="menu" style="width:auto">
+            <div class="mi">
+              <svg><use href="#i-upload" /></svg>Upload or import
+            </div>
+            <div class="mi">
+              <svg><use href="#i-file-plus" /></svg>New file
+            </div>
+            <div class="mi">
+              <svg><use href="#i-archive" /></svg>New chapter
+            </div>
+          </div>
+          <p
+            style="padding:0 16px 14px;font-size:13px;color:var(--fg-muted);margin:0"
+          >
+            Upload or import opens the Add source dialog on Upload, with Import
+            one tab over. New file opens the same dialog on Create, the
+            placeholder tab today. New chapter opens the name dialog.
+          </p>
+        </figure>
+      </div>
+
+      <h3>Dots menu (below lg only) and the scrolling tabs</h3>
+      <div class="detail">
+        <figure>
+          <figcaption>Dots menu on Files</figcaption>
+          <div class="menu" style="width:auto">
+            <div class="mi">
+              <svg><use href="#i-collapse" /></svg>Collapse all chapters
+            </div>
+            <div class="mdiv"></div>
+            <div class="mi">
+              <svg><use href="#i-gear" /></svg>Workspace settings
+            </div>
+          </div>
+        </figure>
+        <figure>
+          <figcaption>Dots menu on Chat</figcaption>
+          <div class="menu" style="width:auto">
+            <div class="mi">
+              <svg><use href="#i-clock" /></svg>Chat history
+            </div>
+            <div class="mi">
+              <svg><use href="#i-newchat" /></svg>New chat
+            </div>
+            <div class="mdiv"></div>
+            <div class="mi">
+              <svg><use href="#i-gear" /></svg>Workspace settings
+            </div>
+          </div>
+        </figure>
+        <figure>
+          <figcaption>
+            Tabs narrower than their labels: they scroll, scrollbar hidden, fade
+            at the far edge; the icons never shrink
+          </figcaption>
+          <div style="padding:0 12px 14px">
+            <div
+              class="tabrow"
+              style="width:300px;border-radius:14px 14px 0 0;background:var(--surface)"
+            >
+              <div class="tabs fade">
+                <span>Files</span><span class="on">Chat</span
+                ><span>Generate</span>
+              </div>
+              <span class="acts"
+                ><span class="ib sm muted"
+                  ><svg><use href="#i-clock" /></svg></span
+                ><span class="ib sm muted"
+                  ><svg><use href="#i-newchat" /></svg></span
+                ><span class="ib sm muted"
+                  ><svg><use href="#i-plus-circle" /></svg></span
+                ><span class="ib sm muted"
+                  ><svg><use href="#i-gear" /></svg></span
+                ></span
+              >
+            </div>
+          </div>
+        </figure>
+      </div>
+
+      <h2 id="chapters">Chapter rows</h2>
+      <p>
+        Chevron first, then Archive01, then the name. Files indent under the
+        glyph so the chevron column stays clear. A collapsed chapter shows how
+        many items it holds.
+      </p>
+      <div class="detail">
+        <figure>
+          <figcaption>Expanded and collapsed, at full size</figcaption>
+          <div class="tree">
+            <div class="ch">
+              <svg class="fi cv"><use href="#i-down" /></svg
+              ><svg class="fi chap"><use href="#i-archive" /></svg>Cell
+              structure
+            </div>
+            <div class="row active">
+              <svg class="fi c-ppt"><use href="#i-file" /></svg
+              ><span>Cell structure.pptx</span>
+            </div>
+            <div class="row">
+              <svg class="fi c-pdf"><use href="#i-file" /></svg
+              ><span>Cell structure.pdf</span>
+            </div>
+            <div class="row">
+              <svg class="fi c-note"><use href="#i-note" /></svg
+              ><span>Lecture notes: the cell</span>
+            </div>
+            <div class="ch">
+              <svg class="fi cv"><use href="#i-right" /></svg
+              ><svg class="fi chap"><use href="#i-archive" /></svg>Genetics<span
+                class="cnt"
+                >2</span
+              >
+            </div>
+            <div class="label" style="padding:12px 8px 6px">Others</div>
+            <div class="row" style="margin-left:0">
+              <svg class="fi c-quiz"><use href="#i-quiz" /></svg
+              ><span>Week 3 quiz</span>
+            </div>
+          </div>
+        </figure>
+      </div>
+
+      <h2 id="composer">Composer pill</h2>
+      <div class="detail">
+        <figure>
+          <figcaption>Off, new thread</figcaption>
+          <div class="composer">
+            <div class="ph">Ask about your sources…</div>
+            <div class="tools">
+              <span class="pill"
+                ><svg><use href="#i-book" /></svg>Curate mode</span
+              ><span class="send"
+                ><svg><use href="#i-send" /></svg></span
+              >
+            </div>
+          </div>
+          <p class="fine">Answers grounded in this workspace's sources</p>
+        </figure>
+        <figure>
+          <figcaption>On, new thread</figcaption>
+          <div class="composer">
+            <div class="ph">Describe what to build from the library…</div>
+            <div class="tools">
+              <span class="pill on"
+                ><svg><use href="#i-book" /></svg>Curate mode</span
+              ><span class="send"
+                ><svg><use href="#i-send" /></svg></span
+              >
+            </div>
+          </div>
+          <p class="fine">
+            Building study materials from the shared textbook library
+          </p>
+        </figure>
+        <figure>
+          <figcaption>Locked, thread has messages</figcaption>
+          <div class="composer">
+            <div class="ph">Ask about your sources…</div>
+            <div class="tools">
+              <span class="pill locked"
+                ><svg><use href="#i-lock" /></svg>Curate mode</span
+              ><span class="send"
+                ><svg><use href="#i-send" /></svg></span
+              >
+            </div>
+          </div>
+          <p class="fine">Answers grounded in this workspace's sources</p>
+        </figure>
+      </div>
+
+      <h2 id="decide">Assumptions to veto</h2>
+      <ol>
+        <li>
+          <b>Three columns:</b>
+          the plus lives on the Files panel only; both panels keep a dots menu.
+        </li>
+        <li><b>Plus menu wording:</b> Upload or import as one item.</li>
+        <li>
+          <b>One column:</b>
+          a bottom drawer opened from a floating pill rather than a slide-over
+          from the right.
+        </li>
+      </ol>
+
+      <details class="aside">
+        <summary>
+          E, tabs that stick out (set aside for now, click to unfold)
+        </summary>
+        <h2 id="e"><span class="letter">E</span>Tabs that stick out</h2>
+        <p>
+          Kept for later with the same header, menu and chapter changes as D. A
+          strip along the panel's top in a lighter gray than the top inset bar;
+          every tab is a white shape, the active one taller with icon and label,
+          the others icon only on the divider line.
+        </p>
+        <div class="states">
+          <figure class="state" data-label="Files">
+            <figcaption>Files tab</figcaption>
+            <div
+              class="frame-wrap"
+              data-h="900"
+              data-w="1440"
+              style="aspect-ratio:1440/900;max-width:1440px"
+            >
+              <div class="frame" style="--w:1440px;--h:900px">
+                <div class="col grow">
+                  <div class="panel grow">
+                    <div class="vh">
+                      <span class="ib sm"
+                        ><svg><use href="#i-panel-left" /></svg></span
+                      ><span class="wsmenu"
+                        ><svg class="ws"><use href="#i-waves" /></svg>Biology
+                        101<svg class="chev"><use href="#i-down" /></svg></span
+                      ><span class="sep">/</span
+                      ><svg class="fi c-ppt"><use href="#i-file" /></svg>
+                      <h2>Cell structure.pptx</h2>
+                      <span class="grow"></span
+                      ><span class="ib sm"
+                        ><svg><use href="#i-max" /></svg></span
+                      ><span class="ib sm"
+                        ><svg><use href="#i-dots-v" /></svg></span
+                      >
+                    </div>
+                    <div class="vbody">
+                      <div class="canvas">
+                        <div class="slide">
+                          <div class="s-title">
+                            The cell: structure and organelles
+                          </div>
+                          <div class="s-cols">
+                            <div class="s-text">
+                              <i></i><i></i><i></i><i class="short"></i><i></i
+                              ><i class="short"></i>
+                            </div>
+                            <div class="s-fig">
+                              <span class="cellpic"></span>
+                            </div>
+                          </div>
+                          <div class="s-foot">
+                            <span>Biology 101 · Week 2</span><span>3</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="slidenav">
+                        <svg><use href="#i-back" /></svg><span>3 / 24</span
+                        ><svg><use href="#i-right" /></svg>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="col" style="width:400px;flex:none">
+                  <div class="bar">
+                    <span class="ib dark"
+                      ><svg><use href="#i-search" /></svg></span
+                    ><span class="ib"
+                      ><svg><use href="#i-bell" /></svg
+                      ><i class="dot"></i></span
+                    ><span class="pill-user"
+                      ><span class="avatar">KM</span>Kate Malone<svg>
+                        <use href="#i-down" />
+                      </svg></span
+                    >
+                  </div>
+                  <div class="panel grow">
+                    <div class="tstrip">
+                      <span class="ftab on"
+                        ><svg><use href="#i-files" /></svg>Files</span
+                      ><span class="ftab"
+                        ><svg><use href="#i-chat" /></svg></span
+                      ><span class="ftab"
+                        ><svg><use href="#i-spark" /></svg></span
+                      ><span class="grow"></span
+                      ><span class="acts"
+                        ><span class="ib sm muted"
+                          ><svg><use href="#i-collapse" /></svg></span
+                        ><span class="ib sm muted"
+                          ><svg><use href="#i-plus-circle" /></svg></span
+                        ><span class="ib sm muted"
+                          ><svg><use href="#i-gear" /></svg></span
+                        ></span
+                      >
+                    </div>
+                    <div class="tree">
+                      <div class="ch">
+                        <svg class="fi cv"><use href="#i-down" /></svg
+                        ><svg class="fi chap">
+                          <use href="#i-archive" />
+                        </svg>Cell structure
+                      </div>
+                      <div class="row active">
+                        <svg class="fi c-ppt"><use href="#i-file" /></svg
+                        ><span>Cell structure.pptx</span>
+                      </div>
+                      <div class="row">
+                        <svg class="fi c-pdf"><use href="#i-file" /></svg
+                        ><span>Cell structure.pdf</span>
+                      </div>
+                      <div class="row">
+                        <svg class="fi c-md"><use href="#i-file" /></svg
+                        ><span>Organelles cheatsheet.md</span>
+                      </div>
+                      <div class="row">
+                        <svg class="fi c-map"><use href="#i-map" /></svg
+                        ><span>Cell biology mindmap</span>
+                      </div>
+                      <div class="row">
+                        <svg class="fi c-note"><use href="#i-note" /></svg
+                        ><span>Lecture notes: the cell</span>
+                      </div>
+                      <div class="ch">
+                        <svg class="fi cv"><use href="#i-down" /></svg
+                        ><svg class="fi chap">
+                          <use href="#i-archive" />
+                        </svg>Membranes &amp; transport
+                      </div>
+                      <div class="row">
+                        <svg class="fi c-txt"><use href="#i-file" /></svg
+                        ><span>Osmosis notes.txt</span>
+                      </div>
+                      <div class="row">
+                        <svg class="fi c-note"><use href="#i-note" /></svg
+                        ><span>Membranes &amp; transport cheatsheet</span>
+                      </div>
+                      <div class="ch">
+                        <svg class="fi cv"><use href="#i-right" /></svg
+                        ><svg class="fi chap">
+                          <use href="#i-archive" />
+                        </svg>Genetics<span class="cnt">2</span>
+                      </div>
+                      <div class="label">Others</div>
+                      <div class="row">
+                        <svg class="fi c-aud"><use href="#i-audio" /></svg
+                        ><span>dummy_audio.wav</span>
+                      </div>
+                      <div class="row">
+                        <svg class="fi c-quiz"><use href="#i-quiz" /></svg
+                        ><span>Week 3 quiz</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </figure>
+          <figure class="state" data-label="Chat, workspace menu open">
+            <figcaption>Chat tab with the workspace menu open</figcaption>
+            <div
+              class="frame-wrap"
+              data-h="900"
+              data-w="1440"
+              style="aspect-ratio:1440/900;max-width:1440px"
+            >
+              <div class="frame" style="--w:1440px;--h:900px">
+                <div class="col grow">
+                  <div class="panel grow">
+                    <div class="vh">
+                      <span class="ib sm"
+                        ><svg><use href="#i-panel-left" /></svg></span
+                      ><span class="wsmenu open"
+                        ><svg class="ws"><use href="#i-waves" /></svg>Biology
+                        101<svg class="chev"><use href="#i-down" /></svg></span
+                      ><span class="sep">/</span
+                      ><svg class="fi c-ppt"><use href="#i-file" /></svg>
+                      <h2>Cell structure.pptx</h2>
+                      <span class="grow"></span
+                      ><span class="ib sm"
+                        ><svg><use href="#i-max" /></svg></span
+                      ><span class="ib sm"
+                        ><svg><use href="#i-dots-v" /></svg></span
+                      >
+                    </div>
+                    <div class="menu" style="left:62px;top:58px;width:300px">
+                      <div class="mi cur">
+                        <svg class="ws"><use href="#i-waves" /></svg>Biology 101<svg
+                          class="chk"
+                        >
+                          <use href="#i-check" />
+                        </svg>
+                      </div>
+                      <div class="mi">
+                        <svg class="ws h1"><use href="#i-waves" /></svg>Calculus
+                        II
+                      </div>
+                      <div class="mi">
+                        <svg class="ws h2"><use href="#i-waves" /></svg>World
+                        History
+                      </div>
+                      <div class="mi">
+                        <svg class="ws h3"><use href="#i-waves" /></svg>Organic
+                        Chemistry
+                      </div>
+                      <div class="mi">
+                        <svg class="ws h4"><use href="#i-waves" /></svg>English
+                        Literature
+                      </div>
+                      <div class="mdiv"></div>
+                      <div class="mfoot">
+                        <span class="btn ghost sm"
+                          ><svg><use href="#i-gear" /></svg>Workspace settings</span
+                        >
+                      </div>
+                    </div>
+                    <div class="vbody">
+                      <div class="canvas">
+                        <div class="slide">
+                          <div class="s-title">
+                            The cell: structure and organelles
+                          </div>
+                          <div class="s-cols">
+                            <div class="s-text">
+                              <i></i><i></i><i></i><i class="short"></i><i></i
+                              ><i class="short"></i>
+                            </div>
+                            <div class="s-fig">
+                              <span class="cellpic"></span>
+                            </div>
+                          </div>
+                          <div class="s-foot">
+                            <span>Biology 101 · Week 2</span><span>3</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="slidenav">
+                        <svg><use href="#i-back" /></svg><span>3 / 24</span
+                        ><svg><use href="#i-right" /></svg>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="col" style="width:400px;flex:none">
+                  <div class="bar">
+                    <span class="ib dark"
+                      ><svg><use href="#i-search" /></svg></span
+                    ><span class="ib"
+                      ><svg><use href="#i-bell" /></svg
+                      ><i class="dot"></i></span
+                    ><span class="pill-user"
+                      ><span class="avatar">KM</span>Kate Malone<svg>
+                        <use href="#i-down" />
+                      </svg></span
+                    >
+                  </div>
+                  <div class="panel grow">
+                    <div class="tstrip">
+                      <span class="ftab"
+                        ><svg><use href="#i-files" /></svg></span
+                      ><span class="ftab on"
+                        ><svg><use href="#i-chat" /></svg>Chat</span
+                      ><span class="ftab"
+                        ><svg><use href="#i-spark" /></svg></span
+                      ><span class="grow"></span
+                      ><span class="acts"
+                        ><span class="ib sm muted"
+                          ><svg><use href="#i-clock" /></svg></span
+                        ><span class="ib sm muted"
+                          ><svg><use href="#i-newchat" /></svg></span
+                        ><span class="ib sm muted"
+                          ><svg><use href="#i-plus-circle" /></svg></span
+                        ><span class="ib sm muted"
+                          ><svg><use href="#i-gear" /></svg></span
+                        ></span
+                      >
+                    </div>
+                    <div class="msgs">
+                      <div class="mu">
+                        What does the mitochondrion actually do besides
+                        "powerhouse"?
+                      </div>
+                      <div class="ma">
+                        It runs oxidative phosphorylation. The electron
+                        transport chain on the inner membrane pumps protons into
+                        the intermembrane space, and ATP synthase lets them back
+                        through to make ATP. The cristae folds exist to fit more
+                        chain complexes into the same organelle.
+                        <div class="mdl">GLM 4.6</div>
+                        <div class="cites">
+                          <span class="cite"
+                            >[1] <svg><use href="#i-file" /></svg>Cell
+                            structure.pdf <em>p. 4</em></span
+                          ><span class="cite"
+                            >[2] <svg><use href="#i-file" /></svg>Organelles
+                            cheatsheet.md</span
+                          >
+                        </div>
+                      </div>
+                      <div class="mu">
+                        And why is the matrix so protein dense?
+                      </div>
+                    </div>
+                    <div class="composer">
+                      <div class="ph">Ask about your sources…</div>
+                      <div class="tools">
+                        <span class="pill locked"
+                          ><svg><use href="#i-lock" /></svg>Curate mode</span
+                        ><span class="send"
+                          ><svg><use href="#i-send" /></svg></span
+                        >
+                      </div>
+                    </div>
+                    <p class="fine">
+                      Answers grounded in this workspace's sources
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </figure>
+          <figure class="state" data-label="Generate">
+            <figcaption>Generate tab</figcaption>
+            <div
+              class="frame-wrap"
+              data-h="900"
+              data-w="1440"
+              style="aspect-ratio:1440/900;max-width:1440px"
+            >
+              <div class="frame" style="--w:1440px;--h:900px">
+                <div class="col grow">
+                  <div class="panel grow">
+                    <div class="vh">
+                      <span class="ib sm"
+                        ><svg><use href="#i-panel-left" /></svg></span
+                      ><span class="wsmenu"
+                        ><svg class="ws"><use href="#i-waves" /></svg>Biology
+                        101<svg class="chev"><use href="#i-down" /></svg></span
+                      ><span class="sep">/</span
+                      ><svg class="fi c-ppt"><use href="#i-file" /></svg>
+                      <h2>Cell structure.pptx</h2>
+                      <span class="grow"></span
+                      ><span class="ib sm"
+                        ><svg><use href="#i-max" /></svg></span
+                      ><span class="ib sm"
+                        ><svg><use href="#i-dots-v" /></svg></span
+                      >
+                    </div>
+                    <div class="vbody">
+                      <div class="canvas">
+                        <div class="slide">
+                          <div class="s-title">
+                            The cell: structure and organelles
+                          </div>
+                          <div class="s-cols">
+                            <div class="s-text">
+                              <i></i><i></i><i></i><i class="short"></i><i></i
+                              ><i class="short"></i>
+                            </div>
+                            <div class="s-fig">
+                              <span class="cellpic"></span>
+                            </div>
+                          </div>
+                          <div class="s-foot">
+                            <span>Biology 101 · Week 2</span><span>3</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="slidenav">
+                        <svg><use href="#i-back" /></svg><span>3 / 24</span
+                        ><svg><use href="#i-right" /></svg>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="col" style="width:400px;flex:none">
+                  <div class="bar">
+                    <span class="ib dark"
+                      ><svg><use href="#i-search" /></svg></span
+                    ><span class="ib"
+                      ><svg><use href="#i-bell" /></svg
+                      ><i class="dot"></i></span
+                    ><span class="pill-user"
+                      ><span class="avatar">KM</span>Kate Malone<svg>
+                        <use href="#i-down" />
+                      </svg></span
+                    >
+                  </div>
+                  <div class="panel grow">
+                    <div class="tstrip">
+                      <span class="ftab"
+                        ><svg><use href="#i-files" /></svg></span
+                      ><span class="ftab"
+                        ><svg><use href="#i-chat" /></svg></span
+                      ><span class="ftab on"
+                        ><svg><use href="#i-spark" /></svg>Generate</span
+                      ><span class="grow"></span
+                      ><span class="acts"
+                        ><span class="ib sm muted"
+                          ><svg><use href="#i-plus-circle" /></svg></span
+                        ><span class="ib sm muted"
+                          ><svg><use href="#i-gear" /></svg></span
+                        ></span
+                      >
+                    </div>
+                    <div class="tiles">
+                      <div class="tile">
+                        <svg class="c-cards">
+                          <use href="#i-cards" />
+                        </svg>Flashcards
+                      </div>
+                      <div class="tile">
+                        <svg class="c-quiz"><use href="#i-quiz" /></svg>Quiz
+                      </div>
+                      <div class="tile">
+                        <svg class="c-map"><use href="#i-map" /></svg>Mindmap
+                      </div>
+                      <div class="tile">
+                        <svg class="c-diag">
+                          <use href="#i-diagram" />
+                        </svg>Diagram
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </figure>
+          <figure class="state" data-label="Three columns">
+            <figcaption>Three columns: Files pinned to the left</figcaption>
+            <div
+              class="frame-wrap"
+              data-h="900"
+              data-w="1440"
+              style="aspect-ratio:1440/900;max-width:1440px"
+            >
+              <div class="frame" style="--w:1440px;--h:900px">
+                <div class="col" style="width:270px;flex:none">
+                  <div class="panel grow">
+                    <div class="tstrip">
+                      <span class="ftab on"
+                        ><svg><use href="#i-files" /></svg>Files</span
+                      ><span class="grow"></span
+                      ><span class="acts"
+                        ><span class="ib sm muted"
+                          ><svg><use href="#i-collapse" /></svg></span
+                        ><span class="ib sm muted"
+                          ><svg><use href="#i-plus-circle" /></svg></span
+                        ><span class="ib sm muted"
+                          ><svg><use href="#i-gear" /></svg></span
+                        ></span
+                      >
+                    </div>
+                    <div class="tree">
+                      <div class="ch">
+                        <svg class="fi cv"><use href="#i-down" /></svg
+                        ><svg class="fi chap">
+                          <use href="#i-archive" />
+                        </svg>Cell structure
+                      </div>
+                      <div class="row active">
+                        <svg class="fi c-ppt"><use href="#i-file" /></svg
+                        ><span>Cell structure.pptx</span>
+                      </div>
+                      <div class="row">
+                        <svg class="fi c-pdf"><use href="#i-file" /></svg
+                        ><span>Cell structure.pdf</span>
+                      </div>
+                      <div class="row">
+                        <svg class="fi c-md"><use href="#i-file" /></svg
+                        ><span>Organelles cheatsheet.md</span>
+                      </div>
+                      <div class="row">
+                        <svg class="fi c-map"><use href="#i-map" /></svg
+                        ><span>Cell biology mindmap</span>
+                      </div>
+                      <div class="row">
+                        <svg class="fi c-note"><use href="#i-note" /></svg
+                        ><span>Lecture notes: the cell</span>
+                      </div>
+                      <div class="ch">
+                        <svg class="fi cv"><use href="#i-down" /></svg
+                        ><svg class="fi chap">
+                          <use href="#i-archive" />
+                        </svg>Membranes &amp; transport
+                      </div>
+                      <div class="row">
+                        <svg class="fi c-txt"><use href="#i-file" /></svg
+                        ><span>Osmosis notes.txt</span>
+                      </div>
+                      <div class="row">
+                        <svg class="fi c-note"><use href="#i-note" /></svg
+                        ><span>Membranes &amp; transport cheatsheet</span>
+                      </div>
+                      <div class="ch">
+                        <svg class="fi cv"><use href="#i-right" /></svg
+                        ><svg class="fi chap">
+                          <use href="#i-archive" />
+                        </svg>Genetics<span class="cnt">2</span>
+                      </div>
+                      <div class="label">Others</div>
+                      <div class="row">
+                        <svg class="fi c-aud"><use href="#i-audio" /></svg
+                        ><span>dummy_audio.wav</span>
+                      </div>
+                      <div class="row">
+                        <svg class="fi c-quiz"><use href="#i-quiz" /></svg
+                        ><span>Week 3 quiz</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="col grow">
+                  <div class="panel grow">
+                    <div class="vh">
+                      <span class="ib sm"
+                        ><svg><use href="#i-panel-left" /></svg></span
+                      ><span class="wsmenu"
+                        ><svg class="ws"><use href="#i-waves" /></svg>Biology
+                        101<svg class="chev"><use href="#i-down" /></svg></span
+                      ><span class="sep">/</span
+                      ><svg class="fi c-ppt"><use href="#i-file" /></svg>
+                      <h2>Cell structure.pptx</h2>
+                      <span class="grow"></span
+                      ><span class="ib sm"
+                        ><svg><use href="#i-max" /></svg></span
+                      ><span class="ib sm"
+                        ><svg><use href="#i-dots-v" /></svg></span
+                      >
+                    </div>
+                    <div class="vbody">
+                      <div class="canvas">
+                        <div class="slide">
+                          <div class="s-title">
+                            The cell: structure and organelles
+                          </div>
+                          <div class="s-cols">
+                            <div class="s-text">
+                              <i></i><i></i><i></i><i class="short"></i><i></i
+                              ><i class="short"></i>
+                            </div>
+                            <div class="s-fig">
+                              <span class="cellpic"></span>
+                            </div>
+                          </div>
+                          <div class="s-foot">
+                            <span>Biology 101 · Week 2</span><span>3</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="slidenav">
+                        <svg><use href="#i-back" /></svg><span>3 / 24</span
+                        ><svg><use href="#i-right" /></svg>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="col" style="width:380px;flex:none">
+                  <div class="bar">
+                    <span class="ib dark"
+                      ><svg><use href="#i-search" /></svg></span
+                    ><span class="ib"
+                      ><svg><use href="#i-bell" /></svg
+                      ><i class="dot"></i></span
+                    ><span class="pill-user"
+                      ><span class="avatar">KM</span>Kate Malone<svg>
+                        <use href="#i-down" />
+                      </svg></span
+                    >
+                  </div>
+                  <div class="panel grow">
+                    <div class="tstrip">
+                      <span class="ftab on"
+                        ><svg><use href="#i-chat" /></svg>Chat</span
+                      ><span class="ftab"
+                        ><svg><use href="#i-spark" /></svg></span
+                      ><span class="grow"></span
+                      ><span class="acts"
+                        ><span class="ib sm muted"
+                          ><svg><use href="#i-clock" /></svg></span
+                        ><span class="ib sm muted"
+                          ><svg><use href="#i-newchat" /></svg></span
+                        ><span class="ib sm muted"
+                          ><svg><use href="#i-gear" /></svg></span
+                        ></span
+                      >
+                    </div>
+                    <div class="msgs">
+                      <div class="chat-empty">
+                        <svg><use href="#i-chat" /></svg>
+                        <div>Ask anything about your sources.</div>
+                      </div>
+                    </div>
+                    <div class="composer">
+                      <div class="ph">Ask about your sources…</div>
+                      <div class="tools">
+                        <span class="pill"
+                          ><svg><use href="#i-book" /></svg>Curate mode</span
+                        ><span class="send"
+                          ><svg><use href="#i-send" /></svg></span
+                        >
+                      </div>
+                    </div>
+                    <p class="fine">
+                      Answers grounded in this workspace's sources
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </figure>
+        </div>
+        <h3>Tab strip at full size</h3>
+        <div class="detail">
+          <figure class="pbox">
+            <div class="tstrip">
+              <span class="ftab on"
+                ><svg><use href="#i-files" /></svg>Files</span
+              ><span class="ftab"
+                ><svg><use href="#i-chat" /></svg></span
+              ><span class="ftab"
+                ><svg><use href="#i-spark" /></svg></span
+              ><span class="grow"></span
+              ><span class="acts"
+                ><span class="ib sm muted"
+                  ><svg><use href="#i-collapse" /></svg></span
+                ><span class="ib sm muted"
+                  ><svg><use href="#i-plus-circle" /></svg></span
+                ><span class="ib sm muted"
+                  ><svg><use href="#i-gear" /></svg></span
+                ></span
+              >
+            </div>
+            <div class="tree">
+              <div class="ch">
+                <svg class="fi cv"><use href="#i-down" /></svg
+                ><svg class="fi chap"><use href="#i-archive" /></svg>Cell
+                structure
+              </div>
+              <div class="row active">
+                <svg class="fi c-ppt"><use href="#i-file" /></svg
+                ><span>Cell structure.pptx</span>
+              </div>
+              <div class="row">
+                <svg class="fi c-pdf"><use href="#i-file" /></svg
+                ><span>Cell structure.pdf</span>
+              </div>
+            </div>
+            <figcaption>Files active: collapse, plus, gear</figcaption>
+          </figure>
+          <figure class="pbox">
+            <div class="tstrip">
+              <span class="ftab"
+                ><svg><use href="#i-files" /></svg></span
+              ><span class="ftab on"
+                ><svg><use href="#i-chat" /></svg>Chat</span
+              ><span class="ftab"
+                ><svg><use href="#i-spark" /></svg></span
+              ><span class="grow"></span
+              ><span class="acts"
+                ><span class="ib sm muted"
+                  ><svg><use href="#i-clock" /></svg></span
+                ><span class="ib sm muted"
+                  ><svg><use href="#i-newchat" /></svg></span
+                ><span class="ib sm muted"
+                  ><svg><use href="#i-plus-circle" /></svg></span
+                ><span class="ib sm muted"
+                  ><svg><use href="#i-gear" /></svg></span
+                ></span
+              >
+            </div>
+            <div class="msgs">
+              <div class="mu">What does the mitochondrion actually do?</div>
+            </div>
+            <figcaption>Chat active: history, new chat, plus, gear</figcaption>
+          </figure>
+        </div>
+      </details>
+    </div>
+
+    <script>
+    'use strict';
+    (() => {
+      var d = document,
+        root = d.documentElement;
+      root.classList.add('js');
+      var mq = window.matchMedia
+        ? window.matchMedia('(prefers-color-scheme: dark)')
+        : null;
+      function setTheme(t) {
+        root.setAttribute('data-theme', t);
+        var bs = d.querySelectorAll('[data-set-theme]');
+        for (var i = 0; i < bs.length; i++) {
+          bs[i].classList.toggle(
+            'on',
+            bs[i].getAttribute('data-set-theme') === t
+          );
+        }
+      }
+      setTheme(mq && mq.matches ? 'mocha' : 'latte');
+      var tb = d.querySelectorAll('[data-set-theme]');
+      for (var i = 0; i < tb.length; i++) {
+        ((b) => {
+          b.addEventListener('click', () => {
+            setTheme(b.getAttribute('data-set-theme'));
+          });
+        })(tb[i]);
+      }
+      if (window.ResizeObserver) {
+        var ro = new ResizeObserver((es) => {
+          for (var j = 0; j < es.length; j++) {
+            var w = es[j].contentRect.width;
+            var w0 = Number.parseFloat(
+              es[j].target.getAttribute('data-w') || '1440'
+            );
+            if (w > 0) {
+              es[j].target.style.setProperty('--s', (w / w0).toFixed(4));
+            }
+          }
+        });
+        var fw = d.querySelectorAll('.frame-wrap');
+        for (var k = 0; k < fw.length; k++) {
+          ro.observe(fw[k]);
+        }
+      }
+      var groups = d.querySelectorAll('.states');
+      for (var g = 0; g < groups.length; g++) {
+        ((group) => {
+          var figs = [];
+          for (var c = 0; c < group.children.length; c++) {
+            if (group.children[c].classList.contains('state'))
+              figs.push(group.children[c]);
+          }
+          if (figs.length < 2) return;
+          var sw = d.createElement('div');
+          sw.className = 'switch';
+          sw.setAttribute('role', 'group');
+          function show(n) {
+            for (var x = 0; x < figs.length; x++) {
+              figs[x].hidden = x !== n;
+            }
+            for (var y = 0; y < sw.children.length; y++) {
+              sw.children[y].classList.toggle('on', y === n);
+            }
+          }
+          for (var f = 0; f < figs.length; f++) {
+            ((n) => {
+              var b = d.createElement('button');
+              b.type = 'button';
+              b.textContent =
+                figs[n].getAttribute('data-label') || 'State ' + (n + 1);
+              b.addEventListener('click', () => {
+                show(n);
+              });
+              sw.appendChild(b);
+            })(f);
+          }
+          group.insertBefore(sw, group.firstChild);
+          show(0);
+        })(groups[g]);
+      }
+    })();
+    </script>
+  </body>
+</html>

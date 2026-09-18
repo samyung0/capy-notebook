@@ -56,10 +56,15 @@ export function LabelEditDialog({
     <SimpleDialog
       footer={
         <>
-          <Button onClick={onClose} type="button" variant="ghost">
+          <Button onClick={onClose} size="lg" type="button" variant="ghost">
             {m.action_cancel()}
           </Button>
-          <Button disabled={submitDisabled} type="submit" variant="accent">
+          <Button
+            disabled={submitDisabled}
+            size="lg"
+            type="submit"
+            variant="accent"
+          >
             {!isSubmitting && <span>{m.action_save()}</span>}
             {isSubmitting && (
               <span>

@@ -56,7 +56,7 @@ export function WorkspaceSettingsDialog({
       title={m.workspace_settings()}
     >
       <Tabs
-        className="mt-2.5 overflow-x-auto whitespace-nowrap"
+        className="mt-2.5 whitespace-nowrap"
         onChange={setTab}
         tabs={[
           { label: m.workspace_general(), value: 'general' },

@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { api, isApiError } from '@/api/client';
 import { useGenerate } from '@/api/hooks';
 import type {
@@ -18,6 +18,7 @@ import { m } from '@/i18n';
 import { describeError } from '@/lib/errors';
 import { materialIconName } from '@/lib/fileIcons';
 import { GenerateFormDialog, type GenerateMode } from './GenerateFormDialog';
+import type { TabAction } from './PanelTabRow';
 
 type GenerateResultData =
   | { kind: 'flashcards'; material?: FlashcardSet; cards?: unknown[] }
@@ -48,9 +49,12 @@ export function GeneratePanel({
   canReprocess,
   onOpenItem,
   onGeneratingChange,
+  renderTabRow,
 }: {
   workspaceId: string;
   workspaceName: string;
+  /** Draws the panel's tab row; Generate has no actions of its own. */
+  renderTabRow: (actions: TabAction[]) => ReactNode;
   /** Owner-only: shows the process-changes button under the pending notice. */
   canReprocess?: boolean;
   chapters: Chapter[];
@@ -111,65 +115,68 @@ export function GeneratePanel({
   }
 
   return (
-    <div className="flex flex-col gap-4 overflow-auto p-4">
-      <div className="grid w-full auto-rows-fr grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-4">
-        {TILES.map((k) => (
-          <ButtonCard
-            buttonText={tileLabel(k)}
-            componentBeforeText={
-              <FileIcon className="size-5.5" name={materialIconName(k)} />
-            }
-            disabled={generateIsPending}
-            key={k}
-            onClick={() => {
-              setResult(null);
-              setMode(k);
-            }}
-          />
-        ))}
-      </div>
-
-      {failure && (
-        <p className="text-sm text-tint-error-fg" role="alert">
-          {failure}
-        </p>
-      )}
-      {pendingFileIds && (
-        <div
-          className="rounded-lg border border-line bg-surface p-3 text-sm"
-          role="status"
-        >
-          <p>{m.source_pending_context()}</p>
-          {canReprocess && (
-            <Button
-              disabled={processingChanges}
-              onClick={() => processChanges(pendingFileIds)}
-              size="sm"
-              variant="ghost-hover"
-            >
-              {m.source_process_changes()}
-            </Button>
-          )}
+    <div className="flex h-full min-h-0 flex-col">
+      {renderTabRow([])}
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-4">
+        <div className="grid w-full auto-rows-fr grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-4">
+          {TILES.map((k) => (
+            <ButtonCard
+              buttonText={tileLabel(k)}
+              componentBeforeText={
+                <FileIcon className="size-5.5" name={materialIconName(k)} />
+              }
+              disabled={generateIsPending}
+              key={k}
+              onClick={() => {
+                setResult(null);
+                setMode(k);
+              }}
+            />
+          ))}
         </div>
-      )}
-      {result && <GenerateResult onOpenItem={onOpenItem} result={result} />}
 
-      {mode && (
-        <GenerateFormDialog
-          chapters={chapters}
-          existingTitles={existingTitles}
-          files={files}
-          key={mode}
-          mode={mode}
-          onGenerate={handleGenerate}
-          open
-          pending={generateIsPending}
-          setOpen={(o) => {
-            if (!o) setMode(null);
-          }}
-          workspaceName={workspaceName}
-        />
-      )}
+        {failure && (
+          <p className="text-sm text-tint-error-fg" role="alert">
+            {failure}
+          </p>
+        )}
+        {pendingFileIds && (
+          <div
+            className="rounded-lg border border-line bg-surface p-3 text-sm"
+            role="status"
+          >
+            <p>{m.source_pending_context()}</p>
+            {canReprocess && (
+              <Button
+                disabled={processingChanges}
+                onClick={() => processChanges(pendingFileIds)}
+                size="sm"
+                variant="ghost-hover"
+              >
+                {m.source_process_changes()}
+              </Button>
+            )}
+          </div>
+        )}
+        {result && <GenerateResult onOpenItem={onOpenItem} result={result} />}
+
+        {mode && (
+          <GenerateFormDialog
+            chapters={chapters}
+            existingTitles={existingTitles}
+            files={files}
+            key={mode}
+            mode={mode}
+            onGenerate={handleGenerate}
+            open
+            pending={generateIsPending}
+            setOpen={(o) => {
+              if (!o) setMode(null);
+            }}
+            workspaceName={workspaceName}
+          />
+        )}
+      </div>
     </div>
   );
 }

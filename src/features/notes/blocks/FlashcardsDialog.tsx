@@ -53,12 +53,13 @@ export function FlashcardsDialog({
     <SimpleDialog
       footer={
         <>
-          <Button onClick={onClose} variant="ghost">
+          <Button onClick={onClose} size="lg" variant="ghost">
             {m.action_cancel()}
           </Button>
           <Button
             disabled={!canSave}
             onClick={() => onSave(flashcardsFenceBody(clean))}
+            size="lg"
             variant="accent"
           >
             {m.action_insert()}

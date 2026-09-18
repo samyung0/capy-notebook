@@ -145,10 +145,11 @@ function FileViewerContent({
     refetch: refetchLinks,
   } = useFileLinks(file?.hasBytes ? file.id : '', { errorBoundary: false });
   if (!file) {
+    // TODO: shouldnt this throw errors?
     return (
       <div className="grid h-full place-items-center">
         <div className="flex flex-col items-center gap-2">
-          <Icon className="non-scaling-svg" name="files" size={32} />
+          <Icon className="non-scaling-svg size-8" name="files" />
           <p>{m.files_select_to_read()}</p>
         </div>
       </div>

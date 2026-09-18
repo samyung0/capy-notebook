@@ -171,7 +171,7 @@ function AllQuizzes() {
         footer={
           info && (
             <>
-              <Button onClick={() => setInfo(null)} variant="ghost">
+              <Button onClick={() => setInfo(null)} size="lg" variant="ghost">
                 {m.action_cancel()}
               </Button>
               <Button
@@ -182,6 +182,7 @@ function AllQuizzes() {
                     to: '/quizzes/$quizId/attempt',
                   })
                 }
+                size="lg"
                 variant="accent"
               >
                 {m.quiz_start()}

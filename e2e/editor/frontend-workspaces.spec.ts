@@ -186,3 +186,63 @@ test('invitations are standalone and transfer previews open only one dialog', as
   await transfer.getByRole('button', { exact: true, name: 'Cancel' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
+
+test('workspace sorting shows direction and stays open while reversing order', async ({
+  page,
+}) => {
+  await page.goto('/workspaces');
+  const trigger = page.getByRole('button', { name: /^Sort:/ });
+  await expect(trigger).toContainText('Newest first', { timeout: 30_000 });
+  const cards = page.locator('a[href^="/workspaces/"]');
+  await expect(cards.first()).toBeVisible();
+  await trigger.click();
+  const menu = page.getByRole('menu');
+  for (const [label, descending, ascending] of [
+    ['Last accessed', 'Newest first', 'Oldest first'],
+    ['Created', 'Newest first', 'Oldest first'],
+    ['Chapters', 'Most first', 'Fewest first'],
+    ['Files', 'Most first', 'Fewest first'],
+  ]) {
+    if (label !== 'Last accessed') {
+      await menu
+        .getByRole('menuitem', { name: `${label} ${descending}` })
+        .click();
+    }
+    await expect(menu).toBeVisible();
+    await expect(trigger).toContainText(`${label}`);
+    await expect(trigger).toContainText(descending);
+    await expect(cards.first()).toBeVisible();
+    const original = await cards.evaluateAll((links) =>
+      links.map((link) => link.getAttribute('href'))
+    );
+    expect(original.length).toBeGreaterThan(1);
+    await menu
+      .getByRole('menuitem', { name: `${label} ${descending}` })
+      .click();
+    await expect(menu).toBeVisible();
+    await expect(trigger).toContainText(ascending);
+    await expect
+      .poll(() =>
+        cards.evaluateAll((links) =>
+          links.map((link) => link.getAttribute('href'))
+        )
+      )
+      .toEqual(original.slice().reverse());
+    const selected = menu.getByRole('menuitem', {
+      name: `${label} ${ascending}`,
+    });
+    await selected.focus();
+    await page.keyboard.press('Enter');
+    await expect(menu).toBeVisible();
+    await expect(trigger).toContainText(descending);
+    await expect
+      .poll(() =>
+        cards.evaluateAll((links) =>
+          links.map((link) => link.getAttribute('href'))
+        )
+      )
+      .toEqual(original);
+  }
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+});

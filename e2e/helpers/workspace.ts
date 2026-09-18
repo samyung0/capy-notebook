@@ -13,7 +13,10 @@ export async function openWorkspaceMaterial(
 
 /** Sharing controls moved into the workspace settings dialog's Sharing tab. */
 export async function openWorkspaceSharing(page: Page) {
-  await page.getByRole('button', { name: 'Workspace settings' }).click();
+  await page
+    .getByRole('button', { name: 'Workspace settings' })
+    .first()
+    .click();
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { exact: true, name: 'Sharing' }).click();
 }

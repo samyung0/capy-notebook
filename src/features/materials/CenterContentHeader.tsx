@@ -1,4 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
+import type { ReactNode } from 'react';
 import { useFile, useFlashcardSet, useMaterial, useQuiz } from '@/api/hooks';
 import type {
   Chapter,
@@ -37,6 +38,7 @@ import {
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
+import { useMediaQuery } from '@/lib/useMediaQuery';
 import { MATERIALMODE_ICON, MATERIALMODE_LABEL } from './materialIconMappings';
 import { type MaterialMode, materialModePolicy } from './modePolicy';
 import type { OpenItem } from './openItem';
@@ -189,8 +191,11 @@ export function Header({
   editorStatus,
   readOnly,
   workspaceId,
+  leading,
 }: {
   beforeFileDelete?: () => boolean;
+  /** Workspace chrome drawn before the file: layout toggle and workspace menu. */
+  leading?: ReactNode;
   chapters: Chapter[];
   color?: UserColor;
   item: OpenItem;
@@ -221,10 +226,16 @@ export function Header({
       ? materialMode
       : defaultMode;
   const statusLabel = noteEditorStatusLabel(editorStatus);
+  // Phones have no room to go fuller than the panel already is.
+  const sm = useMediaQuery('(min-width: 640px)');
   return (
-    <div className="flex h-14 items-center gap-3 border-divider border-b px-5 py-4">
-      <div className="flex items-center gap-1">
-        <FileIcon className="size-4.5" name={icon} />
+    <div className="flex h-14 items-center gap-2 border-divider border-b px-4 py-4">
+      {leading}
+      {leading && (
+        <span className="shrink-0 font-semibold text-line-strong">/</span>
+      )}
+      <div className="flex min-w-0 items-center gap-1">
+        <FileIcon className="size-4.5 shrink-0" name={icon} />
         <h2 className="t-subtitle ml-1 min-w-0 flex-1 translate-y-px truncate">
           {title ?? '--'}
         </h2>
@@ -320,13 +331,19 @@ export function Header({
           }
           display="menu"
           key={`${item.kind}:${item.id}`}
-          leadingItems={[
-            {
-              icon: isFullscreen ? 'minimize' : 'maximize',
-              label: isFullscreen ? 'Exit full screen' : 'Full screen',
-              onClick: onToggleFullscreen,
-            },
-          ]}
+          leadingItems={
+            sm
+              ? [
+                  {
+                    icon: isFullscreen ? 'minimize' : 'maximize',
+                    label: isFullscreen
+                      ? m.material_fullscreen_exit()
+                      : m.material_fullscreen(),
+                    onClick: onToggleFullscreen,
+                  },
+                ]
+              : []
+          }
           menuIconContainerClassName="shrink-0"
           onDeleted={onDeleted}
           readOnly={readOnly}

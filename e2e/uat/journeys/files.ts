@@ -139,6 +139,7 @@ export async function upload(
   const page = run.owner.page;
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
   await page.getByRole('button', { exact: true, name: 'Add file' }).click();
+  await page.getByRole('menuitem', { name: 'Upload or import' }).click();
   // The picker stays disabled until the workspace upload policy is ready.
   const [chooser] = await Promise.all([
     page.waitForEvent('filechooser'),

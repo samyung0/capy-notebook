@@ -58,10 +58,10 @@ export function QuizDialog({
     <SimpleDialog
       footer={
         <>
-          <Button onClick={onClose} variant="ghost">
+          <Button onClick={onClose} size="lg" variant="ghost">
             {m.action_cancel()}
           </Button>
-          <Button disabled={!canSave} onClick={save} variant="accent">
+          <Button disabled={!canSave} onClick={save} size="lg" variant="accent">
             {initialCode ? m.action_save() : m.action_insert()}
           </Button>
         </>

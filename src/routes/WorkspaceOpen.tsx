@@ -1,47 +1,25 @@
-import {
-  Link,
-  useNavigate,
-  useParams,
-  useSearch,
-} from '@tanstack/react-router';
-import { useRef, useState } from 'react';
+import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
+import { type ReactNode, useState } from 'react';
 import { isApiError } from '@/api/client';
 import { addChapterBodyNameMax } from '@/api/gen/validators';
 import {
   useAddChapter,
   useChapters,
   useCloneWorkspace,
-  useCreateNote,
-  useDeleteChapter,
-  useDeleteMaterial,
   useFiles,
   useMaterials,
-  useMoveMaterial,
-  useReorderChapters,
-  useReorderContent,
   useUpdateChapter,
   useWorkspace,
 } from '@/api/hooks';
-import type {
-  Citation,
-  ContentOrderItem,
-  MaterialRef,
-  MaterialRefType,
-  Region,
-  SourceFile,
-  UserColor,
-} from '@/api/types';
+import type { Citation, Region } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { LoadingLarge } from '@/components/app/LoadingLarge';
 import { Panel } from '@/components/app/layout';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { Button } from '@/components/ui/Button';
-import { ConfirmDialog } from '@/components/ui/Dialog';
-import { FileIcon } from '@/components/ui/FileIcon';
-import { SkeletonList } from '@/components/ui/feedback';
-import { HoverActions } from '@/components/ui/HoverActions';
-import { Icon } from '@/components/ui/Icon';
+import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/Drawer';
+import type { IconName } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { NameFormDialog } from '@/components/ui/NameFormDialog';
 import {
@@ -51,59 +29,44 @@ import {
 } from '@/components/ui/Resizable';
 import { Tabs } from '@/components/ui/Tabs';
 import { userToast } from '@/components/ui/userToast';
-import { FileListItem } from '@/features/files/FileListItem';
-import { fileIsIngesting } from '@/features/files/fileUtils';
 import type { OfficeCitation } from '@/features/files/officeProtocol';
 import { useOfficeEditGuard } from '@/features/files/useOfficeEditGuard';
 import { CenterContent } from '@/features/materials/CenterContent';
-import { MaterialListItem } from '@/features/materials/MaterialListItem';
 import {
   type OpenItem,
   openItemFromSearch,
   searchFromOpenItem,
   type WorkspaceOpenSearch,
 } from '@/features/materials/openItem';
-import { AddSourceDialog } from '@/features/workspace/AddSourceDialog';
+import {
+  AddSourceDialog,
+  type AddSourceMode,
+} from '@/features/workspace/AddSourceDialog';
 import {
   canManageWorkspaceSettings,
   isWorkspaceReadOnly,
 } from '@/features/workspace/access';
 import { ChatPanel } from '@/features/workspace/ChatPanel';
+import { FilesPanel } from '@/features/workspace/FilesPanel';
 import type { GenerateMode } from '@/features/workspace/GenerateFormDialog';
 import { GeneratePanel } from '@/features/workspace/GeneratePanel';
+import { PanelTabRow, type TabAction } from '@/features/workspace/PanelTabRow';
 import { StorageOwnerBanner } from '@/features/workspace/StorageOwnerBanner';
+import { WorkspaceMenu } from '@/features/workspace/WorkspaceMenu';
 import { WorkspaceSettingsDialog } from '@/features/workspace/WorkspaceSettingsDialog';
 import { m } from '@/i18n';
 import { toastCloneError } from '@/lib/authToasts';
-import { cn } from '@/lib/cn';
 import { trackItemCloned } from '@/lib/observability';
-import { userColorPair } from '@/lib/userColor';
+import { useMediaQuery } from '@/lib/useMediaQuery';
 
-const GENERATING_MATERIAL: Record<
-  GenerateMode,
-  { type: MaterialRefType; title: () => string }
-> = {
-  diagram: { title: m.generating_diagram, type: 'diagram' },
-  flashcards: { title: m.generating_flashcards, type: 'flashcards' },
-  mindmap: { title: m.generating_mindmap, type: 'mindmap' },
-  quiz: { title: m.generating_quiz, type: 'quiz' },
+type PanelTab = 'files' | 'chat' | 'generate';
+const TAB_ICON: Record<PanelTab, IconName> = {
+  chat: 'message',
+  files: 'files',
+  generate: 'sparkles',
 };
-
-type WorkspaceContentItem =
-  | {
-      type: 'file';
-      id: string;
-      position: number;
-      createdAt: string;
-      data: SourceFile;
-    }
-  | {
-      type: 'material';
-      id: string;
-      position: number;
-      createdAt: string;
-      data: MaterialRef;
-    };
+/** Three columns is a per-browser preference, not per workspace. */
+const PIN_KEY = 'capy.workspace.filesPinned';
 
 export default function WorkspaceOpen() {
   const params = useParams({ strict: false });
@@ -114,7 +77,6 @@ export default function WorkspaceOpen() {
   const {
     data: ws,
     isLoading: wsLoading,
-    isError: wsError,
     error: wsErr,
   } = useWorkspace(workspaceId, { errorBoundary: false });
   const { data: chapters } = useChapters(workspaceId);
@@ -125,16 +87,26 @@ export default function WorkspaceOpen() {
   const canClone = !!ws?.canClone;
   const { mutateAsync: addChapter } = useAddChapter(workspaceId);
   const { mutateAsync: updateChapter } = useUpdateChapter(workspaceId);
-  const { mutate: reorder } = useReorderChapters(workspaceId);
-  const { mutate: delChapter } = useDeleteChapter(workspaceId);
-  const { mutate: delMaterial } = useDeleteMaterial(workspaceId);
-  const { mutate: moveMaterial } = useMoveMaterial(workspaceId);
-  const { mutate: reorderContent } = useReorderContent(workspaceId);
-  const { mutate: createNote } = useCreateNote(workspaceId);
   const { isPending: cloneWorkspaceIsPending, mutate: cloneWorkspace } =
     useCloneWorkspace({ errorToast: false });
 
+  // Breakpoints: one column below lg, the pinned file tree only from xl up.
+  const lg = useMediaQuery('(min-width: 1024px)');
+  const xl = useMediaQuery('(min-width: 1280px)');
+  const [pinned, setPinned] = useState(
+    () => localStorage.getItem(PIN_KEY) === '1'
+  );
+  const layout = lg ? (xl && pinned ? 'three' : 'two') : 'one';
+  function togglePinned() {
+    const next = !pinned;
+    localStorage.setItem(PIN_KEY, next ? '1' : '0');
+    setPinned(next);
+  }
+
   const searchedOpenItem = openItemFromSearch(search);
+  // Files when nothing is open, Chat when the URL already points at an item.
+  const [tab, setTab] = useState<PanelTab>(searchedOpenItem ? 'chat' : 'files');
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [citationTarget, setCitationTarget] = useState<{
     fileId: string;
     regions: Region[];
@@ -155,6 +127,7 @@ export default function WorkspaceOpen() {
   function setOpenItem(item: OpenItem | null) {
     if (!confirmViewerReplacement()) return;
     setCitationTarget(null);
+    setToolsOpen(false);
     navigate({
       replace: true,
       search: searchFromOpenItem(item),
@@ -173,6 +146,7 @@ export default function WorkspaceOpen() {
       fileId: citation.fileId,
       regions,
     });
+    setToolsOpen(false);
     navigate({
       replace: true,
       search: searchFromOpenItem({
@@ -188,269 +162,8 @@ export default function WorkspaceOpen() {
   const [chapterForm, setChapterForm] = useState<
     { mode: 'add' } | { mode: 'rename'; id: string; name: string } | null
   >(null);
-  const [mode, setMode] = useState('chat');
-  const [openChapters, setOpenChapters] = useState<Record<string, boolean>>({});
-  // Drop-target line while dragging workspace content.
-  const [dropTarget, setDropTarget] = useState<string | null>(null);
-  const [insertTarget, setInsertTarget] = useState<{
-    key: string;
-    edge: 'before' | 'after';
-  } | null>(null);
-  const draggedItemRef = useRef<ContentOrderItem | null>(null);
-  const [shareOpen, setShareOpen] = useState(false);
-  const [addSourceOpen, setAddSourceOpen] = useState(false);
-  const [pendingDelete, setPendingDelete] = useState<MaterialRef | null>(null);
-
-  const pair = userColorPair('purple');
-  const unfiled = files?.filter((f) => f.chapterId === null) ?? [];
-  const unfiledMaterials =
-    materials?.filter((mt) => mt.chapterId == null) ?? [];
-
-  function contentFor(chapterId: string | null): WorkspaceContentItem[] {
-    const chapterFiles =
-      files?.filter((file) => file.chapterId === chapterId) ?? [];
-    const chapterMaterials =
-      materials?.filter((material) => material.chapterId === chapterId) ?? [];
-    return [
-      ...chapterFiles.map(
-        (file): WorkspaceContentItem => ({
-          createdAt: file.addedAt,
-          data: file,
-          id: file.id,
-          position: file.position,
-          type: 'file',
-        })
-      ),
-      ...chapterMaterials.map(
-        (material): WorkspaceContentItem => ({
-          createdAt: material.createdAt,
-          data: material,
-          id: material.id,
-          position: material.position,
-          type: 'material',
-        })
-      ),
-    ].sort((a, b) => {
-      const positionDiff = a.position - b.position;
-      if (positionDiff) return positionDiff;
-      if (a.type !== b.type) return a.type === 'file' ? -1 : 1;
-      return +new Date(b.createdAt) - +new Date(a.createdAt);
-    });
-  }
-
-  // Native drag-and-drop: rows expose their content type and id. Drops on a
-  // content row insert before/after that row; the Others bucket appends.
-  const DND_TYPES = ['application/x-capy-material', 'application/x-capy-file'];
-  function hasDraggedContent(e: React.DragEvent) {
-    return (
-      draggedItemRef.current !== null ||
-      DND_TYPES.some((type) => Array.from(e.dataTransfer.types).includes(type))
-    );
-  }
-  function draggedContent(e: React.DragEvent): ContentOrderItem | null {
-    if (draggedItemRef.current) return draggedItemRef.current;
-    const materialId = e.dataTransfer.getData('application/x-capy-material');
-    if (materialId) return { id: materialId, type: 'material' };
-    const fileId = e.dataTransfer.getData('application/x-capy-file');
-    if (fileId) return { id: fileId, type: 'file' };
-    return null;
-  }
-  function clearDragState() {
-    draggedItemRef.current = null;
-    setDropTarget(null);
-    setInsertTarget(null);
-  }
-  function moveContent(
-    dragged: ContentOrderItem,
-    chapterId: string | null,
-    targetIndex: number
-  ) {
-    const items = contentFor(chapterId)
-      .map(({ id, type }) => ({ id, type }))
-      .filter((item) => item.id !== dragged.id || item.type !== dragged.type);
-    items.splice(Math.max(0, Math.min(targetIndex, items.length)), 0, dragged);
-    reorderContent({ chapterId, items });
-    if (chapterId)
-      setOpenChapters((state) => ({ ...state, [chapterId]: true }));
-  }
-  function onItemDrop(chapterId: string | null, e: React.DragEvent) {
-    if (readOnly) return;
-    e.preventDefault();
-    const dragged = draggedContent(e);
-    clearDragState();
-    if (dragged) moveContent(dragged, chapterId, contentFor(chapterId).length);
-  }
-  function dropZone(key: string, chapterId: string | null) {
-    if (readOnly) return {};
-    return {
-      onDragLeave: (e: React.DragEvent) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node))
-          setDropTarget((t) => (t === key ? null : t));
-      },
-      onDragOver: (e: React.DragEvent) => {
-        if (hasDraggedContent(e)) {
-          e.preventDefault();
-          e.dataTransfer.dropEffect = 'move';
-          if (dropTarget !== key) setDropTarget(key);
-          setInsertTarget(null);
-        }
-      },
-      onDrop: (e: React.DragEvent) => onItemDrop(chapterId, e),
-    };
-  }
-  function contentDropZone(
-    item: WorkspaceContentItem,
-    chapterId: string | null
-  ) {
-    const key = `${item.type}:${item.id}`;
-    if (readOnly) return {};
-    return {
-      onDragOver: (e: React.DragEvent) => {
-        if (!hasDraggedContent(e)) return;
-        e.preventDefault();
-        e.stopPropagation();
-        e.dataTransfer.dropEffect = 'move';
-        const rect = e.currentTarget.getBoundingClientRect();
-        const edge =
-          e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-        setDropTarget(null);
-        setInsertTarget((current) =>
-          current?.key === key && current.edge === edge
-            ? current
-            : { edge, key }
-        );
-      },
-      onDrop: (e: React.DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const dragged = draggedContent(e);
-        clearDragState();
-        if (dragged) {
-          if (dragged.id === item.id && dragged.type === item.type) return;
-          const destination = contentFor(chapterId).filter(
-            (content) =>
-              content.id !== dragged.id || content.type !== dragged.type
-          );
-          const targetIndex = destination.findIndex(
-            (content) => content.id === item.id && content.type === item.type
-          );
-          const rect = e.currentTarget.getBoundingClientRect();
-          const edge =
-            e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-          const insertionIndex =
-            targetIndex < 0
-              ? destination.length
-              : targetIndex + (edge === 'after' ? 1 : 0);
-          moveContent(dragged, chapterId, insertionIndex);
-        }
-      },
-    };
-  }
-  function contentListDropZone() {
-    if (readOnly) return {};
-    return {
-      onDragOverCapture: (e: React.DragEvent) => {
-        if (!hasDraggedContent(e)) return;
-        const target = e.target as HTMLElement;
-        if (!target.closest('[data-workspace-content-row]')) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-      },
-      onDropCapture: (e: React.DragEvent) => {
-        const target = e.target as HTMLElement;
-        if (
-          hasDraggedContent(e) &&
-          target.closest('[data-workspace-content-row]')
-        ) {
-          e.preventDefault();
-        }
-      },
-    };
-  }
-  function renderMaterial(mt: MaterialRef, color?: UserColor) {
-    return (
-      <MaterialListItem
-        active={openItem?.kind === 'material' && openItem.id === mt.id}
-        chapters={chapters ?? []}
-        color={color}
-        data={mt}
-        key={`${mt.type}:${mt.id}`}
-        onDelete={readOnly ? undefined : () => setPendingDelete(mt)}
-        onMove={(chapterId) => moveMaterial({ chapterId, id: mt.id })}
-        onOpen={() => setOpenItem({ id: mt.id, kind: 'material' })}
-        readOnly={readOnly}
-        workspaceId={workspaceId}
-      />
-    );
-  }
-  function renderContentItem(
-    item: WorkspaceContentItem,
-    chapterId: string | null
-  ) {
-    const key = `${item.type}:${item.id}`;
-    const draggable =
-      !readOnly && !(item.type === 'file' && fileIsIngesting(item.data.status));
-    return (
-      <div
-        key={key}
-        {...contentDropZone(item, chapterId)}
-        className="relative"
-        data-workspace-content-row
-        draggable={draggable}
-        onDragEnd={clearDragState}
-        onDragStart={(e) => {
-          const dragged: ContentOrderItem = { id: item.id, type: item.type };
-          draggedItemRef.current = dragged;
-          e.dataTransfer.setData(
-            item.type === 'file'
-              ? 'application/x-capy-file'
-              : 'application/x-capy-material',
-            item.id
-          );
-          e.dataTransfer.effectAllowed = 'move';
-        }}
-      >
-        {insertTarget?.key === key && (
-          <div
-            className={cn(
-              'pointer-events-none absolute right-1 left-1 z-10 h-0 border-line-strong border-t-2',
-              insertTarget.edge === 'before' ? 'top-0' : 'bottom-0'
-            )}
-          />
-        )}
-        {item.type === 'file' ? (
-          <FileListItem
-            active={isFileActive(item.id)}
-            beforeDelete={
-              isFileActive(item.id) ? confirmViewerReplacement : undefined
-            }
-            chapters={chapters}
-            color={'purple'}
-            file={item.data}
-            onDeleted={onFileDeleted}
-            onOpen={(id) => setOpenItem({ id, kind: 'file' })}
-            readOnly={readOnly}
-            workspaceId={workspaceId}
-          />
-        ) : (
-          renderMaterial(item.data, 'purple')
-        )}
-      </div>
-    );
-  }
-  function moveChapter(idx: number, dir: -1 | 1) {
-    if (!chapters) return;
-    const ids = chapters.map((c) => c.id);
-    const j = idx + dir;
-    if (j < 0 || j >= ids.length) return;
-    [ids[idx], ids[j]] = [ids[j], ids[idx]];
-    reorder(ids);
-  }
-  const isFileActive = (id: string) =>
-    openItem?.kind === 'file' && openItem.id === id;
-  function onFileDeleted(id: string) {
-    if (openItem?.kind === 'file' && openItem.id === id) setOpenItem(null);
-  }
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [addSource, setAddSource] = useState<AddSourceMode | null>(null);
 
   if (wsLoading) {
     return (
@@ -462,7 +175,7 @@ export default function WorkspaceOpen() {
     );
   }
 
-  if (!wsLoading && (wsError || !ws)) {
+  if (!ws) {
     const denied =
       isApiError(wsErr) && (wsErr.status === 404 || wsErr.status === 401);
     return (
@@ -477,400 +190,291 @@ export default function WorkspaceOpen() {
     );
   }
 
+  // Chat is open to every signed-in role; generation stays edit-only.
+  const panelTabs: PanelTab[] = readOnly
+    ? ['files', 'chat']
+    : ['files', 'chat', 'generate'];
+  const railTabs =
+    layout === 'three' ? panelTabs.filter((t) => t !== 'files') : panelTabs;
+  // Files lives on the left when pinned, and Generate is gone for a read-only
+  // visitor: either way the rail falls back to Chat.
+  const railTab: PanelTab = railTabs.includes(tab) ? tab : 'chat';
+  const tabLabel = (t: PanelTab) =>
+    t === 'files'
+      ? m.workspace_tab_files()
+      : t === 'chat'
+        ? m.workspace_tab_chat()
+        : m.workspace_tab_generate();
+  function showTab(next: PanelTab) {
+    setTab(next);
+    if (layout === 'one') setToolsOpen(true);
+  }
+
+  const rowProps = {
+    compact: layout === 'one',
+    onOpenSettings: canShare ? () => setSettingsOpen(true) : undefined,
+  };
+  const addProps = readOnly
+    ? {}
+    : {
+        onAddChapter: () => setChapterForm({ mode: 'add' }),
+        onAddSource: setAddSource,
+      };
+  const tabs = (
+    <Tabs
+      className="min-w-0 flex-1 shrink"
+      onChange={(value) => showTab(value as PanelTab)}
+      tabs={railTabs.map((t) => ({ label: tabLabel(t), value: t }))}
+      value={railTab}
+    />
+  );
+  // The plus lives with the tree: on the rail row unless Files is pinned left.
+  const railRow = (actions: TabAction[]) => (
+    <PanelTabRow
+      actions={actions}
+      tabs={tabs}
+      {...rowProps}
+      {...(layout === 'three' ? {} : addProps)}
+    />
+  );
+  const filesPanel = (renderTabRow: (actions: TabAction[]) => ReactNode) => (
+    <FilesPanel
+      beforeReplace={confirmViewerReplacement}
+      generating={generating}
+      onOpenItem={setOpenItem}
+      onRenameChapter={(ch) =>
+        setChapterForm({ id: ch.id, mode: 'rename', name: ch.name })
+      }
+      openItem={openItem}
+      readOnly={readOnly}
+      renderTabRow={renderTabRow}
+      workspaceId={workspaceId}
+    />
+  );
+  // Every tab stays mounted so chat and generate keep their state while hidden;
+  // only the visible one draws the tab row.
+  const noRow = () => null;
+  const rail = (
+    <>
+      {layout !== 'three' && (
+        <div className="min-h-0 flex-1" hidden={railTab !== 'files'}>
+          {filesPanel(railTab === 'files' ? railRow : noRow)}
+        </div>
+      )}
+      <div className="min-h-0 flex-1" hidden={railTab !== 'chat'}>
+        <AppErrorBoundary resetKeys={[workspaceId]}>
+          <ChatPanel
+            canReprocess={ws.isOwner}
+            color="purple"
+            onOpenCitation={openCitation}
+            onOpenResource={(ref) =>
+              setOpenItem(
+                ref.kind === 'material'
+                  ? { id: ref.id, kind: 'material' }
+                  : { id: ref.id, kind: 'file' }
+              )
+            }
+            readOnly={readOnly}
+            renderTabRow={railTab === 'chat' ? railRow : noRow}
+            workspaceId={workspaceId}
+          />
+        </AppErrorBoundary>
+      </div>
+      {!readOnly && (
+        <div className="min-h-0 flex-1" hidden={railTab !== 'generate'}>
+          <GeneratePanel
+            canReprocess={ws.isOwner}
+            chapters={chapters ?? []}
+            existingTitles={(materials ?? []).map((mt) => mt.title)}
+            files={files ?? []}
+            onGeneratingChange={setGenerating}
+            onOpenItem={setOpenItem}
+            renderTabRow={railTab === 'generate' ? railRow : noRow}
+            workspaceId={workspaceId}
+            workspaceName={ws.name}
+          />
+        </div>
+      )}
+    </>
+  );
+
+  const viewer = (
+    <Panel className="w-full" sectionClassName="h-full gap-0">
+      <h1 className="sr-only">{ws.name}</h1>
+      <StorageOwnerBanner workspace={ws} />
+      <AppErrorBoundary resetKeys={[openItem?.kind, openItem?.id]}>
+        <CenterContent
+          beforeFileDelete={confirmViewerReplacement}
+          chapters={chapters ?? []}
+          color="purple"
+          item={openItem}
+          leading={
+            <>
+              <IconButton
+                className="text-fg-muted"
+                icon="navigationBack"
+                label={m.workspace_back_to()}
+                onClick={() => navigate({ to: '/workspaces' })}
+                size="sm"
+                tooltip
+                variant="ghost-hover"
+              />
+              {xl && (
+                <IconButton
+                  aria-pressed={pinned}
+                  className="text-fg-muted"
+                  icon="panelLeft"
+                  label={
+                    pinned ? m.workspace_unpin_files() : m.workspace_pin_files()
+                  }
+                  onClick={togglePinned}
+                  size="sm"
+                  tooltip
+                  variant="ghost-hover"
+                />
+              )}
+              <WorkspaceMenu
+                cloning={cloneWorkspaceIsPending}
+                onClone={
+                  readOnly && canClone
+                    ? () =>
+                        cloneWorkspace(workspaceId, {
+                          onError: (err) => toastCloneError(err, 'workspace'),
+                          onSuccess: ({ workspace }) => {
+                            trackItemCloned('workspace');
+                            userToast({
+                              title: m.workspace_cloned(),
+                              variant: 'success',
+                            });
+                            navigate({
+                              params: { workspaceId: workspace.id },
+                              to: '/workspaces/$workspaceId',
+                            });
+                          },
+                        })
+                    : undefined
+                }
+                onOpenSettings={rowProps.onOpenSettings}
+                workspace={ws}
+              />
+            </>
+          }
+          onBrowseFiles={
+            layout === 'three' ? undefined : () => showTab('files')
+          }
+          onDeleted={() => setOpenItem(null)}
+          onFileViewerDirtyChange={setOfficeEditDirty}
+          readOnly={readOnly}
+          requestedMode={search.mode ?? null}
+          workspaceId={workspaceId}
+        />
+      </AppErrorBoundary>
+    </Panel>
+  );
+
+  const railColumn = (
+    <div className="flex h-full w-full flex-col gap-2.5">
+      <TopInsetBar className="w-full" />
+      <Panel className="flex-1" sectionClassName="h-full gap-0 overflow-hidden">
+        {rail}
+      </Panel>
+    </div>
+  );
+
   // overflow-visible WITH important is so that shadow doesnt get clipped
   return (
     <>
-      <ResizablePanelGroup
-        className="overflow-visible! flex h-full min-h-0 gap-1.5"
-        orientation="horizontal"
-      >
-        <ResizablePanel
-          className="overflow-visible! flex w-full flex-col gap-2.5"
-          defaultSize="18%"
-          maxSize="550px"
-          minSize="250px"
-        >
-          {/* Left column */}
-          <div
-            className="rounded-card-lg p-4"
-            style={{
-              background:
-                pair.bg === 'transparent'
-                  ? 'var(--color-surface-dark)'
-                  : pair.bg,
-              color: pair.fg,
-            }}
-          >
-            <Link
-              className="mb-3 inline-flex items-center gap-1 font-semibold text-sm opacity-80 hover:opacity-100"
-              preload="intent"
-              to="/workspaces"
-            >
-              <Icon className="-translate-y-px" name="chevronLeft" size={15} />{' '}
-              {m.workspace_back()}
-            </Link>
-            <h1 className="t-large-card-title wrap-break-word line-clamp-4 text-ellipsis text-inherit">
-              {ws?.name ?? '…'}
-            </h1>
-            {readOnly ? (
-              canClone && (
-                <Button
-                  className="mt-4 h-fit w-full py-2"
-                  disabled={cloneWorkspaceIsPending}
-                  iconLeft="clone"
-                  onClick={() =>
-                    cloneWorkspace(workspaceId, {
-                      onError: (err) => toastCloneError(err, 'workspace'),
-                      onSuccess: ({ workspace }) => {
-                        trackItemCloned('workspace');
-                        userToast({
-                          title: m.workspace_cloned(),
-                          variant: 'success',
-                        });
-                        navigate({
-                          params: { workspaceId: workspace.id },
-                          to: '/workspaces/$workspaceId',
-                        });
-                      },
-                    })
-                  }
-                  size="md"
-                  variant="surface"
-                >
-                  {cloneWorkspaceIsPending
-                    ? m.action_cloning()
-                    : m.action_clone_workspace()}
-                </Button>
-              )
-            ) : (
-              <div
-                className={cn(
-                  'mt-4 grid gap-2',
-                  canShare && !readOnly && 'grid-cols-2',
-                  (canShare && readOnly) ||
-                    (!canShare && !readOnly && 'grid-cols-1'),
-                  !canShare && readOnly && 'mt-0 block'
-                )}
-              >
-                {!readOnly && (
+      {layout === 'one' ? (
+        <div className="flex h-full min-h-0 flex-col gap-2.5">
+          <TopInsetBar className="w-full" />
+          <div className="relative min-h-0 flex-1">
+            {viewer}
+            {!toolsOpen && (
+              <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 gap-0.5 rounded-full border border-line bg-surface p-1 shadow-pop">
+                {panelTabs.map((t) => (
                   <Button
-                    className="h-fit py-2"
-                    iconLeft="newFile"
-                    onClick={() => setAddSourceOpen(true)}
-                    size="md"
-                    variant="surface"
+                    className="h-9 rounded-full px-3.5"
+                    iconLeft={TAB_ICON[t]}
+                    key={t}
+                    onClick={() => showTab(t)}
+                    size="sm"
+                    variant="ghost-hover"
                   >
-                    {m.action_add_file()}
+                    {tabLabel(t)}
                   </Button>
-                )}
-                {canShare && (
-                  <Button
-                    className="h-fit py-2"
-                    iconLeft="settings"
-                    onClick={() => setShareOpen(true)}
-                    size="md"
-                    variant="surface"
-                  >
-                    {m.workspace_settings()}
-                  </Button>
-                )}
+                ))}
               </div>
             )}
           </div>
-
-          <Panel
-            className="min-h-0 flex-1 flex-col p-1"
-            sectionClassName="h-full gap-0"
+          <Drawer
+            onOpenChange={setToolsOpen}
+            open={toolsOpen}
+            showSwipeHandle
+            swipeDirection="down"
           >
-            <div className="min-h-0 flex-1 overflow-auto px-1.5 pt-0 pb-1.5">
-              {!chapters && (
-                <SkeletonList
-                  className="px-1.5 py-2"
-                  count={5}
-                  rowHeight={36}
-                />
-              )}
-              {chapters && (
-                <div className="flex flex-col gap-3 pt-1 pb-2">
-                  <div className="flex flex-col">
-                    <div className="relative mx-2 mt-3 flex items-center justify-between pb-1.5">
-                      <div className="t-label text-fg-muted">
-                        {m.common_content()}
-                      </div>
-                      {!readOnly && (
-                        <div className="absolute top-1/2 right-0 flex -translate-y-[calc(50%+4px)] gap-1">
-                          <IconButton
-                            className="size-6 rounded-md p-1"
-                            icon="newNote"
-                            label={m.workspace_new_note()}
-                            onClick={() =>
-                              createNote(
-                                {},
-                                {
-                                  onSuccess: (mt) =>
-                                    setOpenItem({
-                                      id: mt.id,
-                                      kind: 'material',
-                                    }),
-                                }
-                              )
-                            }
-                            size={'xs'}
-                            tooltip
-                            variant={'surface'}
-                          />
-                          <IconButton
-                            className="size-6 rounded-md p-1"
-                            icon="folderCollapse"
-                            label={m.workspace_collapse_chapters()}
-                            onClick={() =>
-                              setOpenChapters({
-                                ...Object.fromEntries(
-                                  chapters.map((c) => [c.id, false])
-                                ),
-                              })
-                            }
-                            size={'xs'}
-                            tooltip
-                            variant={'surface'}
-                          />
-                        </div>
-                      )}
-                    </div>
-                    {chapters.map((ch, idx) => {
-                      const expanded = openChapters[ch.id] ?? true;
-                      return (
-                        <div className="rounded-button" key={ch.id}>
-                          <div className="group relative flex items-center rounded-button py-1.5 pr-1.5 hover:bg-surface-hover-bg">
-                            <button
-                              className="flex min-w-0 flex-1 items-center gap-1 px-1 text-left"
-                              onClick={() =>
-                                setOpenChapters((s) => ({
-                                  ...s,
-                                  [ch.id]: !expanded,
-                                }))
-                              }
-                              type="button"
-                            >
-                              <FileIcon
-                                className="size-3.75"
-                                name={expanded ? '_folder_open' : '_folder'}
-                              />
-                              <span className="line-clamp-1 translate-y-px truncate font-semibold">
-                                {ch.name}
-                              </span>
-                            </button>
-                            {!readOnly && (
-                              <HoverActions
-                                className="absolute top-1/2 right-1 -translate-y-1/2"
-                                items={[
-                                  {
-                                    icon: 'write',
-                                    label: m.action_rename(),
-                                    onClick: () => {
-                                      setChapterForm({
-                                        id: ch.id,
-                                        mode: 'rename',
-                                        name: ch.name,
-                                      });
-                                    },
-                                  },
-                                  {
-                                    disabled: idx === 0,
-                                    icon: 'chevronUp',
-                                    label: m.workspace_move_up(),
-                                    onClick: () => moveChapter(idx, -1),
-                                  },
-                                  {
-                                    disabled: idx === chapters.length - 1,
-                                    icon: 'chevronDown',
-                                    label: m.workspace_move_down(),
-                                    onClick: () => moveChapter(idx, 1),
-                                  },
-                                  {
-                                    danger: true,
-                                    icon: 'trash',
-                                    label: m.action_delete(),
-                                    onClick: () => delChapter(ch.id),
-                                  },
-                                ]}
-                              />
-                            )}
-                          </div>
-                          {expanded && (
-                            <div
-                              {...contentListDropZone()}
-                              className="flex flex-col pl-4"
-                            >
-                              {contentFor(ch.id).map((item) =>
-                                renderContentItem(item, ch.id)
-                              )}
-                              {contentFor(ch.id).length === 0 && (
-                                <p className="px-1.5 py-1 pl-2 font-semibold text-fg-muted text-xs">
-                                  {m.common_empty()}
-                                </p>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {(unfiled.length > 0 ||
-                    unfiledMaterials.length > 0 ||
-                    generating) && (
-                    <div className="rounded-button">
-                      <div
-                        className={cn(
-                          't-label px-1.5 py-1.5 text-fg-muted',
-                          dropTarget === 'unfiled-files' &&
-                            'border-line-strong border-b-2'
-                        )}
-                      >
-                        {m.nav_section_others()}
-                      </div>
-                      <div {...dropZone('unfiled-files', null)}>
-                        {contentFor(null).map((item) =>
-                          renderContentItem(item, null)
-                        )}
-                        {generating && (
-                          <MaterialListItem
-                            active={false}
-                            chapters={chapters}
-                            color={'purple'}
-                            data={{
-                              chapterId: null,
-                              createdAt: new Date().toISOString(),
-                              id: '__generating__',
-                              maxDepth: 0,
-                              nodeCount: 0,
-                              position: Number.MAX_SAFE_INTEGER,
-                              sizeBytes: 0,
-                              title: GENERATING_MATERIAL[generating].title(),
-                              type: GENERATING_MATERIAL[generating].type,
-                            }}
-                            generating
-                            onOpen={() => {}}
-                            readOnly
-                            workspaceId={workspaceId}
-                          />
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-            {!readOnly && (
-              <Button
-                className="m-2 mb-1 h-fit py-2.5"
-                iconLeft="plus"
-                onClick={() => setChapterForm({ mode: 'add' })}
-                variant="outline"
-              >
-                {m.action_add_chapter()}
-              </Button>
-            )}
-          </Panel>
-        </ResizablePanel>
-        <ResizableHandle withHandle />
-        <ResizablePanel
-          className="overflow-visible!"
-          defaultSize="52%"
-          minSize="400px"
-        >
-          {/* Center: content viewer */}
-          <Panel className="w-full" sectionClassName="h-full gap-0">
-            <StorageOwnerBanner workspace={ws} />
-            <AppErrorBoundary resetKeys={[openItem?.kind, openItem?.id]}>
-              <CenterContent
-                beforeFileDelete={confirmViewerReplacement}
-                chapters={chapters ?? []}
-                color={'purple'}
-                item={openItem}
-                onDeleted={() => setOpenItem(null)}
-                onFileViewerDirtyChange={setOfficeEditDirty}
-                readOnly={readOnly}
-                requestedMode={search.mode ?? null}
-                workspaceId={workspaceId}
-              />
-            </AppErrorBoundary>
-          </Panel>
-        </ResizablePanel>
-        <ResizableHandle withHandle />
-        <ResizablePanel
-          className="overflow-visible!"
-          defaultSize="26%"
-          maxSize="700px"
-          minSize="320px"
-        >
-          {/* Right column: top bar + AI. Chat is open to every signed-in role;
-              generation stays edit-only. */}
-          <div className="flex h-full w-full flex-col gap-2.5">
-            <TopInsetBar className="w-full" />
-            <Panel
-              className="flex-1"
-              sectionClassName="gap-0 min-h-full overflow-hidden"
+            <DrawerContent
+              keepMounted
+              style={{ '--drawer-height': '82dvh' } as React.CSSProperties}
             >
-              {!readOnly && (
-                <div className="flex items-center justify-between py-2.5">
-                  <Tabs
-                    className="px-3"
-                    onChange={setMode}
-                    tabs={[
-                      { label: m.workspace_tab_chat(), value: 'chat' },
-                      {
-                        label: m.workspace_tab_generate(),
-                        value: 'generate',
-                      },
-                    ]}
-                    value={mode}
-                  />
-                </div>
-              )}
-              <div className="h-full flex-1 overflow-hidden">
-                {mode === 'chat' || readOnly ? (
-                  <AppErrorBoundary resetKeys={[workspaceId, mode]}>
-                    <ChatPanel
-                      canReprocess={ws?.isOwner}
-                      color={'purple'}
-                      onOpenCitation={openCitation}
-                      onOpenResource={(ref) =>
-                        setOpenItem(
-                          ref.kind === 'material'
-                            ? { id: ref.id, kind: 'material' }
-                            : { id: ref.id, kind: 'file' }
-                        )
-                      }
-                      readOnly={readOnly}
-                      workspaceId={workspaceId}
+              <DrawerTitle className="sr-only">
+                {m.workspace_tools()}
+              </DrawerTitle>
+              {rail}
+            </DrawerContent>
+          </Drawer>
+        </div>
+      ) : (
+        <ResizablePanelGroup
+          className="overflow-visible! flex h-full min-h-0 gap-1.5"
+          orientation="horizontal"
+        >
+          {layout === 'three' && (
+            <>
+              <ResizablePanel
+                className="overflow-visible!"
+                defaultSize="270px"
+                id="files"
+                maxSize="420px"
+                minSize="230px"
+              >
+                <Panel className="w-full" sectionClassName="h-full gap-0">
+                  {filesPanel((actions) => (
+                    <PanelTabRow
+                      actions={actions}
+                      title={m.workspace_tab_files()}
+                      {...rowProps}
+                      {...addProps}
                     />
-                  </AppErrorBoundary>
-                ) : (
-                  <GeneratePanel
-                    canReprocess={ws?.isOwner}
-                    chapters={chapters ?? []}
-                    existingTitles={(materials ?? []).map((mt) => mt.title)}
-                    files={files ?? []}
-                    onGeneratingChange={setGenerating}
-                    onOpenItem={setOpenItem}
-                    workspaceId={workspaceId}
-                    workspaceName={ws?.name ?? ''}
-                  />
-                )}
-              </div>
-            </Panel>
-          </div>
-        </ResizablePanel>
-      </ResizablePanelGroup>
-      {ws && (
-        <WorkspaceSettingsDialog
-          onClose={() => setShareOpen(false)}
-          open={shareOpen}
-          workspace={ws}
-        />
+                  ))}
+                </Panel>
+              </ResizablePanel>
+              <ResizableHandle withHandle />
+            </>
+          )}
+          <ResizablePanel
+            className="overflow-visible!"
+            id="viewer"
+            minSize="400px"
+          >
+            {viewer}
+          </ResizablePanel>
+          <ResizableHandle withHandle />
+          <ResizablePanel
+            className="overflow-visible!"
+            defaultSize={xl ? '400px' : '340px'}
+            id="rail"
+            maxSize={xl ? '600px' : '420px'}
+            minSize={xl ? '320px' : '300px'}
+          >
+            {railColumn}
+          </ResizablePanel>
+        </ResizablePanelGroup>
       )}
+      <WorkspaceSettingsDialog
+        onClose={() => setSettingsOpen(false)}
+        open={settingsOpen}
+        workspace={ws}
+      />
       {chapterForm && (
         <NameFormDialog
           defaultName={chapterForm.mode === 'rename' ? chapterForm.name : ''}
@@ -897,31 +501,14 @@ export default function WorkspaceOpen() {
           }
         />
       )}
-      {addSourceOpen && (
+      {addSource && (
         <AddSourceDialog
-          onClose={() => setAddSourceOpen(false)}
+          initialMode={addSource}
+          onClose={() => setAddSource(null)}
           open
           workspaceId={workspaceId}
         />
       )}
-      <ConfirmDialog
-        body={m.confirm_delete_body()}
-        danger
-        onClose={() => setPendingDelete(null)}
-        onConfirm={() => {
-          if (!pendingDelete) return;
-          const id = pendingDelete.id;
-          delMaterial(id, {
-            onSuccess: () => {
-              if (openItem?.kind === 'material' && openItem.id === id) {
-                setOpenItem(null);
-              }
-            },
-          });
-        }}
-        open={!!pendingDelete}
-        title={m.confirm_delete_title({ name: pendingDelete?.title ?? '' })}
-      />
     </>
   );
 }

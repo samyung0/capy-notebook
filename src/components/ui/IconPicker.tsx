@@ -108,6 +108,7 @@ export function IconPicker({
         <DialogFooter>
           <Button
             onClick={() => setOpen(false)}
+            size="lg"
             type="button"
             variant="ghost-hover"
           >
@@ -121,6 +122,7 @@ export function IconPicker({
                 setOpen(false);
               }
             }}
+            size="lg"
             type="button"
             variant="accent"
           >

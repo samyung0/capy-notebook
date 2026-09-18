@@ -157,6 +157,7 @@ const appRoutes = [
     loader: ({ context: { queryClient: qc }, params }) => {
       const id = params.workspaceId;
       qc.prefetchQuery(workspaceQuery(id));
+      qc.prefetchQuery(workspacesQuery({ sort: 'accessed' }));
       qc.prefetchQuery(chaptersQuery(id));
       qc.prefetchQuery(filesQuery(id));
       qc.prefetchQuery(materialsQuery(id));

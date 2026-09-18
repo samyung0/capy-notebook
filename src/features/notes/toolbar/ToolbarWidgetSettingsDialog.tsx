@@ -94,7 +94,11 @@ export function WidgetSettingsDialog() {
           ))}
         </div>
         <DialogFooter>
-          <Button onClick={() => setOpen(false)} variant="ghost-hover">
+          <Button
+            onClick={() => setOpen(false)}
+            size="lg"
+            variant="ghost-hover"
+          >
             {m.action_cancel()}
           </Button>
           <Button
@@ -102,6 +106,7 @@ export function WidgetSettingsDialog() {
               setEnabled(draft);
               setOpen(false);
             }}
+            size="lg"
             variant="accent"
           >
             {m.action_apply()}

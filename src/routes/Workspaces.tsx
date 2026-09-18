@@ -34,23 +34,31 @@ function toggleIn(list: string[], value: string) {
 }
 
 export default function Workspaces() {
-  const [sort, setSort] = useState('accessed');
+  const [sort, setSort] = useState<(typeof SORTS)[number]>(SORTS[0]);
+  const [ascending, setAscending] = useState(false);
   const [tagFilters, setTagFilters] = useState<string[]>([]);
   const [filterOpen, setFilterOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
 
   const { data, fetchStatus, isLoading } = useWorkspaces({
-    sort,
+    sort: sort.value,
     tag: tagFilters,
   });
   const revealRef = useLoadingReveal(isLoading);
   const { data: tags = [] } = useTags('workspace', { errorBoundary: false });
   const { mutateAsync: createWorkspace } = useCreateWorkspace();
 
-  const sortLabel = useMemo(
-    () => SORTS.find((s) => s.value === sort)?.label() ?? '',
-    [sort]
-  );
+  function sortDescription(value: (typeof SORTS)[number]['value']) {
+    const isAscending = sort.value === value && ascending;
+    return value === 'accessed' || value === 'created'
+      ? isAscending
+        ? m.workspaces_sort_oldest_first()
+        : m.workspaces_sort_newest_first()
+      : isAscending
+        ? m.workspaces_sort_fewest_first()
+        : m.workspaces_sort_most_first();
+  }
+  const sortedWorkspaces = ascending ? data?.slice().reverse() : data;
   const hasFilters = tagFilters.length > 0;
   const filterLabel = useMemo(() => {
     const parts = tagFilters;
@@ -68,9 +76,14 @@ export default function Workspaces() {
           <Menu
             align="start"
             items={SORTS.map((s) => ({
+              closeOnSelect: false,
+              description: sortDescription(s.value),
               icon: s.icon,
               label: s.label(),
-              onClick: () => setSort(s.value),
+              onClick: () => {
+                setAscending(s.value === sort.value ? !ascending : false);
+                setSort(s);
+              },
             }))}
             trigger={
               <Button
@@ -79,7 +92,10 @@ export default function Workspaces() {
                 size="md"
                 variant="ghost"
               >
-                {m.workspaces_sort_prefix({ label: sortLabel })}
+                {m.workspaces_sort_prefix({ label: sort.label() })}
+                <span className="font-normal text-fg-muted text-xs">
+                  {sortDescription(sort.value)}
+                </span>
               </Button>
             }
           />
@@ -174,7 +190,7 @@ export default function Workspaces() {
             className="grid w-full auto-rows-fr grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4"
             ref={revealRef}
           >
-            {data?.map((w) => (
+            {sortedWorkspaces?.map((w) => (
               <WorkspaceCard key={w.id} workspace={w} />
             ))}
             <Card
