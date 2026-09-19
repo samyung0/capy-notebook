@@ -1739,7 +1739,7 @@ async def _process_material_index_bound(job: dict) -> None:
             job_stage=telemetry.current_stage(),
         )
         _set_stage("indexing")
-        note = await asyncio.to_thread(_fetch_material_text, material_id)
+        note = await asyncio.to_thread(_fetch_material_text, material_id, ws)
         if note is None:
             # Trashed, standalone or gone: nothing to index, nothing to retry.
             await asyncio.to_thread(_finish_material_index, job, material_id)
@@ -1748,7 +1748,7 @@ async def _process_material_index_bound(job: dict) -> None:
         association = await store.attach_material_content(
             workspace_id=ws,
             material_id=material_id,
-            content_hash=indexing.content_hash(chunks),
+            content_hash="note:" + indexing.content_hash(chunks),
             claim_job_id=job["id"],
         )
         if not association["ready"]:
@@ -1757,7 +1757,7 @@ async def _process_material_index_bound(job: dict) -> None:
             await indexing.index_material(
                 workspace_id=ws,
                 content_id=association["content_id"],
-                material_id=material_id,
+                previous_content_id=association["previous_content_id"],
                 chunks=chunks,
                 claim_job_id=job["id"],
             )
@@ -1769,9 +1769,9 @@ async def _process_material_index_bound(job: dict) -> None:
         registry.set_job_pins(None)
 
 
-def _fetch_material_text(material_id: str) -> dict | None:
+def _fetch_material_text(material_id: str, workspace_id: str) -> dict | None:
     """The note's markdown-like text from Go; None when the note is no longer
-    indexable (trashed, standalone or deleted)."""
+    indexable (trashed, standalone, deleted or outside this workspace)."""
     if not cfg.gateway_url or not cfg.pipeline_secret:
         raise TerminalError(
             "GATEWAY_URL and PIPELINE_SECRET are required to index notes"
@@ -1780,6 +1780,7 @@ def _fetch_material_text(material_id: str) -> dict | None:
         response = requests.get(
             cfg.gateway_url.rstrip("/")
             + f"/api/internal/materials/{material_id}/index-text",
+            params={"workspaceId": workspace_id},
             headers={"X-Pipeline-Secret": cfg.pipeline_secret},
             timeout=30,
         )

@@ -80,6 +80,31 @@ const FILE_KINDS: FileKind[] = [
   'unknown',
 ];
 
+function fileKindLabel(kind: FileKind): string {
+  switch (kind) {
+    case 'pdf':
+      return m.file_kind_pdf();
+    case 'doc':
+      return m.file_kind_doc();
+    case 'md':
+      return m.file_kind_md();
+    case 'image':
+      return m.file_kind_image();
+    case 'txt':
+      return m.file_kind_txt();
+    case 'sheet':
+      return m.file_kind_sheet();
+    case 'slides':
+      return m.file_kind_slides();
+    case 'audio':
+      return m.file_kind_audio();
+    case 'json':
+      return m.file_kind_json();
+    default:
+      return m.file_kind_unknown();
+  }
+}
+
 function ActiveFiles() {
   const sorts: SortOption<FileListSort>[] = [
     {
@@ -168,7 +193,10 @@ function ActiveFiles() {
             key: 'kind',
             label: m.files_filter_kind(),
             onToggle: (value) => setKinds((prev) => toggleValue(prev, value)),
-            options: FILE_KINDS.map((kind) => ({ label: kind, value: kind })),
+            options: FILE_KINDS.map((kind) => ({
+              label: fileKindLabel(kind),
+              value: kind,
+            })),
             selected: kinds,
           },
           {

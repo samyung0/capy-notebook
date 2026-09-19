@@ -17,22 +17,20 @@ import {
   type MaterialRefKind,
   materialRefNode,
 } from '@/features/materials/document';
-import { insertEditorNode } from '../insertEditorNode';
+import { insertEditorNode, type NoteEditorInstance } from '../insertEditorNode';
 import { YouTubeDialog } from '../YouTubeDialog';
 import { FlashcardsDialog } from './FlashcardsDialog';
 import { QuizDialog } from './QuizDialog';
 
 type SaveFn = (code: string) => void;
 type SaveYouTubeFn = (videoId: string) => void;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyEditor = any;
 
 export interface NoteBlockDialogsApi {
   /** Create the embedded quiz or flashcard set a fence body describes. */
   createEmbedded: (kind: MaterialRefKind, code: string) => Promise<Material>;
   /** Create the row first, then insert its reference block at the caret. */
   insertEmbedded: (
-    editor: AnyEditor,
+    editor: NoteEditorInstance,
     kind: MaterialRefKind,
     code: string
   ) => Promise<void>;
@@ -119,7 +117,7 @@ export function NoteBlockDialogsProvider({
     [createEmbeddedMaterial, noteId]
   );
   const insertEmbedded = useCallback(
-    async (editor: AnyEditor, kind: MaterialRefKind, code: string) => {
+    async (editor: NoteEditorInstance, kind: MaterialRefKind, code: string) => {
       const material = await createEmbedded(kind, code);
       insertEditorNode(editor, materialRefNode(material.id, kind));
     },

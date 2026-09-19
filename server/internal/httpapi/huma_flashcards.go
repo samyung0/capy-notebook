@@ -10,9 +10,6 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
-type flashcardSetsOutput struct {
-	Body []apimodel.FlashcardSet `nullable:"false"`
-}
 type flashcardSetOutput struct {
 	Body apimodel.FlashcardSet
 }
@@ -54,7 +51,6 @@ type updateCardStudyStateInput struct {
 
 func (a *api) registerFlashcards(api huma.API) {
 	const tag = "Flashcards"
-	reg(api, http.MethodGet, "/api/flashcards", "listFlashcardSets", tag, "List flashcard sets", http.StatusOK, a.listFlashcardSets)
 	reg(api, http.MethodPost, "/api/flashcards", "createFlashcardSet", tag, "Create flashcards", http.StatusCreated, a.createFlashcardSet)
 	reg(api, http.MethodGet, "/api/flashcards/{id}", "getFlashcardSet", tag, "Get flashcards", http.StatusOK, a.getFlashcardSet)
 	reg(api, http.MethodPatch, "/api/flashcards/{id}/metadata", "updateFlashcardSet", tag, "Update flashcard metadata", http.StatusOK, a.updateFlashcardSet)
@@ -64,14 +60,6 @@ func (a *api) registerFlashcards(api huma.API) {
 	reg(api, http.MethodPatch, "/api/flashcards/cards/{id}/content", "updateCard", tag, "Update card content", http.StatusOK, a.updateCard)
 	reg(api, http.MethodPatch, "/api/flashcards/cards/{id}/study-state", "updateCardStudyState", tag, "Update card study state", http.StatusOK, a.updateCardStudyState)
 	reg(api, http.MethodDelete, "/api/flashcards/cards/{id}", "deleteCard", tag, "Delete a card", http.StatusNoContent, a.deleteCard)
-}
-
-func (a *api) listFlashcardSets(ctx context.Context, _ *struct{}) (*flashcardSetsOutput, error) {
-	res, err := a.s.ListFlashcardSets(ctx, userID(ctx))
-	if err != nil {
-		return nil, hErr(err)
-	}
-	return &flashcardSetsOutput{Body: res}, nil
 }
 
 func (a *api) createFlashcardSet(ctx context.Context, in *createFlashcardSetInput) (*flashcardSetOutput, error) {

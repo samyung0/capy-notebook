@@ -183,7 +183,7 @@ async def index_material(
     *,
     workspace_id: str,
     content_id: str,
-    material_id: str,
+    previous_content_id: str | None,
     chunks: list[Chunk],
     claim_job_id: str,
 ) -> dict[str, Any]:
@@ -201,11 +201,15 @@ async def index_material(
         return {"chunks": 0}
     indexed = [chunk.indexed_text() for chunk in chunks]
     spec = embedding_spec()
-    reusable = await store.existing_material_vectors(
-        workspace_id=workspace_id,
-        material_id=material_id,
-        spec=spec,
-        inputs=indexed,
+    reusable = (
+        await store.existing_content_vectors(
+            workspace_id=workspace_id,
+            content_id=previous_content_id,
+            spec=spec,
+            inputs=indexed,
+        )
+        if previous_content_id
+        else {}
     )
     missing = list(dict.fromkeys(text for text in indexed if text not in reusable))
     if missing:

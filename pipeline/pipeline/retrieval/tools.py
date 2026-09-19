@@ -366,6 +366,19 @@ async def _scope_outline(ctx: ToolContext) -> dict[str, Any]:
     return ctx._scope_outline
 
 
+async def _refuse_note_as_file(ctx: ToolContext, resource_id: str) -> ToolResult | None:
+    """Notes share the search scope with files but are not source files: the
+    file lifecycle and edit tools must not accept a note id under that kind."""
+    outline = await _scope_outline(ctx)
+    for item in outline.get("files") or []:
+        if str(item["id"]) == resource_id and item.get("kind") == "material":
+            return _refused(
+                "That id is a note, not a source file; target it as kind material.",
+                code="unavailable_target",
+            )
+    return None
+
+
 def _scope_ids(value: Any) -> list[str] | None:
     if value is _MISSING:
         return []
@@ -641,7 +654,7 @@ async def _describe_documents(args: dict[str, Any], ctx: ToolContext) -> ToolRes
         body = file.get("summary") or file.get("descriptor") or "(no summary yet)"
         lines.append(f"{head}\n{body}")
     for note_id in (fid for fid in resolved.file_ids if fid in notes):
-        lines.append(await _describe_note(note_id))
+        lines.append(await _describe_note(note_id, ctx.workspace_id))
     if not lines:
         return _result("No summaries for those documents.")
     return _result("\n\n".join(lines))
@@ -650,12 +663,13 @@ async def _describe_documents(args: dict[str, Any], ctx: ToolContext) -> ToolRes
 _NOTE_EXCERPT_WORDS = 250
 
 
-async def _describe_note(note_id: str) -> str:
+async def _describe_note(note_id: str, workspace_id: str) -> str:
     """A note has no summary: its heading outline, or its first words when it
     has no headings."""
     try:
         resp = await asyncio.to_thread(
-            _get_json, f"/api/internal/materials/{note_id}/index-text"
+            _get_json,
+            f"/api/internal/materials/{note_id}/index-text?workspaceId={workspace_id}",
         )
     except requests.RequestException as exc:
         return f"### (id={note_id})\nCould not read the note: {exc}"
@@ -1527,6 +1541,9 @@ async def _trash_file(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     call_id = str(args.get("_tool_call_id") or "")
     kind, rid = _target(args)
     if kind == "source_file":
+        refused = await _refuse_note_as_file(ctx, rid)
+        if refused is not None:
+            return refused
         resolved = await _resolve_scope(ctx, {"file_ids": [rid]})
         if isinstance(resolved, ToolResult):
             return resolved
@@ -1667,6 +1684,9 @@ async def _inspect_document(args: dict[str, Any], ctx: ToolContext) -> ToolResul
         )
     kind, rid = _target(args)
     if kind == "source_file":
+        refused = await _refuse_note_as_file(ctx, rid)
+        if refused is not None:
+            return refused
         resolved = await _resolve_scope(ctx, {"file_ids": [rid]})
         if isinstance(resolved, ToolResult):
             return resolved
@@ -1700,6 +1720,9 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         return prepared
     books, todo = prepared
     if kind == "source_file":
+        refused = await _refuse_note_as_file(ctx, rid)
+        if refused is not None:
+            return refused
         resolved = await _resolve_scope(ctx, {"file_ids": [rid]})
         if isinstance(resolved, ToolResult):
             return resolved

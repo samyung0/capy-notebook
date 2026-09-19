@@ -2069,56 +2069,6 @@ export const getSourceSession = async (id: string,
 
 
 
-export type listFlashcardSetsResponse200 = {
-  data: FlashcardSet[]
-  status: 200
-}
-
-export type listFlashcardSetsResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type listFlashcardSetsResponseSuccess = (listFlashcardSetsResponse200) & {
-  headers: Headers;
-};
-export type listFlashcardSetsResponseError = (listFlashcardSetsResponseDefault) & {
-  headers: Headers;
-};
-
-export type listFlashcardSetsResponse = (listFlashcardSetsResponseSuccess | listFlashcardSetsResponseError)
-
-export const getListFlashcardSetsUrl = () => {
-
-
-
-
-  return `/api/flashcards`
-}
-
-/**
- * @summary List flashcard sets
- */
-export const listFlashcardSets = async ( options?: RequestInit): Promise<listFlashcardSetsResponse> => {
-
-  const res = await fetch(getListFlashcardSetsUrl(),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: listFlashcardSetsResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listFlashcardSetsResponse
-}
-
-
-
 export type createFlashcardSetResponse201 = {
   data: FlashcardSet
   status: 201
@@ -4555,56 +4505,6 @@ export const gradeQuizAnswer = async (quizGradeReq: NonReadonly<QuizGradeReq>, o
 
   const data: gradeQuizAnswerResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as gradeQuizAnswerResponse
-}
-
-
-
-export type listQuizzesResponse200 = {
-  data: Quiz[]
-  status: 200
-}
-
-export type listQuizzesResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type listQuizzesResponseSuccess = (listQuizzesResponse200) & {
-  headers: Headers;
-};
-export type listQuizzesResponseError = (listQuizzesResponseDefault) & {
-  headers: Headers;
-};
-
-export type listQuizzesResponse = (listQuizzesResponseSuccess | listQuizzesResponseError)
-
-export const getListQuizzesUrl = () => {
-
-
-
-
-  return `/api/quizzes`
-}
-
-/**
- * @summary List quizzes
- */
-export const listQuizzes = async ( options?: RequestInit): Promise<listQuizzesResponse> => {
-
-  const res = await fetch(getListQuizzesUrl(),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: listQuizzesResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listQuizzesResponse
 }
 
 

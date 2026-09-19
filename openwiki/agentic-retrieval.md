@@ -1638,17 +1638,22 @@ timer (`scheduleNoteIndexes`) asks Go to admit dirty notes that have been idle
 `auto_reindex` on. `POST /internal/collaboration/materials/{id}/index`
 (`RequestMaterialIndex`) reserves ingest credits on the workspace owner,
 inserts one `ingest` job carrying `materialId`, and records it in
-`index_job_id`; 409 means not due. A non-409 failure (credits, quota) is
-parked in `index_error` and shows as `pendingNotes` in workspace settings
-until the note changes again.
+`index_job_id`; 409 means not due. A refusal a retry cannot fix (another
+4xx, such as exhausted credits) is parked in `index_error` and shows as
+`pendingNotes` in workspace settings until the note changes again; transient
+failures retry on the next tick. A job whose worker died is failed by the
+lease reaper, which parks the note the same way.
 
 The ingest worker branches on `materialId`: it fetches the note's
-markdown-like text from `GET /api/internal/materials/{id}/index-text`
+markdown-like text from `GET /api/internal/materials/{id}/index-text?workspaceId=`
+(workspace-scoped, pipeline secret)
 (`materialdoc.ExtractIndexText`: headings keep their level, list items their
 bullets, table rows their cells, code its fence; references, diagrams and
-media are skipped), chunks it with `chunk_markdown`, reuses vectors for
-unchanged chunk text from the note's previous index, writes the content with
-no descriptor or summary, and clears `index_job_id`. A 404 from Go (trashed,
+media are skipped), chunks it with `chunk_markdown`, hashes the chunks under a `note:` prefix
+so a note never shares a content row with a file of identical text, reuses
+vectors for unchanged chunk text from the note's previous content row (read
+before the alias moves), writes the content with no descriptor or summary,
+and clears `index_job_id`. A 404 from Go (trashed,
 standalone, deleted) ends the job without work.
 
 Search runs one pool: the `scoped_files` CTE unions files and notes with a
@@ -1657,7 +1662,8 @@ passage cites `{kind: "material", materialId, fileName: title}` with no page
 or regions. The chat panel renders such a chip with the note glyph and opens
 the note in view mode. The agent's `list_sources` keeps notes as title and
 id, `describe_documents` returns a note's heading outline or its first 250
-words, and `read_document` pages a note's chunks like a file's. Workspace
+words, `read_document` pages a note's chunks like a file's, and the file
+lifecycle and edit tools refuse a note id passed as a source file. Workspace
 clones copy note index rows with the file rows; a cloned note without an
 index starts dirty.
 

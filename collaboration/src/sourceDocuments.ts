@@ -880,7 +880,6 @@ export class SourceDocumentStore {
     const jobs = await this.pool.query<{ id: string; file_id: string }>(
       `SELECT j.id,c.file_id FROM jobs j JOIN source_refresh_candidates c ON c.job_id=j.id WHERE j.type='source_refresh' AND (j.status='pending' OR (j.status='running' AND j.lease_expires_at<now())) ORDER BY j.created_at LIMIT 2`
     );
-    await this.scheduleNoteIndexes();
     for (const job of jobs.rows) {
       try {
         await this.exportCandidate(job.file_id, job.id);
@@ -888,6 +887,11 @@ export class SourceDocumentStore {
         if (!(error instanceof SourceRequestError) || error.status !== 409)
           console.warn('source refresh failed:', error);
       }
+    }
+    try {
+      await this.scheduleNoteIndexes();
+    } catch (error) {
+      console.warn('note index scheduling failed:', error);
     }
   }
 
@@ -908,7 +912,17 @@ export class SourceDocumentStore {
           {}
         );
       } catch (error) {
-        if (error instanceof SourceRequestError && error.status === 409)
+        // 409: not due. Anything transient (network, 5xx, 429) retries next
+        // tick; only a refusal a retry cannot fix parks the note.
+        const status =
+          error instanceof SourceRequestError ? error.status : undefined;
+        if (
+          status === undefined ||
+          status === 409 ||
+          status === 429 ||
+          status < 400 ||
+          status >= 500
+        )
           continue;
         await this.pool.query(
           'UPDATE materials SET index_error=$2 WHERE id=$1 AND index_job_id IS NULL',

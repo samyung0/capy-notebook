@@ -57,6 +57,9 @@ func mapHTTPError(err error) error {
 	if err == nil {
 		return nil
 	}
+	if errors.Is(err, store.ErrInvalidCursor) {
+		return huma.Error400BadRequest(err.Error())
+	}
 	if errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrForbidden) {
 		return huma.Error404NotFound("not found")
 	}

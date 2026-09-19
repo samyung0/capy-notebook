@@ -23,14 +23,6 @@ func noteWithRefs(t *testing.T, refs ...Material) string {
 	return raw
 }
 
-func ageMaterial(t *testing.T, s *Store, id string) {
-	t.Helper()
-	if _, err := s.pool.Exec(context.Background(),
-		`UPDATE materials SET created_at=now() - interval '1 minute' WHERE id=$1`, id); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestEmbeddedMaterialFollowsItsNote(t *testing.T) {
 	s := openMaterialTestStore(t)
 	ctx := context.Background()
@@ -75,31 +67,31 @@ func TestEmbeddedMaterialFollowsItsNote(t *testing.T) {
 	if len(refs) != 1 || refs[0].ID != note.ID {
 		t.Fatalf("tree should hide embedded rows: %+v", refs)
 	}
-	quizzes, err := s.ListQuizzes(ctx, ownerID)
+	owned, err := s.ListOwnedMaterials(ctx, ownerID, MaterialListFilter{Kinds: []string{"quiz"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(quizzes) != 1 || quizzes[0].ID != quiz.ID {
-		t.Fatalf("quiz list should include the embedded quiz: %+v", quizzes)
+	if len(owned.Items) != 1 || owned.Items[0].ID != quiz.ID {
+		t.Fatalf("the Create list should include the embedded quiz: %+v", owned.Items)
 	}
 	if _, err := s.TrashMaterial(ctx, ownerID, quiz.ID, "", AgentOperation{}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("an embedded row cannot be trashed directly, got %v", err)
 	}
 
-	// The note references both; dropping one reference trashes that row once
-	// it is older than the grace window, and referencing it again restores it.
-	content := noteWithRefs(t, quiz, cards)
-	if _, err := s.UpdateMaterial(ctx, note.ID, MaterialPatch{Content: &content, UpdatedBy: ownerID}); err != nil {
-		t.Fatal(err)
-	}
+	// A row nobody has referenced yet is still being inserted and is left
+	// alone; once a projection has referenced it, dropping the reference
+	// trashes it and referencing it again restores it.
 	onlyQuiz := noteWithRefs(t, quiz)
 	if _, err := s.UpdateMaterial(ctx, note.ID, MaterialPatch{Content: &onlyQuiz, UpdatedBy: ownerID}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.GetMaterial(ctx, cards.ID); err != nil {
-		t.Fatalf("a fresh row is left alone by reconciliation: %v", err)
+		t.Fatalf("a never-referenced row is left alone: %v", err)
 	}
-	ageMaterial(t, s, cards.ID)
+	content := noteWithRefs(t, quiz, cards)
+	if _, err := s.UpdateMaterial(ctx, note.ID, MaterialPatch{Content: &content, UpdatedBy: ownerID}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := s.UpdateMaterial(ctx, note.ID, MaterialPatch{Content: &onlyQuiz, UpdatedBy: ownerID}); err != nil {
 		t.Fatal(err)
 	}
