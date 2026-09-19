@@ -2584,6 +2584,38 @@ async def test_curate_stall_guard_turns_tools_off_after_four_barren_responses(
     assert "0 of 1 ledger todos done" in caplog.text
 
 
+async def test_errored_writes_extend_the_stall_guard_twice_at_most(
+    monkeypatch, library_on, caplog
+):
+    """A refused create_material is an attempt at progress: each of the first
+    two grants two more responses, so the guard fires after eight, not four."""
+    writing = _assembled(
+        "", [_call("create_material", '{"kind":"note","title":"x","todo":0}', "w")]
+    )
+    reading = _assembled("", [_call("read_knowledge", '{"excerpt_id":"e_1"}', "k")])
+    # Three refused writes plus reads: only two of the writes count, so the
+    # threshold is 4 + 2 + 2 = 8 barren responses before tools go off.
+    stream, seen = _script_stream(
+        [writing, writing, writing] + [reading] * 5 + [_assembled("Nothing written.")]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+
+    async def _run(name, _args, ctx):
+        if name == "create_material":
+            return ToolResult(text_parts=["read e_1 first"], refused=True)
+        ctx.ledger.note_read("e_1", 0, "8.1")
+        return ToolResult(text_parts=["excerpt"])
+
+    monkeypatch.setattr(agent.tools, "run", _run)
+    ctx = _curate_ctx()
+    ctx.ledger.add("Teach regression", ["one"])
+    events = await _collect("teach me regression", ctx, model=_curate_model())
+
+    assert [call["tools"] is None for call in seen] == [False] * 8 + [True]
+    assert events[-1]["telemetry"]["stopReason"] == "curate_stall"
+    assert "limit 8 after 3 errored writes" in caplog.text
+
+
 async def test_an_empty_curate_response_stalls_but_does_not_end_the_turn(
     monkeypatch, library_on
 ):
@@ -2870,9 +2902,9 @@ async def test_curate_answer_is_plain_prose_with_no_citations(monkeypatch, libra
     assert deltas == "I created a note and a quiz."
 
 
-async def test_curate_allows_four_tool_calls_in_one_response(monkeypatch, library_on):
+async def test_curate_allows_six_tool_calls_in_one_response(monkeypatch, library_on):
     calls = [
-        _call("read_knowledge", f'{{"excerpt_id":"e_{n}"}}', f"k{n}") for n in range(5)
+        _call("read_knowledge", f'{{"excerpt_id":"e_{n}"}}', f"k{n}") for n in range(7)
     ]
     stream, _seen = _script_stream(
         [_assembled("", calls), _assembled("Read what the library holds.")]
@@ -2887,4 +2919,4 @@ async def test_curate_allows_four_tool_calls_in_one_response(monkeypatch, librar
     events = await _collect("teach me regression", _curate_ctx(), model=_curate_model())
 
     outcomes = {e["callId"]: e["outcome"] for e in events if e["type"] == "tool_end"}
-    assert [outcomes[f"k{n}"] for n in range(5)] == ["succeeded"] * 4 + ["refused"]
+    assert [outcomes[f"k{n}"] for n in range(7)] == ["succeeded"] * 6 + ["refused"]

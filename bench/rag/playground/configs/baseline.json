@@ -1,7 +1,0 @@
-{
-  "target": "lab",
-  "workspace_id": "odl_eval_odl",
-  "model": {"provider_slug": "deepseek", "model_slug": "deepseek-v4-flash-vision-exp", "version": 1, "thinking": "instant"},
-  "tools": ["search_workspace", "list_sources", "describe_documents", "read_document"],
-  "limits": {"planning_responses": 12, "tools_per_response": 4, "tools_per_turn": 12}
-}

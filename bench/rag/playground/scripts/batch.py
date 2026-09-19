@@ -1,7 +1,7 @@
 """Run fixture questions through a running playground server, one after another.
 
-  uv run python bench/rag/playground/scripts/batch.py --config structured-glm-tencent --ids odl-agentic-051,odl-agentic-stress-002
-  uv run python bench/rag/playground/scripts/batch.py --config baseline --split heldout
+  uv run python bench/rag/playground/scripts/batch.py --config chat --ids odl-agentic-051,odl-agentic-stress-002
+  uv run python bench/rag/playground/scripts/batch.py --config chat --split heldout
 
 Writes local/batches/<config>-<stamp>.json with each question's required claims,
 the answer, the run id and timing. Grading stays manual: the claims are shown

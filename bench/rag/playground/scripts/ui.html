@@ -31,7 +31,7 @@
     <div class="row"><label>Quality file <span id="quality" class="muted">none</span></label></div>
     <div class="row"><label><input type="checkbox" id="curate"> Curate mode</label> <span class="muted">library tools, curate prompt, progress ledger; materials are written as JSON files under the run</span></div>
     <textarea id="json" spellcheck="false"></textarea>
-    <div class="muted">Fields absent from the JSON use the defaults shown in the browser console (<code>defaults</code>). Tools: search_workspace, list_sources, describe_documents, read_document, capture_page; curate adds search_knowledge, browse_knowledge, read_knowledge, capture_knowledge_page, create_ledger, create_material, edit_document. capture.mode: pixels | ocr | caption.</div>
+    <div class="muted">Fields absent from the JSON use the defaults shown in the browser console (<code>defaults</code>). Tools: search_workspace, list_sources, describe_documents, read_document, capture_page, create_material, inspect_document, edit_document; curate adds search_knowledge, browse_knowledge, read_knowledge, capture_knowledge_page, create_ledger, create_material, edit_document. capture.mode: pixels | ocr | caption.</div>
     <details open><summary>Effective system prompt (what the turn sends)</summary>
       <textarea id="prompt" spellcheck="false" style="min-height:220px"></textarea>
       <div class="row"><button id="applyPrompt">Apply as system_prompt</button> <button id="resetPrompt">Back to production prompt</button>
@@ -62,7 +62,8 @@ const k = (n) => (n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n));
 async function loadState() {
   state = await (await fetch("/api/state")).json();
   console.log("defaults", state.defaults);
-  $("target").textContent = "target: " + state.target;
+  const lib = state.library;
+  $("target").textContent = "target: " + state.target + " · library: " + (lib ? `${lib.books} books · ${lib.excerpts} excerpts · ${lib.topics} topics` : "not configured");
   $("configs").innerHTML = state.configs.map((c) => `<option>${c}</option>`).join("");
   $("models").innerHTML = state.models.map((m) =>
     `<option value='${JSON.stringify([m.provider_slug, m.model_slug, m.version, m.default_thinking])}'>${m.provider_slug}/${m.model_slug} v${m.version}${(m.capabilities || []).includes("vision") ? " 👁" : ""}</option>`).join("");

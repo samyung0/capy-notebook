@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import CONFIGS, LOCAL, REPO, ROOT, TARGETS, PdfResolver, prepare_environment  # noqa: E402
+from common import CONFIGS, LOCAL, REPO, ROOT, TARGETS, PdfResolver, ensure_tunnel, prepare_environment  # noqa: E402
 from fastapi import FastAPI, HTTPException, Request  # noqa: E402
 from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse  # noqa: E402
 
@@ -44,7 +44,7 @@ KNOWLEDGE_TOOLS = (
 )
 ALLOWED_TOOLS = {
     "search_workspace", "list_sources", "describe_documents", "read_document", "capture_page",
-    *KNOWLEDGE_TOOLS, "create_material", "edit_document",
+    *KNOWLEDGE_TOOLS, "create_material", "inspect_document", "edit_document",
 }
 DEFAULT_CONFIG: dict[str, Any] = {
     "target": "lab",
@@ -71,7 +71,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # bound ordinary chat, which curate ignores.
     "limits": {
         "planning_responses": 12, "tools_per_response": 4, "tools_per_turn": 12, "captures_per_turn": 3,
-        "knowledge_tools_per_response": 4, "stall_responses": 4,
+        "knowledge_tools_per_response": 6, "stall_responses": 4,
     },
     "search": {"top_k": 5, "per_file_cap": 4},
     "capture": {
@@ -749,6 +749,28 @@ def build_app(target: str):
     resolver = PdfResolver(target)
     turn_lock = asyncio.Lock()
 
+    async def library_summary() -> dict[str, Any] | None:
+        """What curate turns read: the live library's current books, their
+        excerpts and the topic catalog, or None when no library URL is set."""
+        if not library.enabled():
+            return None
+        pool = await library.pool()
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                "SELECT (SELECT count(*) FROM library_books) AS books, "
+                "(SELECT count(*) FROM library_excerpts e JOIN library_books b ON b.content_id = e.content_id) AS excerpts, "
+                "(SELECT count(*) FROM library_topics) AS topics"
+            )
+            row = await cur.fetchone()
+        return dict(row)
+
+    async def reconnect() -> None:
+        """Reopen the ingest-host tunnel if it died since the last request, and
+        drop both pools when it did: their connections went with the old tunnel."""
+        if target != "local" and ensure_tunnel():
+            await store.close_pool()
+            await library.close_pool()
+
     @app.on_event("shutdown")
     async def close_library():
         await library.close_pool()
@@ -759,6 +781,7 @@ def build_app(target: str):
 
     @app.get("/api/state")
     async def state():
+        await reconnect()
         pool = await store.pool()
         async with pool.connection() as conn:
             cur = await conn.execute(
@@ -774,7 +797,7 @@ def build_app(target: str):
         quality = sorted(p.name for p in (LOCAL / "quality").glob(f"{target}-*.json"))
         return {
             "target": target, "configs": sorted(p.stem for p in CONFIGS.glob("*.json")), "defaults": DEFAULT_CONFIG,
-            "models": models, "workspaces": workspaces, "quality_files": quality,
+            "models": models, "workspaces": workspaces, "library": await library_summary(), "quality_files": quality,
             "runs": sorted((p.name for p in RUNS.glob("*/run.json") for p in [p.parent]), reverse=True)[:200],
         }
 
@@ -825,6 +848,7 @@ def build_app(target: str):
 
     @app.post("/api/turn")
     async def turn(request: Request):
+        await reconnect()
         body = await request.json()
         config = merged(body["config"])
         if config["target"] != target:

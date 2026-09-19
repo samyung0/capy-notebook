@@ -13,7 +13,7 @@ from typing import Any
 from . import curate as curate_prompts
 from .locale import response_language_rule
 
-# The playground's ``structured-glm-tencent`` prompt (bench/rag/playground/configs),
+# The playground's former ``structured-glm-tencent`` prompt (2026-09-12 lab runs),
 # minus its hard-coded locale line, which ``response_language_rule`` supplies,
 # plus the structured-answer rule. The capture rule is part of the base prompt
 # on purpose: the softer wording of an addon was ignored in the lab runs.

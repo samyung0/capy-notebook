@@ -1316,13 +1316,18 @@ A curate turn builds materials instead of answering:
   let two todos answer to the same number. The `ToolContext` is built inside
   `_chat_events`' `try`, so anything else raised there still becomes a typed
   error event.
-- **Limits.** Four tool calls per model response, no per-turn tool count, no
-  planning-response ceiling for any payer and no capture cap. The stall guard is
+- **Limits.** Six tool calls per model response (the prompt states the cap so
+  the model batches its reads), no per-turn tool count, no planning-response
+  ceiling for any payer and no capture cap. The stall guard is
   the workload bound; the credit guard is a platform-paid billing cutoff and
   bounds nothing else. Progress in a response is exactly this turn's
   `create_ledger` call or a completed todo — a repeated read is not, and a
   second `create_ledger` is refused rather than counted. After four consecutive
-  responses without progress the stall guard runs the next call with tools off,
+  responses without progress the stall guard runs the next call with tools off;
+  an errored `create_material` or `edit_document` call is an attempt at progress
+  and raises that threshold by two, for the first two such errors in a turn
+  (`CURATE_WRITE_ERROR_GRACE`, `CURATE_WRITE_ERROR_GRACE_MAX`), so it is at most
+  eight. The guard then runs the next call with tools off,
   and the ledger message on that call ends with a notice that tools are off and
   the reply must list the materials made, the open todos and what to ask next
   (`curate_prompts.FINAL_NOTICE`; without it the first live run of the reshaped
@@ -1406,7 +1411,8 @@ A curate turn builds materials instead of answering:
   (`PlainRenderer` streams the deltas as they arrive). The attribution the user
   sees is the provenance footer on each material, not a citation.
 - **Playground.** `bench/rag/playground` runs this loop in process with
-  `curate: true` (`configs/curate-statistics.json`): the real prompt, tools,
+  `curate: true` (`configs/curate.json`; `configs/chat.json` is ordinary chat
+  with the production prompt and caps): the real prompt, tools,
   ledger and stall guard against the live library through the ingest tunnel,
   with `limits.knowledge_tools_per_response` and `limits.stall_responses`
   patching the two curate caps. There is no gateway, so `create_material` and
@@ -1774,7 +1780,7 @@ reduction path.
 | Search | `CAPY_SEARCH_CANDIDATES`, `CAPY_SEARCH_TOP_K`, `CAPY_SEARCH_PER_FILE_CAP` | |
 | Knowledge library | `LIBRARY_DATABASE_URL`, `CAPY_LIBRARY_TAG_MIN_CONFIDENCE` | Unset URL leaves library tools unavailable. Every environment reads the same live library; books carry their own versions, so there is nothing to pin. Tags below 0.8 confidence, or with an unverified evidence quote, never act as filters. |
 | Library source PDFs | `KNOWLEDGE_BASE_B2_ENDPOINT`, `KNOWLEDGE_BASE_B2_REGION`, `KNOWLEDGE_BASE_B2_BUCKET`, `KNOWLEDGE_BASE_B2_KEY_ID`, `KNOWLEDGE_BASE_B2_APP_KEY` | A dedicated private bucket with its own restricted key, not a prefix of the app bucket. All five or none; unset leaves `capture_knowledge_page` unoffered. |
-| Agent | `CAPY_AGENT_MAX_STEPS` | Default 8 planning responses, 2 tool calls per response, 16 per turn (`retrieval/limits.py`). Cap is the design, not a safety valve. Curate mode instead allows `KNOWLEDGE_TOOLS_PER_RESPONSE` (4) calls per response with no per-turn or planning cap, ends on the `CURATE_STALL_RESPONSES` (4) stall guard, and requires a 200,000-token window |
+| Agent | `CAPY_AGENT_MAX_STEPS` | Default 8 planning responses, 2 tool calls per response, 16 per turn (`retrieval/limits.py`). Cap is the design, not a safety valve. Curate mode instead allows `KNOWLEDGE_TOOLS_PER_RESPONSE` (6) calls per response with no per-turn or planning cap, ends on the `CURATE_STALL_RESPONSES` (4, plus 2 per errored write for at most 2 errors) stall guard, and requires a 200,000-token window |
 | Extraction confidence | `CAPY_CONFIDENCE_NOTE_BELOW` | Default 0.9. A passage whose chunk confidence is below this carries `[extraction confidence 0.72: reasons]` in its header, which the capture rule keys on |
 | capture_page | `CAPY_CAPTURE_CACHE_DIR`, `CAPY_CAPTURE_CACHE_MAX_BYTES`, `CAPY_CAPTURE_MAX_EDGE`, `CAPY_CAPTURES_PER_TURN` | Retrieval-host PDF cache (LRU by size, 2 GiB), 1568 px long edge JPEG q80, 8 captures per turn in ordinary chat, no cap in curate mode |
 | LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `CAPY_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 250k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |

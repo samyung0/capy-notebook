@@ -39,6 +39,8 @@ from .chunking import estimate_tokens
 from .limits import (
     CURATE_MIN_CONTEXT_WINDOW_TOKENS,
     CURATE_STALL_RESPONSES,
+    CURATE_WRITE_ERROR_GRACE,
+    CURATE_WRITE_ERROR_GRACE_MAX,
     KNOWLEDGE_TOOLS_PER_RESPONSE,
     MAX_CONCURRENT,
     PLANNING_RESPONSES,
@@ -52,6 +54,9 @@ from .limits import (
     TOOLS_PER_TURN,
     TurnBudget,
 )
+
+# The curate write tools: an errored call is an attempt at progress.
+WRITE_TOOLS = frozenset({"create_material", "edit_document"})
 from .stream import AssembledResponse, StreamEvent, ToolCall
 from .structured import (
     JSON_OBJECT,
@@ -318,6 +323,8 @@ async def _run_turn(
     # responses stop changing the ledger, and it is its own stop reason.
     stalled = 0
     stall_stop = False
+    # Errored writes earn the guard extra responses (limits.CURATE_WRITE_ERROR_GRACE).
+    write_errors = 0
 
     while ctx.curate or step < planning_cap or terminal_pending:
         if _client_gone(client):
@@ -326,13 +333,18 @@ async def _run_turn(
         terminal_call = terminal_pending
         terminal_pending = False
         if ctx.curate:
-            tools_off = terminal_call or stalled >= CURATE_STALL_RESPONSES
+            stall_limit = CURATE_STALL_RESPONSES + CURATE_WRITE_ERROR_GRACE * min(
+                write_errors, CURATE_WRITE_ERROR_GRACE_MAX
+            )
+            tools_off = terminal_call or stalled >= stall_limit
             if tools_off and not terminal_call:
                 stall_stop = True
                 log.warning(
-                    "curate stall guard: %d responses completed no todo; "
-                    "%d of %d ledger todos done",
+                    "curate stall guard: %d responses completed no todo "
+                    "(limit %d after %d errored writes); %d of %d ledger todos done",
                     stalled,
+                    stall_limit,
+                    write_errors,
                     sum(1 for todo in ctx.ledger.todos if todo.done),
                     len(ctx.ledger.todos),
                 )
@@ -605,6 +617,7 @@ async def _run_turn(
             # Progress is the ledger's first creation or a completed todo;
             # nothing else in a response counts against the stall guard.
             progress_before = ctx.ledger.progress
+            write_calls = {c.id for c in calls if c.name in WRITE_TOOLS}
             try:
                 async for event in _run_tools(calls, ctx, budget, messages):
                     if event.get("type") == "_tool_message":
@@ -612,6 +625,12 @@ async def _run_turn(
                     if event.get("type") == "activity":
                         activity.append(event["block"])
                         continue
+                    if (
+                        event.get("type") == "tool_end"
+                        and event.get("callId") in write_calls
+                        and event.get("outcome") != "succeeded"
+                    ):
+                        write_errors += 1
                     yield event
             except pending.SourceChanged as exc:
                 yield _with_usage(events.error(str(exc), exc.code))

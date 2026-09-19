@@ -96,23 +96,28 @@ def port_open(port: int) -> bool:
         return s.connect_ex(("127.0.0.1", port)) == 0
 
 
-def ensure_tunnel() -> None:
+def ensure_tunnel() -> bool:
+    """Open whatever forwards are down; True when something had to be reopened.
+    Called at start and before every request that reaches a database, because
+    the tunnel dies with the network (sleep, Wi-Fi change) while this server
+    keeps running, and a reopened tunnel means every pooled connection is dead."""
     # Forward only what is not already up, so an older tunnel of this host does
     # not make the new one fail on an address already in use.
     missing = {local: dest for local, dest in TUNNELS.items() if not port_open(local)}
     if not missing:
-        return
+        return False
     forwards = [f"-L{local}:{host}:{port}" for local, (host, port) in missing.items()]
     # Windows OpenSSH ignores -f, so the tunnel is a child we never wait on;
     # it dies with this process. Poll the forwards instead of trusting -f.
     tunnel = subprocess.Popen(
         ["ssh", "-i", str(ingest_key()), "-o", "BatchMode=yes", "-o", "ExitOnForwardFailure=yes",
+         "-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3",
          "-N", *forwards, f"root@{INGEST_HOST}"],
     )
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
         if all(port_open(p) for p in TUNNELS):
-            return
+            return True
         if tunnel.poll() is not None:
             break
         time.sleep(0.5)

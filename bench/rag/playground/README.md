@@ -10,8 +10,7 @@ uv run --with pymupdf==1.28.2 python bench/rag/playground/scripts/playground.py 
 ```
 
 Set `ALIBABA_API_KEY` in the shell first if a config uses `capture.mode = "ocr"`.
-`TOKENHUB` (Tencent TokenHub, used by the `curate-statistics` and `*-tencent`
-configs) is lifted from the repository-root `.env.local` with the other provider
+`TOKENHUB` (Tencent TokenHub, used by the `curate` config) is lifted from the repository-root `.env.local` with the other provider
 keys, so it needs no export. The Claude desktop app's `.claude/launch.json`
 carries `rag-playground-uat`, which starts this server against UAT on port
 18765 with `uv` invoked by its full path. The server opens its own SSH tunnel
@@ -98,7 +97,7 @@ Fields absent from a config take the defaults in `DEFAULT_CONFIG`
 | `system_prompt` / `prompt_addon` | `null` keeps the production prompt; a string replaces it. The addon is appended either way |
 | `curate` | Run the real curate loop: library tools, the curate prompt, curate limits, the progress ledger and the stall guard (see below) |
 | `ledger` | Path to a stored ledger the curate turn continues: a previous `run.json`, or a bare ledger. `--ledger <path>` sets it for every config that does not carry its own |
-| `tools` | Subset of `search_workspace`, `list_sources`, `describe_documents`, `read_document`, `capture_page`, and in curate mode `search_knowledge`, `browse_knowledge`, `read_knowledge`, `capture_knowledge_page`, `create_ledger`, `create_material`, `edit_document` |
+| `tools` | Subset of `search_workspace`, `list_sources`, `describe_documents`, `read_document`, `capture_page`, `create_material`, `inspect_document`, `edit_document`, and in curate mode `search_knowledge`, `browse_knowledge`, `read_knowledge`, `capture_knowledge_page`, `create_ledger`, `create_material`, `edit_document` |
 | `limits` | `planning_responses`, `tools_per_response`, `tools_per_turn`, `captures_per_turn` for ordinary chat; `knowledge_tools_per_response` and `stall_responses` for curate |
 | `search` | `top_k`, `per_file_cap` |
 | `capture.mode` | `pixels` attaches the JPEG to the conversation (needs a vision chat model); `ocr` sends it to Qwen3.5-OCR (`ocr_route` `docparse` or `chat`) and returns the transcript as a passage; `caption` asks the captioning model, question-aware when `question_aware` is true |
@@ -116,9 +115,12 @@ with the rendered box as its region.
 
 ## Curate mode
 
-`curate: true` runs the production curate loop (`configs/curate-statistics.json`
-is the frozen statistics case against the UAT library pin; its `question` field
-prefills the question box). The agent gets the curate system prompt, the
+`curate: true` runs the production curate loop (`configs/curate.json`; its
+`question` field prefills the question box). The other config, `configs/chat.json`,
+is ordinary chat with the production prompt, tools and caps against a UAT
+workspace. The header shows the library the curate turns read (current books,
+excerpts, topics) next to the target; workspace chunk counts are the UAT app
+database and matter only to chat. The agent gets the curate system prompt, the
 library tools and `create_ledger`, no planning ceiling, and the two curate caps
 from `limits.knowledge_tools_per_response` and `limits.stall_responses`, which
 patch `KNOWLEDGE_TOOLS_PER_RESPONSE` and `CURATE_STALL_RESPONSES` for the turn.

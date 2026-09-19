@@ -1,0 +1,42 @@
+{
+  "target": "uat",
+  "workspace_id": "ws_091c0fbaaf",
+  "curate": false,
+  "question": "What does the uploaded document say about its main topic?",
+  "model": {
+    "provider_slug": "deepseek",
+    "model_slug": "deepseek-v4-flash-vision-exp",
+    "version": 1,
+    "thinking": "instant",
+    "transport": null
+  },
+  "tools": [
+    "search_workspace",
+    "list_sources",
+    "describe_documents",
+    "read_document",
+    "capture_page",
+    "create_material",
+    "inspect_document",
+    "edit_document"
+  ],
+  "limits": {
+    "planning_responses": 8,
+    "tools_per_response": 2,
+    "tools_per_turn": 16,
+    "captures_per_turn": 8
+  },
+  "capture": {
+    "mode": "pixels",
+    "max_edge": 1568,
+    "addon": false
+  },
+  "quality": {
+    "show": false
+  },
+  "prompt_addon": "",
+  "system_prompt": null,
+  "answer": {
+    "citations": "as_is"
+  }
+}

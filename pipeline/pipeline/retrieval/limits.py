@@ -21,8 +21,13 @@ MAX_CONCURRENT = 4
 # Curate mode builds materials instead of answering, so it has no planning
 # ceiling for any payer and no per-turn tool count. The stall guard is the
 # workload bound: it ends a turn whose responses stop completing ledger todos.
-KNOWLEDGE_TOOLS_PER_RESPONSE = 4
+KNOWLEDGE_TOOLS_PER_RESPONSE = 6
 CURATE_STALL_RESPONSES = 4
+# A write that errors is an attempt at progress: each of the first two errored
+# create_material or edit_document calls in a turn grants the stall guard two
+# more responses, so the threshold is at most 4 + 4.
+CURATE_WRITE_ERROR_GRACE = 2
+CURATE_WRITE_ERROR_GRACE_MAX = 2
 # A learner's request has to fit the library evidence of a whole turn.
 CURATE_MIN_CONTEXT_WINDOW_TOKENS = 200_000
 

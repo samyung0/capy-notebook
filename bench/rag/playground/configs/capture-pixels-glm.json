@@ -1,9 +1,0 @@
-{
-  "target": "lab",
-  "workspace_id": "odl_eval_odl",
-  "model": {"provider_slug": "zai", "model_slug": "glm-5.3-flash", "version": 1, "thinking": "low"},
-  "tools": ["search_workspace", "list_sources", "describe_documents", "read_document", "capture_page"],
-  "limits": {"planning_responses": 12, "tools_per_response": 4, "tools_per_turn": 12, "captures_per_turn": 3},
-  "capture": {"mode": "pixels", "max_edge": 1568, "require_seen_page": true},
-  "quality": {"show": true, "only_below": 0.9}
-}
