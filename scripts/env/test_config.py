@@ -31,14 +31,19 @@ class ConfigTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unknown"):
             config.classify({"UNCLASSIFIED_SECRET": "never printed"})
 
-    def test_github_requires_known_keys_and_correct_namespace(self):
+    def test_github_selects_managed_keys_and_requires_correct_namespace(self):
         with patch.dict(
             config.os.environ,
             {
                 "CAPY_GITHUB_VARS": json.dumps(
-                    {"DEPLOYMENT_OPS_URL": "https://uat-ops.example.com"}
+                    {
+                        "DEPLOYMENT_OPS_URL": "https://uat-ops.example.com",
+                        "UNRELATED_CI_SETTING": "ignored",
+                    }
                 ),
-                "CAPY_GITHUB_SECRETS": "{}",
+                "CAPY_GITHUB_SECRETS": json.dumps(
+                    {"TEST_ALIBABA": "private", "github_token": "runner"}
+                ),
             },
         ):
             self.assertEqual(
@@ -54,19 +59,6 @@ class ConfigTest(unittest.TestCase):
                 },
             ),
             self.assertRaisesRegex(ValueError, "wrong GitHub namespace"),
-        ):
-            config.github_values()
-        with (
-            patch.dict(
-                config.os.environ,
-                {
-                    "CAPY_GITHUB_VARS": "{}",
-                    "CAPY_GITHUB_SECRETS": json.dumps(
-                        {"NEW_UNCLASSIFIED_SECRET": "private"}
-                    ),
-                },
-            ),
-            self.assertRaisesRegex(ValueError, "unknown GitHub configuration keys"),
         ):
             config.github_values()
         # Actions injects its automatic token lowercase; it is not our configuration.

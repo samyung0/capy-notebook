@@ -596,7 +596,7 @@ export function NoteEditorCore({
   }, [onDocumentRejected, resendPendingCheckpoints, saveImmediately]);
 
   return (
-    <NoteBlockDialogsProvider>
+    <NoteBlockDialogsProvider noteId={material.id}>
       <div className="flex max-h-full flex-1 flex-col overflow-auto">
         <Plate editor={editor} onValueChange={scheduleCheckpoint}>
           <CollaborationProvider

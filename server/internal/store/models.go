@@ -238,6 +238,9 @@ type Material struct {
 	// shared knowledge library; nil for everything else. Written at creation,
 	// appended by curate edits, and rendered outside the editable document.
 	Provenance *Provenance `json:"provenance,omitempty"`
+	// ParentMaterialID is set on a quiz or flashcard set embedded in a note.
+	// The note owns its lifecycle and access; see embedded.go.
+	ParentMaterialID string `json:"parentMaterialId,omitempty"`
 	// IsOwner is request-scoped (not persisted): true when the requester owns
 	// the parent workspace, false for link/public shared reads.
 	IsOwner      bool               `json:"isOwner"`
@@ -475,9 +478,11 @@ type WorkspaceStats struct {
 	NotIndexable   int `json:"notIndexable"`
 	PendingReparse int `json:"pendingReparse"`
 	PendingReindex int `json:"pendingReindex"`
-	Chapters       int `json:"chapters"`
-	Files          int `json:"files"`
-	Quizzes        int `json:"quizzes"`
-	Attempts       int `json:"attempts"`
-	AvgScore       int `json:"avgScore"`
+	// PendingNotes counts workspace notes whose index is behind their content.
+	PendingNotes int `json:"pendingNotes"`
+	Chapters     int `json:"chapters"`
+	Files        int `json:"files"`
+	Quizzes      int `json:"quizzes"`
+	Attempts     int `json:"attempts"`
+	AvgScore     int `json:"avgScore"`
 }

@@ -28,6 +28,7 @@ import type {
   CreateCommentReq,
   CreateConversationReq,
   CreateDiscussionReq,
+  CreateEmbeddedMaterialReq,
   CreateEventReq,
   CreateFlashcardSetReq,
   CreateMaterialReq,
@@ -44,6 +45,7 @@ import type {
   Event,
   File,
   FileLinks,
+  FilePage,
   Flashcard,
   FlashcardSet,
   Generate200,
@@ -60,11 +62,15 @@ import type {
   Label,
   ListModelsParams,
   ListNotificationsParams,
+  ListOwnedFilesParams,
+  ListOwnedMaterialsParams,
   ListTagsParams,
   ListTrashParams,
   ListWorkspacesParams,
   LocaleInputBody,
   Material,
+  MaterialIndexOutputBody,
+  MaterialPage,
   MaterialRef,
   MaterialUpdateResult,
   Message,
@@ -1431,39 +1437,46 @@ export const exploreWorkspaces = async ( options?: RequestInit): Promise<explore
 
 
 
-export type listAllFilesResponse200 = {
-  data: File[]
+export type listOwnedFilesResponse200 = {
+  data: FilePage
   status: 200
 }
 
-export type listAllFilesResponseDefault = {
+export type listOwnedFilesResponseDefault = {
   data: ErrorModel
   status: Exclude<HTTPStatusCodes, 200>
 }
 
-export type listAllFilesResponseSuccess = (listAllFilesResponse200) & {
+export type listOwnedFilesResponseSuccess = (listOwnedFilesResponse200) & {
   headers: Headers;
 };
-export type listAllFilesResponseError = (listAllFilesResponseDefault) & {
+export type listOwnedFilesResponseError = (listOwnedFilesResponseDefault) & {
   headers: Headers;
 };
 
-export type listAllFilesResponse = (listAllFilesResponseSuccess | listAllFilesResponseError)
+export type listOwnedFilesResponse = (listOwnedFilesResponseSuccess | listOwnedFilesResponseError)
 
-export const getListAllFilesUrl = () => {
+export const getListOwnedFilesUrl = (params?: ListOwnedFilesParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/files`
+  return stringifiedParams.length > 0 ? `/api/files?${stringifiedParams}` : `/api/files`
 }
 
 /**
- * @summary List all files
+ * @summary List the caller's files across owned workspaces
  */
-export const listAllFiles = async ( options?: RequestInit): Promise<listAllFilesResponse> => {
+export const listOwnedFiles = async (params?: ListOwnedFilesParams, options?: RequestInit): Promise<listOwnedFilesResponse> => {
 
-  const res = await fetch(getListAllFilesUrl(),
+  const res = await fetch(getListOwnedFilesUrl(params),
   {
     ...options,
     method: 'GET'
@@ -1475,8 +1488,8 @@ export const listAllFiles = async ( options?: RequestInit): Promise<listAllFiles
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: listAllFilesResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listAllFilesResponse
+  const data: listOwnedFilesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listOwnedFilesResponse
 }
 
 
@@ -2962,6 +2975,113 @@ export const updateLabel = async (id: string,
 
 
 
+export type listOwnedMaterialsResponse200 = {
+  data: MaterialPage
+  status: 200
+}
+
+export type listOwnedMaterialsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listOwnedMaterialsResponseSuccess = (listOwnedMaterialsResponse200) & {
+  headers: Headers;
+};
+export type listOwnedMaterialsResponseError = (listOwnedMaterialsResponseDefault) & {
+  headers: Headers;
+};
+
+export type listOwnedMaterialsResponse = (listOwnedMaterialsResponseSuccess | listOwnedMaterialsResponseError)
+
+export const getListOwnedMaterialsUrl = (params?: ListOwnedMaterialsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/materials?${stringifiedParams}` : `/api/materials`
+}
+
+/**
+ * @summary List the caller's notes, quizzes and flashcard sets
+ */
+export const listOwnedMaterials = async (params?: ListOwnedMaterialsParams, options?: RequestInit): Promise<listOwnedMaterialsResponse> => {
+
+  const res = await fetch(getListOwnedMaterialsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listOwnedMaterialsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listOwnedMaterialsResponse
+}
+
+
+
+export type createStandaloneMaterialResponse201 = {
+  data: Material
+  status: 201
+}
+
+export type createStandaloneMaterialResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 201>
+}
+
+export type createStandaloneMaterialResponseSuccess = (createStandaloneMaterialResponse201) & {
+  headers: Headers;
+};
+export type createStandaloneMaterialResponseError = (createStandaloneMaterialResponseDefault) & {
+  headers: Headers;
+};
+
+export type createStandaloneMaterialResponse = (createStandaloneMaterialResponseSuccess | createStandaloneMaterialResponseError)
+
+export const getCreateStandaloneMaterialUrl = () => {
+
+
+
+
+  return `/api/materials`
+}
+
+/**
+ * @summary Create a standalone note
+ */
+export const createStandaloneMaterial = async (createMaterialReq: NonReadonly<CreateMaterialReq>, options?: RequestInit): Promise<createStandaloneMaterialResponse> => {
+
+  const res = await fetch(getCreateStandaloneMaterialUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(createMaterialReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createStandaloneMaterialResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createStandaloneMaterialResponse
+}
+
+
+
 export type deleteMaterialResponse204 = {
   data: void
   status: 204
@@ -3268,6 +3388,57 @@ export const createMaterialDiscussion = async (id: string,
 
   const data: createMaterialDiscussionResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as createMaterialDiscussionResponse
+}
+
+
+
+export type createEmbeddedMaterialResponse201 = {
+  data: Material
+  status: 201
+}
+
+export type createEmbeddedMaterialResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 201>
+}
+
+export type createEmbeddedMaterialResponseSuccess = (createEmbeddedMaterialResponse201) & {
+  headers: Headers;
+};
+export type createEmbeddedMaterialResponseError = (createEmbeddedMaterialResponseDefault) & {
+  headers: Headers;
+};
+
+export type createEmbeddedMaterialResponse = (createEmbeddedMaterialResponseSuccess | createEmbeddedMaterialResponseError)
+
+export const getCreateEmbeddedMaterialUrl = (id: string,) => {
+
+
+
+
+  return `/api/materials/${id}/embedded`
+}
+
+/**
+ * @summary Create a quiz or flashcard set embedded in a note
+ */
+export const createEmbeddedMaterial = async (id: string,
+    createEmbeddedMaterialReq: NonReadonly<CreateEmbeddedMaterialReq>, options?: RequestInit): Promise<createEmbeddedMaterialResponse> => {
+
+  const res = await fetch(getCreateEmbeddedMaterialUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(createEmbeddedMaterialReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createEmbeddedMaterialResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createEmbeddedMaterialResponse
 }
 
 
@@ -7684,6 +7855,56 @@ export const readSourceRefresh = async (id: string,
 
   const data: readSourceRefreshResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as readSourceRefreshResponse
+}
+
+
+
+export type requestMaterialIndexResponse202 = {
+  data: MaterialIndexOutputBody
+  status: 202
+}
+
+export type requestMaterialIndexResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 202>
+}
+
+export type requestMaterialIndexResponseSuccess = (requestMaterialIndexResponse202) & {
+  headers: Headers;
+};
+export type requestMaterialIndexResponseError = (requestMaterialIndexResponseDefault) & {
+  headers: Headers;
+};
+
+export type requestMaterialIndexResponse = (requestMaterialIndexResponseSuccess | requestMaterialIndexResponseError)
+
+export const getRequestMaterialIndexUrl = (id: string,) => {
+
+
+
+
+  return `/internal/collaboration/materials/${id}/index`
+}
+
+/**
+ * @summary Queue a dirty idle note for retrieval indexing
+ */
+export const requestMaterialIndex = async (id: string, options?: RequestInit): Promise<requestMaterialIndexResponse> => {
+
+  const res = await fetch(getRequestMaterialIndexUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: requestMaterialIndexResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as requestMaterialIndexResponse
 }
 
 

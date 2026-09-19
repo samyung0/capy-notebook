@@ -184,7 +184,7 @@ export default function FlashcardStudy() {
       <Link
         className="text-fg-muted hover:text-fg"
         preload="intent"
-        to="/flashcards"
+        to="/create"
       >
         <Icon name="chevronLeft" size={20} />
       </Link>

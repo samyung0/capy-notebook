@@ -1,184 +1,100 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useCreateWorkspace, useTags, useWorkspaces } from '@/api/hooks';
+import {
+  ListToolbar,
+  type SortOption,
+  toggleValue,
+} from '@/components/app/ListToolbar';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
-import { Badge } from '@/components/ui/Badge';
-import { BASE_BUTTON_STYLE, Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
-import { Menu } from '@/components/ui/Menu';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/Popover';
 import { WorkspaceCard } from '@/components/ui/WorkspaceCard';
 import { WorkspaceFormCreateDialog } from '@/features/workspace/WorkspaceFormCreateDialog';
 import { m } from '@/i18n';
-import { cn } from '@/lib/cn';
 import { track } from '@/lib/observability';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
-const SORTS = [
-  { icon: 'clock', label: m.workspaces_sort_accessed, value: 'accessed' },
-  { icon: 'schedule', label: m.workspaces_sort_created, value: 'created' },
-  { icon: 'chapter', label: m.workspaces_sort_chapters, value: 'chapters' },
-  { icon: 'files', label: m.workspaces_sort_files, value: 'files' },
-] as const;
-
-function toggleIn(list: string[], value: string) {
-  return list.includes(value)
-    ? list.filter((v) => v !== value)
-    : [...list, value];
-}
+type WorkspaceSort = 'accessed' | 'created' | 'chapters' | 'files';
 
 export default function Workspaces() {
-  const [sort, setSort] = useState<(typeof SORTS)[number]>(SORTS[0]);
+  const sorts: SortOption<WorkspaceSort>[] = [
+    {
+      icon: 'clock',
+      label: m.workspaces_sort_accessed(),
+      order: 'time',
+      value: 'accessed',
+    },
+    {
+      icon: 'schedule',
+      label: m.workspaces_sort_created(),
+      order: 'time',
+      value: 'created',
+    },
+    {
+      icon: 'chapter',
+      label: m.workspaces_sort_chapters(),
+      order: 'count',
+      value: 'chapters',
+    },
+    {
+      icon: 'files',
+      label: m.workspaces_sort_files(),
+      order: 'count',
+      value: 'files',
+    },
+  ];
+  const [sort, setSort] = useState<WorkspaceSort>('accessed');
   const [ascending, setAscending] = useState(false);
   const [tagFilters, setTagFilters] = useState<string[]>([]);
-  const [filterOpen, setFilterOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
 
   const { data, fetchStatus, isLoading } = useWorkspaces({
-    sort: sort.value,
+    sort,
     tag: tagFilters,
   });
   const revealRef = useLoadingReveal(isLoading);
   const { data: tags = [] } = useTags('workspace', { errorBoundary: false });
   const { mutateAsync: createWorkspace } = useCreateWorkspace();
-
-  function sortDescription(value: (typeof SORTS)[number]['value']) {
-    const isAscending = sort.value === value && ascending;
-    return value === 'accessed' || value === 'created'
-      ? isAscending
-        ? m.workspaces_sort_oldest_first()
-        : m.workspaces_sort_newest_first()
-      : isAscending
-        ? m.workspaces_sort_fewest_first()
-        : m.workspaces_sort_most_first();
-  }
   const sortedWorkspaces = ascending ? data?.slice().reverse() : data;
-  const hasFilters = tagFilters.length > 0;
-  const filterLabel = useMemo(() => {
-    const parts = tagFilters;
-    if (!parts.length) return m.workspaces_filter();
-    if (parts.length <= 2) return parts.join(' · ');
-    return `${parts.slice(0, 2).join(' · ')} +${parts.length - 2}`;
-  }, [tagFilters]);
 
   return (
     <PanelWithInvertedRadius>
       <PageHeader title={m.workspaces_title()} />
-
-      <div className="-mb-3 flex items-center justify-between gap-3 px-6">
-        <div className="flex items-center gap-2 pt-2 pb-3">
-          <Menu
-            align="start"
-            items={SORTS.map((s) => ({
-              closeOnSelect: false,
-              description: sortDescription(s.value),
-              icon: s.icon,
-              label: s.label(),
-              onClick: () => {
-                setAscending(s.value === sort.value ? !ascending : false);
-                setSort(s);
-              },
-            }))}
-            trigger={
-              <Button
-                className="h-fit px-1 py-1.5"
-                iconRight="chevronDown"
-                size="md"
-                variant="ghost"
-              >
-                {m.workspaces_sort_prefix({ label: sort.label() })}
-                <span className="font-normal text-fg-muted text-xs">
-                  {sortDescription(sort.value)}
-                </span>
-              </Button>
-            }
-          />
-          <Popover onOpenChange={setFilterOpen} open={filterOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                className="h-fit px-1 py-1.5"
-                iconLeft="filter"
-                iconRight="chevronDown"
-                size="md"
-                variant="ghost"
-              >
-                {filterLabel}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="max-h-80 w-72 gap-0 p-0">
-              <Card
-                border="solid"
-                className="max-h-80 gap-3 overflow-y-auto p-3.5"
-                radius="card"
-              >
-                <section className="flex flex-col gap-2">
-                  <p>{m.workspaces_filter_tags()}</p>
-                  {tags.length === 0 ? (
-                    <p className="text-fg-muted">
-                      {m.workspaces_filter_no_tags()}
-                    </p>
-                  ) : (
-                    <div className="-ml-0.5 flex flex-wrap gap-1.5">
-                      {tags.map((t) => {
-                        const active = tagFilters.includes(t.value);
-                        return (
-                          <button
-                            className={BASE_BUTTON_STYLE}
-                            key={t.id}
-                            onClick={() =>
-                              setTagFilters((prev) => toggleIn(prev, t.value))
-                            }
-                            type="button"
-                          >
-                            <Badge
-                              className={cn(
-                                'transition-colors',
-                                !active && 'hover:bg-surface-dark'
-                              )}
-                              size="sm"
-                              tone={active ? 'dark' : 'page'}
-                            >
-                              {t.value}
-                            </Badge>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </section>
-
-                <Button
-                  className="mx-auto w-fit"
-                  disabled={!hasFilters}
-                  fullWidth
-                  onClick={() => {
-                    setTagFilters([]);
-                  }}
-                  size="sm"
-                  variant="ghost-hover"
-                >
-                  {m.workspaces_filter_reset()}
-                </Button>
-              </Card>
-            </PopoverContent>
-          </Popover>
-        </div>
-        <Button
-          className="rounded-card font-bold text-link"
-          iconLeft="plus"
-          onClick={() => setCreateOpen(true)}
-          size="md"
-          variant="ghost-hover"
-        >
-          {m.action_new_workspace()}
-        </Button>
-      </div>
+      <ListToolbar
+        action={
+          <Button
+            className="rounded-card font-bold text-link"
+            iconLeft="plus"
+            onClick={() => setCreateOpen(true)}
+            size="md"
+            variant="ghost-hover"
+          >
+            {m.action_new_workspace()}
+          </Button>
+        }
+        ascending={ascending}
+        filters={[
+          {
+            emptyLabel: m.workspaces_filter_no_tags(),
+            key: 'tags',
+            label: m.workspaces_filter_tags(),
+            onToggle: (value) =>
+              setTagFilters((prev) => toggleValue(prev, value)),
+            options: tags.map((t) => ({ label: t.value, value: t.value })),
+            selected: tagFilters,
+          },
+        ]}
+        onResetFilters={() => setTagFilters([])}
+        onSortChange={(next, asc) => {
+          setSort(next);
+          setAscending(asc);
+        }}
+        sort={sort}
+        sorts={sorts}
+      />
 
       <div className="min-h-0 w-full flex-1 overflow-auto px-6 pt-2 pb-6">
         {fetchStatus === 'paused' ? (

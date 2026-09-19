@@ -189,14 +189,14 @@ func materialEffectiveAccess(
 	if userID == "" {
 		return "", ErrNotFound
 	}
-	var materialOwner, wsID, workspaceOwner *string
+	var materialOwner, wsID, workspaceOwner, parentID *string
 	var materialPrivacy Privacy
 	var workspacePrivacy *Privacy
 	var shareRole *ShareRole
 	var memberRole WorkspaceRole
 	err := q.QueryRow(ctx, `
 		SELECT m.owner_user_id, m.privacy, m.workspace_id, w.user_id, w.privacy, w.share_role,
-			COALESCE(wm.role, '')
+			COALESCE(wm.role, ''), m.parent_material_id
 		FROM materials m
 		JOIN users material_owner ON material_owner.id=m.owner_user_id
 		LEFT JOIN workspaces w ON w.id=m.workspace_id
@@ -211,12 +211,17 @@ func materialEffectiveAccess(
 		&workspacePrivacy,
 		&shareRole,
 		&memberRole,
+		&parentID,
 	)
 	if isNoRows(err) {
 		return "", ErrNotFound
 	}
 	if err != nil {
 		return "", err
+	}
+	// An embedded material is reachable exactly as its note is.
+	if parentID != nil {
+		return materialEffectiveAccess(ctx, q, userID, *parentID)
 	}
 	if materialOwner != nil && *materialOwner == userID {
 		return RoleOwner, nil
@@ -254,7 +259,7 @@ func (s *Store) UpdateStandaloneMaterialPrivacy(
 	if err != nil {
 		return Material{}, err
 	}
-	if material.OwnerUserID != userID || material.WorkspaceID != "" ||
+	if material.OwnerUserID != userID || material.WorkspaceID != "" || material.ParentMaterialID != "" ||
 		(expectedKind != "" && string(material.Kind) != expectedKind) {
 		return Material{}, ErrNotFound
 	}
@@ -440,6 +445,7 @@ func snapshotStandaloneCloneAssets(
 	ctx context.Context,
 	tx pgx.Tx,
 	source Material,
+	embeddedIDs []string,
 	contents []string,
 ) ([]workspaceCloneAsset, map[string]string, int64, error) {
 	referenced := map[string]struct{}{}
@@ -460,13 +466,17 @@ func snapshotStandaloneCloneAssets(
 	if len(ids) == 0 {
 		return nil, assetMap, 0, nil
 	}
+	// A standalone note's assets may hang off its embedded rows, so every
+	// material whose content was scanned is an acceptable home.
+	materialIDs := []string{source.ID}
+	materialIDs = append(materialIDs, embeddedIDs...)
 	rows, err := tx.Query(ctx, `SELECT id, name, purpose, object_path, content_type,
 		size_bytes, status, COALESCE(etag,''), created_at, completed_at
 		FROM editor_assets
 		WHERE id=ANY($1) AND status='ready' AND (
 			($2 <> '' AND workspace_id=$2) OR
-			($2 = '' AND material_id=$3)
-		)`, ids, source.WorkspaceID, source.ID)
+			($2 = '' AND material_id=ANY($3))
+		)`, ids, source.WorkspaceID, materialIDs)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -524,6 +534,7 @@ type workspaceCloneAsset struct {
 
 type workspaceCloneMaterial struct {
 	material  Material
+	newID     string
 	content   string
 	metrics   materialdoc.DocumentMetrics
 	sizeBytes int64
@@ -531,11 +542,12 @@ type workspaceCloneMaterial struct {
 }
 
 type workspaceCloneSnapshot struct {
-	chapters  []workspaceCloneChapter
-	files     []workspaceCloneFile
-	assets    []workspaceCloneAsset
-	materials []workspaceCloneMaterial
-	bytes     int64
+	chapters    []workspaceCloneChapter
+	files       []workspaceCloneFile
+	assets      []workspaceCloneAsset
+	materials   []workspaceCloneMaterial
+	materialIDs map[string]string
+	bytes       int64
 }
 
 func lockCloneBlobPathsTx(
@@ -721,14 +733,19 @@ func (s *Store) snapshotWorkspaceForClone(
 	if err != nil {
 		return workspaceCloneSnapshot{}, err
 	}
+	// Ids are minted up front so a note's references can point at the clones
+	// of its embedded rows before either is inserted.
+	materialIDs := map[string]string{}
 	for rows.Next() {
 		material, err := scanMaterial(rows)
 		if err != nil {
 			rows.Close()
 			return workspaceCloneSnapshot{}, err
 		}
+		materialIDs[material.ID] = uid("mat")
 		snapshot.materials = append(snapshot.materials, workspaceCloneMaterial{
 			material: material,
+			newID:    materialIDs[material.ID],
 			content:  material.Content,
 		})
 	}
@@ -737,6 +754,7 @@ func (s *Store) snapshotWorkspaceForClone(
 		return workspaceCloneSnapshot{}, err
 	}
 	rows.Close()
+	snapshot.materialIDs = materialIDs
 
 	for i := range snapshot.materials {
 		materialSnapshot := &snapshot.materials[i]
@@ -744,6 +762,14 @@ func (s *Store) snapshotWorkspaceForClone(
 		if materialSnapshot.material.Kind == "flashcards" {
 			materialSnapshot.content, materialSnapshot.cardIDs, err = rewriteCardIDsWithMap(
 				materialSnapshot.content, cardIDMap,
+			)
+			if err != nil {
+				return workspaceCloneSnapshot{}, err
+			}
+		}
+		if materialSnapshot.material.Kind == "note" {
+			materialSnapshot.content, err = materialdoc.RewriteMaterialRefIDs(
+				materialSnapshot.content, materialIDs,
 			)
 			if err != nil {
 				return workspaceCloneSnapshot{}, err
@@ -978,9 +1004,6 @@ func (s *Store) cloneWorkspaceOnce(
 			return Workspace{}, err
 		}
 	}
-	if err := cloneRetrievalIndex(ctx, tx, srcID, newID, srcEmbed.Pin, fileMap, chapterMap); err != nil {
-		return Workspace{}, err
-	}
 
 	// Ready editor assets are logical resources too. Their blob paths remain
 	// shared, but each clone receives a new asset row and therefore its own
@@ -1004,9 +1027,29 @@ func (s *Store) cloneWorkspaceOnce(
 	// Materials (clone lands private; retained history shares the same fresh
 	// asset/card ID maps as current content, while comments are not copied).
 	{
+		// Parents first: an embedded row references its note through a FK.
+		ordered := make([]workspaceCloneMaterial, 0, len(snapshot.materials))
 		for _, materialSnapshot := range snapshot.materials {
+			if materialSnapshot.material.ParentMaterialID == "" {
+				ordered = append(ordered, materialSnapshot)
+			}
+		}
+		for _, materialSnapshot := range snapshot.materials {
+			if materialSnapshot.material.ParentMaterialID != "" {
+				ordered = append(ordered, materialSnapshot)
+			}
+		}
+		for _, materialSnapshot := range ordered {
 			mt := materialSnapshot.material
-			nid := uid("mat")
+			nid := materialSnapshot.newID
+			var parentID *string
+			if mt.ParentMaterialID != "" {
+				for _, candidate := range snapshot.materials {
+					if candidate.material.ID == mt.ParentMaterialID {
+						parentID = &candidate.newID
+					}
+				}
+			}
 			var chapterID *string
 			if mt.ChapterID != nil {
 				if mapped, ok := chapterMap[*mt.ChapterID]; ok {
@@ -1027,11 +1070,12 @@ func (s *Store) cloneWorkspaceOnce(
 			}
 			if _, err := tx.Exec(ctx, `INSERT INTO materials
 				(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
-					 chapter_id, position, scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_at, revision, updated_by, provenance)
-				VALUES ($1,$2,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'private',$12,$13,$14,$15,$16,$2,$17)`,
+					 chapter_id, position, scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_at, revision, updated_by, provenance,
+					 parent_material_id)
+				VALUES ($1,$2,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'private',$12,$13,$14,$15,$16,$2,$17,$18)`,
 				nid, userID, newID, name, mt.Kind, mt.Title, json.RawMessage(content), chapterID,
 				mt.Position, mt.ScopeChapters, mt.ScopeFileNames, mt.Color, metrics.NodeCount,
-				metrics.MaxDepth, createdAt, mt.Revision, provenance); err != nil {
+				metrics.MaxDepth, createdAt, mt.Revision, provenance, parentID); err != nil {
 				return Workspace{}, err
 			}
 			for _, cid := range materialSnapshot.cardIDs {
@@ -1041,6 +1085,17 @@ func (s *Store) cloneWorkspaceOnce(
 				}
 			}
 		}
+	}
+
+	// The index follows files and notes; a note the source had not indexed yet
+	// starts dirty so the scheduler builds its index in the clone.
+	if err := cloneRetrievalIndex(ctx, tx, srcID, newID, srcEmbed.Pin, fileMap, snapshot.materialIDs); err != nil {
+		return Workspace{}, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE materials m SET index_dirty_at=now()
+		WHERE m.workspace_id=$1 AND m.kind='note'
+		  AND NOT EXISTS (SELECT 1 FROM rag_material_contents mc WHERE mc.material_id=m.id)`, newID); err != nil {
+		return Workspace{}, err
 	}
 
 	if _, err := tx.Exec(ctx, `INSERT INTO workspace_clone_counts (workspace_id, clone_count)
@@ -1064,103 +1119,123 @@ func (s *Store) cloneWorkspaceOnce(
 //
 // Canonical content receives fresh ids because it is workspace-scoped, while
 // duplicate logical files in the clone keep sharing one copied index.
-func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, newID string, pin models.Pin, fileMap, chapterMap map[string]string) error {
+func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, newID string, pin models.Pin, fileMap, materialMap map[string]string) error {
 	oldFiles, newFiles := unzipIDs(fileMap)
-	if len(oldFiles) > 0 {
-		contentMap := map[string]string{}
-		rows, err := tx.Query(ctx, `
-			SELECT DISTINCT fc.content_id FROM rag_file_contents fc
-			JOIN rag_contents rc ON rc.id=fc.content_id
-			WHERE fc.file_id = ANY($1::text[]) AND rc.status='ready'`, oldFiles)
-		if err != nil {
-			return err
-		}
-		for rows.Next() {
-			var oldContentID string
-			if err := rows.Scan(&oldContentID); err != nil {
-				rows.Close()
-				return err
-			}
-			contentMap[oldContentID] = uid("rgc")
-		}
-		if err := rows.Err(); err != nil {
+	oldMaterials, newMaterials := unzipIDs(materialMap)
+	if len(oldFiles) == 0 && len(oldMaterials) == 0 {
+		return nil
+	}
+	// Files and notes alias the same canonical content rows; copy each ready
+	// row once and re-point both alias tables at the copies.
+	contentMap := map[string]string{}
+	rows, err := tx.Query(ctx, `
+		SELECT rc.id FROM rag_contents rc
+		WHERE rc.workspace_id=$3 AND rc.status='ready' AND (
+			rc.id IN (SELECT content_id FROM rag_file_contents WHERE file_id = ANY($1::text[]))
+			OR rc.id IN (SELECT content_id FROM rag_material_contents WHERE material_id = ANY($2::text[])))`,
+		oldFiles, oldMaterials, srcID)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var oldContentID string
+		if err := rows.Scan(&oldContentID); err != nil {
 			rows.Close()
 			return err
 		}
+		contentMap[oldContentID] = uid("rgc")
+	}
+	if err := rows.Err(); err != nil {
 		rows.Close()
-		oldContents, newContents := unzipIDs(contentMap)
-
-		if len(oldContents) > 0 {
-			vectors, err := vectorTable(pin)
-			if err != nil {
-				return err
-			}
-			if _, err := tx.Exec(ctx, `
-				WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
-				INSERT INTO rag_contents (id, workspace_id, content_hash, status,
-					embedding_provider_slug, embedding_model_slug, embedding_model_version, embedding_dim,
-					source_sha256, pipeline_identity)
-				SELECT c.new_id, $3, rc.content_hash, rc.status,
-				       rc.embedding_provider_slug, rc.embedding_model_slug, rc.embedding_model_version, rc.embedding_dim,
-				       rc.source_sha256, rc.pipeline_identity
-				FROM rag_contents rc JOIN cmap c ON c.old_id = rc.id
-				WHERE rc.status='ready'`,
-				oldContents, newContents, newID); err != nil {
-				return err
-			}
-			if _, err := tx.Exec(ctx, `
-				WITH fmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[])),
-				     cmap(old_id, new_id) AS (SELECT * FROM unnest($3::text[], $4::text[]))
-				INSERT INTO rag_file_contents (file_id, workspace_id, content_id)
-				SELECT f.new_id, $5, c.new_id
-				FROM rag_file_contents fc
-				JOIN fmap f ON f.old_id = fc.file_id
-				JOIN cmap c ON c.old_id = fc.content_id`,
-				oldFiles, newFiles, oldContents, newContents, newID); err != nil {
-				return err
-			}
-			// Mirrors copy_content_from_donor in pipeline/pipeline/retrieval/store.py:
-			// dest chunk ids are derived from dest workspace id + donor chunk id so
-			// the vector copy can recompute them and pair each embedding with its
-			// passage. newID is freshly minted, so the derivation is still unique
-			// across clones of the same source.
-			const newChunkID = `'rc_' || substr(md5($3 || c.id), 1, 12)`
-			if _, err := tx.Exec(ctx, `
-			WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
-			INSERT INTO rag_chunks
-				(id, workspace_id, content_id, chunk_idx, section_path, text, indexed_text,
-				 token_count, page_start, page_end, regions, lang, search,
-				 confidence, confidence_reasons)
-			SELECT `+newChunkID+`,
-			       $3, m.new_id, c.chunk_idx, c.section_path, c.text, c.indexed_text,
-			       c.token_count, c.page_start, c.page_end, c.regions, c.lang, c.search,
-			       c.confidence, c.confidence_reasons
-			FROM rag_chunks c JOIN cmap m ON m.old_id = c.content_id`,
-				oldContents, newContents, newID); err != nil {
-				return err
-			}
-			if _, err := tx.Exec(ctx, `
-			WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
-			INSERT INTO `+vectors+` (chunk_id, workspace_id, embedding)
-			SELECT `+newChunkID+`, $3, v.embedding
-			FROM rag_chunks c
-			JOIN cmap m ON m.old_id = c.content_id
-			JOIN `+vectors+` v ON v.chunk_id = c.id`,
-				oldContents, newContents, newID); err != nil {
-				return err
-			}
-			if _, err := tx.Exec(ctx, `
-			WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
-			INSERT INTO rag_content_summaries
-				(content_id, workspace_id, fingerprint, descriptor, summary, summary_version, updated_at)
-			SELECT c.new_id, $3, s.fingerprint, s.descriptor, s.summary, s.summary_version, s.updated_at
-			FROM rag_content_summaries s JOIN cmap c ON c.old_id = s.content_id`,
-				oldContents, newContents, newID); err != nil {
-				return err
-			}
+		return err
+	}
+	rows.Close()
+	if len(contentMap) == 0 {
+		return nil
+	}
+	oldContents, newContents := unzipIDs(contentMap)
+	vectors, err := vectorTable(pin)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
+		WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
+		INSERT INTO rag_contents (id, workspace_id, content_hash, status,
+			embedding_provider_slug, embedding_model_slug, embedding_model_version, embedding_dim,
+			source_sha256, pipeline_identity)
+		SELECT c.new_id, $3, rc.content_hash, rc.status,
+		       rc.embedding_provider_slug, rc.embedding_model_slug, rc.embedding_model_version, rc.embedding_dim,
+		       rc.source_sha256, rc.pipeline_identity
+		FROM rag_contents rc JOIN cmap c ON c.old_id = rc.id
+		WHERE rc.status='ready'`,
+		oldContents, newContents, newID); err != nil {
+		return err
+	}
+	if len(oldFiles) > 0 {
+		if _, err := tx.Exec(ctx, `
+			WITH fmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[])),
+			     cmap(old_id, new_id) AS (SELECT * FROM unnest($3::text[], $4::text[]))
+			INSERT INTO rag_file_contents (file_id, workspace_id, content_id)
+			SELECT f.new_id, $5, c.new_id
+			FROM rag_file_contents fc
+			JOIN fmap f ON f.old_id = fc.file_id
+			JOIN cmap c ON c.old_id = fc.content_id`,
+			oldFiles, newFiles, oldContents, newContents, newID); err != nil {
+			return err
 		}
 	}
-
+	if len(oldMaterials) > 0 {
+		if _, err := tx.Exec(ctx, `
+			WITH mmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[])),
+			     cmap(old_id, new_id) AS (SELECT * FROM unnest($3::text[], $4::text[]))
+			INSERT INTO rag_material_contents (material_id, workspace_id, content_id)
+			SELECT m.new_id, $5, c.new_id
+			FROM rag_material_contents mc
+			JOIN mmap m ON m.old_id = mc.material_id
+			JOIN cmap c ON c.old_id = mc.content_id`,
+			oldMaterials, newMaterials, oldContents, newContents, newID); err != nil {
+			return err
+		}
+	}
+	// Mirrors copy_content_from_donor in pipeline/pipeline/retrieval/store.py:
+	// dest chunk ids are derived from dest workspace id + donor chunk id so
+	// the vector copy can recompute them and pair each embedding with its
+	// passage. newID is freshly minted, so the derivation is still unique
+	// across clones of the same source.
+	const newChunkID = `'rc_' || substr(md5($3 || c.id), 1, 12)`
+	if _, err := tx.Exec(ctx, `
+	WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
+	INSERT INTO rag_chunks
+		(id, workspace_id, content_id, chunk_idx, section_path, text, indexed_text,
+		 token_count, page_start, page_end, regions, lang, search,
+		 confidence, confidence_reasons)
+	SELECT `+newChunkID+`,
+	       $3, m.new_id, c.chunk_idx, c.section_path, c.text, c.indexed_text,
+	       c.token_count, c.page_start, c.page_end, c.regions, c.lang, c.search,
+	       c.confidence, c.confidence_reasons
+	FROM rag_chunks c JOIN cmap m ON m.old_id = c.content_id`,
+		oldContents, newContents, newID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
+	WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
+	INSERT INTO `+vectors+` (chunk_id, workspace_id, embedding)
+	SELECT `+newChunkID+`, $3, v.embedding
+	FROM rag_chunks c
+	JOIN cmap m ON m.old_id = c.content_id
+	JOIN `+vectors+` v ON v.chunk_id = c.id`,
+		oldContents, newContents, newID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
+	WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
+	INSERT INTO rag_content_summaries
+		(content_id, workspace_id, fingerprint, descriptor, summary, summary_version, updated_at)
+	SELECT c.new_id, $3, s.fingerprint, s.descriptor, s.summary, s.summary_version, s.updated_at
+	FROM rag_content_summaries s JOIN cmap c ON c.old_id = s.content_id`,
+		oldContents, newContents, newID); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1250,8 +1325,36 @@ func (s *Store) cloneMaterialKindOnce(
 		return Material{}, ErrNotFound
 	}
 
+	// A note brings its embedded rows along; their references are rewritten
+	// to the copies below.
+	var embedded []Material
+	if src.Kind == "note" {
+		childRows, err := tx.Query(ctx, `SELECT `+materialCols+`
+			FROM materials WHERE parent_material_id=$1 AND trashed_at IS NULL ORDER BY created_at`, matID)
+		if err != nil {
+			return Material{}, err
+		}
+		for childRows.Next() {
+			child, err := scanMaterial(childRows)
+			if err != nil {
+				childRows.Close()
+				return Material{}, err
+			}
+			embedded = append(embedded, child)
+		}
+		childRows.Close()
+		if err := childRows.Err(); err != nil {
+			return Material{}, err
+		}
+	}
+	contents := []string{src.Content}
+	childIDs := make([]string, 0, len(embedded))
+	for _, child := range embedded {
+		contents = append(contents, child.Content)
+		childIDs = append(childIDs, child.ID)
+	}
 	assets, assetIDMap, assetBytes, err := snapshotStandaloneCloneAssets(
-		ctx, tx, src, []string{src.Content},
+		ctx, tx, src, childIDs, contents,
 	)
 	if err != nil {
 		return Material{}, err
@@ -1272,7 +1375,46 @@ func (s *Store) cloneMaterialKindOnce(
 			return Material{}, err
 		}
 	}
+	nid := uid("mat")
+	type embeddedClone struct {
+		src     Material
+		newID   string
+		content string
+		metrics materialdoc.DocumentMetrics
+		cardIDs []string
+	}
+	embeddedIDs := map[string]string{}
+	clones := make([]embeddedClone, 0, len(embedded))
+	var embeddedBytes int64
+	for _, child := range embedded {
+		clone := embeddedClone{src: child, newID: uid("mat"), content: child.Content}
+		embeddedIDs[child.ID] = clone.newID
+		if child.Kind == "flashcards" {
+			if clone.content, clone.cardIDs, err = rewriteCardIDsWithMap(child.Content, map[string]string{}); err != nil {
+				return Material{}, err
+			}
+		}
+		if clone.content, err = materialdoc.RewriteClonedEditorAssetIDs(clone.content, assetIDMap); err != nil {
+			return Material{}, err
+		}
+		if clone.metrics, err = materialdoc.Metrics(clone.content); err != nil {
+			return Material{}, err
+		}
+		if err := clone.metrics.LimitError(); err != nil {
+			return Material{}, err
+		}
+		size, err := storageJSONSizeTx(ctx, tx, clone.content)
+		if err != nil {
+			return Material{}, err
+		}
+		embeddedBytes += size
+		clones = append(clones, clone)
+	}
 	content, err = materialdoc.RewriteClonedEditorAssetIDs(content, assetIDMap)
+	if err != nil {
+		return Material{}, err
+	}
+	content, err = materialdoc.RewriteMaterialRefIDs(content, embeddedIDs)
 	if err != nil {
 		return Material{}, err
 	}
@@ -1288,11 +1430,10 @@ func (s *Store) cloneMaterialKindOnce(
 	if err != nil {
 		return Material{}, err
 	}
-	if err := s.gateStorageTx(ctx, tx, userID, storedSize+assetBytes); err != nil {
+	if err := s.gateStorageTx(ctx, tx, userID, storedSize+embeddedBytes+assetBytes); err != nil {
 		return Material{}, err
 	}
 
-	nid := uid("mat")
 	// Attribution travels with the copy; see the workspace clone above.
 	var provenance []byte
 	if src.Provenance != nil {
@@ -1308,6 +1449,24 @@ func (s *Store) cloneMaterialKindOnce(
 		src.Color, metrics.NodeCount, metrics.MaxDepth, src.UpdatedAt, src.Revision,
 		provenance); err != nil {
 		return Material{}, err
+	}
+	for _, clone := range clones {
+		if _, err := tx.Exec(ctx, `INSERT INTO materials
+			(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
+			 scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_at, revision, updated_by,
+			 parent_material_id)
+			VALUES ($1,$2,$2,NULL,'',$3,$4,$5,'{}','{}','private',$6,$7,$8,$9,$10,$2,$11)`,
+			clone.newID, userID, clone.src.Kind, clone.src.Title, json.RawMessage(clone.content),
+			clone.src.Color, clone.metrics.NodeCount, clone.metrics.MaxDepth, clone.src.UpdatedAt,
+			clone.src.Revision, nid); err != nil {
+			return Material{}, err
+		}
+		for _, cid := range clone.cardIDs {
+			if _, err := tx.Exec(ctx, `INSERT INTO card_stats (card_id, material_id, srs, known) VALUES ($1,$2,$3,false)`,
+				cid, clone.newID, newSrsBytes()); err != nil {
+				return Material{}, err
+			}
+		}
 	}
 	for _, asset := range assets {
 		if _, err := tx.Exec(ctx, `INSERT INTO editor_assets

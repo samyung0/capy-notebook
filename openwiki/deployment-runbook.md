@@ -2017,6 +2017,9 @@ or secret and names its deployment targets. Both complete examples include
 backend, browser, provider and ingest inputs. Keep the real files ignored and
 mode `0600`. Use `CLERK_PUBLISHABLE_KEY` for deployments; the renderer derives
 its browser/ops `VITE_` form. Local development continues using `deploy/.env`.
+The renderer selects only manifest keys from GitHub's variable and secret
+contexts, ignoring unrelated settings. Managed keys must still use the correct
+namespace and satisfy required-setting checks. Local env files reject unknown keys.
 
 Set `DEPLOYMENT_OPS_URL` in each GitHub environment and its local environment
 file for the optional ops edge check. The UAT workflow and local review scripts

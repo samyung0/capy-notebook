@@ -1,13 +1,11 @@
-import {
-  flashcardsNode,
-  mermaidNode,
-  quizNode,
-} from '@/features/materials/document';
+import { mermaidNode } from '@/features/materials/document';
 import {
   bullet,
   callout,
   codeBlock,
   columns,
+  embeddedFlashcards,
+  embeddedQuiz,
   equation,
   heading,
   hr,
@@ -93,50 +91,44 @@ export const bioNotes: SeedNote[] = [
         'mermaid_bio_central'
       ),
       heading(2, 'Self-check'),
-      quizNode(
-        {
-          questions: [
-            {
-              correct: [1],
-              explanation:
-                'Mitochondria produce ATP through cellular respiration.',
-              id: 'bio_note_q1',
-              level: 'recall',
-              options: [
-                { value: 'Nucleus' },
-                { value: 'Mitochondria' },
-                { value: 'Golgi apparatus' },
-              ],
-              prompt: 'Which organelle produces most of the cell’s ATP?',
-              type: 'mcq',
-            },
-            {
-              correct: true,
-              explanation: 'True — prokaryotes lack membrane-bound organelles.',
-              id: 'bio_note_q2',
-              level: 'recall',
-              prompt: 'Prokaryotes lack a membrane-bound nucleus.',
-              type: 'boolean',
-            },
-          ],
-        },
-        'quiz_bio_note_1'
-      ),
-      flashcardsNode(
-        [
+      embeddedQuiz('mat_note_1', 'mat_embed_bio_note_quiz', {
+        questions: [
           {
-            back: 'Diffusion of water across a semi-permeable membrane',
-            front: 'What is osmosis?',
-            id: 'fc_bio_note_1',
+            correct: [1],
+            explanation:
+              'Mitochondria produce ATP through cellular respiration.',
+            id: 'bio_note_q1',
+            level: 'recall',
+            options: [
+              { value: 'Nucleus' },
+              { value: 'Mitochondria' },
+              { value: 'Golgi apparatus' },
+            ],
+            prompt: 'Which organelle produces most of the cell’s ATP?',
+            type: 'mcq',
           },
           {
-            back: 'Phospholipid bilayer with embedded proteins',
-            front: 'What is the basic structure of the cell membrane?',
-            id: 'fc_bio_note_2',
+            correct: true,
+            explanation: 'True — prokaryotes lack membrane-bound organelles.',
+            id: 'bio_note_q2',
+            level: 'recall',
+            prompt: 'Prokaryotes lack a membrane-bound nucleus.',
+            type: 'boolean',
           },
         ],
-        'fcset_bio_note_1'
-      ),
+      }),
+      embeddedFlashcards('mat_note_1', 'mat_embed_bio_note_cards', [
+        {
+          back: 'Diffusion of water across a semi-permeable membrane',
+          front: 'What is osmosis?',
+          id: 'fc_bio_note_1',
+        },
+        {
+          back: 'Phospholipid bilayer with embedded proteins',
+          front: 'What is the basic structure of the cell membrane?',
+          id: 'fc_bio_note_2',
+        },
+      ]),
       p([
         text('Keyboard shortcut while reviewing: press '),
         text('Space', { kbd: true }),
@@ -354,60 +346,58 @@ export const bioNotes: SeedNote[] = [
       ),
 
       heading(2, 'Quiz block'),
-      quizNode(
-        {
-          questions: [
-            {
-              correct: [0],
-              explanation: 'Glycolysis occurs in the cytosol of the cell.',
-              id: 'bio_matrix_q_mcq',
-              level: 'recall',
-              options: [
-                { value: 'Cytosol' },
-                { value: 'Nucleus' },
-                { value: 'Golgi lumen' },
-              ],
-              prompt: 'Where does glycolysis occur?',
-              type: 'mcq',
-            },
-            {
-              correct: [0, 2],
-              explanation:
-                'Both mitochondria and chloroplasts have their own DNA.',
-              id: 'bio_matrix_q_multi',
-              level: 'application',
-              options: [
-                { value: 'Mitochondria' },
-                { value: 'Lysosomes' },
-                { value: 'Chloroplasts' },
-              ],
-              prompt: 'Which organelles contain their own DNA? (multi)',
-              type: 'multi',
-            },
-            {
-              correct: true,
-              explanation: 'True — ribosomes are not membrane-bound.',
-              id: 'bio_matrix_q_bool',
-              level: 'recall',
-              prompt:
-                'Ribosomes are present in both prokaryotes and eukaryotes.',
-              type: 'boolean',
-            },
-            {
-              accepted: [{ value: 'ATP' }, { value: 'adenosine triphosphate' }],
-              explanation: 'ATP is the cell’s short-term energy currency.',
-              id: 'bio_matrix_q_short',
-              level: 'recall',
-              prompt: 'The main short-term energy carrier is ____.',
-              type: 'short',
-            },
-          ],
-        },
-        'quiz_bio_feature_matrix'
-      ),
+      embeddedQuiz('mat_note_bio_feature_matrix', 'mat_embed_bio_matrix_quiz', {
+        questions: [
+          {
+            correct: [0],
+            explanation: 'Glycolysis occurs in the cytosol of the cell.',
+            id: 'bio_matrix_q_mcq',
+            level: 'recall',
+            options: [
+              { value: 'Cytosol' },
+              { value: 'Nucleus' },
+              { value: 'Golgi lumen' },
+            ],
+            prompt: 'Where does glycolysis occur?',
+            type: 'mcq',
+          },
+          {
+            correct: [0, 2],
+            explanation:
+              'Both mitochondria and chloroplasts have their own DNA.',
+            id: 'bio_matrix_q_multi',
+            level: 'application',
+            options: [
+              { value: 'Mitochondria' },
+              { value: 'Lysosomes' },
+              { value: 'Chloroplasts' },
+            ],
+            prompt: 'Which organelles contain their own DNA? (multi)',
+            type: 'multi',
+          },
+          {
+            correct: true,
+            explanation: 'True — ribosomes are not membrane-bound.',
+            id: 'bio_matrix_q_bool',
+            level: 'recall',
+            prompt: 'Ribosomes are present in both prokaryotes and eukaryotes.',
+            type: 'boolean',
+          },
+          {
+            accepted: [{ value: 'ATP' }, { value: 'adenosine triphosphate' }],
+            explanation: 'ATP is the cell’s short-term energy currency.',
+            id: 'bio_matrix_q_short',
+            level: 'recall',
+            prompt: 'The main short-term energy carrier is ____.',
+            type: 'short',
+          },
+        ],
+      }),
 
       heading(2, 'Flashcards block'),
-      flashcardsNode(
+      embeddedFlashcards(
+        'mat_note_bio_feature_matrix',
+        'mat_embed_bio_matrix_cards',
         [
           {
             back: 'Adenosine triphosphate — cellular energy currency',
@@ -419,8 +409,7 @@ export const bioNotes: SeedNote[] = [
             front: 'Define osmosis',
             id: 'fc_bio_matrix_2',
           },
-        ],
-        'fcset_bio_feature_matrix'
+        ]
       ),
 
       p([

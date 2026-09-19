@@ -14,7 +14,7 @@ export function signInHref(
 
 export function toastCloneError(
   err: unknown,
-  kind: 'workspace' | 'quiz' | 'flashcards'
+  kind: 'workspace' | 'quiz' | 'flashcards' | 'material'
 ) {
   if (isStorageQuotaError(err)) {
     trackQuotaBlocked(err, 'clone');
@@ -38,7 +38,9 @@ export function toastCloneError(
           ? m.clone_signin_workspace()
           : kind === 'quiz'
             ? m.clone_signin_quiz()
-            : m.clone_signin_flashcards(),
+            : kind === 'material'
+              ? m.clone_signin_material()
+              : m.clone_signin_flashcards(),
       title: m.clone_signin_title(),
     });
     return;

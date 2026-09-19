@@ -451,9 +451,9 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
       return m.editor_quiz();
     },
     run: (editor, dialogs) =>
-      dialogs?.openQuiz(undefined, (code) =>
-        insertEditorNode(editor, customBlockNode('quiz', code))
-      ),
+      dialogs?.openQuiz(undefined, (code) => {
+        void dialogs.insertEmbedded(editor, 'quiz', code);
+      }),
     widget: 'quiz',
   },
   {
@@ -467,9 +467,9 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
       return m.editor_flashcards();
     },
     run: (editor, dialogs) =>
-      dialogs?.openFlashcards(undefined, (code) =>
-        insertEditorNode(editor, customBlockNode('flashcards', code))
-      ),
+      dialogs?.openFlashcards(undefined, (code) => {
+        void dialogs.insertEmbedded(editor, 'flashcards', code);
+      }),
     widget: 'flashcards',
   },
   {

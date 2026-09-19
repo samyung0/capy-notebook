@@ -1,8 +1,8 @@
-import { quizNode } from '@/features/materials/document';
 import {
   bullet,
   callout,
   columns,
+  embeddedQuiz,
   heading,
   hr,
   link,
@@ -95,31 +95,28 @@ export const engNotes: SeedNote[] = [
         text(' wants peer feedback on thesis statements by Wednesday.'),
       ]),
       heading(2, 'Thesis practice'),
-      quizNode(
-        {
-          questions: [
-            {
-              correct: [2],
-              explanation:
-                'The strongest claims link Nick’s narrative reliability to theme, not plot summary.',
-              id: 'eng_gatsby_q1',
-              level: 'analysis',
-              options: [
-                { value: 'Gatsby is rich and throws parties.' },
-                { value: 'Daisy lives in East Egg.' },
-                {
-                  value:
-                    'Nick’s claim of honesty is undermined by selective narration that romanticizes Gatsby.',
-                },
-                { value: 'The novel is set in the 1920s.' },
-              ],
-              prompt: 'Which thesis is most analytically useful?',
-              type: 'mcq',
-            },
-          ],
-        },
-        'quiz_eng_gatsby'
-      ),
+      embeddedQuiz('mat_note_eng_gatsby', 'mat_embed_eng_gatsby_quiz', {
+        questions: [
+          {
+            correct: [2],
+            explanation:
+              'The strongest claims link Nick’s narrative reliability to theme, not plot summary.',
+            id: 'eng_gatsby_q1',
+            level: 'analysis',
+            options: [
+              { value: 'Gatsby is rich and throws parties.' },
+              { value: 'Daisy lives in East Egg.' },
+              {
+                value:
+                  'Nick’s claim of honesty is undermined by selective narration that romanticizes Gatsby.',
+              },
+              { value: 'The novel is set in the 1920s.' },
+            ],
+            prompt: 'Which thesis is most analytically useful?',
+            type: 'mcq',
+          },
+        ],
+      }),
       heading(2, 'Reading todos'),
       todo('Finish Ch. 3 and log three motif sightings', true),
       todo('Draft a 4-sentence paragraph on Nick’s reliability'),

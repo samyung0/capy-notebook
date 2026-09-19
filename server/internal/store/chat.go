@@ -56,13 +56,17 @@ type Message struct {
 // and PDFs parsed in 'normal' mode, where the cloud parser returns markdown
 // with no layout).
 type Citation struct {
-	FileID    string   `json:"fileId"`
-	ChunkID   string   `json:"chunkId,omitempty"`
-	FileName  string   `json:"fileName"`
-	Snippet   string   `json:"snippet"`
-	PageStart *int     `json:"pageStart,omitempty"`
-	PageEnd   *int     `json:"pageEnd,omitempty"`
-	Regions   []Region `json:"regions,omitempty"`
+	// Kind is "material" when the passage came from an indexed note; then
+	// MaterialID names the note and FileID is empty.
+	Kind       string   `json:"kind,omitempty"`
+	MaterialID string   `json:"materialId,omitempty"`
+	FileID     string   `json:"fileId"`
+	ChunkID    string   `json:"chunkId,omitempty"`
+	FileName   string   `json:"fileName"`
+	Snippet    string   `json:"snippet"`
+	PageStart  *int     `json:"pageStart,omitempty"`
+	PageEnd    *int     `json:"pageEnd,omitempty"`
+	Regions    []Region `json:"regions,omitempty"`
 }
 
 // ActivityBlock is one completed narration or tool-display item persisted on

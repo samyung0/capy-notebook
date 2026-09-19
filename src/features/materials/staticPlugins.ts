@@ -79,9 +79,15 @@ const CUSTOM_BLOCK_TYPES = [
   'mermaid_caption',
 ] as const;
 
-const staticCustomBlockPlugins = CUSTOM_BLOCK_TYPES.map((type) =>
-  createSlatePlugin({ key: type, node: { isElement: true, type } })
-);
+const staticCustomBlockPlugins = [
+  ...CUSTOM_BLOCK_TYPES.map((type) =>
+    createSlatePlugin({ key: type, node: { isElement: true, type } })
+  ),
+  createSlatePlugin({
+    key: 'material_ref',
+    node: { isElement: true, isVoid: true, type: 'material_ref' },
+  }),
+];
 
 /* Equation node schema, declared locally instead of importing from
    @platejs/math: that package's root entry statically imports the whole KaTeX

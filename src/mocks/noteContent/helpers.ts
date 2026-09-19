@@ -1,7 +1,13 @@
-import type {
-  MaterialElement,
-  MaterialText,
-  MaterialValue,
+import type { FlashcardContent, QuizBlock } from '@/features/materials/blocks';
+import {
+  type FlashcardsElement,
+  flashcardsNode,
+  type MaterialElement,
+  type MaterialText,
+  type MaterialValue,
+  materialRefNode,
+  type QuizElement,
+  quizNode,
 } from '@/features/materials/document';
 
 /** Lightweight builders for authored Plate note fixtures. */
@@ -183,3 +189,32 @@ export type SeedNote = {
   workspaceId: string;
   workspaceName: string;
 };
+
+/* Embedded study blocks: a note fixture holds a reference, the row itself is
+ * registered here and materialized by db.ts under the note. */
+export type EmbeddedSeed = {
+  block: QuizElement | FlashcardsElement;
+  id: string;
+  kind: 'quiz' | 'flashcards';
+  noteId: string;
+};
+export const embeddedSeeds: EmbeddedSeed[] = [];
+
+export function embeddedQuiz(noteId: string, id: string, data: QuizBlock) {
+  embeddedSeeds.push({ block: quizNode(data), id, kind: 'quiz', noteId });
+  return materialRefNode(id, 'quiz');
+}
+
+export function embeddedFlashcards(
+  noteId: string,
+  id: string,
+  cards: FlashcardContent[]
+) {
+  embeddedSeeds.push({
+    block: flashcardsNode(cards),
+    id,
+    kind: 'flashcards',
+    noteId,
+  });
+  return materialRefNode(id, 'flashcards');
+}

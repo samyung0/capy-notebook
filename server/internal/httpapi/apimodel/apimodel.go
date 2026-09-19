@@ -62,6 +62,9 @@ type (
 	User               = store.User
 	Chapter            = store.Chapter
 	File               = store.File
+	FilePage           = store.FilePage
+	MaterialListItem   = store.MaterialListItem
+	MaterialPage       = store.MaterialPage
 	TrashItem          = store.TrashItem
 	TrashPage          = store.TrashPage
 	OperationReceipt   = store.AgentOperation
@@ -212,6 +215,8 @@ type Material struct {
 	// Attribution of a material written from the knowledge library; absent
 	// otherwise. The frontend renders it outside the editable document.
 	Provenance *store.Provenance `json:"provenance,omitempty"`
+	// ParentMaterialID names the note a quiz or flashcard set is embedded in.
+	ParentMaterialID string `json:"parentMaterialId,omitempty"`
 }
 
 // MaterialUpdateResult is the lightweight acknowledgement returned by
@@ -245,7 +250,7 @@ func FromMaterial(m store.Material) (Material, error) {
 		Privacy: m.Privacy, Color: m.Color, CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt,
 		Revision: m.Revision,
 		IsOwner:  m.IsOwner, Role: m.Role, Capabilities: m.Capabilities,
-		Provenance: m.Provenance,
+		Provenance: m.Provenance, ParentMaterialID: m.ParentMaterialID,
 	}, nil
 }
 

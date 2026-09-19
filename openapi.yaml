@@ -378,6 +378,17 @@ components:
         - name
         - updatedAt
       type: object
+    CardContent:
+      additionalProperties: false
+      properties:
+        back:
+          type: string
+        front:
+          type: string
+      required:
+        - front
+        - back
+      type: object
     Chapter:
       additionalProperties: false
       properties:
@@ -415,6 +426,10 @@ components:
         fileId:
           type: string
         fileName:
+          type: string
+        kind:
+          type: string
+        materialId:
           type: string
         pageEnd:
           format: int64
@@ -727,6 +742,39 @@ components:
       required:
         - anchorVersion
         - contentRich
+      type: object
+    CreateEmbeddedMaterialReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/CreateEmbeddedMaterialReq.json
+          format: uri
+          readOnly: true
+          type: string
+        cards:
+          items:
+            $ref: "#/components/schemas/CardContent"
+          nullable: true
+          type: array
+        kind:
+          $ref: "#/components/schemas/MaterialKind"
+          enum:
+            - quiz
+            - flashcards
+        questions:
+          items:
+            additionalProperties: {}
+            type: object
+          nullable: true
+          type: array
+        timeLimitMin:
+          format: int64
+          maximum: 180
+          minimum: 1
+          type: integer
+      required:
+        - kind
       type: object
     CreateEventReq:
       additionalProperties: false
@@ -1220,6 +1268,24 @@ components:
       required:
         - url
         - expiresAt
+      type: object
+    FilePage:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/FilePage.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/File"
+          type: array
+        nextCursor:
+          type: string
+      required:
+        - items
       type: object
     FileStatus:
       enum:
@@ -1724,6 +1790,8 @@ components:
         nodeCount:
           format: int64
           type: integer
+        parentMaterialId:
+          type: string
         position:
           format: int64
           type: integer
@@ -1774,6 +1842,20 @@ components:
         - isOwner
         - capabilities
       type: object
+    MaterialIndexOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/MaterialIndexOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        jobId:
+          type: string
+      required:
+        - jobId
+      type: object
     MaterialKind:
       enum:
         - mindmap
@@ -1782,6 +1864,87 @@ components:
         - flashcards
         - note
       type: string
+    MaterialListItem:
+      additionalProperties: false
+      properties:
+        cardCount:
+          format: int64
+          type: integer
+        chapterId:
+          nullable: true
+          type: string
+        chapterName:
+          type: string
+        createdAt:
+          format: date-time
+          type: string
+        dueCount:
+          format: int64
+          type: integer
+        id:
+          type: string
+        kind:
+          $ref: "#/components/schemas/MaterialKind"
+        knownPct:
+          format: int64
+          type: integer
+        parentMaterialId:
+          type: string
+        parentTitle:
+          type: string
+        privacy:
+          $ref: "#/components/schemas/Privacy"
+        questionCount:
+          format: int64
+          type: integer
+        sizeBytes:
+          format: int64
+          type: integer
+        timeLimitMin:
+          format: int64
+          type: integer
+        title:
+          type: string
+        updatedAt:
+          format: date-time
+          type: string
+        workspaceId:
+          type: string
+        workspaceName:
+          type: string
+      required:
+        - id
+        - kind
+        - title
+        - workspaceId
+        - workspaceName
+        - chapterId
+        - chapterName
+        - parentMaterialId
+        - parentTitle
+        - privacy
+        - createdAt
+        - updatedAt
+        - sizeBytes
+      type: object
+    MaterialPage:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/MaterialPage.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/MaterialListItem"
+          type: array
+        nextCursor:
+          type: string
+      required:
+        - items
+      type: object
     MaterialRef:
       additionalProperties: false
       properties:
@@ -4304,6 +4467,9 @@ components:
         notIndexed:
           format: int64
           type: integer
+        pendingNotes:
+          format: int64
+          type: integer
         pendingReindex:
           format: int64
           type: integer
@@ -4319,6 +4485,7 @@ components:
         - notIndexable
         - pendingReparse
         - pendingReindex
+        - pendingNotes
         - chapters
         - files
         - quizzes
@@ -4993,15 +5160,64 @@ paths:
         - Explore
   /api/files:
     get:
-      operationId: listAllFiles
+      operationId: listOwnedFiles
+      parameters:
+        - description: Comma-separated file kinds
+          explode: false
+          in: query
+          name: kind
+          schema:
+            description: Comma-separated file kinds
+            type: string
+        - description: Comma-separated workspace ids the caller owns
+          explode: false
+          in: query
+          name: workspaceId
+          schema:
+            description: Comma-separated workspace ids the caller owns
+            type: string
+        - explode: false
+          in: query
+          name: sort
+          schema:
+            default: added
+            enum:
+              - added
+              - name
+              - size
+              - kind
+            type: string
+        - explode: false
+          in: query
+          name: dir
+          schema:
+            default: desc
+            enum:
+              - asc
+              - desc
+            type: string
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            default: 40
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
+        - description: Opaque cursor from the previous page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page
+            type: string
       responses:
         "200":
           content:
             application/json:
               schema:
-                items:
-                  $ref: "#/components/schemas/File"
-                type: array
+                $ref: "#/components/schemas/FilePage"
           description: OK
         default:
           content:
@@ -5009,7 +5225,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: List all files
+      summary: List the caller's files across owned workspaces
       tags:
         - Content
   /api/files/{id}:
@@ -5767,6 +5983,112 @@ paths:
       summary: Update a label
       tags:
         - Schedule
+  /api/materials:
+    get:
+      operationId: listOwnedMaterials
+      parameters:
+        - description: "Comma-separated kinds: note, quiz, flashcards"
+          explode: false
+          in: query
+          name: kind
+          schema:
+            description: "Comma-separated kinds: note, quiz, flashcards"
+            type: string
+        - description: Comma-separated workspace ids the caller owns
+          explode: false
+          in: query
+          name: workspaceId
+          schema:
+            description: Comma-separated workspace ids the caller owns
+            type: string
+        - description: Where the material lives; empty means anywhere
+          explode: false
+          in: query
+          name: location
+          schema:
+            description: Where the material lives; empty means anywhere
+            enum:
+              - ""
+              - workspace
+              - embedded
+              - standalone
+            type: string
+        - explode: false
+          in: query
+          name: sort
+          schema:
+            default: updated
+            enum:
+              - updated
+              - created
+              - title
+              - kind
+            type: string
+        - explode: false
+          in: query
+          name: dir
+          schema:
+            default: desc
+            enum:
+              - asc
+              - desc
+            type: string
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            default: 40
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
+        - description: Opaque cursor from the previous page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaterialPage"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List the caller's notes, quizzes and flashcard sets
+      tags:
+        - Materials
+    post:
+      operationId: createStandaloneMaterial
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMaterialReq"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Material"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Create a standalone note
+      tags:
+        - Materials
   /api/materials/{id}:
     delete:
       operationId: deleteMaterial
@@ -5927,6 +6249,37 @@ paths:
       summary: Create a comment discussion
       tags:
         - Material collaboration
+  /api/materials/{id}/embedded:
+    post:
+      operationId: createEmbeddedMaterial
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEmbeddedMaterialReq"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Material"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Create a quiz or flashcard set embedded in a note
+      tags:
+        - Materials
   /api/materials/{id}/metadata:
     patch:
       operationId: updateMaterial
@@ -8310,6 +8663,35 @@ paths:
       summary: Read a leased source export
       tags:
         - Source collaboration
+  /internal/collaboration/materials/{id}/index:
+    post:
+      operationId: requestMaterialIndex
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Collaboration-Secret
+          schema:
+            type: string
+      responses:
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaterialIndexOutputBody"
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Queue a dirty idle note for retrieval indexing
+      tags:
+        - Material collaboration
   /internal/collaboration/materials/{id}/projection:
     post:
       operationId: projectMaterialYjsDocument

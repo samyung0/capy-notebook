@@ -1,8 +1,9 @@
-import { flashcardsNode, mermaidNode } from '@/features/materials/document';
+import { mermaidNode } from '@/features/materials/document';
 import {
   bullet,
   callout,
   codeBlock,
+  embeddedFlashcards,
   equation,
   heading,
   hr,
@@ -85,26 +86,23 @@ export const chemNotes: SeedNote[] = [
         'info'
       ),
       heading(2, 'Drill cards'),
-      flashcardsNode(
-        [
-          {
-            back: 'Back-side attack; inversion of configuration; concerted',
-            front: 'SN2 stereochemical outcome?',
-            id: 'fc_chem_sn2',
-          },
-          {
-            back: 'Carbocation intermediate; racemization if chiral center involved',
-            front: 'SN1 key intermediate?',
-            id: 'fc_chem_sn1',
-          },
-          {
-            back: 'Polar aprotic (e.g. acetone, DMSO, DMF)',
-            front: 'Preferred solvent class for SN2?',
-            id: 'fc_chem_solvent',
-          },
-        ],
-        'fcset_chem_sn'
-      ),
+      embeddedFlashcards('mat_note_chem_sn', 'mat_embed_chem_sn_cards', [
+        {
+          back: 'Back-side attack; inversion of configuration; concerted',
+          front: 'SN2 stereochemical outcome?',
+          id: 'fc_chem_sn2',
+        },
+        {
+          back: 'Carbocation intermediate; racemization if chiral center involved',
+          front: 'SN1 key intermediate?',
+          id: 'fc_chem_sn1',
+        },
+        {
+          back: 'Polar aprotic (e.g. acetone, DMSO, DMF)',
+          front: 'Preferred solvent class for SN2?',
+          id: 'fc_chem_solvent',
+        },
+      ]),
       heading(2, 'Lab prep todos'),
       todo('Redraw both mechanisms without notes', true),
       todo('Predict major path for three mixed problems'),

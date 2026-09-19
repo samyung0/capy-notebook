@@ -42,6 +42,7 @@ import type {
   CreateCardReq,
   CreateCommentReq,
   CreateDiscussionReq,
+  CreateEmbeddedMaterialReq,
   CreateEventReq,
   CreateFlashcardSetReq,
   CreateMaterialReq,
@@ -50,6 +51,8 @@ import type {
   CreateWorkspaceReq,
   DeletionPreflight,
   FileLinks,
+  FileListParams,
+  FilePage,
   Flashcard,
   FlashcardSet,
   GenerateOptions,
@@ -63,6 +66,8 @@ import type {
   MaterialCollaborationToken,
   MaterialComment,
   MaterialDiscussion,
+  MaterialListParams,
+  MaterialPage,
   MaterialRef,
   MaterialUpdateResult,
   ModelSlot,
@@ -71,6 +76,7 @@ import type {
   NotificationPage,
   NotificationPrefs,
   OperationReceipt,
+  Privacy,
   PublicFlashcardSet,
   PublicQuiz,
   PublicWorkspace,
@@ -847,9 +853,51 @@ export const useFile = (id: string | null, options?: QueryUiOptions) =>
     staleTime: 5000,
   });
 
+/** Query string for the owner-scoped listings: comma-joined lists, blanks
+ * dropped, the page cursor last. */
+function listSearch(
+  params: Record<string, string | readonly string[] | undefined>,
+  cursor: string
+): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (Array.isArray(value)) {
+      if (value.length) search.set(key, value.join(','));
+    } else if (typeof value === 'string' && value) {
+      search.set(key, value);
+    }
+  }
+  if (cursor) search.set('cursor', cursor);
+  const query = search.toString();
+  return query ? `?${query}` : '';
+}
+
+export const ownedFilesQuery = (params: FileListParams = {}) => ({
+  getNextPageParam: (last: FilePage) => last.nextCursor || undefined,
+  initialPageParam: '',
+  queryFn: ({ pageParam }: { pageParam: string }) =>
+    api.get<FilePage>(
+      `/files${listSearch(
+        {
+          dir: params.dir,
+          kind: params.kinds,
+          sort: params.sort,
+          workspaceId: params.workspaceIds,
+        },
+        pageParam
+      )}`
+    ),
+  queryKey: qk.ownedFiles(params),
+});
+/** Files of every workspace the caller owns, newest first by default. */
+export const useOwnedFiles = (params: FileListParams = {}) =>
+  useInfiniteQuery(ownedFilesQuery(params));
+
+/** The first page of the owner's newest files, for the dashboard. */
 export const allFilesQuery = () =>
   queryOptions({
-    queryFn: () => api.get<SourceFile[]>('/files'),
+    queryFn: () =>
+      api.get<FilePage>('/files?limit=100').then((page) => page.items),
     queryKey: qk.allFiles,
   });
 export const useAllFiles = (options?: QueryUiOptions) =>
@@ -907,6 +955,7 @@ export function useDeleteFile(wsId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.files(wsId) });
       qc.invalidateQueries({ queryKey: qk.allFiles });
+      qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
       qc.invalidateQueries({ queryKey: qk.chapters(wsId) });
       qc.invalidateQueries({ queryKey: qk.workspaceStats(wsId) });
       qc.invalidateQueries({ queryKey: qk.trash() });
@@ -955,6 +1004,8 @@ function invalidateAfterTrashChange(qc: QueryClient, item: TrashItem) {
   qc.invalidateQueries({ queryKey: qk.allFiles });
   qc.invalidateQueries({ queryKey: qk.quizzes });
   qc.invalidateQueries({ queryKey: qk.flashcardSets });
+  qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot });
+  qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
   qc.invalidateQueries({ queryKey: qk.usage });
   if (item.workspaceId) {
     qc.invalidateQueries({ queryKey: qk.files(item.workspaceId) });
@@ -1333,6 +1384,7 @@ export function useGenerate(wsId: string, options?: MutationUiOptions) {
         qc.invalidateQueries({ queryKey: qk.quizzes }),
         qc.invalidateQueries({ queryKey: qk.flashcardSets }),
         qc.invalidateQueries({ queryKey: qk.materials(wsId) }),
+        qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot }),
       ]);
     },
   });
@@ -1365,6 +1417,67 @@ export const useMaterial = (id: string | null, options?: QueryUiOptions) =>
   useQuery({ ...materialQuery(id), meta: queryMeta(options) });
 
 /** Deleting a material moves it to the trash (see useDeleteFile). */
+export const ownedMaterialsQuery = (params: MaterialListParams = {}) => ({
+  getNextPageParam: (last: MaterialPage) => last.nextCursor || undefined,
+  initialPageParam: '',
+  queryFn: ({ pageParam }: { pageParam: string }) =>
+    api.get<MaterialPage>(
+      `/materials${listSearch(
+        {
+          dir: params.dir,
+          kind: params.kinds,
+          location: params.location,
+          sort: params.sort,
+          workspaceId: params.workspaceIds,
+        },
+        pageParam
+      )}`
+    ),
+  queryKey: qk.ownedMaterials(params),
+});
+/** Notes, quizzes and flashcard sets the caller owns, standalone or in their
+ * own workspaces; the Create page's list. */
+export const useOwnedMaterials = (params: MaterialListParams = {}) =>
+  useInfiniteQuery(ownedMaterialsQuery(params));
+
+function invalidateOwnedMaterials(qc: QueryClient) {
+  qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot });
+}
+
+/** Create a note outside any workspace. */
+export function useCreateStandaloneNote() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { title?: string }) =>
+      api.post<Material>('/materials', { kind: 'note', ...body }),
+    onSuccess: () => invalidateOwnedMaterials(qc),
+  });
+}
+
+/** Clone a readable material into a private standalone copy. */
+export function useCloneMaterial(options?: MutationUiOptions) {
+  const qc = useQueryClient();
+  return useMutation({
+    meta: mutationMeta(options),
+    mutationFn: (id: string) => api.post<Material>(`/materials/${id}/clone`),
+    onSuccess: () => invalidateOwnedMaterials(qc),
+  });
+}
+
+/** Standalone material sharing (notes); quizzes and flashcard sets keep their
+ * typed sharing routes. */
+export function useUpdateMaterialSharing() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, privacy }: { id: string; privacy: Privacy }) =>
+      api.patch<Material>(`/materials/${id}/sharing`, { privacy }),
+    onSuccess: (material) => {
+      qc.setQueryData<Material>(qk.material(material.id), material);
+      invalidateOwnedMaterials(qc);
+    },
+  });
+}
+
 export function useDeleteMaterial(wsId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -1372,6 +1485,7 @@ export function useDeleteMaterial(wsId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.materials(wsId) });
       qc.invalidateQueries({ queryKey: qk.quizzes });
+      invalidateOwnedMaterials(qc);
       qc.invalidateQueries({ queryKey: qk.flashcardSets });
       qc.invalidateQueries({ queryKey: qk.trash() });
     },
@@ -1380,6 +1494,24 @@ export function useDeleteMaterial(wsId: string) {
 
 /** Create a user-authored note (markdown) material and reveal it in-pane. */
 export type CreateNoteInput = Omit<CreateMaterialReq, 'kind'>;
+/** Create the quiz or flashcard set a note embeds; the caller inserts the
+ * returned id as a reference block. */
+export function useCreateEmbeddedMaterial() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      noteId,
+      ...body
+    }: CreateEmbeddedMaterialReq & { noteId: string }) =>
+      api.post<Material>(`/materials/${noteId}/embedded`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.quizzes });
+      invalidateOwnedMaterials(qc);
+      qc.invalidateQueries({ queryKey: qk.flashcardSets });
+    },
+  });
+}
+
 export function useCreateNote(wsId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -1403,6 +1535,7 @@ export function useUpdateMaterial(wsId: string) {
     mutationFn: ({ id, patch }: { id: string; patch: UpdateMaterialReq }) =>
       api.patch<MaterialUpdateResult>(`/materials/${id}/metadata`, patch),
     onSuccess: (result, { id, patch }) => {
+      invalidateOwnedMaterials(qc);
       qc.setQueryData<Material>(qk.material(id), (current) =>
         current
           ? {
@@ -1734,6 +1867,7 @@ function invalidateAllMaterials(qc: ReturnType<typeof useQueryClient>) {
       q.queryKey[0] === 'workspace' &&
       q.queryKey[2] === 'materials',
   });
+  invalidateOwnedMaterials(qc);
 }
 
 export function useCreateQuiz() {
@@ -1742,6 +1876,7 @@ export function useCreateQuiz() {
     mutationFn: (body: CreateQuizReq) => api.post<Quiz>('/quizzes', body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.quizzes });
+      invalidateOwnedMaterials(qc);
       invalidateAllMaterials(qc);
     },
   });
@@ -1787,6 +1922,7 @@ export function useDeleteQuiz() {
     mutationFn: (id: string) => api.del<void>(`/quizzes/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.quizzes });
+      invalidateOwnedMaterials(qc);
       qc.invalidateQueries({ queryKey: qk.trash() });
       invalidateAllMaterials(qc);
     },
@@ -2103,6 +2239,7 @@ export function useCloneWorkspace(options?: MutationUiOptions) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['workspaces'] });
       qc.invalidateQueries({ queryKey: qk.quizzes });
+      invalidateOwnedMaterials(qc);
       qc.invalidateQueries({ queryKey: qk.flashcardSets });
       qc.invalidateQueries({ queryKey: qk.exploreWorkspaces });
     },
@@ -2118,6 +2255,7 @@ export function useCloneQuiz(options?: MutationUiOptions) {
     onSuccess: () => {
       trackItemCloned('quiz');
       qc.invalidateQueries({ queryKey: qk.quizzes });
+      invalidateOwnedMaterials(qc);
       qc.invalidateQueries({ queryKey: qk.exploreQuizzes });
       invalidateAllMaterials(qc);
     },

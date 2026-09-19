@@ -5,6 +5,7 @@ import {
   createMaterialDocument,
   flashcardsNode,
   type MaterialValue,
+  materialRefNode,
   mermaidNode,
   quizNode,
 } from './document';
@@ -301,5 +302,12 @@ describe('static study-block renderers', () => {
     expect(html).toContain('Front one');
     expect(html).toContain('Back two');
     expect(html).toContain('grid-cols-[minmax(0,1fr)_minmax(0,1fr)]');
+  });
+
+  it('renders an embedded material reference as a card without a query client', () => {
+    const html = renderMaterial([materialRefNode('mat_child', 'quiz')]);
+    expect(html).toContain('Quiz');
+    expect(html).toContain('This item is no longer available');
+    expect(html).not.toContain('Start quiz');
   });
 });

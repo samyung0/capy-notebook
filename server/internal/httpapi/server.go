@@ -211,6 +211,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		r.Post("/api/internal/trash", a.internalTrash)
 		r.Post("/api/internal/trash/restore", a.internalRestore)
 		r.Get("/api/internal/trash", a.internalListTrash)
+		r.Get("/api/internal/materials/{id}/index-text", a.internalMaterialIndexText)
 		r.Post("/api/internal/documents/list", a.internalListDocuments)
 		r.Post("/api/internal/documents/inspect", a.internalInspectDocument)
 		r.Post("/api/internal/documents/edit", a.internalEditDocument)

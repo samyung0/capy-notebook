@@ -91,6 +91,30 @@ func (a *api) registerCollaboration(api huma.API) {
 	reg(api, http.MethodDelete, "/api/comments/{id}", "deleteMaterialComment", tag, "Soft-delete a comment", http.StatusNoContent, a.deleteMaterialComment)
 	reg(api, http.MethodPost, "/api/materials/{id}/collaboration-token", "createMaterialCollaborationToken", tag, "Create a short-lived material room token", http.StatusCreated, a.createMaterialCollaborationToken)
 	regWithMaxBody(api, http.MethodPost, "/internal/collaboration/materials/{id}/projection", "projectMaterialYjsDocument", tag, "Project a durably stored Yjs document", http.StatusOK, materialRequestMaxBytes, a.projectMaterialYjsDocument)
+	reg(api, http.MethodPost, "/internal/collaboration/materials/{id}/index", "requestMaterialIndex", tag, "Queue a dirty idle note for retrieval indexing", http.StatusAccepted, a.requestMaterialIndex)
+}
+
+type materialIndexInput struct {
+	ID     string `path:"id"`
+	Secret string `header:"X-Collaboration-Secret"`
+}
+type materialIndexOutput struct {
+	Body struct {
+		JobID string `json:"jobId"`
+	}
+}
+
+func (a *api) requestMaterialIndex(ctx context.Context, in *materialIndexInput) (*materialIndexOutput, error) {
+	if err := a.checkSourceSecret(ctx, in.Secret); err != nil {
+		return nil, err
+	}
+	jobID, err := a.s.RequestMaterialIndex(ctx, in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	out := &materialIndexOutput{}
+	out.Body.JobID = jobID
+	return out, nil
 }
 
 func (a *api) createMaterialCollaborationToken(

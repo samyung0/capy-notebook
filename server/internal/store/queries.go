@@ -1083,13 +1083,13 @@ func (s *Store) UpdateFile(ctx context.Context, actorID, id string, p FilePatch)
 
 /* ------------------------------------------------------------- materials */
 
-const materialCols = `id, COALESCE(created_by,''), owner_user_id, COALESCE(workspace_id,''), workspace_name, kind, title, content, chapter_id, position, scope_chapters, scope_file_names, privacy, color, created_at, updated_at, revision, size_bytes, node_count, max_depth, provenance`
-const materialColsM = `m.id, COALESCE(m.created_by,''), m.owner_user_id, COALESCE(m.workspace_id,''), m.workspace_name, m.kind, m.title, m.content, m.chapter_id, m.position, m.scope_chapters, m.scope_file_names, m.privacy, m.color, m.created_at, m.updated_at, m.revision, m.size_bytes, m.node_count, m.max_depth, m.provenance`
+const materialCols = `id, COALESCE(created_by,''), owner_user_id, COALESCE(workspace_id,''), workspace_name, kind, title, content, chapter_id, position, scope_chapters, scope_file_names, privacy, color, created_at, updated_at, revision, size_bytes, node_count, max_depth, provenance, COALESCE(parent_material_id,'')`
+const materialColsM = `m.id, COALESCE(m.created_by,''), m.owner_user_id, COALESCE(m.workspace_id,''), m.workspace_name, m.kind, m.title, m.content, m.chapter_id, m.position, m.scope_chapters, m.scope_file_names, m.privacy, m.color, m.created_at, m.updated_at, m.revision, m.size_bytes, m.node_count, m.max_depth, m.provenance, COALESCE(m.parent_material_id,'')`
 
 func scanMaterial(row pgx.Row) (Material, error) {
 	var mt Material
 	var provenance []byte
-	err := row.Scan(&mt.ID, &mt.CreatedBy, &mt.OwnerUserID, &mt.WorkspaceID, &mt.WorkspaceName, &mt.Kind, &mt.Title, &mt.Content, &mt.ChapterID, &mt.Position, &mt.ScopeChapters, &mt.ScopeFileNames, &mt.Privacy, &mt.Color, &mt.CreatedAt, &mt.UpdatedAt, &mt.Revision, &mt.SizeBytes, &mt.NodeCount, &mt.MaxDepth, &provenance)
+	err := row.Scan(&mt.ID, &mt.CreatedBy, &mt.OwnerUserID, &mt.WorkspaceID, &mt.WorkspaceName, &mt.Kind, &mt.Title, &mt.Content, &mt.ChapterID, &mt.Position, &mt.ScopeChapters, &mt.ScopeFileNames, &mt.Privacy, &mt.Color, &mt.CreatedAt, &mt.UpdatedAt, &mt.Revision, &mt.SizeBytes, &mt.NodeCount, &mt.MaxDepth, &provenance, &mt.ParentMaterialID)
 	if mt.ScopeChapters == nil {
 		mt.ScopeChapters = []string{}
 	}
@@ -1138,6 +1138,9 @@ func (s *Store) createMaterialTx(ctx context.Context, tx pgx.Tx, mt Material) (s
 	}
 	if mt.Color == "" {
 		mt.Color = "green"
+	}
+	if mt.ParentMaterialID != "" && (mt.Kind != "quiz" && mt.Kind != "flashcards" || mt.ChapterID != nil) {
+		return "", fmt.Errorf("%w: only an unfiled quiz or flashcard set can be embedded", materialdoc.ErrInvalid)
 	}
 	content, err := materialdoc.FromLegacyMarkdown(string(mt.Kind), mt.Content)
 	if err != nil {
@@ -1208,14 +1211,22 @@ func (s *Store) createMaterialTx(ctx context.Context, tx pgx.Tx, mt Material) (s
 	if err := s.gateStorageTx(ctx, tx, ownerID, storedSize+int64(len(provenance))); err != nil {
 		return "", err
 	}
+	// A workspace note is dirty from birth: the scheduler indexes it once it
+	// sits idle. Standalone notes are never indexed.
+	var indexDirtyAt *time.Time
+	if mt.Kind == "note" && mt.WorkspaceID != "" {
+		now := time.Now().UTC()
+		indexDirtyAt = &now
+	}
 	_, err = tx.Exec(ctx, `INSERT INTO materials
 		(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
-		 chapter_id, scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_by, provenance)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+		 chapter_id, scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_by, provenance,
+		 parent_material_id, index_dirty_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
 		mt.ID, creatorID, ownerID, nullStr(mt.WorkspaceID), mt.WorkspaceName, mt.Kind,
 		mt.Title, json.RawMessage(mt.Content), mt.ChapterID, mt.ScopeChapters,
 		mt.ScopeFileNames, mt.Privacy, mt.Color, metrics.NodeCount, metrics.MaxDepth, creatorID,
-		provenance)
+		provenance, nullStr(mt.ParentMaterialID), indexDirtyAt)
 	if err != nil {
 		if uniqueConstraintName(err) == "materials_pkey" {
 			return "", ErrMaterialIDTaken
@@ -1603,7 +1614,7 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 		}
 	}
 	if p.Content != nil {
-		sets = append(sets, "revision=revision+1")
+		sets = append(sets, "revision=revision+1", noteIndexDirtySQL)
 	}
 	args = append(args, id)
 	where := fmt.Sprintf(" WHERE id=$%d AND trashed_at IS NULL", i)
@@ -1692,6 +1703,11 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 			return Material{}, err
 		}
 	}
+	if p.Content != nil && contentKind == "note" {
+		if err := reconcileEmbeddedTx(ctx, tx, id, *p.Content, p.UpdatedBy); err != nil {
+			return Material{}, err
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return Material{}, err
 	}
@@ -1733,7 +1749,8 @@ func (s *Store) MaterialIDsOwnedByUser(ctx context.Context, userID string) ([]st
 func (s *Store) ListMaterialRefs(ctx context.Context, wsID string) ([]MaterialRef, error) {
 	out := []MaterialRef{}
 	rows, err := s.pool.Query(ctx, `SELECT id, kind, title, chapter_id, position, created_at, size_bytes, node_count, max_depth, provenance
-		FROM materials WHERE workspace_id=$1 AND trashed_at IS NULL ORDER BY position, created_at DESC`, wsID)
+		FROM materials WHERE workspace_id=$1 AND parent_material_id IS NULL AND trashed_at IS NULL
+		ORDER BY position, created_at DESC`, wsID)
 	if err != nil {
 		return nil, err
 	}

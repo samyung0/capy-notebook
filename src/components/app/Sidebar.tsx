@@ -46,8 +46,8 @@ function items(): { general: NavItem[]; tools: NavItem[]; bottom: NavItem[] } {
         : []),
     ],
     tools: [
-      { icon: 'quiz', label: m.nav_quizzes(), to: '/quizzes' },
-      { icon: 'flashcards', label: m.nav_flashcards(), to: '/flashcards' },
+      { icon: 'write', label: m.nav_create(), to: '/create' },
+      { icon: 'circleCheck', label: m.nav_learning(), to: '/learning' },
       { icon: 'files', label: m.nav_files(), to: '/files' },
       ...(features.tasks
         ? [{ icon: 'todo' as IconName, label: m.nav_tasks(), to: '/tasks' }]

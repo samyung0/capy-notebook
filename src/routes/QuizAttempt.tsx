@@ -105,7 +105,7 @@ export default function QuizAttempt() {
             <Icon className="non-scaling-svg" name="check" size={30} />
           </span>
           <p className="t-large-card-title">{m.quiz_no_questions()}</p>
-          <Link preload="intent" to="/quizzes">
+          <Link preload="intent" to="/create">
             <Button iconLeft="chevronLeft">{m.quiz_back()}</Button>
           </Link>
         </div>
@@ -227,7 +227,7 @@ export default function QuizAttempt() {
               );
             })}
           </div>
-          <Link preload="intent" to="/quizzes">
+          <Link preload="intent" to="/create">
             <Button iconLeft="chevronLeft">{m.quiz_back()}</Button>
           </Link>
         </div>
@@ -242,7 +242,7 @@ export default function QuizAttempt() {
           <Link
             className="text-fg-muted hover:text-fg"
             preload="intent"
-            to="/quizzes"
+            to="/create"
           >
             <Icon name="x" size={20} />
           </Link>

@@ -5,17 +5,19 @@ import {
   type CustomMaterialElement,
   type FlashcardsElement,
   flashcardsElementToCards,
-  flashcardsNodeFromFence,
+  MATERIAL_REF_TYPE,
+  type MaterialRefElement,
   type MermaidElement,
+  materialRefNode,
   mermaidNode,
   type QuizElement,
   quizElementToBlock,
-  quizNodeFromFence,
 } from '@/features/materials/document';
 
 export const QUIZ_KEY = 'quiz';
 export const FLASHCARDS_KEY = 'flashcards';
 export const MERMAID_KEY = 'mermaid';
+export const MATERIAL_REF_KEY = MATERIAL_REF_TYPE;
 
 export const CUSTOM_BLOCK_LANGS = [
   QUIZ_KEY,
@@ -34,14 +36,19 @@ export function isCustomBlockLang(lang: unknown): lang is CustomBlockLang {
 export type CustomBlockElement =
   | QuizElement
   | FlashcardsElement
-  | MermaidElement;
+  | MermaidElement
+  | MaterialRefElement;
 
+/** Node for a fenced block. Quiz and flashcards fences become pending
+ * references: a note keeps study blocks in their own material rows, created
+ * by the editor once the node mounts. */
 export function customBlockNode(
   type: CustomBlockLang,
   code: string
 ): CustomBlockElement {
-  if (type === QUIZ_KEY) return quizNodeFromFence(code);
-  if (type === FLASHCARDS_KEY) return flashcardsNodeFromFence(code);
+  if (type === QUIZ_KEY || type === FLASHCARDS_KEY) {
+    return materialRefNode('', type, code);
+  }
   return mermaidNode(code);
 }
 
@@ -52,6 +59,7 @@ export function customBlockCode(element: CustomMaterialElement): string {
     return flashcardsFenceBody(flashcardsElementToCards(element));
   }
   if (element.type === MERMAID_KEY) return element.source;
+  if (element.type === MATERIAL_REF_KEY) return element.pending ?? '';
   return '';
 }
 

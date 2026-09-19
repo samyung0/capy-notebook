@@ -23,6 +23,8 @@ from .lang import UND
 @dataclass
 class Passage:
     chunk_id: str
+    # The resource the chunk belongs to: a file, or a note when kind is
+    # "material" (file_id then holds the material id and file_name its title).
     file_id: str
     file_name: str
     chunk_idx: int
@@ -47,6 +49,7 @@ class Passage:
     # for sources without a page model.
     confidence: float | None = None
     confidence_reasons: list[str] = field(default_factory=list)
+    kind: str = "file"
 
     @classmethod
     def from_row(cls, row: dict[str, Any]) -> Passage:
@@ -56,6 +59,7 @@ class Passage:
             chunk_id=row["id"],
             file_id=row["file_id"],
             file_name=row["file_name"],
+            kind=str(row.get("kind") or "file"),
             chunk_idx=row["chunk_idx"],
             section_path=row.get("section_path") or "",
             text=row["text"],
@@ -96,11 +100,14 @@ class Passage:
 
     def as_citation(self) -> dict[str, Any]:
         citation: dict[str, Any] = {
-            "fileId": self.file_id,
+            "fileId": "" if self.kind == "material" else self.file_id,
             "chunkId": self.chunk_id,
             "fileName": self.file_name,
             "snippet": (self.hit_text or self.text)[:400],
         }
+        if self.kind == "material":
+            citation["kind"] = "material"
+            citation["materialId"] = self.file_id
         if self.page_start:
             citation["pageStart"] = self.page_start
             citation["pageEnd"] = self.page_end or self.page_start

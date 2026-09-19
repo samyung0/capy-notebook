@@ -22,6 +22,7 @@
 import type {
   ActivityBlockOutcome,
   ActivityCapture,
+  FileKind,
   AttemptDetail as GenAttemptDetail,
   Citation as GenCitation,
   Comment as GenComment,
@@ -29,6 +30,7 @@ import type {
   CreateCardReq as GenCreateCardReq,
   CreateCommentReq as GenCreateCommentReq,
   CreateDiscussionReq as GenCreateDiscussionReq,
+  CreateEmbeddedMaterialReq as GenCreateEmbeddedMaterialReq,
   CreateMaterialReq as GenCreateMaterialReq,
   CreateQuizReq as GenCreateQuizReq,
   CreateWorkspaceInviteReq as GenCreateWorkspaceInviteReq,
@@ -150,7 +152,6 @@ export type {
 /* ---------------- enums & scalars (straight from the generated spec) ---------------- */
 export {
   AccountState,
-  FileKind,
   FileStatus,
   MaterialKind,
   MaterialRefType,
@@ -232,6 +233,11 @@ export type CreateCardReq = Required<Pick<GenCreateCardReq, 'back' | 'front'>>;
 export type CreateMaterialReq = Omit<GenCreateMaterialReq, 'content'> & {
   content?: import('@/features/materials/document').MaterialDocument;
 };
+/** A quiz or flashcard set authored inside a note; the wire keeps questions opaque. */
+export type CreateEmbeddedMaterialReq = Omit<
+  GenCreateEmbeddedMaterialReq,
+  'questions'
+> & { questions?: Question[] };
 export type CreateDiscussionReq = Omit<
   GenCreateDiscussionReq,
   'contentRich'
@@ -454,6 +460,31 @@ export type GenerateOptions =
 export type Material = Omit<GenMaterial, 'content'> & {
   content: import('@/features/materials/document').MaterialDocument;
 };
+
+/* Owner-scoped, paginated listings behind the Create and Files pages. */
+export type {
+  FileKind,
+  FilePage,
+  MaterialListItem,
+  MaterialPage,
+} from './gen/model';
+export type MaterialListKind = 'note' | 'quiz' | 'flashcards';
+export type MaterialListLocation = 'workspace' | 'embedded' | 'standalone';
+export type MaterialListSort = 'updated' | 'created' | 'title' | 'kind';
+export interface MaterialListParams {
+  dir?: 'asc' | 'desc';
+  kinds?: MaterialListKind[];
+  location?: MaterialListLocation | '';
+  sort?: MaterialListSort;
+  workspaceIds?: string[];
+}
+export type FileListSort = 'added' | 'name' | 'size' | 'kind';
+export interface FileListParams {
+  dir?: 'asc' | 'desc';
+  kinds?: FileKind[];
+  sort?: FileListSort;
+  workspaceIds?: string[];
+}
 
 /* Attribution of a material or file written from the shared knowledge library,
    rendered outside the editable document so a user cannot delete the credit. */

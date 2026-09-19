@@ -53,6 +53,14 @@ export const noteMarkdownPlugin = MarkdownPlugin.configure({
         },
       },
       flashcards: { serialize: serializeCustomBlock('flashcards') },
+      // Export resolves references into inline blocks first
+      // (documentAdapters); an unresolved one keeps its fence when pending.
+      material_ref: {
+        serialize: (node: AnyNode) =>
+          node.pending
+            ? { lang: node.refKind, type: 'code', value: node.pending }
+            : { children: [], type: 'paragraph' },
+      },
       mermaid: { serialize: serializeCustomBlock('mermaid') },
       quiz: { serialize: serializeCustomBlock('quiz') },
     } as AnyNode,

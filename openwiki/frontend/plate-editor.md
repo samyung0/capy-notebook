@@ -163,6 +163,26 @@ update or checkpoint. A workspace-contained custom material already
 shows its relational title in the workspace chrome, and an embedded quiz or
 flashcard block inside a note does not render the note title.
 
+## Embedded quizzes and flashcards
+
+A note never inlines a quiz or flashcard set. Both are material rows of their
+own with `parent_material_id` set, sharing the note's workspace, private and
+unfiled, and the note stores a void `material_ref` block
+(`{materialId, refKind}`) rendered as a compact card by `MaterialRefCard` in
+every mode. Inserting through the slash command or toolbar opens the existing
+dialog, creates the row through `POST /api/materials/{noteId}/embedded`, then
+inserts the reference at the top level; nothing is inserted when creation
+fails. Edit reopens the dialog and saves through the quiz content endpoint or
+the per-card flashcard endpoints, so note undo covers only inserting and
+removing the reference. Go and the sidecar reject inline `quiz`/`flashcards`
+nodes in a note and references anywhere but the top level. A markdown fence
+imports as a pending reference (`materialId: ''` plus the fence body in
+`pending`) that the mounted editor resolves into a row; markdown export
+resolves references back into inline blocks first. Removing the reference
+trashes the row at the next projection and undo restores it (see
+[authorization](../authorization-permissions-lifecycles.md)). Mermaid blocks
+stay inline.
+
 ## Persistence and save status
 
 Hocuspocus provider sync means only that the browser and in-memory server

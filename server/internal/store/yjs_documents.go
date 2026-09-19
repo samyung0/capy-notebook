@@ -162,7 +162,7 @@ func (s *Store) ProjectMaterialContent(
 	now := time.Now().UTC()
 	nextRevision := revision + 1
 	if _, err := tx.Exec(ctx, `UPDATE materials
-		SET content=$2, node_count=$3, max_depth=$4, revision=$5, updated_at=$6
+		SET content=$2, node_count=$3, max_depth=$4, revision=$5, updated_at=$6, `+noteIndexDirtySQL+`
 		WHERE id=$1 AND trashed_at IS NULL`, materialID, json.RawMessage(content), metrics.NodeCount,
 		metrics.MaxDepth, nextRevision, now); err != nil {
 		return Material{}, err
@@ -182,6 +182,11 @@ func (s *Store) ProjectMaterialContent(
 		// A chat Undo that re-inserted a removed card retained its study row;
 		// put it back over the fresh default once this version is projected.
 		if err := applyCardStateRestoresTx(ctx, tx, materialID, yjsVersion, cardIDs, now); err != nil {
+			return Material{}, err
+		}
+	}
+	if kind == "note" {
+		if err := reconcileEmbeddedTx(ctx, tx, materialID, content, ""); err != nil {
 			return Material{}, err
 		}
 	}

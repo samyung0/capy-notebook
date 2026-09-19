@@ -40,6 +40,17 @@ type reorderContentInput struct {
 type filesOutput struct {
 	Body []apimodel.File `nullable:"false"`
 }
+type filesListInput struct {
+	Kind        string `query:"kind" doc:"Comma-separated file kinds"`
+	WorkspaceID string `query:"workspaceId" doc:"Comma-separated workspace ids the caller owns"`
+	Sort        string `query:"sort" enum:"added,name,size,kind" default:"added"`
+	Dir         string `query:"dir" enum:"asc,desc" default:"desc"`
+	Limit       int    `query:"limit" minimum:"1" maximum:"100" default:"40"`
+	Cursor      string `query:"cursor" doc:"Opaque cursor from the previous page"`
+}
+type filePageOutput struct {
+	Body apimodel.FilePage
+}
 type fileOutput struct {
 	Body apimodel.File
 }
@@ -64,7 +75,7 @@ func (a *api) registerContent(api huma.API) {
 	reg(api, http.MethodPatch, "/api/chapters/{id}", "updateChapter", tag, "Update a chapter", http.StatusOK, a.updateChapter)
 	reg(api, http.MethodDelete, "/api/chapters/{id}", "deleteChapter", tag, "Delete a chapter", http.StatusNoContent, a.deleteChapter)
 
-	reg(api, http.MethodGet, "/api/files", "listAllFiles", tag, "List all files", http.StatusOK, a.listAllFiles)
+	reg(api, http.MethodGet, "/api/files", "listOwnedFiles", tag, "List the caller's files across owned workspaces", http.StatusOK, a.listOwnedFiles)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/files", "listWorkspaceFiles", tag, "List workspace files", http.StatusOK, a.listWorkspaceFiles)
 	reg(api, http.MethodGet, "/api/files/{id}", "getFile", tag, "Get a file", http.StatusOK, a.getFile)
 	reg(api, http.MethodGet, "/api/files/{id}/links", "getFileLinks", tag, "Get presigned file reads", http.StatusOK, a.getFileLinks)
@@ -147,12 +158,15 @@ func (a *api) deleteChapter(ctx context.Context, in *chapterIDInput) (*Empty, er
 	return &Empty{}, nil
 }
 
-func (a *api) listAllFiles(ctx context.Context, _ *struct{}) (*filesOutput, error) {
-	res, err := a.s.ListFiles(ctx, userID(ctx), "")
+func (a *api) listOwnedFiles(ctx context.Context, in *filesListInput) (*filePageOutput, error) {
+	page, err := a.s.ListOwnedFiles(ctx, userID(ctx), store.FileListFilter{
+		Kinds: csv(in.Kind), WorkspaceIDs: csv(in.WorkspaceID),
+		Sort: in.Sort, Ascending: in.Dir == "asc", Limit: in.Limit, Cursor: in.Cursor,
+	})
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return &filesOutput{Body: res}, nil
+	return &filePageOutput{Body: page}, nil
 }
 
 func (a *api) listWorkspaceFiles(ctx context.Context, in *workspaceIDInput) (*filesOutput, error) {

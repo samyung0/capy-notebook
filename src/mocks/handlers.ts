@@ -48,6 +48,30 @@ import { getFileKind } from '@/features/workspace/sourceUpload';
 import { isKnown, newSrsState } from '@/lib/srs';
 import * as db from './db';
 import { uid } from './db';
+
+/** Query parsing shared by the owner-scoped list mocks; the cursor is an offset. */
+function listParams(href: string) {
+  const url = new URL(href);
+  const param = (key: string) => url.searchParams.get(key) ?? '';
+  return {
+    asc: param('dir') === 'asc',
+    limit: Number(param('limit') || 40),
+    list: (key: string) => param(key).split(',').filter(Boolean),
+    offset: Number(param('cursor') || 0),
+    param,
+    sort: param('sort'),
+  };
+}
+
+function sortBy<T>(key: (row: T) => string | number, asc: boolean) {
+  return (a: T, b: T) => {
+    const ka = key(a);
+    const kb = key(b);
+    const cmp = ka < kb ? -1 : ka > kb ? 1 : 0;
+    return asc ? cmp : -cmp;
+  };
+}
+
 import { dialogFiles } from './dialogFiles';
 import { sourceUploadPolicy } from './sourceUploadPolicy';
 
@@ -1343,7 +1367,35 @@ export const handlers = [
     }
     return new HttpResponse(null, { status: 204 });
   }),
-  http.get('/api/files', async () => HttpResponse.json(db.files)),
+  http.get('/api/files', async ({ request }) => {
+    const { asc, limit, list, offset, sort } = listParams(request.url);
+    const kinds = list('kind');
+    const wsIds = list('workspaceId');
+    const rows = db.files
+      .filter(
+        (f) =>
+          (!kinds.length || kinds.includes(f.kind)) &&
+          (!wsIds.length || wsIds.includes(f.workspaceId))
+      )
+      .sort(
+        sortBy(
+          (f) =>
+            sort === 'name'
+              ? f.name.toLowerCase()
+              : sort === 'size'
+                ? f.sizeBytes
+                : sort === 'kind'
+                  ? f.kind
+                  : f.addedAt,
+          asc
+        )
+      );
+    return HttpResponse.json({
+      items: rows.slice(offset, offset + limit),
+      nextCursor:
+        offset + limit < rows.length ? String(offset + limit) : undefined,
+    });
+  }),
   http.get('/api/workspaces/:id/files', async ({ params }) =>
     HttpResponse.json(db.files.filter((f) => f.workspaceId === params.id))
   ),
@@ -1456,10 +1508,74 @@ export const handlers = [
     });
   }),
   /* ---------------- study materials ---------------- */
+  http.get('/api/materials', async ({ request }) => {
+    const { asc, limit, list, offset, param, sort } = listParams(request.url);
+    const kinds = list('kind');
+    const wsIds = list('workspaceId');
+    const location = param('location');
+    const allowed = kinds.length ? kinds : ['note', 'quiz', 'flashcards'];
+    const rows = db.materials
+      .filter((mt) => {
+        if (!allowed.includes(mt.kind)) return false;
+        if (wsIds.length && !wsIds.includes(mt.workspaceId)) return false;
+        const embedded = !!mt.parentMaterialId;
+        if (location === 'embedded') return embedded;
+        if (location === 'workspace') return !!mt.workspaceId && !embedded;
+        if (location === 'standalone') return !mt.workspaceId && !embedded;
+        return true;
+      })
+      .sort(
+        sortBy(
+          (mt) =>
+            sort === 'title'
+              ? mt.title.toLowerCase()
+              : sort === 'kind'
+                ? mt.kind
+                : sort === 'created'
+                  ? mt.createdAt
+                  : mt.updatedAt,
+          asc
+        )
+      );
+    return HttpResponse.json({
+      items: rows.slice(offset, offset + limit).map(db.materialListItem),
+      nextCursor:
+        offset + limit < rows.length ? String(offset + limit) : undefined,
+    });
+  }),
+  http.post('/api/materials', async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as {
+      kind?: Material['kind'];
+      title?: string;
+      content?: Material['content'];
+    };
+    if (body.kind !== 'note') {
+      return HttpResponse.json(
+        { message: 'unsupported material kind' },
+        { status: 400 }
+      );
+    }
+    const mt = db.makeMaterial({
+      ...ownerMaterialAccess,
+      chapterId: null,
+      content: body.content ?? emptyMaterialDocument(),
+      createdAt: new Date().toISOString(),
+      id: uid('mat'),
+      kind: 'note',
+      privacy: 'private',
+      scopeChapters: [],
+      scopeFileNames: [],
+      title: body.title || copyText(db.user.locale, 'untitled_note'),
+      workspaceId: '',
+      workspaceName: '',
+    });
+    db.materials.unshift(mt);
+    return HttpResponse.json(mt, { status: 201 });
+  }),
   http.get('/api/workspaces/:id/materials', async ({ params }) => {
     const wsId = String(params.id);
     const refs: MaterialRef[] = db.materials
-      .filter((mt) => mt.workspaceId === wsId)
+      .filter((mt) => mt.workspaceId === wsId && !mt.parentMaterialId)
       .map((mt) => ({
         chapterId: mt.chapterId,
         createdAt: mt.createdAt,
@@ -1503,6 +1619,51 @@ export const handlers = [
       title: body.title || copyText(db.user.locale, 'untitled_note'),
       workspaceId: wsId,
       workspaceName: ws?.name ?? '',
+    });
+    db.materials.unshift(mt);
+    return HttpResponse.json(mt, { status: 201 });
+  }),
+  http.post('/api/materials/:id/embedded', async ({ params, request }) => {
+    const note = db.materials.find(
+      (x) => x.id === params.id && x.kind === 'note' && !x.parentMaterialId
+    );
+    if (!note) return new HttpResponse(null, { status: 404 });
+    const body = (await request.json().catch(() => ({}))) as {
+      kind?: 'quiz' | 'flashcards';
+      questions?: Question[];
+      timeLimitMin?: number;
+      cards?: { front: string; back: string }[];
+    };
+    if (body.kind !== 'quiz' && body.kind !== 'flashcards') {
+      return HttpResponse.json(
+        { message: 'unsupported embedded material kind' },
+        { status: 400 }
+      );
+    }
+    const block =
+      body.kind === 'quiz'
+        ? quizNode({
+            questions: body.questions ?? [],
+            timeLimitMin: body.timeLimitMin,
+          })
+        : flashcardsNode(
+            (body.cards ?? []).map((card) => ({ ...card, id: uid('c') }))
+          );
+    const suffix = body.kind === 'quiz' ? 'Quiz' : 'Flashcards';
+    const mt = db.makeMaterial({
+      ...ownerMaterialAccess,
+      chapterId: null,
+      content: { schemaVersion: 1, value: [block] },
+      createdAt: new Date().toISOString(),
+      id: uid('mat'),
+      kind: body.kind,
+      parentMaterialId: note.id,
+      privacy: 'private',
+      scopeChapters: [],
+      scopeFileNames: [],
+      title: `${note.title} · ${suffix}`,
+      workspaceId: note.workspaceId,
+      workspaceName: note.workspaceName,
     });
     db.materials.unshift(mt);
     return HttpResponse.json(mt, { status: 201 });

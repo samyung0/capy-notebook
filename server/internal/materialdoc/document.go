@@ -262,13 +262,136 @@ func ValidateKind(raw, kind string) error {
 		valid = find(doc.Value, "mermaid") != nil ||
 			find(doc.Value, "diagram") != nil ||
 			find(doc.Value, "mindmap") != nil
+	case "note":
+		return validateNoteReferences(doc.Value)
 	default:
 		return nil
 	}
 	if !valid {
 		return fmt.Errorf("%w: %s element is required", ErrInvalid, kind)
 	}
+	if find(doc.Value, RefType) != nil {
+		return fmt.Errorf("%w: %s cannot contain a material reference", ErrInvalid, kind)
+	}
 	return nil
+}
+
+// RefType is the void node a note stores for an embedded quiz or flashcard
+// set. The referenced material row holds the content.
+const RefType = "material_ref"
+
+var refKinds = set("quiz", "flashcards")
+
+// MaterialRef is one top-level reference node of a note.
+type MaterialRef struct {
+	ID         string
+	MaterialID string
+	Kind       string
+}
+
+// validateNoteReferences enforces the note contract: study blocks live in
+// their own material rows, so inline quiz/flashcards nodes are rejected and a
+// reference is only valid as a top-level block.
+func validateNoteReferences(nodes []map[string]any) error {
+	for _, inline := range []string{"quiz", "flashcards"} {
+		if find(nodes, inline) != nil {
+			return fmt.Errorf("%w: note cannot contain an inline %s block", ErrInvalid, inline)
+		}
+	}
+	for index, node := range nodes {
+		for _, child := range children(node) {
+			if find([]map[string]any{child}, RefType) != nil {
+				return fmt.Errorf("%w: value[%d]: material reference must be a top-level block", ErrInvalid, index)
+			}
+		}
+	}
+	return nil
+}
+
+func validateMaterialRef(node map[string]any) error {
+	if err := requireID(node); err != nil {
+		return err
+	}
+	// A fence imported as markdown is a pending reference until the editor
+	// creates its row: no material id yet, the fence body in "pending".
+	materialID, ok := node["materialId"].(string)
+	if !ok {
+		return errors.New("materialId is required")
+	}
+	if strings.TrimSpace(materialID) == "" {
+		if pending, _ := node["pending"].(string); pending == "" {
+			return errors.New("materialId is required")
+		}
+	}
+	kind, ok := node["refKind"].(string)
+	if !ok || !refKinds[kind] {
+		return errors.New("refKind must be quiz or flashcards")
+	}
+	values := node["children"].([]any)
+	if len(values) != 1 {
+		return errors.New("material reference carries one empty text leaf")
+	}
+	leaf, _ := values[0].(map[string]any)
+	if text, _ := leaf["text"].(string); text != "" {
+		return errors.New("material reference carries one empty text leaf")
+	}
+	return nil
+}
+
+// MaterialRefNode builds the reference block a note stores for an embedded
+// material.
+func MaterialRefNode(materialID, kind string) map[string]any {
+	return map[string]any{
+		"type":       RefType,
+		"id":         newID("block"),
+		"materialId": materialID,
+		"refKind":    kind,
+		"children":   []any{textLeaf("")},
+	}
+}
+
+// ExtractMaterialRefs lists the note's embedded material references in
+// document order.
+func ExtractMaterialRefs(raw string) ([]MaterialRef, error) {
+	doc, err := Parse(raw)
+	if err != nil {
+		return nil, err
+	}
+	refs := []MaterialRef{}
+	for _, node := range doc.Value {
+		if node["type"] != RefType {
+			continue
+		}
+		materialID, _ := node["materialId"].(string)
+		if materialID == "" {
+			continue // pending, no row yet
+		}
+		id, _ := node["id"].(string)
+		kind, _ := node["refKind"].(string)
+		refs = append(refs, MaterialRef{ID: id, MaterialID: materialID, Kind: kind})
+	}
+	return refs, nil
+}
+
+// RewriteMaterialRefIDs points every reference whose material id is in ids at
+// the mapped id, for clones. Unmapped references are left as they are.
+func RewriteMaterialRefIDs(raw string, ids map[string]string) (string, error) {
+	if len(ids) == 0 {
+		return raw, nil
+	}
+	doc, err := Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	for _, node := range doc.Value {
+		if node["type"] != RefType {
+			continue
+		}
+		if materialID, _ := node["materialId"].(string); ids[materialID] != "" {
+			node["materialId"] = ids[materialID]
+		}
+	}
+	return Marshal(doc)
 }
 
 func validateNode(node map[string]any, depth int) error {
@@ -329,6 +452,8 @@ func validateNode(node map[string]any, depth int) error {
 		return validateDiagram(node)
 	case "video":
 		return validateYouTube(node)
+	case RefType:
+		return validateMaterialRef(node)
 	}
 	return nil
 }
@@ -993,6 +1118,93 @@ func ExtractNoteText(raw string) (string, error) {
 		text.WriteString(nodeText(node))
 	}
 	return text.String(), nil
+}
+
+// ExtractIndexText renders a note as markdown-like plain text for retrieval
+// chunking: headings keep their level, list items their bullets, table rows
+// their cells and code its fence. References, diagrams and media carry no
+// text and are skipped.
+func ExtractIndexText(raw string) (string, error) {
+	doc, err := Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	var blocks []string
+	for _, node := range doc.Value {
+		writeIndexBlock(node, &blocks)
+	}
+	return strings.Join(blocks, "\n\n"), nil
+}
+
+var (
+	indexContainers = set("callout", "column_group", "column", "toggle", "details")
+	indexSkipped    = set("hr", "toc", "equation", "inline_equation", "img", "image", "audio", "file",
+		"video", "mermaid", "diagram", "mindmap", RefType, "quiz", "flashcards")
+)
+
+func writeIndexBlock(node map[string]any, out *[]string) {
+	typ, _ := node["type"].(string)
+	switch {
+	case indexSkipped[typ]:
+		return
+	case indexContainers[typ]:
+		for _, child := range children(node) {
+			writeIndexBlock(child, out)
+		}
+		return
+	case typ == "table":
+		var rows []string
+		for _, tr := range children(node) {
+			var cells []string
+			for _, td := range children(tr) {
+				cells = append(cells, strings.TrimSpace(nodeText(td)))
+			}
+			if len(cells) > 0 {
+				rows = append(rows, "| "+strings.Join(cells, " | ")+" |")
+			}
+		}
+		if len(rows) > 0 {
+			*out = append(*out, strings.Join(rows, "\n"))
+		}
+		return
+	case typ == "code_block":
+		var lines []string
+		for _, line := range children(node) {
+			lines = append(lines, nodeText(line))
+		}
+		lang, _ := node["lang"].(string)
+		*out = append(*out, "```"+lang+"\n"+strings.Join(lines, "\n")+"\n```")
+		return
+	}
+	text := strings.TrimSpace(nodeText(node))
+	if text == "" {
+		return
+	}
+	switch {
+	case len(typ) == 2 && typ[0] == 'h' && typ[1] >= '1' && typ[1] <= '6':
+		text = strings.Repeat("#", int(typ[1]-'0')) + " " + text
+	case typ == "blockquote":
+		text = "> " + text
+	case typ == "p":
+		if style, _ := node["listStyleType"].(string); style != "" {
+			indent := 0
+			if n, ok := number(node["indent"]); ok && n > 1 {
+				indent = int(n) - 1
+			}
+			prefix := "- "
+			switch style {
+			case "decimal":
+				prefix = "1. "
+			case "todo":
+				prefix = "- [ ] "
+				if checked, _ := node["checked"].(bool); checked {
+					prefix = "- [x] "
+				}
+			}
+			text = strings.Repeat("  ", indent) + prefix + text
+		}
+	}
+	*out = append(*out, text)
 }
 
 func IncomingNoteText(content string) string {

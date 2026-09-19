@@ -56,13 +56,14 @@ function Citations({
         return (
           <button
             className="inline-flex items-center gap-1 rounded-full bg-tint-info px-2 py-0.5 font-medium text-[11px] text-tint-info-fg hover:brightness-97"
-            key={`${c.fileId}:${i}`}
+            key={`${c.materialId || c.fileId}:${i}`}
             onClick={() => onOpen?.(c)}
             title={c.snippet}
             type="button"
           >
             <span className="opacity-70">[{i + 1}]</span>
-            <Icon name="files" size={12} /> {c.fileName}
+            <Icon name={c.materialId ? 'newNote' : 'files'} size={12} />{' '}
+            {c.fileName}
             {page && <span className="opacity-70">{page}</span>}
           </button>
         );

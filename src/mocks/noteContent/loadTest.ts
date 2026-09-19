@@ -1,9 +1,7 @@
 import {
   createMaterialDocumentWithMetrics,
-  flashcardsNode,
   type MaterialValue,
   mermaidNode,
-  quizNode,
 } from '@/features/materials/document';
 import { MATERIAL_DOCUMENT_LIMITS } from '@/lib/const';
 import {
@@ -11,6 +9,8 @@ import {
   callout,
   codeBlock,
   columns,
+  embeddedFlashcards,
+  embeddedQuiz,
   equation,
   heading,
   hr,
@@ -140,36 +140,30 @@ function featureSkeleton(): MaterialValue {
       'Compact respiration map',
       'mermaid_bio_load_test'
     ),
-    quizNode(
-      {
-        questions: [
-          {
-            correct: [1],
-            explanation: 'Mitochondria produce most ATP.',
-            id: 'bio_load_q1',
-            level: 'recall',
-            options: [
-              { value: 'Nucleus' },
-              { value: 'Mitochondria' },
-              { value: 'Ribosome' },
-            ],
-            prompt: 'Primary ATP organelle?',
-            type: 'mcq',
-          },
-        ],
-      },
-      'quiz_bio_load_test'
-    ),
-    flashcardsNode(
-      [
+    embeddedQuiz('mat_note_bio_load_test', 'mat_embed_bio_load_quiz', {
+      questions: [
         {
-          back: 'Adenosine triphosphate',
-          front: 'ATP expands to?',
-          id: 'fc_bio_load_1',
+          correct: [1],
+          explanation: 'Mitochondria produce most ATP.',
+          id: 'bio_load_q1',
+          level: 'recall',
+          options: [
+            { value: 'Nucleus' },
+            { value: 'Mitochondria' },
+            { value: 'Ribosome' },
+          ],
+          prompt: 'Primary ATP organelle?',
+          type: 'mcq',
         },
       ],
-      'fcset_bio_load_test'
-    ),
+    }),
+    embeddedFlashcards('mat_note_bio_load_test', 'mat_embed_bio_load_cards', [
+      {
+        back: 'Adenosine triphosphate',
+        front: 'ATP expands to?',
+        id: 'fc_bio_load_1',
+      },
+    ]),
     heading(2, 'Bulk filler (size load)'),
     p(
       'Everything below exists to approach the content-byte ceiling while staying feature-mixed.'

@@ -201,7 +201,7 @@ function MaterialBody({
   );
 }
 
-function MaterialContent({
+export function MaterialContent({
   materialId,
   mode,
   allowExternalAssets,

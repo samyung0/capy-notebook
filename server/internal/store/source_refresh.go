@@ -429,5 +429,10 @@ func (s *Store) workspaceIndexCounts(ctx context.Context, ws string, stats *Work
 			}
 		}
 	}
-	return rows.Err()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	return s.pool.QueryRow(ctx, `SELECT count(*) FROM materials
+		WHERE workspace_id=$1 AND kind='note' AND trashed_at IS NULL
+		  AND (index_dirty_at IS NOT NULL OR index_job_id IS NOT NULL)`, ws).Scan(&stats.PendingNotes)
 }

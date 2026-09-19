@@ -390,6 +390,11 @@ export const qk = {
   notificationPrefs: ['notification-prefs'] as const,
   notifications: ['notifications'] as const,
   notificationUnread: ['notifications', 'unread-count'] as const,
+  ownedFiles: (params?: unknown) => ['files', 'owned', params ?? null] as const,
+  ownedFilesRoot: ['files', 'owned'] as const,
+  ownedMaterials: (params?: unknown) =>
+    ['materials', 'owned', params ?? null] as const,
+  ownedMaterialsRoot: ['materials', 'owned'] as const,
   quiz: (id: string) => ['quiz', id] as const,
   quizzes: ['quizzes'] as const,
   search: (q: string) => ['search', q] as const,

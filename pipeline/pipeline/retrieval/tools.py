@@ -627,15 +627,53 @@ async def _describe_documents(args: dict[str, Any], ctx: ToolContext) -> ToolRes
         return resolved
     if len(resolved.file_ids) > _DESCRIBE_CAP:
         return _refused(f"describe_documents accepts at most {_DESCRIBE_CAP} file ids.")
-    rows = await store.file_summaries(ctx.workspace_id, resolved.file_ids)
-    if not rows:
-        return _result("No summaries for those documents.")
+    outline = await _scope_outline(ctx)
+    notes = {
+        str(item["id"])
+        for item in outline.get("files") or []
+        if item.get("kind") == "material"
+    }
+    file_ids = [fid for fid in resolved.file_ids if fid not in notes]
+    rows = await store.file_summaries(ctx.workspace_id, file_ids)
     lines: list[str] = []
     for file in rows:
         head = f"### {file['name']} (file_id={file['id']})"
         body = file.get("summary") or file.get("descriptor") or "(no summary yet)"
         lines.append(f"{head}\n{body}")
+    for note_id in (fid for fid in resolved.file_ids if fid in notes):
+        lines.append(await _describe_note(note_id))
+    if not lines:
+        return _result("No summaries for those documents.")
     return _result("\n\n".join(lines))
+
+
+_NOTE_EXCERPT_WORDS = 250
+
+
+async def _describe_note(note_id: str) -> str:
+    """A note has no summary: its heading outline, or its first words when it
+    has no headings."""
+    try:
+        resp = await asyncio.to_thread(
+            _get_json, f"/api/internal/materials/{note_id}/index-text"
+        )
+    except requests.RequestException as exc:
+        return f"### (id={note_id})\nCould not read the note: {exc}"
+    if resp.status_code != 200:
+        return f"### (id={note_id})\nThe note is not available."
+    body = resp.json() if isinstance(resp.json(), dict) else {}
+    text = str(body.get("text") or "")
+    head = f"### {body.get('title') or ''} (id={note_id}, kind=material)"
+    headings = [
+        line.strip() for line in text.splitlines() if line.lstrip().startswith("#")
+    ]
+    if headings:
+        return head + "\n" + "\n".join(headings)
+    words = text.split()
+    excerpt = " ".join(words[:_NOTE_EXCERPT_WORDS])
+    if len(words) > _NOTE_EXCERPT_WORDS:
+        excerpt += " …"
+    return head + "\n" + (excerpt or "(empty note)")
 
 
 def _file_line(file: dict[str, Any], editable: bool) -> str:
@@ -1563,6 +1601,10 @@ async def _restore_file(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     if result.effects:
         await _after_lifecycle_change(ctx, kind, rid, trashed=False)
     return result
+
+
+def _get_json(path: str) -> requests.Response:
+    return requests.get(_material_url(path), headers=_material_headers(), timeout=15)
 
 
 def _post_json(path: str, payload: dict[str, Any]) -> requests.Response:

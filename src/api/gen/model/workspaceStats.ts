@@ -15,6 +15,7 @@ export interface WorkspaceStats {
   indexed: number;
   notIndexable: number;
   notIndexed: number;
+  pendingNotes: number;
   pendingReindex: number;
   pendingReparse: number;
   quizzes: number;

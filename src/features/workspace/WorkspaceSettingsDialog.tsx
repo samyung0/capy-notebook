@@ -181,6 +181,10 @@ export function WorkspaceSettingsDialog({
                         {stats.pendingReindex}
                       </span>
                     </div>
+                    <div className="flex justify-between">
+                      <span>{m.workspace_pending_notes()}</span>
+                      <span className="tabular-nums">{stats.pendingNotes}</span>
+                    </div>
                   </div>
                 </>
               )

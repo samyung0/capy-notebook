@@ -1,14 +1,19 @@
 import { encodeUrlIfNeeded, validateUrl } from '@platejs/link';
 import { MarkdownPlugin, serializeMd } from '@platejs/markdown';
+import type { QueryClient } from '@tanstack/react-query';
 import { KEYS, type SlatePlugin } from 'platejs';
 import type { PlateEditor } from 'platejs/react';
+import { cardsQuery, quizQuery } from '@/api/hooks';
 import {
   assertMaterialDocument,
   createMaterialDocument,
+  flashcardsNode,
+  isMaterialRefElement,
   type MaterialDocument,
   type MaterialElement,
   type MaterialNode,
   type MaterialValue,
+  quizNode,
 } from '@/features/materials/document';
 
 type MarkdownEditor = PlateEditor & {
@@ -69,10 +74,48 @@ export function importJsonDocument(
   return sanitizeImportedDocument(editor, assertMaterialDocument(source));
 }
 
-export function exportMarkdownDocument(editor: PlateEditor): string {
-  return serializeMd(editor, {
-    value: editor.children as MaterialValue,
-  });
+/** Embedded materials are exported inline: each reference is replaced by the
+ * quiz or flashcards block built from the material it points at. A reference
+ * that cannot be read is exported as it is. */
+async function resolveMaterialRefs(
+  value: MaterialValue,
+  queryClient: QueryClient
+): Promise<MaterialValue> {
+  return Promise.all(
+    value.map(async (node) => {
+      if (!isMaterialRefElement(node) || !node.materialId) return node;
+      try {
+        if (node.refKind === 'quiz') {
+          const quiz = await queryClient.fetchQuery(quizQuery(node.materialId));
+          return quizNode({
+            questions: quiz.questions,
+            timeLimitMin: quiz.timeLimitMin,
+          });
+        }
+        const cards = await queryClient.fetchQuery(cardsQuery(node.materialId));
+        return flashcardsNode(
+          cards.map((card) => ({
+            back: card.back,
+            front: card.front,
+            id: card.id,
+          }))
+        );
+      } catch {
+        return node;
+      }
+    })
+  );
+}
+
+export async function exportMarkdownDocument(
+  editor: PlateEditor,
+  queryClient: QueryClient
+): Promise<string> {
+  const value = await resolveMaterialRefs(
+    editor.children as MaterialValue,
+    queryClient
+  );
+  return serializeMd(editor, { value });
 }
 
 export async function importDocxDocument(

@@ -64,7 +64,7 @@ export default function AttemptResult() {
       <PanelWithInvertedRadius>
         <ErrorState
           action={
-            <Link preload="intent" to="/quizzes">
+            <Link preload="intent" to="/learning">
               <Button iconLeft="chevronLeft">{m.quiz_back()}</Button>
             </Link>
           }
@@ -85,7 +85,7 @@ export default function AttemptResult() {
           <Link
             className="text-fg-muted hover:text-fg"
             preload="intent"
-            to="/quizzes"
+            to="/learning"
           >
             <Icon name="chevronLeft" size={20} />
           </Link>
@@ -169,7 +169,7 @@ export default function AttemptResult() {
         )}
 
         <div className="mt-6">
-          <Link preload="intent" to="/quizzes">
+          <Link preload="intent" to="/learning">
             <Button iconLeft="chevronLeft">{m.quiz_back()}</Button>
           </Link>
         </div>

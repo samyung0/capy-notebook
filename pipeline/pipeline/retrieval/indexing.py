@@ -179,6 +179,66 @@ async def index_file(
     return {"chunks": len(rows), "fingerprint": fingerprint}
 
 
+async def index_material(
+    *,
+    workspace_id: str,
+    content_id: str,
+    material_id: str,
+    chunks: list[Chunk],
+    claim_job_id: str,
+) -> dict[str, Any]:
+    """Write a note's chunks into canonical content. Notes get no descriptor
+    or summary: the agent lists them by title and describes them from their
+    headings."""
+    if not chunks:
+        await store.replace_content_chunks(
+            workspace_id=workspace_id,
+            content_id=content_id,
+            rows=[],
+            claim_job_id=claim_job_id,
+        )
+        await store.mark_content_ready(content_id, claim_job_id=claim_job_id)
+        return {"chunks": 0}
+    indexed = [chunk.indexed_text() for chunk in chunks]
+    spec = embedding_spec()
+    reusable = await store.existing_material_vectors(
+        workspace_id=workspace_id,
+        material_id=material_id,
+        spec=spec,
+        inputs=indexed,
+    )
+    missing = list(dict.fromkeys(text for text in indexed if text not in reusable))
+    if missing:
+        reusable.update(zip(missing, await models.embed(missing, spec=spec)))
+    rows = [
+        {
+            "id": _uid("chk"),
+            "chunk_idx": idx,
+            "section_path": chunk.section_path,
+            "text": chunk.text,
+            "indexed_text": text,
+            "token_count": max(1, estimate_tokens(text)),
+            "page_start": None,
+            "page_end": None,
+            "regions": [],
+            "lang": detect_lang(chunk.text),
+            "search_text": "" if chunk.reference else tokenize_for_search(text),
+            "confidence": chunk.confidence,
+            "confidence_reasons": list(chunk.confidence_reasons),
+            "embedding": store.vector_literal(reusable[text]),
+        }
+        for idx, (chunk, text) in enumerate(zip(chunks, indexed))
+    ]
+    await store.replace_content_chunks(
+        workspace_id=workspace_id,
+        content_id=content_id,
+        rows=rows,
+        claim_job_id=claim_job_id,
+    )
+    await store.mark_content_ready(content_id, claim_job_id=claim_job_id)
+    return {"chunks": len(rows), "fingerprint": content_hash(chunks)}
+
+
 async def embed_copied_chunks(
     *,
     workspace_id: str,

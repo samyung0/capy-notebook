@@ -94,6 +94,22 @@ type CreateMaterialReq struct {
 	ScopeFileNames []string              `json:"scopeFileNames,omitempty"`
 }
 
+// CreateEmbeddedMaterialReq is the body for POST /api/materials/{id}/embedded:
+// a quiz or flashcard set authored inside the note {id}. The note title gives
+// the default title; the caller inserts the returned id as a reference block.
+type CreateEmbeddedMaterialReq struct {
+	Kind         store.MaterialKind `json:"kind" enum:"quiz,flashcards"`
+	Questions    []map[string]any   `json:"questions,omitempty"`
+	TimeLimitMin *int               `json:"timeLimitMin,omitempty" minimum:"1" maximum:"180"`
+	Cards        []CardContent      `json:"cards,omitempty"`
+}
+
+// CardContent is one authored flashcard face pair.
+type CardContent struct {
+	Front string `json:"front"`
+	Back  string `json:"back"`
+}
+
 // UpdateMaterialReq is the (partial) body for PATCH /api/materials/{id}/metadata.
 //
 // ChapterID files the material under a chapter (membership): omit to leave it

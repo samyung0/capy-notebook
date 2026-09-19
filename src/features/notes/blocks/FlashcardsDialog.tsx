@@ -62,7 +62,7 @@ export function FlashcardsDialog({
             size="lg"
             variant="accent"
           >
-            {m.action_insert()}
+            {initialCode ? m.action_save() : m.action_insert()}
           </Button>
         </>
       }

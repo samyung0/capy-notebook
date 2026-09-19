@@ -106,6 +106,20 @@ export interface MermaidElement extends MaterialElement {
   type: 'mermaid';
 }
 
+export type MaterialRefKind = 'quiz' | 'flashcards';
+
+/** A note's void reference to an embedded quiz or flashcard set. The material
+ * row holds the content. `pending` carries a fence body that has not been
+ * turned into a row yet (markdown import); it resolves in the editor. */
+export interface MaterialRefElement extends MaterialElement {
+  children: [MaterialText];
+  id: string;
+  materialId: string;
+  pending?: string;
+  refKind: MaterialRefKind;
+  type: 'material_ref';
+}
+
 export type CustomMaterialElement =
   | QuizElement
   | QuizQuestionElement
@@ -116,7 +130,11 @@ export type CustomMaterialElement =
   | FlashcardElement
   | FlashcardFaceElement
   | MermaidElement
-  | MermaidCaptionElement;
+  | MermaidCaptionElement
+  | MaterialRefElement;
+
+export const MATERIAL_REF_TYPE = 'material_ref';
+const MATERIAL_REF_KINDS = new Set<string>(['quiz', 'flashcards']);
 
 const CUSTOM_TYPES = new Set([
   'quiz',
@@ -130,6 +148,7 @@ const CUSTOM_TYPES = new Set([
   'flashcard_back',
   'mermaid',
   'mermaid_caption',
+  MATERIAL_REF_TYPE,
 ]);
 const MEDIA_TYPES = new Set(['img', 'image', 'audio', 'file']);
 const YOUTUBE_VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
@@ -234,6 +253,23 @@ function validateCustomElement(element: MaterialElement): boolean {
         isElementNode(element.children[0]) &&
         element.children[0].type === 'mermaid_caption'
       );
+    case MATERIAL_REF_TYPE: {
+      const ref = element as MaterialRefElement;
+      const resolved =
+        typeof ref.materialId === 'string' && ref.materialId.trim() !== '';
+      const pending =
+        ref.materialId === '' &&
+        typeof ref.pending === 'string' &&
+        ref.pending !== '';
+      return (
+        hasId(element) &&
+        (resolved || pending) &&
+        MATERIAL_REF_KINDS.has(ref.refKind) &&
+        element.children.length === 1 &&
+        isTextNode(element.children[0]) &&
+        element.children[0].text === ''
+      );
+    }
     default:
       return true;
   }
@@ -575,6 +611,29 @@ export function flashcardsNodeFromFence(
   id?: string
 ): FlashcardsElement {
   return flashcardsNode(parseFlashcardsFenceBody(code).cards, id);
+}
+
+/** Reference block for an embedded material. Without a material id the fence
+ * body is kept as `pending` until the editor creates the row. */
+export function materialRefNode(
+  materialId: string,
+  refKind: MaterialRefKind,
+  pending?: string
+): MaterialRefElement {
+  return {
+    children: [{ text: '' }],
+    id: uid('block'),
+    materialId,
+    ...(materialId ? {} : { pending }),
+    refKind,
+    type: MATERIAL_REF_TYPE,
+  };
+}
+
+export function isMaterialRefElement(
+  value: unknown
+): value is MaterialRefElement {
+  return isElementNode(value) && value.type === MATERIAL_REF_TYPE;
 }
 
 export function mermaidNode(

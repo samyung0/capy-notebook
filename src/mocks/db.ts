@@ -14,6 +14,7 @@ import type {
   FlashcardSet,
   Label,
   Material,
+  MaterialListItem,
   NotificationPrefs,
   PublicFlashcardSet,
   PublicQuiz,
@@ -54,6 +55,7 @@ import {
   EDITOR_WORKSPACE_ID,
 } from './editorSeed';
 import { seedNotes } from './noteContent';
+import { embeddedSeeds } from './noteContent/helpers';
 import { buildBiologyLoadTestValue } from './noteContent/loadTest';
 import {
   buildSmallPerfDocument,
@@ -1561,6 +1563,30 @@ if (import.meta.env.VITE_LOAD_TEST_SEED === 'true') {
   );
 }
 
+/* Embedded quiz and flashcard rows referenced from the note fixtures. */
+for (const seed of embeddedSeeds) {
+  const note = materials.find((mt) => mt.id === seed.noteId);
+  if (!note) continue;
+  materials.push(
+    makeMaterial({
+      capabilities: ownerCapabilities,
+      chapterId: null,
+      content: createMaterialDocument([seed.block]),
+      createdAt: note.createdAt,
+      id: seed.id,
+      kind: seed.kind,
+      parentMaterialId: note.id,
+      privacy: 'private',
+      role: 'owner',
+      scopeChapters: [],
+      scopeFileNames: [],
+      title: `${note.title} · ${seed.kind === 'quiz' ? 'Quiz' : 'Flashcards'}`,
+      workspaceId: note.workspaceId,
+      workspaceName: note.workspaceName,
+    })
+  );
+}
+
 /** Derive the typed Quiz view from a quiz material (questions from the fence). */
 export function quizFromMaterial(mt: Material): Quiz {
   const { questions, timeLimitMin } =
@@ -1624,6 +1650,44 @@ export function flashcardSetFromMaterial(mt: Material): FlashcardSet {
     privacy: mt.privacy,
     workspaceId: mt.workspaceId,
     workspaceName: mt.workspaceName,
+  };
+}
+
+/** One Create page row for a material, with the per-kind counts the card shows. */
+export function materialListItem(mt: Material): MaterialListItem {
+  const parent = mt.parentMaterialId
+    ? materials.find((p) => p.id === mt.parentMaterialId)
+    : undefined;
+  const quiz = mt.kind === 'quiz' ? quizFromMaterial(mt) : undefined;
+  const set =
+    mt.kind === 'flashcards' ? flashcardSetFromMaterial(mt) : undefined;
+  return {
+    chapterId: mt.chapterId,
+    chapterName: chapters.find((c) => c.id === mt.chapterId)?.name ?? '',
+    createdAt: mt.createdAt,
+    id: mt.id,
+    kind: mt.kind,
+    parentMaterialId: mt.parentMaterialId ?? '',
+    parentTitle: parent?.title ?? '',
+    privacy: mt.privacy,
+    sizeBytes: mt.contentBytes,
+    title: mt.title,
+    updatedAt: mt.updatedAt,
+    workspaceId: mt.workspaceId,
+    workspaceName: mt.workspaceName,
+    ...(quiz
+      ? {
+          questionCount: quiz.questions.length,
+          timeLimitMin: quiz.timeLimitMin,
+        }
+      : {}),
+    ...(set
+      ? {
+          cardCount: set.cardCount,
+          dueCount: set.dueCount,
+          knownPct: set.knownPct,
+        }
+      : {}),
   };
 }
 

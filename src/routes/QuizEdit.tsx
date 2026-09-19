@@ -39,7 +39,7 @@ export default function QuizEdit() {
   }, [quiz]);
 
   function back() {
-    navigate({ to: '/quizzes' });
+    navigate({ to: '/create' });
   }
 
   async function save() {

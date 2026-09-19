@@ -164,7 +164,7 @@ export type AnalyticsEvent =
   | {
       name: 'item_cloned';
       props: {
-        kind: 'workspace' | 'quiz' | 'flashcards';
+        kind: 'workspace' | 'quiz' | 'flashcards' | 'material';
         source: 'share' | 'explore' | 'app';
       };
     }
@@ -220,7 +220,7 @@ export function trackQuotaBlocked(error: unknown, surface: string): void {
 }
 
 export function trackItemCloned(
-  kind: 'workspace' | 'quiz' | 'flashcards',
+  kind: 'workspace' | 'quiz' | 'flashcards' | 'material',
   pathname = typeof window === 'undefined' ? '' : window.location.pathname
 ): void {
   const source = cloneSourceFromPath(pathname);

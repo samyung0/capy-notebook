@@ -4,6 +4,7 @@ import {
   FlashcardElement,
   FlashcardFrontElement,
   FlashcardsElement,
+  MaterialRefElement,
   MermaidCaptionElement,
   MermaidElement,
   QuizElement,
@@ -12,7 +13,12 @@ import {
   QuizPromptElement,
   QuizQuestionElement,
 } from './elements';
-import { FLASHCARDS_KEY, MERMAID_KEY, QUIZ_KEY } from './shared';
+import {
+  FLASHCARDS_KEY,
+  MATERIAL_REF_KEY,
+  MERMAID_KEY,
+  QUIZ_KEY,
+} from './shared';
 
 export const QuizElementPlugin = createPlatePlugin({
   key: QUIZ_KEY,
@@ -69,7 +75,13 @@ export const MermaidCaptionPlugin = createPlatePlugin({
   node: { isElement: true, type: 'mermaid_caption' },
 }).withComponent(MermaidCaptionElement);
 
+export const MaterialRefPlugin = createPlatePlugin({
+  key: MATERIAL_REF_KEY,
+  node: { isElement: true, isVoid: true, type: MATERIAL_REF_KEY },
+}).withComponent(MaterialRefElement);
+
 export const customBlockPlugins = [
+  MaterialRefPlugin,
   QuizElementPlugin,
   QuizQuestionPlugin,
   QuizPromptPlugin,

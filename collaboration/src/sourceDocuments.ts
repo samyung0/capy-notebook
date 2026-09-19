@@ -244,19 +244,24 @@ export class SourceDocumentStore {
     endpoint: string,
     body?: unknown
   ): Promise<T> {
-    const response = await fetch(
-      `${this.apiURL}/internal/collaboration/files/${encodeURIComponent(fileId)}/${endpoint}`,
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Collaboration-Secret': this.secret,
-          ...retryEventHeaders(),
-        },
-        method: body === undefined ? 'GET' : 'POST',
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        signal: AbortSignal.timeout(60_000),
-      }
+    return this.requestPath(
+      `/internal/collaboration/files/${encodeURIComponent(fileId)}/${endpoint}`,
+      body
     );
+  }
+
+  private async requestPath<T>(path: string, body?: unknown): Promise<T> {
+    const endpoint = path.split('/').pop() ?? path;
+    const response = await fetch(`${this.apiURL}${path}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Collaboration-Secret': this.secret,
+        ...retryEventHeaders(),
+      },
+      method: body === undefined ? 'GET' : 'POST',
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      signal: AbortSignal.timeout(60_000),
+    });
     if (!response.ok)
       throw withEventId(
         new SourceRequestError(
@@ -875,12 +880,40 @@ export class SourceDocumentStore {
     const jobs = await this.pool.query<{ id: string; file_id: string }>(
       `SELECT j.id,c.file_id FROM jobs j JOIN source_refresh_candidates c ON c.job_id=j.id WHERE j.type='source_refresh' AND (j.status='pending' OR (j.status='running' AND j.lease_expires_at<now())) ORDER BY j.created_at LIMIT 2`
     );
+    await this.scheduleNoteIndexes();
     for (const job of jobs.rows) {
       try {
         await this.exportCandidate(job.file_id, job.id);
       } catch (error) {
         if (!(error instanceof SourceRequestError) || error.status !== 409)
           console.warn('source refresh failed:', error);
+      }
+    }
+  }
+
+  /** Dirty workspace notes that sat idle become one ingest job each. Go admits
+   * or refuses (409) each request; a real failure is parked on the note until
+   * its content changes again. */
+  async scheduleNoteIndexes() {
+    const eligible = await this.pool.query<{ id: string }>(`
+      SELECT m.id FROM materials m JOIN workspaces w ON w.id=m.workspace_id
+      WHERE m.kind='note' AND m.trashed_at IS NULL AND m.index_dirty_at IS NOT NULL
+        AND m.index_job_id IS NULL AND m.index_error IS NULL AND w.auto_reindex
+        AND m.updated_at < now()-interval '15 seconds'
+      ORDER BY m.updated_at LIMIT 8`);
+    for (const row of eligible.rows) {
+      try {
+        await this.requestPath(
+          `/internal/collaboration/materials/${encodeURIComponent(row.id)}/index`,
+          {}
+        );
+      } catch (error) {
+        if (error instanceof SourceRequestError && error.status === 409)
+          continue;
+        await this.pool.query(
+          'UPDATE materials SET index_error=$2 WHERE id=$1 AND index_job_id IS NULL',
+          [row.id, error instanceof Error ? error.message : String(error)]
+        );
       }
     }
   }

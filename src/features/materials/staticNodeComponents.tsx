@@ -70,12 +70,14 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import type {
   FlashcardElement as FlashcardNode,
+  MaterialRefElement as MaterialRefNode,
   MermaidElement as MermaidNode,
   QuizOptionElement as QuizOptionNode,
   QuizQuestionElement as QuizQuestionNode,
 } from './document';
 import { quizQuestionElementToQuestion } from './document';
 import { Katex } from './Katex';
+import { MaterialRefCard } from './MaterialRefCard';
 import { StandaloneMaterialTitle } from './MaterialRenderContext';
 import { type MediaAssetNode, MediaAssetView } from './MediaAssetView';
 import { Mermaid } from './Mermaid';
@@ -385,6 +387,19 @@ function FlashcardsElement(props: SlateElementProps) {
   );
 }
 
+function MaterialRefElement(props: SlateElementProps) {
+  const element = props.element as unknown as MaterialRefNode;
+  return (
+    <SlateElement {...props} className="my-4">
+      <MaterialRefCard
+        materialId={element.materialId}
+        refKind={element.refKind}
+      />
+      {props.children}
+    </SlateElement>
+  );
+}
+
 function MermaidElement(props: SlateElementProps) {
   const element = props.element as unknown as MermaidNode;
   return (
@@ -519,6 +534,7 @@ export const staticNoteComponents = {
   kbd: mark('kbd', KBD_MARK_CLASS),
   li: element('li', LI_CLASS),
   lic: element('span'),
+  material_ref: MaterialRefElement,
   mention: Mention,
   mermaid: MermaidElement,
   mermaid_caption: element('p', MERMAID_CAPTION_CLASS),

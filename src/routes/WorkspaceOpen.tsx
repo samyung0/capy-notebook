@@ -137,6 +137,15 @@ export default function WorkspaceOpen() {
 
   function openCitation(citation: Citation) {
     if (!confirmViewerReplacement()) return;
+    if (citation.materialId) {
+      setToolsOpen(false);
+      navigate({
+        replace: true,
+        search: { material: citation.materialId, mode: 'view' },
+        to: '.',
+      });
+      return;
+    }
     const regions = citation.regions ?? [];
     const regionPage = regions.find((region) => region.page > 0)?.page;
     setCitationTarget({

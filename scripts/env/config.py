@@ -91,15 +91,7 @@ def github_values():
         )
     variables = json.loads(os.environ["CAPY_GITHUB_VARS"])
     secrets = json.loads(os.environ["CAPY_GITHUB_SECRETS"])
-    # Actions injects its automatic token into toJSON(secrets), spelled lowercase.
-    supplied = {
-        key
-        for key in variables.keys() | secrets.keys()
-        if key.upper() != "GITHUB_TOKEN"
-    }
-    unknown = supplied - MANIFEST.keys()
-    if unknown:
-        fail("unknown GitHub configuration keys: " + ", ".join(sorted(unknown)))
+    # GitHub contexts also contain unrelated repository and organization settings.
     result = {}
     for key, spec in MANIFEST.items():
         if spec["targets"] == ["local"]:

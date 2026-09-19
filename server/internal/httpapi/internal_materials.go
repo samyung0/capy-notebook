@@ -397,6 +397,21 @@ func (a *api) internalGetAgentOperation(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, op)
 }
 
+// internalMaterialIndexText hands the ingest worker the text of a workspace
+// note; 404 covers a trashed, standalone or missing note, which ends the job.
+func (a *api) internalMaterialIndexText(w http.ResponseWriter, r *http.Request) {
+	if !a.pipelineSecretOK(r) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"message": "unauthorized"})
+		return
+	}
+	text, err := a.s.MaterialIndexText(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, text)
+}
+
 func (a *api) pipelineSecretOK(r *http.Request) bool {
 	secret := a.cfg.PipelineSecret
 	return secret != "" &&

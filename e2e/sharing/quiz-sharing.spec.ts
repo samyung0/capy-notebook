@@ -6,10 +6,11 @@ test.describe('quiz sharing', () => {
     ownerApi,
     ownerPage,
   }) => {
-    await ownerPage.goto('/quizzes');
+    await ownerPage.goto('/create');
     const created = waitForApi(ownerPage, apiEndsWith('/api/quizzes', 'POST'));
+    await ownerPage.getByRole('button', { exact: true, name: 'New' }).click();
     await ownerPage
-      .getByRole('button', { exact: true, name: 'New quiz' })
+      .getByRole('menuitem', { exact: true, name: 'Quiz' })
       .click();
     const response = await created;
     expect(response.status()).toBe(201);

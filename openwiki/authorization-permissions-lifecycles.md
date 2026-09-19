@@ -318,6 +318,14 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   anything.
 - Signed-in viewers can read a shared quiz or flashcards, but cannot change
   its questions or cards. Anonymous visitors must sign in to read this content.
+- An embedded quiz or flashcard set (`parent_material_id` set) has no lifecycle
+  or sharing of its own: `materialEffectiveAccess` evaluates the parent note,
+  the sharing endpoint rejects it, it is hidden from the workspace tree, the
+  trash listing and the agent's source list, and it cannot be trashed
+  directly. Trashing, restoring, purging and cloning the note carry its rows
+  along (clones rewrite the reference ids). Removing the reference block
+  trashes the row on the next projection once it is older than a 30-second
+  grace window, and a projection that references it again restores it.
 - Cloning a readable standalone quiz, flashcards, or material creates a new
   owner-controlled copy charged to the signed-in cloner. Cloning a workspace
   additionally requires membership of any role or an effective editor grant.

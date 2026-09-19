@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import type { SlatePlugin } from 'platejs';
 import { useState } from 'react';
 import {
@@ -22,6 +23,7 @@ import { m } from '@/i18n';
 
 export function ExportMenu({ editor }: { editor: AnyEditor }) {
   const [open, setOpen] = useState(false);
+  const queryClient = useQueryClient();
   return (
     <DropdownMenu modal={false} onOpenChange={setOpen} open={open}>
       <DropdownMenuTrigger asChild>
@@ -40,10 +42,8 @@ export function ExportMenu({ editor }: { editor: AnyEditor }) {
         <MenuRow
           label={m.editor_export_md()}
           onSelect={() =>
-            downloadEditorText(
-              exportMarkdownDocument(editor),
-              'document.md',
-              'text/markdown'
+            void exportMarkdownDocument(editor, queryClient).then((markdown) =>
+              downloadEditorText(markdown, 'document.md', 'text/markdown')
             )
           }
         />

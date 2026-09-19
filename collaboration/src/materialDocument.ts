@@ -272,6 +272,9 @@ function validateNode(node: MaterialNode, depth: number) {
     case 'mindmap':
       validateDiagram(node);
       break;
+    case MATERIAL_REF_TYPE:
+      validateMaterialRef(node);
+      break;
     case 'video':
       if (node.provider !== 'youtube') fail('video provider must be youtube');
       if (
@@ -286,6 +289,45 @@ function validateNode(node: MaterialNode, depth: number) {
       break;
     default:
       break;
+  }
+}
+
+/** The void block a note stores for an embedded quiz or flashcard set. */
+export const MATERIAL_REF_TYPE = 'material_ref';
+const REF_KINDS = new Set(['quiz', 'flashcards']);
+
+function validateMaterialRef(node: MaterialNode) {
+  requireId(node);
+  // A fence imported as markdown is a pending reference until the editor
+  // creates its row: no material id yet, the fence body in `pending`.
+  if (typeof node.materialId !== 'string') fail('materialId is required');
+  if (
+    node.materialId.trim() === '' &&
+    (typeof node.pending !== 'string' || node.pending === '')
+  ) {
+    fail('materialId is required');
+  }
+  if (typeof node.refKind !== 'string' || !REF_KINDS.has(node.refKind)) {
+    fail('refKind must be quiz or flashcards');
+  }
+  const leaves = children(node);
+  if (leaves.length !== 1 || leaves[0].text !== '') {
+    fail('material reference carries one empty text leaf');
+  }
+}
+
+/** Notes keep study blocks in their own rows: no inline quiz/flashcards, and a
+ * reference only as a top-level block. Other kinds carry no references. */
+function validateNoteReferences(nodes: MaterialNode[]) {
+  for (const inline of ['quiz', 'flashcards']) {
+    if (containsType(nodes, inline)) {
+      fail(`note cannot contain an inline ${inline} block`);
+    }
+  }
+  for (const [index, node] of nodes.entries()) {
+    if (containsType(children(node), MATERIAL_REF_TYPE)) {
+      fail(`value[${index}]: material reference must be a top-level block`);
+    }
   }
 }
 
@@ -328,10 +370,16 @@ export function assertCanonicalMaterialValue(value: unknown[], kind: string) {
     case 'diagram':
       requiredTypes = ['mermaid', 'diagram', 'mindmap'];
       break;
+    case 'note':
+      validateNoteReferences(nodes);
+      return;
     default:
       return;
   }
   if (!requiredTypes.some((type) => containsType(nodes, type))) {
     fail(`${kind} element is required`);
+  }
+  if (containsType(nodes, MATERIAL_REF_TYPE)) {
+    fail(`${kind} cannot contain a material reference`);
   }
 }

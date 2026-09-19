@@ -6,6 +6,7 @@ import {
   shift,
   useVirtualFloating,
 } from '@platejs/floating';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   PlateElement,
   type PlateElementProps,
@@ -13,10 +14,24 @@ import {
   useEditorSelector,
   useReadOnly,
 } from 'platejs/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import {
+  cardsQuery,
+  quizQuery,
+  useCreateCard,
+  useDeleteCard,
+  useUpdateCard,
+  useUpdateQuizContent,
+} from '@/api/hooks';
+import type { Flashcard } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { PopupMotion } from '@/components/ui/PopupMotion';
 import { ButtonTooltip } from '@/components/ui/Tooltip';
+import {
+  type FlashcardContent,
+  parseFlashcardsFenceBody,
+  parseQuizFenceBody,
+} from '@/features/materials/blocks';
 import {
   type FlashcardElement as FlashcardNode,
   type FlashcardsElement as FlashcardsNode,
@@ -24,6 +39,7 @@ import {
   flashcardsNodeFromFence,
   type MaterialElement,
   type MaterialNode,
+  type MaterialRefElement as MaterialRefNode,
   type MermaidElement as MermaidNode,
   normalizeMaterialValue,
   type QuizElement as QuizNode,
@@ -33,6 +49,7 @@ import {
   quizNodeFromFence,
   quizQuestionElementToQuestion,
 } from '@/features/materials/document';
+import { MaterialRefCard } from '@/features/materials/MaterialRefCard';
 import { StandaloneMaterialTitle } from '@/features/materials/MaterialRenderContext';
 import { Mermaid } from '@/features/materials/Mermaid';
 import { mermaidBlockLabel } from '@/features/materials/MermaidBlockLabel';
@@ -434,6 +451,114 @@ export function FlashcardsElement(props: PlateElementProps) {
     >
       <StandaloneMaterialTitle kinds="flashcards" />
     </StudyBlockRoot>
+  );
+}
+
+/** A note's embedded quiz or flashcard set: a void block holding the material
+ * id, rendered as a compact card. Edits go through the authoring dialogs and
+ * the material's own content endpoints, never through this document. */
+export function MaterialRefElement(props: PlateElementProps) {
+  const editor = useEditorRef();
+  const readOnly = useReadOnly();
+  const dialogs = useOptionalNoteBlockDialogs();
+  const queryClient = useQueryClient();
+  const element = props.element as unknown as MaterialRefNode;
+  const { materialId, refKind, pending } = element;
+  const { mutateAsync: updateQuizContent } = useUpdateQuizContent();
+  const { mutateAsync: createCard } = useCreateCard(materialId);
+  const { mutateAsync: updateCard } = useUpdateCard(materialId);
+  const { mutateAsync: deleteCard } = useDeleteCard(materialId);
+  const resolving = useRef(false);
+
+  // A fence imported as markdown lands here without a row. Create it once and
+  // point the node at it; a failed creation drops the block.
+  useEffect(() => {
+    if (materialId || !pending || readOnly || !dialogs || resolving.current)
+      return;
+    resolving.current = true;
+    const at = () => editor.api.findPath(props.element);
+    dialogs.createEmbedded(refKind, pending).then(
+      (material) => {
+        const path = at();
+        if (!path) return;
+        editor.tf.setNodes({ materialId: material.id }, { at: path });
+        editor.tf.unsetNodes('pending', { at: path });
+      },
+      () => {
+        const path = at();
+        if (path) editor.tf.removeNodes({ at: path });
+      }
+    );
+  }, [dialogs, editor, materialId, pending, props.element, readOnly, refKind]);
+
+  async function editQuiz() {
+    const quiz = await queryClient.fetchQuery(quizQuery(materialId));
+    dialogs?.openQuiz(
+      quizFenceBody({
+        questions: quiz.questions,
+        timeLimitMin: quiz.timeLimitMin,
+      }),
+      (code) => {
+        const block = parseQuizFenceBody(code);
+        void updateQuizContent({
+          id: materialId,
+          questions: block.questions,
+          ...(block.timeLimitMin == null
+            ? {}
+            : { timeLimitMin: block.timeLimitMin }),
+        });
+      }
+    );
+  }
+
+  async function editFlashcards() {
+    const current = await queryClient.fetchQuery(cardsQuery(materialId));
+    dialogs?.openFlashcards(
+      flashcardsFenceBody(
+        current.map((card) => ({
+          back: card.back,
+          front: card.front,
+          id: card.id,
+        }))
+      ),
+      (code) => {
+        void syncCards(current, parseFlashcardsFenceBody(code).cards);
+      }
+    );
+  }
+
+  /** Apply the dialog's card list through the per-card content endpoints. */
+  async function syncCards(current: Flashcard[], next: FlashcardContent[]) {
+    const kept = new Set(next.map((card) => card.id));
+    for (const card of current) {
+      if (!kept.has(card.id)) await deleteCard(card.id);
+    }
+    for (const card of next) {
+      const existing = current.find((item) => item.id === card.id);
+      if (!existing) {
+        await createCard({ back: card.back, front: card.front });
+      } else if (existing.front !== card.front || existing.back !== card.back) {
+        await updateCard({ back: card.back, front: card.front, id: card.id });
+      }
+    }
+  }
+
+  const canEdit = !readOnly && !!dialogs && !!materialId;
+  return (
+    <PlateElement {...props} className="my-4">
+      <MaterialRefCard
+        materialId={materialId}
+        onEdit={
+          canEdit
+            ? refKind === 'quiz'
+              ? () => void editQuiz()
+              : () => void editFlashcards()
+            : undefined
+        }
+        refKind={refKind}
+      />
+      {props.children}
+    </PlateElement>
   );
 }
 

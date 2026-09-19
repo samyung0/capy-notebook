@@ -10,6 +10,8 @@ export interface Citation {
   chunkId?: string;
   fileId: string;
   fileName: string;
+  kind?: string;
+  materialId?: string;
   pageEnd?: number;
   pageStart?: number;
   /** @nullable */

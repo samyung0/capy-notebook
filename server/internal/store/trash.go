@@ -149,16 +149,17 @@ func (s *Store) TrashMaterial(ctx context.Context, actorID, materialID, expected
 	}
 	defer tx.Rollback(ctx)
 	var ownerID, kind, title string
-	var workspaceID *string
+	var workspaceID, parentID *string
 	var trashedAt *time.Time
-	if err := tx.QueryRow(ctx, `SELECT owner_user_id, workspace_id, kind, title, trashed_at
-		FROM materials WHERE id=$1`, materialID).Scan(&ownerID, &workspaceID, &kind, &title, &trashedAt); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT owner_user_id, workspace_id, kind, title, trashed_at, parent_material_id
+		FROM materials WHERE id=$1`, materialID).Scan(&ownerID, &workspaceID, &kind, &title, &trashedAt, &parentID); err != nil {
 		if isNoRows(err) {
 			return AgentOperation{}, ErrNotFound
 		}
 		return AgentOperation{}, err
 	}
-	if expectedKind != "" && kind != expectedKind {
+	// An embedded row leaves with its reference block, never on its own.
+	if (expectedKind != "" && kind != expectedKind) || parentID != nil {
 		return AgentOperation{}, ErrNotFound
 	}
 	if workspaceID != nil {
@@ -196,6 +197,11 @@ func (s *Store) TrashMaterial(ctx context.Context, actorID, materialID, expected
 		}
 		if err := invalidateEditInversesTx(ctx, tx, agenttools.KindMaterial, materialID, "trashed"); err != nil {
 			return nil, err
+		}
+		if kind == "note" {
+			if err := trashEmbeddedChildrenTx(ctx, tx, materialID, actorID, episode); err != nil {
+				return nil, err
+			}
 		}
 		return &agenttools.ResourceEffect{
 			Operation: agenttools.EffectTrashed,
@@ -259,7 +265,8 @@ func (s *Store) ListTrash(ctx context.Context, ownerID, workspaceID string, limi
 			SELECT 'material', m.id, m.title, m.kind, COALESCE(m.workspace_id,''), m.workspace_name,
 				m.size_bytes, m.trashed_at, m.purge_after, m.trash_episode_id
 			FROM materials m
-			WHERE m.trashed_at IS NOT NULL AND m.owner_user_id=$1 AND ($2='' OR m.workspace_id=$2)
+			WHERE m.trashed_at IS NOT NULL AND m.owner_user_id=$1 AND m.parent_material_id IS NULL
+				AND ($2='' OR m.workspace_id=$2)
 		) t
 		WHERE $3::timestamptz IS NULL OR (t.trashed_at, t.id) < ($3::timestamptz, $4::text)
 		ORDER BY t.trashed_at DESC, t.id DESC
@@ -398,9 +405,16 @@ func (s *Store) RestoreTrashed(ctx context.Context, ownerID string, kind agentto
 			if _, err := tx.Exec(ctx, `UPDATE source_documents SET epoch=epoch+1, updated_at=now() WHERE file_id=$1`, id); err != nil {
 				return nil, err
 			}
-		} else if _, err := tx.Exec(ctx, `UPDATE material_yjs_documents SET room_schema=room_schema+1, updated_at=now()
-			WHERE material_id=$1`, id); err != nil {
-			return nil, err
+		} else {
+			if _, err := tx.Exec(ctx, `UPDATE material_yjs_documents SET room_schema=room_schema+1, updated_at=now()
+				WHERE material_id=$1`, id); err != nil {
+				return nil, err
+			}
+			if subKind == "note" {
+				if err := restoreEmbeddedChildrenTx(ctx, tx, id, episodeID); err != nil {
+					return nil, err
+				}
+			}
 		}
 		ref := agenttools.ResourceRef{Kind: kind, ID: id, Title: title, WorkspaceID: wsID}
 		if kind == agenttools.KindMaterial {

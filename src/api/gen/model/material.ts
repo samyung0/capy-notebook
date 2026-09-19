@@ -28,6 +28,7 @@ export interface Material {
   kind: MaterialKind;
   maxDepth: number;
   nodeCount: number;
+  parentMaterialId?: string;
   position: number;
   privacy: Privacy;
   provenance?: Provenance;

@@ -149,6 +149,95 @@ async def existing_file_vectors(
         }
 
 
+async def existing_material_vectors(
+    *, workspace_id: str, material_id: str, spec, inputs: list[str]
+) -> dict[str, list[float]]:
+    """Reuse exact embedding input from this note's current index."""
+    table = vector_table(spec.provider_slug, spec.model_slug, spec.version)
+    db = await pool()
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            f"""
+            SELECT c.indexed_text, v.embedding::text AS embedding
+            FROM rag_material_contents mc
+            JOIN rag_contents rc ON rc.id = mc.content_id AND rc.status = 'ready'
+            JOIN rag_chunks c ON c.content_id = rc.id
+            JOIN {table} v ON v.chunk_id = c.id
+            WHERE mc.material_id = %s AND mc.workspace_id = %s
+              AND rc.embedding_provider_slug = %s AND rc.embedding_model_slug = %s
+              AND rc.embedding_model_version = %s
+              AND c.indexed_text = ANY(%s::text[])
+            """,
+            (
+                material_id,
+                workspace_id,
+                spec.provider_slug,
+                spec.model_slug,
+                spec.version,
+                inputs,
+            ),
+        )
+        return {
+            row["indexed_text"]: json.loads(row["embedding"])
+            for row in await cur.fetchall()
+        }
+
+
+async def attach_material_content(
+    *, workspace_id: str, material_id: str, content_hash: str, claim_job_id: str
+) -> dict[str, Any]:
+    """Attach a note to canonical workspace content, like attach_file_content
+    without a source revision: the note's projection is the only version."""
+    content_id = f"rgc_{secrets.token_hex(8)}"
+    db = await pool()
+    async with db.connection() as conn, conn.transaction():
+        cur = await conn.execute(
+            """
+            INSERT INTO rag_contents
+                (id, workspace_id, content_hash, status, claim_job_id, updated_at)
+            VALUES (%s, %s, %s, 'processing', %s, now())
+            ON CONFLICT (workspace_id, content_hash) DO NOTHING
+            RETURNING id, status, claim_job_id
+            """,
+            (content_id, workspace_id, content_hash, claim_job_id),
+        )
+        row = await cur.fetchone()
+        created = row is not None
+        if row is None:
+            cur = await conn.execute(
+                """
+                SELECT id, status, claim_job_id FROM rag_contents
+                WHERE workspace_id = %s AND content_hash = %s
+                FOR UPDATE
+                """,
+                (workspace_id, content_hash),
+            )
+            row = await cur.fetchone()
+        if row is None:
+            raise RuntimeError("canonical retrieval content disappeared")
+        if (
+            not created
+            and row["status"] != "ready"
+            and row["claim_job_id"] == claim_job_id
+        ):
+            created = True
+        await conn.execute(
+            """
+            INSERT INTO rag_material_contents (material_id, workspace_id, content_id)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (material_id) DO UPDATE SET
+                workspace_id = EXCLUDED.workspace_id,
+                content_id = EXCLUDED.content_id
+            """,
+            (material_id, workspace_id, row["id"]),
+        )
+        return {
+            "content_id": row["id"],
+            "ready": row["status"] == "ready",
+            "created": created,
+        }
+
+
 async def _lock_source_candidate(conn, refresh: dict[str, Any]) -> None:
     file_id = refresh["fileId"]
     await conn.execute(
@@ -868,16 +957,28 @@ _LOOKUP_TERMS = (2, 3)
 # scope and matched against the chunks of that language. A French query
 # against English chunks is parsed by the english stemmer and misses, which is
 # what should happen: the vector leg carries cross-language questions.
+# Files and notes alias the same canonical content and rank in one pool; the
+# scoped resource carries a kind so citations can open the right thing.
 _SEARCH_SQL_TEMPLATE = """
 WITH scoped_files AS (
-        SELECT DISTINCT ON (fc.content_id)
-                     fc.content_id, f.id AS file_id, f.name AS file_name
-        FROM rag_file_contents fc
-        JOIN rag_contents rc ON rc.id = fc.content_id AND rc.status = 'ready'
-        JOIN files f ON f.id = fc.file_id
-        WHERE fc.workspace_id = %(ws)s AND f.trashed_at IS NULL
-            AND (%(no_filter)s OR f.id = ANY(%(file_ids)s))
-        ORDER BY fc.content_id, f.added_at, f.id
+        SELECT DISTINCT ON (content_id) content_id, file_id, file_name, kind
+        FROM (
+            SELECT fc.content_id, f.id AS file_id, f.name AS file_name,
+                   'file' AS kind, f.added_at AS ordered_at
+            FROM rag_file_contents fc
+            JOIN rag_contents rc ON rc.id = fc.content_id AND rc.status = 'ready'
+            JOIN files f ON f.id = fc.file_id
+            WHERE fc.workspace_id = %(ws)s AND f.trashed_at IS NULL
+                AND (%(no_filter)s OR f.id = ANY(%(file_ids)s))
+            UNION ALL
+            SELECT mc.content_id, m.id, m.title, 'material', m.created_at
+            FROM rag_material_contents mc
+            JOIN rag_contents rc ON rc.id = mc.content_id AND rc.status = 'ready'
+            JOIN materials m ON m.id = mc.material_id
+            WHERE mc.workspace_id = %(ws)s AND m.trashed_at IS NULL
+                AND (%(no_filter)s OR m.id = ANY(%(file_ids)s))
+        ) resources
+        ORDER BY content_id, ordered_at, file_id
 ),
 vec AS (
     SELECT c.id, v.embedding <=> %(vector)s::halfvec AS dist,
@@ -928,7 +1029,7 @@ fused AS (
           FROM lex
     ) parts GROUP BY id
 )
-SELECT c.id, sf.file_id, c.chunk_idx, c.section_path, c.text, c.page_start,
+SELECT c.id, sf.file_id, sf.kind, c.chunk_idx, c.section_path, c.text, c.page_start,
        c.page_end, c.regions, c.lang, c.confidence, c.confidence_reasons,
        sf.file_name, fused.score, fused.flat_score,
        vec.rank AS vec_rank, vec.dist AS vec_dist, lex.rank AS lex_rank
@@ -1108,6 +1209,24 @@ async def workspace_outline(workspace_id: str) -> dict[str, Any]:
         )
         files = [dict(row) for row in await cur.fetchall()]
 
+        # Indexed or not, every workspace note is a scope target; a note that
+        # is still dirty simply has no passages yet.
+        cur = await conn.execute(
+            """
+            SELECT m.id, m.title AS name, m.chapter_id, 'ready' AS status,
+                   '' AS descriptor, '' AS summary, 'material' AS kind,
+                   (SELECT count(*) FROM rag_chunks c
+                    JOIN rag_material_contents mc ON mc.content_id = c.content_id
+                    WHERE mc.material_id = m.id) AS chunks
+            FROM materials m
+            WHERE m.workspace_id = %s AND m.kind = 'note' AND m.trashed_at IS NULL
+              AND m.parent_material_id IS NULL
+            ORDER BY m.position, m.created_at
+            """,
+            (workspace_id,),
+        )
+        files.extend(dict(row) for row in await cur.fetchall())
+
     return {"chapters": chapters, "files": files}
 
 
@@ -1170,15 +1289,23 @@ async def history_passages(
     async with db.connection() as conn:
         cur = await conn.execute(
             """
-            SELECT c.id, fc.file_id, c.chunk_idx, c.section_path, c.text, c.page_start,
-                   c.page_end, c.regions, c.confidence, c.confidence_reasons,
+            SELECT c.id, fc.file_id, 'file' AS kind, c.chunk_idx, c.section_path, c.text,
+                   c.page_start, c.page_end, c.regions, c.confidence, c.confidence_reasons,
                    f.name AS file_name
             FROM rag_file_contents fc
             JOIN files f ON f.id = fc.file_id
             JOIN rag_chunks c ON c.content_id = fc.content_id
             WHERE f.workspace_id = %s AND f.trashed_at IS NULL AND c.id = ANY(%s)
+            UNION ALL
+            SELECT c.id, mc.material_id, 'material', c.chunk_idx, c.section_path, c.text,
+                   c.page_start, c.page_end, c.regions, c.confidence, c.confidence_reasons,
+                   m.title
+            FROM rag_material_contents mc
+            JOIN materials m ON m.id = mc.material_id
+            JOIN rag_chunks c ON c.content_id = mc.content_id
+            WHERE m.workspace_id = %s AND m.trashed_at IS NULL AND c.id = ANY(%s)
             """,
-            (workspace_id, chunk_ids),
+            (workspace_id, chunk_ids, workspace_id, chunk_ids),
         )
         return [dict(row) for row in await cur.fetchall()]
 
@@ -1190,17 +1317,28 @@ async def read_file_range(
     async with db.connection() as conn:
         cur = await conn.execute(
             """
-            SELECT c.id, fc.file_id, c.chunk_idx, c.section_path, c.text, c.page_start,
-                   c.page_end, c.regions, c.confidence, c.confidence_reasons,
-                   f.name AS file_name
-            FROM rag_file_contents fc
-            JOIN files f ON f.id = fc.file_id
-            JOIN rag_chunks c ON c.content_id = fc.content_id
-            WHERE f.workspace_id = %s AND fc.file_id = %s AND f.trashed_at IS NULL AND c.chunk_idx >= %s
-            ORDER BY c.chunk_idx
+            SELECT * FROM (
+                SELECT c.id, fc.file_id, 'file' AS kind, c.chunk_idx, c.section_path, c.text,
+                       c.page_start, c.page_end, c.regions, c.confidence, c.confidence_reasons,
+                       f.name AS file_name
+                FROM rag_file_contents fc
+                JOIN files f ON f.id = fc.file_id
+                JOIN rag_chunks c ON c.content_id = fc.content_id
+                WHERE f.workspace_id = %s AND fc.file_id = %s AND f.trashed_at IS NULL
+                UNION ALL
+                SELECT c.id, mc.material_id, 'material', c.chunk_idx, c.section_path, c.text,
+                       c.page_start, c.page_end, c.regions, c.confidence, c.confidence_reasons,
+                       m.title
+                FROM rag_material_contents mc
+                JOIN materials m ON m.id = mc.material_id
+                JOIN rag_chunks c ON c.content_id = mc.content_id
+                WHERE m.workspace_id = %s AND mc.material_id = %s AND m.trashed_at IS NULL
+            ) passages
+            WHERE chunk_idx >= %s
+            ORDER BY chunk_idx
             LIMIT %s
             """,
-            (workspace_id, file_id, start, count),
+            (workspace_id, file_id, workspace_id, file_id, start, count),
         )
         return [dict(row) for row in await cur.fetchall()]
 

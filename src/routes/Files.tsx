@@ -1,12 +1,23 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
-  useAllFiles,
   useFile,
+  useOwnedFiles,
   usePurgeTrashed,
   useRestoreTrashed,
   useTrash,
+  useWorkspaces,
 } from '@/api/hooks';
-import type { TrashItem } from '@/api/types';
+import type {
+  FileKind,
+  FileListParams,
+  FileListSort,
+  TrashItem,
+} from '@/api/types';
+import {
+  ListToolbar,
+  type SortOption,
+  toggleValue,
+} from '@/components/app/ListToolbar';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Badge } from '@/components/ui/Badge';
@@ -45,20 +56,88 @@ export default function Files() {
         ]}
         value={tab}
       />
-      <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
-        {tab === 'trash' ? <TrashTab /> : <ActiveFiles />}
-      </div>
+      {tab === 'trash' ? (
+        <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
+          <TrashTab />
+        </div>
+      ) : (
+        <ActiveFiles />
+      )}
     </PanelWithInvertedRadius>
   );
 }
 
+const FILE_KINDS: FileKind[] = [
+  'pdf',
+  'doc',
+  'md',
+  'image',
+  'txt',
+  'sheet',
+  'slides',
+  'audio',
+  'json',
+  'unknown',
+];
+
 function ActiveFiles() {
-  const { data, fetchStatus, isLoading } = useAllFiles();
+  const sorts: SortOption<FileListSort>[] = [
+    {
+      icon: 'clock',
+      label: m.files_sort_added(),
+      order: 'time',
+      value: 'added',
+    },
+    {
+      icon: 'pencil',
+      label: m.files_sort_name(),
+      order: 'name',
+      value: 'name',
+    },
+    {
+      icon: 'files',
+      label: m.files_sort_size(),
+      order: 'count',
+      value: 'size',
+    },
+    {
+      icon: 'chapter',
+      label: m.files_sort_kind(),
+      order: 'name',
+      value: 'kind',
+    },
+  ];
+  const [sort, setSort] = useState<FileListSort>('added');
+  const [ascending, setAscending] = useState(false);
+  const [kinds, setKinds] = useState<string[]>([]);
+  const [workspaceIds, setWorkspaceIds] = useState<string[]>([]);
+  const params = useMemo<FileListParams>(
+    () => ({
+      dir: ascending ? 'asc' : 'desc',
+      sort,
+      ...(kinds.length ? { kinds: kinds as FileKind[] } : {}),
+      ...(workspaceIds.length ? { workspaceIds } : {}),
+    }),
+    [ascending, kinds, sort, workspaceIds]
+  );
+  const {
+    data,
+    fetchNextPage,
+    fetchStatus,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+  } = useOwnedFiles(params);
+  const files = data?.pages.flatMap((page) => page.items) ?? [];
+  const { data: workspaces = [] } = useWorkspaces(
+    { sort: 'accessed' },
+    { errorBoundary: false }
+  );
   const revealRef = useLoadingReveal(isLoading);
   const [openFileId, setOpenFileId] = useState<string | null>(null);
   const [officeEditDirty, setOfficeEditDirty] = useState(false);
   const confirmViewerReplacement = useOfficeEditGuard(officeEditDirty);
-  const open = data?.find((file) => file.id === openFileId) ?? null;
+  const open = files.find((file) => file.id === openFileId) ?? null;
   // The list omits `content`, so the viewer needs the full row. The header and
   // the indexed banner render from the list entry meanwhile.
   const {
@@ -80,34 +159,85 @@ function ActiveFiles() {
     setOpenFileId(null);
   };
 
-  if (fetchStatus === 'paused') return <QueryPausedState />;
-  if (isLoading) return <SkeletonCardGrid cardHeight={72} count={6} />;
   return (
     <>
-      <div
-        className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
-        ref={revealRef}
-      >
-        {data?.map((f) => (
-          <Card
-            className="flex items-center gap-3 p-5.5"
-            interactive
-            key={f.id}
-            onClick={() => openFile(f.id)}
-            radius="card-lg"
-          >
-            <span className="flex h-10 w-10 items-center justify-center rounded-card bg-surface-hover-bg text-fg-secondary">
-              <FileIcon className="size-4.5" name={fileIconName(f)} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="t-subtitle truncate">{f.name}</p>
-              <p className="t-meta text-fg-muted">
-                {formatFileSize(f.sizeBytes)}
-              </p>
+      <ListToolbar
+        ascending={ascending}
+        filters={[
+          {
+            key: 'kind',
+            label: m.files_filter_kind(),
+            onToggle: (value) => setKinds((prev) => toggleValue(prev, value)),
+            options: FILE_KINDS.map((kind) => ({ label: kind, value: kind })),
+            selected: kinds,
+          },
+          {
+            emptyLabel: m.create_filter_no_workspaces(),
+            key: 'workspace',
+            label: m.files_filter_workspace(),
+            onToggle: (value) =>
+              setWorkspaceIds((prev) => toggleValue(prev, value)),
+            options: workspaces
+              .filter((ws) => ws.isOwner)
+              .map((ws) => ({ label: ws.name, value: ws.id })),
+            selected: workspaceIds,
+          },
+        ]}
+        onResetFilters={() => {
+          setKinds([]);
+          setWorkspaceIds([]);
+        }}
+        onSortChange={(next, asc) => {
+          setSort(next);
+          setAscending(asc);
+        }}
+        sort={sort}
+        sorts={sorts}
+      />
+      <div className="min-h-0 flex-1 overflow-auto px-6 pt-2 pb-5">
+        {fetchStatus === 'paused' && !data ? (
+          <QueryPausedState />
+        ) : isLoading ? (
+          <SkeletonCardGrid cardHeight={72} count={6} />
+        ) : files.length === 0 ? (
+          <p className="py-10 text-center text-fg-muted">{m.files_empty()}</p>
+        ) : (
+          <div className="flex flex-col gap-3" ref={revealRef}>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {files.map((f) => (
+                <Card
+                  className="flex items-center gap-3 p-5.5"
+                  interactive
+                  key={f.id}
+                  onClick={() => openFile(f.id)}
+                  radius="card-lg"
+                >
+                  <span className="flex h-10 w-10 items-center justify-center rounded-card bg-surface-hover-bg text-fg-secondary">
+                    <FileIcon className="size-4.5" name={fileIconName(f)} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="t-subtitle truncate">{f.name}</p>
+                    <p className="t-meta text-fg-muted">
+                      {formatFileSize(f.sizeBytes)}
+                    </p>
+                  </div>
+                  <Badge size="sm">{f.kind}</Badge>
+                </Card>
+              ))}
             </div>
-            <Badge size="sm">{f.kind}</Badge>
-          </Card>
-        ))}
+            {hasNextPage && (
+              <Button
+                className="self-center"
+                disabled={isFetchingNextPage}
+                onClick={() => fetchNextPage()}
+                size="sm"
+                variant="ghost-hover"
+              >
+                {m.list_load_more()}
+              </Button>
+            )}
+          </div>
+        )}
       </div>
       <SimpleDialog
         onClose={closeFile}

@@ -103,6 +103,8 @@ describe('analytics helpers', () => {
     expect(cloneSourceFromPath('/quizzes/q_1/attempt')).toBe('app');
     expect(cloneSourceFromPath('/flashcards')).toBe('app');
     expect(cloneSourceFromPath('/flashcards/d_1')).toBe('app');
+    expect(cloneSourceFromPath('/create')).toBe('app');
+    expect(cloneSourceFromPath('/materials/mat_1')).toBe('app');
     expect(cloneSourceFromPath('/workspaces/ws_1')).toBeNull();
   });
 

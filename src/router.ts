@@ -22,13 +22,14 @@ import {
   exploreWorkspacesQuery,
   filesQuery,
   flashcardSetQuery,
-  flashcardSetsQuery,
   labelsQuery,
+  materialQuery,
   materialsQuery,
   meQuery,
   modelsQuery,
+  ownedFilesQuery,
+  ownedMaterialsQuery,
   quizQuery,
-  quizzesQuery,
   tasksQuery,
   usageQuery,
   workspaceQuery,
@@ -168,13 +169,32 @@ const appRoutes = [
     validateSearch: parseWorkspaceOpenSearch,
   }),
   page(
-    '/quizzes',
-    () => import('@/routes/Quizzes'),
-    ({ context: { queryClient: qc } }) => {
-      qc.prefetchQuery(quizzesQuery());
-      qc.prefetchQuery(attemptsQuery());
-    }
+    '/create',
+    () => import('@/routes/Create'),
+    ({ context: { queryClient: qc } }) =>
+      qc.prefetchInfiniteQuery(
+        ownedMaterialsQuery({ dir: 'desc', sort: 'updated' })
+      )
   ),
+  page(
+    '/learning',
+    () => import('@/routes/Learning'),
+    ({ context: { queryClient: qc } }) => qc.prefetchQuery(attemptsQuery())
+  ),
+  page(
+    '/materials/$materialId',
+    () => import('@/routes/MaterialOpen'),
+    ({ context: { queryClient: qc }, params }) =>
+      qc.prefetchQuery(materialQuery(params.materialId))
+  ),
+  createRoute({
+    beforeLoad: () => {
+      throw redirect({ replace: true, to: '/create' });
+    },
+    component: () => null,
+    getParentRoute: () => authShellRoute,
+    path: '/quizzes',
+  }),
   page(
     '/quizzes/$quizId/attempt',
     () => import('@/routes/QuizAttempt'),
@@ -208,11 +228,14 @@ const appRoutes = [
       event: typeof search.event === 'string' ? search.event : undefined,
     }),
   }),
-  page(
-    '/flashcards',
-    () => import('@/routes/Flashcards'),
-    ({ context: { queryClient: qc } }) => qc.prefetchQuery(flashcardSetsQuery())
-  ),
+  createRoute({
+    beforeLoad: () => {
+      throw redirect({ replace: true, to: '/create' });
+    },
+    component: () => null,
+    getParentRoute: () => authShellRoute,
+    path: '/flashcards',
+  }),
   page(
     '/flashcards/$flashcardSetId',
     () => import('@/routes/FlashcardStudy'),
@@ -224,7 +247,8 @@ const appRoutes = [
   page(
     '/files',
     () => import('@/routes/Files'),
-    ({ context: { queryClient: qc } }) => qc.prefetchQuery(allFilesQuery())
+    ({ context: { queryClient: qc } }) =>
+      qc.prefetchInfiniteQuery(ownedFilesQuery({ dir: 'desc', sort: 'added' }))
   ),
   createRoute({
     beforeLoad: () => {

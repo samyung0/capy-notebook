@@ -1635,6 +1635,9 @@ async def process_ingest_job(job: dict) -> None:
 async def _process_ingest_job_bound(job: dict) -> None:
     _set_stage("validating")
     payload = job["payload"] or {}
+    if payload.get("materialId"):
+        await _process_material_index_bound(job)
+        return
     _require_ingest_payload(payload)
     file_id = payload["fileId"]
     ws = payload["workspaceId"]
@@ -1702,6 +1705,124 @@ async def _process_ingest_job_bound(job: dict) -> None:
             accounting.reset(accounting_token)
         _resource_rates.reset(rates_token)
         registry.set_job_pins(None)
+
+
+# ------------------------------------------------------------- note index
+
+
+async def _process_material_index_bound(job: dict) -> None:
+    """Index one workspace note: fetch its text from the gateway, chunk it like
+    a text file, embed the chunks that changed and attach the canonical content.
+    Notes get no parse stage, no summary and no page model."""
+    payload = job["payload"] or {}
+    material_id = str(payload["materialId"])
+    ws = str(payload["workspaceId"])
+    rates = payload.get("resourceRates")
+    if not isinstance(rates, dict) or not _REQUIRED_RESOURCE_RATES.issubset(rates):
+        raise TerminalError("note index payload is missing resource rate snapshots")
+    try:
+        pins = registry.pins_from_payload(
+            payload, embedding=await _workspace_embedding_spec(ws)
+        )
+    except (registry.RegistryError, TerminalError) as exc:
+        raise TerminalError(
+            f"note index refused because its model pins could not be resolved: {exc}"
+        ) from exc
+    registry.set_job_pins(pins)
+    rates_token = _resource_rates.set(rates)
+    accounting_token = None
+    try:
+        accounting_token = accounting.bind_ingest(
+            _reservation_id(payload),
+            rates,
+            job_attempt_id=telemetry.current_attempt_id(),
+            job_stage=telemetry.current_stage(),
+        )
+        _set_stage("indexing")
+        note = await asyncio.to_thread(_fetch_material_text, material_id)
+        if note is None:
+            # Trashed, standalone or gone: nothing to index, nothing to retry.
+            await asyncio.to_thread(_finish_material_index, job, material_id)
+            return
+        chunks = chunk_markdown(str(note.get("text") or ""))
+        association = await store.attach_material_content(
+            workspace_id=ws,
+            material_id=material_id,
+            content_hash=indexing.content_hash(chunks),
+            claim_job_id=job["id"],
+        )
+        if not association["ready"]:
+            if not association["created"]:
+                raise RetryableError("note content is being indexed by another job")
+            await indexing.index_material(
+                workspace_id=ws,
+                content_id=association["content_id"],
+                material_id=material_id,
+                chunks=chunks,
+                claim_job_id=job["id"],
+            )
+        await asyncio.to_thread(_finish_material_index, job, material_id)
+    finally:
+        if accounting_token is not None:
+            accounting.reset(accounting_token)
+        _resource_rates.reset(rates_token)
+        registry.set_job_pins(None)
+
+
+def _fetch_material_text(material_id: str) -> dict | None:
+    """The note's markdown-like text from Go; None when the note is no longer
+    indexable (trashed, standalone or deleted)."""
+    if not cfg.gateway_url or not cfg.pipeline_secret:
+        raise TerminalError(
+            "GATEWAY_URL and PIPELINE_SECRET are required to index notes"
+        )
+    try:
+        response = requests.get(
+            cfg.gateway_url.rstrip("/")
+            + f"/api/internal/materials/{material_id}/index-text",
+            headers={"X-Pipeline-Secret": cfg.pipeline_secret},
+            timeout=30,
+        )
+    except (requests.Timeout, requests.ConnectionError) as exc:
+        raise RetryableError("note index gateway was unavailable") from exc
+    if response.status_code == 404:
+        return None
+    if response.status_code >= 500 or response.status_code == 429:
+        raise RetryableError(f"note index gateway returned {response.status_code}")
+    if response.status_code != 200:
+        raise TerminalError(f"note index gateway returned {response.status_code}")
+    body = response.json()
+    return body if isinstance(body, dict) else None
+
+
+def _finish_material_index(job: dict, material_id: str) -> None:
+    attempt = int(job.get("attempts") or 1)
+    with db.connect() as conn, conn.cursor() as cur:
+        if _lost_claim(cur, job["id"], attempt):
+            return
+        db.settle_credit_reservation(cur, _reservation_id(job["payload"] or {}))
+        cur.execute(
+            "UPDATE materials SET index_job_id=NULL, index_error=NULL WHERE id=%s AND index_job_id=%s",
+            (material_id, job["id"]),
+        )
+        db.set_job(cur, job["id"], "done")
+        db.finish_job_attempt(
+            cur,
+            attempt_id=telemetry.current_attempt_id(),
+            outcome="succeeded",
+            snapshot=telemetry.snapshot(),
+        )
+        conn.commit()
+
+
+def _fail_material_index(job: dict, material_id: str, error: str) -> None:
+    """A terminal failure is parked on the note until its content changes."""
+    with db.connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            "UPDATE materials SET index_job_id=NULL, index_error=%s WHERE id=%s AND index_job_id=%s",
+            (error[:500], material_id, job["id"]),
+        )
+        conn.commit()
 
 
 async def _workspace_embedding_spec(workspace_id: str) -> registry.ModelConfig:
@@ -2535,6 +2656,10 @@ async def _handle_job_failure_bound(job: dict, exc: BaseException) -> None:
         and is_retryable(exc)
         and attempts < policy.max_attempts
     )
+    if payload.get("materialId") and not retry:
+        await asyncio.to_thread(
+            _fail_material_index, job, str(payload["materialId"]), str(exc)
+        )
     if job_type == "parse":
         await asyncio.to_thread(
             _record_parse_attempt,

@@ -81,3 +81,55 @@ describe('canonical material document validation', () => {
     }
   });
 });
+
+describe('embedded material references', () => {
+  const ref = (materialId = 'mat_child') => ({
+    children: [{ text: '' }],
+    id: 'ref_1',
+    materialId,
+    refKind: 'quiz',
+    type: 'material_ref',
+  });
+
+  it('rejects inline study blocks inside a note', () => {
+    expect(() => assertCanonicalMaterialValue([quiz(10)], 'note')).toThrow(
+      'note cannot contain an inline quiz block'
+    );
+  });
+
+  it('accepts a top-level reference in a note only', () => {
+    expect(() =>
+      assertCanonicalMaterialValue([paragraph(1), ref()], 'note')
+    ).not.toThrow();
+    expect(() =>
+      assertCanonicalMaterialValue(
+        [{ children: [ref()], id: 'block_1', type: 'callout' }],
+        'note'
+      )
+    ).toThrow('must be a top-level block');
+    expect(() =>
+      assertCanonicalMaterialValue([quiz(10), ref()], 'quiz')
+    ).toThrow('quiz cannot contain a material reference');
+  });
+
+  it('requires a material id, a study kind and an empty leaf', () => {
+    expect(() => assertCanonicalMaterialValue([ref('')], 'note')).toThrow(
+      'materialId is required'
+    );
+    expect(() =>
+      assertCanonicalMaterialValue(
+        [{ ...ref(''), pending: 'questions: []' }],
+        'note'
+      )
+    ).not.toThrow();
+    expect(() =>
+      assertCanonicalMaterialValue([{ ...ref(), refKind: 'note' }], 'note')
+    ).toThrow('refKind must be quiz or flashcards');
+    expect(() =>
+      assertCanonicalMaterialValue(
+        [{ ...ref(), children: [{ text: 'x' }] }],
+        'note'
+      )
+    ).toThrow('one empty text leaf');
+  });
+});

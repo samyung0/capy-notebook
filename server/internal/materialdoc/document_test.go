@@ -607,3 +607,101 @@ func TestSuggestionPropertiesAreRejected(t *testing.T) {
 		}
 	}
 }
+
+func TestNoteKeepsStudyBlocksAsReferences(t *testing.T) {
+	quiz, err := QuizDocument(json.RawMessage(`[{"id":"q1","type":"boolean","level":"recall","prompt":"True?","correct":true}]`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateKind(quiz, "note"); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("note should reject an inline quiz block, got %v", err)
+	}
+	ref := MaterialRefNode("mat_child", "quiz")
+	nested, err := Marshal(Envelope{SchemaVersion: 1, Value: []map[string]any{{
+		"type": "callout", "id": "block_1", "children": []any{ref},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateKind(nested, "note"); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("note should reject a nested reference, got %v", err)
+	}
+	withRef, err := Marshal(Envelope{SchemaVersion: 1, Value: []map[string]any{
+		ParagraphNode("intro"), ref,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateKind(withRef, "note"); err != nil {
+		t.Fatalf("top-level reference should be valid: %v", err)
+	}
+	if err := ValidateKind(withRef, "quiz"); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("a quiz material should reject references, got %v", err)
+	}
+	refs, err := ExtractMaterialRefs(withRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(refs) != 1 || refs[0].MaterialID != "mat_child" || refs[0].Kind != "quiz" {
+		t.Fatalf("refs = %#v", refs)
+	}
+	rewritten, err := RewriteMaterialRefIDs(withRef, map[string]string{"mat_child": "mat_clone"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	refs, err = ExtractMaterialRefs(rewritten)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(refs) != 1 || refs[0].MaterialID != "mat_clone" {
+		t.Fatalf("rewritten refs = %#v", refs)
+	}
+	pending, err := Marshal(Envelope{SchemaVersion: 1, Value: []map[string]any{
+		{"type": RefType, "id": "r", "materialId": "", "pending": "questions: []", "refKind": "quiz", "children": []any{textLeaf("")}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateKind(pending, "note"); err != nil {
+		t.Fatalf("a pending reference is valid until the editor resolves it: %v", err)
+	}
+	if refs, err := ExtractMaterialRefs(pending); err != nil || len(refs) != 0 {
+		t.Fatalf("pending references carry no material: %v %v", refs, err)
+	}
+	for _, broken := range []map[string]any{
+		{"type": RefType, "id": "r", "materialId": "", "refKind": "quiz", "children": []any{textLeaf("")}},
+		{"type": RefType, "id": "r", "materialId": "m", "refKind": "note", "children": []any{textLeaf("")}},
+		{"type": RefType, "id": "r", "materialId": "m", "refKind": "quiz", "children": []any{textLeaf("x")}},
+	} {
+		raw, err := json.Marshal(Envelope{SchemaVersion: 1, Value: []map[string]any{broken}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := ValidateKind(string(raw), "note"); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("expected %v to be rejected, got %v", broken, err)
+		}
+	}
+}
+
+func TestExtractIndexTextRendersMarkdownLikeBlocks(t *testing.T) {
+	raw := `{"schemaVersion":1,"value":[
+		{"type":"h2","id":"b1","children":[{"text":"Cells"}]},
+		{"type":"p","id":"b2","children":[{"text":"Intro "},{"type":"a","url":"x","children":[{"text":"link"}]}]},
+		{"type":"p","id":"b3","listStyleType":"disc","indent":1,"children":[{"text":"first"}]},
+		{"type":"p","id":"b4","listStyleType":"decimal","indent":2,"children":[{"text":"nested"}]},
+		{"type":"callout","id":"b5","children":[{"type":"p","children":[{"text":"note"}]}]},
+		{"type":"table","id":"b6","children":[{"type":"tr","children":[{"type":"th","children":[{"type":"p","children":[{"text":"a"}]}]},{"type":"td","children":[{"type":"p","children":[{"text":"b"}]}]}]}]},
+		{"type":"code_block","id":"b7","lang":"go","children":[{"type":"code_line","children":[{"text":"x := 1"}]}]},
+		{"type":"material_ref","id":"b8","materialId":"m","refKind":"quiz","children":[{"text":""}]},
+		{"type":"mermaid","id":"b9","source":"flowchart","children":[{"type":"mermaid_caption","children":[{"text":"cap"}]}]},
+		{"type":"p","id":"b10","children":[{"text":"   "}]}
+	]}`
+	text, err := ExtractIndexText(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "## Cells\n\nIntro link\n\n- first\n\n  1. nested\n\nnote\n\n| a | b |\n\n```go\nx := 1\n```"
+	if text != want {
+		t.Fatalf("index text = %q, want %q", text, want)
+	}
+}

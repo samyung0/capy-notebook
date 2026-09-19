@@ -4,6 +4,8 @@ import {
   createMaterialDocument,
   createMaterialDocumentWithMetrics,
   isMaterialDocument,
+  isMaterialRefElement,
+  materialRefNode,
   normalizeMaterialValue,
   normalizeMaterialValueWithMetrics,
   parseMaterialDocument,
@@ -190,5 +192,24 @@ describe('Universal Plate material documents', () => {
         ],
       })
     ).toBe(false);
+  });
+});
+
+describe('embedded material references', () => {
+  it('accepts a resolved or pending reference and rejects a malformed one', () => {
+    const resolved = materialRefNode('mat_child', 'quiz');
+    expect(isMaterialDocument(createMaterialDocument([resolved]))).toBe(true);
+    const pending = materialRefNode('', 'flashcards', 'cards: []');
+    expect(isMaterialDocument(createMaterialDocument([pending]))).toBe(true);
+    expect(isMaterialRefElement(resolved)).toBe(true);
+    for (const broken of [
+      { ...resolved, materialId: '' },
+      { ...resolved, refKind: 'note' },
+      { ...resolved, children: [{ text: 'x' }] },
+    ]) {
+      expect(isMaterialDocument({ schemaVersion: 1, value: [broken] })).toBe(
+        false
+      );
+    }
   });
 });

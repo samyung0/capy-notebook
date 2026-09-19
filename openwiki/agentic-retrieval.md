@@ -1614,6 +1614,47 @@ paragraph/line/cell geometry. Ambiguous, short or unsupported matches open witho
 a highlight. Editing hides the overlay. See
 [Office citation geometry](frontend/office-files.md#citation-geometry).
 
+## Note indexing
+
+Workspace notes (`materials.kind='note'` with a workspace) are indexed into
+the same canonical content files use. `rag_material_contents` aliases a note
+to a ready `rag_contents` row exactly as `rag_file_contents` does for files,
+so chunks, vectors, summaries, orphan cleanup and clone copying are shared.
+Standalone notes have no workspace and are never indexed; embedded quiz and
+flashcard rows are separate materials and stay out of note text.
+
+The trigger is the projection. `ProjectMaterialContent` (and the SQL content
+path of `UpdateMaterial`) sets `materials.index_dirty_at` when a workspace
+note's content changes, clears `index_error`, and skips unchanged writes; a
+new workspace note is dirty from creation. The collaboration sidecar's 5 s
+timer (`scheduleNoteIndexes`) asks Go to admit dirty notes that have been idle
+15 s, have no running job and no parked error, in workspaces with
+`auto_reindex` on. `POST /internal/collaboration/materials/{id}/index`
+(`RequestMaterialIndex`) reserves ingest credits on the workspace owner,
+inserts one `ingest` job carrying `materialId`, and records it in
+`index_job_id`; 409 means not due. A non-409 failure (credits, quota) is
+parked in `index_error` and shows as `pendingNotes` in workspace settings
+until the note changes again.
+
+The ingest worker branches on `materialId`: it fetches the note's
+markdown-like text from `GET /api/internal/materials/{id}/index-text`
+(`materialdoc.ExtractIndexText`: headings keep their level, list items their
+bullets, table rows their cells, code its fence; references, diagrams and
+media are skipped), chunks it with `chunk_markdown`, reuses vectors for
+unchanged chunk text from the note's previous index, writes the content with
+no descriptor or summary, and clears `index_job_id`. A 404 from Go (trashed,
+standalone, deleted) ends the job without work.
+
+Search runs one pool: the `scoped_files` CTE unions files and notes with a
+`kind` column, the per-resource cap counts a note like a file, and a note
+passage cites `{kind: "material", materialId, fileName: title}` with no page
+or regions. The chat panel renders such a chip with the note glyph and opens
+the note in view mode. The agent's `list_sources` keeps notes as title and
+id, `describe_documents` returns a note's heading outline or its first 250
+words, and `read_document` pages a note's chunks like a file's. Workspace
+clones copy note index rows with the file rows; a cloned note without an
+index starts dirty.
+
 ## Clone and teardown
 
 `CloneWorkspace` copies the retrieval index **in the same transaction** as the
