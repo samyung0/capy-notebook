@@ -1230,6 +1230,13 @@ def reclaim_expired_leases(
             file_failed = fail_pipeline_file_if_current(cur, payload)
             discard_source_candidate(cur, payload, job_id, note, stale=False)
             close_credit_reservation(cur, str(payload.get("reservationId") or ""))
+            if payload.get("materialId"):
+                # A note index job that died is parked on the note like any
+                # other terminal failure; the next content change retries it.
+                cur.execute(
+                    "UPDATE materials SET index_job_id=NULL, index_error=%s WHERE id=%s AND index_job_id=%s",
+                    (note[:500], str(payload["materialId"]), job_id),
+                )
         cur.execute(
             """
             UPDATE ingest_job_attempts SET

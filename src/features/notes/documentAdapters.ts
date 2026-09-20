@@ -13,6 +13,7 @@ import {
   type MaterialElement,
   type MaterialNode,
   type MaterialValue,
+  materialRefNode,
   quizNode,
 } from '@/features/materials/document';
 
@@ -101,7 +102,13 @@ async function resolveMaterialRefs(
           }))
         );
       } catch {
-        return node;
+        // Kept as a fence so the block is visible in the export rather than
+        // silently dropped.
+        return materialRefNode(
+          '',
+          node.refKind,
+          `# This ${node.refKind === 'quiz' ? 'quiz' : 'flashcard set'} could not be exported.`
+        );
       }
     })
   );

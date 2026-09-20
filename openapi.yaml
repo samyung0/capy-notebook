@@ -5537,26 +5537,6 @@ paths:
       tags:
         - Source collaboration
   /api/flashcards:
-    get:
-      operationId: listFlashcardSets
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                items:
-                  $ref: "#/components/schemas/FlashcardSet"
-                type: array
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: List flashcard sets
-      tags:
-        - Flashcards
     post:
       operationId: createFlashcardSet
       requestBody:
@@ -6780,26 +6760,6 @@ paths:
       tags:
         - Quizzes
   /api/quizzes:
-    get:
-      operationId: listQuizzes
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                items:
-                  $ref: "#/components/schemas/Quiz"
-                type: array
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: List quizzes
-      tags:
-        - Quizzes
     post:
       operationId: createQuiz
       requestBody:

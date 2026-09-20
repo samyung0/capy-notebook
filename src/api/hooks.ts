@@ -893,11 +893,11 @@ export const ownedFilesQuery = (params: FileListParams = {}) => ({
 export const useOwnedFiles = (params: FileListParams = {}) =>
   useInfiniteQuery(ownedFilesQuery(params));
 
-/** The first page of the owner's newest files, for the dashboard. */
+/** The owner's 30 newest files, for the dashboard recents. */
 export const allFilesQuery = () =>
   queryOptions({
     queryFn: () =>
-      api.get<FilePage>('/files?limit=100').then((page) => page.items),
+      api.get<FilePage>('/files?limit=30').then((page) => page.items),
     queryKey: qk.allFiles,
   });
 export const useAllFiles = (options?: QueryUiOptions) =>
@@ -1002,8 +1002,6 @@ export const useTrash = (wsId: string | undefined, enabled: boolean) =>
 function invalidateAfterTrashChange(qc: QueryClient, item: TrashItem) {
   qc.invalidateQueries({ queryKey: qk.trash() });
   qc.invalidateQueries({ queryKey: qk.allFiles });
-  qc.invalidateQueries({ queryKey: qk.quizzes });
-  qc.invalidateQueries({ queryKey: qk.flashcardSets });
   qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot });
   qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
   qc.invalidateQueries({ queryKey: qk.usage });
@@ -1381,8 +1379,6 @@ export function useGenerate(wsId: string, options?: MutationUiOptions) {
     onSuccess: async (_data, opts) => {
       track('material_generated', { kind: opts.kind, workspaceId: wsId });
       await Promise.all([
-        qc.invalidateQueries({ queryKey: qk.quizzes }),
-        qc.invalidateQueries({ queryKey: qk.flashcardSets }),
         qc.invalidateQueries({ queryKey: qk.materials(wsId) }),
         qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot }),
       ]);
@@ -1484,9 +1480,7 @@ export function useDeleteMaterial(wsId: string) {
     mutationFn: (id: string) => api.del<void>(`/materials/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.materials(wsId) });
-      qc.invalidateQueries({ queryKey: qk.quizzes });
       invalidateOwnedMaterials(qc);
-      qc.invalidateQueries({ queryKey: qk.flashcardSets });
       qc.invalidateQueries({ queryKey: qk.trash() });
     },
   });
@@ -1505,9 +1499,7 @@ export function useCreateEmbeddedMaterial() {
     }: CreateEmbeddedMaterialReq & { noteId: string }) =>
       api.post<Material>(`/materials/${noteId}/embedded`, body),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.quizzes });
       invalidateOwnedMaterials(qc);
-      qc.invalidateQueries({ queryKey: qk.flashcardSets });
     },
   });
 }
@@ -1817,13 +1809,6 @@ export function useMoveMaterial(wsId: string) {
 }
 
 /* ---------------- quizzes ---------------- */
-export const quizzesQuery = () =>
-  queryOptions({
-    queryFn: () => api.get<Quiz[]>('/quizzes'),
-    queryKey: qk.quizzes,
-  });
-export const useQuizzes = () => useQuery(quizzesQuery());
-
 export const quizQuery = (id: string) =>
   queryOptions({
     enabled: !!id,
@@ -1875,14 +1860,13 @@ export function useCreateQuiz() {
   return useMutation({
     mutationFn: (body: CreateQuizReq) => api.post<Quiz>('/quizzes', body),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.quizzes });
       invalidateOwnedMaterials(qc);
       invalidateAllMaterials(qc);
     },
   });
 }
 function invalidateQuiz(qc: ReturnType<typeof useQueryClient>, id: string) {
-  qc.invalidateQueries({ queryKey: qk.quizzes });
+  invalidateOwnedMaterials(qc);
   qc.invalidateQueries({ queryKey: qk.quiz(id) });
   invalidateAllMaterials(qc);
 }
@@ -1921,7 +1905,6 @@ export function useDeleteQuiz() {
   return useMutation({
     mutationFn: (id: string) => api.del<void>(`/quizzes/${id}`),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.quizzes });
       invalidateOwnedMaterials(qc);
       qc.invalidateQueries({ queryKey: qk.trash() });
       invalidateAllMaterials(qc);
@@ -1942,20 +1925,12 @@ export function useSubmitAttempt(options?: MutationUiOptions) {
 }
 
 /* ---------------- flashcards ---------------- */
-export const flashcardSetsQuery = () =>
-  queryOptions({
-    queryFn: () => api.get<FlashcardSet[]>('/flashcards'),
-    queryKey: qk.flashcardSets,
-  });
-export const useFlashcardSets = () => useQuery(flashcardSetsQuery());
-
 export function useCreateFlashcardSet() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: CreateFlashcardSetReq) =>
       api.post<FlashcardSet>('/flashcards', body),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.flashcardSets });
       invalidateAllMaterials(qc);
     },
   });
@@ -1968,7 +1943,6 @@ export function useCreateCard(flashcardSetId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.cards(flashcardSetId) });
       qc.invalidateQueries({ queryKey: qk.flashcardSet(flashcardSetId) });
-      qc.invalidateQueries({ queryKey: qk.flashcardSets });
     },
   });
 }
@@ -1979,7 +1953,6 @@ export function useDeleteCard(flashcardSetId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.cards(flashcardSetId) });
       qc.invalidateQueries({ queryKey: qk.flashcardSet(flashcardSetId) });
-      qc.invalidateQueries({ queryKey: qk.flashcardSets });
     },
   });
 }
@@ -2009,7 +1982,6 @@ export function useUpdateCard(flashcardSetId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.cards(flashcardSetId) });
       qc.invalidateQueries({ queryKey: qk.flashcardSet(flashcardSetId) });
-      qc.invalidateQueries({ queryKey: qk.flashcardSets });
     },
   });
 }
@@ -2025,7 +1997,6 @@ export function useReviewCard(flashcardSetId: string) {
       } satisfies UpdateCardStudyStateReq),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.flashcardSet(flashcardSetId) });
-      qc.invalidateQueries({ queryKey: qk.flashcardSets });
     },
   });
 }
@@ -2238,9 +2209,7 @@ export function useCloneWorkspace(options?: MutationUiOptions) {
       api.post<CloneWorkspaceResult>(`/workspaces/${id}/clone`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['workspaces'] });
-      qc.invalidateQueries({ queryKey: qk.quizzes });
       invalidateOwnedMaterials(qc);
-      qc.invalidateQueries({ queryKey: qk.flashcardSets });
       qc.invalidateQueries({ queryKey: qk.exploreWorkspaces });
     },
   });
@@ -2254,7 +2223,6 @@ export function useCloneQuiz(options?: MutationUiOptions) {
     mutationFn: (id: string) => api.post<Quiz>(`/quizzes/${id}/clone`),
     onSuccess: () => {
       trackItemCloned('quiz');
-      qc.invalidateQueries({ queryKey: qk.quizzes });
       invalidateOwnedMaterials(qc);
       qc.invalidateQueries({ queryKey: qk.exploreQuizzes });
       invalidateAllMaterials(qc);
@@ -2271,7 +2239,6 @@ export function useCloneFlashcardSet(options?: MutationUiOptions) {
       api.post<FlashcardSet>(`/flashcards/${id}/clone`),
     onSuccess: () => {
       trackItemCloned('flashcards');
-      qc.invalidateQueries({ queryKey: qk.flashcardSets });
       qc.invalidateQueries({ queryKey: qk.exploreFlashcardSets });
       invalidateAllMaterials(qc);
     },
@@ -2285,7 +2252,6 @@ export function useUpdateFlashcardSet() {
     mutationFn: ({ id, ...body }: UpdateFlashcardSetReq & { id: string }) =>
       api.patch<FlashcardSet>(`/flashcards/${id}/metadata`, body),
     onSuccess: (_d, v) => {
-      qc.invalidateQueries({ queryKey: qk.flashcardSets });
       qc.invalidateQueries({ queryKey: qk.flashcardSet(v.id) });
       invalidateAllMaterials(qc);
     },
@@ -2301,7 +2267,6 @@ export function useUpdateFlashcardSetSharing() {
     }: UpdateStandaloneSharingReq & { id: string }) =>
       api.patch<FlashcardSet>(`/flashcards/${id}/sharing`, body),
     onSuccess: (_d, v) => {
-      qc.invalidateQueries({ queryKey: qk.flashcardSets });
       qc.invalidateQueries({ queryKey: qk.flashcardSet(v.id) });
       invalidateAllMaterials(qc);
     },

@@ -55,7 +55,7 @@ func TestNoteIndexDirtyMarkAndJobAdmission(t *testing.T) {
 		t.Fatalf("standalone note is not indexable, got %v", err)
 	}
 
-	text, err := s.MaterialIndexText(ctx, note.ID)
+	text, err := s.MaterialIndexText(ctx, note.ID, ws.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

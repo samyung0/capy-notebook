@@ -47,7 +47,12 @@ export function customBlockNode(
   code: string
 ): CustomBlockElement {
   if (type === QUIZ_KEY || type === FLASHCARDS_KEY) {
-    return materialRefNode('', type, code);
+    const body = code.trim()
+      ? code
+      : type === QUIZ_KEY
+        ? 'questions: []'
+        : 'cards: []';
+    return materialRefNode('', type, body);
   }
   return mermaidNode(code);
 }

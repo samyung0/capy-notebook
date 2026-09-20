@@ -13,9 +13,6 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
-type quizzesOutput struct {
-	Body []apimodel.Quiz `nullable:"false"`
-}
 type quizOutput struct {
 	Body apimodel.Quiz
 }
@@ -60,7 +57,6 @@ type attemptDetailOutput struct {
 
 func (a *api) registerQuizzes(api huma.API) {
 	const tag = "Quizzes"
-	reg(api, http.MethodGet, "/api/quizzes", "listQuizzes", tag, "List quizzes", http.StatusOK, a.listQuizzes)
 	reg(api, http.MethodPost, "/api/quizzes", "createQuiz", tag, "Create a quiz", http.StatusCreated, a.createQuiz)
 	reg(api, http.MethodGet, "/api/mistakes", "getMistakes", tag, "Review-mistakes quiz", http.StatusOK, a.getMistakes)
 	reg(api, http.MethodGet, "/api/quizzes/{id}", "getQuiz", tag, "Get a quiz", http.StatusOK, a.getQuiz)
@@ -72,14 +68,6 @@ func (a *api) registerQuizzes(api huma.API) {
 	reg(api, http.MethodGet, "/api/attempts", "listAttempts", tag, "List attempts", http.StatusOK, a.listAttempts)
 	reg(api, http.MethodGet, "/api/attempts/{id}", "getAttempt", tag, "Get an attempt's result breakdown", http.StatusOK, a.getAttempt)
 	a.registerQuizGrade(api)
-}
-
-func (a *api) listQuizzes(ctx context.Context, _ *struct{}) (*quizzesOutput, error) {
-	res, err := a.s.ListQuizzes(ctx, userID(ctx))
-	if err != nil {
-		return nil, hErr(err)
-	}
-	return &quizzesOutput{Body: apimodel.FromQuizzes(res)}, nil
 }
 
 func (a *api) getMistakes(ctx context.Context, _ *struct{}) (*quizOutput, error) {

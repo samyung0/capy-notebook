@@ -43,8 +43,7 @@ export function invalidateForEffects(
   for (const effect of effects ?? []) {
     if (effect.resource.kind === 'material') {
       void qc.invalidateQueries({ queryKey: qk.materials(workspaceId) });
-      void qc.invalidateQueries({ queryKey: qk.quizzes });
-      void qc.invalidateQueries({ queryKey: qk.flashcardSets });
+      void qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot });
       if (effect.operation !== 'created') {
         void qc.invalidateQueries({
           queryKey: qk.material(effect.resource.id),

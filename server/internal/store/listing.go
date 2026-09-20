@@ -3,10 +3,14 @@ package store
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 )
+
+// ErrInvalidCursor is a malformed or foreign page cursor: a client error.
+var ErrInvalidCursor = errors.New("invalid cursor")
 
 // Owner-scoped, filtered, sorted, keyset-paginated listings behind the Create
 // and Files pages. Both list only what the caller owns: materials and files in
@@ -31,11 +35,11 @@ func decodeListCursor(cursor string) (primary, id string, ok bool, err error) {
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(cursor)
 	if err != nil {
-		return "", "", false, fmt.Errorf("%w: invalid cursor", ErrNotFound)
+		return "", "", false, ErrInvalidCursor
 	}
 	primary, id, found := strings.Cut(string(raw), "|")
 	if !found {
-		return "", "", false, fmt.Errorf("%w: invalid cursor", ErrNotFound)
+		return "", "", false, ErrInvalidCursor
 	}
 	return primary, id, true, nil
 }
@@ -52,13 +56,13 @@ func cursorClause(sort listSort, idColumn string, ascending bool, cursor string,
 	case "time":
 		at, err := time.Parse(time.RFC3339Nano, primary)
 		if err != nil {
-			return "", nil, fmt.Errorf("%w: invalid cursor", ErrNotFound)
+			return "", nil, ErrInvalidCursor
 		}
 		value = at
 	case "int":
 		var n int64
 		if _, err := fmt.Sscanf(primary, "%d", &n); err != nil {
-			return "", nil, fmt.Errorf("%w: invalid cursor", ErrNotFound)
+			return "", nil, ErrInvalidCursor
 		}
 		value = n
 	}

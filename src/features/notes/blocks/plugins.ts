@@ -78,7 +78,25 @@ export const MermaidCaptionPlugin = createPlatePlugin({
 export const MaterialRefPlugin = createPlatePlugin({
   key: MATERIAL_REF_KEY,
   node: { isElement: true, isVoid: true, type: MATERIAL_REF_KEY },
-}).withComponent(MaterialRefElement);
+})
+  .overrideEditor(({ editor, tf: { normalizeNode } }) => ({
+    transforms: {
+      normalizeNode([node, path]) {
+        // A reference pasted inside a container is lifted until it is a
+        // top-level block, the only place the document contract allows it.
+        if (
+          'type' in node &&
+          node.type === MATERIAL_REF_KEY &&
+          path.length > 1
+        ) {
+          editor.tf.liftNodes({ at: path });
+          return;
+        }
+        normalizeNode([node, path]);
+      },
+    },
+  }))
+  .withComponent(MaterialRefElement);
 
 export const customBlockPlugins = [
   MaterialRefPlugin,

@@ -117,6 +117,8 @@ export interface MaterialRefElement extends MaterialElement {
   materialId: string;
   pending?: string;
   refKind: MaterialRefKind;
+  /** The client creating the row for a pending reference. */
+  resolvingBy?: string;
   type: 'material_ref';
 }
 

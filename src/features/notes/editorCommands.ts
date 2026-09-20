@@ -450,10 +450,12 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     get label() {
       return m.editor_quiz();
     },
-    run: (editor, dialogs) =>
+    run: (editor, dialogs) => {
+      if (insideContainer(editor)) return;
       dialogs?.openQuiz(undefined, (code) => {
         void dialogs.insertEmbedded(editor, 'quiz', code);
-      }),
+      });
+    },
     widget: 'quiz',
   },
   {
@@ -466,10 +468,12 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     get label() {
       return m.editor_flashcards();
     },
-    run: (editor, dialogs) =>
+    run: (editor, dialogs) => {
+      if (insideContainer(editor)) return;
       dialogs?.openFlashcards(undefined, (code) => {
         void dialogs.insertEmbedded(editor, 'flashcards', code);
-      }),
+      });
+    },
     widget: 'flashcards',
   },
   {
@@ -483,14 +487,24 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     get label() {
       return m.editor_mermaid();
     },
-    run: (editor) =>
+    run: (editor) => {
+      if (insideContainer(editor)) return;
       insertEditorNode(
         editor,
         customBlockNode('mermaid', 'flowchart LR\n  A --> B')
-      ),
+      );
+    },
     widget: 'mermaid',
   },
 ];
+
+/** Study blocks and diagrams live at the top level only. With the caret
+ * inside a callout, column, table or other container the insert commands do
+ * nothing. */
+export function insideContainer(editor: NoteEditorInstance): boolean {
+  const block = editor.api.block();
+  return !!block && block[1].length > 1;
+}
 
 export function commandMatches(command: EditorCommand, query: string): boolean {
   const normalized = query.trim().toLowerCase();

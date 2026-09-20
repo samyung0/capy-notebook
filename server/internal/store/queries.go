@@ -136,7 +136,7 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 	}
 	rows.Close()
 
-	rows, err = s.pool.Query(ctx, `SELECT m.id, m.title, m.workspace_name
+	rows, err = s.pool.Query(ctx, `SELECT m.id, m.title, m.workspace_name, COALESCE(m.workspace_id,''), COALESCE(m.parent_material_id,'')
 		FROM materials m
 		JOIN users owner ON owner.id=m.owner_user_id
 		WHERE m.trashed_at IS NULL AND (m.owner_user_id=$2 OR EXISTS (
@@ -147,11 +147,16 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 		return nil, err
 	}
 	for rows.Next() {
-		var id, name, wsName string
-		if err := rows.Scan(&id, &name, &wsName); err != nil {
+		var id, name, wsName, wsID, parentID string
+		if err := rows.Scan(&id, &name, &wsName, &wsID, &parentID); err != nil {
 			return nil, err
 		}
-		out = append(out, SearchResult{ID: id, Kind: "flashcards", Title: name, Subtitle: wsName, Href: "/flashcards/" + id})
+		// An embedded set opens as the note that embeds it.
+		href := "/flashcards/" + id
+		if parentID != "" && wsID != "" {
+			href = "/workspaces/" + wsID + "?material=" + parentID
+		}
+		out = append(out, SearchResult{ID: id, Kind: "flashcards", Title: name, Subtitle: wsName, Href: href})
 	}
 	rows.Close()
 
@@ -1806,64 +1811,6 @@ func quizFromMaterial(mt Material) (Quiz, error) {
 	}, nil
 }
 
-func (s *Store) ListQuizzes(ctx context.Context, userID string) ([]Quiz, error) {
-	// Effective role per membership, so list and detail agree for a member
-	// raised by an editor share role.
-	roles := map[string]WorkspaceRole{}
-	roleRows, err := s.pool.Query(ctx, `SELECT wm.workspace_id,
-		CASE WHEN wm.role='owner' THEN 'owner'
-			WHEN w.privacy IN ('link','public') AND w.share_role='editor' THEN 'editor' ELSE wm.role END
-		FROM workspace_members wm JOIN workspaces w ON w.id=wm.workspace_id WHERE wm.user_id=$1`, userID)
-	if err != nil {
-		return nil, err
-	}
-	for roleRows.Next() {
-		var workspaceID string
-		var role WorkspaceRole
-		if err := roleRows.Scan(&workspaceID, &role); err != nil {
-			roleRows.Close()
-			return nil, err
-		}
-		roles[workspaceID] = role
-	}
-	if err := roleRows.Err(); err != nil {
-		roleRows.Close()
-		return nil, err
-	}
-	roleRows.Close()
-
-	rows, err := s.pool.Query(ctx, `SELECT `+materialColsM+`
-		FROM materials m
-		JOIN users owner ON owner.id=m.owner_user_id
-		WHERE m.trashed_at IS NULL AND (m.owner_user_id=$1 OR EXISTS (
-			SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=m.workspace_id AND wm.user_id=$1
-		)) AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
-			AND m.kind='quiz' ORDER BY m.created_at DESC`, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []Quiz{}
-	for rows.Next() {
-		mt, err := scanMaterial(rows)
-		if err != nil {
-			return nil, err
-		}
-		q, err := quizFromMaterial(mt)
-		if err != nil {
-			return nil, err
-		}
-		role := roles[mt.WorkspaceID]
-		if mt.OwnerUserID == userID {
-			role = RoleOwner
-		}
-		q.IsOwner = role == RoleOwner
-		q.CanEdit = RoleCanEdit(role)
-		out = append(out, q)
-	}
-	return out, rows.Err()
-}
-
 func (s *Store) GetQuiz(ctx context.Context, id string) (Quiz, error) {
 	mt, err := s.GetMaterial(ctx, id)
 	if err != nil {
@@ -2059,44 +2006,6 @@ func scanFlashcardSetRow(row pgx.Row, extra ...any) (FlashcardSet, error) {
 		d.Provenance, err = decodeProvenance(provenance)
 	}
 	return d, err
-}
-
-// ListFlashcardSets returns the flashcardSets a user owns plus those reachable through
-// workspace membership, so IsOwner has to be derived per row rather than
-// assumed — a member seeing owner-only affordances would be offered actions the
-// API then refuses.
-func (s *Store) ListFlashcardSets(ctx context.Context, userID string) ([]FlashcardSet, error) {
-	rows, err := s.pool.Query(ctx, `SELECT `+flashcardSetCols+`,
-		(m.owner_user_id=$1),
-		(m.owner_user_id=$1 OR EXISTS (
-			SELECT 1 FROM workspace_members editor
-			WHERE editor.workspace_id=m.workspace_id AND editor.user_id=$1
-				AND editor.role IN ('owner','editor')
-		) OR EXISTS (
-			SELECT 1 FROM workspaces w WHERE w.id=m.workspace_id
-				AND w.privacy IN ('link','public') AND w.share_role='editor'
-		))
-		FROM materials m
-		JOIN users owner ON owner.id=m.owner_user_id
-		WHERE m.trashed_at IS NULL AND (m.owner_user_id=$1 OR EXISTS (
-			SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=m.workspace_id AND wm.user_id=$1
-		)) AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
-			AND m.kind='flashcards' ORDER BY m.title`, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []FlashcardSet{}
-	for rows.Next() {
-		var isOwner, canEdit bool
-		d, err := scanFlashcardSetRow(rows, &isOwner, &canEdit)
-		if err != nil {
-			return nil, err
-		}
-		d.IsOwner, d.CanEdit = isOwner, canEdit
-		out = append(out, d)
-	}
-	return out, rows.Err()
 }
 
 func (s *Store) GetFlashcardSet(ctx context.Context, id string) (FlashcardSet, error) {

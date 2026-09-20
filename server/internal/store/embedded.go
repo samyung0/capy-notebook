@@ -79,10 +79,10 @@ func (s *Store) CreateEmbeddedMaterial(
 }
 
 // reconcileEmbeddedTx aligns the note's embedded rows with the references in
-// its projected content: a referenced row that was trashed comes back (undo of
-// a block removal), an unreferenced row is trashed. Rows younger than the
-// grace window are left alone because their reference is created after the
-// row and may not have reached this projection yet.
+// its projected content. A row is first noted as referenced (reference_seen_at)
+// and from then on follows its block: a referenced row that was trashed comes
+// back (undo of a block removal), an unreferenced row is trashed. A row no
+// projection has referenced yet is still being inserted and is left alone.
 func reconcileEmbeddedTx(ctx context.Context, tx pgx.Tx, noteID, content, actorID string) error {
 	refs, err := materialdoc.ExtractMaterialRefs(content)
 	if err != nil {
@@ -92,29 +92,36 @@ func reconcileEmbeddedTx(ctx context.Context, tx pgx.Tx, noteID, content, actorI
 	for _, ref := range refs {
 		referenced[ref.MaterialID] = true
 	}
-	rows, err := tx.Query(ctx, `SELECT id, trashed_at IS NOT NULL, created_at < now() - interval '30 seconds'
+	rows, err := tx.Query(ctx, `SELECT id, trashed_at IS NOT NULL, reference_seen_at IS NOT NULL
 		FROM materials WHERE parent_material_id=$1 FOR UPDATE`, noteID)
 	if err != nil {
 		return err
 	}
-	var restore, trash []string
+	var seen, restore, trash []string
 	for rows.Next() {
 		var id string
-		var trashed, settled bool
-		if err := rows.Scan(&id, &trashed, &settled); err != nil {
+		var trashed, wasSeen bool
+		if err := rows.Scan(&id, &trashed, &wasSeen); err != nil {
 			rows.Close()
 			return err
 		}
 		switch {
+		case referenced[id] && !wasSeen:
+			seen = append(seen, id)
 		case referenced[id] && trashed:
 			restore = append(restore, id)
-		case !referenced[id] && !trashed && settled:
+		case !referenced[id] && !trashed && wasSeen:
 			trash = append(trash, id)
 		}
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return err
+	}
+	if len(seen) > 0 {
+		if _, err := tx.Exec(ctx, `UPDATE materials SET reference_seen_at=now() WHERE id = ANY($1)`, seen); err != nil {
+			return err
+		}
 	}
 	for _, id := range restore {
 		if err := restoreEmbeddedRowTx(ctx, tx, id); err != nil {

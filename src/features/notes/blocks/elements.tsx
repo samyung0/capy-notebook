@@ -66,6 +66,7 @@ import {
 } from '@/features/quizzes/quizOptionStyles';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { uid } from '@/lib/id';
 import {
   BLOCK_SHELL_CLASS,
   FLASHCARD_BACK_CLASS,
@@ -82,6 +83,11 @@ import { flashcardsFenceBody, quizFenceBody } from './shared';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyEditor = any;
+
+/** Identifies this browser session's claim on a pending reference. */
+const CLIENT_ID = uid('client');
+/** Long enough for a concurrent claim to merge back before creating a row. */
+const CLAIM_SETTLE_MS = 400;
 
 function replaceElement(editor: AnyEditor, current: object, next: object) {
   const at = editor.api.findPath(current);
@@ -470,26 +476,47 @@ export function MaterialRefElement(props: PlateElementProps) {
   const { mutateAsync: deleteCard } = useDeleteCard(materialId);
   const resolving = useRef(false);
 
-  // A fence imported as markdown lands here without a row. Create it once and
-  // point the node at it; a failed creation drops the block.
+  // A fence imported as markdown lands here without a row. Every client with
+  // the note open sees it, so the node is claimed in the shared document
+  // first and only the client whose claim survives the merge creates the row;
+  // a failed creation drops the block.
   useEffect(() => {
     if (materialId || !pending || readOnly || !dialogs || resolving.current)
       return;
+    if (element.resolvingBy && element.resolvingBy !== CLIENT_ID) return;
     resolving.current = true;
     const at = () => editor.api.findPath(props.element);
-    dialogs.createEmbedded(refKind, pending).then(
-      (material) => {
-        const path = at();
-        if (!path) return;
-        editor.tf.setNodes({ materialId: material.id }, { at: path });
-        editor.tf.unsetNodes('pending', { at: path });
-      },
-      () => {
-        const path = at();
-        if (path) editor.tf.removeNodes({ at: path });
-      }
-    );
-  }, [dialogs, editor, materialId, pending, props.element, readOnly, refKind]);
+    const claim = at();
+    if (!claim) return;
+    editor.tf.setNodes({ resolvingBy: CLIENT_ID }, { at: claim });
+    const timer = setTimeout(() => {
+      const path = at();
+      const current = path && (editor.api.node(path)?.[0] as MaterialRefNode);
+      if (!current || current.resolvingBy !== CLIENT_ID) return;
+      dialogs.createEmbedded(refKind, pending).then(
+        (material) => {
+          const target = at();
+          if (!target) return;
+          editor.tf.setNodes({ materialId: material.id }, { at: target });
+          editor.tf.unsetNodes(['pending', 'resolvingBy'], { at: target });
+        },
+        () => {
+          const target = at();
+          if (target) editor.tf.removeNodes({ at: target });
+        }
+      );
+    }, CLAIM_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [
+    dialogs,
+    editor,
+    element.resolvingBy,
+    materialId,
+    pending,
+    props.element,
+    readOnly,
+    refKind,
+  ]);
 
   async function editQuiz() {
     const quiz = await queryClient.fetchQuery(quizQuery(materialId));

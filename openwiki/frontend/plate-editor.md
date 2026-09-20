@@ -172,13 +172,17 @@ unfiled, and the note stores a void `material_ref` block
 every mode. Inserting through the slash command or toolbar opens the existing
 dialog, creates the row through `POST /api/materials/{noteId}/embedded`, then
 inserts the reference at the top level; nothing is inserted when creation
-fails. Edit reopens the dialog and saves through the quiz content endpoint or
+fails, and with the caret inside a callout, column, table or other container
+the quiz, flashcards and mermaid commands do nothing. A reference that lands
+nested (a paste) is lifted to the top level by the plugin's normalizer. Edit reopens the dialog and saves through the quiz content endpoint or
 the per-card flashcard endpoints, so note undo covers only inserting and
 removing the reference. Go and the sidecar reject inline `quiz`/`flashcards`
 nodes in a note and references anywhere but the top level. A markdown fence
 imports as a pending reference (`materialId: ''` plus the fence body in
-`pending`) that the mounted editor resolves into a row; markdown export
-resolves references back into inline blocks first. Removing the reference
+`pending`); the mounted editor claims it in the shared document
+(`resolvingBy`) and the client whose claim survives the merge creates the
+row; markdown export resolves references back into inline blocks first and
+keeps an unresolvable one as a placeholder fence. Removing the reference
 trashes the row at the next projection and undo restores it (see
 [authorization](../authorization-permissions-lifecycles.md)). Mermaid blocks
 stay inline.

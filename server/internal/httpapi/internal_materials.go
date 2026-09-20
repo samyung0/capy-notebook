@@ -404,7 +404,12 @@ func (a *api) internalMaterialIndexText(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"message": "unauthorized"})
 		return
 	}
-	text, err := a.s.MaterialIndexText(r.Context(), chi.URLParam(r, "id"))
+	workspaceID := r.URL.Query().Get("workspaceId")
+	if workspaceID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": "workspaceId is required"})
+		return
+	}
+	text, err := a.s.MaterialIndexText(r.Context(), chi.URLParam(r, "id"), workspaceID)
 	if err != nil {
 		a.fail(w, err)
 		return

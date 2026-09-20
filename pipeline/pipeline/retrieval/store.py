@@ -149,27 +149,27 @@ async def existing_file_vectors(
         }
 
 
-async def existing_material_vectors(
-    *, workspace_id: str, material_id: str, spec, inputs: list[str]
+async def existing_content_vectors(
+    *, workspace_id: str, content_id: str, spec, inputs: list[str]
 ) -> dict[str, list[float]]:
-    """Reuse exact embedding input from this note's current index."""
+    """Reuse exact embedding input from one ready content row: a note's
+    previous index, read before the alias moves and the orphan trigger drops it."""
     table = vector_table(spec.provider_slug, spec.model_slug, spec.version)
     db = await pool()
     async with db.connection() as conn:
         cur = await conn.execute(
             f"""
             SELECT c.indexed_text, v.embedding::text AS embedding
-            FROM rag_material_contents mc
-            JOIN rag_contents rc ON rc.id = mc.content_id AND rc.status = 'ready'
+            FROM rag_contents rc
             JOIN rag_chunks c ON c.content_id = rc.id
             JOIN {table} v ON v.chunk_id = c.id
-            WHERE mc.material_id = %s AND mc.workspace_id = %s
+            WHERE rc.id = %s AND rc.workspace_id = %s AND rc.status = 'ready'
               AND rc.embedding_provider_slug = %s AND rc.embedding_model_slug = %s
               AND rc.embedding_model_version = %s
               AND c.indexed_text = ANY(%s::text[])
             """,
             (
-                material_id,
+                content_id,
                 workspace_id,
                 spec.provider_slug,
                 spec.model_slug,
@@ -191,6 +191,11 @@ async def attach_material_content(
     content_id = f"rgc_{secrets.token_hex(8)}"
     db = await pool()
     async with db.connection() as conn, conn.transaction():
+        cur = await conn.execute(
+            "SELECT content_id FROM rag_material_contents WHERE material_id = %s",
+            (material_id,),
+        )
+        previous = await cur.fetchone()
         cur = await conn.execute(
             """
             INSERT INTO rag_contents
@@ -233,6 +238,7 @@ async def attach_material_content(
         )
         return {
             "content_id": row["id"],
+            "previous_content_id": previous["content_id"] if previous else None,
             "ready": row["status"] == "ready",
             "created": created,
         }
@@ -958,7 +964,18 @@ _LOOKUP_TERMS = (2, 3)
 # against English chunks is parsed by the english stemmer and misses, which is
 # what should happen: the vector leg carries cross-language questions.
 # Files and notes alias the same canonical content and rank in one pool; the
-# scoped resource carries a kind so citations can open the right thing.
+# scoped resource carries a kind so citations can open the right thing. The
+# note leg only exists in the workspace database: the knowledge library runs
+# the same statement against its own schema, which has no materials.
+_MATERIAL_SCOPE_SQL = """
+            UNION ALL
+            SELECT mc.content_id, m.id, m.title, 'material', m.created_at
+            FROM rag_material_contents mc
+            JOIN rag_contents rc ON rc.id = mc.content_id AND rc.status = 'ready'
+            JOIN materials m ON m.id = mc.material_id
+            WHERE mc.workspace_id = %(ws)s AND m.trashed_at IS NULL
+                AND (%(no_filter)s OR m.id = ANY(%(file_ids)s))"""
+
 _SEARCH_SQL_TEMPLATE = """
 WITH scoped_files AS (
         SELECT DISTINCT ON (content_id) content_id, file_id, file_name, kind
@@ -969,14 +986,7 @@ WITH scoped_files AS (
             JOIN rag_contents rc ON rc.id = fc.content_id AND rc.status = 'ready'
             JOIN files f ON f.id = fc.file_id
             WHERE fc.workspace_id = %(ws)s AND f.trashed_at IS NULL
-                AND (%(no_filter)s OR f.id = ANY(%(file_ids)s))
-            UNION ALL
-            SELECT mc.content_id, m.id, m.title, 'material', m.created_at
-            FROM rag_material_contents mc
-            JOIN rag_contents rc ON rc.id = mc.content_id AND rc.status = 'ready'
-            JOIN materials m ON m.id = mc.material_id
-            WHERE mc.workspace_id = %(ws)s AND m.trashed_at IS NULL
-                AND (%(no_filter)s OR m.id = ANY(%(file_ids)s))
+                AND (%(no_filter)s OR f.id = ANY(%(file_ids)s)){material_scope}
         ) resources
         ORDER BY content_id, ordered_at, file_id
 ),
@@ -1086,7 +1096,9 @@ async def hybrid_search(
     """
     pin = pin or await workspace_embedding_pin(workspace_id)
     sql = _SEARCH_SQL_TEMPLATE.format(
-        vector_table=vector_table_for_pin(pin), chunk_filter=chunk_filter
+        vector_table=vector_table_for_pin(pin),
+        chunk_filter=chunk_filter,
+        material_scope="" if conn is not None else _MATERIAL_SCOPE_SQL,
     )
     params = dict(chunk_filter_params or {})
     params.update(

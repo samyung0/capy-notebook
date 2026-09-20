@@ -764,7 +764,10 @@ export const handlers = [
       if (mt.title.toLowerCase().includes(q))
         results.push({
           color: mt.color,
-          href: `/flashcards/${mt.id}`,
+          href:
+            mt.parentMaterialId && mt.workspaceId
+              ? `/workspaces/${mt.workspaceId}?material=${mt.parentMaterialId}`
+              : `/flashcards/${mt.id}`,
           id: mt.id,
           kind: 'flashcards',
           subtitle: mt.workspaceName,
@@ -2495,9 +2498,6 @@ export const handlers = [
     });
   }),
   /* ---------------- quizzes & attempts ---------------- */
-  http.get('/api/quizzes', async () =>
-    HttpResponse.json(db.quizMaterials().map(db.quizFromMaterial))
-  ),
   http.post('/api/quizzes', async ({ request }) => {
     const body = (await request.json()) as Partial<Quiz>;
     const ws = db.workspaces.find((w) => w.id === body.workspaceId);
@@ -2683,11 +2683,6 @@ export const handlers = [
     return HttpResponse.json(at, { status: 201 });
   }),
   /* ---------------- flashcards ---------------- */
-  http.get('/api/flashcards', async () =>
-    HttpResponse.json(
-      db.flashcardSetMaterials().map(db.flashcardSetFromMaterial)
-    )
-  ),
   http.post('/api/flashcards', async ({ request }) => {
     const body = (await request.json()) as Partial<FlashcardSet>;
     const ws = db.workspaces.find((w) => w.id === body.workspaceId);

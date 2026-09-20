@@ -29,12 +29,13 @@ type MaterialIndexText struct {
 	Text     string `json:"text"`
 }
 
-// MaterialIndexText renders an active workspace note for indexing.
-func (s *Store) MaterialIndexText(ctx context.Context, materialID string) (MaterialIndexText, error) {
+// MaterialIndexText renders an active note of the given workspace for
+// indexing; the workspace binds the internal caller to its own scope.
+func (s *Store) MaterialIndexText(ctx context.Context, materialID, workspaceID string) (MaterialIndexText, error) {
 	var out MaterialIndexText
 	var content string
 	err := s.pool.QueryRow(ctx, `SELECT id, title, revision, content FROM materials
-		WHERE id=$1 AND kind='note' AND workspace_id IS NOT NULL AND trashed_at IS NULL`, materialID).
+		WHERE id=$1 AND workspace_id=$2 AND kind='note' AND trashed_at IS NULL`, materialID, workspaceID).
 		Scan(&out.ID, &out.Title, &out.Revision, &content)
 	if isNoRows(err) {
 		return out, ErrNotFound

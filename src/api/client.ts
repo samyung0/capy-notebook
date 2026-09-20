@@ -375,7 +375,6 @@ export const qk = {
     ['file-links', id, consumer] as const,
   files: (wsId: string) => ['workspace', wsId, 'files'] as const,
   flashcardSet: (id: string) => ['flashcardSet', id] as const,
-  flashcardSets: ['flashcardSets'] as const,
   ingestSlots: ['me', 'ingest-slots'] as const,
   integrations: ['integrations'] as const,
   labels: ['labels'] as const,
@@ -396,7 +395,6 @@ export const qk = {
     ['materials', 'owned', params ?? null] as const,
   ownedMaterialsRoot: ['materials', 'owned'] as const,
   quiz: (id: string) => ['quiz', id] as const,
-  quizzes: ['quizzes'] as const,
   search: (q: string) => ['search', q] as const,
   sourceUploadPolicy: (wsId?: string) =>
     ['source-upload-policy', wsId ?? null] as const,

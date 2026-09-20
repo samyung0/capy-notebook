@@ -1112,40 +1112,6 @@ export const GetSourceSessionResponse = zod.object({
 
 
 /**
- * @summary List flashcard sets
- */
-export const ListFlashcardSetsResponseItem = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "canEdit": zod.boolean(),
-  "cardCount": zod.int(),
-  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
-  "dueCount": zod.int(),
-  "id": zod.string(),
-  "isOwner": zod.boolean(),
-  "knownPct": zod.int(),
-  "name": zod.string(),
-  "privacy": zod.enum(['private', 'public', 'link']),
-  "provenance": zod.object({
-  "books": zod.array(zod.object({
-  "authors": zod.array(zod.string()),
-  "edition": zod.string().optional(),
-  "excerptIds": zod.array(zod.string()),
-  "id": zod.string(),
-  "license": zod.string().optional(),
-  "licenseUrl": zod.string().optional(),
-  "sourceUrl": zod.string().optional(),
-  "title": zod.string(),
-  "version": zod.int()
-})),
-  "license": zod.string().optional()
-}).optional(),
-  "workspaceId": zod.string(),
-  "workspaceName": zod.string()
-})
-export const ListFlashcardSetsResponse = zod.array(ListFlashcardSetsResponseItem)
-
-
-/**
  * @summary Create flashcards
  */
 export const createFlashcardSetBodyColorDefault = `green`;
@@ -2486,40 +2452,6 @@ export const GradeQuizAnswerResponse = zod.object({
   "award": zod.number(),
   "reason": zod.string()
 })
-
-
-/**
- * @summary List quizzes
- */
-export const ListQuizzesResponseItem = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "canEdit": zod.boolean(),
-  "chapters": zod.array(zod.string()),
-  "createdAt": zod.iso.datetime({"offset":true}),
-  "id": zod.string(),
-  "isOwner": zod.boolean(),
-  "name": zod.string(),
-  "privacy": zod.enum(['private', 'public', 'link']),
-  "provenance": zod.object({
-  "books": zod.array(zod.object({
-  "authors": zod.array(zod.string()),
-  "edition": zod.string().optional(),
-  "excerptIds": zod.array(zod.string()),
-  "id": zod.string(),
-  "license": zod.string().optional(),
-  "licenseUrl": zod.string().optional(),
-  "sourceUrl": zod.string().optional(),
-  "title": zod.string(),
-  "version": zod.int()
-})),
-  "license": zod.string().optional()
-}).optional(),
-  "questions": zod.array(zod.record(zod.string(), zod.unknown())),
-  "timeLimitMin": zod.int().optional(),
-  "workspaceId": zod.string(),
-  "workspaceName": zod.string()
-})
-export const ListQuizzesResponse = zod.array(ListQuizzesResponseItem)
 
 
 /**
