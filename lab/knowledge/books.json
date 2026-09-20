@@ -39,6 +39,31 @@
       ]
     },
     {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "authors": [
+        "William Frey",
+        "Jose A. Cruz-Cruz"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/certificates-and-diplomas/18025",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/2/2917/pdf/Business_Ethics_2917_r.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/certificates-and-diplomas/18025",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution-ShareAlike 4.0 International License ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Business Ethics, William Frey, Jose A. Cruz-Cruz. CC BY-SA 4.0. https://www.opentextbooks.org.hk/certificates-and-diplomas/18025",
+      "pdf_path": "data/knowledge-base/sources/e12775e7f7de8d40c3679621c2fef95c0cec2a2d52dd89fe370284f822495b92.pdf",
+      "sha256": "e12775e7f7de8d40c3679621c2fef95c0cec2a2d52dd89fe370284f822495b92",
+      "bytes": 5097000,
+      "pages": 358,
+      "first_content_page": 11,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "business-law-ethics"
+    },
+    {
       "id": "evidence-based-software-engineering",
       "title": "Evidence-based Software Engineering",
       "authors": [
@@ -85,7 +110,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "communication-media",
-      "version": 1
+      "version": 2
     },
     {
       "id": "information-systems-for-business-and-beyond",
@@ -110,7 +135,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "information-systems",
-      "version": 1
+      "version": 2
     },
     {
       "id": "integrated-infrastructure-design-guide-methods-techniques-st",
@@ -187,7 +212,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "marketing",
-      "version": 1
+      "version": 2
     },
     {
       "id": "introductory-business-statistics",
@@ -212,7 +237,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "statistics",
-      "version": 1
+      "version": 2
     },
     {
       "id": "lsj",
@@ -301,7 +326,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "management",
-      "version": 1
+      "version": 2
     },
     {
       "id": "os4",
@@ -364,7 +389,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "physics",
-      "version": 2
+      "version": 3
     },
     {
       "id": "project-management",

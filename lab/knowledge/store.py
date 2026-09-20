@@ -299,6 +299,19 @@ def download_by_sha(sha256: str) -> dict | None:
     return download_dict(row) if row else None
 
 
+def reject_download_noncommercial(pdf_url: str) -> bool:
+    """Record a manual decision without inventing licence metadata."""
+    with db() as conn:
+        return (
+            conn.execute(
+                "UPDATE downloads SET status='rejected', last_error=?, finished_at=? "
+                "WHERE pdf_url=? AND status IN ('failed','rejected')",
+                ("NonCommercial licence (manual review)", time.time(), pdf_url),
+            ).rowcount
+            == 1
+        )
+
+
 def mark_duplicate(pdf_url: str, existing_sha: str, attempts: int) -> None:
     """The new URL served bytes we already hold: note it on the existing row."""
     with db() as conn:

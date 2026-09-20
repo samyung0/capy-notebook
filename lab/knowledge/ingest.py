@@ -275,7 +275,9 @@ def run_figures(book: dict, run_dir: Path, log: Path) -> int:
     return run_command(pilot("refresh-figures", run_dir), log)
 
 
-def run_topics(book: dict, run_dir: Path, log: Path) -> int:
+def run_topics(
+    book: dict, run_dir: Path, log: Path, *, review_context: Path | None = None
+) -> int:
     return run_command(
         [
             sys.executable,
@@ -284,6 +286,7 @@ def run_topics(book: dict, run_dir: Path, log: Path) -> int:
             str(run_dir),
             "--book",
             book["book_id"],
+            *(["--review-context", str(review_context)] if review_context else []),
         ],
         log,
     )

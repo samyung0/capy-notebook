@@ -3,10 +3,31 @@ import json
 import pytest
 import scrape
 import store
+from fastapi.testclient import TestClient
 
 import server
 
 SHA = "d" * 64
+
+
+@pytest.mark.parametrize(
+    "status", ["failed", "rejected", "queued", "downloading", "downloaded"]
+)
+def test_manual_noncommercial_rejection_only_changes_failed_or_rejected(status):
+    url = "https://example.test/book.pdf?edition=2&file=book"
+    store.add_download({"pdf_url": url}, status, "no licence stated")
+    client = TestClient(server.build_app())
+    response = client.post("/api/downloads/reject-noncommercial", json={"pdf_url": url})
+    row = store.downloads()[0]
+    if status in ("failed", "rejected"):
+        assert response.status_code == 200
+        assert row["status"] == "rejected"
+        assert row["last_error"] == "NonCommercial licence (manual review)"
+    else:
+        assert response.status_code == 409
+        assert row["status"] == status
+        assert row["last_error"] == "no licence stated"
+    assert row["licence"] is None and row["evidence_quote"] is None
 
 
 @pytest.fixture

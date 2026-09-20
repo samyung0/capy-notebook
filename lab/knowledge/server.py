@@ -449,6 +449,15 @@ def build_app():
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
 
+    @app.post("/api/downloads/reject-noncommercial")
+    async def reject_download_noncommercial(request: Request):
+        url = str((await request.json()).get("pdf_url") or "")
+        if not store.reject_download_noncommercial(url):
+            raise HTTPException(
+                409, "download is no longer failed or rejected; refresh"
+            )
+        return {"ok": True}
+
     @app.post("/api/books/{sha}/{action}")
     def book_action(sha: str, action: str):
         book = store.book(sha)
