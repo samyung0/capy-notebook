@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import re
+import sqlite3
 import sys
 import threading
 import time
@@ -24,7 +25,12 @@ from pathlib import Path
 
 # Module-level so FastAPI can resolve the postponed `Request` annotations.
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    StreamingResponse,
+)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import store
@@ -398,6 +404,18 @@ def build_app():
 
     app = FastAPI(lifespan=lifespan)
 
+    @app.exception_handler(sqlite3.OperationalError)
+    async def database_error(request: Request, exc: sqlite3.OperationalError):
+        if getattr(exc, "sqlite_errorcode", 0) & 0xFF not in (
+            sqlite3.SQLITE_BUSY,
+            sqlite3.SQLITE_LOCKED,
+        ):
+            raise exc
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Database is busy. Please try again shortly."},
+        )
+
     @app.get("/")
     def index():
         return HTMLResponse(UI.read_text(encoding="utf-8"))
@@ -450,12 +468,10 @@ def build_app():
             raise HTTPException(400, str(exc)) from exc
 
     @app.post("/api/downloads/reject-noncommercial")
-    async def reject_download_noncommercial(request: Request):
-        url = str((await request.json()).get("pdf_url") or "")
+    def reject_download_noncommercial(body: dict):
+        url = str(body.get("pdf_url") or "")
         if not store.reject_download_noncommercial(url):
-            raise HTTPException(
-                409, "download is no longer failed or rejected; refresh"
-            )
+            raise HTTPException(409, "download no longer has a 403 error; refresh")
         return {"ok": True}
 
     @app.post("/api/books/{sha}/{action}")

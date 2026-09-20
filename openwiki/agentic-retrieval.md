@@ -1115,7 +1115,7 @@ that scrapes and downloads open textbooks, runs the pilot stages per book
 and calls this loader to publish; the loader, the reader and the curate tools
 are what it feeds. Its scraper judges pages with GLM-5.3-Flash on the local
 Ollama cloud model. Catalogs discover individual book landing pages; downloads
-require book-specific licence evidence, English secondary/undergraduate content,
+require book-specific licence evidence, English content at secondary, undergraduate, graduate or other levels,
 title and a known subject. Missing authors are allowed at download; authorless
 books require source/PDF attribution review and a supplied attribution statement
 at admission, enforced again before publication. Titles and filenames containing

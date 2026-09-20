@@ -344,6 +344,7 @@ function renderSources(list) {
 function downloadErrorGroup(download) {
   const error = (download.last_error || '').trim();
   if (!error) return '';
+  if (/^duplicate of\b/i.test(error)) return 'Duplicated PDF';
   const http = error.match(/(?:Client|Server) error '([45]\d{2})\b/i);
   if (http) return `HTTP ${http[1]}`;
   return error.split('\n')[0].split(':')[0];
@@ -380,7 +381,7 @@ function renderDownloads(downloads) {
       <div class="q muted">${esc((d.authors || []).join(', '))}${d.edition ? ' · ' + esc(d.edition) : ''} · ${esc(d.subject_id || '?')} · ${esc(d.level || '?')} · ${esc(d.language || '?')} · ${esc(d.licence || 'no licence')}</div>
       ${d.evidence_quote ? `<div class="q">“${esc(d.evidence_quote)}” <a href="${esc(d.licence_evidence_url)}" target="_blank">evidence</a></div>` : ''}
       ${d.last_error ? `<div class="q bad">${esc(d.last_error)}</div>` : ''}
-      ${['failed', 'rejected'].includes(d.status) && !/NonCommercial/i.test(d.last_error || '') ? `<button type="button" data-pdf-url="${esc(d.pdf_url)}" onclick="rejectNonCommercial(this)">Reject: non-commercial</button>` : ''}
+      ${['failed', 'rejected'].includes(d.status) && downloadErrorGroup(d) === 'HTTP 403' ? `<button type="button" data-pdf-url="${esc(d.pdf_url)}" onclick="rejectNonCommercial(this)">Reject: non-commercial</button>` : ''}
       ${d.duplicate_urls.length ? `<div class="q muted">also at: ${d.duplicate_urls.map(esc).join(', ')}</div>` : ''}
       <div class="q"><a href="${esc(d.pdf_url)}" target="_blank">${esc(d.pdf_url)}</a>${d.landing_url ? ` · <a href="${esc(d.landing_url)}" target="_blank">landing page</a>` : ''}</div>
     </div>`

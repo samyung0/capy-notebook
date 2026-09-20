@@ -22,6 +22,18 @@ def test_subject_schema_accepts_parent_subjects_but_rejects_invented_ids():
     [
         ("CC BY 4.0", "https://x/licence", "Licensed under CC BY 4.0", True, ""),
         ("CC BY-SA 3.0", "https://x", "q", True, ""),
+        ("CC BY 3.0 US", "https://x", "q", True, ""),
+        ("Creative Commons Attribution 3.0 United States", "https://x", "q", True, ""),
+        ("CC BY-NC 3.0 US", "https://x", "q", False, "NonCommercial licence"),
+        ("CC BY-ND 3.0 US", "https://x", "q", False, "NoDerivatives licence"),
+        ("Free Documentation License (GNU)", "https://x", "q", False, "GFDL licence"),
+        (
+            "GNU GPL v2",
+            "https://x",
+            "q",
+            False,
+            "GNU GPL (outside approved licence policy) licence",
+        ),
         (
             "Creative Commons Attribution-ShareAlike 4.0 International",
             "https://x",
@@ -52,7 +64,30 @@ def test_licence_gate(name, url, quote, ok, reason):
     assert scrape.licence_accepted(name, url, quote) == (ok, reason)
 
 
-def test_gate_needs_english_secondary_or_undergraduate():
+def test_worker_failure_retains_cause(monkeypatch, caplog):
+    stop = threading.Event()
+    monkeypatch.setattr(scrape, "paused", lambda _: False)
+    monkeypatch.setattr(
+        store, "next_download", lambda _: {"pdf_url": "https://x/book.pdf"}
+    )
+
+    def fail(*_):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(scrape, "download_one", fail)
+    captured = []
+
+    def finish(*args):
+        captured.append(args)
+        stop.set()
+
+    monkeypatch.setattr(store, "finish_download", finish)
+    scrape.download_worker(stop)
+    assert captured[0][3] == "worker error: RuntimeError: database is locked"
+    assert "Download worker failed" in caplog.text
+
+
+def test_gate_accepts_all_classified_levels_but_requires_english():
     verdict = {
         "page_type": "book",
         "subject_id": "physics",
@@ -60,9 +95,10 @@ def test_gate_needs_english_secondary_or_undergraduate():
         "language": "en",
         "level": "undergraduate",
     }
-    assert scrape.gate(verdict) == (True, "")
+    for level in ("secondary", "undergraduate", "graduate", "other"):
+        assert scrape.gate({**verdict, "level": level}) == (True, "")
     assert scrape.gate({**verdict, "language": "es"}) == (False, "language 'es'")
-    assert scrape.gate({**verdict, "level": "graduate"}) == (False, "level 'graduate'")
+    assert scrape.gate({**verdict, "level": None}) == (False, "level None")
     assert scrape.gate({**verdict, "licence": None})[1] == "no licence stated"
     assert scrape.gate({**verdict, "relevant": False, "licence": None}) == (
         False,

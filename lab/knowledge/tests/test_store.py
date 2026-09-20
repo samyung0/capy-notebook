@@ -1,7 +1,36 @@
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from threading import Barrier
 
 import store
+
+
+def test_large_blocked_queue_does_not_scan_history_per_candidate(monkeypatch):
+    with store.db() as conn:
+        conn.executemany(
+            "INSERT INTO urls(url,host,status,added_at,depth) VALUES(?,?,'pending',0,0)",
+            [(f"https://busy.test/{i}", "busy.test") for i in range(3000)],
+        )
+        conn.executemany(
+            "INSERT INTO downloads(pdf_url,host,status,added_at) VALUES(?,?,'queued',0)",
+            [(f"https://busy.test/{i}.pdf", "busy.test") for i in range(1000)],
+        )
+        conn.execute(
+            "INSERT INTO downloads(pdf_url,host,status,added_at) "
+            "VALUES('https://busy.test/active.pdf','busy.test','downloading',0)"
+        )
+    original_db = store.db
+
+    @contextmanager
+    def bounded_db():
+        with original_db() as conn:
+            # Abort an accidental quadratic scan without a wall-clock assertion.
+            conn.set_progress_handler(lambda: 1, 500_000)
+            yield conn
+
+    monkeypatch.setattr(store, "db", bounded_db)
+    assert store.next_url(5) is None
+    assert store.next_download(5) is None
 
 
 def test_ten_workers_claim_distinct_urls_and_recover_interrupted_claims():

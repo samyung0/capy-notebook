@@ -63,7 +63,7 @@ include = ["pipeline*"]
 pipeline = ["elitellm/providers.json", "generated/agent_tools.json"]
 
 [tool.ruff]
-extend-exclude = ["bench", "vendor"]
+extend-exclude = ["bench", "tmp", "vendor"]
 force-exclude = true
 
 [tool.ruff.lint.isort]

@@ -2,6 +2,201 @@
   "schema_version": 1,
   "books": [
     {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "authors": [
+        "Louis Scharf"
+      ],
+      "edition": "",
+      "source_url": "https://archive.org/details/cnx-org-col10685",
+      "download_url": "https://archive.org/download/cnx-org-col10685/a-first-course-in-electrical-and-computer-engineering.pdf",
+      "license": "CC BY 3.0",
+      "license_url": "http://creativecommons.org/licenses/by/3.0/",
+      "license_evidence_url": "https://archive.org/details/cnx-org-col10685",
+      "license_evidence_quote": "Usage Attribution 3.0",
+      "attribution_reviewed": false,
+      "attribution": "A First Course in Electrical and Computer Engineering, Louis Scharf. CC BY 3.0. https://archive.org/details/cnx-org-col10685",
+      "pdf_path": "data/knowledge-base/sources/004c71b1fc297b7e3feab2d13c534c76587ce3de90db8bb9e86ba3cb14d3f29c.pdf",
+      "sha256": "004c71b1fc297b7e3feab2d13c534c76587ce3de90db8bb9e86ba3cb14d3f29c",
+      "bytes": 9253042,
+      "pages": 381,
+      "first_content_page": 1,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "electrical-engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "authors": [
+        "Christian Döhler"
+      ],
+      "edition": "",
+      "source_url": "https://langsci-press.org/catalog/book/212",
+      "download_url": "https://langsci-press.org/catalog/view/212/1408/1325-1",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "https://langsci-press.org/catalog/book/212",
+      "license_evidence_quote": "This work is licensed under a Creative Commons Attribution 4.0 International License",
+      "attribution_reviewed": false,
+      "attribution": "A grammar of Komnzo, Christian Döhler. CC BY 4.0. https://langsci-press.org/catalog/book/212",
+      "pdf_path": "data/knowledge-base/sources/70aa468d555df515e2151aa7f08996ba456f171b1436b3adb55afb3902aaca91.pdf",
+      "sha256": "70aa468d555df515e2151aa7f08996ba456f171b1436b3adb55afb3902aaca91",
+      "bytes": 4107782,
+      "pages": 468,
+      "first_content_page": 19,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "linguistics",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "authors": [
+        "Dianne Friesen"
+      ],
+      "edition": "",
+      "source_url": "https://langsci-press.org/catalog/book/118",
+      "download_url": "https://langsci-press.org/catalog/view/118/263/760-3",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "https://langsci-press.org/catalog/view/118/263/760-3#page=4",
+      "license_evidence_quote": "Published under the Creative Commons Attribution 4.0 Licence (CC BY 4.0).",
+      "attribution_reviewed": false,
+      "attribution": "A grammar of Moloko, Dianne Friesen. CC BY 4.0. https://langsci-press.org/catalog/book/118",
+      "pdf_path": "data/knowledge-base/sources/9093442169ee34dd1ff9b037836bce330948ae3b4e91488c0c063db43e6e14d9.pdf",
+      "sha256": "9093442169ee34dd1ff9b037836bce330948ae3b4e91488c0c063db43e6e14d9",
+      "bytes": 1395383,
+      "pages": 474,
+      "first_content_page": 17,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "linguistics",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "authors": [
+        "Henrik Liljegren"
+      ],
+      "edition": "",
+      "source_url": "https://langsci-press.org/catalog/book/82",
+      "download_url": "https://langsci-press.org/catalog/view/82/85/399-1",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "https://langsci-press.org/catalog/view/82/85/399-1#page=4",
+      "license_evidence_quote": "Published under the Creative Commons Attribution 4.0 Licence (CC BY 4.0).",
+      "attribution_reviewed": false,
+      "attribution": "A grammar of Palula, Henrik Liljegren. CC BY 4.0. https://langsci-press.org/catalog/book/82",
+      "pdf_path": "data/knowledge-base/sources/69502a317d9eefc28f4c92a878990f48495bf4fcee163d39fd72fe905fffdd6c.pdf",
+      "sha256": "69502a317d9eefc28f4c92a878990f48495bf4fcee163d39fd72fe905fffdd6c",
+      "bytes": 10460117,
+      "pages": 493,
+      "first_content_page": 27,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "linguistics"
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "authors": [
+        "Angela Kluge"
+      ],
+      "edition": "",
+      "source_url": "https://langsci-press.org/catalog/book/78",
+      "download_url": "https://langsci-press.org/catalog/view/78/35/613-3",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "https://langsci-press.org/catalog/view/78/35/613-3#page=4",
+      "license_evidence_quote": "Published under the Creative Commons Attribution 4.0 Licence (CC BY 4.0).",
+      "attribution_reviewed": false,
+      "attribution": "A grammar of Papuan Malay, Angela Kluge. CC BY 4.0. https://langsci-press.org/catalog/book/78",
+      "pdf_path": "data/knowledge-base/sources/edf33e7107fd2e543ff48c0ce3c6c87dbe668bcd7c20b3c3a7852139f17d1cfb.pdf",
+      "sha256": "edf33e7107fd2e543ff48c0ce3c6c87dbe668bcd7c20b3c3a7852139f17d1cfb",
+      "bytes": 3986794,
+      "pages": 770,
+      "first_content_page": 31,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "linguistics"
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "authors": [
+        "Joshua Wilbur"
+      ],
+      "edition": "",
+      "source_url": "https://langsci-press.org/catalog/book/17",
+      "download_url": "https://langsci-press.org/catalog/view/17/6/110-2",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "https://langsci-press.org/catalog/view/17/6/110-2#page=4",
+      "license_evidence_quote": "Published under the Creative Commons Attribution 4.0 Licence (CC BY 4.0).",
+      "attribution_reviewed": false,
+      "attribution": "A grammar of Pite Saami, Joshua Wilbur. CC BY 4.0. https://langsci-press.org/catalog/book/17",
+      "pdf_path": "data/knowledge-base/sources/e6a676aa060a648d29aa0fbafc3b1ed3f39e51bed5e7b59b59cac93a6cfc8c86.pdf",
+      "sha256": "e6a676aa060a648d29aa0fbafc3b1ed3f39e51bed5e7b59b59cac93a6cfc8c86",
+      "bytes": 1657721,
+      "pages": 297,
+      "first_content_page": 17,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "linguistics"
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "authors": [
+        "Diana Schackow"
+      ],
+      "edition": "",
+      "source_url": "https://langsci-press.org/catalog/book/66",
+      "download_url": "https://langsci-press.org/catalog/view/66/12/332-1",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "https://langsci-press.org/catalog/book/66",
+      "license_evidence_quote": "This work is licensed under a Creative Commons Attribution 4.0 International License",
+      "attribution_reviewed": false,
+      "attribution": "A grammar of Yakkha, Diana Schackow. CC BY 4.0. https://langsci-press.org/catalog/book/66",
+      "pdf_path": "data/knowledge-base/sources/555e4ba68db68e7c30f3bfc608f516d68bb80f86865a4b8867a501dce6dd83f1.pdf",
+      "sha256": "555e4ba68db68e7c30f3bfc608f516d68bb80f86865a4b8867a501dce6dd83f1",
+      "bytes": 10266986,
+      "pages": 622,
+      "first_content_page": 19,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "linguistics"
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "authors": [
+        "Aviva Shimelman"
+      ],
+      "edition": "",
+      "source_url": "https://langsci-press.org/catalog/book/83",
+      "download_url": "https://langsci-press.org/catalog/view/83/87/637-1",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "https://langsci-press.org/catalog/book/83",
+      "license_evidence_quote": "This work is licensed under a Creative Commons Attribution 4.0 International License",
+      "attribution_reviewed": false,
+      "attribution": "A grammar of Yauyos Quechua, Aviva Shimelman. CC BY 4.0. https://langsci-press.org/catalog/book/83",
+      "pdf_path": "data/knowledge-base/sources/a3ef1baeb58c65100fda1a76379912ffcd3096fd8e0ec1d3a29277cbe4041667.pdf",
+      "sha256": "a3ef1baeb58c65100fda1a76379912ffcd3096fd8e0ec1d3a29277cbe4041667",
+      "bytes": 6078560,
+      "pages": 359,
+      "first_content_page": 21,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "linguistics"
+    },
+    {
       "id": "ahss4",
       "subject_id": "statistics",
       "title": "Advanced High School Statistics",
@@ -39,6 +234,58 @@
       ]
     },
     {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "authors": [
+        "Cheryl E Ball",
+        "Drew M Loewe"
+      ],
+      "edition": "",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/bad-ideas-about-writing",
+      "download_url": "https://textbooks.lib.wvu.edu/badideas/badideasaboutwriting-book.pdf",
+      "license": "CC BY 4.0",
+      "license_url": "http://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "https://open.umn.edu/opentextbooks/textbooks/bad-ideas-about-writing",
+      "license_evidence_quote": "Conditions of Use Attribution CC BY",
+      "attribution_reviewed": false,
+      "attribution": "Bad Ideas About Writing, Cheryl E Ball, Drew M Loewe. CC BY 4.0. https://open.umn.edu/opentextbooks/textbooks/bad-ideas-about-writing",
+      "pdf_path": "data/knowledge-base/sources/dd825e5e8975ff148908a5d4b6c04e8ef9425bc60e5e3a49a25b9d4a6bfd7a89.pdf",
+      "sha256": "dd825e5e8975ff148908a5d4b6c04e8ef9425bc60e5e3a49a25b9d4a6bfd7a89",
+      "bytes": 2425678,
+      "pages": 382,
+      "first_content_page": 1,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "writing-composition",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "authors": [
+        "Ana Carolina Rodriguez",
+        "Taylor Cavallo"
+      ],
+      "edition": "",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/becoming-a-change-facilitator",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/5211",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "file:///C:/WEB/capy-notebook/data/knowledge-base/sources/5a15f6e0fa2b197fd2046cdfdc2c3657eb39c028e9af0bb890ff032487ec4221.pdf#page=4",
+      "license_evidence_quote": "Becoming a Change Facilitator Copyright © 2026 by Ana Carolina Rodriguez and Taylor Cavallo is licensed under a Creative Commons Attribution 4.0 International License, except where otherwise noted.",
+      "attribution_reviewed": false,
+      "attribution": "Becoming a Change Facilitator, Ana Carolina Rodriguez, Taylor Cavallo. CC BY 4.0. https://open.umn.edu/opentextbooks/textbooks/becoming-a-change-facilitator",
+      "pdf_path": "data/knowledge-base/sources/5a15f6e0fa2b197fd2046cdfdc2c3657eb39c028e9af0bb890ff032487ec4221.pdf",
+      "sha256": "5a15f6e0fa2b197fd2046cdfdc2c3657eb39c028e9af0bb890ff032487ec4221",
+      "bytes": 2179528,
+      "pages": 115,
+      "first_content_page": 13,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "management",
+      "version": 1
+    },
+    {
       "id": "business-ethics",
       "title": "Business Ethics",
       "authors": [
@@ -61,7 +308,110 @@
       "first_content_page": 11,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "business-law-ethics"
+      "subject_id": "business-law-ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "authors": [
+        "Donald McCubbrey",
+        "Marisa Drexel",
+        "Jackie Sharman"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/certificates-and-diplomas/18029",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/6/6841/pdf/Business_Fundamentals_6841.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/certificates-and-diplomas/18029",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution-ShareAlike 4.0 International License ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Business Fundamentals, Donald McCubbrey, Marisa Drexel, Jackie Sharman. CC BY-SA 4.0. https://www.opentextbooks.org.hk/certificates-and-diplomas/18029",
+      "pdf_path": "data/knowledge-base/sources/79b592a642c525f41e86f1aee7dfa50d255c96a52284fc25a6a4455dbd3284f1.pdf",
+      "sha256": "79b592a642c525f41e86f1aee7dfa50d255c96a52284fc25a6a4455dbd3284f1",
+      "bytes": 11263339,
+      "pages": 398,
+      "first_content_page": 16,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "business-fundamentals",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "authors": [
+        "John Burnett"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/certificates-and-diplomas/40380",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/39/39965/pdf/Core_Concepts_of_Marketing_39965.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/certificates-and-diplomas/40380",
+      "license_evidence_quote": "This book is licensed under a Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Core Concepts of Marketing, John Burnett. CC BY-SA 4.0. https://www.opentextbooks.org.hk/certificates-and-diplomas/40380",
+      "pdf_path": "data/knowledge-base/sources/53292fa11a7a1b44e6d64c793d1c6f05783dd23b2602b6cc0ece1848cc53907f.pdf",
+      "sha256": "53292fa11a7a1b44e6d64c793d1c6f05783dd23b2602b6cc0ece1848cc53907f",
+      "bytes": 14081139,
+      "pages": 374,
+      "first_content_page": 18,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "authors": [
+        "Karen Jones"
+      ],
+      "edition": "",
+      "source_url": "https://pressbooks.palni.org/curriculumdevelopmentforchristianministry/",
+      "download_url": "https://pressbooks.palni.org/curriculumdevelopmentforchristianministry/open/download?type=print_pdf",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "https://pressbooks.palni.org/curriculumdevelopmentforchristianministry/",
+      "license_evidence_quote": "Curriculum Development for Christian Ministry by Karen Jones is licensed under a Creative Commons Attribution 4.0 International License , except where otherwise noted.",
+      "attribution_reviewed": false,
+      "attribution": "Curriculum Development for Christian Ministry, Karen Jones. CC BY 4.0. https://pressbooks.palni.org/curriculumdevelopmentforchristianministry/",
+      "pdf_path": "data/knowledge-base/sources/81d62467bd3790771aac6871f2020fc985fc1e7f346cb114b5c6ceb135904b0c.pdf",
+      "sha256": "81d62467bd3790771aac6871f2020fc985fc1e7f346cb114b5c6ceb135904b0c",
+      "bytes": 77003356,
+      "pages": 224,
+      "first_content_page": 1,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "curriculum-instruction",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "authors": [
+        "Ellingson, Steven W."
+      ],
+      "edition": "",
+      "source_url": "https://vtechworks.lib.vt.edu/items/6f75e22e-ea6a-48a3-b441-65ce5ebf5331",
+      "download_url": "https://vtechworks.lib.vt.edu/bitstreams/9c823491-b65b-4884-a6cb-8221febf270f/download",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+      "license_evidence_url": "https://vtechworks.lib.vt.edu/items/6f75e22e-ea6a-48a3-b441-65ce5ebf5331",
+      "license_evidence_quote": "CC BY-SA 4.0",
+      "attribution_reviewed": false,
+      "attribution": "Electromagnetics, Volume 1, Ellingson, Steven W.. CC BY-SA 4.0. https://vtechworks.lib.vt.edu/items/6f75e22e-ea6a-48a3-b441-65ce5ebf5331",
+      "pdf_path": "data/knowledge-base/sources/903f4c3fdc972e5cf37b59809e214e8583916f46dacec8f695e00670eda0f77a.pdf",
+      "sha256": "903f4c3fdc972e5cf37b59809e214e8583916f46dacec8f695e00670eda0f77a",
+      "bytes": 10772807,
+      "pages": 240,
+      "first_content_page": 16,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "electrical-engineering",
+      "version": 1
     },
     {
       "id": "evidence-based-software-engineering",
@@ -85,7 +435,58 @@
       "first_content_page": 12,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "computer-science-foundations"
+      "subject_id": "computer-science-foundations",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "authors": [
+        "Genick Bar-Meir"
+      ],
+      "edition": "Version 0.5.4, January 11 2026",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/fundamentals-of-compressible-flow-mechanics",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/877",
+      "license": "GNU Free Documentation License",
+      "license_url": "https://www.gnu.org/licenses/fdl.html",
+      "license_evidence_url": "file:///C:/WEB/capy-notebook/data/knowledge-base/sources/c22a282bc397a216956b7d5f90d5f84c19291aaf92dda42769cc963c47a24695.pdf#page=2",
+      "license_evidence_quote": "Fundamentals of Compressible Fundamentals of Compressible Fundamentals of Compressible Fundamentals of Compressible Fundamentals of Compressible Fundamentals of Compressible Fundamentals of Compressible Fundamentals of Compressible Fundamentals of Compressible Fluid Mechanics Fluid Mechanics Fluid Mechanics Genick Bar–Meir, Ph. D. 8118 Kolmar Ave Skokie, IL 60076 barmeir at gmail Copyright © 2026, 2025,2022, 2021, 2020, 2019, 2017, 2013, 2012, 2009, 2008, 2007, 2006, 2005, and 2004 by Genick Bar-Meir See the file copying.fdl or copyright.tex for copying conditions. doi: 0.5281/zenodo.18217916 Version (0.5.4 January 11, 2026)",
+      "attribution_reviewed": false,
+      "attribution": "Fundamentals of Compressible Fluid Mechanics, Genick Bar-Meir, Version 0.5.4, January 11 2026. GNU Free Documentation License. https://open.umn.edu/opentextbooks/textbooks/fundamentals-of-compressible-flow-mechanics",
+      "pdf_path": "data/knowledge-base/sources/c22a282bc397a216956b7d5f90d5f84c19291aaf92dda42769cc963c47a24695.pdf",
+      "sha256": "c22a282bc397a216956b7d5f90d5f84c19291aaf92dda42769cc963c47a24695",
+      "bytes": 6542678,
+      "pages": 521,
+      "first_content_page": 78,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "mechanical-engineering",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "authors": [
+        "Don Johnson"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/certificates-and-diplomas/18070",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/9/9648/pdf/Fundamentals_of_Electrical_Engineering_I_9648.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/certificates-and-diplomas/18070",
+      "license_evidence_quote": "This selection and arrangement of content as a collection is copyrighted by Don Johnson under the Creative Commons Attribution-ShareAlike 4.0 International License",
+      "attribution_reviewed": false,
+      "attribution": "Fundamentals of Electrical Engineering I, Don Johnson. CC BY-SA 4.0. https://www.opentextbooks.org.hk/certificates-and-diplomas/18070",
+      "pdf_path": "data/knowledge-base/sources/e53ed3d0c7dd4add27d791d8d8d24f0e49ab87a40b99043b73a022a28446675a.pdf",
+      "sha256": "e53ed3d0c7dd4add27d791d8d8d24f0e49ab87a40b99043b73a022a28446675a",
+      "bytes": 12915545,
+      "pages": 364,
+      "first_content_page": 11,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "electrical-engineering",
+      "version": 1
     },
     {
       "id": "information-strategies-for-communicators",
@@ -162,7 +563,8 @@
       "first_content_page": 1,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "civil-engineering"
+      "subject_id": "civil-engineering",
+      "version": 1
     },
     {
       "id": "intermediate-financial-accounting-2021-a-volume-1",
@@ -187,7 +589,8 @@
       "first_content_page": 23,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "accounting"
+      "subject_id": "accounting",
+      "version": 1
     },
     {
       "id": "introducing-marketing",
@@ -238,6 +641,32 @@
       "rights_notes": [],
       "subject_id": "statistics",
       "version": 2
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "authors": [
+        "Ralph Morelli",
+        "Ralph Walde"
+      ],
+      "edition": "3/E",
+      "source_url": "https://www.cs.trincoll.edu/~ram/jjj/",
+      "download_url": "https://www.cs.trincoll.edu/~ram/jjj/jjj-os-20170625.pdf",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "https://www.cs.trincoll.edu/~ram/jjj/jjj-os-20170625.pdf#page=2",
+      "license_evidence_quote": "This work is licensed under a Creative Commons Attribution 4.0 International License (CC BY 4.0).",
+      "attribution_reviewed": false,
+      "attribution": "Java, Java, Java: Object-Oriented Problem Solving, 3/E, Ralph Morelli, Ralph Walde, 3/E. CC BY 4.0. https://www.cs.trincoll.edu/~ram/jjj/",
+      "pdf_path": "data/knowledge-base/sources/f8f4dc6320070e3d54afb4061ad1bb8e0644dd42180a5a721d4c1235a476b678.pdf",
+      "sha256": "f8f4dc6320070e3d54afb4061ad1bb8e0644dd42180a5a721d4c1235a476b678",
+      "bytes": 5885059,
+      "pages": 856,
+      "first_content_page": 17,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "programming",
+      "version": 1
     },
     {
       "id": "lsj",
@@ -294,7 +723,139 @@
       "first_content_page": 18,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "management"
+      "subject_id": "management",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "authors": [
+        "Wikibooks"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/certificates-and-diplomas/18026",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/12/12765/pdf/Marketing_12765.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/certificates-and-diplomas/18026",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Marketing, Wikibooks. CC BY-SA 4.0. https://www.opentextbooks.org.hk/certificates-and-diplomas/18026",
+      "pdf_path": "data/knowledge-base/sources/97f8fa5581f7bf12a34d7b93897633f1684042b74cf687591db9baefac3f1126.pdf",
+      "sha256": "97f8fa5581f7bf12a34d7b93897633f1684042b74cf687591db9baefac3f1126",
+      "bytes": 2145850,
+      "pages": 34,
+      "first_content_page": 5,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "authors": [
+        "Michelle Manes"
+      ],
+      "edition": "",
+      "source_url": "https://pressbooks-dev.oer.hawaii.edu/math111/",
+      "download_url": "https://pressbooks-dev.oer.hawaii.edu/math111/open/download?type=print_pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://pressbooks-dev.oer.hawaii.edu/math111/",
+      "license_evidence_quote": "Mathematics for Elementary Teachers Copyright © 2018 by Michelle Manes is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License , except where otherwise noted.",
+      "attribution_reviewed": false,
+      "attribution": "Mathematics for Elementary Teachers, Michelle Manes. CC BY-SA 4.0. https://pressbooks-dev.oer.hawaii.edu/math111/",
+      "pdf_path": "data/knowledge-base/sources/deaf0983b26ba39521da5b95300a646f8bdde63b3cce2c33c62aa5766f2b0753.pdf",
+      "sha256": "deaf0983b26ba39521da5b95300a646f8bdde63b3cce2c33c62aa5766f2b0753",
+      "bytes": 35796567,
+      "pages": 457,
+      "first_content_page": 1,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "arithmetic-prealgebra",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "authors": [
+        "Terry B. Ewell"
+      ],
+      "edition": "",
+      "source_url": "https://archive.org/details/cnx-org-col10714",
+      "download_url": "https://archive.org/download/cnx-org-col10714/music-fundamentals-1-pitch-and-major-scales-and-keys.pdf",
+      "license": "CC BY 3.0",
+      "license_url": "http://creativecommons.org/licenses/by/3.0/",
+      "license_evidence_url": "https://archive.org/details/cnx-org-col10714",
+      "license_evidence_quote": "Usage Attribution 3.0",
+      "attribution_reviewed": false,
+      "attribution": "Music Fundamentals 1: Pitch and Major Scales and Keys, Terry B. Ewell. CC BY 3.0. https://archive.org/details/cnx-org-col10714",
+      "pdf_path": "data/knowledge-base/sources/2fd40c84aee549955794f35f2ec2d0790506221d6256c734ea7c239a7cd51d95.pdf",
+      "sha256": "2fd40c84aee549955794f35f2ec2d0790506221d6256c734ea7c239a7cd51d95",
+      "bytes": 1431736,
+      "pages": 58,
+      "first_content_page": 1,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "music",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "authors": [
+        "Terry B. Ewell"
+      ],
+      "edition": "",
+      "source_url": "https://archive.org/details/cnx-org-col10716",
+      "download_url": "https://archive.org/download/cnx-org-col10716/music-fundamentals-2-rhythm-and-meter.pdf",
+      "license": "CC BY 3.0",
+      "license_url": "http://creativecommons.org/licenses/by/3.0/",
+      "license_evidence_url": "https://archive.org/details/cnx-org-col10716",
+      "license_evidence_quote": "Usage Attribution 3.0",
+      "attribution_reviewed": false,
+      "attribution": "Music Fundamentals 2: Rhythm and Meter, Terry B. Ewell. CC BY 3.0. https://archive.org/details/cnx-org-col10716",
+      "pdf_path": "data/knowledge-base/sources/30e2a1e16fc8eb89755f0bbb95440cff186788ab58dfb5d95af08291ee3cc38f.pdf",
+      "sha256": "30e2a1e16fc8eb89755f0bbb95440cff186788ab58dfb5d95af08291ee3cc38f",
+      "bytes": 880718,
+      "pages": 50,
+      "first_content_page": 1,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "music",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "authors": [
+        "Richard Zach",
+        "Andrew Arana",
+        "Jeremy Avigad",
+        "Walter Dean",
+        "Gillian Russell",
+        "Nicole Wyatt",
+        "Audrey Yap"
+      ],
+      "edition": "Complete build, revision 9620cc7 (2026-07-12)",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/open-logic-project",
+      "download_url": "http://builds.openlogicproject.org/open-logic-complete.pdf",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "http://builds.openlogicproject.org/open-logic-complete.pdf#page=1",
+      "license_evidence_quote": "The Open Logic Text by Open Logic Project is licensed under a Creative Commons Attribution 4.0 International License.",
+      "attribution_reviewed": false,
+      "attribution": "Open Logic Project, Richard Zach, Andrew Arana, Jeremy Avigad, Walter Dean, Gillian Russell, Nicole Wyatt, Audrey Yap, Complete build, revision 9620cc7 (2026-07-12). CC BY 4.0. https://open.umn.edu/opentextbooks/textbooks/open-logic-project",
+      "pdf_path": "data/knowledge-base/sources/e17ac6f54723999b727b56b60f864a969f2b7c883be5ce7149f13472a0ee14ae.pdf",
+      "sha256": "e17ac6f54723999b727b56b60f864a969f2b7c883be5ce7149f13472a0ee14ae",
+      "bytes": 4063129,
+      "pages": 1016,
+      "first_content_page": 26,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "discrete-mathematics",
+      "version": 1
     },
     {
       "id": "operations-management",
@@ -364,6 +925,30 @@
       ]
     },
     {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "authors": [
+        "Luke J. Harmon"
+      ],
+      "edition": "v1.0.0",
+      "source_url": "https://lukejharmon.github.io/pcm/",
+      "download_url": "https://lukejharmon.github.io/pcm/pdf/phylogeneticComparativeMethods.pdf",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "https://lukejharmon.github.io/pcm/",
+      "license_evidence_quote": "This is book text v1.0.0 © CC-BY 2019.",
+      "attribution_reviewed": false,
+      "attribution": "Phylogenetic Comparative Methods: learning from trees, Luke J. Harmon, v1.0.0. CC BY 4.0. https://lukejharmon.github.io/pcm/",
+      "pdf_path": "data/knowledge-base/sources/39270d259d4e40a73ef3e883346bc4d94d950905badbc4da100eb5fd66e9943b.pdf",
+      "sha256": "39270d259d4e40a73ef3e883346bc4d94d950905badbc4da100eb5fd66e9943b",
+      "bytes": 12834825,
+      "pages": 234,
+      "first_content_page": 1,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "ecology-evolution"
+    },
+    {
       "id": "physics",
       "title": "Physics",
       "authors": [
@@ -392,6 +977,31 @@
       "version": 3
     },
     {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "authors": [
+        "Christine Jonick"
+      ],
+      "edition": "",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/principles-of-financial-accounting",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/1101",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://web.ung.edu/media/university-press/Principles-of-Financial-Accounting.pdf#page=4",
+      "license_evidence_quote": "Principles of Financial Accounting is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License. NOTE: The above copyright license which University System of Georgia uses for their original content does not extend to or include content which was accessed and incorporated, and which is licensed under various other CC Licenses, such as ND licenses. Nor does it extend to or include any Special Permissions which were granted to us by the rightsholders for our use of their content. Image Disclaimer: All images and figures in this book are believed to be (after a reasonable investigation) either public domain or carry a compatible Creative Commons license.",
+      "attribution_reviewed": false,
+      "attribution": "Principles of Financial Accounting, Christine Jonick. CC BY-SA 4.0. https://open.umn.edu/opentextbooks/textbooks/principles-of-financial-accounting",
+      "pdf_path": "data/knowledge-base/sources/ddc74629d85972a05bc362c0e3f3a23e678b4869c8b97a512aba00bf1a220174.pdf",
+      "sha256": "ddc74629d85972a05bc362c0e3f3a23e678b4869c8b97a512aba00bf1a220174",
+      "bytes": 5296257,
+      "pages": 318,
+      "first_content_page": 11,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "accounting",
+      "version": 1
+    },
+    {
       "id": "project-management",
       "title": "Project Management",
       "authors": [
@@ -413,7 +1023,8 @@
       "first_content_page": 15,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "management"
+      "subject_id": "management",
+      "version": 1
     },
     {
       "id": "the-impact-of-open-source-software-on-education",
@@ -437,7 +1048,8 @@
       "first_content_page": 21,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "educational-technology"
+      "subject_id": "educational-technology",
+      "version": 1
     },
     {
       "id": "tourism-the-international-business",
@@ -461,7 +1073,36 @@
       "first_content_page": 1,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "business-fundamentals"
+      "subject_id": "business-fundamentals",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "authors": [
+        "Amy Berke",
+        "Robert R. Bleil",
+        "Jordan Cofer",
+        "Doug Davis"
+      ],
+      "edition": "",
+      "source_url": "https://ung.edu/university-press/books/writing-the-nation-a-concise-introduction-to-american-literature-1865-to-present.php",
+      "download_url": "https://ung.edu/university-press/_uploads/files/Writing-the-Nation.pdf",
+      "license": "CC BY-SA 4.0 International",
+      "license_url": "https://ung.edu/university-press/books/writing-the-nation-a-concise-introduction-to-american-literature-1865-to-present.php",
+      "license_evidence_url": "https://ung.edu/university-press/books/writing-the-nation-a-concise-introduction-to-american-literature-1865-to-present.php",
+      "license_evidence_quote": "Copyright License: CC BY-SA 4.0 International",
+      "attribution_reviewed": false,
+      "attribution": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present, Amy Berke, Robert R. Bleil, Jordan Cofer, Doug Davis. CC BY-SA 4.0 International. https://ung.edu/university-press/books/writing-the-nation-a-concise-introduction-to-american-literature-1865-to-present.php",
+      "pdf_path": "data/knowledge-base/sources/c401e6976388f3cf8fc7ed52a277d7158299bc4450e527aa1c5687ede2443ab4.pdf",
+      "sha256": "c401e6976388f3cf8fc7ed52a277d7158299bc4450e527aa1c5687ede2443ab4",
+      "bytes": 15191322,
+      "pages": 775,
+      "first_content_page": 10,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "literature",
+      "version": 1
     }
   ]
 }

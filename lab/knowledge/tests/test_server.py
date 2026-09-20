@@ -1,5 +1,9 @@
+import asyncio
 import json
+import sqlite3
+import threading
 
+import httpx
 import pytest
 import scrape
 import store
@@ -10,23 +14,62 @@ import server
 SHA = "d" * 64
 
 
+def test_busy_rejection_does_not_block_other_requests(monkeypatch):
+    entered = threading.Event()
+    release = threading.Event()
+
+    def blocked_rejection(url):
+        entered.set()
+        assert release.wait(5)
+        error = sqlite3.OperationalError("database is locked")
+        error.sqlite_errorcode = sqlite3.SQLITE_BUSY
+        raise error
+
+    monkeypatch.setattr(store, "reject_download_noncommercial", blocked_rejection)
+
+    async def exercise():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=server.build_app()),
+            base_url="http://test",
+        ) as client:
+            rejection = asyncio.create_task(
+                client.post(
+                    "/api/downloads/reject-noncommercial", json={"pdf_url": "x"}
+                )
+            )
+            try:
+                assert await asyncio.to_thread(entered.wait, 2)
+                response = await asyncio.wait_for(client.get("/"), timeout=2)
+                assert response.status_code == 200
+            finally:
+                release.set()
+            response = await rejection
+            assert response.status_code == 503
+            assert "try again" in response.json()["detail"]
+
+    asyncio.run(exercise())
+
+
 @pytest.mark.parametrize(
     "status", ["failed", "rejected", "queued", "downloading", "downloaded"]
 )
-def test_manual_noncommercial_rejection_only_changes_failed_or_rejected(status):
+@pytest.mark.parametrize(
+    "error", ["HTTPStatusError: Client error '403 Forbidden'", "no licence stated"]
+)
+def test_manual_noncommercial_rejection_only_changes_403_errors(status, error):
     url = "https://example.test/book.pdf?edition=2&file=book"
-    store.add_download({"pdf_url": url}, status, "no licence stated")
+    store.add_download({"pdf_url": url}, status, error)
     client = TestClient(server.build_app())
     response = client.post("/api/downloads/reject-noncommercial", json={"pdf_url": url})
     row = store.downloads()[0]
-    if status in ("failed", "rejected"):
+    if status in ("failed", "rejected") and "403" in error:
         assert response.status_code == 200
         assert row["status"] == "rejected"
         assert row["last_error"] == "NonCommercial licence (manual review)"
     else:
         assert response.status_code == 409
         assert row["status"] == status
-        assert row["last_error"] == "no licence stated"
+        assert row["last_error"] == error
     assert row["licence"] is None and row["evidence_quote"] is None
 
 

@@ -66,6 +66,7 @@ server/bin/
 
 # --- Data / artifacts ---
 data/
+tmp/
 *.sqlite
 *.sqlite3
 *.db

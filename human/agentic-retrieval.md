@@ -168,4 +168,20 @@
 
 - Developer Epo changed the delegated active-book limit to eight and requested eight concurrent Sol agents (2026-09-20); the current platform permits three subagents alongside the parent, so queue excess reviews until slots become available.
 - Developer Epo approved delegated review before topic generation (2026-09-20): Sol corrects excerpts and supplies roles, full existing synopses and evidence; GLM derives/reuses topics from the outline plus all reviewed excerpt context without compact summaries; final topic-ID assignment follows. Audit processed books for supported enrichment, publish changed versions and retire old versions only after replacement verification. Ordinary Qwen workflow remains unchanged.
-- Developer Epo requested (2026-09-20) a per-download manual NonCommercial rejection button for inaccessible/403 items; include unresolved rejected rows because access failures may only be in audit reports. Save the manual rejection reason without inventing a licence name/version or evidence. lab/knowledge/ui.html lab/knowledge/server.py lab/knowledge/store.py
+- Developer Epo clarified (2026-09-20) the manual NonCommercial rejection button and endpoint apply only to 403 download errors; no-licence records remain for subagent review. Save the manual rejection reason without inventing licence metadata. lab/knowledge/ui.html lab/knowledge/server.py lab/knowledge/store.py
+
+- Developer Epo set the delegated knowledge-builder limit to six concurrent Sol medium subagents after restarting Codex (2026-09-20), with eight active books and the five-minute monitor unchanged; resume queued work. lab/knowledge/README.md
+
+- Developer Epo requested (2026-09-20) fixing builder SQLite queue contention and the manual 403 NonCommercial rejection endpoint so a busy database does not freeze the dashboard or produce an unhandled 500; preserve atomic claims, host delays, and rejection eligibility. lab/knowledge/store.py lab/knowledge/server.py
+- Developer Epo approved (2026-09-20) recognising verified CC BY/BY-SA United States jurisdiction suffixes, clear policy-exclusion licence labels and underlying worker error details, and retrying the six historical worker failures only after current eligibility checks. lab/knowledge/scrape.py lab/knowledge/tests/test_scrape.py
+- Developer Epo approved (2026-09-20) using Principles of Financial Accounting by Christine Jonick under its stated CC BY-SA 4.0 licence despite the unresolved third-party exception notice; developer will track the caveat personally. This is a book-specific exception, preserve the notice and review evidence. data/knowledge-base/licence-recheck/financial-accounting-parent-review/
+
+- Developer Epo expanded knowledge-builder eligibility to include graduate and other levels alongside secondary and undergraduate (2026-09-20), and requested requeueing existing level-only rejections after all remaining eligibility checks. lab/knowledge/scrape.py lab/knowledge/README.md
+
+- Developer Epo approved (2026-09-20) a book-specific GNU Free Documentation License exception for Fundamentals of Compressible Fluid Mechanics by Genick Bar-Meir, version 0.5.4, supplied PDF SHA256 c22a282bc397a216956b7d5f90d5f84c19291aaf92dda42769cc963c47a24695. Attach the supplied PDF as downloaded and retain its GNU licence; developer will track the exception personally. General GNU/GFDL rejection policy remains unchanged. Receipt: data/knowledge-base/manual-14-review/gnu-user-exception.json.
+
+- Developer Epo requested (2026-09-20) grouping all hash-specific duplicate download errors into one Duplicated PDF filter category while retaining individual record details. lab/knowledge/ui.html lab/knowledge/tests/download-filter.cjs
+
+- Developer Epo requested (2026-09-20) accommodating manually supplied textbooks above 100 MiB. Set CAPY_MAX_SOURCE_BYTES=209715200 on the local knowledge-builder parser container, matching the scraper 200 MiB cap; retain production defaults. data/knowledge-base/manual-7-review/parser-limit-change.json
+
+- Developer Epo requested (2026-09-20) fresh Sol medium subagents for every new knowledge-builder assignment instead of reusing completed agents; existing assignments finish normally, with six concurrent subagents and eight active books unchanged.

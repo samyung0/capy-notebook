@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS urls (
   visited_at REAL, verdict TEXT
 );
 CREATE INDEX IF NOT EXISTS urls_pending ON urls(status, added_at);
+CREATE INDEX IF NOT EXISTS urls_host_visited ON urls(host, visited_at);
 CREATE TABLE IF NOT EXISTS downloads (
   pdf_url TEXT PRIMARY KEY, host TEXT NOT NULL, landing_url TEXT, title TEXT, authors TEXT, edition TEXT,
   subject_id TEXT, level TEXT, language TEXT, licence TEXT, licence_url TEXT,
@@ -40,6 +41,9 @@ CREATE TABLE IF NOT EXISTS downloads (
   bytes INTEGER, pages INTEGER, duplicate_urls TEXT NOT NULL DEFAULT '[]',
   added_at REAL NOT NULL, finished_at REAL
 );
+CREATE INDEX IF NOT EXISTS downloads_queued ON downloads(added_at) WHERE status='queued';
+CREATE INDEX IF NOT EXISTS downloads_host_finished ON downloads(host, finished_at);
+CREATE INDEX IF NOT EXISTS downloads_active_host ON downloads(host) WHERE status='downloading';
 CREATE TABLE IF NOT EXISTS books (
   sha256 TEXT PRIMARY KEY, book_id TEXT NOT NULL UNIQUE, manifest TEXT NOT NULL,
   status TEXT NOT NULL, stage TEXT, queue_position INTEGER, run_dir TEXT NOT NULL,
@@ -175,7 +179,9 @@ def next_url(delay_seconds: float) -> sqlite3.Row | None:
             "SELECT u.url FROM urls u WHERE u.status='pending' AND NOT EXISTS "
             "(SELECT 1 FROM urls v WHERE v.host=u.host AND v.visited_at > ?) "
             "AND NOT EXISTS (SELECT 1 FROM downloads d WHERE d.host=u.host "
-            "AND (d.status='downloading' OR d.finished_at > ?)) "
+            "AND d.status='downloading') "
+            "AND NOT EXISTS (SELECT 1 FROM downloads d WHERE d.host=u.host "
+            "AND d.finished_at > ?) "
             "ORDER BY u.added_at, u.rowid LIMIT 1) RETURNING *",
             (now, now - delay_seconds, now - delay_seconds),
         ).fetchone()
@@ -265,7 +271,8 @@ def next_download(delay_seconds: float) -> dict | None:
         row = conn.execute(
             "UPDATE downloads SET status='downloading' WHERE pdf_url=("
             "SELECT d.pdf_url FROM downloads d WHERE d.status='queued' AND NOT EXISTS "
-            "(SELECT 1 FROM downloads o WHERE o.host=d.host AND (o.status='downloading' OR o.finished_at > ?)) "
+            "(SELECT 1 FROM downloads o WHERE o.host=d.host AND o.status='downloading') "
+            "AND NOT EXISTS (SELECT 1 FROM downloads o WHERE o.host=d.host AND o.finished_at > ?) "
             "AND NOT EXISTS (SELECT 1 FROM urls v WHERE v.host=d.host AND v.visited_at > ?) "
             "ORDER BY d.added_at LIMIT 1) RETURNING *",
             (since, since),
@@ -305,8 +312,13 @@ def reject_download_noncommercial(pdf_url: str) -> bool:
         return (
             conn.execute(
                 "UPDATE downloads SET status='rejected', last_error=?, finished_at=? "
-                "WHERE pdf_url=? AND status IN ('failed','rejected')",
-                ("NonCommercial licence (manual review)", time.time(), pdf_url),
+                "WHERE pdf_url=? AND status IN ('failed','rejected') AND lower(last_error) LIKE ?",
+                (
+                    "NonCommercial licence (manual review)",
+                    time.time(),
+                    pdf_url,
+                    "%error '403 %",
+                ),
             ).rowcount
             == 1
         )

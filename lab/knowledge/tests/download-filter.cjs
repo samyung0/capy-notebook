@@ -19,7 +19,7 @@ const { chromium } = require('@playwright/test');
       state = { scrape: { downloads: [
         row('First blocked book', "HTTPStatusError: Client error '403 Forbidden' for url 'https://one.test/'"),
         row('Second blocked book', "HTTPStatusError: Client error '403 Forbidden' for url 'https://two.test/'"),
-        row('Bad file', 'not a PDF'),
+        row('Unreviewed book', 'no licence stated'),
         row('Restricted licence', 'NonCommercial licence'),
         row('Downloaded book', null),
       ] } };
@@ -45,8 +45,9 @@ const { chromium } = require('@playwright/test');
     await page.evaluate(() => { state.scrape.downloads[0].last_error = "HTTPStatusError: Client error '403 Forbidden'"; });
     await page.evaluate(() => renderDownloads(state.scrape.downloads));
     assert.equal(await filter.inputValue(), 'error:HTTP 403');
-    await filter.selectOption('error:not a PDF');
-    assert.equal(await page.locator('#downloads b').innerText(), 'Bad file');
+    await filter.selectOption('error:no licence stated');
+    assert.equal(await page.locator('#downloads b').innerText(), 'Unreviewed book');
+    assert.equal(await page.getByRole('button', { name: 'Reject: non-commercial', exact: true }).count(), 0);
     await filter.selectOption('errors');
     assert.equal(await page.locator('#downloads .dl').count(), 4);
     await filter.selectOption('none');
@@ -56,6 +57,17 @@ const { chromium } = require('@playwright/test');
     await page.evaluate(() => renderDownloads([]));
     assert.equal(await filter.inputValue(), 'error:HTTP 403');
     assert.match(await page.locator('#downloads').innerText(), /No downloads match/);
+    await page.evaluate(() => {
+      state.scrape.downloads = ['a', 'b'].map((hash) => ({
+        title: `Duplicate ${hash}`, status: 'rejected', duplicate_urls: [],
+        pdf_url: `https://example.test/${hash}.pdf`, last_error: `duplicate of ${hash.repeat(64)}`,
+      }));
+      renderDownloads(state.scrape.downloads);
+    });
+    assert.equal(await filter.locator('option').filter({ hasText: 'Duplicated PDF (2)' }).count(), 1);
+    await filter.selectOption('error:Duplicated PDF');
+    assert.equal(await page.locator('#downloads .dl').count(), 2);
+    assert.match(await page.locator('#downloads').innerText(), new RegExp(`duplicate of ${'a'.repeat(64)}`));
     console.log('Download error filtering and refresh persistence passed.');
   } finally {
     await browser.close();

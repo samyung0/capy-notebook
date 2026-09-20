@@ -49,9 +49,13 @@ Licence policy (decision of 2026-09-19, applied verbatim by
 > licence evidence URL or PDF page recorded in the manifest; reject NC, ND,
 > GFDL, ODbL, unknown licences and free-to-read pages without a licence.
 
+Queue claims use indexed host activity lookups inside atomic updates. A busy
+database returns HTTP 503 from dashboard actions; manual rejection runs outside
+the event loop so it does not block other requests.
+
 The download gate also requires a book page, a nonempty title, a
-known subject, `language == "en"` and a level of `secondary` or
-`undergraduate` (library decision of 2026-09-16). PDF and follow URLs must occur
+known subject, `language == "en"` and a classified level of `secondary`, `undergraduate`,
+`graduate` or `other` (expanded by the developer on 2026-09-20). PDF and follow URLs must occur
 in the extracted links; licence quotes must occur in the page text. Rejections are kept in
 `downloads` with their reason so near misses stay visible.
 
@@ -73,7 +77,9 @@ once; links are followed to depth 4 from a seed; explicit `rel=next` links on
 the same catalog path keep their depth, so pagination can continue beyond four
 pages; at most 2,000 pending URLs per
 host; pages are read up to 20 MB and clipped to about 12k tokens before the
-model sees them; a PDF is capped at 200 MB. PDFs download two at a time with
+model sees them; a PDF is capped at 200 MiB. The local builder parser container
+uses `CAPY_MAX_SOURCE_BYTES=209715200` to match; preserve this override when
+recreating it. PDFs download two at a time with
 three attempts (waiting 5 s, then 20 s), are hashed while streaming, and a file
 whose sha256 is already held is recorded as a duplicate URL on the existing
 row; a file PyMuPDF cannot open is a failed row.
@@ -201,7 +207,7 @@ The dashboard's ordinary stage runner still uses the Qwen workflow above.
 
 The monitor allows up to eight active books across preparation, source review
 and indexing. Parser requests respect the configured document capacity. Up to
-three Sol agents can run alongside the parent; large books can share those
+six Sol agents can run alongside the parent; large books can share those
 slots through disjoint page/excerpt scopes. The parent imports completed
 artifacts and advances the dashboard state through publication automatically.
 No stage waits for user approval; existing validation and eligibility checks
