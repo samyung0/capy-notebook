@@ -38,7 +38,7 @@ edit `human/`; report decisions you need in your final message instead.
 - Ops: routes `server/internal/ops/http.go`, `ReadStore` with secondary pools,
   pools opened in `server/cmd/ops/main.go`, permissions from `ops_permissions`
   (`PermReadAll`); frontend `ops/src` with hand-written Zod in `api.ts`.
-- Playground: `bench/rag/playground/scripts/playground.py` (FastAPI, runs the
+- Playground: `lab/playground/scripts/playground.py` (FastAPI, runs the
   real agent with monkey patches, config JSON, `run.json`), `common.py`
   (targets `lab`/`uat`, SSH tunnel), `ui.html`.
 

@@ -1,0 +1,560 @@
+{
+  "answer": {
+    "reused": [],
+    "proposed": [
+      {
+        "id": "world-class-manufacturing",
+        "label": "World Class Manufacturing",
+        "aliases": [
+          "WCM",
+          "world class manufacturing pillars",
+          "kaizen",
+          "lean manufacturing excellence",
+          "Fiat WCM"
+        ],
+        "scope": "Covers the World Class Manufacturing model, its technical and managerial pillars, Kaizen continuous improvement, and WCM tools such as cost deployment, KPI/KAI indicators and PDCA-based case applications; excludes reliability mathematics and scheduling algorithms.",
+        "source_sections": "Chapter 1 Improving Operations Performance with World Class Manufacturing Technique: A Case in Automotive Industry"
+      },
+      {
+        "id": "overall-equipment-effectiveness",
+        "label": "Overall Equipment Effectiveness",
+        "aliases": [
+          "OEE",
+          "equipment effectiveness",
+          "TEEP",
+          "OAE",
+          "OFE",
+          "OPE",
+          "six big losses",
+          "TPM metrics"
+        ],
+        "scope": "Covers OEE fundamentals, its availability-performance-quality formulation, the six big losses, OEE variants (TEEP, PEE, OAE, OFE, OPE), data collection and automated OEE systems; excludes system-level design modeling covered under manufacturing system design.",
+        "source_sections": "Chapter 2 Managing OEE to Optimize Factory Performance"
+      },
+      {
+        "id": "manufacturing-system-design-ote",
+        "label": "Manufacturing System Design with OEE and OTE",
+        "aliases": [
+          "system OEE",
+          "overall throughput effectiveness",
+          "OTE",
+          "losses propagation",
+          "buffer sizing",
+          "machine count design"
+        ],
+        "scope": "Covers using OEE and Overall Throughput Effectiveness to size production systems, external time losses, losses propagation between stations, buffer capacity and layout effects, and simulation of system performance; excludes single-machine OEE definitions.",
+        "source_sections": "Chapter 3 Using Overall Equipment Effectiveness for Manufacturing System Design"
+      },
+      {
+        "id": "reliability-maintainability",
+        "label": "Reliability and Maintainability",
+        "aliases": [
+          "system reliability",
+          "hazard function",
+          "MTTF",
+          "MTTR",
+          "failure rate",
+          "bathtub curve",
+          "availability",
+          "preventive maintenance",
+          "minimal repair",
+          "Weibull reliability"
+        ],
+        "scope": "Covers reliability basics, series-parallel and k-out-of-n configurations, hazard and time-dependent reliability models, repairable systems, substitution and minimal repair models, availability and optimal preventive replacement; excludes human reliability analysis.",
+        "source_sections": "Chapter 4 Reliability and Maintainability in Operations Management"
+      },
+      {
+        "id": "job-shop-scheduling",
+        "label": "Job Shop Scheduling",
+        "aliases": [
+          "JSSP",
+          "production scheduling",
+          "job sequencing",
+          "makespan",
+          "Gantt chart scheduling",
+          "dispatching rules"
+        ],
+        "scope": "Covers the job shop scheduling problem, its representation via Gantt charts and disjunctive graphs, priority rules and performance measures such as makespan; excludes the specific metaheuristic algorithms listed separately.",
+        "source_sections": "Chapter 5 Production Scheduling Approaches for Operations Management (sections 5.1-5.4)"
+      },
+      {
+        "id": "scheduling-metaheuristics",
+        "label": "Metaheuristics for Scheduling",
+        "aliases": [
+          "genetic algorithms",
+          "ant colony optimization",
+          "ACO",
+          "bees algorithm",
+          "simulated annealing",
+          "tabu search",
+          "electromagnetism like method",
+          "neural network scheduling"
+        ],
+        "scope": "Covers population-based and local-search metaheuristics (GA, ACO, Bees Algorithm, EM, SA, Tabu Search, neural networks) applied to solving the job shop scheduling problem; excludes exact scheduling formulations.",
+        "source_sections": "Chapter 5 Production Scheduling Approaches for Operations Management (section 5.5)"
+      },
+      {
+        "id": "just-in-time-production",
+        "label": "Just-In-Time Production",
+        "aliases": [
+          "JIT",
+          "kanban",
+          "Toyota Production System",
+          "TPS",
+          "heijunka",
+          "production leveling",
+          "CONWIP",
+          "POLCA",
+          "just in sequence",
+          "theory of constraints"
+        ],
+        "scope": "Covers JIT philosophy, one-card and two-card kanban systems, heijunka leveling, JIT criticism, and alternative pull systems such as CONWIP, POLCA, Just in Sequence and Theory of Constraints; excludes the formal MMJIT optimization problem.",
+        "source_sections": "Chapter 6 On Just-In-Time Production Leveling (sections 6.1-6.5)"
+      },
+      {
+        "id": "mixed-model-jit-scheduling",
+        "label": "Mixed-Model JIT Scheduling",
+        "aliases": [
+          "MMJIT",
+          "production sequencing",
+          "goal chasing method",
+          "GCM",
+          "JIT leveling problem"
+        ],
+        "scope": "Covers the mixed-model just-in-time sequencing problem, Goal Chasing heuristics, criticism of MMJIT solution complexity, and simulation-based validation of JIT heuristics; excludes kanban mechanics.",
+        "source_sections": "Chapter 6 On Just-In-Time Production Leveling (sections 6.6-6.9)"
+      },
+      {
+        "id": "enterprise-risk-management",
+        "label": "Enterprise Risk Management",
+        "aliases": [
+          "ERM",
+          "risk management process",
+          "risk assessment",
+          "risk classification",
+          "risk register",
+          "FMEA",
+          "corporate governance risk",
+          "business continuity"
+        ],
+        "scope": "Covers corporate governance links to risk, risk classification, the risk management process (assessment, evaluation, treatment, review), internal control systems and business continuity management; excludes reliability engineering techniques.",
+        "source_sections": "Chapter 7 Enterprise Risk Management to Drive Operations Performances"
+      },
+      {
+        "id": "packaging-operations-management",
+        "label": "Packaging in Operations Management",
+        "aliases": [
+          "packaging system",
+          "packaging logistics",
+          "packaging functions",
+          "packaging cost model",
+          "sustainable packaging"
+        ],
+        "scope": "Covers the packaging system framework, its functions along the supply chain, consumer and company perception of packaging, sustainable operations links and mathematical packaging cost evaluation; excludes e-commerce channel specifics.",
+        "source_sections": "Chapter 8 The Important Role of Packaging in Operations Management (sections 8.1-8.4)"
+      },
+      {
+        "id": "packaging-e-commerce-logistics",
+        "label": "Packaging and E-commerce Logistics",
+        "aliases": [
+          "e-commerce packaging",
+          "online shopping logistics",
+          "e-commerce operations",
+          "RFID packaging"
+        ],
+        "scope": "Covers e-commerce's role in operations, packaging requirements for online retail versus physical shops, security and re-use of packages, and the wholesaler e-commerce logistics case study; excludes general packaging theory.",
+        "source_sections": "Chapter 8 The Important Role of Packaging in Operations Management (sections 8.5-8.8)"
+      },
+      {
+        "id": "human-reliability-analysis",
+        "label": "Human Reliability Analysis",
+        "aliases": [
+          "HRA",
+          "THERP",
+          "human error probability",
+          "performance shaping factors",
+          "PSF",
+          "human error assessment",
+          "rest breaks fatigue"
+        ],
+        "scope": "Covers first-, second- and last-generation HRA methods, human error modeling in manufacturing, performance shaping factors, and the effect of rest breaks and fatigue on human reliability; excludes equipment reliability models.",
+        "source_sections": "Chapter 9 An Overview of Human Reliability Analysis Techniques in Manufacturing Operations"
+      }
+    ]
+  },
+  "merged": {
+    "subject_id": "management",
+    "topics": [
+      {
+        "id": "world-class-manufacturing",
+        "label": "World Class Manufacturing",
+        "aliases": [
+          "WCM",
+          "world class manufacturing pillars",
+          "kaizen",
+          "lean manufacturing excellence",
+          "Fiat WCM"
+        ],
+        "scope": "Covers the World Class Manufacturing model, its technical and managerial pillars, Kaizen continuous improvement, and WCM tools such as cost deployment, KPI/KAI indicators and PDCA-based case applications; excludes reliability mathematics and scheduling algorithms.",
+        "source_sections": "Chapter 1 Improving Operations Performance with World Class Manufacturing Technique: A Case in Automotive Industry"
+      },
+      {
+        "id": "overall-equipment-effectiveness",
+        "label": "Overall Equipment Effectiveness",
+        "aliases": [
+          "OEE",
+          "equipment effectiveness",
+          "TEEP",
+          "OAE",
+          "OFE",
+          "OPE",
+          "six big losses",
+          "TPM metrics"
+        ],
+        "scope": "Covers OEE fundamentals, its availability-performance-quality formulation, the six big losses, OEE variants (TEEP, PEE, OAE, OFE, OPE), data collection and automated OEE systems; excludes system-level design modeling covered under manufacturing system design.",
+        "source_sections": "Chapter 2 Managing OEE to Optimize Factory Performance"
+      },
+      {
+        "id": "manufacturing-system-design-ote",
+        "label": "Manufacturing System Design with OEE and OTE",
+        "aliases": [
+          "system OEE",
+          "overall throughput effectiveness",
+          "OTE",
+          "losses propagation",
+          "buffer sizing",
+          "machine count design"
+        ],
+        "scope": "Covers using OEE and Overall Throughput Effectiveness to size production systems, external time losses, losses propagation between stations, buffer capacity and layout effects, and simulation of system performance; excludes single-machine OEE definitions.",
+        "source_sections": "Chapter 3 Using Overall Equipment Effectiveness for Manufacturing System Design"
+      },
+      {
+        "id": "reliability-maintainability",
+        "label": "Reliability and Maintainability",
+        "aliases": [
+          "system reliability",
+          "hazard function",
+          "MTTF",
+          "MTTR",
+          "failure rate",
+          "bathtub curve",
+          "availability",
+          "preventive maintenance",
+          "minimal repair",
+          "Weibull reliability"
+        ],
+        "scope": "Covers reliability basics, series-parallel and k-out-of-n configurations, hazard and time-dependent reliability models, repairable systems, substitution and minimal repair models, availability and optimal preventive replacement; excludes human reliability analysis.",
+        "source_sections": "Chapter 4 Reliability and Maintainability in Operations Management"
+      },
+      {
+        "id": "job-shop-scheduling",
+        "label": "Job Shop Scheduling",
+        "aliases": [
+          "JSSP",
+          "production scheduling",
+          "job sequencing",
+          "makespan",
+          "Gantt chart scheduling",
+          "dispatching rules"
+        ],
+        "scope": "Covers the job shop scheduling problem, its representation via Gantt charts and disjunctive graphs, priority rules and performance measures such as makespan; excludes the specific metaheuristic algorithms listed separately.",
+        "source_sections": "Chapter 5 Production Scheduling Approaches for Operations Management (sections 5.1-5.4)"
+      },
+      {
+        "id": "scheduling-metaheuristics",
+        "label": "Metaheuristics for Scheduling",
+        "aliases": [
+          "genetic algorithms",
+          "ant colony optimization",
+          "ACO",
+          "bees algorithm",
+          "simulated annealing",
+          "tabu search",
+          "electromagnetism like method",
+          "neural network scheduling"
+        ],
+        "scope": "Covers population-based and local-search metaheuristics (GA, ACO, Bees Algorithm, EM, SA, Tabu Search, neural networks) applied to solving the job shop scheduling problem; excludes exact scheduling formulations.",
+        "source_sections": "Chapter 5 Production Scheduling Approaches for Operations Management (section 5.5)"
+      },
+      {
+        "id": "just-in-time-production",
+        "label": "Just-In-Time Production",
+        "aliases": [
+          "JIT",
+          "kanban",
+          "Toyota Production System",
+          "TPS",
+          "heijunka",
+          "production leveling",
+          "CONWIP",
+          "POLCA",
+          "just in sequence",
+          "theory of constraints"
+        ],
+        "scope": "Covers JIT philosophy, one-card and two-card kanban systems, heijunka leveling, JIT criticism, and alternative pull systems such as CONWIP, POLCA, Just in Sequence and Theory of Constraints; excludes the formal MMJIT optimization problem.",
+        "source_sections": "Chapter 6 On Just-In-Time Production Leveling (sections 6.1-6.5)"
+      },
+      {
+        "id": "mixed-model-jit-scheduling",
+        "label": "Mixed-Model JIT Scheduling",
+        "aliases": [
+          "MMJIT",
+          "production sequencing",
+          "goal chasing method",
+          "GCM",
+          "JIT leveling problem"
+        ],
+        "scope": "Covers the mixed-model just-in-time sequencing problem, Goal Chasing heuristics, criticism of MMJIT solution complexity, and simulation-based validation of JIT heuristics; excludes kanban mechanics.",
+        "source_sections": "Chapter 6 On Just-In-Time Production Leveling (sections 6.6-6.9)"
+      },
+      {
+        "id": "enterprise-risk-management",
+        "label": "Enterprise Risk Management",
+        "aliases": [
+          "ERM",
+          "risk management process",
+          "risk assessment",
+          "risk classification",
+          "risk register",
+          "FMEA",
+          "corporate governance risk",
+          "business continuity"
+        ],
+        "scope": "Covers corporate governance links to risk, risk classification, the risk management process (assessment, evaluation, treatment, review), internal control systems and business continuity management; excludes reliability engineering techniques.",
+        "source_sections": "Chapter 7 Enterprise Risk Management to Drive Operations Performances"
+      },
+      {
+        "id": "packaging-operations-management",
+        "label": "Packaging in Operations Management",
+        "aliases": [
+          "packaging system",
+          "packaging logistics",
+          "packaging functions",
+          "packaging cost model",
+          "sustainable packaging"
+        ],
+        "scope": "Covers the packaging system framework, its functions along the supply chain, consumer and company perception of packaging, sustainable operations links and mathematical packaging cost evaluation; excludes e-commerce channel specifics.",
+        "source_sections": "Chapter 8 The Important Role of Packaging in Operations Management (sections 8.1-8.4)"
+      },
+      {
+        "id": "packaging-e-commerce-logistics",
+        "label": "Packaging and E-commerce Logistics",
+        "aliases": [
+          "e-commerce packaging",
+          "online shopping logistics",
+          "e-commerce operations",
+          "RFID packaging"
+        ],
+        "scope": "Covers e-commerce's role in operations, packaging requirements for online retail versus physical shops, security and re-use of packages, and the wholesaler e-commerce logistics case study; excludes general packaging theory.",
+        "source_sections": "Chapter 8 The Important Role of Packaging in Operations Management (sections 8.5-8.8)"
+      },
+      {
+        "id": "human-reliability-analysis",
+        "label": "Human Reliability Analysis",
+        "aliases": [
+          "HRA",
+          "THERP",
+          "human error probability",
+          "performance shaping factors",
+          "PSF",
+          "human error assessment",
+          "rest breaks fatigue"
+        ],
+        "scope": "Covers first-, second- and last-generation HRA methods, human error modeling in manufacturing, performance shaping factors, and the effect of rest breaks and fatigue on human reliability; excludes equipment reliability models.",
+        "source_sections": "Chapter 9 An Overview of Human Reliability Analysis Techniques in Manufacturing Operations"
+      }
+    ],
+    "reused": [],
+    "proposed": [
+      {
+        "id": "world-class-manufacturing",
+        "label": "World Class Manufacturing",
+        "aliases": [
+          "WCM",
+          "world class manufacturing pillars",
+          "kaizen",
+          "lean manufacturing excellence",
+          "Fiat WCM"
+        ],
+        "scope": "Covers the World Class Manufacturing model, its technical and managerial pillars, Kaizen continuous improvement, and WCM tools such as cost deployment, KPI/KAI indicators and PDCA-based case applications; excludes reliability mathematics and scheduling algorithms.",
+        "source_sections": "Chapter 1 Improving Operations Performance with World Class Manufacturing Technique: A Case in Automotive Industry"
+      },
+      {
+        "id": "overall-equipment-effectiveness",
+        "label": "Overall Equipment Effectiveness",
+        "aliases": [
+          "OEE",
+          "equipment effectiveness",
+          "TEEP",
+          "OAE",
+          "OFE",
+          "OPE",
+          "six big losses",
+          "TPM metrics"
+        ],
+        "scope": "Covers OEE fundamentals, its availability-performance-quality formulation, the six big losses, OEE variants (TEEP, PEE, OAE, OFE, OPE), data collection and automated OEE systems; excludes system-level design modeling covered under manufacturing system design.",
+        "source_sections": "Chapter 2 Managing OEE to Optimize Factory Performance"
+      },
+      {
+        "id": "manufacturing-system-design-ote",
+        "label": "Manufacturing System Design with OEE and OTE",
+        "aliases": [
+          "system OEE",
+          "overall throughput effectiveness",
+          "OTE",
+          "losses propagation",
+          "buffer sizing",
+          "machine count design"
+        ],
+        "scope": "Covers using OEE and Overall Throughput Effectiveness to size production systems, external time losses, losses propagation between stations, buffer capacity and layout effects, and simulation of system performance; excludes single-machine OEE definitions.",
+        "source_sections": "Chapter 3 Using Overall Equipment Effectiveness for Manufacturing System Design"
+      },
+      {
+        "id": "reliability-maintainability",
+        "label": "Reliability and Maintainability",
+        "aliases": [
+          "system reliability",
+          "hazard function",
+          "MTTF",
+          "MTTR",
+          "failure rate",
+          "bathtub curve",
+          "availability",
+          "preventive maintenance",
+          "minimal repair",
+          "Weibull reliability"
+        ],
+        "scope": "Covers reliability basics, series-parallel and k-out-of-n configurations, hazard and time-dependent reliability models, repairable systems, substitution and minimal repair models, availability and optimal preventive replacement; excludes human reliability analysis.",
+        "source_sections": "Chapter 4 Reliability and Maintainability in Operations Management"
+      },
+      {
+        "id": "job-shop-scheduling",
+        "label": "Job Shop Scheduling",
+        "aliases": [
+          "JSSP",
+          "production scheduling",
+          "job sequencing",
+          "makespan",
+          "Gantt chart scheduling",
+          "dispatching rules"
+        ],
+        "scope": "Covers the job shop scheduling problem, its representation via Gantt charts and disjunctive graphs, priority rules and performance measures such as makespan; excludes the specific metaheuristic algorithms listed separately.",
+        "source_sections": "Chapter 5 Production Scheduling Approaches for Operations Management (sections 5.1-5.4)"
+      },
+      {
+        "id": "scheduling-metaheuristics",
+        "label": "Metaheuristics for Scheduling",
+        "aliases": [
+          "genetic algorithms",
+          "ant colony optimization",
+          "ACO",
+          "bees algorithm",
+          "simulated annealing",
+          "tabu search",
+          "electromagnetism like method",
+          "neural network scheduling"
+        ],
+        "scope": "Covers population-based and local-search metaheuristics (GA, ACO, Bees Algorithm, EM, SA, Tabu Search, neural networks) applied to solving the job shop scheduling problem; excludes exact scheduling formulations.",
+        "source_sections": "Chapter 5 Production Scheduling Approaches for Operations Management (section 5.5)"
+      },
+      {
+        "id": "just-in-time-production",
+        "label": "Just-In-Time Production",
+        "aliases": [
+          "JIT",
+          "kanban",
+          "Toyota Production System",
+          "TPS",
+          "heijunka",
+          "production leveling",
+          "CONWIP",
+          "POLCA",
+          "just in sequence",
+          "theory of constraints"
+        ],
+        "scope": "Covers JIT philosophy, one-card and two-card kanban systems, heijunka leveling, JIT criticism, and alternative pull systems such as CONWIP, POLCA, Just in Sequence and Theory of Constraints; excludes the formal MMJIT optimization problem.",
+        "source_sections": "Chapter 6 On Just-In-Time Production Leveling (sections 6.1-6.5)"
+      },
+      {
+        "id": "mixed-model-jit-scheduling",
+        "label": "Mixed-Model JIT Scheduling",
+        "aliases": [
+          "MMJIT",
+          "production sequencing",
+          "goal chasing method",
+          "GCM",
+          "JIT leveling problem"
+        ],
+        "scope": "Covers the mixed-model just-in-time sequencing problem, Goal Chasing heuristics, criticism of MMJIT solution complexity, and simulation-based validation of JIT heuristics; excludes kanban mechanics.",
+        "source_sections": "Chapter 6 On Just-In-Time Production Leveling (sections 6.6-6.9)"
+      },
+      {
+        "id": "enterprise-risk-management",
+        "label": "Enterprise Risk Management",
+        "aliases": [
+          "ERM",
+          "risk management process",
+          "risk assessment",
+          "risk classification",
+          "risk register",
+          "FMEA",
+          "corporate governance risk",
+          "business continuity"
+        ],
+        "scope": "Covers corporate governance links to risk, risk classification, the risk management process (assessment, evaluation, treatment, review), internal control systems and business continuity management; excludes reliability engineering techniques.",
+        "source_sections": "Chapter 7 Enterprise Risk Management to Drive Operations Performances"
+      },
+      {
+        "id": "packaging-operations-management",
+        "label": "Packaging in Operations Management",
+        "aliases": [
+          "packaging system",
+          "packaging logistics",
+          "packaging functions",
+          "packaging cost model",
+          "sustainable packaging"
+        ],
+        "scope": "Covers the packaging system framework, its functions along the supply chain, consumer and company perception of packaging, sustainable operations links and mathematical packaging cost evaluation; excludes e-commerce channel specifics.",
+        "source_sections": "Chapter 8 The Important Role of Packaging in Operations Management (sections 8.1-8.4)"
+      },
+      {
+        "id": "packaging-e-commerce-logistics",
+        "label": "Packaging and E-commerce Logistics",
+        "aliases": [
+          "e-commerce packaging",
+          "online shopping logistics",
+          "e-commerce operations",
+          "RFID packaging"
+        ],
+        "scope": "Covers e-commerce's role in operations, packaging requirements for online retail versus physical shops, security and re-use of packages, and the wholesaler e-commerce logistics case study; excludes general packaging theory.",
+        "source_sections": "Chapter 8 The Important Role of Packaging in Operations Management (sections 8.5-8.8)"
+      },
+      {
+        "id": "human-reliability-analysis",
+        "label": "Human Reliability Analysis",
+        "aliases": [
+          "HRA",
+          "THERP",
+          "human error probability",
+          "performance shaping factors",
+          "PSF",
+          "human error assessment",
+          "rest breaks fatigue"
+        ],
+        "scope": "Covers first-, second- and last-generation HRA methods, human error modeling in manufacturing, performance shaping factors, and the effect of rest breaks and fatigue on human reliability; excludes equipment reliability models.",
+        "source_sections": "Chapter 9 An Overview of Human Reliability Analysis Techniques in Manufacturing Operations"
+      }
+    ],
+    "mapped": [],
+    "renamed": [],
+    "subject_total": 12
+  },
+  "model": "glm-5.3-flash:cloud",
+  "usage": {
+    "prompt_tokens": 46996,
+    "completion_tokens": 2400,
+    "reasoning_tokens": null
+  },
+  "elapsed_s": 17.73399999999674,
+  "input_chars": 206451
+}

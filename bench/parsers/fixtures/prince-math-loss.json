@@ -1,0 +1,508 @@
+{
+  "schema": "prince-math-loss-v1",
+  "frozen_before_detector": true,
+  "source": "data/knowledge-base/sources/a3f75487411ef13d0270c65fc801ceff2b28e6b339afed9b407fe477f7e8453e.pdf",
+  "sha256": "a3f75487411ef13d0270c65fc801ceff2b28e6b339afed9b407fe477f7e8453e",
+  "parsed": "data/knowledge-base/runs/physics/books/physics/parsed",
+  "label_method": "Visual review of rendered source pages and native text before detector implementation. Coordinates are PDF points, top-left. Positive means visible mathematical content missing from the native text layer. Negatives concern math-loss detection, so ordinary diagrams remain negative even when their meaning requires vision. Case selection is purposive, not a prevalence sample.",
+  "independent_page_selection": [
+    32,
+    46,
+    55,
+    82,
+    172,
+    248,
+    500,
+    687,
+    5,
+    6,
+    8,
+    31,
+    77,
+    100,
+    104
+  ],
+  "cases": [
+    {
+      "id": "known-97-inline",
+      "page": 97,
+      "bbox": [
+        262,
+        437,
+        285,
+        450
+      ],
+      "positive": true,
+      "kind": "inline-vector",
+      "note": "1 m/s after slope of first section"
+    },
+    {
+      "id": "known-97-options",
+      "page": 97,
+      "bbox": [
+        120,
+        488,
+        150,
+        511
+      ],
+      "positive": true,
+      "kind": "inline-vector",
+      "note": "0 m/s and 2 m/s options after a. and b."
+    },
+    {
+      "id": "known-98-options",
+      "page": 98,
+      "bbox": [
+        120,
+        574,
+        220,
+        633
+      ],
+      "positive": true,
+      "kind": "inline-vector",
+      "note": "Four velocity ratio answer options"
+    },
+    {
+      "id": "known-99-35",
+      "page": 99,
+      "bbox": [
+        246,
+        129,
+        288,
+        139
+      ],
+      "positive": true,
+      "kind": "inline-vector",
+      "note": "35 meters"
+    },
+    {
+      "id": "known-99-18",
+      "page": 99,
+      "bbox": [
+        142,
+        142,
+        183,
+        151
+      ],
+      "positive": true,
+      "kind": "inline-vector",
+      "note": "18 meters"
+    },
+    {
+      "id": "known-99-26",
+      "page": 99,
+      "bbox": [
+        98,
+        155,
+        139,
+        164
+      ],
+      "positive": true,
+      "kind": "inline-vector",
+      "note": "26 meters at start of line"
+    },
+    {
+      "id": "known-99-79",
+      "page": 99,
+      "bbox": [
+        168,
+        168,
+        190,
+        177
+      ],
+      "positive": true,
+      "kind": "inline-vector",
+      "note": "79 m in first answer"
+    },
+    {
+      "id": "known-103-diameter",
+      "page": 103,
+      "bbox": [
+        192,
+        492,
+        218,
+        505
+      ],
+      "positive": true,
+      "kind": "inline-vector",
+      "note": "14 cm diameter"
+    },
+    {
+      "id": "known-103-displacement",
+      "page": 103,
+      "bbox": [
+        190,
+        595,
+        216,
+        606
+      ],
+      "positive": true,
+      "kind": "inline-vector",
+      "note": "14 cm displacement on wrapped line"
+    },
+    {
+      "id": "known-262-worked",
+      "page": 262,
+      "bbox": [
+        140,
+        362,
+        470,
+        400
+      ],
+      "positive": true,
+      "kind": "display-vector",
+      "note": "g = GM/r^2 substitution line after Cancel m and substitute"
+    },
+    {
+      "id": "known-616-capacitance",
+      "page": 616,
+      "bbox": [
+        198,
+        258,
+        221,
+        271
+      ],
+      "positive": true,
+      "kind": "inline-vector",
+      "note": "10 microfarad inline value"
+    },
+    {
+      "id": "known-616-charge",
+      "page": 616,
+      "bbox": [
+        298,
+        258,
+        328,
+        271
+      ],
+      "positive": true,
+      "kind": "inline-vector",
+      "note": "120 microcoulomb inline value"
+    },
+    {
+      "id": "known-616-worked",
+      "page": 616,
+      "bbox": [
+        250,
+        365,
+        404,
+        399
+      ],
+      "positive": true,
+      "kind": "display-vector",
+      "note": "V=Q/C=...=12 V display line"
+    },
+    {
+      "id": "independent-46-display",
+      "page": 46,
+      "bbox": [
+        200,
+        57,
+        451,
+        115
+      ],
+      "positive": true,
+      "kind": "display-vector",
+      "note": "Volume and height of money display derivation"
+    },
+    {
+      "id": "independent-172-display",
+      "page": 172,
+      "bbox": [
+        272,
+        339,
+        339,
+        354
+      ],
+      "positive": true,
+      "kind": "display-vector",
+      "note": "v_tot = 7.2 m/s"
+    },
+    {
+      "id": "independent-172-inline",
+      "page": 172,
+      "bbox": [
+        278,
+        357,
+        323,
+        369
+      ],
+      "positive": true,
+      "kind": "inline-vector",
+      "note": "theta = 32 degrees after protractor sentence"
+    },
+    {
+      "id": "independent-77-display",
+      "page": 77,
+      "bbox": [
+        212,
+        502,
+        400,
+        530
+      ],
+      "positive": true,
+      "kind": "display-vector",
+      "note": "Average speed 5.2 m / 1.8 s"
+    },
+    {
+      "id": "negative-32-photo",
+      "page": 32,
+      "bbox": [
+        185,
+        70,
+        430,
+        310
+      ],
+      "positive": false,
+      "kind": "photo",
+      "note": "Atomic clock photograph"
+    },
+    {
+      "id": "negative-46-table",
+      "page": 46,
+      "bbox": [
+        207,
+        475,
+        405,
+        714
+      ],
+      "positive": false,
+      "kind": "table",
+      "note": "Time and distance table with ordinary text digits and rules"
+    },
+    {
+      "id": "negative-55-prose",
+      "page": 55,
+      "bbox": [
+        70,
+        45,
+        550,
+        730
+      ],
+      "positive": false,
+      "kind": "ordinary-text",
+      "note": "Chapter review ordinary text and heading underlines"
+    },
+    {
+      "id": "negative-82-diagram",
+      "page": 82,
+      "bbox": [
+        180,
+        410,
+        425,
+        570
+      ],
+      "positive": false,
+      "kind": "diagram",
+      "note": "Graph with mathematical labels inside image; not an inline prose gap"
+    },
+    {
+      "id": "negative-172-diagram",
+      "page": 172,
+      "bbox": [
+        145,
+        40,
+        468,
+        273
+      ],
+      "positive": false,
+      "kind": "diagram",
+      "note": "Boat vector illustration"
+    },
+    {
+      "id": "negative-248-prose",
+      "page": 248,
+      "bbox": [
+        70,
+        45,
+        550,
+        735
+      ],
+      "positive": false,
+      "kind": "ordinary-text",
+      "note": "Kepler laws prose and numbered list"
+    },
+    {
+      "id": "negative-500-prose",
+      "page": 500,
+      "bbox": [
+        70,
+        45,
+        550,
+        735
+      ],
+      "positive": false,
+      "kind": "ordinary-text",
+      "note": "Electromagnetic spectrum chapter review prose"
+    },
+    {
+      "id": "negative-687-diagrams",
+      "page": 687,
+      "bbox": [
+        70,
+        115,
+        550,
+        515
+      ],
+      "positive": false,
+      "kind": "diagram",
+      "note": "Bar magnets and field-line illustrations"
+    },
+    {
+      "id": "negative-5-logo",
+      "page": 5,
+      "bbox": [
+        70,
+        45,
+        550,
+        600
+      ],
+      "positive": false,
+      "kind": "logo-and-text",
+      "note": "Rice logo and frontmatter"
+    },
+    {
+      "id": "negative-8-toc",
+      "page": 8,
+      "bbox": [
+        70,
+        45,
+        550,
+        735
+      ],
+      "positive": false,
+      "kind": "table-of-contents",
+      "note": "Contents spacing and page numbers"
+    },
+    {
+      "id": "negative-31-table",
+      "page": 31,
+      "bbox": [
+        208,
+        45,
+        405,
+        264
+      ],
+      "positive": false,
+      "kind": "table",
+      "note": "SI units table rules and text"
+    },
+    {
+      "id": "negative-31-prose",
+      "page": 31,
+      "bbox": [
+        70,
+        530,
+        550,
+        735
+      ],
+      "positive": false,
+      "kind": "ordinary-text",
+      "note": "Unit definitions"
+    },
+    {
+      "id": "negative-100-graphs",
+      "page": 100,
+      "bbox": [
+        95,
+        105,
+        308,
+        345
+      ],
+      "positive": false,
+      "kind": "diagram",
+      "note": "Velocity graph in image"
+    },
+    {
+      "id": "negative-104-graphs",
+      "page": 104,
+      "bbox": [
+        360,
+        99,
+        545,
+        328
+      ],
+      "positive": false,
+      "kind": "diagram",
+      "note": "Position graph in image"
+    },
+    {
+      "id": "negative-326-small-image",
+      "page": 326,
+      "bbox": [
+        98,
+        91,
+        301,
+        114
+      ],
+      "positive": false,
+      "kind": "small-raster-diagram",
+      "note": "Long thin tool illustration"
+    },
+    {
+      "id": "negative-653-resistor",
+      "page": 653,
+      "bbox": [
+        295,
+        77,
+        341,
+        89
+      ],
+      "positive": false,
+      "kind": "small-raster-diagram",
+      "note": "Resistor symbol illustration"
+    },
+    {
+      "id": "negative-653-options",
+      "page": 653,
+      "bbox": [
+        122,
+        192,
+        261,
+        230
+      ],
+      "positive": false,
+      "kind": "small-raster-diagram",
+      "note": "Coil and resistor answer diagrams next to a. and b."
+    },
+    {
+      "id": "negative-676-battery",
+      "page": 676,
+      "bbox": [
+        98,
+        554,
+        111,
+        573
+      ],
+      "positive": false,
+      "kind": "small-raster-diagram",
+      "note": "Battery symbol"
+    },
+    {
+      "id": "negative-676-circuit",
+      "page": 676,
+      "bbox": [
+        342,
+        168,
+        409,
+        187
+      ],
+      "positive": false,
+      "kind": "small-raster-diagram",
+      "note": "Battery/resistor diagram"
+    },
+    {
+      "id": "negative-753-spectrum",
+      "page": 753,
+      "bbox": [
+        98,
+        182,
+        302,
+        202
+      ],
+      "positive": false,
+      "kind": "small-raster-diagram",
+      "note": "Emission spectrum colored strip"
+    }
+  ]
+}

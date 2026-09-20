@@ -196,7 +196,7 @@ create_material 2). Output: a note "Linear Regression — Beginner Study Guide"
 excerpts), both grounded in Advanced High School Statistics chapter 5 with
 provenance recorded (one book, CC BY-SA 3.0, version 1). Usage: 129,667 input
 tokens (35,456 cached), 5,026 output. Receipt:
-`bench/rag/playground/local/runs/20260917-124642-8c0c66/run.json`.
+`lab/playground/local/runs/20260917-124642-8c0c66/run.json`.
 
 Four parts of the design were therefore not exercised at all: no
 `search_knowledge` call (the model browsed and read only), no
@@ -240,7 +240,7 @@ The following implementation details remain proposals. Assistant recommendations
 - The fixed Generate workflow at `/generate`, outside the agent loop.
 - The ops app under `ops/` with operators, role tokens, audit events, and pages for overview, health, ingest host, registry, costs, users, reconciliation and audit.
 - Public workspaces readable by any signed-in user, with chat.
-- The playground under `bench/rag/playground` running the production agent against the lab or UAT index.
+- The playground under `lab/playground` running the production agent against the lab or UAT index.
 
 ## Design as it stands
 
@@ -519,7 +519,21 @@ benchmark-only captions do not change the pilot's original-caption policy.
 - `knowledge-base-review.md`
 - `human/agentic-retrieval.md`
 - `openwiki/agentic-retrieval.md`
-- `bench/rag/playground/scripts/common.py` (existing remote targets and credential loading)
+- `lab/playground/scripts/common.py` (existing remote targets and credential loading)
 - `server/internal/agenttools/agenttools.go` and `server/internal/httpapi/internal_documents.go` (quiz append contract and implementation)
 - [GitHub Actions secrets API](https://docs.github.com/en/rest/actions/secrets#get-a-repository-secret) (metadata is readable; stored secret values are not)
 - [Alibaba Model Studio base URLs](https://help.aliyun.com/en/model-studio/base-url) (workspace-specific Beijing endpoint)
+
+## Local builder, 2026-09-19
+
+Epo asked for a local dashboard over two workflows, scraping and download with a
+persistent queue and per-book ingestion with start and pause, and for a
+three-level taxonomy (areas, subjects, per-book topics) before broader
+acquisition. Decisions are in `human/agentic-retrieval.md` (2026-09-19 lines);
+the plan is [`artifacts/2026-09-19-knowledge-builder-plan.md`](artifacts/2026-09-19-knowledge-builder-plan.md)
+and the areas/subjects fixture is
+[`lab/knowledge/subjects.json`](lab/knowledge/subjects.json),
+both written for review. The taxonomy landed on 2026-09-19: `library_subjects` and `library_topics.subject_id` in the schema, the loader loading the fixture and dropping unreferenced topics, `catalog()` returning subjects with counts, `browse_knowledge` taking a subject or a topic (contract v7), the curate prompt browsing a subject first, the ops Topics tab filtering by subject, and the live library dropped and republished under it. Model routing moves to
+GLM-5.3-Flash through the local Ollama cloud model with TokenHub as fallback;
+the headless Sonnet arm is retired from the builder; the book-summary stage is
+dropped; selective recovery becomes a batch stage over parser-flagged chunks.

@@ -1,0 +1,22 @@
+{
+  "sources": [
+    {
+      "id": "scope-gnu-grep",
+      "title": "GNU Grep manual",
+      "url": "https://www.gnu.org/software/grep/manual/grep.pdf",
+      "landing_page": "https://www.gnu.org/software/grep/manual/",
+      "family": "GNU Texinfo",
+      "language": "en",
+      "licence": "GFDL1.3 or later; no invariant sections or cover texts"
+    },
+    {
+      "id": "scope-lua50",
+      "title": "Lua5.0 Reference Manual",
+      "url": "https://www.lua.org/ftp/refman-5.0.pdf",
+      "landing_page": "https://www.lua.org/manual/",
+      "family": "Lua reference manual",
+      "language": "en",
+      "licence": "Lua licence; official manual landing page"
+    }
+  ]
+}

@@ -54,12 +54,16 @@ SYSTEM_PROMPT = (
 )
 
 CAPTURE_RULE = (
-    "IMPORTANT: extraction confidence is attached for every passage when it is "
-    "below 0.9. If passage extraction confidence is below 0.9 and your answer "
-    "quotes numbers, formulas or table cells from it, you must call capture_page "
-    "on that page (with a bbox around the table or formula). capture_page shows "
-    "you a source page, or a boxed part of it, as it is printed. The captured "
-    "image is always the source of truth."
+    "Before using source-specific numerical results, formulas, table cells or "
+    "relationships, or figures in an answer or material, call capture_page on "
+    "the relevant page and read the image, regardless of extraction confidence. "
+    "Use a bbox to read small details while keeping the labels and context needed "
+    "to interpret them. A high confidence score measures text-layer agreement "
+    "and does not verify visual content. Low-confidence passages also need "
+    "capture when their uncertain text matters to the answer. The captured image "
+    "is the source of truth. If capture is unavailable or the detail is illegible, "
+    "say it could not be verified instead of guessing. This rule applies to "
+    "sources with pages; text-only sources and user-supplied values need no capture."
 )
 
 FOLLOW_REFERENCES_RULE = (

@@ -1,0 +1,1894 @@
+{
+ "_note": "Unit-conversion equivalence probe for typesafe.ai jev. kind: decimal (power-of-ten shift) | factor (non-10 factor: 60, 12, 16, 8, 4) | formula (temperature, angle) | approx (miles/km, kcal/kJ, atm/kPa). 'arguable' pairs are excluded from counts.",
+ "pairs": [
+  {
+   "family": "mass",
+   "kind": "decimal",
+   "question": "What is the mass of the sample?",
+   "correct": "1.5 kg",
+   "user": "1500 g",
+   "expected": "eq"
+  },
+  {
+   "family": "mass",
+   "kind": "decimal",
+   "question": "What is the mass of the sample?",
+   "correct": "2.5 kg",
+   "user": "2500 g",
+   "expected": "eq"
+  },
+  {
+   "family": "mass",
+   "kind": "decimal",
+   "question": "What is the mass of the sample?",
+   "correct": "2.5 kg",
+   "user": "2050 g",
+   "expected": "neq"
+  },
+  {
+   "family": "mass",
+   "kind": "decimal",
+   "question": "What is the mass of the sample?",
+   "correct": "2.5 kg",
+   "user": "250 g",
+   "expected": "neq"
+  },
+  {
+   "family": "mass",
+   "kind": "decimal",
+   "question": "What is the mass of the sample?",
+   "correct": "2.5 kg",
+   "user": "2400 g",
+   "expected": "neq"
+  },
+  {
+   "family": "mass",
+   "kind": "decimal",
+   "question": "What is the mass of the sample?",
+   "correct": "0.35 kg",
+   "user": "350 g",
+   "expected": "eq"
+  },
+  {
+   "family": "mass",
+   "kind": "decimal",
+   "question": "What is the mass of the sample?",
+   "correct": "0.35 kg",
+   "user": "305 g",
+   "expected": "neq"
+  },
+  {
+   "family": "mass",
+   "kind": "decimal",
+   "question": "What is the mass of the sample?",
+   "correct": "0.35 kg",
+   "user": "35 g",
+   "expected": "neq"
+  },
+  {
+   "family": "mass",
+   "kind": "decimal",
+   "question": "What is the mass of the sample?",
+   "correct": "3.2 kg",
+   "user": "3200 g",
+   "expected": "eq"
+  },
+  {
+   "family": "mass",
+   "kind": "decimal",
+   "question": "What is the mass of the sample?",
+   "correct": "3.2 kg",
+   "user": "3020 g",
+   "expected": "neq"
+  },
+  {
+   "family": "mass",
+   "kind": "decimal",
+   "question": "What is the mass of the sample?",
+   "correct": "3.2 kg",
+   "user": "3.2 g",
+   "expected": "neq"
+  },
+  {
+   "family": "mass",
+   "kind": "decimal",
+   "question": "What is the mass of the sample?",
+   "correct": "750 g",
+   "user": "0.75 kg",
+   "expected": "eq"
+  },
+  {
+   "family": "mass",
+   "kind": "decimal",
+   "question": "What is the mass of the sample?",
+   "correct": "750 g",
+   "user": "7.5 kg",
+   "expected": "neq"
+  },
+  {
+   "family": "mass",
+   "kind": "decimal",
+   "question": "What is the mass of the sample?",
+   "correct": "750 g",
+   "user": "0.705 kg",
+   "expected": "neq"
+  },
+  {
+   "family": "mass",
+   "kind": "decimal",
+   "question": "What is the mass of the sample?",
+   "correct": "4.25 kg",
+   "user": "4250 g",
+   "expected": "eq"
+  },
+  {
+   "family": "mass",
+   "kind": "decimal",
+   "question": "What is the mass of the sample?",
+   "correct": "4.25 kg",
+   "user": "4025 g",
+   "expected": "neq"
+  },
+  {
+   "family": "mass",
+   "kind": "decimal",
+   "question": "What is the mass of the sample?",
+   "correct": "4.25 kg",
+   "user": "4225 g",
+   "expected": "neq"
+  },
+  {
+   "family": "mass",
+   "kind": "decimal",
+   "question": "What is the mass of the sample?",
+   "correct": "0.5 g",
+   "user": "500 mg",
+   "expected": "eq"
+  },
+  {
+   "family": "mass",
+   "kind": "decimal",
+   "question": "What is the mass of the sample?",
+   "correct": "0.5 g",
+   "user": "50 mg",
+   "expected": "neq"
+  },
+  {
+   "family": "mass",
+   "kind": "decimal",
+   "question": "What is the mass of the sample?",
+   "correct": "2.4 g",
+   "user": "2400 mg",
+   "expected": "eq"
+  },
+  {
+   "family": "mass",
+   "kind": "decimal",
+   "question": "What is the mass of the sample?",
+   "correct": "2.4 g",
+   "user": "2040 mg",
+   "expected": "neq"
+  },
+  {
+   "family": "mass",
+   "kind": "decimal",
+   "question": "What is the mass of the sample?",
+   "correct": "2.5 t",
+   "user": "2500 kg",
+   "expected": "eq"
+  },
+  {
+   "family": "mass",
+   "kind": "decimal",
+   "question": "What is the mass of the sample?",
+   "correct": "2.5 t",
+   "user": "2050 kg",
+   "expected": "neq"
+  },
+  {
+   "family": "mass",
+   "kind": "factor",
+   "question": "What is the mass of the sample?",
+   "correct": "2 lb",
+   "user": "32 oz",
+   "expected": "eq"
+  },
+  {
+   "family": "mass",
+   "kind": "factor",
+   "question": "What is the mass of the sample?",
+   "correct": "2 lb",
+   "user": "30 oz",
+   "expected": "neq"
+  },
+  {
+   "family": "mass",
+   "kind": "factor",
+   "question": "What is the mass of the sample?",
+   "correct": "2 lb",
+   "user": "20 oz",
+   "expected": "neq"
+  },
+  {
+   "family": "mass",
+   "kind": "factor",
+   "question": "What is the mass of the sample?",
+   "correct": "1.5 lb",
+   "user": "24 oz",
+   "expected": "eq"
+  },
+  {
+   "family": "mass",
+   "kind": "factor",
+   "question": "What is the mass of the sample?",
+   "correct": "1.5 lb",
+   "user": "20 oz",
+   "expected": "neq"
+  },
+  {
+   "family": "mass",
+   "kind": "factor",
+   "question": "What is the mass of the sample?",
+   "correct": "1.5 lb",
+   "user": "15 oz",
+   "expected": "neq"
+  },
+  {
+   "family": "mass",
+   "kind": "factor",
+   "question": "What is the mass of the sample?",
+   "correct": "3 lb",
+   "user": "48 oz",
+   "expected": "eq"
+  },
+  {
+   "family": "mass",
+   "kind": "factor",
+   "question": "What is the mass of the sample?",
+   "correct": "3 lb",
+   "user": "46 oz",
+   "expected": "neq"
+  },
+  {
+   "family": "mass",
+   "kind": "factor",
+   "question": "What is the mass of the sample?",
+   "correct": "5 lb",
+   "user": "80 oz",
+   "expected": "eq"
+  },
+  {
+   "family": "mass",
+   "kind": "factor",
+   "question": "What is the mass of the sample?",
+   "correct": "5 lb",
+   "user": "84 oz",
+   "expected": "neq"
+  },
+  {
+   "family": "mass",
+   "kind": "factor",
+   "question": "What is the mass of the sample?",
+   "correct": "1 kg",
+   "user": "2.2 lb",
+   "expected": "eq"
+  },
+  {
+   "family": "mass",
+   "kind": "factor",
+   "question": "What is the mass of the sample?",
+   "correct": "1 kg",
+   "user": "2 lb",
+   "expected": "neq"
+  },
+  {
+   "family": "mass",
+   "kind": "factor",
+   "question": "What is the mass of the sample?",
+   "correct": "10 kg",
+   "user": "22 lb",
+   "expected": "eq"
+  },
+  {
+   "family": "mass",
+   "kind": "factor",
+   "question": "What is the mass of the sample?",
+   "correct": "10 kg",
+   "user": "25 lb",
+   "expected": "neq"
+  },
+  {
+   "family": "volume",
+   "kind": "decimal",
+   "question": "What is the volume?",
+   "correct": "1 L",
+   "user": "1000 mL",
+   "expected": "eq"
+  },
+  {
+   "family": "volume",
+   "kind": "decimal",
+   "question": "What is the volume?",
+   "correct": "0.75 L",
+   "user": "750 mL",
+   "expected": "eq"
+  },
+  {
+   "family": "volume",
+   "kind": "decimal",
+   "question": "What is the volume?",
+   "correct": "0.75 L",
+   "user": "705 mL",
+   "expected": "neq"
+  },
+  {
+   "family": "volume",
+   "kind": "decimal",
+   "question": "What is the volume?",
+   "correct": "0.75 L",
+   "user": "75 mL",
+   "expected": "neq"
+  },
+  {
+   "family": "volume",
+   "kind": "decimal",
+   "question": "What is the volume?",
+   "correct": "2.5 L",
+   "user": "2500 mL",
+   "expected": "eq"
+  },
+  {
+   "family": "volume",
+   "kind": "decimal",
+   "question": "What is the volume?",
+   "correct": "2.5 L",
+   "user": "2050 mL",
+   "expected": "neq"
+  },
+  {
+   "family": "volume",
+   "kind": "decimal",
+   "question": "What is the volume?",
+   "correct": "2.5 L",
+   "user": "250 mL",
+   "expected": "neq"
+  },
+  {
+   "family": "volume",
+   "kind": "decimal",
+   "question": "What is the volume?",
+   "correct": "1.2 L",
+   "user": "1200 mL",
+   "expected": "eq"
+  },
+  {
+   "family": "volume",
+   "kind": "decimal",
+   "question": "What is the volume?",
+   "correct": "1.2 L",
+   "user": "1020 mL",
+   "expected": "neq"
+  },
+  {
+   "family": "volume",
+   "kind": "decimal",
+   "question": "What is the volume?",
+   "correct": "1.2 L",
+   "user": "1250 mL",
+   "expected": "neq"
+  },
+  {
+   "family": "volume",
+   "kind": "decimal",
+   "question": "What is the volume?",
+   "correct": "330 mL",
+   "user": "0.33 L",
+   "expected": "eq"
+  },
+  {
+   "family": "volume",
+   "kind": "decimal",
+   "question": "What is the volume?",
+   "correct": "330 mL",
+   "user": "3.3 L",
+   "expected": "neq"
+  },
+  {
+   "family": "volume",
+   "kind": "decimal",
+   "question": "What is the volume?",
+   "correct": "1.5 L",
+   "user": "150 cL",
+   "expected": "eq"
+  },
+  {
+   "family": "volume",
+   "kind": "decimal",
+   "question": "What is the volume?",
+   "correct": "1.5 L",
+   "user": "15 cL",
+   "expected": "neq"
+  },
+  {
+   "family": "volume",
+   "kind": "decimal",
+   "question": "What is the volume?",
+   "correct": "1 L",
+   "user": "1000 cm³",
+   "expected": "eq"
+  },
+  {
+   "family": "volume",
+   "kind": "decimal",
+   "question": "What is the volume?",
+   "correct": "1 L",
+   "user": "100 cm³",
+   "expected": "neq"
+  },
+  {
+   "family": "volume",
+   "kind": "decimal",
+   "question": "What is the volume?",
+   "correct": "2.5 L",
+   "user": "2500 cm³",
+   "expected": "eq"
+  },
+  {
+   "family": "volume",
+   "kind": "decimal",
+   "question": "What is the volume?",
+   "correct": "2.5 L",
+   "user": "2.5 cm³",
+   "expected": "neq"
+  },
+  {
+   "family": "volume",
+   "kind": "factor",
+   "question": "What is the volume?",
+   "correct": "2 gallons",
+   "user": "8 quarts",
+   "expected": "eq"
+  },
+  {
+   "family": "volume",
+   "kind": "factor",
+   "question": "What is the volume?",
+   "correct": "2 gallons",
+   "user": "6 quarts",
+   "expected": "neq"
+  },
+  {
+   "family": "volume",
+   "kind": "factor",
+   "question": "What is the volume?",
+   "correct": "3 gallons",
+   "user": "12 quarts",
+   "expected": "eq"
+  },
+  {
+   "family": "volume",
+   "kind": "factor",
+   "question": "What is the volume?",
+   "correct": "3 gallons",
+   "user": "10 quarts",
+   "expected": "neq"
+  },
+  {
+   "family": "volume",
+   "kind": "factor",
+   "question": "What is the volume?",
+   "correct": "2 cups",
+   "user": "1 pint",
+   "expected": "eq"
+  },
+  {
+   "family": "volume",
+   "kind": "factor",
+   "question": "What is the volume?",
+   "correct": "3 cups",
+   "user": "1 pint",
+   "expected": "neq"
+  },
+  {
+   "family": "volume",
+   "kind": "factor",
+   "question": "What is the volume?",
+   "correct": "1 gallon",
+   "user": "3.785 L",
+   "expected": "eq"
+  },
+  {
+   "family": "volume",
+   "kind": "factor",
+   "question": "What is the volume?",
+   "correct": "1 gallon",
+   "user": "2.5 L",
+   "expected": "neq"
+  },
+  {
+   "family": "data",
+   "kind": "decimal",
+   "question": "What is the file size?",
+   "correct": "1 MB",
+   "user": "1000 KB",
+   "expected": "eq"
+  },
+  {
+   "family": "data",
+   "kind": "decimal",
+   "question": "What is the file size?",
+   "correct": "1 MB",
+   "user": "1024 KB",
+   "expected": "eq",
+   "arguable": true
+  },
+  {
+   "family": "data",
+   "kind": "decimal",
+   "question": "What is the file size?",
+   "correct": "2.5 MB",
+   "user": "2500 KB",
+   "expected": "eq"
+  },
+  {
+   "family": "data",
+   "kind": "decimal",
+   "question": "What is the file size?",
+   "correct": "2.5 MB",
+   "user": "2050 KB",
+   "expected": "neq"
+  },
+  {
+   "family": "data",
+   "kind": "decimal",
+   "question": "What is the file size?",
+   "correct": "2.5 MB",
+   "user": "2560 KB",
+   "expected": "eq",
+   "arguable": true
+  },
+  {
+   "family": "data",
+   "kind": "decimal",
+   "question": "What is the file size?",
+   "correct": "2.5 MB",
+   "user": "250 KB",
+   "expected": "neq"
+  },
+  {
+   "family": "data",
+   "kind": "decimal",
+   "question": "What is the file size?",
+   "correct": "3.2 GB",
+   "user": "3200 MB",
+   "expected": "eq"
+  },
+  {
+   "family": "data",
+   "kind": "decimal",
+   "question": "What is the file size?",
+   "correct": "3.2 GB",
+   "user": "3020 MB",
+   "expected": "neq"
+  },
+  {
+   "family": "data",
+   "kind": "decimal",
+   "question": "What is the file size?",
+   "correct": "3.2 GB",
+   "user": "3.2 MB",
+   "expected": "neq"
+  },
+  {
+   "family": "data",
+   "kind": "decimal",
+   "question": "What is the file size?",
+   "correct": "3.2 GB",
+   "user": "3277 MB",
+   "expected": "eq",
+   "arguable": true
+  },
+  {
+   "family": "data",
+   "kind": "decimal",
+   "question": "What is the file size?",
+   "correct": "512 KB",
+   "user": "0.5 MB",
+   "expected": "eq",
+   "arguable": true
+  },
+  {
+   "family": "data",
+   "kind": "decimal",
+   "question": "What is the file size?",
+   "correct": "512 KB",
+   "user": "5 MB",
+   "expected": "neq"
+  },
+  {
+   "family": "data",
+   "kind": "decimal",
+   "question": "What is the file size?",
+   "correct": "1.5 GB",
+   "user": "1500 MB",
+   "expected": "eq"
+  },
+  {
+   "family": "data",
+   "kind": "decimal",
+   "question": "What is the file size?",
+   "correct": "1.5 GB",
+   "user": "1536 MB",
+   "expected": "eq",
+   "arguable": true
+  },
+  {
+   "family": "data",
+   "kind": "decimal",
+   "question": "What is the file size?",
+   "correct": "1.5 GB",
+   "user": "1550 MB",
+   "expected": "neq"
+  },
+  {
+   "family": "data",
+   "kind": "decimal",
+   "question": "What is the file size?",
+   "correct": "4 TB",
+   "user": "4000 GB",
+   "expected": "eq"
+  },
+  {
+   "family": "data",
+   "kind": "decimal",
+   "question": "What is the file size?",
+   "correct": "4 TB",
+   "user": "400 GB",
+   "expected": "neq"
+  },
+  {
+   "family": "data",
+   "kind": "decimal",
+   "question": "What is the file size?",
+   "correct": "0.25 GB",
+   "user": "250 MB",
+   "expected": "eq"
+  },
+  {
+   "family": "data",
+   "kind": "decimal",
+   "question": "What is the file size?",
+   "correct": "0.25 GB",
+   "user": "25 MB",
+   "expected": "neq"
+  },
+  {
+   "family": "data",
+   "kind": "factor",
+   "question": "What is the transfer rate?",
+   "correct": "8 bits",
+   "user": "1 byte",
+   "expected": "eq"
+  },
+  {
+   "family": "data",
+   "kind": "factor",
+   "question": "What is the transfer rate?",
+   "correct": "16 bits",
+   "user": "2 bytes",
+   "expected": "eq"
+  },
+  {
+   "family": "data",
+   "kind": "factor",
+   "question": "What is the transfer rate?",
+   "correct": "12 bits",
+   "user": "2 bytes",
+   "expected": "neq"
+  },
+  {
+   "family": "data",
+   "kind": "factor",
+   "question": "What is the transfer rate?",
+   "correct": "32 bits",
+   "user": "4 bytes",
+   "expected": "eq"
+  },
+  {
+   "family": "data",
+   "kind": "factor",
+   "question": "What is the transfer rate?",
+   "correct": "32 bits",
+   "user": "3 bytes",
+   "expected": "neq"
+  },
+  {
+   "family": "data",
+   "kind": "factor",
+   "question": "What is the transfer rate?",
+   "correct": "10 Mbps",
+   "user": "1.25 MB/s",
+   "expected": "eq"
+  },
+  {
+   "family": "data",
+   "kind": "factor",
+   "question": "What is the transfer rate?",
+   "correct": "10 Mbps",
+   "user": "10 MB/s",
+   "expected": "neq"
+  },
+  {
+   "family": "data",
+   "kind": "factor",
+   "question": "What is the transfer rate?",
+   "correct": "100 Mbps",
+   "user": "12.5 MB/s",
+   "expected": "eq"
+  },
+  {
+   "family": "data",
+   "kind": "factor",
+   "question": "What is the transfer rate?",
+   "correct": "100 Mbps",
+   "user": "100 MB/s",
+   "expected": "neq"
+  },
+  {
+   "family": "data",
+   "kind": "factor",
+   "question": "What is the transfer rate?",
+   "correct": "100 Mbps",
+   "user": "10 MB/s",
+   "expected": "neq"
+  },
+  {
+   "family": "length",
+   "kind": "decimal",
+   "question": "What is the distance?",
+   "correct": "2.5 km",
+   "user": "2500 m",
+   "expected": "eq"
+  },
+  {
+   "family": "length",
+   "kind": "decimal",
+   "question": "What is the distance?",
+   "correct": "2.5 km",
+   "user": "2050 m",
+   "expected": "neq"
+  },
+  {
+   "family": "length",
+   "kind": "decimal",
+   "question": "What is the distance?",
+   "correct": "2.5 km",
+   "user": "250 m",
+   "expected": "neq"
+  },
+  {
+   "family": "length",
+   "kind": "decimal",
+   "question": "What is the distance?",
+   "correct": "1.75 m",
+   "user": "175 cm",
+   "expected": "eq"
+  },
+  {
+   "family": "length",
+   "kind": "decimal",
+   "question": "What is the distance?",
+   "correct": "1.75 m",
+   "user": "157 cm",
+   "expected": "neq"
+  },
+  {
+   "family": "length",
+   "kind": "decimal",
+   "question": "What is the distance?",
+   "correct": "1.75 m",
+   "user": "17.5 cm",
+   "expected": "neq"
+  },
+  {
+   "family": "length",
+   "kind": "decimal",
+   "question": "What is the distance?",
+   "correct": "1.75 m",
+   "user": "1750 mm",
+   "expected": "eq"
+  },
+  {
+   "family": "length",
+   "kind": "decimal",
+   "question": "What is the distance?",
+   "correct": "1.75 m",
+   "user": "1705 mm",
+   "expected": "neq"
+  },
+  {
+   "family": "length",
+   "kind": "decimal",
+   "question": "What is the distance?",
+   "correct": "4.2 cm",
+   "user": "42 mm",
+   "expected": "eq"
+  },
+  {
+   "family": "length",
+   "kind": "decimal",
+   "question": "What is the distance?",
+   "correct": "4.2 cm",
+   "user": "4.2 mm",
+   "expected": "neq"
+  },
+  {
+   "family": "length",
+   "kind": "decimal",
+   "question": "What is the distance?",
+   "correct": "4.2 cm",
+   "user": "40 mm",
+   "expected": "neq"
+  },
+  {
+   "family": "length",
+   "kind": "decimal",
+   "question": "What is the distance?",
+   "correct": "350 m",
+   "user": "0.35 km",
+   "expected": "eq"
+  },
+  {
+   "family": "length",
+   "kind": "decimal",
+   "question": "What is the distance?",
+   "correct": "350 m",
+   "user": "3.5 km",
+   "expected": "neq"
+  },
+  {
+   "family": "length",
+   "kind": "factor",
+   "question": "What is the distance?",
+   "correct": "5 ft",
+   "user": "60 in",
+   "expected": "eq"
+  },
+  {
+   "family": "length",
+   "kind": "factor",
+   "question": "What is the distance?",
+   "correct": "5 ft",
+   "user": "50 in",
+   "expected": "neq"
+  },
+  {
+   "family": "length",
+   "kind": "factor",
+   "question": "What is the distance?",
+   "correct": "6 ft 2 in",
+   "user": "74 in",
+   "expected": "eq"
+  },
+  {
+   "family": "length",
+   "kind": "factor",
+   "question": "What is the distance?",
+   "correct": "6 ft 2 in",
+   "user": "72 in",
+   "expected": "neq"
+  },
+  {
+   "family": "length",
+   "kind": "factor",
+   "question": "What is the distance?",
+   "correct": "6 ft 2 in",
+   "user": "6.17 ft",
+   "expected": "eq"
+  },
+  {
+   "family": "length",
+   "kind": "factor",
+   "question": "What is the distance?",
+   "correct": "6 ft 2 in",
+   "user": "6.2 ft",
+   "expected": "neq"
+  },
+  {
+   "family": "length",
+   "kind": "factor",
+   "question": "What is the distance?",
+   "correct": "2 yards",
+   "user": "6 feet",
+   "expected": "eq"
+  },
+  {
+   "family": "length",
+   "kind": "factor",
+   "question": "What is the distance?",
+   "correct": "2 yards",
+   "user": "8 feet",
+   "expected": "neq"
+  },
+  {
+   "family": "length",
+   "kind": "factor",
+   "question": "What is the distance?",
+   "correct": "2 yards",
+   "user": "72 inches",
+   "expected": "eq"
+  },
+  {
+   "family": "length",
+   "kind": "factor",
+   "question": "What is the distance?",
+   "correct": "2 yards",
+   "user": "60 inches",
+   "expected": "neq"
+  },
+  {
+   "family": "length",
+   "kind": "approx",
+   "question": "What is the distance?",
+   "correct": "10 miles",
+   "user": "16.1 km",
+   "expected": "eq"
+  },
+  {
+   "family": "length",
+   "kind": "approx",
+   "question": "What is the distance?",
+   "correct": "10 miles",
+   "user": "10 km",
+   "expected": "neq"
+  },
+  {
+   "family": "length",
+   "kind": "approx",
+   "question": "What is the distance?",
+   "correct": "10 miles",
+   "user": "18 km",
+   "expected": "neq"
+  },
+  {
+   "family": "length",
+   "kind": "approx",
+   "question": "What is the distance?",
+   "correct": "5 km",
+   "user": "3.1 miles",
+   "expected": "eq"
+  },
+  {
+   "family": "length",
+   "kind": "approx",
+   "question": "What is the distance?",
+   "correct": "5 km",
+   "user": "5 miles",
+   "expected": "neq"
+  },
+  {
+   "family": "length",
+   "kind": "approx",
+   "question": "What is the distance?",
+   "correct": "5 km",
+   "user": "2.5 miles",
+   "expected": "neq"
+  },
+  {
+   "family": "length",
+   "kind": "approx",
+   "question": "What is the distance?",
+   "correct": "10 inches",
+   "user": "25.4 cm",
+   "expected": "eq"
+  },
+  {
+   "family": "length",
+   "kind": "approx",
+   "question": "What is the distance?",
+   "correct": "10 inches",
+   "user": "25 cm",
+   "expected": "eq",
+   "arguable": true
+  },
+  {
+   "family": "length",
+   "kind": "approx",
+   "question": "What is the distance?",
+   "correct": "10 inches",
+   "user": "24 cm",
+   "expected": "neq"
+  },
+  {
+   "family": "length",
+   "kind": "approx",
+   "question": "What is the distance?",
+   "correct": "10 inches",
+   "user": "20 cm",
+   "expected": "neq"
+  },
+  {
+   "family": "time",
+   "kind": "factor",
+   "question": "How long did it take?",
+   "correct": "2.5 hours",
+   "user": "150 minutes",
+   "expected": "eq"
+  },
+  {
+   "family": "time",
+   "kind": "factor",
+   "question": "How long did it take?",
+   "correct": "2.5 hours",
+   "user": "250 minutes",
+   "expected": "neq"
+  },
+  {
+   "family": "time",
+   "kind": "factor",
+   "question": "How long did it take?",
+   "correct": "2.5 hours",
+   "user": "2 hours 30 minutes",
+   "expected": "eq"
+  },
+  {
+   "family": "time",
+   "kind": "factor",
+   "question": "How long did it take?",
+   "correct": "2.5 hours",
+   "user": "2 hours 50 minutes",
+   "expected": "neq"
+  },
+  {
+   "family": "time",
+   "kind": "factor",
+   "question": "How long did it take?",
+   "correct": "1.25 hours",
+   "user": "75 minutes",
+   "expected": "eq"
+  },
+  {
+   "family": "time",
+   "kind": "factor",
+   "question": "How long did it take?",
+   "correct": "1.25 hours",
+   "user": "125 minutes",
+   "expected": "neq"
+  },
+  {
+   "family": "time",
+   "kind": "factor",
+   "question": "How long did it take?",
+   "correct": "1.25 hours",
+   "user": "1 hour 25 minutes",
+   "expected": "neq"
+  },
+  {
+   "family": "time",
+   "kind": "factor",
+   "question": "How long did it take?",
+   "correct": "1.25 hours",
+   "user": "1 hour 15 minutes",
+   "expected": "eq"
+  },
+  {
+   "family": "time",
+   "kind": "factor",
+   "question": "How long did it take?",
+   "correct": "3 days",
+   "user": "72 hours",
+   "expected": "eq"
+  },
+  {
+   "family": "time",
+   "kind": "factor",
+   "question": "How long did it take?",
+   "correct": "3 days",
+   "user": "70 hours",
+   "expected": "neq"
+  },
+  {
+   "family": "time",
+   "kind": "factor",
+   "question": "How long did it take?",
+   "correct": "3 days",
+   "user": "30 hours",
+   "expected": "neq"
+  },
+  {
+   "family": "time",
+   "kind": "factor",
+   "question": "How long did it take?",
+   "correct": "2 weeks",
+   "user": "14 days",
+   "expected": "eq"
+  },
+  {
+   "family": "time",
+   "kind": "factor",
+   "question": "How long did it take?",
+   "correct": "2 weeks",
+   "user": "12 days",
+   "expected": "neq"
+  },
+  {
+   "family": "time",
+   "kind": "factor",
+   "question": "How long did it take?",
+   "correct": "2 weeks",
+   "user": "20 days",
+   "expected": "neq"
+  },
+  {
+   "family": "time",
+   "kind": "factor",
+   "question": "How long did it take?",
+   "correct": "18 months",
+   "user": "1.5 years",
+   "expected": "eq"
+  },
+  {
+   "family": "time",
+   "kind": "factor",
+   "question": "How long did it take?",
+   "correct": "18 months",
+   "user": "1 year 6 months",
+   "expected": "eq"
+  },
+  {
+   "family": "time",
+   "kind": "factor",
+   "question": "How long did it take?",
+   "correct": "18 months",
+   "user": "1 year 8 months",
+   "expected": "neq"
+  },
+  {
+   "family": "time",
+   "kind": "factor",
+   "question": "How long did it take?",
+   "correct": "18 months",
+   "user": "1.8 years",
+   "expected": "neq"
+  },
+  {
+   "family": "time",
+   "kind": "factor",
+   "question": "How long did it take?",
+   "correct": "45 seconds",
+   "user": "0.75 minutes",
+   "expected": "eq"
+  },
+  {
+   "family": "time",
+   "kind": "factor",
+   "question": "How long did it take?",
+   "correct": "45 seconds",
+   "user": "0.45 minutes",
+   "expected": "neq"
+  },
+  {
+   "family": "time",
+   "kind": "factor",
+   "question": "How long did it take?",
+   "correct": "1 year 2 months",
+   "user": "14 months",
+   "expected": "eq"
+  },
+  {
+   "family": "time",
+   "kind": "factor",
+   "question": "How long did it take?",
+   "correct": "1 year 2 months",
+   "user": "12 months",
+   "expected": "neq"
+  },
+  {
+   "family": "time",
+   "kind": "factor",
+   "question": "How long did it take?",
+   "correct": "100 minutes",
+   "user": "1 hour 40 minutes",
+   "expected": "eq"
+  },
+  {
+   "family": "time",
+   "kind": "factor",
+   "question": "How long did it take?",
+   "correct": "100 minutes",
+   "user": "1 hour 0 minutes",
+   "expected": "neq"
+  },
+  {
+   "family": "time",
+   "kind": "factor",
+   "question": "How long did it take?",
+   "correct": "100 minutes",
+   "user": "1.67 hours",
+   "expected": "eq"
+  },
+  {
+   "family": "time",
+   "kind": "factor",
+   "question": "How long did it take?",
+   "correct": "100 minutes",
+   "user": "1.4 hours",
+   "expected": "neq"
+  },
+  {
+   "family": "temperature",
+   "kind": "formula",
+   "question": "What is the temperature?",
+   "correct": "100 °C",
+   "user": "212 °F",
+   "expected": "eq"
+  },
+  {
+   "family": "temperature",
+   "kind": "formula",
+   "question": "What is the temperature?",
+   "correct": "100 °C",
+   "user": "200 °F",
+   "expected": "neq"
+  },
+  {
+   "family": "temperature",
+   "kind": "formula",
+   "question": "What is the temperature?",
+   "correct": "0 °C",
+   "user": "32 °F",
+   "expected": "eq"
+  },
+  {
+   "family": "temperature",
+   "kind": "formula",
+   "question": "What is the temperature?",
+   "correct": "0 °C",
+   "user": "0 °F",
+   "expected": "neq"
+  },
+  {
+   "family": "temperature",
+   "kind": "formula",
+   "question": "What is the temperature?",
+   "correct": "37 °C",
+   "user": "98.6 °F",
+   "expected": "eq"
+  },
+  {
+   "family": "temperature",
+   "kind": "formula",
+   "question": "What is the temperature?",
+   "correct": "37 °C",
+   "user": "96.8 °F",
+   "expected": "neq"
+  },
+  {
+   "family": "temperature",
+   "kind": "formula",
+   "question": "What is the temperature?",
+   "correct": "20 °C",
+   "user": "68 °F",
+   "expected": "eq"
+  },
+  {
+   "family": "temperature",
+   "kind": "formula",
+   "question": "What is the temperature?",
+   "correct": "20 °C",
+   "user": "70 °F",
+   "expected": "neq"
+  },
+  {
+   "family": "temperature",
+   "kind": "formula",
+   "question": "What is the temperature?",
+   "correct": "20 °C",
+   "user": "293 K",
+   "expected": "eq"
+  },
+  {
+   "family": "temperature",
+   "kind": "formula",
+   "question": "What is the temperature?",
+   "correct": "20 °C",
+   "user": "273 K",
+   "expected": "neq"
+  },
+  {
+   "family": "temperature",
+   "kind": "formula",
+   "question": "What is the temperature?",
+   "correct": "300 K",
+   "user": "27 °C",
+   "expected": "eq"
+  },
+  {
+   "family": "temperature",
+   "kind": "formula",
+   "question": "What is the temperature?",
+   "correct": "300 K",
+   "user": "30 °C",
+   "expected": "neq"
+  },
+  {
+   "family": "temperature",
+   "kind": "formula",
+   "question": "What is the temperature?",
+   "correct": "15 °C",
+   "user": "59 °F",
+   "expected": "eq"
+  },
+  {
+   "family": "temperature",
+   "kind": "formula",
+   "question": "What is the temperature?",
+   "correct": "15 °C",
+   "user": "55 °F",
+   "expected": "neq"
+  },
+  {
+   "family": "temperature",
+   "kind": "formula",
+   "question": "What is the temperature?",
+   "correct": "-40 °C",
+   "user": "-40 °F",
+   "expected": "eq"
+  },
+  {
+   "family": "temperature",
+   "kind": "formula",
+   "question": "What is the temperature?",
+   "correct": "-10 °C",
+   "user": "14 °F",
+   "expected": "eq"
+  },
+  {
+   "family": "temperature",
+   "kind": "formula",
+   "question": "What is the temperature?",
+   "correct": "-10 °C",
+   "user": "10 °F",
+   "expected": "neq"
+  },
+  {
+   "family": "speed",
+   "kind": "factor",
+   "question": "What is the speed?",
+   "correct": "36 km/h",
+   "user": "10 m/s",
+   "expected": "eq"
+  },
+  {
+   "family": "speed",
+   "kind": "factor",
+   "question": "What is the speed?",
+   "correct": "36 km/h",
+   "user": "36 m/s",
+   "expected": "neq"
+  },
+  {
+   "family": "speed",
+   "kind": "factor",
+   "question": "What is the speed?",
+   "correct": "36 km/h",
+   "user": "12 m/s",
+   "expected": "neq"
+  },
+  {
+   "family": "speed",
+   "kind": "factor",
+   "question": "What is the speed?",
+   "correct": "72 km/h",
+   "user": "20 m/s",
+   "expected": "eq"
+  },
+  {
+   "family": "speed",
+   "kind": "factor",
+   "question": "What is the speed?",
+   "correct": "72 km/h",
+   "user": "25 m/s",
+   "expected": "neq"
+  },
+  {
+   "family": "speed",
+   "kind": "factor",
+   "question": "What is the speed?",
+   "correct": "15 m/s",
+   "user": "54 km/h",
+   "expected": "eq"
+  },
+  {
+   "family": "speed",
+   "kind": "factor",
+   "question": "What is the speed?",
+   "correct": "15 m/s",
+   "user": "50 km/h",
+   "expected": "neq"
+  },
+  {
+   "family": "speed",
+   "kind": "factor",
+   "question": "What is the speed?",
+   "correct": "60 mph",
+   "user": "96.6 km/h",
+   "expected": "eq"
+  },
+  {
+   "family": "speed",
+   "kind": "factor",
+   "question": "What is the speed?",
+   "correct": "60 mph",
+   "user": "60 km/h",
+   "expected": "neq"
+  },
+  {
+   "family": "speed",
+   "kind": "factor",
+   "question": "What is the speed?",
+   "correct": "60 mph",
+   "user": "100 km/h",
+   "expected": "neq",
+   "arguable": true
+  },
+  {
+   "family": "area",
+   "kind": "decimal",
+   "question": "What is the area?",
+   "correct": "1 hectare",
+   "user": "10,000 m²",
+   "expected": "eq"
+  },
+  {
+   "family": "area",
+   "kind": "decimal",
+   "question": "What is the area?",
+   "correct": "1 hectare",
+   "user": "1,000 m²",
+   "expected": "neq"
+  },
+  {
+   "family": "area",
+   "kind": "decimal",
+   "question": "What is the area?",
+   "correct": "2.5 km²",
+   "user": "2,500,000 m²",
+   "expected": "eq"
+  },
+  {
+   "family": "area",
+   "kind": "decimal",
+   "question": "What is the area?",
+   "correct": "2.5 km²",
+   "user": "2,500 m²",
+   "expected": "neq"
+  },
+  {
+   "family": "area",
+   "kind": "decimal",
+   "question": "What is the area?",
+   "correct": "1 m²",
+   "user": "10,000 cm²",
+   "expected": "eq"
+  },
+  {
+   "family": "area",
+   "kind": "decimal",
+   "question": "What is the area?",
+   "correct": "1 m²",
+   "user": "100 cm²",
+   "expected": "neq"
+  },
+  {
+   "family": "area",
+   "kind": "decimal",
+   "question": "What is the area?",
+   "correct": "3 m²",
+   "user": "30,000 cm²",
+   "expected": "eq"
+  },
+  {
+   "family": "area",
+   "kind": "decimal",
+   "question": "What is the area?",
+   "correct": "3 m²",
+   "user": "300 cm²",
+   "expected": "neq"
+  },
+  {
+   "family": "angle",
+   "kind": "formula",
+   "question": "What is the angle?",
+   "correct": "180°",
+   "user": "π rad",
+   "expected": "eq"
+  },
+  {
+   "family": "angle",
+   "kind": "formula",
+   "question": "What is the angle?",
+   "correct": "90°",
+   "user": "π/2",
+   "expected": "eq"
+  },
+  {
+   "family": "angle",
+   "kind": "formula",
+   "question": "What is the angle?",
+   "correct": "60°",
+   "user": "π/3",
+   "expected": "eq"
+  },
+  {
+   "family": "angle",
+   "kind": "formula",
+   "question": "What is the angle?",
+   "correct": "60°",
+   "user": "π/6",
+   "expected": "neq"
+  },
+  {
+   "family": "angle",
+   "kind": "formula",
+   "question": "What is the angle?",
+   "correct": "45°",
+   "user": "π/4",
+   "expected": "eq"
+  },
+  {
+   "family": "angle",
+   "kind": "formula",
+   "question": "What is the angle?",
+   "correct": "45°",
+   "user": "0.785 rad",
+   "expected": "eq"
+  },
+  {
+   "family": "angle",
+   "kind": "formula",
+   "question": "What is the angle?",
+   "correct": "30°",
+   "user": "π/4",
+   "expected": "neq"
+  },
+  {
+   "family": "angle",
+   "kind": "formula",
+   "question": "What is the angle?",
+   "correct": "1 rad",
+   "user": "57.3°",
+   "expected": "eq"
+  },
+  {
+   "family": "angle",
+   "kind": "formula",
+   "question": "What is the angle?",
+   "correct": "1 rad",
+   "user": "60°",
+   "expected": "neq"
+  },
+  {
+   "family": "angle",
+   "kind": "formula",
+   "question": "What is the angle?",
+   "correct": "120°",
+   "user": "2π/3",
+   "expected": "eq"
+  },
+  {
+   "family": "angle",
+   "kind": "formula",
+   "question": "What is the angle?",
+   "correct": "120°",
+   "user": "π/3",
+   "expected": "neq"
+  },
+  {
+   "family": "angle",
+   "kind": "formula",
+   "question": "What is the angle?",
+   "correct": "2 rad",
+   "user": "114.6°",
+   "expected": "eq"
+  },
+  {
+   "family": "angle",
+   "kind": "formula",
+   "question": "What is the angle?",
+   "correct": "2 rad",
+   "user": "120°",
+   "expected": "neq"
+  },
+  {
+   "family": "energy",
+   "kind": "approx",
+   "question": "How much energy?",
+   "correct": "1 kcal",
+   "user": "4.184 kJ",
+   "expected": "eq"
+  },
+  {
+   "family": "energy",
+   "kind": "approx",
+   "question": "How much energy?",
+   "correct": "1 kcal",
+   "user": "4184 J",
+   "expected": "eq"
+  },
+  {
+   "family": "energy",
+   "kind": "approx",
+   "question": "How much energy?",
+   "correct": "1 kcal",
+   "user": "1000 J",
+   "expected": "neq"
+  },
+  {
+   "family": "energy",
+   "kind": "approx",
+   "question": "How much energy?",
+   "correct": "500 kcal",
+   "user": "2092 kJ",
+   "expected": "eq"
+  },
+  {
+   "family": "energy",
+   "kind": "approx",
+   "question": "How much energy?",
+   "correct": "500 kcal",
+   "user": "2000 kJ",
+   "expected": "neq",
+   "arguable": true
+  },
+  {
+   "family": "energy",
+   "kind": "approx",
+   "question": "How much energy?",
+   "correct": "500 kcal",
+   "user": "500 kJ",
+   "expected": "neq"
+  },
+  {
+   "family": "energy",
+   "kind": "approx",
+   "question": "How much energy?",
+   "correct": "2.5 kJ",
+   "user": "2500 J",
+   "expected": "eq"
+  },
+  {
+   "family": "energy",
+   "kind": "approx",
+   "question": "How much energy?",
+   "correct": "2.5 kJ",
+   "user": "2050 J",
+   "expected": "neq"
+  },
+  {
+   "family": "energy",
+   "kind": "approx",
+   "question": "How much energy?",
+   "correct": "1 kWh",
+   "user": "3.6 MJ",
+   "expected": "eq"
+  },
+  {
+   "family": "energy",
+   "kind": "approx",
+   "question": "How much energy?",
+   "correct": "1 kWh",
+   "user": "3600 J",
+   "expected": "neq"
+  },
+  {
+   "family": "energy",
+   "kind": "approx",
+   "question": "How much energy?",
+   "correct": "1 kWh",
+   "user": "3.6 kJ",
+   "expected": "neq"
+  },
+  {
+   "family": "pressure",
+   "kind": "approx",
+   "question": "What is the pressure?",
+   "correct": "1 atm",
+   "user": "101.325 kPa",
+   "expected": "eq"
+  },
+  {
+   "family": "pressure",
+   "kind": "approx",
+   "question": "What is the pressure?",
+   "correct": "1 atm",
+   "user": "101325 Pa",
+   "expected": "eq"
+  },
+  {
+   "family": "pressure",
+   "kind": "approx",
+   "question": "What is the pressure?",
+   "correct": "1 atm",
+   "user": "1.013 bar",
+   "expected": "eq"
+  },
+  {
+   "family": "pressure",
+   "kind": "approx",
+   "question": "What is the pressure?",
+   "correct": "1 atm",
+   "user": "100 kPa",
+   "expected": "eq",
+   "arguable": true
+  },
+  {
+   "family": "pressure",
+   "kind": "approx",
+   "question": "What is the pressure?",
+   "correct": "1 atm",
+   "user": "10 kPa",
+   "expected": "neq"
+  },
+  {
+   "family": "pressure",
+   "kind": "approx",
+   "question": "What is the pressure?",
+   "correct": "2 bar",
+   "user": "200 kPa",
+   "expected": "eq"
+  },
+  {
+   "family": "pressure",
+   "kind": "approx",
+   "question": "What is the pressure?",
+   "correct": "2 bar",
+   "user": "20 kPa",
+   "expected": "neq"
+  },
+  {
+   "family": "pressure",
+   "kind": "approx",
+   "question": "What is the pressure?",
+   "correct": "2 bar",
+   "user": "2000 hPa",
+   "expected": "eq"
+  },
+  {
+   "family": "pressure",
+   "kind": "approx",
+   "question": "What is the pressure?",
+   "correct": "2 bar",
+   "user": "2000 Pa",
+   "expected": "neq"
+  },
+  {
+   "family": "misc",
+   "kind": "decimal",
+   "question": "What is the value?",
+   "correct": "2.4 GHz",
+   "user": "2400 MHz",
+   "expected": "eq"
+  },
+  {
+   "family": "misc",
+   "kind": "decimal",
+   "question": "What is the value?",
+   "correct": "2.4 GHz",
+   "user": "2040 MHz",
+   "expected": "neq"
+  },
+  {
+   "family": "misc",
+   "kind": "decimal",
+   "question": "What is the value?",
+   "correct": "1.5 kW",
+   "user": "1500 W",
+   "expected": "eq"
+  },
+  {
+   "family": "misc",
+   "kind": "decimal",
+   "question": "What is the value?",
+   "correct": "1.5 kW",
+   "user": "150 W",
+   "expected": "neq"
+  },
+  {
+   "family": "misc",
+   "kind": "decimal",
+   "question": "What is the value?",
+   "correct": "0.75 kW",
+   "user": "750 W",
+   "expected": "eq"
+  },
+  {
+   "family": "misc",
+   "kind": "decimal",
+   "question": "What is the value?",
+   "correct": "0.75 kW",
+   "user": "705 W",
+   "expected": "neq"
+  },
+  {
+   "family": "misc",
+   "kind": "decimal",
+   "question": "What is the value?",
+   "correct": "2.5k",
+   "user": "2500",
+   "expected": "eq"
+  },
+  {
+   "family": "misc",
+   "kind": "decimal",
+   "question": "What is the value?",
+   "correct": "2.5k",
+   "user": "2050",
+   "expected": "neq"
+  },
+  {
+   "family": "misc",
+   "kind": "decimal",
+   "question": "What is the value?",
+   "correct": "1.2 million",
+   "user": "1,200,000",
+   "expected": "eq"
+  },
+  {
+   "family": "misc",
+   "kind": "decimal",
+   "question": "What is the value?",
+   "correct": "1.2 million",
+   "user": "120,000",
+   "expected": "neq"
+  },
+  {
+   "family": "misc",
+   "kind": "decimal",
+   "question": "What is the value?",
+   "correct": "3 dozen",
+   "user": "36",
+   "expected": "eq"
+  },
+  {
+   "family": "misc",
+   "kind": "decimal",
+   "question": "What is the value?",
+   "correct": "3 dozen",
+   "user": "30",
+   "expected": "neq"
+  },
+  {
+   "family": "misc",
+   "kind": "decimal",
+   "question": "What is the value?",
+   "correct": "5 mA",
+   "user": "0.005 A",
+   "expected": "eq"
+  },
+  {
+   "family": "misc",
+   "kind": "decimal",
+   "question": "What is the value?",
+   "correct": "5 mA",
+   "user": "0.05 A",
+   "expected": "neq"
+  },
+  {
+   "family": "misc",
+   "kind": "decimal",
+   "question": "What is the value?",
+   "correct": "220 V",
+   "user": "0.22 kV",
+   "expected": "eq"
+  },
+  {
+   "family": "misc",
+   "kind": "decimal",
+   "question": "What is the value?",
+   "correct": "220 V",
+   "user": "2.2 kV",
+   "expected": "neq"
+  }
+ ]
+}

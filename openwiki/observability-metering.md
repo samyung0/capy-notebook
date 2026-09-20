@@ -392,7 +392,7 @@ DeepSeek, OpenAI, and routed GLM under its `zai` slug report a cache
 split proven inclusive of their own reported input; Anthropic's disjoint
 counters are folded into input separately. Routed GLM counts because TokenHub
 serves the model and bills us directly, so its split is the one the row's
-cached rate is priced against (the playground runs in `bench/rag/playground`
+cached rate is priced against (the playground runs in `lab/playground`
 recorded `prompt_tokens_details.cached_tokens` ≤ `prompt_tokens` on every
 TokenHub call). A split larger than reported input is still refused as
 `cached_gt_input` and charged in full.
@@ -998,7 +998,10 @@ variable every library route answers 404 `library_unconfigured`. The nav entry
 is shown to every `read_all` operator either way, and the page itself reports
 the unconfigured state. The section
 is read-only by design — the live counts, books with their version history and
-receipts, topics with excerpt counts by role, a filtered excerpt browser paging
+receipts, subjects (`/subjects`: the fixture's id, area and label with the
+topics and tagged excerpts the library holds under each) and topics with their
+`subjectId` and excerpt counts by role (the Topics tab shows the subject as a
+column and filters by subject), a filtered excerpt browser paging
 50 at a time, excerpt detail with chunk, figure and parser/chunker locators,
 model runs, and a per-book JSON export (`?version=` for a retained version)
 whose sha256 travels in `X-Capy-Export-Sha256` so another reviewer can verify

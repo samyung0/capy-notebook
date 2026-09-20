@@ -88,8 +88,8 @@ class Passage:
             )
             parts.append(span)
         header = " › ".join(parts)
-        # Below the threshold the model is told why the text may be off, which
-        # is what the prompt's capture_page rule keys on.
+        # This warns about text extraction. Visual facts require capture even
+        # when the text-layer agreement score is high.
         if self.confidence is not None and self.confidence < cfg.confidence_note_below:
             reasons = "; ".join(self.confidence_reasons) or "no issue found"
             header += f" [extraction confidence {self.confidence:.2f}: {reasons}]"

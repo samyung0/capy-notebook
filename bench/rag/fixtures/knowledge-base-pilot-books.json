@@ -6,6 +6,7 @@
   "books": [
     {
       "id": "os4",
+      "subject_id": "statistics",
       "title": "OpenIntro Statistics",
       "authors": [
         "David Diez",
@@ -40,6 +41,7 @@
     },
     {
       "id": "ahss4",
+      "subject_id": "statistics",
       "title": "Advanced High School Statistics",
       "authors": [
         "Leah Dorazio",
@@ -76,6 +78,7 @@
     },
     {
       "id": "lsj",
+      "subject_id": "statistics",
       "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
       "authors": [
         "Danielle J. Navarro",
@@ -183,7 +186,7 @@
       "source_sections": "OS4 2.1-2.2; AHSS4 1.2-1.4; LSJ 5"
     },
     {
-      "id": "probability",
+      "id": "probability-basics",
       "label": "Probability rules",
       "aliases": [
         "sample space",

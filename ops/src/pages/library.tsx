@@ -473,6 +473,11 @@ function BooksTab() {
 
 function TopicsTab() {
   const { api } = useOpsApp();
+  const [subject, setSubject] = useState('');
+  const { data: subjects } = useQuery({
+    queryFn: api.librarySubjects,
+    queryKey: ['library-subjects'],
+  });
   const { data, error, isPending, refetch } = useQuery({
     queryFn: api.libraryTopics,
     queryKey: ['library-topics'],
@@ -484,22 +489,48 @@ function TopicsTab() {
   if (error || !data) {
     return <ErrorState error={error} retry={() => void refetch()} />;
   }
+  const subjectLabel = new Map(
+    (subjects ?? []).map((item) => [item.id, item.label])
+  );
+  const shown = subject
+    ? data.filter((topic) => topic.subjectId === subject)
+    : data;
 
   return (
     <Card className="shadow-sm">
       <CardHeader>
-        <CardTitle>Topic catalog</CardTitle>
+        <CardTitle>Topics by subject</CardTitle>
         <CardDescription>
-          Excerpts carrying each topic, by role, as retrievable / verified /
-          total. Retrievable applies the curate confidence floor of 0.8 on top
-          of a verified evidence quote; that is what curate-mode search returns.
+          Topics are derived per book under one fixture subject; a topic no
+          tagged excerpt carries is dropped at publish. Excerpts carrying each
+          topic, by role, as retrievable / verified / total. Retrievable applies
+          the curate confidence floor of 0.8 on top of a verified evidence
+          quote; that is what curate-mode search returns.
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-5">
+        <div className="flex flex-wrap items-end gap-4">
+          <FilterSelect
+            id="library-subject"
+            label="Subject"
+            onChange={setSubject}
+            value={subject}
+          >
+            <option value="">Every subject</option>
+            {(subjects ?? [])
+              .filter((item) => item.topics > 0)
+              .map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label} ({item.topics} topics, {item.excerpts} excerpts)
+                </option>
+              ))}
+          </FilterSelect>
+        </div>
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Topic</TableHead>
+              <TableHead>Subject</TableHead>
               <TableHead>Scope</TableHead>
               {libraryRoles.map((role) => (
                 <TableHead className="text-right" key={role}>
@@ -509,7 +540,7 @@ function TopicsTab() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {data.map((topic) => (
+            {shown.map((topic) => (
               <TableRow key={topic.id}>
                 <TableCell className="align-top">
                   <span className="block font-medium">{topic.label}</span>
@@ -519,6 +550,12 @@ function TopicsTab() {
                   <span className="block text-muted-foreground text-xs">
                     {jsonText(topic.aliases)}
                   </span>
+                </TableCell>
+                <TableCell className="align-top text-sm">
+                  {subjectLabel.get(topic.subjectId) ?? topic.subjectId}
+                  <code className="block font-mono text-muted-foreground text-xs">
+                    {topic.subjectId}
+                  </code>
                 </TableCell>
                 <TableCell className="max-w-64 align-top text-muted-foreground text-xs">
                   {topic.scope}

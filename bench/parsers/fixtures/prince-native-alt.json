@@ -1,0 +1,17 @@
+{
+  "source_sha256": "a3f75487411ef13d0270c65fc801ceff2b28e6b339afed9b407fe477f7e8453e",
+  "gold_provenance": "Page images inspected on 2026-09-20 before implementing the candidate. Spoken alternatives below preserve the PDF's wording; these are witnesses, not an exhaustive mathematical fidelity score.",
+  "cases": [
+    {"page": 97, "context": "frog", "visible_values": ["1 m/s", "0 m/s", "1 second"], "alt_values": ["1 m slash s", "0 m slash s", "1 second"]},
+    {"page": 98, "context": "Logan", "visible_values": ["3/2", "2/3"], "alt_values": ["v sub avg comma cap L equals three halves v sub avg comma cap R", "v sub avg comma cap L equals two thirds v sub avg comma cap R"]},
+    {"page": 99, "context": "coordinate system", "visible_values": ["35 meters", "18 meters", "26 meters", "79 m", "-43 m"], "alt_values": ["35 meters", "18 meters", "26 meters", "79 m", "negative 43 m"]},
+    {"page": 103, "context": "fly buzzes", "visible_values": ["14 cm", "63 pi cm", "7 cm"], "alt_values": ["14 centimeters", "63 pi times centimeters", "7 centimeters"]},
+    {"page": 262, "context": "Cancel", "visible_values": ["g = GM/r^2", "6.67", "2.70"], "alt_values": ["g equals G of the fraction with numerator M and denominator r squared equals open paren 6.67"]},
+    {"page": 616, "context": "To store", "visible_values": ["10 microfarads", "120 microcoulombs"], "alt_values": ["10 mu F", "120 mu C"]}
+  ],
+  "controls": [
+    {"page": 99, "unchanged_context": "You sit in a car"},
+    {"page": 99, "unchanged_context": "A train starts from rest"},
+    {"page": 99, "excluded_alt_prefix": "A graph titled Runner Position"}
+  ]
+}

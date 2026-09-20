@@ -2376,9 +2376,10 @@ def _curate_model() -> ModelConfig:
 
 
 def _curate_ctx(**kwargs) -> ToolContext:
-    # The catalog is set, so the turn does not open a library connection to read it.
+    # The subject list is set, so the turn does not open a library connection to read it.
     kwargs.setdefault(
-        "library_catalog", [{"id": "regression", "label": "Regression", "scope": ""}]
+        "library_catalog",
+        [{"id": "statistics", "label": "Statistics", "aliases": [], "excerpts": 3}],
     )
     return ToolContext(
         workspace_id="ws_1",
@@ -2406,11 +2407,11 @@ async def test_curate_needs_a_library_and_a_200k_window(monkeypatch, library_on)
     assert events[-1]["code"] == "model_unavailable"
 
 
-async def test_a_library_with_no_published_topics_is_model_unavailable(
+async def test_a_library_with_no_published_subjects_is_model_unavailable(
     monkeypatch, library_on, caplog
 ):
-    """An empty topic catalog would refuse every knowledge call one by one; the
-    admission check treats it as a library that is not published."""
+    """An empty subject list would leave every knowledge call empty or refused;
+    the admission check treats it as a library that is not published."""
     events = await _collect(
         "teach me regression",
         _curate_ctx(library_catalog=[]),
@@ -2418,14 +2419,14 @@ async def test_a_library_with_no_published_topics_is_model_unavailable(
     )
 
     assert events[-1]["code"] == "model_unavailable"
-    assert "no published topics" in caplog.text
+    assert "no published subjects" in caplog.text
 
 
 async def test_a_library_that_does_not_answer_is_model_unavailable(
     monkeypatch, library_on, caplog
 ):
-    """The catalog read is the admission check, so a down library is typed
-    here instead of surfacing as a generic failure on the first tool call."""
+    """The subject list read is the admission check, so a down library is
+    typed here instead of surfacing as a generic failure on the first tool call."""
 
     async def _catalog(_ctx):
         raise TimeoutError("pool timeout")

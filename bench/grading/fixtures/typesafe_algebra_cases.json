@@ -1,0 +1,1533 @@
+{
+ "_note": "Algebraic-form equivalence probe for typesafe.ai jev. Labels for pairs with a sympy form were verified numerically at six random rational points; roots, intervals and |x| pairs were checked by hand. 'arguable' pairs are excluded from counts.",
+ "pairs": [
+  {
+   "family": "rational",
+   "question": "Find f(x) given f(x)·(x + 1) = x² + x + 1.",
+   "correct": "(x² + x + 1)/(x + 1)",
+   "user": "1 + x²/(x + 1)",
+   "expected": "eq"
+  },
+  {
+   "family": "rational",
+   "question": "Find f(x) given f(x)·(x + 1) = x² + x + 1.",
+   "correct": "(x² + x + 1)/(x + 1)",
+   "user": "x + 1/(x + 1)",
+   "expected": "eq"
+  },
+  {
+   "family": "rational",
+   "question": "Find f(x) given f(x)·(x + 1) = x² + x + 1.",
+   "correct": "(x² + x + 1)/(x + 1)",
+   "user": "x + 1/(1 + x)",
+   "expected": "eq"
+  },
+  {
+   "family": "rational",
+   "question": "Find f(x) given f(x)·(x + 1) = x² + x + 1.",
+   "correct": "(x² + x + 1)/(x + 1)",
+   "user": "(x² + x)/(x + 1) + 1",
+   "expected": "neq"
+  },
+  {
+   "family": "rational",
+   "question": "Find f(x) given f(x)·(x + 1) = x² + x + 1.",
+   "correct": "(x² + x + 1)/(x + 1)",
+   "user": "1 − x²/(x + 1)",
+   "expected": "neq"
+  },
+  {
+   "family": "rational",
+   "question": "Find f(x) given f(x)·(x + 1) = x² + x + 1.",
+   "correct": "(x² + x + 1)/(x + 1)",
+   "user": "1 + x/(x + 1)",
+   "expected": "neq"
+  },
+  {
+   "family": "rational",
+   "question": "Find f(x) given f(x)·(x + 1) = x² + x + 1.",
+   "correct": "(x² + x + 1)/(x + 1)",
+   "user": "x − 1/(x + 1)",
+   "expected": "neq"
+  },
+  {
+   "family": "rational",
+   "question": "Find f(x) given f(x)·(x + 1) = x² + x + 1.",
+   "correct": "(x² + x + 1)/(x + 1)",
+   "user": "x + 1 + 1/(x + 1)",
+   "expected": "neq"
+  },
+  {
+   "family": "rational",
+   "question": "Find f(x) given f(x)·(x + 1) = x² + x + 1.",
+   "correct": "(x² + x + 1)/(x + 1)",
+   "user": "1 + x²/(x − 1)",
+   "expected": "neq"
+  },
+  {
+   "family": "rational",
+   "question": "Find f(x) given f(x)·(x + 1) = x².",
+   "correct": "x²/(x + 1)",
+   "user": "x − 1 + 1/(x + 1)",
+   "expected": "eq"
+  },
+  {
+   "family": "rational",
+   "question": "Find f(x) given f(x)·(x + 1) = x².",
+   "correct": "x²/(x + 1)",
+   "user": "(x² − 1)/(x + 1) + 1/(x + 1)",
+   "expected": "eq"
+  },
+  {
+   "family": "rational",
+   "question": "Find f(x) given f(x)·(x + 1) = x².",
+   "correct": "x²/(x + 1)",
+   "user": "x + 1 − 1/(x + 1)",
+   "expected": "neq"
+  },
+  {
+   "family": "rational",
+   "question": "Find f(x) given f(x)·(x + 1) = x².",
+   "correct": "x²/(x + 1)",
+   "user": "x − 1 − 1/(x + 1)",
+   "expected": "neq"
+  },
+  {
+   "family": "rational",
+   "question": "Find f(x) given f(x)·(x + 1) = x².",
+   "correct": "x²/(x + 1)",
+   "user": "x − 1/(x + 1)",
+   "expected": "neq"
+  },
+  {
+   "family": "rational",
+   "question": "Find f(x) given f(x)·(x² − x − 2) = x² − 4, for x ≠ 2, −1.",
+   "correct": "(x + 2)/(x + 1)",
+   "user": "(x² − 4)/(x² − x − 2)",
+   "expected": "eq"
+  },
+  {
+   "family": "rational",
+   "question": "Find f(x) given f(x)·(x² − x − 2) = x² − 4, for x ≠ 2, −1.",
+   "correct": "(x + 2)/(x + 1)",
+   "user": "1 + 1/(x + 1)",
+   "expected": "eq"
+  },
+  {
+   "family": "rational",
+   "question": "Find f(x) given f(x)·(x² − x − 2) = x² − 4, for x ≠ 2, −1.",
+   "correct": "(x + 2)/(x + 1)",
+   "user": "(x − 2)/(x + 1)",
+   "expected": "neq"
+  },
+  {
+   "family": "rational",
+   "question": "Find f(x) given f(x)·(x² − x − 2) = x² − 4, for x ≠ 2, −1.",
+   "correct": "(x + 2)/(x + 1)",
+   "user": "(x + 2)/(x − 1)",
+   "expected": "neq"
+  },
+  {
+   "family": "rational",
+   "question": "Find f(x) given f(x)·(x² − x − 2) = x² − 4, for x ≠ 2, −1.",
+   "correct": "(x + 2)/(x + 1)",
+   "user": "1 − 1/(x + 1)",
+   "expected": "neq"
+  },
+  {
+   "family": "rational",
+   "question": "Find the quotient (x³ − 1)/(x − 1) for x ≠ 1.",
+   "correct": "x² + x + 1",
+   "user": "1 + x + x²",
+   "expected": "eq"
+  },
+  {
+   "family": "rational",
+   "question": "Find the quotient (x³ − 1)/(x − 1) for x ≠ 1.",
+   "correct": "x² + x + 1",
+   "user": "x² − x + 1",
+   "expected": "neq"
+  },
+  {
+   "family": "rational",
+   "question": "Find the quotient (x³ − 1)/(x − 1) for x ≠ 1.",
+   "correct": "x² + x + 1",
+   "user": "x² + x − 1",
+   "expected": "neq"
+  },
+  {
+   "family": "rational",
+   "question": "Find the quotient (x³ − 1)/(x − 1) for x ≠ 1.",
+   "correct": "x² + x + 1",
+   "user": "(x³ − 1)/(x − 1)",
+   "expected": "eq",
+   "arguable": true
+  },
+  {
+   "family": "rational",
+   "question": "Find f(x) given f(x) = 1/(1 + 1/x).",
+   "correct": "x/(x + 1)",
+   "user": "1 − 1/(x + 1)",
+   "expected": "eq"
+  },
+  {
+   "family": "rational",
+   "question": "Find f(x) given f(x) = 1/(1 + 1/x).",
+   "correct": "x/(x + 1)",
+   "user": "1/(1 + 1/x)",
+   "expected": "eq",
+   "arguable": true
+  },
+  {
+   "family": "rational",
+   "question": "Find f(x) given f(x) = 1/(1 + 1/x).",
+   "correct": "x/(x + 1)",
+   "user": "1/(x + 1)",
+   "expected": "neq"
+  },
+  {
+   "family": "rational",
+   "question": "Find f(x) given f(x) = 1/(1 + 1/x).",
+   "correct": "x/(x + 1)",
+   "user": "(x + 1)/x",
+   "expected": "neq"
+  },
+  {
+   "family": "rational",
+   "question": "Find f(x) given f(x) = 1/(1 + 1/x).",
+   "correct": "x/(x + 1)",
+   "user": "1 + 1/(x + 1)",
+   "expected": "neq"
+  },
+  {
+   "family": "rational",
+   "question": "Simplify (x² − y²)/(x − y).",
+   "correct": "x + y",
+   "user": "y + x",
+   "expected": "eq"
+  },
+  {
+   "family": "rational",
+   "question": "Simplify (x² − y²)/(x − y).",
+   "correct": "x + y",
+   "user": "x − y",
+   "expected": "neq"
+  },
+  {
+   "family": "rational",
+   "question": "Simplify (x² − y²)/(x − y).",
+   "correct": "x + y",
+   "user": "x² + y²",
+   "expected": "neq"
+  },
+  {
+   "family": "fraction",
+   "question": "Combine 1/(x − 1) − 1/(x + 1) into one fraction.",
+   "correct": "2/(x² − 1)",
+   "user": "2/((x − 1)(x + 1))",
+   "expected": "eq"
+  },
+  {
+   "family": "fraction",
+   "question": "Combine 1/(x − 1) − 1/(x + 1) into one fraction.",
+   "correct": "2/(x² − 1)",
+   "user": "−2/(1 − x²)",
+   "expected": "eq"
+  },
+  {
+   "family": "fraction",
+   "question": "Combine 1/(x − 1) − 1/(x + 1) into one fraction.",
+   "correct": "2/(x² − 1)",
+   "user": "−2/(x² − 1)",
+   "expected": "neq"
+  },
+  {
+   "family": "fraction",
+   "question": "Combine 1/(x − 1) − 1/(x + 1) into one fraction.",
+   "correct": "2/(x² − 1)",
+   "user": "2/(x² + 1)",
+   "expected": "neq"
+  },
+  {
+   "family": "fraction",
+   "question": "Combine 1/(x − 1) − 1/(x + 1) into one fraction.",
+   "correct": "2/(x² − 1)",
+   "user": "2/(1 − x²)",
+   "expected": "neq"
+  },
+  {
+   "family": "fraction",
+   "question": "Combine 1/x + 1/y into one fraction.",
+   "correct": "(x + y)/(xy)",
+   "user": "(y + x)/(xy)",
+   "expected": "eq"
+  },
+  {
+   "family": "fraction",
+   "question": "Combine 1/x + 1/y into one fraction.",
+   "correct": "(x + y)/(xy)",
+   "user": "1/(x + y)",
+   "expected": "neq"
+  },
+  {
+   "family": "fraction",
+   "question": "Combine 1/x + 1/y into one fraction.",
+   "correct": "(x + y)/(xy)",
+   "user": "xy/(x + y)",
+   "expected": "neq"
+  },
+  {
+   "family": "fraction",
+   "question": "Simplify x/2 + x/3.",
+   "correct": "5x/6",
+   "user": "(5/6)x",
+   "expected": "eq"
+  },
+  {
+   "family": "fraction",
+   "question": "Simplify x/2 + x/3.",
+   "correct": "5x/6",
+   "user": "2x/5",
+   "expected": "neq"
+  },
+  {
+   "family": "fraction",
+   "question": "Simplify x/2 + x/3.",
+   "correct": "5x/6",
+   "user": "6x/5",
+   "expected": "neq"
+  },
+  {
+   "family": "fraction",
+   "question": "Simplify x/2 + x/3.",
+   "correct": "5x/6",
+   "user": "0.8333x",
+   "expected": "eq",
+   "arguable": true
+  },
+  {
+   "family": "fraction",
+   "question": "Decompose 1/(x(x + 1)) into partial fractions.",
+   "correct": "1/x − 1/(x + 1)",
+   "user": "−1/(x + 1) + 1/x",
+   "expected": "eq"
+  },
+  {
+   "family": "fraction",
+   "question": "Decompose 1/(x(x + 1)) into partial fractions.",
+   "correct": "1/x − 1/(x + 1)",
+   "user": "1/x + 1/(x + 1)",
+   "expected": "neq"
+  },
+  {
+   "family": "fraction",
+   "question": "Decompose 1/(x(x + 1)) into partial fractions.",
+   "correct": "1/x − 1/(x + 1)",
+   "user": "1/(x + 1) − 1/x",
+   "expected": "neq"
+  },
+  {
+   "family": "fraction",
+   "question": "Decompose 3/(x² − 1) into partial fractions.",
+   "correct": "(3/2)/(x − 1) − (3/2)/(x + 1)",
+   "user": "(3/2)(1/(x − 1) − 1/(x + 1))",
+   "expected": "eq"
+  },
+  {
+   "family": "fraction",
+   "question": "Decompose 3/(x² − 1) into partial fractions.",
+   "correct": "(3/2)/(x − 1) − (3/2)/(x + 1)",
+   "user": "3/(2(x − 1)) − 3/(2(x + 1))",
+   "expected": "eq"
+  },
+  {
+   "family": "fraction",
+   "question": "Decompose 3/(x² − 1) into partial fractions.",
+   "correct": "(3/2)/(x − 1) − (3/2)/(x + 1)",
+   "user": "3/(x − 1) − 3/(x + 1)",
+   "expected": "neq"
+  },
+  {
+   "family": "fraction",
+   "question": "Decompose 3/(x² − 1) into partial fractions.",
+   "correct": "(3/2)/(x − 1) − (3/2)/(x + 1)",
+   "user": "(3/2)/(x + 1) − (3/2)/(x − 1)",
+   "expected": "neq"
+  },
+  {
+   "family": "factor_expand",
+   "question": "Expand (x + 2)³.",
+   "correct": "x³ + 6x² + 12x + 8",
+   "user": "8 + 12x + 6x² + x³",
+   "expected": "eq"
+  },
+  {
+   "family": "factor_expand",
+   "question": "Expand (x + 2)³.",
+   "correct": "x³ + 6x² + 12x + 8",
+   "user": "(x + 2)(x² + 4x + 4)",
+   "expected": "eq"
+  },
+  {
+   "family": "factor_expand",
+   "question": "Expand (x + 2)³.",
+   "correct": "x³ + 6x² + 12x + 8",
+   "user": "x³ + 6x² + 8x + 12",
+   "expected": "neq"
+  },
+  {
+   "family": "factor_expand",
+   "question": "Expand (x + 2)³.",
+   "correct": "x³ + 6x² + 12x + 8",
+   "user": "x³ + 6x² + 12x + 6",
+   "expected": "neq"
+  },
+  {
+   "family": "factor_expand",
+   "question": "Expand (x + 2)³.",
+   "correct": "x³ + 6x² + 12x + 8",
+   "user": "x³ + 3x² + 3x + 8",
+   "expected": "neq"
+  },
+  {
+   "family": "factor_expand",
+   "question": "Factor x² − 5x + 6.",
+   "correct": "(x − 2)(x − 3)",
+   "user": "(x − 3)(x − 2)",
+   "expected": "eq"
+  },
+  {
+   "family": "factor_expand",
+   "question": "Factor x² − 5x + 6.",
+   "correct": "(x − 2)(x − 3)",
+   "user": "(2 − x)(3 − x)",
+   "expected": "eq"
+  },
+  {
+   "family": "factor_expand",
+   "question": "Factor x² − 5x + 6.",
+   "correct": "(x − 2)(x − 3)",
+   "user": "−(2 − x)(x − 3)",
+   "expected": "eq"
+  },
+  {
+   "family": "factor_expand",
+   "question": "Factor x² − 5x + 6.",
+   "correct": "(x − 2)(x − 3)",
+   "user": "(x + 2)(x + 3)",
+   "expected": "neq"
+  },
+  {
+   "family": "factor_expand",
+   "question": "Factor x² − 5x + 6.",
+   "correct": "(x − 2)(x − 3)",
+   "user": "(x − 1)(x − 6)",
+   "expected": "neq"
+  },
+  {
+   "family": "factor_expand",
+   "question": "Factor x² − 5x + 6.",
+   "correct": "(x − 2)(x − 3)",
+   "user": "(2 − x)(x − 3)",
+   "expected": "neq"
+  },
+  {
+   "family": "factor_expand",
+   "question": "Simplify (a + b)² − (a − b)².",
+   "correct": "4ab",
+   "user": "4ba",
+   "expected": "eq"
+  },
+  {
+   "family": "factor_expand",
+   "question": "Simplify (a + b)² − (a − b)².",
+   "correct": "4ab",
+   "user": "2ab + 2ab",
+   "expected": "eq"
+  },
+  {
+   "family": "factor_expand",
+   "question": "Simplify (a + b)² − (a − b)².",
+   "correct": "4ab",
+   "user": "2ab",
+   "expected": "neq"
+  },
+  {
+   "family": "factor_expand",
+   "question": "Simplify (a + b)² − (a − b)².",
+   "correct": "4ab",
+   "user": "4a²b²",
+   "expected": "neq"
+  },
+  {
+   "family": "factor_expand",
+   "question": "Expand (a + b)².",
+   "correct": "a² + 2ab + b²",
+   "user": "b² + 2ab + a²",
+   "expected": "eq"
+  },
+  {
+   "family": "factor_expand",
+   "question": "Expand (a + b)².",
+   "correct": "a² + 2ab + b²",
+   "user": "a² + 2ba + b²",
+   "expected": "eq"
+  },
+  {
+   "family": "factor_expand",
+   "question": "Expand (a + b)².",
+   "correct": "a² + 2ab + b²",
+   "user": "(a + b)(a + b)",
+   "expected": "eq",
+   "arguable": true
+  },
+  {
+   "family": "factor_expand",
+   "question": "Expand (a + b)².",
+   "correct": "a² + 2ab + b²",
+   "user": "a² + b²",
+   "expected": "neq"
+  },
+  {
+   "family": "factor_expand",
+   "question": "Expand (a + b)².",
+   "correct": "a² + 2ab + b²",
+   "user": "a² + ab + b²",
+   "expected": "neq"
+  },
+  {
+   "family": "factor_expand",
+   "question": "Write x² + 6x + 5 in completed-square form.",
+   "correct": "(x + 3)² − 4",
+   "user": "(x + 3)² − 2²",
+   "expected": "eq"
+  },
+  {
+   "family": "factor_expand",
+   "question": "Write x² + 6x + 5 in completed-square form.",
+   "correct": "(x + 3)² − 4",
+   "user": "−4 + (x + 3)²",
+   "expected": "eq"
+  },
+  {
+   "family": "factor_expand",
+   "question": "Write x² + 6x + 5 in completed-square form.",
+   "correct": "(x + 3)² − 4",
+   "user": "(x + 3)² + 4",
+   "expected": "neq"
+  },
+  {
+   "family": "factor_expand",
+   "question": "Write x² + 6x + 5 in completed-square form.",
+   "correct": "(x + 3)² − 4",
+   "user": "(x + 3)² − 9",
+   "expected": "neq"
+  },
+  {
+   "family": "factor_expand",
+   "question": "Write x² + 6x + 5 in completed-square form.",
+   "correct": "(x + 3)² − 4",
+   "user": "(x − 3)² − 4",
+   "expected": "neq"
+  },
+  {
+   "family": "exponent",
+   "question": "Simplify (2x)³.",
+   "correct": "8x³",
+   "user": "2³x³",
+   "expected": "eq"
+  },
+  {
+   "family": "exponent",
+   "question": "Simplify (2x)³.",
+   "correct": "8x³",
+   "user": "8 · x³",
+   "expected": "eq"
+  },
+  {
+   "family": "exponent",
+   "question": "Simplify (2x)³.",
+   "correct": "8x³",
+   "user": "2x³",
+   "expected": "neq"
+  },
+  {
+   "family": "exponent",
+   "question": "Simplify (2x)³.",
+   "correct": "8x³",
+   "user": "6x³",
+   "expected": "neq"
+  },
+  {
+   "family": "exponent",
+   "question": "Simplify (x^a)^b.",
+   "correct": "x^(ab)",
+   "user": "x^(ba)",
+   "expected": "eq"
+  },
+  {
+   "family": "exponent",
+   "question": "Simplify (x^a)^b.",
+   "correct": "x^(ab)",
+   "user": "(x^b)^a",
+   "expected": "eq"
+  },
+  {
+   "family": "exponent",
+   "question": "Simplify (x^a)^b.",
+   "correct": "x^(ab)",
+   "user": "x^(a + b)",
+   "expected": "neq"
+  },
+  {
+   "family": "exponent",
+   "question": "Simplify (x^a)^b.",
+   "correct": "x^(ab)",
+   "user": "x^a · x^b",
+   "expected": "neq"
+  },
+  {
+   "family": "exponent",
+   "question": "Simplify (x/2)².",
+   "correct": "x²/4",
+   "user": "(1/4)x²",
+   "expected": "eq"
+  },
+  {
+   "family": "exponent",
+   "question": "Simplify (x/2)².",
+   "correct": "x²/4",
+   "user": "0.25x²",
+   "expected": "eq"
+  },
+  {
+   "family": "exponent",
+   "question": "Simplify (x/2)².",
+   "correct": "x²/4",
+   "user": "x²/2",
+   "expected": "neq"
+  },
+  {
+   "family": "exponent",
+   "question": "Simplify (x/2)².",
+   "correct": "x²/4",
+   "user": "x/4",
+   "expected": "neq"
+  },
+  {
+   "family": "exponent",
+   "question": "Simplify x^(1/2) · x^(1/3).",
+   "correct": "x^(5/6)",
+   "user": "⁶√(x⁵)",
+   "expected": "eq"
+  },
+  {
+   "family": "exponent",
+   "question": "Simplify x^(1/2) · x^(1/3).",
+   "correct": "x^(5/6)",
+   "user": "(x⁵)^(1/6)",
+   "expected": "eq"
+  },
+  {
+   "family": "exponent",
+   "question": "Simplify x^(1/2) · x^(1/3).",
+   "correct": "x^(5/6)",
+   "user": "x^(1/6)",
+   "expected": "neq"
+  },
+  {
+   "family": "exponent",
+   "question": "Simplify x^(1/2) · x^(1/3).",
+   "correct": "x^(5/6)",
+   "user": "x^(1/5)",
+   "expected": "neq"
+  },
+  {
+   "family": "exponent",
+   "question": "Simplify 2^(x + 1).",
+   "correct": "2 · 2^x",
+   "user": "2^x + 2^x",
+   "expected": "eq"
+  },
+  {
+   "family": "exponent",
+   "question": "Simplify 2^(x + 1).",
+   "correct": "2 · 2^x",
+   "user": "2^x · 2",
+   "expected": "eq"
+  },
+  {
+   "family": "exponent",
+   "question": "Simplify 2^(x + 1).",
+   "correct": "2 · 2^x",
+   "user": "2^x + 2",
+   "expected": "neq"
+  },
+  {
+   "family": "exponent",
+   "question": "Simplify 2^(x + 1).",
+   "correct": "2 · 2^x",
+   "user": "4^x",
+   "expected": "neq"
+  },
+  {
+   "family": "explog",
+   "question": "Simplify e^(2 ln x) for x > 0.",
+   "correct": "x²",
+   "user": "(e^(ln x))²",
+   "expected": "eq"
+  },
+  {
+   "family": "explog",
+   "question": "Simplify e^(2 ln x) for x > 0.",
+   "correct": "x²",
+   "user": "x^2",
+   "expected": "eq"
+  },
+  {
+   "family": "explog",
+   "question": "Simplify e^(2 ln x) for x > 0.",
+   "correct": "x²",
+   "user": "2x",
+   "expected": "neq"
+  },
+  {
+   "family": "explog",
+   "question": "Simplify e^(2 ln x) for x > 0.",
+   "correct": "x²",
+   "user": "x ln 2",
+   "expected": "neq"
+  },
+  {
+   "family": "explog",
+   "question": "Simplify ln(x²) for x > 0.",
+   "correct": "2 ln x",
+   "user": "ln x + ln x",
+   "expected": "eq"
+  },
+  {
+   "family": "explog",
+   "question": "Simplify ln(x²) for x > 0.",
+   "correct": "2 ln x",
+   "user": "2 ln|x|",
+   "expected": "eq"
+  },
+  {
+   "family": "explog",
+   "question": "Simplify ln(x²) for x > 0.",
+   "correct": "2 ln x",
+   "user": "(ln x)²",
+   "expected": "neq"
+  },
+  {
+   "family": "explog",
+   "question": "Simplify ln(x²) for x > 0.",
+   "correct": "2 ln x",
+   "user": "ln 2 · ln x",
+   "expected": "neq"
+  },
+  {
+   "family": "explog",
+   "question": "Simplify log(a) + log(b).",
+   "correct": "log(ab)",
+   "user": "log(ba)",
+   "expected": "eq"
+  },
+  {
+   "family": "explog",
+   "question": "Simplify log(a) + log(b).",
+   "correct": "log(ab)",
+   "user": "log(a + b)",
+   "expected": "neq"
+  },
+  {
+   "family": "explog",
+   "question": "Simplify log(a) + log(b).",
+   "correct": "log(ab)",
+   "user": "log(a) · log(b)",
+   "expected": "neq"
+  },
+  {
+   "family": "explog",
+   "question": "Simplify log(a) − log(b).",
+   "correct": "log(a/b)",
+   "user": "−log(b/a)",
+   "expected": "eq"
+  },
+  {
+   "family": "explog",
+   "question": "Simplify log(a) − log(b).",
+   "correct": "log(a/b)",
+   "user": "log(a · b⁻¹)",
+   "expected": "eq"
+  },
+  {
+   "family": "explog",
+   "question": "Simplify log(a) − log(b).",
+   "correct": "log(a/b)",
+   "user": "log(a)/log(b)",
+   "expected": "neq"
+  },
+  {
+   "family": "explog",
+   "question": "Simplify log(a) − log(b).",
+   "correct": "log(a/b)",
+   "user": "log(b/a)",
+   "expected": "neq"
+  },
+  {
+   "family": "trig",
+   "question": "Express sin²x in terms of cos 2x.",
+   "correct": "(1 − cos 2x)/2",
+   "user": "1/2 − (cos 2x)/2",
+   "expected": "eq"
+  },
+  {
+   "family": "trig",
+   "question": "Express sin²x in terms of cos 2x.",
+   "correct": "(1 − cos 2x)/2",
+   "user": "(1 + cos 2x)/2",
+   "expected": "neq"
+  },
+  {
+   "family": "trig",
+   "question": "Express sin²x in terms of cos 2x.",
+   "correct": "(1 − cos 2x)/2",
+   "user": "(cos 2x − 1)/2",
+   "expected": "neq"
+  },
+  {
+   "family": "trig",
+   "question": "Express sin²x in terms of cos 2x.",
+   "correct": "(1 − cos 2x)/2",
+   "user": "1 − cos²x",
+   "expected": "eq",
+   "arguable": true
+  },
+  {
+   "family": "trig",
+   "question": "Simplify sec²x − 1.",
+   "correct": "tan²x",
+   "user": "sin²x/cos²x",
+   "expected": "eq"
+  },
+  {
+   "family": "trig",
+   "question": "Simplify sec²x − 1.",
+   "correct": "tan²x",
+   "user": "cot²x",
+   "expected": "neq"
+  },
+  {
+   "family": "trig",
+   "question": "Simplify sec²x − 1.",
+   "correct": "tan²x",
+   "user": "−tan²x",
+   "expected": "neq"
+  },
+  {
+   "family": "trig",
+   "question": "Simplify cos²x − sin²x.",
+   "correct": "cos 2x",
+   "user": "1 − 2sin²x",
+   "expected": "eq"
+  },
+  {
+   "family": "trig",
+   "question": "Simplify cos²x − sin²x.",
+   "correct": "cos 2x",
+   "user": "2cos²x − 1",
+   "expected": "eq"
+  },
+  {
+   "family": "trig",
+   "question": "Simplify cos²x − sin²x.",
+   "correct": "cos 2x",
+   "user": "2sin²x − 1",
+   "expected": "neq"
+  },
+  {
+   "family": "trig",
+   "question": "Simplify cos²x − sin²x.",
+   "correct": "cos 2x",
+   "user": "sin 2x",
+   "expected": "neq"
+  },
+  {
+   "family": "trig",
+   "question": "Simplify sin(x + π/2).",
+   "correct": "cos x",
+   "user": "cos(−x)",
+   "expected": "eq"
+  },
+  {
+   "family": "trig",
+   "question": "Simplify sin(x + π/2).",
+   "correct": "cos x",
+   "user": "sin(π/2 − x)",
+   "expected": "eq"
+  },
+  {
+   "family": "trig",
+   "question": "Simplify sin(x + π/2).",
+   "correct": "cos x",
+   "user": "−cos x",
+   "expected": "neq"
+  },
+  {
+   "family": "trig",
+   "question": "Simplify sin(x + π/2).",
+   "correct": "cos x",
+   "user": "sin x",
+   "expected": "neq"
+  },
+  {
+   "family": "trig",
+   "question": "Simplify sin(x + π/2).",
+   "correct": "cos x",
+   "user": "cos(x + π)",
+   "expected": "neq"
+  },
+  {
+   "family": "trig",
+   "question": "Simplify tan x · cos x.",
+   "correct": "sin x",
+   "user": "cos(π/2 − x)",
+   "expected": "eq"
+  },
+  {
+   "family": "trig",
+   "question": "Simplify tan x · cos x.",
+   "correct": "sin x",
+   "user": "cos x",
+   "expected": "neq"
+  },
+  {
+   "family": "trig",
+   "question": "Simplify tan x · cos x.",
+   "correct": "sin x",
+   "user": "−sin x",
+   "expected": "neq"
+  },
+  {
+   "family": "trig",
+   "question": "Simplify (eˣ + e⁻ˣ)²/4 − (eˣ − e⁻ˣ)²/4.",
+   "correct": "1",
+   "user": "cosh²x − sinh²x",
+   "expected": "eq"
+  },
+  {
+   "family": "trig",
+   "question": "Simplify (eˣ + e⁻ˣ)²/4 − (eˣ − e⁻ˣ)²/4.",
+   "correct": "1",
+   "user": "0",
+   "expected": "neq"
+  },
+  {
+   "family": "trig",
+   "question": "Simplify (eˣ + e⁻ˣ)²/4 − (eˣ − e⁻ˣ)²/4.",
+   "correct": "1",
+   "user": "cosh 2x",
+   "expected": "neq"
+  },
+  {
+   "family": "radical",
+   "question": "Simplify √8.",
+   "correct": "2√2",
+   "user": "√2 · 2",
+   "expected": "eq"
+  },
+  {
+   "family": "radical",
+   "question": "Simplify √8.",
+   "correct": "2√2",
+   "user": "√4 · √2",
+   "expected": "eq"
+  },
+  {
+   "family": "radical",
+   "question": "Simplify √8.",
+   "correct": "2√2",
+   "user": "4√2",
+   "expected": "neq"
+  },
+  {
+   "family": "radical",
+   "question": "Simplify √8.",
+   "correct": "2√2",
+   "user": "2√4",
+   "expected": "neq"
+  },
+  {
+   "family": "radical",
+   "question": "Simplify √8.",
+   "correct": "2√2",
+   "user": "2.828",
+   "expected": "eq",
+   "arguable": true
+  },
+  {
+   "family": "radical",
+   "question": "Rationalise 1/√2.",
+   "correct": "√2/2",
+   "user": "(1/2)√2",
+   "expected": "eq"
+  },
+  {
+   "family": "radical",
+   "question": "Rationalise 1/√2.",
+   "correct": "√2/2",
+   "user": "√2",
+   "expected": "neq"
+  },
+  {
+   "family": "radical",
+   "question": "Rationalise 1/√2.",
+   "correct": "√2/2",
+   "user": "2/√2",
+   "expected": "neq"
+  },
+  {
+   "family": "radical",
+   "question": "Rationalise 1/(√2 + 1).",
+   "correct": "√2 − 1",
+   "user": "−1 + √2",
+   "expected": "eq"
+  },
+  {
+   "family": "radical",
+   "question": "Rationalise 1/(√2 + 1).",
+   "correct": "√2 − 1",
+   "user": "(√2 − 1)/(2 − 1)",
+   "expected": "eq"
+  },
+  {
+   "family": "radical",
+   "question": "Rationalise 1/(√2 + 1).",
+   "correct": "√2 − 1",
+   "user": "√2 + 1",
+   "expected": "neq"
+  },
+  {
+   "family": "radical",
+   "question": "Rationalise 1/(√2 + 1).",
+   "correct": "√2 − 1",
+   "user": "1 − √2",
+   "expected": "neq"
+  },
+  {
+   "family": "radical",
+   "question": "Simplify √(a² + b²).",
+   "correct": "√(a² + b²)",
+   "user": "√(b² + a²)",
+   "expected": "eq"
+  },
+  {
+   "family": "radical",
+   "question": "Simplify √(a² + b²).",
+   "correct": "√(a² + b²)",
+   "user": "(a² + b²)^(1/2)",
+   "expected": "eq"
+  },
+  {
+   "family": "radical",
+   "question": "Simplify √(a² + b²).",
+   "correct": "√(a² + b²)",
+   "user": "a + b",
+   "expected": "neq"
+  },
+  {
+   "family": "radical",
+   "question": "Simplify √(a² + b²).",
+   "correct": "√(a² + b²)",
+   "user": "|a + b|",
+   "expected": "neq"
+  },
+  {
+   "family": "radical",
+   "question": "Simplify √(x²) for real x.",
+   "correct": "|x|",
+   "user": "x if x ≥ 0, −x if x < 0",
+   "expected": "eq"
+  },
+  {
+   "family": "radical",
+   "question": "Simplify √(x²) for real x.",
+   "correct": "|x|",
+   "user": "x",
+   "expected": "neq",
+   "arguable": true
+  },
+  {
+   "family": "radical",
+   "question": "Simplify √(x²) for real x.",
+   "correct": "|x|",
+   "user": "−x",
+   "expected": "neq"
+  },
+  {
+   "family": "calculus",
+   "question": "Differentiate ln(x² + 1).",
+   "correct": "2x/(x² + 1)",
+   "user": "2x/(1 + x²)",
+   "expected": "eq"
+  },
+  {
+   "family": "calculus",
+   "question": "Differentiate ln(x² + 1).",
+   "correct": "2x/(x² + 1)",
+   "user": "2x · (x² + 1)⁻¹",
+   "expected": "eq"
+  },
+  {
+   "family": "calculus",
+   "question": "Differentiate ln(x² + 1).",
+   "correct": "2x/(x² + 1)",
+   "user": "1/(x² + 1)",
+   "expected": "neq"
+  },
+  {
+   "family": "calculus",
+   "question": "Differentiate ln(x² + 1).",
+   "correct": "2x/(x² + 1)",
+   "user": "x/(x² + 1)",
+   "expected": "neq"
+  },
+  {
+   "family": "calculus",
+   "question": "Differentiate x eˣ.",
+   "correct": "eˣ(x + 1)",
+   "user": "x eˣ + eˣ",
+   "expected": "eq"
+  },
+  {
+   "family": "calculus",
+   "question": "Differentiate x eˣ.",
+   "correct": "eˣ(x + 1)",
+   "user": "(1 + x)eˣ",
+   "expected": "eq"
+  },
+  {
+   "family": "calculus",
+   "question": "Differentiate x eˣ.",
+   "correct": "eˣ(x + 1)",
+   "user": "eˣ(x − 1)",
+   "expected": "neq"
+  },
+  {
+   "family": "calculus",
+   "question": "Differentiate x eˣ.",
+   "correct": "eˣ(x + 1)",
+   "user": "x eˣ",
+   "expected": "neq"
+  },
+  {
+   "family": "calculus",
+   "question": "Differentiate sin²x.",
+   "correct": "2 sin x cos x",
+   "user": "sin 2x",
+   "expected": "eq"
+  },
+  {
+   "family": "calculus",
+   "question": "Differentiate sin²x.",
+   "correct": "2 sin x cos x",
+   "user": "2 cos x sin x",
+   "expected": "eq"
+  },
+  {
+   "family": "calculus",
+   "question": "Differentiate sin²x.",
+   "correct": "2 sin x cos x",
+   "user": "2 sin x",
+   "expected": "neq"
+  },
+  {
+   "family": "calculus",
+   "question": "Differentiate sin²x.",
+   "correct": "2 sin x cos x",
+   "user": "cos 2x",
+   "expected": "neq"
+  },
+  {
+   "family": "calculus",
+   "question": "Integrate 2x dx.",
+   "correct": "x² + C",
+   "user": "x² + c",
+   "expected": "eq"
+  },
+  {
+   "family": "calculus",
+   "question": "Integrate 2x dx.",
+   "correct": "x² + C",
+   "user": "x²",
+   "expected": "eq",
+   "arguable": true
+  },
+  {
+   "family": "calculus",
+   "question": "Integrate 2x dx.",
+   "correct": "x² + C",
+   "user": "2x² + C",
+   "expected": "neq"
+  },
+  {
+   "family": "calculus",
+   "question": "Integrate 2x dx.",
+   "correct": "x² + C",
+   "user": "x²/2 + C",
+   "expected": "neq"
+  },
+  {
+   "family": "calculus",
+   "question": "Integrate 1/(x² − 1) dx for x > 1.",
+   "correct": "(1/2) ln((x − 1)/(x + 1)) + C",
+   "user": "(1/2)(ln(x − 1) − ln(x + 1)) + C",
+   "expected": "eq"
+  },
+  {
+   "family": "calculus",
+   "question": "Integrate 1/(x² − 1) dx for x > 1.",
+   "correct": "(1/2) ln((x − 1)/(x + 1)) + C",
+   "user": "(1/2) ln(x − 1) − (1/2) ln(x + 1) + C",
+   "expected": "eq"
+  },
+  {
+   "family": "calculus",
+   "question": "Integrate 1/(x² − 1) dx for x > 1.",
+   "correct": "(1/2) ln((x − 1)/(x + 1)) + C",
+   "user": "(1/2) ln((x + 1)/(x − 1)) + C",
+   "expected": "neq"
+  },
+  {
+   "family": "calculus",
+   "question": "Integrate 1/(x² − 1) dx for x > 1.",
+   "correct": "(1/2) ln((x − 1)/(x + 1)) + C",
+   "user": "ln((x − 1)/(x + 1)) + C",
+   "expected": "neq"
+  },
+  {
+   "family": "roots",
+   "question": "Solve x² − 2x − 1 = 0.",
+   "correct": "x = 1 ± √2",
+   "user": "x = (2 ± √8)/2",
+   "expected": "eq"
+  },
+  {
+   "family": "roots",
+   "question": "Solve x² − 2x − 1 = 0.",
+   "correct": "x = 1 ± √2",
+   "user": "x = (2 ± 2√2)/2",
+   "expected": "eq"
+  },
+  {
+   "family": "roots",
+   "question": "Solve x² − 2x − 1 = 0.",
+   "correct": "x = 1 ± √2",
+   "user": "x = 1 + √2 or x = 1 − √2",
+   "expected": "eq"
+  },
+  {
+   "family": "roots",
+   "question": "Solve x² − 2x − 1 = 0.",
+   "correct": "x = 1 ± √2",
+   "user": "x = 1 ± √3",
+   "expected": "neq"
+  },
+  {
+   "family": "roots",
+   "question": "Solve x² − 2x − 1 = 0.",
+   "correct": "x = 1 ± √2",
+   "user": "x = −1 ± √2",
+   "expected": "neq"
+  },
+  {
+   "family": "roots",
+   "question": "Solve x² − 2x − 1 = 0.",
+   "correct": "x = 1 ± √2",
+   "user": "x = (2 ± √4)/2",
+   "expected": "neq"
+  },
+  {
+   "family": "roots",
+   "question": "Solve x² + 4x + 1 = 0.",
+   "correct": "x = −2 ± √3",
+   "user": "x = (−4 ± √12)/2",
+   "expected": "eq"
+  },
+  {
+   "family": "roots",
+   "question": "Solve x² + 4x + 1 = 0.",
+   "correct": "x = −2 ± √3",
+   "user": "x = (−4 ± 2√3)/2",
+   "expected": "eq"
+  },
+  {
+   "family": "roots",
+   "question": "Solve x² + 4x + 1 = 0.",
+   "correct": "x = −2 ± √3",
+   "user": "x = 2 ± √3",
+   "expected": "neq"
+  },
+  {
+   "family": "roots",
+   "question": "Solve x² + 4x + 1 = 0.",
+   "correct": "x = −2 ± √3",
+   "user": "x = −2 ± √5",
+   "expected": "neq"
+  },
+  {
+   "family": "roots",
+   "question": "Solve x² + 4x + 1 = 0.",
+   "correct": "x = −2 ± √3",
+   "user": "x = (−4 ± √12)/4",
+   "expected": "neq"
+  },
+  {
+   "family": "complex",
+   "question": "Compute (1 + i)².",
+   "correct": "2i",
+   "user": "0 + 2i",
+   "expected": "eq"
+  },
+  {
+   "family": "complex",
+   "question": "Compute (1 + i)².",
+   "correct": "2i",
+   "user": "2e^(iπ/2)",
+   "expected": "eq"
+  },
+  {
+   "family": "complex",
+   "question": "Compute (1 + i)².",
+   "correct": "2i",
+   "user": "2",
+   "expected": "neq"
+  },
+  {
+   "family": "complex",
+   "question": "Compute (1 + i)².",
+   "correct": "2i",
+   "user": "1 + 2i",
+   "expected": "neq"
+  },
+  {
+   "family": "complex",
+   "question": "Compute (1 + i)².",
+   "correct": "2i",
+   "user": "−2i",
+   "expected": "neq"
+  },
+  {
+   "family": "complex",
+   "question": "Compute 1/(1 + i).",
+   "correct": "(1 − i)/2",
+   "user": "1/2 − i/2",
+   "expected": "eq"
+  },
+  {
+   "family": "complex",
+   "question": "Compute 1/(1 + i).",
+   "correct": "(1 − i)/2",
+   "user": "0.5 − 0.5i",
+   "expected": "eq"
+  },
+  {
+   "family": "complex",
+   "question": "Compute 1/(1 + i).",
+   "correct": "(1 − i)/2",
+   "user": "(1/√2)e^(−iπ/4)",
+   "expected": "eq"
+  },
+  {
+   "family": "complex",
+   "question": "Compute 1/(1 + i).",
+   "correct": "(1 − i)/2",
+   "user": "(1 + i)/2",
+   "expected": "neq"
+  },
+  {
+   "family": "complex",
+   "question": "Compute 1/(1 + i).",
+   "correct": "(1 − i)/2",
+   "user": "1 − i",
+   "expected": "neq"
+  },
+  {
+   "family": "complex",
+   "question": "Compute e^(iπ).",
+   "correct": "−1",
+   "user": "−1 + 0i",
+   "expected": "eq"
+  },
+  {
+   "family": "complex",
+   "question": "Compute e^(iπ).",
+   "correct": "−1",
+   "user": "cos π + i sin π",
+   "expected": "eq"
+  },
+  {
+   "family": "complex",
+   "question": "Compute e^(iπ).",
+   "correct": "−1",
+   "user": "1",
+   "expected": "neq"
+  },
+  {
+   "family": "complex",
+   "question": "Compute e^(iπ).",
+   "correct": "−1",
+   "user": "i",
+   "expected": "neq"
+  },
+  {
+   "family": "interval",
+   "question": "Solve |x − 2| < 3.",
+   "correct": "−1 < x < 5",
+   "user": "x ∈ (−1, 5)",
+   "expected": "eq"
+  },
+  {
+   "family": "interval",
+   "question": "Solve |x − 2| < 3.",
+   "correct": "−1 < x < 5",
+   "user": "x > −1 and x < 5",
+   "expected": "eq"
+  },
+  {
+   "family": "interval",
+   "question": "Solve |x − 2| < 3.",
+   "correct": "−1 < x < 5",
+   "user": "−3 < x − 2 < 3",
+   "expected": "eq"
+  },
+  {
+   "family": "interval",
+   "question": "Solve |x − 2| < 3.",
+   "correct": "−1 < x < 5",
+   "user": "x ∈ [−1, 5]",
+   "expected": "neq",
+   "arguable": true
+  },
+  {
+   "family": "interval",
+   "question": "Solve |x − 2| < 3.",
+   "correct": "−1 < x < 5",
+   "user": "−5 < x < 1",
+   "expected": "neq"
+  },
+  {
+   "family": "interval",
+   "question": "Solve |x − 2| < 3.",
+   "correct": "−1 < x < 5",
+   "user": "−1 < x ≤ 5",
+   "expected": "neq"
+  },
+  {
+   "family": "interval",
+   "question": "Solve x² < 9.",
+   "correct": "−3 < x < 3",
+   "user": "|x| < 3",
+   "expected": "eq"
+  },
+  {
+   "family": "interval",
+   "question": "Solve x² < 9.",
+   "correct": "−3 < x < 3",
+   "user": "x ∈ (−3, 3)",
+   "expected": "eq"
+  },
+  {
+   "family": "interval",
+   "question": "Solve x² < 9.",
+   "correct": "−3 < x < 3",
+   "user": "x < 3",
+   "expected": "neq"
+  },
+  {
+   "family": "interval",
+   "question": "Solve x² < 9.",
+   "correct": "−3 < x < 3",
+   "user": "x < ±3",
+   "expected": "neq"
+  },
+  {
+   "family": "interval",
+   "question": "Solve x² < 9.",
+   "correct": "−3 < x < 3",
+   "user": "x < −3 or x > 3",
+   "expected": "neq"
+  },
+  {
+   "family": "closed_form",
+   "question": "Find 1 + 2 + ... + n in closed form.",
+   "correct": "n(n + 1)/2",
+   "user": "(n² + n)/2",
+   "expected": "eq"
+  },
+  {
+   "family": "closed_form",
+   "question": "Find 1 + 2 + ... + n in closed form.",
+   "correct": "n(n + 1)/2",
+   "user": "n²/2 + n/2",
+   "expected": "eq"
+  },
+  {
+   "family": "closed_form",
+   "question": "Find 1 + 2 + ... + n in closed form.",
+   "correct": "n(n + 1)/2",
+   "user": "(n + 1)n/2",
+   "expected": "eq"
+  },
+  {
+   "family": "closed_form",
+   "question": "Find 1 + 2 + ... + n in closed form.",
+   "correct": "n(n + 1)/2",
+   "user": "C(n + 1, 2)",
+   "expected": "eq"
+  },
+  {
+   "family": "closed_form",
+   "question": "Find 1 + 2 + ... + n in closed form.",
+   "correct": "n(n + 1)/2",
+   "user": "n(n − 1)/2",
+   "expected": "neq"
+  },
+  {
+   "family": "closed_form",
+   "question": "Find 1 + 2 + ... + n in closed form.",
+   "correct": "n(n + 1)/2",
+   "user": "n(n + 1)",
+   "expected": "neq"
+  },
+  {
+   "family": "closed_form",
+   "question": "Write C(n, 2) as a polynomial in n.",
+   "correct": "n(n − 1)/2",
+   "user": "(n² − n)/2",
+   "expected": "eq"
+  },
+  {
+   "family": "closed_form",
+   "question": "Write C(n, 2) as a polynomial in n.",
+   "correct": "n(n − 1)/2",
+   "user": "n!/(2(n − 2)!)",
+   "expected": "eq"
+  },
+  {
+   "family": "closed_form",
+   "question": "Write C(n, 2) as a polynomial in n.",
+   "correct": "n(n − 1)/2",
+   "user": "n(n + 1)/2",
+   "expected": "neq"
+  },
+  {
+   "family": "closed_form",
+   "question": "Write C(n, 2) as a polynomial in n.",
+   "correct": "n(n − 1)/2",
+   "user": "n²/2 − n",
+   "expected": "neq"
+  }
+ ]
+}

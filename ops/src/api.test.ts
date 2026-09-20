@@ -6,6 +6,8 @@ import {
   libraryBooksSchema,
   libraryExcerptDetailSchema,
   libraryOverviewSchema,
+  librarySubjectsSchema,
+  libraryTopicsSchema,
   OpsApiError,
 } from './api';
 
@@ -320,6 +322,49 @@ describe('knowledge library reads', () => {
         topics: 32,
       })
     ).toMatchObject({ books: 3, topics: 32 });
+  });
+
+  it('reads subjects with their holdings and topics under their subject', () => {
+    expect(
+      librarySubjectsSchema.parse([
+        {
+          area: 'mathematics',
+          excerpts: 1894,
+          id: 'statistics',
+          label: 'Statistics',
+          topics: 32,
+        },
+      ])
+    ).toHaveLength(1);
+    expect(
+      libraryTopicsSchema.parse([
+        {
+          aliases: ['least squares'],
+          byRole: { introduction: 2 },
+          id: 'linear-regression',
+          label: 'Linear regression',
+          retrievableByRole: { introduction: 1 },
+          scope: 'Fitting lines',
+          sourceSections: 'AHSS 8',
+          subjectId: 'statistics',
+          verifiedByRole: { introduction: 1 },
+        },
+      ])[0].subjectId
+    ).toBe('statistics');
+    expect(() =>
+      libraryTopicsSchema.parse([
+        {
+          aliases: [],
+          byRole: {},
+          id: 'orphan',
+          label: 'Orphan',
+          retrievableByRole: {},
+          scope: '',
+          sourceSections: '',
+          verifiedByRole: {},
+        },
+      ])
+    ).toThrow();
   });
 
   it('keeps every publish of a book with its receipts', () => {

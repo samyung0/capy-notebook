@@ -1,0 +1,441 @@
+{
+  "_note": "Math step-checking probe for typesafe.ai jev. Each case has a correct worked solution (reference) and answer variants. expected: correct | wrong. 'wrong' variants marked step_only have the right final result but a wrong intermediate step.",
+  "cases": [
+    {
+      "id": "arith",
+      "level": 1,
+      "question": "Compute 17 × 23.",
+      "reference": "17 × 23 = 17 × 20 + 17 × 3 = 340 + 51 = 391.",
+      "answers": [
+        {
+          "label": "correct",
+          "expected": "correct",
+          "text": "17 × 23 = 17 × 20 + 17 × 3 = 340 + 51 = 391."
+        },
+        {
+          "label": "correct_alt_method",
+          "expected": "correct",
+          "text": "17 × 23 = (20 − 3) × 23 = 460 − 69 = 391."
+        },
+        {
+          "label": "wrong_final",
+          "expected": "wrong",
+          "text": "17 × 23 = 17 × 20 + 17 × 3 = 340 + 51 = 381."
+        },
+        {
+          "label": "wrong_step_right_final",
+          "expected": "wrong",
+          "step_only": true,
+          "text": "17 × 23 = 17 × 20 + 17 × 3 = 340 + 41 = 391."
+        }
+      ],
+      "final": "391"
+    },
+    {
+      "id": "linear",
+      "level": 2,
+      "question": "Solve 3x + 7 = 22 for x.",
+      "reference": "3x = 22 − 7 = 15, so x = 15/3 = 5.",
+      "answers": [
+        {
+          "label": "correct",
+          "expected": "correct",
+          "text": "3x = 22 − 7 = 15, so x = 15/3 = 5."
+        },
+        {
+          "label": "correct_alt_method",
+          "expected": "correct",
+          "text": "Subtract 7 from both sides: 3x = 15. Divide by 3: x = 5. Check: 3·5 + 7 = 22. ✓"
+        },
+        {
+          "label": "wrong_sign",
+          "expected": "wrong",
+          "text": "3x = 22 + 7 = 29, so x = 29/3."
+        },
+        {
+          "label": "wrong_step_right_final",
+          "expected": "wrong",
+          "step_only": true,
+          "text": "3x = 22 − 7 = 16, so x = 16/3 = 5."
+        }
+      ],
+      "final": "x = 5"
+    },
+    {
+      "id": "quadratic",
+      "level": 3,
+      "question": "Solve x² − 5x + 6 = 0.",
+      "reference": "x² − 5x + 6 = (x − 2)(x − 3) = 0, so x = 2 or x = 3.",
+      "answers": [
+        {
+          "label": "correct_factor",
+          "expected": "correct",
+          "text": "x² − 5x + 6 = (x − 2)(x − 3) = 0, so x = 2 or x = 3."
+        },
+        {
+          "label": "correct_alt_method",
+          "expected": "correct",
+          "text": "Complete the square: (x − 5/2)² = 25/4 − 6 = 1/4, so x − 5/2 = ±1/2, giving x = 3 or x = 2."
+        },
+        {
+          "label": "correct_formula",
+          "expected": "correct",
+          "text": "x = (5 ± √(25 − 24))/2 = (5 ± 1)/2, so x = 3 or x = 2."
+        },
+        {
+          "label": "wrong_sign",
+          "expected": "wrong",
+          "text": "x² − 5x + 6 = (x + 2)(x + 3) = 0, so x = −2 or x = −3."
+        },
+        {
+          "label": "wrong_discriminant",
+          "expected": "wrong",
+          "text": "x = (5 ± √(25 + 24))/2 = (5 ± 7)/2, so x = 6 or x = −1."
+        },
+        {
+          "label": "wrong_step_right_final",
+          "expected": "wrong",
+          "step_only": true,
+          "text": "x² − 5x + 6 = (x − 1)(x − 6) = 0, so x = 2 or x = 3."
+        }
+      ],
+      "final": "x = 2 or x = 3"
+    },
+    {
+      "id": "product_rule",
+      "level": 3,
+      "question": "Differentiate f(x) = x³ sin x.",
+      "reference": "By the product rule, f'(x) = 3x² sin x + x³ cos x.",
+      "answers": [
+        {
+          "label": "correct",
+          "expected": "correct",
+          "text": "By the product rule, f'(x) = (x³)' sin x + x³ (sin x)' = 3x² sin x + x³ cos x."
+        },
+        {
+          "label": "correct_alt_method",
+          "expected": "correct",
+          "text": "Write f = uv with u = x³, v = sin x. f' = u'v + uv' = 3x² sin x + x³ cos x."
+        },
+        {
+          "label": "wrong_sign",
+          "expected": "wrong",
+          "text": "By the product rule, f'(x) = (x³)' sin x − x³ (sin x)' = 3x² sin x − x³ cos x."
+        },
+        {
+          "label": "wrong_power",
+          "expected": "wrong",
+          "text": "By the product rule, f'(x) = (x³)' sin x + x³ (sin x)' = 3x³ sin x + x³ cos x."
+        }
+      ],
+      "final": "3x² sin x + x³ cos x"
+    },
+    {
+      "id": "limit",
+      "level": 3,
+      "question": "Evaluate lim_{x→0} (1 − cos x)/x².",
+      "reference": "Both numerator and denominator tend to 0. By L'Hôpital: lim sin x/(2x). Again 0/0, so lim cos x/2 = 1/2.",
+      "answers": [
+        {
+          "label": "correct",
+          "expected": "correct",
+          "text": "Both numerator and denominator tend to 0. By L'Hôpital: lim sin x/(2x). Again 0/0, so lim cos x/2 = 1/2."
+        },
+        {
+          "label": "correct_alt_method",
+          "expected": "correct",
+          "text": "Using 1 − cos x = 2sin²(x/2): (2sin²(x/2))/x² = (1/2)·(sin(x/2)/(x/2))² → (1/2)·1 = 1/2."
+        },
+        {
+          "label": "wrong_final",
+          "expected": "wrong",
+          "text": "Both numerator and denominator tend to 0. By L'Hôpital: lim sin x/(2x). Again 0/0, so lim cos x/2 = 1."
+        },
+        {
+          "label": "wrong_sign",
+          "expected": "wrong",
+          "text": "Both numerator and denominator tend to 0. By L'Hôpital: lim (−sin x)/(2x). Again 0/0, so lim (−cos x)/2 = −1/2."
+        }
+      ],
+      "final": "1/2"
+    },
+    {
+      "id": "int_by_parts",
+      "level": 4,
+      "question": "Evaluate ∫₀¹ x eˣ dx.",
+      "reference": "Let u = x, dv = eˣ dx, so du = dx, v = eˣ. Then ∫ x eˣ dx = x eˣ − ∫ eˣ dx = x eˣ − eˣ. Evaluating from 0 to 1: (e − e) − (0 − 1) = 1.",
+      "answers": [
+        {
+          "label": "correct",
+          "expected": "correct",
+          "text": "Let u = x, dv = eˣ dx, so du = dx, v = eˣ. Then ∫ x eˣ dx = x eˣ − ∫ eˣ dx = x eˣ − eˣ. Evaluating from 0 to 1: (e − e) − (0 − 1) = 1."
+        },
+        {
+          "label": "correct_alt_method",
+          "expected": "correct",
+          "text": "Tabular method: derivatives of x are x, 1, 0; integrals of eˣ are eˣ, eˣ. So ∫ x eˣ dx = x eˣ − eˣ + C. From 0 to 1: (e − e) − (0 − 1) = 1."
+        },
+        {
+          "label": "wrong_sign",
+          "expected": "wrong",
+          "text": "Let u = x, dv = eˣ dx, so du = dx, v = eˣ. Then ∫ x eˣ dx = x eˣ + ∫ eˣ dx = x eˣ + eˣ. Evaluating from 0 to 1: (e + e) − (0 + 1) = 2e − 1."
+        },
+        {
+          "label": "wrong_final_arith",
+          "expected": "wrong",
+          "text": "Let u = x, dv = eˣ dx, so du = dx, v = eˣ. Then ∫ x eˣ dx = x eˣ − ∫ eˣ dx = x eˣ − eˣ. Evaluating from 0 to 1: (e − e) − (0 − 1) = e − 1."
+        },
+        {
+          "label": "wrong_step_right_final",
+          "expected": "wrong",
+          "step_only": true,
+          "text": "Let u = x, dv = eˣ dx, so du = dx, v = eˣ. Then ∫ x eˣ dx = x eˣ − ∫ eˣ dx = x eˣ − eˣ. Evaluating from 0 to 1: (e − e) − (1 − 1) = 1."
+        }
+      ],
+      "final": "1"
+    },
+    {
+      "id": "compound",
+      "level": 4,
+      "question": "A principal of $1000 earns 5% annual compound interest. What is the amount after 3 years, to the nearest cent?",
+      "reference": "A = 1000 × 1.05³ = 1000 × 1.157625 = $1157.63.",
+      "answers": [
+        {
+          "label": "correct",
+          "expected": "correct",
+          "text": "A = 1000 × (1 + 0.05)³ = 1000 × 1.157625 = $1157.63."
+        },
+        {
+          "label": "correct_alt_method",
+          "expected": "correct",
+          "text": "Year 1: 1000 × 1.05 = 1050. Year 2: 1050 × 1.05 = 1102.50. Year 3: 1102.50 × 1.05 = 1157.625, so $1157.63."
+        },
+        {
+          "label": "wrong_transposed_digits",
+          "expected": "wrong",
+          "text": "A = 1000 × (1 + 0.05)³ = 1000 × 1.157625 = $1157.36."
+        },
+        {
+          "label": "wrong_rounding",
+          "expected": "wrong",
+          "text": "A = 1000 × (1 + 0.05)³ = 1000 × 1.157625 = $1157.62."
+        },
+        {
+          "label": "wrong_power",
+          "expected": "wrong",
+          "text": "A = 1000 × (1 + 0.05)³ = 1000 × 1.1025 = $1102.50."
+        },
+        {
+          "label": "wrong_step_right_final",
+          "expected": "wrong",
+          "step_only": true,
+          "text": "A = 1000 × (1 + 0.05)³ = 1000 × 1.175625 = $1157.63."
+        }
+      ],
+      "final": "$1157.63"
+    },
+    {
+      "id": "geometric",
+      "level": 4,
+      "question": "Find the sum to infinity of the geometric series 2 + 0.6 + 0.18 + ...",
+      "reference": "a = 2, r = 0.6/2 = 0.3. Since |r| < 1, S = a/(1 − r) = 2/(1 − 0.3) = 2/0.7 = 20/7 ≈ 2.857.",
+      "answers": [
+        {
+          "label": "correct",
+          "expected": "correct",
+          "text": "a = 2, r = 0.6/2 = 0.3. Since |r| < 1, S = a/(1 − r) = 2/(1 − 0.3) = 2/0.7 = 20/7 ≈ 2.857."
+        },
+        {
+          "label": "correct_alt_method",
+          "expected": "correct",
+          "text": "Ratio r = 0.18/0.6 = 0.3. Sum S satisfies S = 2 + 0.3S, so 0.7S = 2 and S = 20/7."
+        },
+        {
+          "label": "wrong_transposed_digits",
+          "expected": "wrong",
+          "text": "a = 2, r = 0.6/2 = 0.3. Since |r| < 1, S = a/(1 − r) = 2/(1 − 0.3) = 2/0.7 = 20/7 ≈ 2.587."
+        },
+        {
+          "label": "wrong_sign",
+          "expected": "wrong",
+          "text": "a = 2, r = 0.6/2 = 0.3. Since |r| < 1, S = a/(1 + r) = 2/(1 + 0.3) = 2/1.3 ≈ 1.538."
+        },
+        {
+          "label": "wrong_step_right_final",
+          "expected": "wrong",
+          "step_only": true,
+          "text": "a = 2, r = 0.6/2 = 0.2. Since |r| < 1, S = a/(1 − r) = 2/(1 − 0.3) = 2/0.7 = 20/7 ≈ 2.857."
+        }
+      ],
+      "final": "20/7"
+    },
+    {
+      "id": "determinant",
+      "level": 5,
+      "question": "Compute the determinant of the matrix [[2, 1, 3], [0, 4, 1], [5, 2, 0]].",
+      "reference": "Expand along the first row: 2(4·0 − 1·2) − 1(0·0 − 1·5) + 3(0·2 − 4·5) = 2(−2) − 1(−5) + 3(−20) = −4 + 5 − 60 = −59.",
+      "answers": [
+        {
+          "label": "correct",
+          "expected": "correct",
+          "text": "Expand along the first row: 2(4·0 − 1·2) − 1(0·0 − 1·5) + 3(0·2 − 4·5) = 2(−2) − 1(−5) + 3(−20) = −4 + 5 − 60 = −59."
+        },
+        {
+          "label": "correct_alt_method",
+          "expected": "correct",
+          "text": "Expand along the first column: 2·(4·0 − 1·2) − 0 + 5·(1·1 − 3·4) = 2(−2) + 5(−11) = −4 − 55 = −59."
+        },
+        {
+          "label": "wrong_cofactor_sign",
+          "expected": "wrong",
+          "text": "Expand along the first row: 2(4·0 − 1·2) + 1(0·0 − 1·5) + 3(0·2 − 4·5) = 2(−2) + 1(−5) + 3(−20) = −4 − 5 − 60 = −69."
+        },
+        {
+          "label": "wrong_step_right_final",
+          "expected": "wrong",
+          "step_only": true,
+          "text": "Expand along the first row: 2(4·0 − 1·2) − 1(0·0 − 1·5) + 3(0·2 − 4·5) = 2(−2) − 1(−5) + 3(−10) = −4 + 5 − 60 = −59."
+        }
+      ],
+      "final": "−59"
+    },
+    {
+      "id": "bayes",
+      "level": 5,
+      "question": "A test for a disease has 99% sensitivity and 95% specificity. The prevalence is 1%. What is the probability that a person who tests positive actually has the disease?",
+      "reference": "P(D|+) = P(+|D)P(D) / [P(+|D)P(D) + P(+|¬D)P(¬D)] = (0.99 × 0.01) / (0.99 × 0.01 + 0.05 × 0.99) = 0.0099 / (0.0099 + 0.0495) = 0.0099 / 0.0594 = 1/6 ≈ 0.167.",
+      "answers": [
+        {
+          "label": "correct",
+          "expected": "correct",
+          "text": "P(D|+) = P(+|D)P(D) / [P(+|D)P(D) + P(+|¬D)P(¬D)] = (0.99 × 0.01) / (0.99 × 0.01 + 0.05 × 0.99) = 0.0099 / (0.0099 + 0.0495) = 0.0099 / 0.0594 = 1/6 ≈ 0.167."
+        },
+        {
+          "label": "correct_alt_method",
+          "expected": "correct",
+          "text": "Take 10,000 people: 100 have the disease, of whom 99 test positive; 9,900 do not, of whom 5% = 495 test positive. P(D|+) = 99/(99 + 495) = 99/594 = 1/6 ≈ 0.167."
+        },
+        {
+          "label": "wrong_false_positive_rate",
+          "expected": "wrong",
+          "text": "P(D|+) = P(+|D)P(D) / [P(+|D)P(D) + P(+|¬D)P(¬D)] = (0.99 × 0.01) / (0.99 × 0.01 + 0.95 × 0.99) = 0.0099 / (0.0099 + 0.9405) = 0.0099 / 0.9504 ≈ 0.0104."
+        },
+        {
+          "label": "wrong_final_arith",
+          "expected": "wrong",
+          "text": "P(D|+) = P(+|D)P(D) / [P(+|D)P(D) + P(+|¬D)P(¬D)] = (0.99 × 0.01) / (0.99 × 0.01 + 0.05 × 0.99) = 0.0099 / (0.0099 + 0.0495) = 0.0099 / 0.0594 ≈ 0.20."
+        },
+        {
+          "label": "wrong_step_right_final",
+          "expected": "wrong",
+          "step_only": true,
+          "text": "P(D|+) = P(+|D)P(D) / [P(+|D)P(D) + P(+|¬D)P(¬D)] = (0.99 × 0.01) / (0.99 × 0.01 + 0.05 × 0.99) = 0.0099 / (0.0099 + 0.0405) = 0.0099 / 0.0594 = 1/6 ≈ 0.167."
+        }
+      ],
+      "final": "1/6 ≈ 0.167"
+    },
+    {
+      "id": "modular",
+      "level": 5,
+      "question": "Find the remainder when 3¹⁰⁰ is divided by 7.",
+      "reference": "By Fermat's little theorem, 3⁶ ≡ 1 (mod 7). Since 100 = 6·16 + 4, 3¹⁰⁰ ≡ 3⁴ = 81 ≡ 81 − 77 = 4 (mod 7). The remainder is 4.",
+      "answers": [
+        {
+          "label": "correct",
+          "expected": "correct",
+          "text": "By Fermat's little theorem, 3⁶ ≡ 1 (mod 7). Since 100 = 6·16 + 4, 3¹⁰⁰ ≡ 3⁴ = 81 ≡ 81 − 77 = 4 (mod 7). The remainder is 4."
+        },
+        {
+          "label": "correct_alt_method",
+          "expected": "correct",
+          "text": "3³ = 27 ≡ −1 (mod 7). So 3¹⁰⁰ = 3⁹⁹ · 3 = (3³)³³ · 3 ≡ (−1)³³ · 3 = −3 ≡ 4 (mod 7). The remainder is 4."
+        },
+        {
+          "label": "wrong_exponent",
+          "expected": "wrong",
+          "text": "By Fermat's little theorem, 3⁶ ≡ 1 (mod 7). Since 100 = 6·16 + 2, 3¹⁰⁰ ≡ 3² = 9 ≡ 2 (mod 7). The remainder is 2."
+        },
+        {
+          "label": "wrong_step_right_final",
+          "expected": "wrong",
+          "step_only": true,
+          "text": "By Fermat's little theorem, 3⁶ ≡ 1 (mod 7). Since 100 = 6·16 + 4, 3¹⁰⁰ ≡ 3⁴ = 84 ≡ 84 − 80 = 4 (mod 7). The remainder is 4."
+        }
+      ],
+      "final": "4"
+    },
+    {
+      "id": "induction",
+      "level": 6,
+      "question": "Prove that 1 + 2 + ... + n = n(n+1)/2 for all positive integers n.",
+      "reference": "Base case n = 1: LHS = 1, RHS = 1·2/2 = 1. Inductive step: assume 1 + ... + k = k(k+1)/2. Then 1 + ... + k + (k+1) = k(k+1)/2 + (k+1) = (k+1)(k/2 + 1) = (k+1)(k+2)/2, which is the formula for n = k+1. By induction the formula holds for all n ≥ 1.",
+      "answers": [
+        {
+          "label": "correct",
+          "expected": "correct",
+          "text": "Base case n = 1: LHS = 1, RHS = 1·2/2 = 1. Inductive step: assume 1 + ... + k = k(k+1)/2. Then 1 + ... + k + (k+1) = k(k+1)/2 + (k+1) = (k+1)(k/2 + 1) = (k+1)(k+2)/2, which is the formula for n = k+1. By induction the formula holds for all n ≥ 1."
+        },
+        {
+          "label": "correct_alt_method",
+          "expected": "correct",
+          "text": "Pair the terms: write S = 1 + 2 + ... + n and also S = n + (n−1) + ... + 1. Adding termwise gives 2S = n(n+1), since each of the n pairs sums to n+1. Hence S = n(n+1)/2."
+        },
+        {
+          "label": "wrong_algebra",
+          "expected": "wrong",
+          "text": "Base case n = 1: LHS = 1, RHS = 1·2/2 = 1. Inductive step: assume 1 + ... + k = k(k+1)/2. Then 1 + ... + k + (k+1) = k(k+1)/2 + (k+1) = (k+1)(k+1)/2 = (k+1)²/2, which is the formula for n = k+1. By induction the formula holds for all n ≥ 1."
+        },
+        {
+          "label": "wrong_base_case",
+          "expected": "wrong",
+          "step_only": true,
+          "text": "Base case n = 1: LHS = 1, RHS = 1·2/2 = 2. Inductive step: assume 1 + ... + k = k(k+1)/2. Then 1 + ... + k + (k+1) = k(k+1)/2 + (k+1) = (k+1)(k/2 + 1) = (k+1)(k+2)/2, which is the formula for n = k+1. By induction the formula holds for all n ≥ 1."
+        }
+      ],
+      "final": "(proof)"
+    },
+    {
+      "id": "sec_proof",
+      "level": 7,
+      "question": "Prove that sec(2π/9) + sec(4π/9) + sec(8π/9) = 6.",
+      "reference": "Let x = 2cosθ. Then x³ − 3x = 8cos³θ − 6cosθ = 2cos3θ, so x³ − 3x + 1 = 0 exactly when cos3θ = −1/2. For θ = 2π/9, 4π/9, 8π/9 we have 3θ = 2π/3, 4π/3, 8π/3, and cos of each is −1/2. Hence r₁ = 2cos(2π/9), r₂ = 2cos(4π/9), r₃ = 2cos(8π/9) are roots of x³ − 3x + 1. Since cos is strictly decreasing on [0, π] and the three angles lie in [0, π], the rᵢ are distinct, so they are all three roots of the cubic.\n\nBy Vieta on the monic cubic x³ + 0·x² − 3x + 1: r₁ + r₂ + r₃ = 0, r₁r₂ + r₂r₃ + r₃r₁ = −3, r₁r₂r₃ = −1. Therefore\n1/r₁ + 1/r₂ + 1/r₃ = (r₁r₂ + r₂r₃ + r₃r₁)/(r₁r₂r₃) = (−3)/(−1) = 3.\nFinally secθᵢ = 1/cosθᵢ = 2/rᵢ, so sec(2π/9) + sec(4π/9) + sec(8π/9) = 2 · 3 = 6.",
+      "answers": [
+        {
+          "label": "correct",
+          "expected": "correct",
+          "text": "Let x = 2cosθ. Then x³ − 3x = 8cos³θ − 6cosθ = 2cos3θ, so x³ − 3x + 1 = 0 exactly when cos3θ = −1/2. For θ = 2π/9, 4π/9, 8π/9 we have 3θ = 2π/3, 4π/3, 8π/3, and cos of each is −1/2. Hence r₁ = 2cos(2π/9), r₂ = 2cos(4π/9), r₃ = 2cos(8π/9) are roots of x³ − 3x + 1. Since cos is strictly decreasing on [0, π] and the three angles lie in [0, π], the rᵢ are distinct, so they are all three roots of the cubic.\n\nBy Vieta on the monic cubic x³ + 0·x² − 3x + 1: r₁ + r₂ + r₃ = 0, r₁r₂ + r₂r₃ + r₃r₁ = −3, r₁r₂r₃ = −1. Therefore\n1/r₁ + 1/r₂ + 1/r₃ = (r₁r₂ + r₂r₃ + r₃r₁)/(r₁r₂r₃) = (−3)/(−1) = 3.\nFinally secθᵢ = 1/cosθᵢ = 2/rᵢ, so sec(2π/9) + sec(4π/9) + sec(8π/9) = 2 · 3 = 6."
+        },
+        {
+          "label": "wrong_triple_angle_identity",
+          "expected": "wrong",
+          "step_only": true,
+          "text": "Let x = 2cosθ. Then x³ − 3x = 8cos³θ − 6cosθ = 2cos2θ, so x³ − 3x + 1 = 0 exactly when cos3θ = −1/2. For θ = 2π/9, 4π/9, 8π/9 we have 3θ = 2π/3, 4π/3, 8π/3, and cos of each is −1/2. Hence r₁ = 2cos(2π/9), r₂ = 2cos(4π/9), r₃ = 2cos(8π/9) are roots of x³ − 3x + 1. Since cos is strictly decreasing on [0, π] and the three angles lie in [0, π], the rᵢ are distinct, so they are all three roots of the cubic.\n\nBy Vieta on the monic cubic x³ + 0·x² − 3x + 1: r₁ + r₂ + r₃ = 0, r₁r₂ + r₂r₃ + r₃r₁ = −3, r₁r₂r₃ = −1. Therefore\n1/r₁ + 1/r₂ + 1/r₃ = (r₁r₂ + r₂r₃ + r₃r₁)/(r₁r₂r₃) = (−3)/(−1) = 3.\nFinally secθᵢ = 1/cosθᵢ = 2/rᵢ, so sec(2π/9) + sec(4π/9) + sec(8π/9) = 2 · 3 = 6."
+        },
+        {
+          "label": "wrong_angle",
+          "expected": "wrong",
+          "step_only": true,
+          "text": "Let x = 2cosθ. Then x³ − 3x = 8cos³θ − 6cosθ = 2cos3θ, so x³ − 3x + 1 = 0 exactly when cos3θ = −1/2. For θ = 2π/9, 4π/9, 8π/9 we have 3θ = 2π/3, 4π/3, 6π/3, and cos of each is −1/2. Hence r₁ = 2cos(2π/9), r₂ = 2cos(4π/9), r₃ = 2cos(8π/9) are roots of x³ − 3x + 1. Since cos is strictly decreasing on [0, π] and the three angles lie in [0, π], the rᵢ are distinct, so they are all three roots of the cubic.\n\nBy Vieta on the monic cubic x³ + 0·x² − 3x + 1: r₁ + r₂ + r₃ = 0, r₁r₂ + r₂r₃ + r₃r₁ = −3, r₁r₂r₃ = −1. Therefore\n1/r₁ + 1/r₂ + 1/r₃ = (r₁r₂ + r₂r₃ + r₃r₁)/(r₁r₂r₃) = (−3)/(−1) = 3.\nFinally secθᵢ = 1/cosθᵢ = 2/rᵢ, so sec(2π/9) + sec(4π/9) + sec(8π/9) = 2 · 3 = 6."
+        },
+        {
+          "label": "wrong_vieta_sign",
+          "expected": "wrong",
+          "step_only": true,
+          "text": "Let x = 2cosθ. Then x³ − 3x = 8cos³θ − 6cosθ = 2cos3θ, so x³ − 3x + 1 = 0 exactly when cos3θ = −1/2. For θ = 2π/9, 4π/9, 8π/9 we have 3θ = 2π/3, 4π/3, 8π/3, and cos of each is −1/2. Hence r₁ = 2cos(2π/9), r₂ = 2cos(4π/9), r₃ = 2cos(8π/9) are roots of x³ − 3x + 1. Since cos is strictly decreasing on [0, π] and the three angles lie in [0, π], the rᵢ are distinct, so they are all three roots of the cubic.\n\nBy Vieta on the monic cubic x³ + 0·x² − 3x + 1: r₁ + r₂ + r₃ = 0, r₁r₂ + r₂r₃ + r₃r₁ = 3, r₁r₂r₃ = −1. Therefore\n1/r₁ + 1/r₂ + 1/r₃ = (r₁r₂ + r₂r₃ + r₃r₁)/(r₁r₂r₃) = (3)/(−1) = 3.\nFinally secθᵢ = 1/cosθᵢ = 2/rᵢ, so sec(2π/9) + sec(4π/9) + sec(8π/9) = 2 · 3 = 6."
+        },
+        {
+          "label": "wrong_product_sign",
+          "expected": "wrong",
+          "step_only": true,
+          "text": "Let x = 2cosθ. Then x³ − 3x = 8cos³θ − 6cosθ = 2cos3θ, so x³ − 3x + 1 = 0 exactly when cos3θ = −1/2. For θ = 2π/9, 4π/9, 8π/9 we have 3θ = 2π/3, 4π/3, 8π/3, and cos of each is −1/2. Hence r₁ = 2cos(2π/9), r₂ = 2cos(4π/9), r₃ = 2cos(8π/9) are roots of x³ − 3x + 1. Since cos is strictly decreasing on [0, π] and the three angles lie in [0, π], the rᵢ are distinct, so they are all three roots of the cubic.\n\nBy Vieta on the monic cubic x³ + 0·x² − 3x + 1: r₁ + r₂ + r₃ = 0, r₁r₂ + r₂r₃ + r₃r₁ = −3, r₁r₂r₃ = 1. Therefore\n1/r₁ + 1/r₂ + 1/r₃ = (r₁r₂ + r₂r₃ + r₃r₁)/(r₁r₂r₃) = (−3)/(1) = 3.\nFinally secθᵢ = 1/cosθᵢ = 2/rᵢ, so sec(2π/9) + sec(4π/9) + sec(8π/9) = 2 · 3 = 6."
+        },
+        {
+          "label": "wrong_final",
+          "expected": "wrong",
+          "text": "Let x = 2cosθ. Then x³ − 3x = 8cos³θ − 6cosθ = 2cos3θ, so x³ − 3x + 1 = 0 exactly when cos3θ = −1/2. For θ = 2π/9, 4π/9, 8π/9 we have 3θ = 2π/3, 4π/3, 8π/3, and cos of each is −1/2. Hence r₁ = 2cos(2π/9), r₂ = 2cos(4π/9), r₃ = 2cos(8π/9) are roots of x³ − 3x + 1. Since cos is strictly decreasing on [0, π] and the three angles lie in [0, π], the rᵢ are distinct, so they are all three roots of the cubic.\n\nBy Vieta on the monic cubic x³ + 0·x² − 3x + 1: r₁ + r₂ + r₃ = 0, r₁r₂ + r₂r₃ + r₃r₁ = −3, r₁r₂r₃ = −1. Therefore\n1/r₁ + 1/r₂ + 1/r₃ = (r₁r₂ + r₂r₃ + r₃r₁)/(r₁r₂r₃) = (−3)/(−1) = −3.\nFinally secθᵢ = 1/cosθᵢ = 2/rᵢ, so sec(2π/9) + sec(4π/9) + sec(8π/9) = 2 · (−3) = −6."
+        }
+      ],
+      "final": "(proof)"
+    }
+  ]
+}

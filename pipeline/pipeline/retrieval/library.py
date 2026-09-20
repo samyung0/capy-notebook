@@ -12,7 +12,9 @@ verified role and topic tags, figures and model-run receipts.
 Retrieval unit is the excerpt (one section of one book). ``search`` ranks
 chunks with hybrid search, restricted in SQL to excerpts whose verified tags
 match the requested topics and roles, and folds the hits into excerpts by
-best chunk. ``browse`` lists what the taxonomy holds for one topic. Measured
+best chunk. The taxonomy has subjects (the committed fixture) over topics
+(derived per book): ``catalog`` lists the subjects that hold excerpts,
+``browse_subject`` a subject's topics, ``browse`` one topic's excerpts. Measured
 motivation in bench/rag/reports/2026-09-17-knowledge-base-retrieval.md: role
 wording in a query does not move the ranker, tag predicates do.
 """
@@ -47,6 +49,11 @@ CREATE TABLE IF NOT EXISTS workspaces (id text PRIMARY KEY, embedding_provider_s
 CREATE TABLE IF NOT EXISTS files (id text PRIMARY KEY, name text NOT NULL, added_at timestamptz NOT NULL DEFAULT now(), trashed_at timestamptz);
 CREATE TABLE IF NOT EXISTS rag_contents (id text PRIMARY KEY, status text NOT NULL);
 CREATE TABLE IF NOT EXISTS rag_file_contents (file_id text PRIMARY KEY REFERENCES files, workspace_id text NOT NULL REFERENCES workspaces, content_id text NOT NULL REFERENCES rag_contents);
+-- Notes never enter the library. These stay empty so the production search
+-- statement, which ranks note chunks in the same pool as file chunks, runs
+-- unchanged here.
+CREATE TABLE IF NOT EXISTS materials (id text PRIMARY KEY, title text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), trashed_at timestamptz);
+CREATE TABLE IF NOT EXISTS rag_material_contents (material_id text PRIMARY KEY REFERENCES materials, workspace_id text NOT NULL REFERENCES workspaces, content_id text NOT NULL REFERENCES rag_contents);
 CREATE TABLE IF NOT EXISTS library_chunks (
   id text PRIMARY KEY, workspace_id text NOT NULL REFERENCES workspaces, content_id text NOT NULL REFERENCES rag_contents,
   chunk_idx int NOT NULL, section_path text NOT NULL, text text NOT NULL, indexed_text text NOT NULL,
@@ -81,9 +88,12 @@ CREATE TABLE IF NOT EXISTS library_book_versions (
   object_key text, note text NOT NULL DEFAULT '',
   PRIMARY KEY (book_id, version)
 );
--- The catalog is library-wide; a publish upserts the topics it uses.
+-- Taxonomy: subjects are the committed fixture (lab/knowledge/subjects.json),
+-- loaded by the loader; topics are library-wide, derived per book and upserted
+-- by each publish under the book's subject.
+CREATE TABLE IF NOT EXISTS library_subjects (id text PRIMARY KEY, area text NOT NULL, label text NOT NULL, aliases jsonb NOT NULL);
 CREATE TABLE IF NOT EXISTS library_topics (
-  id text PRIMARY KEY, label text NOT NULL, aliases jsonb NOT NULL,
+  id text PRIMARY KEY, subject_id text NOT NULL REFERENCES library_subjects, label text NOT NULL, aliases jsonb NOT NULL,
   scope text NOT NULL, source_sections text NOT NULL
 );
 CREATE TABLE IF NOT EXISTS library_excerpts (
@@ -99,7 +109,9 @@ CREATE TABLE IF NOT EXISTS library_figures (
   content_id text NOT NULL REFERENCES rag_contents, id text NOT NULL, book_id text NOT NULL, page int NOT NULL,
   bbox int[] NOT NULL, caption_bbox int[], space text NOT NULL, geometry_kind text NOT NULL, block_index int NOT NULL,
   original_caption jsonb NOT NULL, original_footnote jsonb NOT NULL, section_path text NOT NULL, excluded boolean NOT NULL,
-  exclusion_evidence jsonb NOT NULL, capture_path text, capture_pixel_size int[], PRIMARY KEY (content_id, id)
+  exclusion_evidence jsonb NOT NULL, capture_path text, capture_pixel_size int[],
+  -- What the figure visibly shows, from the builder's transcribe stage; empty for the pilot books.
+  description text NOT NULL DEFAULT '', PRIMARY KEY (content_id, id)
 );
 CREATE TABLE IF NOT EXISTS library_model_runs (
   book_id text NOT NULL, content_id text NOT NULL REFERENCES rag_contents, stage text NOT NULL,
@@ -176,12 +188,74 @@ async def close_pool() -> None:
         _pool = None
 
 
+# Tagged excerpts of the books' current versions: the unit the taxonomy counts.
+_CURRENT_TAGGED = """
+        SELECT 1 FROM library_excerpts e
+        JOIN rag_file_contents fc
+          ON fc.content_id = e.content_id AND fc.workspace_id = %(ws)s
+        WHERE e.tag_status = 'tagged'"""
+
+
 async def catalog(conn: Any) -> list[dict[str, Any]]:
-    """The library-wide topic catalog, for the tool description."""
+    """Subjects holding at least one tagged excerpt, for the tool description."""
     cur = await conn.execute(
-        "SELECT id, label, aliases, scope FROM library_topics ORDER BY id"
+        f"""
+        SELECT * FROM (
+          SELECT s.id, s.label, s.aliases, s.area,
+                 (SELECT count(*) FROM ({_CURRENT_TAGGED}
+                    AND e.topic_ids && ARRAY(
+                      SELECT t.id FROM library_topics t WHERE t.subject_id = s.id)
+                  ) held) AS excerpts
+          FROM library_subjects s
+        ) counted WHERE excerpts > 0 ORDER BY label
+        """,
+        {"ws": WORKSPACE},
     )
     return [dict(row) for row in await cur.fetchall()]
+
+
+async def browse_subject(subject_id: str) -> dict[str, Any]:
+    """One subject with its topics and their tagged-excerpt counts.
+
+    Subjects and topics are separate catalogs whose ids may coincide (the
+    loader refuses new collisions, but the reader never guesses), so the
+    tool dispatches here on the ``subject`` argument, never on lookup order.
+    """
+    db = await pool()
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            "SELECT id, label, aliases, area FROM library_subjects WHERE id = %s",
+            (subject_id,),
+        )
+        subject = await cur.fetchone()
+        if subject is None:
+            raise ValueError(
+                f"unknown subject id {subject_id!r}; subject ids are the ones "
+                "listed in the browse_knowledge description"
+            )
+        cur = await conn.execute(
+            f"""
+            SELECT t.id, t.label, t.aliases, t.scope,
+                   (SELECT count(*) FROM ({_CURRENT_TAGGED}
+                      AND e.topic_ids @> ARRAY[t.id]) held) AS excerpts
+            FROM library_topics t WHERE t.subject_id = %(subject)s ORDER BY t.label
+            """,
+            {"ws": WORKSPACE, "subject": subject_id},
+        )
+        topics = [dict(row) for row in await cur.fetchall()]
+    return {"subject": dict(subject), "topics": topics}
+
+
+async def known_topics(topic_ids: list[str]) -> set[str]:
+    """Which of these topic ids the library holds, in one query."""
+    if not topic_ids:
+        return set()
+    db = await pool()
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            "SELECT id FROM library_topics WHERE id = ANY(%s)", (topic_ids,)
+        )
+        return {row["id"] for row in await cur.fetchall()}
 
 
 @dataclass
@@ -561,7 +635,7 @@ async def provenance(excerpt_ids: list[str]) -> list[dict[str, Any]]:
 
 
 async def browse(topic: str, *, page: int = 1, page_size: int = 20) -> BrowseResult:
-    """What the verified taxonomy holds for one topic: counts, then a page of excerpts."""
+    """One topic's verified counts by role and by book, then a page of excerpts."""
     if page < 1 or not 1 <= page_size <= 50:
         raise ValueError("page must be at least 1 and page_size between 1 and 50")
     db = await pool()
@@ -572,7 +646,9 @@ async def browse(topic: str, *, page: int = 1, page_size: int = 20) -> BrowseRes
         )
         found = await cur.fetchone()
         if found is None:
-            raise ValueError(f"unknown topic {topic!r}")
+            raise ValueError(
+                f"unknown topic id {topic!r}; topic ids come from browsing a subject"
+            )
         by_role = await _available_roles(conn, [topic])
         cur = await conn.execute(
             """

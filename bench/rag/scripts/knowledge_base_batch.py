@@ -80,7 +80,7 @@ def request(custom_id: str, messages: list[dict], max_tokens: int) -> dict:
     }
 
 
-def prepare(directory: Path, requests: list[dict]) -> dict:
+def prepare(directory: Path, requests: list[dict], base_url: str = BASE_URL) -> dict:
     if not requests or len(requests) > 50000:
         raise PilotError("A batch needs 1–50,000 requests")
     ids = [row["custom_id"] for row in requests]
@@ -111,7 +111,7 @@ def prepare(directory: Path, requests: list[dict]) -> dict:
         "request_ids": ids,
         "status": "prepared",
         "model": MODEL,
-        "base_url": BASE_URL,
+        "base_url": base_url,
     }
     save_json(state_path, state)
     return state
@@ -149,11 +149,12 @@ def shard_unsubmitted(directory: Path, size: int) -> dict:
 
 
 class BatchClient:
-    def __init__(self, key: str, *, transport=None):
+    def __init__(self, key: str, *, base_url: str = BASE_URL, transport=None):
         if not key:
             raise PilotError("Missing ALIBABA_API_KEY in the local secrets file")
+        self.base_url = base_url
         self.http = httpx.Client(
-            base_url=BASE_URL,
+            base_url=base_url,
             headers={"Authorization": f"Bearer {key}"},
             timeout=120,
             transport=transport,
@@ -190,7 +191,7 @@ class BatchClient:
         # the local diagnostic. Network errors remain explicit and resumable.
         try:
             response = requests.post(
-                BASE_URL + "/files",
+                self.base_url + "/files",
                 headers={"Authorization": self.http.headers["Authorization"]},
                 data={"purpose": "batch"},
                 files={"file": (filename, payload, "application/jsonl")},

@@ -1,0 +1,347 @@
+{
+  "schema_version": 1,
+  "frozen_at": "2026-09-19T19:28:10.434454+00:00",
+  "source_manifest": "bench/parsers/fixtures/heading-release-sources-2026-09-20.json",
+  "source_manifest_sha256": "87447bf832777f9f1c29a9588270acb20d9e96115a9607f4bfbd1ba282262a43",
+  "provenance": "Source PDF rendering and embedded outline only; no baseline or candidate parser outputs inspected",
+  "coordinate_system": "PDF points, top-left, 1-based physical pages; manually padded witness boxes",
+  "cases": [
+    {
+      "id": "heading-release-01",
+      "source_id": "heading-forallx",
+      "page": 11,
+      "bbox": [
+        30,
+        155,
+        331,
+        310
+      ],
+      "source_text": "PART I / Key notions of logic",
+      "expected_role": "root",
+      "expected_behavior": "preserve source-confirmed outline root",
+      "reason": "Part divider precedes chapter 1, confirmed by source outline.",
+      "source_render": "bench/parsers/reports/local/2026-09-20-heading-release/source-renders/heading-forallx-p11.png",
+      "expected_outline_level": 1
+    },
+    {
+      "id": "heading-release-02",
+      "source_id": "heading-forallx",
+      "page": 36,
+      "bbox": [
+        60,
+        140,
+        300,
+        355
+      ],
+      "source_text": "PART II / Truth-functional logic",
+      "expected_role": "root",
+      "expected_behavior": "preserve source-confirmed outline root",
+      "reason": "Distinct later part must survive complete root selection.",
+      "source_render": "bench/parsers/reports/local/2026-09-20-heading-release/source-renders/heading-forallx-p36.png",
+      "expected_outline_level": 1
+    },
+    {
+      "id": "heading-release-03",
+      "source_id": "heading-forallx",
+      "page": 378,
+      "bbox": [
+        60,
+        170,
+        300,
+        285
+      ],
+      "source_text": "PART IX / Metatheory",
+      "expected_role": "root",
+      "expected_behavior": "preserve source-confirmed outline root",
+      "reason": "Late root; prevents initial-chapter-only root coverage.",
+      "source_render": "bench/parsers/reports/local/2026-09-20-heading-release/source-renders/heading-forallx-p378.png",
+      "expected_outline_level": 1
+    },
+    {
+      "id": "heading-release-04",
+      "source_id": "heading-forallx",
+      "page": 12,
+      "bbox": [
+        30,
+        100,
+        255,
+        180
+      ],
+      "source_text": "CHAPTER 1 / Arguments",
+      "expected_role": "keep-heading",
+      "expected_behavior": "preserve heading",
+      "reason": "Actual chapter title, contrasted with recurring small top banner.",
+      "source_render": "bench/parsers/reports/local/2026-09-20-heading-release/source-renders/heading-forallx-p12.png",
+      "expected_outline_level": 2
+    },
+    {
+      "id": "heading-release-05",
+      "source_id": "heading-forallx",
+      "page": 13,
+      "bbox": [
+        30,
+        14,
+        332,
+        29
+      ],
+      "source_text": "CHAPTER 1. ARGUMENTS / 3",
+      "expected_role": "discard-banner",
+      "expected_behavior": "exclude running banner from heading outline; preserve source evidence",
+      "reason": "Repeated small running title with changing folio on page 14.",
+      "source_render": "bench/parsers/reports/local/2026-09-20-heading-release/source-renders/heading-forallx-p13.png"
+    },
+    {
+      "id": "heading-release-06",
+      "source_id": "heading-libreoffice",
+      "page": 14,
+      "bbox": [
+        50,
+        55,
+        232,
+        78
+      ],
+      "source_text": "Where to get more help",
+      "expected_role": "keep-heading",
+      "expected_behavior": "preserve heading",
+      "reason": "True section starts at top body margin (~7% page height), above explanatory body.",
+      "source_render": "bench/parsers/reports/local/2026-09-20-heading-release/source-renders/heading-libreoffice-p14.png"
+    },
+    {
+      "id": "heading-release-07",
+      "source_id": "heading-libreoffice",
+      "page": 13,
+      "bbox": [
+        410,
+        770,
+        544,
+        786
+      ],
+      "source_text": "Extensions and add-ons | 13",
+      "expected_role": "discard-banner",
+      "expected_behavior": "exclude running banner from heading outline; preserve source evidence",
+      "reason": "Odd-page right footer names current subsection, unlike even-page left parent footer.",
+      "source_render": "bench/parsers/reports/local/2026-09-20-heading-release/source-renders/heading-libreoffice-p13.png"
+    },
+    {
+      "id": "heading-release-08",
+      "source_id": "heading-libreoffice",
+      "page": 14,
+      "bbox": [
+        50,
+        770,
+        110,
+        786
+      ],
+      "source_text": "14 | Preface",
+      "expected_role": "discard-banner",
+      "expected_behavior": "exclude running banner from heading outline; preserve source evidence",
+      "reason": "Even-page left parent footer alternates with odd-page section footer.",
+      "source_render": "bench/parsers/reports/local/2026-09-20-heading-release/source-renders/heading-libreoffice-p14.png"
+    },
+    {
+      "id": "heading-release-09",
+      "source_id": "heading-libreoffice",
+      "page": 23,
+      "bbox": [
+        82,
+        403,
+        368,
+        482
+      ],
+      "source_text": "Chapter 1, LibreOffice Basics",
+      "expected_role": "root",
+      "expected_behavior": "preserve source-confirmed outline root",
+      "reason": "Chapter divider is distinct from repeating book branding.",
+      "source_render": "bench/parsers/reports/local/2026-09-20-heading-release/source-renders/heading-libreoffice-p23.png",
+      "expected_outline_level": 1
+    },
+    {
+      "id": "heading-release-10",
+      "source_id": "heading-r-intro",
+      "page": 8,
+      "bbox": [
+        70,
+        100,
+        354,
+        122
+      ],
+      "source_text": "1 Introduction and preliminaries",
+      "expected_role": "root",
+      "expected_behavior": "preserve source-confirmed outline root",
+      "reason": "First numbered root confirmed on source page and embedded outline.",
+      "source_render": "bench/parsers/reports/local/2026-09-20-heading-release/source-renders/heading-r-intro-p8.png",
+      "expected_outline_level": 1
+    },
+    {
+      "id": "heading-release-11",
+      "source_id": "heading-r-intro",
+      "page": 13,
+      "bbox": [
+        70,
+        100,
+        465,
+        122
+      ],
+      "source_text": "2 Simple manipulations; numbers and vectors",
+      "expected_role": "root",
+      "expected_behavior": "preserve source-confirmed outline root",
+      "reason": "Second root must not be lost by first-root or margin heuristics.",
+      "source_render": "bench/parsers/reports/local/2026-09-20-heading-release/source-renders/heading-r-intro-p13.png",
+      "expected_outline_level": 1
+    },
+    {
+      "id": "heading-release-12",
+      "source_id": "heading-r-intro",
+      "page": 12,
+      "bbox": [
+        70,
+        47,
+        528,
+        63
+      ],
+      "source_text": "Chapter 1: Introduction and preliminaries / 6",
+      "expected_role": "discard-banner",
+      "expected_behavior": "exclude running banner from heading outline; preserve source evidence",
+      "reason": "Continuation running title contrasts with real chapter titles lower on their opening pages.",
+      "source_render": "bench/parsers/reports/local/2026-09-20-heading-release/source-renders/heading-r-intro-p12.png"
+    },
+    {
+      "id": "heading-release-13",
+      "source_id": "heading-oecd",
+      "page": 21,
+      "bbox": [
+        63,
+        64,
+        354,
+        110
+      ],
+      "source_text": "Executive summary",
+      "expected_role": "root",
+      "expected_behavior": "preserve source-confirmed outline root",
+      "reason": "Large real title near top margin.",
+      "source_render": "bench/parsers/reports/local/2026-09-20-heading-release/source-renders/heading-oecd-p21.png",
+      "expected_outline_level": 1
+    },
+    {
+      "id": "heading-release-14",
+      "source_id": "heading-oecd",
+      "page": 44,
+      "bbox": [
+        96,
+        96,
+        467,
+        239
+      ],
+      "source_text": "Part A. The output of educational institutions and the impact of learning",
+      "expected_role": "root",
+      "expected_behavior": "preserve source-confirmed outline root",
+      "reason": "Three-line part title; merge full source title rather than promote fragments.",
+      "source_render": "bench/parsers/reports/local/2026-09-20-heading-release/source-renders/heading-oecd-p44.png",
+      "expected_outline_level": 1
+    },
+    {
+      "id": "heading-release-15",
+      "source_id": "heading-oecd",
+      "page": 250,
+      "bbox": [
+        96,
+        96,
+        491,
+        192
+      ],
+      "source_text": "Part C. Financial resources invested in education",
+      "expected_role": "root",
+      "expected_behavior": "preserve source-confirmed outline root",
+      "reason": "Later multiline root; source outline omits some spaces, rendered source supplies wording.",
+      "source_render": "bench/parsers/reports/local/2026-09-20-heading-release/source-renders/heading-oecd-p250.png",
+      "expected_outline_level": 1
+    },
+    {
+      "id": "heading-release-16",
+      "source_id": "heading-oecd",
+      "page": 46,
+      "bbox": [
+        95,
+        332,
+        111,
+        560
+      ],
+      "source_text": "60, 50, 40, 30, 20, 10, 0",
+      "expected_role": "body-label",
+      "expected_behavior": "do not promote to outline heading; do not count absent native text as a repair",
+      "reason": "Chart y-axis tick labels. Raster/source-only labels; missing native text is not success or a repair.",
+      "source_render": "bench/parsers/reports/local/2026-09-20-heading-release/source-renders/heading-oecd-p46.png"
+    },
+    {
+      "id": "heading-release-17",
+      "source_id": "heading-weasyprint",
+      "page": 4,
+      "bbox": [
+        65,
+        33,
+        542,
+        51
+      ],
+      "source_text": "4 / Big title on left page, with text on columns",
+      "expected_role": "discard-banner",
+      "expected_behavior": "exclude running banner from heading outline; preserve source evidence",
+      "reason": "Small top running title duplicates larger multiline content title below.",
+      "source_render": "bench/parsers/reports/local/2026-09-20-heading-release/source-renders/heading-weasyprint-p4.png"
+    },
+    {
+      "id": "heading-release-18",
+      "source_id": "heading-weasyprint",
+      "page": 5,
+      "bbox": [
+        65,
+        33,
+        542,
+        51
+      ],
+      "source_text": "5 / This is another big title, on a page full of work presentation",
+      "expected_role": "discard-banner",
+      "expected_behavior": "exclude running banner from heading outline; preserve source evidence",
+      "reason": "Coherent running location/style although chapter wording changes.",
+      "source_render": "bench/parsers/reports/local/2026-09-20-heading-release/source-renders/heading-weasyprint-p5.png"
+    },
+    {
+      "id": "heading-release-19",
+      "source_id": "heading-weasyprint",
+      "page": 4,
+      "bbox": [
+        54,
+        81,
+        480,
+        162
+      ],
+      "source_text": "Big title on left page, with text on columns",
+      "expected_role": "keep-heading",
+      "expected_behavior": "preserve heading",
+      "reason": "Actual two-line title below banner; both lines belong together.",
+      "source_render": "bench/parsers/reports/local/2026-09-20-heading-release/source-renders/heading-weasyprint-p4.png"
+    },
+    {
+      "id": "heading-release-20",
+      "source_id": "heading-weasyprint",
+      "page": 6,
+      "bbox": [
+        110,
+        255,
+        148,
+        280
+      ],
+      "source_text": "€135",
+      "expected_role": "body-label",
+      "expected_behavior": "do not promote to outline heading; do not count absent native text as a repair",
+      "reason": "Price in a colored offer card, not a section heading.",
+      "source_render": "bench/parsers/reports/local/2026-09-20-heading-release/source-renders/heading-weasyprint-p6.png"
+    }
+  ],
+  "limitations": [
+    "All English; five documents do not establish broad-language performance.",
+    "Alternating and changing single-line banners covered; no genuinely multiline recurring banner found. Multiline true titles provide negative controls, not multiline-banner coverage.",
+    "Entire embedded root inventory is frozen for all five sources; only listed root witnesses have visual review.",
+    "Chart axis values are image-only in native text; absence must be unmeasured for preservation, never a repair success.",
+    "No baseline/candidate outputs inspected; pre-existing success may mean unchanged preservation."
+  ]
+}

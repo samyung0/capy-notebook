@@ -12,6 +12,15 @@ version n+1, marks the previous version retained and swaps the book's pointer
 in one transaction. `rollback` points a book back at a retained version,
 `retire` drops a retained version's content rows while keeping its receipts.
 
+Taxonomy: subjects come from the committed fixture `lab/knowledge/subjects.json`,
+loaded by `schema` and refreshed by every `publish`; each manifest book names
+its `subject_id`. Topics come from the run (`<run>/topics.json`, written by the
+builder's topics stage) or, for the pilot run, from the manifest's `topics`, and
+are upserted under the book's subject; a topic whose id is a subject id is
+refused. After a book's excerpts are written, and again when a version is
+retired, topics no tagged excerpt of a current or retained version references
+are dropped.
+
 `schema` creates the schema as it is written. There is no migration path: a
 changed `LIBRARY_SCHEMA` means dropping the library database and publishing
 every book again, which costs a loader run and no model calls.
@@ -48,6 +57,12 @@ for _key, _value in LOCAL_ENV.items():
 
 from pipeline.retrieval.library import LIBRARY_SCHEMA as SCHEMA
 from pipeline.retrieval.library import WORKSPACE
+
+SUBJECTS = ROOT / "lab/knowledge/subjects.json"
+MANIFEST = ROOT / "lab/knowledge/books.json"
+# Section paths join their segments with this (retrieval/chunking._section_path).
+SECTION_SEP = " › "
+SUMMARY_MAX_CHARS = 1000
 
 
 def library_url() -> str:
@@ -89,8 +104,10 @@ def versioned(identifier: str, version: int) -> str:
     return f"{identifier}_v{version}"
 
 
-def corpus_identity(book_corpus: dict, pin: dict) -> str:
-    """Everything that decides a book version's content, in one digest."""
+def corpus_identity(book_corpus: dict, pin: dict, tags: dict) -> str:
+    """Everything that decides a book version's content, in one digest: the
+    parse, the embedding pin and each excerpt's tag outcome (a retag or a
+    topic rename changes the excerpt rows, so it is a new version)."""
     return digest(
         {
             "source_id": book_corpus["source_id"],
@@ -99,6 +116,7 @@ def corpus_identity(book_corpus: dict, pin: dict) -> str:
             "chunker_version": book_corpus["chunker_version"],
             "release_sha": book_corpus["release_sha"],
             "pin": pin,
+            "tags": {e["id"]: tags["tags"].get(e["id"]) for e in book_corpus["excerpts"]},
         }
     )
 
@@ -161,18 +179,40 @@ def figure_rows(corpus: dict, captures: dict) -> list[dict]:
                 "book_id": corpus["book"]["id"],
                 "capture_path": relative_path(capture["path"]) if capture else None,
                 "capture_pixel_size": capture["pixel_size"] if capture else None,
+                # The builder's transcribe stage writes it; pilot corpora have none.
+                "description": figure.get("description", ""),
             }
         )
     return rows
 
 
-def model_run_rows(run: Path, usage: dict) -> list[dict]:
+def model_run_rows(run: Path) -> list[dict]:
+    """One receipt per model stage in the run, plus the embedding usage.
+
+    The pilot's priced `usage-summary.json` is used when present. A builder run
+    has only each stage's state (the `realtime/` one when the stage ran through
+    the normal API), which carries the same counts unpriced, and the embedding
+    log the index stage appends to.
+    """
+    priced = run / "usage-summary.json"
+    usage = read_json(priced) if priced.exists() else {"stages": {}}
     rows = []
-    for stage, summary in usage["stages"].items():
-        state = read_json(run / "models" / stage / "state.json")
+    models = run / "models"
+    stages = sorted(d for d in models.iterdir() if d.is_dir()) if models.exists() else []
+    for directory in stages:
+        state = read_json(directory / "state.json")
+        summary = usage["stages"].get(directory.name)
+        if summary is None:
+            realtime = directory / "realtime/state.json"
+            done = read_json(realtime) if realtime.exists() else state
+            summary = {
+                "attempts": done.get("normal_requests", 0),
+                "collection": done.get("collection", {}),
+                "usage": done.get("usage", {}),
+            }
         rows.append(
             {
-                "stage": stage,
+                "stage": directory.name,
                 "transport": state.get("transport", "normal"),
                 "model": state.get("model", ""),
                 "attempts": summary["attempts"],
@@ -181,31 +221,128 @@ def model_run_rows(run: Path, usage: dict) -> list[dict]:
                 "approximate_cost_usd": summary.get("approximate_cost_usd"),
                 "request_start_utc": summary.get("request_start_utc"),
                 "request_end_utc": summary.get("request_end_utc"),
-                "results_path": (run / "models" / stage).relative_to(ROOT).as_posix(),
+                "results_path": relative_path(str(directory)),
             }
         )
-    embeddings = usage["embeddings"]
-    rows.append(
-        {
-            "stage": "embeddings",
-            "transport": "normal",
-            "model": "deepinfra/Qwen/Qwen3-Embedding-4B",
-            "attempts": embeddings["new_calls"],
-            "collection": {"new_texts": embeddings["new_texts"]},
-            "usage": {"tokens": embeddings["tokens"]},
-            "approximate_cost_usd": embeddings.get("approximate_cost_usd"),
-            "request_start_utc": None,
-            "request_end_utc": None,
-            "results_path": (run / "embedding-usage.jsonl")
-            .relative_to(ROOT)
-            .as_posix(),
+    log = run / "embedding-usage.jsonl"
+    embeddings = usage.get("embeddings")
+    if embeddings is None and log.exists():
+        lines = [
+            json.loads(line)
+            for line in log.read_text("utf-8").splitlines()
+            if line.strip()
+        ]
+        embeddings = {
+            "new_calls": sum(line["usage"]["calls"] for line in lines),
+            "new_texts": sum(line["inputs"] for line in lines),
+            "tokens": sum(line["usage"]["embedTokens"] for line in lines),
         }
-    )
+    if embeddings is not None:
+        rows.append(
+            {
+                "stage": "embeddings",
+                "transport": "normal",
+                "model": "deepinfra/Qwen/Qwen3-Embedding-4B",
+                "attempts": embeddings["new_calls"],
+                "collection": {"new_texts": embeddings["new_texts"]},
+                "usage": {"tokens": embeddings["tokens"]},
+                "approximate_cost_usd": embeddings.get("approximate_cost_usd"),
+                "request_start_utc": None,
+                "request_end_utc": None,
+                "results_path": relative_path(str(log)),
+            }
+        )
     return rows
 
 
+def load_subjects() -> dict[str, dict]:
+    return {s["id"]: s for s in read_json(SUBJECTS)["subjects"]}
+
+
+def sync_subjects(conn, subjects: dict[str, dict]) -> None:
+    """Upsert the fixture; a subject it dropped goes only when no topic uses it."""
+    for subject in subjects.values():
+        conn.execute(
+            "INSERT INTO library_subjects VALUES(%s,%s,%s,%s) ON CONFLICT (id) DO UPDATE SET "
+            "area=EXCLUDED.area, label=EXCLUDED.label, aliases=EXCLUDED.aliases",
+            (subject["id"], subject["area"], subject["label"], Jsonb(subject["aliases"])),
+        )
+    ids = list(subjects)
+    conn.execute(
+        "DELETE FROM library_subjects s WHERE s.id <> ALL(%s) "
+        "AND NOT EXISTS (SELECT 1 FROM library_topics t WHERE t.subject_id = s.id)",
+        (ids,),
+    )
+    stuck = [
+        row[0]
+        for row in conn.execute(
+            "SELECT id FROM library_subjects WHERE id <> ALL(%s) ORDER BY id", (ids,)
+        )
+    ]
+    if stuck:
+        raise PilotError(
+            f"Subjects {stuck} are gone from {SUBJECTS.name} but still hold topics"
+        )
+
+
+def drop_unreferenced_topics(conn) -> int:
+    """Drop topics no tagged excerpt carries.
+
+    Excerpt rows exist for current and retained versions only (`retire`
+    deletes a version's), so a retained version keeps its topics until it is
+    retired and a rollback never lands on excerpts whose topics are gone.
+    """
+    return conn.execute(
+        "DELETE FROM library_topics t WHERE NOT EXISTS ("
+        " SELECT 1 FROM library_excerpts e"
+        " WHERE e.tag_status = 'tagged' AND e.topic_ids @> ARRAY[t.id])"
+    ).rowcount
+
+
+def book_topics(run: Path, manifest: dict, book: dict, subjects: dict) -> list[dict]:
+    """The topics this publish upserts under the book's subject.
+
+    A builder run writes `<run>/topics.json` from its topics stage; the pilot
+    run has none and its manifest carries the hand-written catalog. A topic
+    whose id is a subject id is refused: `browse_knowledge` tells the two
+    catalogs apart by argument, and the ids stay distinct at the source.
+    """
+    path = run / "topics.json"
+    if path.exists():
+        data = read_json(path)
+        if data["subject_id"] != book["subject_id"]:
+            raise PilotError(
+                f"{path.name} is for subject {data['subject_id']!r}; "
+                f"{book['id']} is {book['subject_id']!r}"
+            )
+        topics = data["topics"]
+    else:
+        topics = manifest.get("topics")
+        if not topics:
+            raise PilotError(
+                f"{book['id']}: no {path.name} in the run and the manifest has no topics"
+            )
+    for topic in topics:
+        if topic["id"] in subjects:
+            raise PilotError(
+                f"{book['id']}: topic {topic['id']!r} ({topic['label']}) shares its id "
+                f"with subject {topic['id']!r} ({subjects[topic['id']]['label']}); "
+                "rename the topic"
+            )
+    return [t | {"subject_id": book["subject_id"]} for t in topics]
+
+
+def section_summary(corpus: dict) -> str:
+    """The book's top-level section titles, in order, as its version summary."""
+    titles = dict.fromkeys(
+        e["section_path"].split(SECTION_SEP)[0].strip() for e in corpus["excerpts"]
+    )
+    return " · ".join(t for t in titles if t)[:SUMMARY_MAX_CHARS]
+
+
 def apply_schema() -> dict:
-    """Create the library schema exactly as `LIBRARY_SCHEMA` writes it.
+    """Create the library schema exactly as `LIBRARY_SCHEMA` writes it and load
+    the subjects fixture.
 
     Every statement is CREATE ... IF NOT EXISTS, so this is a no-op against a
     live library. Changing the schema means dropping the database and
@@ -213,6 +350,7 @@ def apply_schema() -> dict:
     """
     with connect() as conn:
         conn.execute(SCHEMA)
+        sync_subjects(conn, load_subjects())
     return status()
 
 
@@ -238,7 +376,6 @@ def publish_book(
     run: Path,
     book: dict,
     book_corpus: dict,
-    summary: dict,
     topics: list[dict],
     tags: dict,
     captures: dict,
@@ -246,8 +383,18 @@ def publish_book(
     identity: str,
     note: str,
 ) -> dict:
-    """Load one book as its next version and swap the book's pointer."""
+    """Load one book as its next version and swap the book's pointer.
+
+    The version's descriptor is the manifest attribution line and its summary
+    the book's top-level section titles (decision 2026-09-19: no summary
+    stage). Topics are upserted under the book's subject before the excerpts,
+    and topics no tagged excerpt in the library references are dropped after.
+    """
     book_id = book["id"]
+    if not book.get("authors") and (
+        book.get("attribution_reviewed") is not True or not book.get("attribution")
+    ):
+        raise PilotError(f"Book {book_id} needs attribution review before publication")
     # Numbering follows the highest version ever published (a rollback leaves a
     # higher one behind); the refusal compares the live one.
     highest = target.execute(
@@ -335,7 +482,7 @@ def publish_book(
         )
         figures = figure_rows(book_corpus, captures)
         target.cursor().executemany(
-            "INSERT INTO library_figures VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            "INSERT INTO library_figures VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             [
                 (
                     content_id,
@@ -354,16 +501,19 @@ def publish_book(
                     Jsonb(f["exclusion_evidence"]),
                     f["capture_path"],
                     f["capture_pixel_size"],
+                    f["description"],
                 )
                 for f in figures
             ],
         )
         for topic in topics:
             target.execute(
-                "INSERT INTO library_topics VALUES(%s,%s,%s,%s,%s) ON CONFLICT (id) DO UPDATE SET "
-                "label=EXCLUDED.label, aliases=EXCLUDED.aliases, scope=EXCLUDED.scope, source_sections=EXCLUDED.source_sections",
+                "INSERT INTO library_topics VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT (id) DO UPDATE SET "
+                "subject_id=EXCLUDED.subject_id, label=EXCLUDED.label, aliases=EXCLUDED.aliases, "
+                "scope=EXCLUDED.scope, source_sections=EXCLUDED.source_sections",
                 (
                     topic["id"],
+                    topic["subject_id"],
                     topic["label"],
                     Jsonb(topic["aliases"]),
                     topic["scope"],
@@ -434,8 +584,8 @@ def publish_book(
                 book_corpus["release_sha"],
                 book_corpus["parser_fingerprint"],
                 book_corpus["chunker_version"],
-                summary["descriptor"],
-                summary["summary"],
+                book["attribution"],
+                section_summary(book_corpus),
                 key,
                 note,
             ),
@@ -451,6 +601,7 @@ def publish_book(
             raise PilotError(
                 f"{book_id}: searchable chunks differ from the run; nothing committed"
             )
+        dropped = drop_unreferenced_topics(target)
     return {
         "book": book_id,
         "version": version,
@@ -463,47 +614,79 @@ def publish_book(
             "excerpts": len(excerpts),
             "figures": len(figures),
             "topics": len(topics),
+            "topics_dropped": dropped,
         },
     }
 
 
-def publish(run: Path, manifest_path: Path, book_ids: list[str], note: str) -> dict:
+def select_books(manifest: dict, run: Path, book_ids: list[str]) -> list[dict]:
+    """Manifest books to publish: the named ones, else every book the run holds."""
+    books = {b["id"]: b for b in manifest["books"]}
+    unknown = sorted(set(book_ids) - set(books))
+    if unknown:
+        raise PilotError(f"The manifest holds no book {unknown}")
+    selected = [
+        book
+        for book in books.values()
+        if (book["id"] in book_ids)
+        or (not book_ids and (run / "books" / book["id"] / "corpus.json").exists())
+    ]
+    if not selected:
+        raise PilotError(f"{run} holds no corpus for any manifest book")
+    return selected
+
+
+def publish(
+    run: Path,
+    manifest_path: Path,
+    book_ids: list[str],
+    note: str,
+    config_path: Path | None = None,
+) -> dict:
     import knowledge_base_pilot as pilot
 
-    manifest = pilot.load_manifest(manifest_path)
-    corpus = pilot.corpora(manifest, run)
-    unknown = sorted(set(book_ids) - {c["book"]["id"] for c in corpus})
-    if unknown:
-        raise PilotError(f"The run holds no book {unknown}")
-    selected = [c for c in corpus if not book_ids or c["book"]["id"] in book_ids]
+    manifest = read_json(manifest_path)
+    subjects = load_subjects()
+    selected = select_books(manifest, run, book_ids)
+    topics = {}
+    for book in selected:
+        if book.get("subject_id") not in subjects:
+            raise PilotError(
+                f"{book['id']}: subject {book.get('subject_id')!r} is not in {SUBJECTS.name}"
+            )
+        topics[book["id"]] = book_topics(run, manifest, book, subjects)
+    corpora = {}
+    for book in selected:
+        corpus = read_json(run / "books" / book["id"] / "corpus.json")
+        if corpus["source_id"] != pilot.book_identity(book):
+            raise PilotError(
+                f"{book['id']}: manifest edition/source identity differs from the parsed corpus"
+            )
+        corpora[book["id"]] = corpus
     tags = read_json(run / "tags.json")
-    captures = read_json(run / "captures.json")
-    summaries = {
-        s["book_id"]: s for s in read_json(run / "summaries.json")["summaries"]
-    }
+    captures_path = run / "captures.json"
+    captures = read_json(captures_path) if captures_path.exists() else {"captures": []}
     index = read_json(run / "index.json")
-    usage = read_json(run / "usage-summary.json")
-    pilot_url = read_json(run.parent / "config.json")["database_url"]
-    books = {b["id"]: b for b in manifest["books"]}
-    model_runs = model_run_rows(run, usage)
+    pilot_url = read_json(config_path or run.parent / "config.json")["database_url"]
+    model_runs = model_run_rows(run)
     started = time.time()
     receipts = []
     with psycopg.connect(pilot_url) as source, connect() as target:
         ensure_pin(target, tuple(index["pin"][key] for key in pilot.PIN))
-        for book_corpus in selected:
-            book = books[book_corpus["book"]["id"]]
+        sync_subjects(target, subjects)
+        for book in selected:
+            book_corpus = corpora[book["id"]]
             receipt = publish_book(
                 source,
                 target,
                 run=run,
                 book=book,
                 book_corpus=book_corpus,
-                summary=summaries[book["id"]],
-                topics=manifest["topics"],
+                topics=topics[book["id"]],
                 tags=tags,
                 captures=captures,
                 model_runs=model_runs,
-                identity=corpus_identity(book_corpus, index["pin"]),
+                identity=corpus_identity(book_corpus, index["pin"], tags),
                 note=note,
             )
             save_json(
@@ -550,7 +733,7 @@ def rollback(book_id: str, version: int) -> dict:
 
 
 def retire(book_id: str, version: int) -> dict:
-    """Drop a retained version's content rows.
+    """Drop a retained version's content rows, then the topics only it kept.
 
     Its receipts stay: the version row and its `library_model_runs` are what a
     reviewer needs to see which model wrote that version's tags and prose, and
@@ -577,7 +760,8 @@ def retire(book_id: str, version: int) -> dict:
             "UPDATE library_book_versions SET status='retired' WHERE book_id=%s AND version=%s",
             (book_id, version),
         )
-    return status()
+        dropped = drop_unreferenced_topics(conn)
+    return status() | {"topics_dropped": dropped}
 
 
 def status() -> dict:
@@ -594,6 +778,18 @@ def status() -> dict:
             "ORDER BY book_id, version"
         ).fetchall()
         topics = conn.execute("SELECT count(*) FROM library_topics").fetchone()[0]
+        subjects = conn.execute(
+            "SELECT s.id, s.label, "
+            "(SELECT count(*) FROM library_topics t WHERE t.subject_id = s.id) AS topics, "
+            "(SELECT count(*) FROM library_excerpts e"
+            " JOIN rag_file_contents fc ON fc.content_id = e.content_id AND fc.workspace_id = %s"
+            " WHERE e.tag_status = 'tagged' AND e.topic_ids && ARRAY("
+            "  SELECT id FROM library_topics t WHERE t.subject_id = s.id)) AS excerpts "
+            "FROM library_subjects s "
+            "WHERE EXISTS (SELECT 1 FROM library_topics t WHERE t.subject_id = s.id) "
+            "ORDER BY s.id",
+            (WORKSPACE,),
+        ).fetchall()
     history: dict[str, list[dict]] = {}
     for row in versions:
         history.setdefault(row[0], []).append(
@@ -626,6 +822,9 @@ def status() -> dict:
             for book in books
         ],
         "topics": topics,
+        "subjects": [
+            dict(zip(("id", "label", "topics", "excerpts"), row)) for row in subjects
+        ],
     }
 
 
@@ -717,7 +916,78 @@ def check() -> None:
         figures[0]["capture_path"] == "captures/f1.jpg"
         and "out_of_page_bounds" not in figures[0]
     )
+    assert figure_rows(corpus, {"captures": []})[0]["capture_path"] is None
+    assert figures[0]["description"] == ""  # a pilot corpus: no transcribe stage
+    corpus["figures"][0]["description"] = "a line from (0, 0) to (70, 140)"
+    assert figure_rows(corpus, captures)[0]["description"].startswith("a line")
     assert digest({"a": 1}) == digest({"a": 1})
+
+    # The version summary is the book's top-level section titles, once each, in
+    # order, with empty paths skipped and the whole clipped.
+    corpus["excerpts"][0]["section_path"] = f"Chapter 1{SECTION_SEP}1.1 Data"
+    corpus["excerpts"][1]["section_path"] = ""
+    corpus["excerpts"].append({"section_path": f"Chapter 1{SECTION_SEP}1.2 Cases"})
+    corpus["excerpts"].append({"section_path": "Chapter 2"})
+    assert section_summary(corpus) == "Chapter 1 · Chapter 2"
+    assert len(section_summary({"excerpts": [{"section_path": "x" * 2000}]})) == 1000
+
+    # Topics come from the run when its topics stage wrote them, else from the
+    # manifest (the pilot), always carry the book's subject, and never share an
+    # id with a subject.
+    import tempfile
+
+    book = {"id": "b", "subject_id": "statistics"}
+    subjects = {"statistics": {"label": "Statistics"}, "probability": {"label": "Probability"}}
+    catalog = [{"id": "t1", "label": "T", "aliases": [], "scope": "s"}]
+    with tempfile.TemporaryDirectory() as tmp:
+        run = Path(tmp)
+        assert book_topics(run, {"topics": catalog}, book, subjects)[0]["subject_id"] == "statistics"
+        try:
+            book_topics(run, {}, book, subjects)
+            raise AssertionError("a run without topics.json needs manifest topics")
+        except PilotError:
+            pass
+        colliding = {"topics": [{"id": "probability", "label": "Probability rules"}]}
+        try:
+            book_topics(run, colliding, book, subjects)
+            raise AssertionError("a topic with a subject's id must be refused")
+        except PilotError as exc:
+            assert "topic 'probability' (Probability rules)" in str(exc)
+            assert "subject 'probability' (Probability)" in str(exc)
+        save_json(run / "topics.json", {"subject_id": "statistics", "topics": catalog})
+        assert book_topics(run, {}, book, subjects) == [catalog[0] | {"subject_id": "statistics"}]
+        try:
+            book_topics(run, {}, book | {"subject_id": "algebra"}, subjects)
+            raise AssertionError("topics.json for another subject must be refused")
+        except PilotError:
+            pass
+        # Books to publish: named ones must be in the manifest; unnamed means
+        # every manifest book whose corpus the run holds.
+        manifest = {"books": [{"id": "b"}, {"id": "c"}]}
+        (run / "books/b").mkdir(parents=True)
+        save_json(run / "books/b/corpus.json", {})
+        assert [b["id"] for b in select_books(manifest, run, [])] == ["b"]
+        assert [b["id"] for b in select_books(manifest, run, ["c"])] == ["c"]
+        try:
+            select_books(manifest, run, ["d"])
+            raise AssertionError("a book the manifest lacks must be refused")
+        except PilotError:
+            pass
+        # Receipts without the pilot's priced summary come from the stage state.
+        (run / "models/tags/realtime").mkdir(parents=True)
+        save_json(run / "models/tags/state.json", {"model": "m", "transport": "normal-api"})
+        save_json(
+            run / "models/tags/realtime/state.json",
+            {"normal_requests": 3, "collection": {"success": 3}, "usage": {"prompt_tokens": 9}},
+        )
+        (run / "embedding-usage.jsonl").write_text(
+            '{"stage":"b","inputs":2,"usage":{"embedTokens":50,"calls":1}}\n', "utf-8"
+        )
+        rows = {r["stage"]: r for r in model_run_rows(run)}
+        assert rows["tags"]["attempts"] == 3 and rows["tags"]["usage"] == {"prompt_tokens": 9}
+        assert rows["tags"]["model"] == "m" and rows["tags"]["approximate_cost_usd"] is None
+        assert rows["embeddings"]["usage"] == {"tokens": 50} and rows["embeddings"]["attempts"] == 1
+    assert "statistics" in load_subjects(), "the pilot books name this subject"
 
     # Two versions of one book must not share chunk ids: the builder derives
     # them from the book identity, which a reparse does not change.
@@ -729,11 +999,19 @@ def check() -> None:
         "parser_fingerprint": "fp",
         "chunker_version": "v10",
         "release_sha": "sha",
+        "excerpts": [{"id": "e1"}, {"id": "e2"}],
     }
-    assert corpus_identity(base, pin) == corpus_identity(dict(base), pin), (
+    tagged = {"tags": {"e1": {"roles": ["formal"], "topic_ids": ["t1"]}}, "failed_tags": {"e2": {}}}
+    assert corpus_identity(base, pin, tagged) == corpus_identity(dict(base), pin, dict(tagged)), (
         "an unchanged corpus must keep its identity so a republish is refused"
     )
-    assert corpus_identity(base, pin) != corpus_identity(base | {"parser_fingerprint": "fp2"}, pin)
+    assert corpus_identity(base, pin, tagged) != corpus_identity(
+        base | {"parser_fingerprint": "fp2"}, pin, tagged
+    )
+    retagged = {"tags": {"e1": {"roles": ["formal"], "topic_ids": ["t2"]}}, "failed_tags": {}}
+    assert corpus_identity(base, pin, tagged) != corpus_identity(base, pin, retagged), (
+        "a retag or topic rename changes the excerpt rows, so it is a new version"
+    )
 
     # A missing object refuses the publish rather than recording a key that
     # would fail at capture time; a present one becomes books/<sha256>.pdf.
@@ -753,7 +1031,7 @@ def check() -> None:
             pass
     finally:
         blobstore.library_object_info = original
-    print("Library excerpt/figure assembly, id versioning and object checks passed")
+    print("Library excerpt/figure assembly, summary, topics, receipts, identity, id versioning and object checks passed")
 
 
 def main() -> None:
@@ -765,7 +1043,13 @@ def main() -> None:
     p.add_argument(
         "--manifest",
         type=Path,
-        default=ROOT / "bench/rag/fixtures/knowledge-base-pilot-books.json",
+        default=MANIFEST,
+        help="books with their subject_id; the pilot fixture also carries the topics its run has no topics.json for",
+    )
+    p.add_argument(
+        "--config",
+        type=Path,
+        help="pilot config with the source database url; default <run>/../config.json",
     )
     p.add_argument(
         "--book",
@@ -777,7 +1061,7 @@ def main() -> None:
     p = sub.add_parser("rollback", help="point a book back at a retained version")
     p.add_argument("--book", required=True)
     p.add_argument("--version", type=int, required=True)
-    p = sub.add_parser("retire", help="drop a retained version's content rows")
+    p = sub.add_parser("retire", help="drop a retained version's content rows and the topics only it kept")
     p.add_argument("--book", required=True)
     p.add_argument("--version", type=int, required=True)
     sub.add_parser("status")
@@ -790,7 +1074,13 @@ def main() -> None:
     elif args.command == "publish":
         print(
             json.dumps(
-                publish(args.run.resolve(), args.manifest, args.book, args.note)
+                publish(
+                    args.run.resolve(),
+                    args.manifest,
+                    args.book,
+                    args.note,
+                    args.config,
+                )
             )
         )
     elif args.command == "rollback":

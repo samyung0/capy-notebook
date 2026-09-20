@@ -23,7 +23,6 @@ Raw run artifacts sit in a sibling `YYYY-MM-DD-<machine>/` directory.
 | [`parsers/`](parsers/)     | Ingest-host parser accuracy and capacity: OCR modes, concurrency, worker memory, OOM behavior    | `python bench/parsers/scripts/…` (needs VM) |
 | [`grading/`](grading/)     | Small local models against the production quiz-grading rubric, native and in-browser             | `python bench/grading/scripts/benchmark.py` |
 | [`rag/`](rag/scripts/)     | Retrieval and chat-agent quality: live diagnostic plus four frozen experiments                   | see below                                   |
-| [`rag/playground/`](rag/playground/) | Interactive agent-loop tuning against the lab, UAT or local dev index: prompt, tools, caps, model, `capture_page`, confidence notes, and the whole curate loop (library tools, progress ledger, stall guard, material writes) against the live knowledge library | `python bench/rag/playground/scripts/playground.py --target lab, uat or local` |
 
 ### editor
 
@@ -52,6 +51,11 @@ production prompt in `pipeline/pipeline/retrieve/quiz_grade.py`. AI-authored and
 AI-reviewed labels, not human-certified — read
 [the README](grading/README.md) on provenance before citing a number. Model
 files and run artifacts live in the gitignored `data/grading-benchmark/`.
+`scripts/typesafe_math.py` is a separate hosted-judge probe: typesafe.ai jev on
+math step checking, final-answer and unit equivalence, algebraic form, and per-rubric
+grading across subjects (essays plus the English seeds) and routing of
+computational questions, findings in
+[2026-09-19-typesafe-jev-judge.md](grading/reports/2026-09-19-typesafe-jev-judge.md).
 
 ### rag
 
@@ -105,3 +109,7 @@ Narrative and current position: [HANDOFF-rag.md](../HANDOFF-rag.md).
 `pipeline/scripts/certify_agentic_loop_model.py` records and replays one
 provider's agentic loop. Both are correctness harnesses, not measurements, and
 stay where they are.
+
+Developer-PC tools that are not measurements live under [`lab/`](../lab/):
+the agentic-loop playground (`lab/playground`) and the knowledge-base builder
+(`lab/knowledge`). Both reuse bench fixtures and the pilot scripts here.

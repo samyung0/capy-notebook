@@ -340,6 +340,16 @@ def library_download_file(
     )
 
 
+def library_presign_get(object_key: str, expires: int) -> str:
+    """A GET URL for one knowledge-base object (`presign_get` is bound to the
+    app bucket); the builder's review batches reference page images this way."""
+    return library_client().generate_presigned_url(
+        "get_object",
+        Params={"Bucket": cfg.knowledge_base_b2_bucket, "Key": object_key},
+        ExpiresIn=expires,
+    )
+
+
 def library_object_info(object_key: str) -> dict | None:
     """Head one knowledge-base object; None when it is not there."""
     from botocore.exceptions import ClientError

@@ -1,0 +1,2734 @@
+{
+  "schema": "unseen-pdf-visual-witnesses-v1",
+  "status": "frozen",
+  "detector_sha256": "136de0218bda281e34a50454b5aff6d969c93d7ae5a074f6be7b9ac2cd897e35",
+  "selection": "Purposive visual cases; no repaired output or detector results inspected while labeling. Families collapsed by exporter, not subject.",
+  "documents": [
+    {
+      "id": "acl2024-multilingual",
+      "source_sha256": "1d7160f1fb7903f5357ac502e46118b0a1fb4f0a0f1561eea8baaad1ac79ca6a",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/acl2024-multilingual.pdf",
+      "exporter_family": "pdfTeX and pdfeTeX",
+      "producer": "pdfTeX-1.40.22",
+      "creator": "LaTeX with hyperref",
+      "language": "en",
+      "pages": 16,
+      "source_outline_present": false
+    },
+    {
+      "id": "bccampus-accessibility",
+      "source_sha256": "5e90615054edd1e8b66897fe705046b3ca8bcb43fb419d4c24f4912c66d24913",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/bccampus-accessibility.pdf",
+      "exporter_family": "Prince",
+      "producer": "Prince 16.1 (www.princexml.com)",
+      "creator": "Pressbooks 6.31.4",
+      "language": "en",
+      "pages": 101,
+      "source_outline_present": true
+    },
+    {
+      "id": "bookdown-manual",
+      "source_sha256": "b90354f001e2ae165958dc13b52ddfc17c2be2326297d47da52412ddb058e748",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/bookdown-manual.pdf",
+      "exporter_family": "dvipdfmx",
+      "producer": "xdvipdfmx (20260317)",
+      "creator": "LaTeX via pandoc",
+      "language": "en",
+      "pages": 155,
+      "source_outline_present": true
+    },
+    {
+      "id": "ctan-axessibility",
+      "source_sha256": "5258fd965544975fb9fe6dde2592fa5c91fa270fb1c2d95572c0d505627fe0e4",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/ctan-axessibility.pdf",
+      "exporter_family": "pdfTeX and pdfeTeX",
+      "producer": "pdfTeX-1.40.20",
+      "creator": "TeX",
+      "language": "en",
+      "pages": 20,
+      "source_outline_present": false
+    },
+    {
+      "id": "dmoi4",
+      "source_sha256": "243a707ee7902d73b369bc29b3fc2cf6dcf61901114ff0a4f082dd6018f3f82e",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/dmoi4.pdf",
+      "exporter_family": "pdfTeX and pdfeTeX",
+      "producer": "pdfTeX-1.40.28",
+      "creator": "LaTeX with hyperref",
+      "language": "en",
+      "pages": 549,
+      "source_outline_present": true
+    },
+    {
+      "id": "jstage-1949-statistics",
+      "source_sha256": "7739ee22bc1b44cc71b86432af5c6d80707a24557a8f6a1f823f97613087c347",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/jstage-1949-statistics.pdf",
+      "exporter_family": "e.Typist OCR",
+      "producer": "e.Typist v.11.0 for Windows",
+      "creator": "e.Typist v.11.0 for Windows",
+      "language": "ja",
+      "pages": 12,
+      "source_outline_present": false
+    },
+    {
+      "id": "lille-course-guide",
+      "source_sha256": "1ec6d49f41a0241fe05b53f591e58f64d9f24938c1b6005e3b0cd5b6a436fa64",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/lille-course-guide.pdf",
+      "exporter_family": "Microsoft Word",
+      "producer": "",
+      "creator": "Microsoft Word",
+      "language": "fr",
+      "pages": 26,
+      "source_outline_present": true
+    },
+    {
+      "id": "lille-probability",
+      "source_sha256": "61683d4f3aeaae44b3b162f68a807a1cd0df5478d55e3f85c42494423ab2da00",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/lille-probability.pdf",
+      "exporter_family": "dvipdfmx",
+      "producer": "xdvipdfmx (0.1)",
+      "creator": "LaTeX with hyperref",
+      "language": "fr",
+      "pages": 6,
+      "source_outline_present": false
+    },
+    {
+      "id": "mit-strang-calculus",
+      "source_sha256": "e9bc46d0663bf59134e45eee296ad244985b397b3957e4d66d90b62e0f089803",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/mit-strang-calculus.pdf",
+      "exporter_family": "Acrobat reprocessed composite",
+      "producer": "Adobe Acrobat 26.1.21789",
+      "creator": "Adobe Acrobat 26.1.21789",
+      "language": "en",
+      "pages": 706,
+      "source_outline_present": true
+    },
+    {
+      "id": "mu-calculus",
+      "source_sha256": "cd679097a7495ddeebbb52cd6b62691b353549abdb2a79adec88f472fc3ac7bc",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/mu-calculus.pdf",
+      "exporter_family": "Microsoft Word",
+      "producer": "Microsoft® Word 2010",
+      "creator": "Microsoft® Word 2010",
+      "language": "ar",
+      "pages": 6,
+      "source_outline_present": false
+    },
+    {
+      "id": "ntnu-linear-algebra",
+      "source_sha256": "74435fc8c2c262bbf5593f54cab6c72bad219dac1146ddfc29c1aa0d04c5acd4",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/ntnu-linear-algebra.pdf",
+      "exporter_family": "dvipdfmx",
+      "producer": "MiKTeX-dvipdfmx (20230429)",
+      "creator": " XeTeX output 2026.09.03:1826",
+      "language": "zh-Hant",
+      "pages": 233,
+      "source_outline_present": false
+    },
+    {
+      "id": "openstax-introduction-computer-science",
+      "source_sha256": "fd56aaf80c851e9f3b417745785ea5c832fc2911acfd2094a86f4c517fdf435a",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/openstax-introduction-computer-science.pdf",
+      "exporter_family": "Prince",
+      "producer": "Prince 16.2 (www.princexml.com)",
+      "creator": "",
+      "language": "en",
+      "pages": 939,
+      "source_outline_present": true
+    },
+    {
+      "id": "openstax-introductory-statistics-2e",
+      "source_sha256": "a79a953b75e570030c74ea6f700b8bd70f41dc8c01bf4e9618e6a0adba3a382a",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/openstax-introductory-statistics-2e.pdf",
+      "exporter_family": "Prince",
+      "producer": "Prince 16.2 (www.princexml.com)",
+      "creator": "",
+      "language": "en",
+      "pages": 847,
+      "source_outline_present": true
+    },
+    {
+      "id": "prince-icelandic",
+      "source_sha256": "da4f0973847b82f7bcc74b6c09b7b651a4573f8435436c334580cc895eea82fa",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/prince-icelandic.pdf",
+      "exporter_family": "Prince",
+      "producer": "Prince 20231221 (www.princexml.com)",
+      "creator": "",
+      "language": "is/en",
+      "pages": 660,
+      "source_outline_present": true
+    },
+    {
+      "id": "prince-math",
+      "source_sha256": "dcb61d9259d4ad92b72f6e17b810f990d50dd3bdfad4a1d33ec3ba621e267311",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/prince-math.pdf",
+      "exporter_family": "Prince",
+      "producer": "Prince 16 (www.princexml.com)",
+      "creator": "",
+      "language": "en",
+      "pages": 13,
+      "source_outline_present": false
+    },
+    {
+      "id": "prince-textbook",
+      "source_sha256": "aad86d1af542a839dc330354637079ed1cb54e658d03393643f3dde864a88df7",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/prince-textbook.pdf",
+      "exporter_family": "Prince",
+      "producer": "Prince 16 (www.princexml.com)",
+      "creator": "",
+      "language": "en",
+      "pages": 4,
+      "source_outline_present": true
+    },
+    {
+      "id": "qmul-probability",
+      "source_sha256": "f50433d8c283f0ce72e25e4f166b70bb69082a6b5dada5077191ae2644bacb94",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/qmul-probability.pdf",
+      "exporter_family": "pdfTeX and pdfeTeX",
+      "producer": "pdfeTeX-1.21a",
+      "creator": "TeX",
+      "language": "en",
+      "pages": 94,
+      "source_outline_present": false
+    },
+    {
+      "id": "snu-admissions",
+      "source_sha256": "47c10d341ef8038d27981a87785151a83a051001f373d0ebeae04e9bd1ee0537",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/snu-admissions.pdf",
+      "exporter_family": "Hancom Hwp",
+      "producer": "Hancom PDF 1.3.0.545",
+      "creator": "Hwp 2022 12.0.0.535",
+      "language": "ko",
+      "pages": 76,
+      "source_outline_present": false
+    },
+    {
+      "id": "w3c-complex-table",
+      "source_sha256": "c0bd0fc65103f2528e2fd6ece4c2529cce9dbbbdc0d333dc0d7e538550cd46c7",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/w3c-complex-table.pdf",
+      "exporter_family": "Microsoft Word",
+      "producer": "",
+      "creator": "Microsoft Word",
+      "language": "en",
+      "pages": 1,
+      "source_outline_present": true
+    },
+    {
+      "id": "w3c-openoffice-columns",
+      "source_sha256": "0c8cd5c891e4b39f85f3f3ebea00c8aa56db35ce1f6d04f1ff263dac43e1ff3a",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/w3c-openoffice-columns.pdf",
+      "exporter_family": "LibreOffice Writer",
+      "producer": "LibreOffice 7.5",
+      "creator": "Writer",
+      "language": "en",
+      "pages": 1,
+      "source_outline_present": true
+    },
+    {
+      "id": "w3c-word-columns",
+      "source_sha256": "9a3a38c444fa165d2b33af41fb2c90502c52def5c560f5d543afe01d937d6e80",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/w3c-word-columns.pdf",
+      "exporter_family": "Acrobat PDFMaker",
+      "producer": "Adobe PDF Library 9.0",
+      "creator": "Acrobat PDFMaker 9.0 for Word",
+      "language": "en",
+      "pages": 1,
+      "source_outline_present": true
+    }
+  ],
+  "cases": [
+    {
+      "id": "prince-math-01",
+      "document_id": "prince-math",
+      "source_sha256": "dcb61d9259d4ad92b72f6e17b810f990d50dd3bdfad4a1d33ec3ba621e267311",
+      "page": 1,
+      "bbox": [
+        139.536,
+        570.24,
+        183.6,
+        589.248
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "z = 1/c is the displayed equation numbered (1).",
+      "expected_behavior": "retain_math_relation",
+      "layer_status": "present",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "z = 1/c"
+    },
+    {
+      "id": "prince-math-02",
+      "document_id": "prince-math",
+      "source_sha256": "dcb61d9259d4ad92b72f6e17b810f990d50dd3bdfad4a1d33ec3ba621e267311",
+      "page": 2,
+      "bbox": [
+        140.76,
+        273.24,
+        244.8,
+        294.624
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "ch^2(x) - sh^2(x) = 1; both powers apply to the functions.",
+      "expected_behavior": "retain_math_relation",
+      "layer_status": "present",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "ch2(x) − sh2(x) = 1"
+    },
+    {
+      "id": "prince-math-03",
+      "document_id": "prince-math",
+      "source_sha256": "dcb61d9259d4ad92b72f6e17b810f990d50dd3bdfad4a1d33ec3ba621e267311",
+      "page": 2,
+      "bbox": [
+        140.76,
+        342.144,
+        223.38,
+        364.32
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "Na minus e with superscript minus equals Na with superscript plus.",
+      "expected_behavior": "retain_math_relation",
+      "layer_status": "present",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Na − e−= Na+"
+    },
+    {
+      "id": "prince-math-04",
+      "document_id": "prince-math",
+      "source_sha256": "dcb61d9259d4ad92b72f6e17b810f990d50dd3bdfad4a1d33ec3ba621e267311",
+      "page": 2,
+      "bbox": [
+        140.148,
+        398.376,
+        219.708,
+        424.512
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "T_mn = -T_nm; the two subscript orders differ.",
+      "expected_behavior": "retain_math_relation",
+      "layer_status": "present",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Tmn = − Tnm"
+    },
+    {
+      "id": "prince-math-05",
+      "document_id": "prince-math",
+      "source_sha256": "dcb61d9259d4ad92b72f6e17b810f990d50dd3bdfad4a1d33ec3ba621e267311",
+      "page": 2,
+      "bbox": [
+        88.776,
+        69.954,
+        271.538,
+        95.046
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "2. Indices in display mode",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "2. Indices in display mode",
+        "level": null,
+        "parent": null
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "2. Indices in display mode"
+    },
+    {
+      "id": "prince-textbook-01",
+      "document_id": "prince-textbook",
+      "source_sha256": "aad86d1af542a839dc330354637079ed1cb54e658d03393643f3dde864a88df7",
+      "page": 1,
+      "bbox": [
+        55.559,
+        84.029,
+        484.713,
+        119.066
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Anatomy of the Somatosensory System",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Anatomy of the Somatosensory System",
+        "level": 1,
+        "parent": null
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Anatomy of the Somatosensory System"
+    },
+    {
+      "id": "prince-textbook-02",
+      "document_id": "prince-textbook",
+      "source_sha256": "aad86d1af542a839dc330354637079ed1cb54e658d03393643f3dde864a88df7",
+      "page": 1,
+      "bbox": [
+        55.559,
+        287.757,
+        165.86,
+        306.049
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Cutaneous receptors",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Cutaneous receptors",
+        "level": 2,
+        "parent": "Anatomy of the Somatosensory System"
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Cutaneous receptors"
+    },
+    {
+      "id": "prince-textbook-03",
+      "document_id": "prince-textbook",
+      "source_sha256": "aad86d1af542a839dc330354637079ed1cb54e658d03393643f3dde864a88df7",
+      "page": 3,
+      "bbox": [
+        55.559,
+        493.507,
+        143.02,
+        511.799
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Muscle Spindles",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Muscle Spindles",
+        "level": 2,
+        "parent": "Anatomy of the Somatosensory System"
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Muscle Spindles"
+    },
+    {
+      "id": "prince-textbook-04",
+      "document_id": "prince-textbook",
+      "source_sha256": "aad86d1af542a839dc330354637079ed1cb54e658d03393643f3dde864a88df7",
+      "page": 1,
+      "bbox": [
+        57.827,
+        389.764,
+        337.323,
+        609.449
+      ],
+      "space": "pdf-points-topleft",
+      "category": "diagram",
+      "visible_expectation": "Skin cross-section labels distinguish free nerve ending, Meissner corpuscle, and Pacinian corpuscle; retain it as a figure.",
+      "expected_behavior": "preserve_figure_separation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Hairy skin\nGlabrous skin\nEpidermis\nDermis\nPacinian\ncorpuscle\nPapillary Ridges\nSepta\nRuffini’s\n corpuscle\nHair receptor\nMeissner’s\ncorpuscle\nSebaceous\ngland\nFree nerve\nending\nMerkel’s\nreceptor"
+    },
+    {
+      "id": "prince-textbook-05",
+      "document_id": "prince-textbook",
+      "source_sha256": "aad86d1af542a839dc330354637079ed1cb54e658d03393643f3dde864a88df7",
+      "page": 3,
+      "bbox": [
+        56.693,
+        83.622,
+        511.937,
+        193.465
+      ],
+      "space": "pdf-points-topleft",
+      "category": "table",
+      "visible_expectation": "Surface receptor/small receptive field pairs rapidly adapting hair and Meissner receptors with slowly adapting Merkel receptors.",
+      "expected_behavior": "preserve_table_relation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Rapidly adapting\nSlowly adapting\nSurface receptor /\nsmall receptive\nfield\nHair receptor, Meissner’s corpuscle: De-\ntect an insect or a very fine vibration.\nUsed for recognizing texture.\nMerkel’s receptor: Used for spa-\ntial details, e.g. a round surface\nedge or “an X” in brail.\nDeep receptor /\nlarge receptive\nfield\nPacinian corpuscle: “A diffuse vibra-\ntion” e.g. tapping with a pencil.\nRuffini’s corpuscle: “A skin\nstretch”. Used for joint position\nin fingers."
+    },
+    {
+      "id": "prince-textbook-06",
+      "document_id": "prince-textbook",
+      "source_sha256": "aad86d1af542a839dc330354637079ed1cb54e658d03393643f3dde864a88df7",
+      "page": 3,
+      "bbox": [
+        311.811,
+        48.898,
+        511.937,
+        67.323
+      ],
+      "space": "pdf-points-topleft",
+      "category": "margin-furniture",
+      "visible_expectation": "Anatomy of the Somatosensory System repeats as a running header.",
+      "expected_behavior": "exclude_margin_furniture",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": null,
+      "related_locations": [
+        {
+          "page": 2,
+          "role": "running-header"
+        },
+        {
+          "page": 4,
+          "role": "running-header"
+        }
+      ],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Anatomy of the Somatosensory System"
+    },
+    {
+      "id": "w3c-complex-table-01",
+      "document_id": "w3c-complex-table",
+      "source_sha256": "c0bd0fc65103f2528e2fd6ece4c2529cce9dbbbdc0d333dc0d7e538550cd46c7",
+      "page": 1,
+      "bbox": [
+        70.801,
+        94.446,
+        203.549,
+        121.054
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Example table",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Example table",
+        "level": 1,
+        "parent": null
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Example table"
+    },
+    {
+      "id": "w3c-complex-table-02",
+      "document_id": "w3c-complex-table",
+      "source_sha256": "c0bd0fc65103f2528e2fd6ece4c2529cce9dbbbdc0d333dc0d7e538550cd46c7",
+      "page": 1,
+      "bbox": [
+        85.068,
+        143.352,
+        547.74,
+        217.008
+      ],
+      "space": "pdf-points-topleft",
+      "category": "table",
+      "visible_expectation": "Results is a spanning header over Accuracy and Time to complete, not a value for either column.",
+      "expected_behavior": "preserve_table_relation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Disability \nCategory \nParticipants \nBallots \nCompleted \nBallots \nIncomplete/ \nTerminated \nResults \nAccuracy \nTime to \ncomplete"
+    },
+    {
+      "id": "w3c-complex-table-03",
+      "document_id": "w3c-complex-table",
+      "source_sha256": "c0bd0fc65103f2528e2fd6ece4c2529cce9dbbbdc0d333dc0d7e538550cd46c7",
+      "page": 1,
+      "bbox": [
+        85.068,
+        213.048,
+        547.74,
+        243.144
+      ],
+      "space": "pdf-points-topleft",
+      "category": "table",
+      "visible_expectation": "Blind row has 5 participants, 1 completed ballot, 4 incomplete ballots, accuracy 34.5% n=1, and time1199 seconds n=1.",
+      "expected_behavior": "preserve_table_relation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Blind \n5 \n1 \n4 \n34.5%, n=1 \n1199 sec, n=1"
+    },
+    {
+      "id": "w3c-complex-table-04",
+      "document_id": "w3c-complex-table",
+      "source_sha256": "c0bd0fc65103f2528e2fd6ece4c2529cce9dbbbdc0d333dc0d7e538550cd46c7",
+      "page": 1,
+      "bbox": [
+        85.068,
+        236.808,
+        547.74,
+        289.872
+      ],
+      "space": "pdf-points-topleft",
+      "category": "table",
+      "visible_expectation": "Low Vision row keeps the parenthesized 97.7% n=3 accuracy apart from parenthesized1934 seconds n=2 time.",
+      "expected_behavior": "preserve_table_relation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Low Vision \n5 \n2 \n3 \n98.3% n=2 \n(97.7%, n=3) \n1716 sec, n=3 \n(1934 sec, n=2)"
+    },
+    {
+      "id": "w3c-openoffice-columns-01",
+      "document_id": "w3c-openoffice-columns",
+      "source_sha256": "0c8cd5c891e4b39f85f3f3ebea00c8aa56db35ce1f6d04f1ff263dac43e1ff3a",
+      "page": 1,
+      "bbox": [
+        55.692,
+        67.32,
+        309.06,
+        125.136
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Application for this and that",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Application for this and that",
+        "level": 1,
+        "parent": null
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Application for this and \nthat\nt\nP\nv"
+    },
+    {
+      "id": "w3c-openoffice-columns-02",
+      "document_id": "w3c-openoffice-columns",
+      "source_sha256": "0c8cd5c891e4b39f85f3f3ebea00c8aa56db35ce1f6d04f1ff263dac43e1ff3a",
+      "page": 1,
+      "bbox": [
+        55.576,
+        256.728,
+        87.994,
+        279.822
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "List",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "List",
+        "level": 2,
+        "parent": "Application for this and that"
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "List"
+    },
+    {
+      "id": "w3c-openoffice-columns-03",
+      "document_id": "w3c-openoffice-columns",
+      "source_sha256": "0c8cd5c891e4b39f85f3f3ebea00c8aa56db35ce1f6d04f1ff263dac43e1ff3a",
+      "page": 1,
+      "bbox": [
+        55.576,
+        402.232,
+        182.128,
+        431.968
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Header One",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Header One",
+        "level": 1,
+        "parent": null
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Header One"
+    },
+    {
+      "id": "w3c-openoffice-columns-04",
+      "document_id": "w3c-openoffice-columns",
+      "source_sha256": "0c8cd5c891e4b39f85f3f3ebea00c8aa56db35ce1f6d04f1ff263dac43e1ff3a",
+      "page": 1,
+      "bbox": [
+        304.876,
+        132.528,
+        398.422,
+        155.622
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Another list",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Another list",
+        "level": 2,
+        "parent": "Header One"
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Another list"
+    },
+    {
+      "id": "w3c-openoffice-columns-05",
+      "document_id": "w3c-openoffice-columns",
+      "source_sha256": "0c8cd5c891e4b39f85f3f3ebea00c8aa56db35ce1f6d04f1ff263dac43e1ff3a",
+      "page": 1,
+      "bbox": [
+        304.876,
+        339.232,
+        522.292,
+        368.968
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Another Header One",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Another Header One",
+        "level": 1,
+        "parent": null
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Another Header One"
+    },
+    {
+      "id": "ctan-axessibility-01",
+      "document_id": "ctan-axessibility",
+      "source_sha256": "5258fd965544975fb9fe6dde2592fa5c91fa270fb1c2d95572c0d505627fe0e4",
+      "page": 5,
+      "bbox": [
+        176.719,
+        338.127,
+        221.164,
+        355.841
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Usage",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Usage",
+        "level": null,
+        "parent": null
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Usage"
+    },
+    {
+      "id": "ctan-axessibility-02",
+      "document_id": "ctan-axessibility",
+      "source_sha256": "5258fd965544975fb9fe6dde2592fa5c91fa270fb1c2d95572c0d505627fe0e4",
+      "page": 5,
+      "bbox": [
+        166.677,
+        565.75,
+        362.523,
+        592.691
+      ],
+      "space": "pdf-points-topleft",
+      "category": "code",
+      "visible_expectation": "The paired begin/end eqnarray and eqnarray* commands are literal package usage examples, not formulas missing from the text layer.",
+      "expected_behavior": "preserve_figure_separation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "\\begin{eqnarray} . . . \\end{eqnarray}\n\\begin{eqnarray*} . . . \\end{eqnarray*}"
+    },
+    {
+      "id": "lille-probability-01",
+      "document_id": "lille-probability",
+      "source_sha256": "61683d4f3aeaae44b3b162f68a807a1cd0df5478d55e3f85c42494423ab2da00",
+      "page": 1,
+      "bbox": [
+        170.25,
+        511.869,
+        432.173,
+        538.81
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "Absolute P(A intersection B)-P(A)P(B) is bounded by one quarter times absolute P(A|B)-P(A|B complement).",
+      "expected_behavior": "retain_math_relation",
+      "layer_status": "present",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "|P (A ∩B) −P (A) P (B)| ⩽1\n4 |P (A | B) −P (A | Bc)| ."
+    },
+    {
+      "id": "lille-probability-02",
+      "document_id": "lille-probability",
+      "source_sha256": "61683d4f3aeaae44b3b162f68a807a1cd0df5478d55e3f85c42494423ab2da00",
+      "page": 1,
+      "bbox": [
+        63.1,
+        458.83,
+        152.392,
+        486.612
+      ],
+      "space": "pdf-points-topleft",
+      "category": "inline-math",
+      "visible_expectation": "0 < P(B) < 1 is a strict two-sided condition.",
+      "expected_behavior": "retain_math_relation",
+      "layer_status": "present",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Sur l’espace proba\n0 < P (B) < 1."
+    },
+    {
+      "id": "lille-probability-03",
+      "document_id": "lille-probability",
+      "source_sha256": "61683d4f3aeaae44b3b162f68a807a1cd0df5478d55e3f85c42494423ab2da00",
+      "page": 1,
+      "bbox": [
+        61.172,
+        439.06,
+        114.684,
+        453.337
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Exercice 2",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Exercice 2",
+        "level": null,
+        "parent": null
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Exercice 2"
+    },
+    {
+      "id": "lille-probability-04",
+      "document_id": "lille-probability",
+      "source_sha256": "61683d4f3aeaae44b3b162f68a807a1cd0df5478d55e3f85c42494423ab2da00",
+      "page": 2,
+      "bbox": [
+        164.297,
+        269.405,
+        491.106,
+        292.136
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "N_i is the set whose i-th digit after the decimal point is zero.",
+      "expected_behavior": "retain_math_relation",
+      "layer_status": "present",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Ni := {le ie chiffre de x après la virgule est un zéro}"
+    },
+    {
+      "id": "mit-strang-calculus-01",
+      "document_id": "mit-strang-calculus",
+      "source_sha256": "e9bc46d0663bf59134e45eee296ad244985b397b3957e4d66d90b62e0f089803",
+      "page": 20,
+      "bbox": [
+        275.4,
+        100.584,
+        320.076,
+        136.224
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "The example gives f = 10t^2 and its slope s = 20t.",
+      "expected_behavior": "retain_math_relation",
+      "layer_status": "present",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "f D 10t2\ns D 20t"
+    },
+    {
+      "id": "mit-strang-calculus-02",
+      "document_id": "mit-strang-calculus",
+      "source_sha256": "e9bc46d0663bf59134e45eee296ad244985b397b3957e4d66d90b62e0f089803",
+      "page": 20,
+      "bbox": [
+        336.6,
+        274.032,
+        400.86,
+        300.96
+      ],
+      "space": "pdf-points-topleft",
+      "category": "inline-math",
+      "visible_expectation": "s = f/t is explicitly labeled wrong when speed changes.",
+      "expected_behavior": "retain_math_relation",
+      "layer_status": "present",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "s D f\nt is wrong"
+    },
+    {
+      "id": "mit-strang-calculus-03",
+      "document_id": "mit-strang-calculus",
+      "source_sha256": "e9bc46d0663bf59134e45eee296ad244985b397b3957e4d66d90b62e0f089803",
+      "page": 15,
+      "bbox": [
+        85.68,
+        491.04,
+        483.48,
+        588.456
+      ],
+      "space": "pdf-points-topleft",
+      "category": "diagram",
+      "visible_expectation": "Three graphs distinguish y=2x, y=x^2, and y=2^x; preserve their labels and curve associations.",
+      "expected_behavior": "preserve_figure_separation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "y D 2x\nx\ny D x2\nx\ny D 2x\nx"
+    },
+    {
+      "id": "mit-strang-calculus-04",
+      "document_id": "mit-strang-calculus",
+      "source_sha256": "e9bc46d0663bf59134e45eee296ad244985b397b3957e4d66d90b62e0f089803",
+      "page": 20,
+      "bbox": [
+        190.944,
+        35.64,
+        511.02,
+        59.4
+      ],
+      "space": "pdf-points-topleft",
+      "category": "margin-furniture",
+      "visible_expectation": "0.1 Distance and Speed // Height and Slope is the running header, not a fresh section opening.",
+      "expected_behavior": "exclude_margin_furniture",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "0.1\nDistance and Speed == Height and Slope"
+    },
+    {
+      "id": "bookdown-manual-01",
+      "document_id": "bookdown-manual",
+      "source_sha256": "b90354f001e2ae165958dc13b52ddfc17c2be2326297d47da52412ddb058e748",
+      "page": 34,
+      "bbox": [
+        239.292,
+        379.368,
+        382.5,
+        416.592
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "f(k) equals binomial n choose k times p^k times(1-p)^(n-k).",
+      "expected_behavior": "retain_math_relation",
+      "layer_status": "present",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "𝑓(𝑘) = (𝑛\n𝑘)𝑝𝑘(1 −𝑝)\n𝑛−𝑘"
+    },
+    {
+      "id": "bookdown-manual-02",
+      "document_id": "bookdown-manual",
+      "source_sha256": "b90354f001e2ae165958dc13b52ddfc17c2be2326297d47da52412ddb058e748",
+      "page": 35,
+      "bbox": [
+        270.504,
+        139.392,
+        349.452,
+        190.08
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "X is a three-by-two matrix with a first column of ones and second column x_1,x_2,x_3.",
+      "expected_behavior": "retain_math_relation",
+      "layer_status": "present",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "𝑋= ⎡⎢\n⎣\n1\n𝑥1\n1\n𝑥2\n1\n𝑥3\n⎤⎥\n⎦"
+    },
+    {
+      "id": "bookdown-manual-03",
+      "document_id": "bookdown-manual",
+      "source_sha256": "b90354f001e2ae165958dc13b52ddfc17c2be2326297d47da52412ddb058e748",
+      "page": 35,
+      "bbox": [
+        264.384,
+        384.912,
+        354.348,
+        420.552
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "The determinant with rows(a,b) and(c,d) equals ad-bc.",
+      "expected_behavior": "retain_math_relation",
+      "layer_status": "present",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "∣𝑎\n𝑏\n𝑐\n𝑑∣= 𝑎𝑑−𝑏𝑐"
+    },
+    {
+      "id": "bookdown-manual-04",
+      "document_id": "bookdown-manual",
+      "source_sha256": "b90354f001e2ae165958dc13b52ddfc17c2be2326297d47da52412ddb058e748",
+      "page": 35,
+      "bbox": [
+        168.363,
+        460.922,
+        349.122,
+        480.361
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Markdown extensions by bookdown",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Markdown extensions by bookdown",
+        "level": 2,
+        "parent": "Components"
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Markdown extensions by bookdown"
+    },
+    {
+      "id": "bookdown-manual-05",
+      "document_id": "bookdown-manual",
+      "source_sha256": "b90354f001e2ae165958dc13b52ddfc17c2be2326297d47da52412ddb058e748",
+      "page": 35,
+      "bbox": [
+        173.124,
+        585.471,
+        325.38,
+        603.554
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Number and reference equations",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Number and reference equations",
+        "level": 3,
+        "parent": "Markdown extensions by bookdown"
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Number and reference equations"
+    },
+    {
+      "id": "dmoi4-01",
+      "document_id": "dmoi4",
+      "source_sha256": "243a707ee7902d73b369bc29b3fc2cf6dcf61901114ff0a4f082dd6018f3f82e",
+      "page": 25,
+      "bbox": [
+        165.312,
+        53.28,
+        339.192,
+        70.56
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Discrete Structures",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Discrete Structures",
+        "level": 2,
+        "parent": "Introduction and Preliminaries"
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "0.2\nDiscrete Structures"
+    },
+    {
+      "id": "dmoi4-02",
+      "document_id": "dmoi4",
+      "source_sha256": "243a707ee7902d73b369bc29b3fc2cf6dcf61901114ff0a4f082dd6018f3f82e",
+      "page": 25,
+      "bbox": [
+        229.969,
+        82.491,
+        309.897,
+        97.326
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Introduction",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Introduction",
+        "level": 3,
+        "parent": "Discrete Structures"
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Introduction"
+    },
+    {
+      "id": "dmoi4-03",
+      "document_id": "dmoi4",
+      "source_sha256": "243a707ee7902d73b369bc29b3fc2cf6dcf61901114ff0a4f082dd6018f3f82e",
+      "page": 25,
+      "bbox": [
+        220.752,
+        604.08,
+        283.752,
+        619.92
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Sets",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Sets",
+        "level": 3,
+        "parent": "Discrete Structures"
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "0.2.2\nSets"
+    },
+    {
+      "id": "dmoi4-04",
+      "document_id": "dmoi4",
+      "source_sha256": "243a707ee7902d73b369bc29b3fc2cf6dcf61901114ff0a4f082dd6018f3f82e",
+      "page": 26,
+      "bbox": [
+        21.672,
+        146.16,
+        236.88,
+        162.0
+      ],
+      "space": "pdf-points-topleft",
+      "category": "inline-math",
+      "visible_expectation": "A = {x in N : x < 10} expresses a set-builder restriction.",
+      "expected_behavior": "retain_math_relation",
+      "layer_status": "present",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "something called set comprehension (a\nof this is 𝐴= {𝑥∈ℕ: 𝑥< 10}. We"
+    },
+    {
+      "id": "dmoi4-05",
+      "document_id": "dmoi4",
+      "source_sha256": "243a707ee7902d73b369bc29b3fc2cf6dcf61901114ff0a4f082dd6018f3f82e",
+      "page": 25,
+      "bbox": [
+        55.44,
+        111.6,
+        445.032,
+        201.6
+      ],
+      "space": "pdf-points-topleft",
+      "category": "callout",
+      "visible_expectation": "Investigate! asks about double-six dominoes. The rounded border and title are authored callout content, not missing mathematics.",
+      "expected_behavior": "preserve_figure_separation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Investigate!\nA double-six domino set consists of tiles containing pairs of numbers, each\nfrom 0 to 6. How many tiles are in a double-six domino set? How many\ndominoes are in a double-nine domino set? How many dominoes are in a\ndouble-𝑛domino set?"
+    },
+    {
+      "id": "ntnu-linear-algebra-01",
+      "document_id": "ntnu-linear-algebra",
+      "source_sha256": "74435fc8c2c262bbf5593f54cab6c72bad219dac1146ddfc29c1aa0d04c5acd4",
+      "page": 1,
+      "bbox": [
+        77.724,
+        170.28,
+        298.656,
+        228.888
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Systems of Linear Equations",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Systems of Linear Equations",
+        "level": null,
+        "parent": null
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Systems of Linear\nEquations"
+    },
+    {
+      "id": "ntnu-linear-algebra-02",
+      "document_id": "ntnu-linear-algebra",
+      "source_sha256": "74435fc8c2c262bbf5593f54cab6c72bad219dac1146ddfc29c1aa0d04c5acd4",
+      "page": 2,
+      "bbox": [
+        162.18,
+        125.928,
+        427.788,
+        199.584
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "A is m-by-n, x has n entries, b has m entries; Ax=b must retain these matrix relations.",
+      "expected_behavior": "retain_math_relation",
+      "layer_status": "present",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "A =\n\n\na11\na12\n···\na1n\na21\na22\n···\na2n\n...\n...\n...\n...\nam1\nam2\n···\namn\n\n, x =\n\n\nx1\nx2\n...\nxn\n\n, b =\n\n\nb1\nb2\n...\nbm\n\n,"
+    },
+    {
+      "id": "ntnu-linear-algebra-03",
+      "document_id": "ntnu-linear-algebra",
+      "source_sha256": "74435fc8c2c262bbf5593f54cab6c72bad219dac1146ddfc29c1aa0d04c5acd4",
+      "page": 3,
+      "bbox": [
+        241.74,
+        502.128,
+        347.616,
+        552.024
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "Matrix A has rows(1,2,3,4),(2,1,-1,3),(4,0,1,2).",
+      "expected_behavior": "retain_math_relation",
+      "layer_status": "present",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "A =\n\n\n1\n2\n3\n4\n2\n1\n−1\n3\n4\n0\n1\n2\n\n."
+    },
+    {
+      "id": "ntnu-linear-algebra-04",
+      "document_id": "ntnu-linear-algebra",
+      "source_sha256": "74435fc8c2c262bbf5593f54cab6c72bad219dac1146ddfc29c1aa0d04c5acd4",
+      "page": 3,
+      "bbox": [
+        241.74,
+        561.528,
+        347.616,
+        613.8
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "Matrix B has rows(2,1,-1,3),(1,2,3,4),(4,0,1,2), swapping the first two rows of A.",
+      "expected_behavior": "retain_math_relation",
+      "layer_status": "present",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "（即做\n個type 1 的e\nB =\n\n\n2\n1\n−1\n3\n1\n2\n3\n4\n4\n0\n1\n2\n\n."
+    },
+    {
+      "id": "ntnu-linear-algebra-05",
+      "document_id": "ntnu-linear-algebra",
+      "source_sha256": "74435fc8c2c262bbf5593f54cab6c72bad219dac1146ddfc29c1aa0d04c5acd4",
+      "page": 3,
+      "bbox": [
+        73.44,
+        48.312,
+        523.26,
+        69.696
+      ],
+      "space": "pdf-points-topleft",
+      "category": "margin-furniture",
+      "visible_expectation": "1.1. 一次聯立方程組及基本列運算 and page3 are margin furniture; preserve the actual section opening on page1.",
+      "expected_behavior": "exclude_margin_furniture",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "1.1. 一次聯立方程組及基本列運算\n3"
+    },
+    {
+      "id": "snu-admissions-01",
+      "document_id": "snu-admissions",
+      "source_sha256": "47c10d341ef8038d27981a87785151a83a051001f373d0ebeae04e9bd1ee0537",
+      "page": 5,
+      "bbox": [
+        246.925,
+        63.075,
+        348.075,
+        80.736
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "입학전형 일정표",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "입학전형 일정표",
+        "level": null,
+        "parent": null
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "입학전형 일정표"
+    },
+    {
+      "id": "snu-admissions-02",
+      "document_id": "snu-admissions",
+      "source_sha256": "47c10d341ef8038d27981a87785151a83a051001f373d0ebeae04e9bd1ee0537",
+      "page": 5,
+      "bbox": [
+        63.665,
+        149.698,
+        535.5,
+        191.748
+      ],
+      "space": "pdf-points-topleft",
+      "category": "table",
+      "visible_expectation": "지원서 접수 row is associated with2024-09-09 10:00 through2024-09-11 18:00.",
+      "expected_behavior": "preserve_table_relation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "구 분\n일 정\n지원서 접수(인터넷 접수)\n2024. 9. 9.(월) 10:00 ~ 9. 11.(수) 18:00"
+    },
+    {
+      "id": "snu-admissions-03",
+      "document_id": "snu-admissions",
+      "source_sha256": "47c10d341ef8038d27981a87785151a83a051001f373d0ebeae04e9bd1ee0537",
+      "page": 6,
+      "bbox": [
+        62.475,
+        160.631,
+        537.88,
+        222.024
+      ],
+      "space": "pdf-points-topleft",
+      "category": "table",
+      "visible_expectation": "The row hierarchy under the general admission category associates 서류제출 with September9-12 and 1단계 합격자 발표 with November15.",
+      "expected_behavior": "preserve_table_relation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "전 모집단위\n(사범대학\n서류제출(해당자) \n2024. 9. 9.(월) ~ 9. 12.(목) 10:00 ~ 18:00\n1단계 합격자 발표\n2024. 11. 15.(금) 18:00 이후\n2단계 전형료 납부*\n2024. 11. 18.(월) 10:00 ~ 11. 19.(화) 18:00"
+    },
+    {
+      "id": "snu-admissions-04",
+      "document_id": "snu-admissions",
+      "source_sha256": "47c10d341ef8038d27981a87785151a83a051001f373d0ebeae04e9bd1ee0537",
+      "page": 5,
+      "bbox": [
+        61.285,
+        79.895,
+        535.5,
+        126.15
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "학생부종합전형(지역균형전형) labels its own schedule table.",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Ⅰ\n 학생부종합전형(지역균형전형)"
+    },
+    {
+      "id": "mu-calculus-01",
+      "document_id": "mu-calculus",
+      "source_sha256": "cd679097a7495ddeebbb52cd6b62691b353549abdb2a79adec88f472fc3ac7bc",
+      "page": 2,
+      "bbox": [
+        227.481,
+        80.014,
+        375.165,
+        101.912
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "نموذج توصيف مقرر دراسي is the form title above the institutional rows.",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "نموذج\nتوصيف مقرر در\nاسي"
+    },
+    {
+      "id": "mu-calculus-02",
+      "document_id": "mu-calculus",
+      "source_sha256": "cd679097a7495ddeebbb52cd6b62691b353549abdb2a79adec88f472fc3ac7bc",
+      "page": 2,
+      "bbox": [
+        260.829,
+        220.669,
+        518.085,
+        240.041
+      ],
+      "space": "pdf-points-topleft",
+      "category": "table",
+      "visible_expectation": "عدد الساعات المعتمدة is associated with3 hours; preserve the right-to-left label-value relationship.",
+      "expected_behavior": "preserve_table_relation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "عدد الساعات المعتمد :\n3 ساعات \nأ"
+    },
+    {
+      "id": "mu-calculus-03",
+      "document_id": "mu-calculus",
+      "source_sha256": "cd679097a7495ddeebbb52cd6b62691b353549abdb2a79adec88f472fc3ac7bc",
+      "page": 4,
+      "bbox": [
+        23.82,
+        37.059,
+        577.635,
+        282.154
+      ],
+      "space": "pdf-points-topleft",
+      "category": "table",
+      "visible_expectation": "The right column carries course description and topic-distribution labels; the left column carries their content, not the reverse.",
+      "expected_behavior": "preserve_table_relation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "وصف المقرر \n \n \nمفردات المقرر وتوزيعها \n \n \n األعداد الحقيقية، المتباينات، الدوال، الدوال المتباينة ومعكوسها، تعريف النهاية، االتصال، خواص الدالة المتصلة\n على فترة، االشتقاق، طرق االشتقاق، النقاط الحرجة، القيم القصوى المطلقة، القيم القصوى المحلية، نظرية القيمة\nالمتوسطة، التزايد والتناقص، اختبار المشتق ة األولى، اختبار المشتقة الثانية، التقعر، نقاط االنقالب، الخطوط\nالتقاربية، رسم المنحنيات، مسائل القيم القصوى التطبيقية، مسائل المعدالت المترابطة، القطوع المخروطية.\n \n4\n ساعات \n، األعداد الحقيقية   الفترات، القيم \n.المطلقة والمتباينات \n6 ساعات \nالدوال الحقيقية،تعر يفها، المجال والمدى، الدوال المتباينة، الدوال الغامرة ، التقابل، العمليات الجبرية على الدوال"
+    },
+    {
+      "id": "mu-calculus-04",
+      "document_id": "mu-calculus",
+      "source_sha256": "cd679097a7495ddeebbb52cd6b62691b353549abdb2a79adec88f472fc3ac7bc",
+      "page": 2,
+      "bbox": [
+        80.392,
+        626.634,
+        518.085,
+        724.335
+      ],
+      "space": "pdf-points-topleft",
+      "category": "table",
+      "visible_expectation": "The objectives block follows its heading beneath the preceding course-information table; do not merge its bullets into the earlier row.",
+      "expected_behavior": "preserve_table_relation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "ب- األهداف: \n \n-\n:وصف موجز لنتائج التعلم األساسية للطلبة المسجلين في المقرر \n(۱\n.) دراسة الدالة مبتغري واحد وأمناطها بطرق دقيقة \n(۲\n ) دراسة مفاهيم النهاية و االتصال وطرق التفاضل"
+    },
+    {
+      "id": "jstage-1949-statistics-01",
+      "document_id": "jstage-1949-statistics",
+      "source_sha256": "7739ee22bc1b44cc71b86432af5c6d80707a24557a8f6a1f823f97613087c347",
+      "page": 1,
+      "bbox": [
+        50.648,
+        354.993,
+        230.838,
+        386.082
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "m=sum(x_i)/n and s^2=sum((x_i-m)^2)/(n-1); both summation formulas are visible.",
+      "expected_behavior": "flag_or_recover_math_loss",
+      "layer_status": "missing",
+      "detector_expected": true,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": ""
+    },
+    {
+      "id": "jstage-1949-statistics-02",
+      "document_id": "jstage-1949-statistics",
+      "source_sha256": "7739ee22bc1b44cc71b86432af5c6d80707a24557a8f6a1f823f97613087c347",
+      "page": 1,
+      "bbox": [
+        261.519,
+        314.505,
+        436.352,
+        331.857
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "Normal density phi(x)dx=(2*pi*sigma^2)^(-1/2)*exp(-(x-mu)^2/(2*sigma^2))*dx.",
+      "expected_behavior": "retain_math_relation",
+      "layer_status": "corrupt_ocr",
+      "detector_expected": null,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "φ(藤;(盆\nπσ2戸exp{(一\nμ)・/2σ・}砒"
+    },
+    {
+      "id": "jstage-1949-statistics-03",
+      "document_id": "jstage-1949-statistics",
+      "source_sha256": "7739ee22bc1b44cc71b86432af5c6d80707a24557a8f6a1f823f97613087c347",
+      "page": 2,
+      "bbox": [
+        262.98,
+        296.43,
+        440.735,
+        349.932
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "Equation(2) relates determinant products with t_1/x and t_2/x to the determinant of their combined matrix expression.",
+      "expected_behavior": "flag_or_recover_math_loss",
+      "layer_status": "missing",
+      "detector_expected": true,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "(2)"
+    },
+    {
+      "id": "jstage-1949-statistics-04",
+      "document_id": "jstage-1949-statistics",
+      "source_sha256": "7739ee22bc1b44cc71b86432af5c6d80707a24557a8f6a1f823f97613087c347",
+      "page": 1,
+      "bbox": [
+        35.551,
+        275.463,
+        134.412,
+        290.646
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "I. 独立性の判定條件 is a body section after the paper title, not a margin running title.",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "I。 独立性め判定條件"
+    },
+    {
+      "id": "acl2024-multilingual-01",
+      "document_id": "acl2024-multilingual",
+      "source_sha256": "1d7160f1fb7903f5357ac502e46118b0a1fb4f0a0f1561eea8baaad1ac79ca6a",
+      "page": 3,
+      "bbox": [
+        322.64,
+        77.454,
+        516.104,
+        123.758
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "Cross-entropy loss is the negative sum over j of y_j log(yhat_j).",
+      "expected_behavior": "retain_math_relation",
+      "layer_status": "present",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "ℓCE(y, ˆy) = −\n|V|\nX\nj=1\nyj log(ˆyj)\n("
+    },
+    {
+      "id": "acl2024-multilingual-02",
+      "document_id": "acl2024-multilingual",
+      "source_sha256": "1d7160f1fb7903f5357ac502e46118b0a1fb4f0a0f1561eea8baaad1ac79ca6a",
+      "page": 3,
+      "bbox": [
+        322.64,
+        211.314,
+        516.104,
+        248.358
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "SFT loss averages cross-entropy over N training examples using a1/N factor.",
+      "expected_behavior": "retain_math_relation",
+      "layer_status": "present",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "LSFT = 1\nN\nN\nX\ni=1\nℓCE(yi, Mθ(xi))\n("
+    },
+    {
+      "id": "acl2024-multilingual-03",
+      "document_id": "acl2024-multilingual",
+      "source_sha256": "1d7160f1fb7903f5357ac502e46118b0a1fb4f0a0f1561eea8baaad1ac79ca6a",
+      "page": 4,
+      "bbox": [
+        309.544,
+        192.793,
+        535.748,
+        246.674
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "Code-switching replaces x_i,k by Dict(x_i,k) with probability p, otherwise leaves x_i,k with probability1-p.",
+      "expected_behavior": "retain_math_relation",
+      "layer_status": "present",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "xi,k =\n(\nDict(xi,k)\nwith probability p;\nxi,k\nwith probability 1 −p,\n(5)"
+    },
+    {
+      "id": "acl2024-multilingual-04",
+      "document_id": "acl2024-multilingual",
+      "source_sha256": "1d7160f1fb7903f5357ac502e46118b0a1fb4f0a0f1561eea8baaad1ac79ca6a",
+      "page": 4,
+      "bbox": [
+        307.758,
+        377.167,
+        536.939,
+        570.801
+      ],
+      "space": "pdf-points-topleft",
+      "category": "table",
+      "visible_expectation": "The prompt-template table separates translation and completion templates; example translations are authored examples, not page alt descriptions.",
+      "expected_behavior": "preserve_table_relation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "The Template for Constructing Dmt and Dcomp\n# Construct Data for Machine Translation\nQuestion: Translate the following sentence from\nEnglish to Indonesian.\nThe quick brown fox jumps over the lazy dog.\nAnswer: Sang rubah cokelat cepat melompati an-\njing malas.\n# Construct Data for Sentence Completion\nQuestion: Complete the following sentence in In-\ndonesian according to its context.\nSang rubah cokelat cepat\nAnswer: Sang rubah cokelat cepat melompati an-\njing malas."
+    },
+    {
+      "id": "acl2024-multilingual-05",
+      "document_id": "acl2024-multilingual",
+      "source_sha256": "1d7160f1fb7903f5357ac502e46118b0a1fb4f0a0f1561eea8baaad1ac79ca6a",
+      "page": 3,
+      "bbox": [
+        87.6,
+        393.34,
+        129.829,
+        412.262
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Method",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Method",
+        "level": null,
+        "parent": null
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Method"
+    },
+    {
+      "id": "bccampus-accessibility-01",
+      "document_id": "bccampus-accessibility",
+      "source_sha256": "5e90615054edd1e8b66897fe705046b3ca8bcb43fb419d4c24f4912c66d24913",
+      "page": 38,
+      "bbox": [
+        191.556,
+        112.464,
+        417.384,
+        283.536
+      ],
+      "space": "pdf-points-topleft",
+      "category": "illustration",
+      "visible_expectation": "An illustration of a person at a computer stays a figure; its image description must not be inserted as a literal quotation from body prose.",
+      "expected_behavior": "preserve_figure_separation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": ""
+    },
+    {
+      "id": "bccampus-accessibility-02",
+      "document_id": "bccampus-accessibility",
+      "source_sha256": "5e90615054edd1e8b66897fe705046b3ca8bcb43fb419d4c24f4912c66d24913",
+      "page": 38,
+      "bbox": [
+        55.469,
+        503.49,
+        174.137,
+        522.878
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Functional images",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Functional images",
+        "level": 3,
+        "parent": "Images"
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Functional images"
+    },
+    {
+      "id": "bccampus-accessibility-03",
+      "document_id": "bccampus-accessibility",
+      "source_sha256": "5e90615054edd1e8b66897fe705046b3ca8bcb43fb419d4c24f4912c66d24913",
+      "page": 55,
+      "bbox": [
+        55.692,
+        57.816,
+        147.492,
+        85.536
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "6. Tables",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "6. Tables",
+        "level": 2,
+        "parent": null
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "6.  Tables"
+    },
+    {
+      "id": "bccampus-accessibility-04",
+      "document_id": "bccampus-accessibility",
+      "source_sha256": "5e90615054edd1e8b66897fe705046b3ca8bcb43fb419d4c24f4912c66d24913",
+      "page": 83,
+      "bbox": [
+        83.904,
+        309.936,
+        115.962,
+        324.624
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Images",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Images",
+        "level": 2,
+        "parent": "Appendix A: Checklist for Accessibility"
+      },
+      "related_locations": [
+        {
+          "page": 37,
+          "role": "body-heading Images, source outline level2"
+        },
+        {
+          "page": 92,
+          "role": "body-heading Images, source outline level2"
+        }
+      ],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Images"
+    },
+    {
+      "id": "bccampus-accessibility-05",
+      "document_id": "bccampus-accessibility",
+      "source_sha256": "5e90615054edd1e8b66897fe705046b3ca8bcb43fb419d4c24f4912c66d24913",
+      "page": 68,
+      "bbox": [
+        220.932,
+        437.184,
+        368.424,
+        534.6
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "m=m_0/sqrt(1-v^2/c^2) is visible inside the example image; denominator scope includes the whole square root.",
+      "expected_behavior": "flag_or_recover_math_loss",
+      "layer_status": "missing",
+      "detector_expected": true,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": ""
+    },
+    {
+      "id": "bccampus-accessibility-06",
+      "document_id": "bccampus-accessibility",
+      "source_sha256": "5e90615054edd1e8b66897fe705046b3ca8bcb43fb419d4c24f4912c66d24913",
+      "page": 68,
+      "bbox": [
+        55.469,
+        236.125,
+        192.487,
+        255.513
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Image with an alt tag",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Image with an alt tag",
+        "level": 3,
+        "parent": "Formulas"
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Image with an alt tag"
+    },
+    {
+      "id": "prince-icelandic-01",
+      "document_id": "prince-icelandic",
+      "source_sha256": "da4f0973847b82f7bcc74b6c09b7b651a4573f8435436c334580cc895eea82fa",
+      "page": 37,
+      "bbox": [
+        101.594,
+        46.488,
+        158.74,
+        121.323
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "The large Á opens the dictionary chapter named Á.",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Á",
+        "level": 1,
+        "parent": null
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Á"
+    },
+    {
+      "id": "prince-icelandic-02",
+      "document_id": "prince-icelandic",
+      "source_sha256": "da4f0973847b82f7bcc74b6c09b7b651a4573f8435436c334580cc895eea82fa",
+      "page": 37,
+      "bbox": [
+        420.435,
+        113.386,
+        453.09,
+        170.079
+      ],
+      "space": "pdf-points-topleft",
+      "category": "rotated-margin",
+      "visible_expectation": "The vertical Á thumb tab is a navigation tab; abstain from using it as a new upright heading.",
+      "expected_behavior": "abstain_from_upright_heading_repair",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": null,
+      "related_locations": [
+        {
+          "page": 39,
+          "role": "rotated-thumb-tab"
+        }
+      ],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Á"
+    },
+    {
+      "id": "prince-icelandic-03",
+      "document_id": "prince-icelandic",
+      "source_sha256": "da4f0973847b82f7bcc74b6c09b7b651a4573f8435436c334580cc895eea82fa",
+      "page": 38,
+      "bbox": [
+        214.072,
+        21.543,
+        231.307,
+        43.654
+      ],
+      "space": "pdf-points-topleft",
+      "category": "margin-furniture",
+      "visible_expectation": "Centered Á at top repeats the current dictionary chapter; it is not a new chapter.",
+      "expected_behavior": "exclude_margin_furniture",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": null,
+      "related_locations": [
+        {
+          "page": 37,
+          "role": "running-letter"
+        },
+        {
+          "page": 39,
+          "role": "running-letter"
+        }
+      ],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Á"
+    },
+    {
+      "id": "prince-icelandic-04",
+      "document_id": "prince-icelandic",
+      "source_sha256": "da4f0973847b82f7bcc74b6c09b7b651a4573f8435436c334580cc895eea82fa",
+      "page": 39,
+      "bbox": [
+        55.786,
+        249.449,
+        379.616,
+        313.512
+      ],
+      "space": "pdf-points-topleft",
+      "category": "dictionary-columns",
+      "visible_expectation": "Alphabetic entries flow down the left column before the right; do not interleave the two entry lists.",
+      "expected_behavior": "preserve_figure_separation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "ment, imperfect (þar er honum þótti\n-vant um kristnihaldit).\nábóti, m. abbot.\ná-breiða, f., á-breizl, n. bed-covering,\ncounterpane.\ná-brúðigr, a. = afbrúðigr; ábbrýða, v.\nfb ýð\ná brýði f\nfb ýði\n(löngu) á., a little while (long) before\n= áðr en, previous to the time when, bef\nere; þeir höfðu skamma hríð setið á.\nkom Gunnhildr, they had sat but a s\nwhile before G. came; dóu margir á.\nkœmi til fyrirheitsjarðar, before they c\nt th l\nd f\ni\n(4)\ntil till"
+    },
+    {
+      "id": "w3c-word-columns-01",
+      "document_id": "w3c-word-columns",
+      "source_sha256": "9a3a38c444fa165d2b33af41fb2c90502c52def5c560f5d543afe01d937d6e80",
+      "page": 1,
+      "bbox": [
+        70.776,
+        92.916,
+        253.863,
+        114.982
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Application for this and that",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Application for this and that",
+        "level": 1,
+        "parent": null
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Application for this and that"
+    },
+    {
+      "id": "w3c-word-columns-02",
+      "document_id": "w3c-word-columns",
+      "source_sha256": "9a3a38c444fa165d2b33af41fb2c90502c52def5c560f5d543afe01d937d6e80",
+      "page": 1,
+      "bbox": [
+        70.776,
+        261.087,
+        95.113,
+        281.699
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "List",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "List",
+        "level": 2,
+        "parent": "Application for this and that"
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "List"
+    },
+    {
+      "id": "w3c-word-columns-03",
+      "document_id": "w3c-word-columns",
+      "source_sha256": "9a3a38c444fa165d2b33af41fb2c90502c52def5c560f5d543afe01d937d6e80",
+      "page": 1,
+      "bbox": [
+        70.776,
+        422.076,
+        149.307,
+        444.142
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Header One",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Header One",
+        "level": 1,
+        "parent": null
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Header One"
+    },
+    {
+      "id": "w3c-word-columns-04",
+      "document_id": "w3c-word-columns",
+      "source_sha256": "9a3a38c444fa165d2b33af41fb2c90502c52def5c560f5d543afe01d937d6e80",
+      "page": 1,
+      "bbox": [
+        70.776,
+        600.327,
+        143.96,
+        620.939
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Another list",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Another list",
+        "level": 2,
+        "parent": "Header One"
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Another list"
+    },
+    {
+      "id": "w3c-word-columns-05",
+      "document_id": "w3c-word-columns",
+      "source_sha256": "9a3a38c444fa165d2b33af41fb2c90502c52def5c560f5d543afe01d937d6e80",
+      "page": 1,
+      "bbox": [
+        322.776,
+        205.476,
+        457.228,
+        227.542
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Another Header One",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Another Header One",
+        "level": 1,
+        "parent": null
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Another Header One"
+    },
+    {
+      "id": "qmul-probability-01",
+      "document_id": "qmul-probability",
+      "source_sha256": "f50433d8c283f0ce72e25e4f166b70bb69082a6b5dada5077191ae2644bacb94",
+      "page": 11,
+      "bbox": [
+        80.362,
+        149.856,
+        474.435,
+        202.054
+      ],
+      "space": "pdf-points-topleft",
+      "category": "inline-math",
+      "visible_expectation": "P(A intersection B)=3/8 is explicitly distinguished from P(A)*P(B).",
+      "expected_behavior": "retain_math_relation",
+      "layer_status": "present",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "a forward slash /.\nIn the example, A′ is the event ‘more tails than heads’, and A∩B is the event\n{HHH,THH,HTH}. Note that P(A∩B) = 3/8; this is not equal to P(A)·P(B),\ndespite what you read in some books!"
+    },
+    {
+      "id": "qmul-probability-02",
+      "document_id": "qmul-probability",
+      "source_sha256": "f50433d8c283f0ce72e25e4f166b70bb69082a6b5dada5077191ae2644bacb94",
+      "page": 11,
+      "bbox": [
+        86.315,
+        671.828,
+        312.52,
+        724.025
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "Axiom2 states P(S)=1, while Axiom1 gives P(A)>=0.",
+      "expected_behavior": "retain_math_relation",
+      "layer_status": "present",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Axiom 1: For any event A, we have P(A) ≥0.\nAxiom 2: P(S) = 1."
+    },
+    {
+      "id": "qmul-probability-03",
+      "document_id": "qmul-probability",
+      "source_sha256": "f50433d8c283f0ce72e25e4f166b70bb69082a6b5dada5077191ae2644bacb94",
+      "page": 12,
+      "bbox": [
+        244.063,
+        254.251,
+        397.049,
+        283.717
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "For pairwise disjoint events, P(A_1 union...union A_n)=sum_i P(A_i).",
+      "expected_behavior": "retain_math_relation",
+      "layer_status": "present",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "P(A1 ∪···∪An) =\nn\n∑\ni=1\nP(Ai),"
+    },
+    {
+      "id": "qmul-probability-04",
+      "document_id": "qmul-probability",
+      "source_sha256": "f50433d8c283f0ce72e25e4f166b70bb69082a6b5dada5077191ae2644bacb94",
+      "page": 12,
+      "bbox": [
+        161.35,
+        423.889,
+        394.383,
+        444.472
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Proving things from the axioms",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Proving things from the axioms",
+        "level": null,
+        "parent": null
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Proving things from the axioms"
+    },
+    {
+      "id": "lille-course-guide-01",
+      "document_id": "lille-course-guide",
+      "source_sha256": "1ec6d49f41a0241fe05b53f591e58f64d9f24938c1b6005e3b0cd5b6a436fa64",
+      "page": 7,
+      "bbox": [
+        186.39,
+        69.296,
+        407.198,
+        89.072
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "STRUCTURE DE LA FORMATION",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "STRUCTURE DE LA FORMATION",
+        "level": 1,
+        "parent": null
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "STRUCTURE DE LA FORMATION"
+    },
+    {
+      "id": "lille-course-guide-02",
+      "document_id": "lille-course-guide",
+      "source_sha256": "1ec6d49f41a0241fe05b53f591e58f64d9f24938c1b6005e3b0cd5b6a436fa64",
+      "page": 7,
+      "bbox": [
+        261.91,
+        110.302,
+        335.721,
+        128.826
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "SEMESTRE 1",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "SEMESTRE 1",
+        "level": 2,
+        "parent": "Structure de la formation"
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "SEMESTRE 1"
+    },
+    {
+      "id": "lille-course-guide-03",
+      "document_id": "lille-course-guide",
+      "source_sha256": "1ec6d49f41a0241fe05b53f591e58f64d9f24938c1b6005e3b0cd5b6a436fa64",
+      "page": 7,
+      "bbox": [
+        259.41,
+        365.266,
+        334.858,
+        382.698
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "SEMESTRE 2",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "SEMESTRE 2",
+        "level": 2,
+        "parent": "Structure de la formation"
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "SEMESTRE 2"
+    },
+    {
+      "id": "lille-course-guide-04",
+      "document_id": "lille-course-guide",
+      "source_sha256": "1ec6d49f41a0241fe05b53f591e58f64d9f24938c1b6005e3b0cd5b6a436fa64",
+      "page": 7,
+      "bbox": [
+        111.312,
+        145.666,
+        476.795,
+        202.08
+      ],
+      "space": "pdf-points-topleft",
+      "category": "table",
+      "visible_expectation": "Each of the three BCC Fondements theoriques1 subjects has6 ECTS.",
+      "expected_behavior": "preserve_table_relation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "ECTS \nBCC Fondements théoriques 1 \n6 \n6 \n6 \nProbabilités : modèles et applications \nModélisation et approximation par différences finies \nOptimisation convexe"
+    },
+    {
+      "id": "lille-course-guide-05",
+      "document_id": "lille-course-guide",
+      "source_sha256": "1ec6d49f41a0241fe05b53f591e58f64d9f24938c1b6005e3b0cd5b6a436fa64",
+      "page": 7,
+      "bbox": [
+        111.312,
+        399.95,
+        476.795,
+        447.944
+      ],
+      "space": "pdf-points-topleft",
+      "category": "table",
+      "visible_expectation": "BCC Fondements theoriques2 associates6 ECTS with elliptic/parabolic problems and9 ECTS with scientific-computing numerical tools.",
+      "expected_behavior": "preserve_table_relation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "ECTS \nBCC Fondements théoriques 2 \n6 \n9 \nEtude de problèmes elliptiques et paraboliques \nOutils numériques pour le calcul scientifique \nMéthodes spectrales et Fourier"
+    },
+    {
+      "id": "openstax-introductory-statistics-2e-01",
+      "document_id": "openstax-introductory-statistics-2e",
+      "source_sha256": "a79a953b75e570030c74ea6f700b8bd70f41dc8c01bf4e9618e6a0adba3a382a",
+      "page": 38,
+      "bbox": [
+        70.776,
+        136.965,
+        486.475,
+        158.908
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "1.3 Frequency, Frequency Tables, and Levels of Measurement",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "1.3 Frequency, Frequency Tables, and Levels of Measurement",
+        "level": 2,
+        "parent": "Chapter 1 Sampling and Data"
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "1.3 Frequency, Frequency Tables, and Levels of Measurement"
+    },
+    {
+      "id": "openstax-introductory-statistics-2e-02",
+      "document_id": "openstax-introductory-statistics-2e",
+      "source_sha256": "a79a953b75e570030c74ea6f700b8bd70f41dc8c01bf4e9618e6a0adba3a382a",
+      "page": 110,
+      "bbox": [
+        70.776,
+        589.895,
+        328.984,
+        611.839
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "2.5 Measures of the Center of the Data",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "2.5 Measures of the Center of the Data",
+        "level": 2,
+        "parent": "Chapter 2 Descriptive Statistics"
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "2.5 Measures of the Center of the Data"
+    },
+    {
+      "id": "openstax-introductory-statistics-2e-03",
+      "document_id": "openstax-introductory-statistics-2e",
+      "source_sha256": "a79a953b75e570030c74ea6f700b8bd70f41dc8c01bf4e9618e6a0adba3a382a",
+      "page": 242,
+      "bbox": [
+        70.776,
+        322.59,
+        425.358,
+        344.533
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "4.2 Mean or Expected Value and Standard Deviation",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "4.2 Mean or Expected Value and Standard Deviation",
+        "level": 2,
+        "parent": "Chapter 4 Discrete Random Variables"
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "4.2 Mean or Expected Value and Standard Deviation"
+    },
+    {
+      "id": "openstax-introductory-statistics-2e-04",
+      "document_id": "openstax-introductory-statistics-2e",
+      "source_sha256": "a79a953b75e570030c74ea6f700b8bd70f41dc8c01bf4e9618e6a0adba3a382a",
+      "page": 110,
+      "bbox": [
+        141.372,
+        398.376,
+        484.092,
+        479.952
+      ],
+      "space": "pdf-points-topleft",
+      "category": "diagram",
+      "visible_expectation": "Boxplot five-number summary is10,15,95,490,790; quartile and median markers must remain associated with their positions.",
+      "expected_behavior": "preserve_figure_separation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "ph shows the box and whisker plot. \nFigure 2.15"
+    },
+    {
+      "id": "openstax-introductory-statistics-2e-05",
+      "document_id": "openstax-introductory-statistics-2e",
+      "source_sha256": "a79a953b75e570030c74ea6f700b8bd70f41dc8c01bf4e9618e6a0adba3a382a",
+      "page": 111,
+      "bbox": [
+        348.84,
+        315.216,
+        365.976,
+        332.64
+      ],
+      "space": "pdf-points-topleft",
+      "category": "inline-math",
+      "visible_expectation": "The location-of-median expression is(n+1)/2, not n+1 divided after an unrelated clause.",
+      "expected_behavior": "flag_or_recover_math_loss",
+      "layer_status": "missing",
+      "detector_expected": true,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "."
+    },
+    {
+      "id": "openstax-introductory-statistics-2e-06",
+      "document_id": "openstax-introductory-statistics-2e",
+      "source_sha256": "a79a953b75e570030c74ea6f700b8bd70f41dc8c01bf4e9618e6a0adba3a382a",
+      "page": 111,
+      "bbox": [
+        198.288,
+        243.936,
+        414.936,
+        273.24
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "The sample mean is a fraction whose denominator is11 and value2.7.",
+      "expected_behavior": "flag_or_recover_math_loss",
+      "layer_status": "missing",
+      "detector_expected": true,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": ""
+    },
+    {
+      "id": "openstax-introductory-statistics-2e-07",
+      "document_id": "openstax-introductory-statistics-2e",
+      "source_sha256": "a79a953b75e570030c74ea6f700b8bd70f41dc8c01bf4e9618e6a0adba3a382a",
+      "page": 242,
+      "bbox": [
+        269.28,
+        540.144,
+        342.108,
+        558.36
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "mu=sum(x*P(x)) gives the expected value.",
+      "expected_behavior": "flag_or_recover_math_loss",
+      "layer_status": "missing",
+      "detector_expected": true,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": ""
+    },
+    {
+      "id": "openstax-introductory-statistics-2e-08",
+      "document_id": "openstax-introductory-statistics-2e",
+      "source_sha256": "a79a953b75e570030c74ea6f700b8bd70f41dc8c01bf4e9618e6a0adba3a382a",
+      "page": 242,
+      "bbox": [
+        246.024,
+        578.16,
+        365.976,
+        600.336
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "sigma is the square root of sum((x-mu)^2*P(x)).",
+      "expected_behavior": "flag_or_recover_math_loss",
+      "layer_status": "missing",
+      "detector_expected": true,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": ""
+    },
+    {
+      "id": "openstax-introductory-statistics-2e-09",
+      "document_id": "openstax-introductory-statistics-2e",
+      "source_sha256": "a79a953b75e570030c74ea6f700b8bd70f41dc8c01bf4e9618e6a0adba3a382a",
+      "page": 242,
+      "bbox": [
+        282.132,
+        63.36,
+        332.316,
+        185.328
+      ],
+      "space": "pdf-points-topleft",
+      "category": "table",
+      "visible_expectation": "The P(x) table pairs0 with0.01,1 with0.04,2 with0.15,and3 with0.80.",
+      "expected_behavior": "preserve_table_relation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "x \nP(x) \n0 \n0.01 \n1 \n0.04 \n2 \n0.15 \n3 \n0.80"
+    },
+    {
+      "id": "openstax-introductory-statistics-2e-10",
+      "document_id": "openstax-introductory-statistics-2e",
+      "source_sha256": "a79a953b75e570030c74ea6f700b8bd70f41dc8c01bf4e9618e6a0adba3a382a",
+      "page": 38,
+      "bbox": [
+        70.992,
+        755.568,
+        178.704,
+        770.616
+      ],
+      "space": "pdf-points-topleft",
+      "category": "margin-furniture",
+      "visible_expectation": "Access for free at openstax.org is a repeating footer, not a heading.",
+      "expected_behavior": "exclude_margin_furniture",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": null,
+      "related_locations": [
+        {
+          "page": 110,
+          "role": "footer"
+        },
+        {
+          "page": 242,
+          "role": "footer"
+        }
+      ],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Access for free at openstax.org"
+    },
+    {
+      "id": "openstax-introduction-computer-science-01",
+      "document_id": "openstax-introduction-computer-science",
+      "source_sha256": "fd56aaf80c851e9f3b417745785ea5c832fc2911acfd2094a86f4c517fdf435a",
+      "page": 116,
+      "bbox": [
+        70.992,
+        53.856,
+        253.98,
+        74.448
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Time and Space Complexity",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Time and Space Complexity",
+        "level": null,
+        "parent": null
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Time and Space Complexity"
+    },
+    {
+      "id": "openstax-introduction-computer-science-02",
+      "document_id": "openstax-introduction-computer-science",
+      "source_sha256": "fd56aaf80c851e9f3b417745785ea5c832fc2911acfd2094a86f4c517fdf435a",
+      "page": 216,
+      "bbox": [
+        70.776,
+        55.411,
+        306.418,
+        73.289
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Unsigned Integer Numbers Representation",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Unsigned Integer Numbers Representation",
+        "level": null,
+        "parent": null
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Unsigned Integer Numbers Representation"
+    },
+    {
+      "id": "openstax-introduction-computer-science-03",
+      "document_id": "openstax-introduction-computer-science",
+      "source_sha256": "fd56aaf80c851e9f3b417745785ea5c832fc2911acfd2094a86f4c517fdf435a",
+      "page": 216,
+      "bbox": [
+        70.776,
+        236.311,
+        291.74,
+        254.189
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Signed Integer Numbers Representation",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Signed Integer Numbers Representation",
+        "level": null,
+        "parent": null
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Signed Integer Numbers Representation"
+    },
+    {
+      "id": "openstax-introduction-computer-science-04",
+      "document_id": "openstax-introduction-computer-science",
+      "source_sha256": "fd56aaf80c851e9f3b417745785ea5c832fc2911acfd2094a86f4c517fdf435a",
+      "page": 115,
+      "bbox": [
+        85.68,
+        576.576,
+        522.648,
+        673.2
+      ],
+      "space": "pdf-points-topleft",
+      "category": "diagram",
+      "visible_expectation": "Flame-graph bars show call durations; do not insert bar labels as an unrelated formula sentence.",
+      "expected_behavior": "preserve_figure_separation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": ""
+    },
+    {
+      "id": "openstax-introduction-computer-science-05",
+      "document_id": "openstax-introduction-computer-science",
+      "source_sha256": "fd56aaf80c851e9f3b417745785ea5c832fc2911acfd2094a86f4c517fdf435a",
+      "page": 216,
+      "bbox": [
+        165.24,
+        348.48,
+        446.76,
+        459.36
+      ],
+      "space": "pdf-points-topleft",
+      "category": "table",
+      "visible_expectation": "The three binary representation columns differ:100 is minus0 for sign-magnitude,minus3 for ones complement,andminus4 for twos complement.",
+      "expected_behavior": "preserve_table_relation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": ""
+    },
+    {
+      "id": "openstax-introduction-computer-science-06",
+      "document_id": "openstax-introduction-computer-science",
+      "source_sha256": "fd56aaf80c851e9f3b417745785ea5c832fc2911acfd2094a86f4c517fdf435a",
+      "page": 216,
+      "bbox": [
+        141.984,
+        202.752,
+        193.392,
+        220.968
+      ],
+      "space": "pdf-points-topleft",
+      "category": "inline-math",
+      "visible_expectation": "The upper end of the unsigned range is2^n-1, with n as the exponent.",
+      "expected_behavior": "retain_math_relation",
+      "layer_status": "present",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": ",\n,\nm 0 to 2n – 1."
+    },
+    {
+      "id": "openstax-introduction-computer-science-07",
+      "document_id": "openstax-introduction-computer-science",
+      "source_sha256": "fd56aaf80c851e9f3b417745785ea5c832fc2911acfd2094a86f4c517fdf435a",
+      "page": 217,
+      "bbox": [
+        318.24,
+        380.952,
+        403.92,
+        400.752
+      ],
+      "space": "pdf-points-topleft",
+      "category": "inline-math",
+      "visible_expectation": "The signed n-bit range is[-2^(n-1),+2^(n-1)-1].",
+      "expected_behavior": "retain_math_relation",
+      "layer_status": "present",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "[–2n – 1, +2n – 1 – 1]."
+    },
+    {
+      "id": "openstax-introduction-computer-science-08",
+      "document_id": "openstax-introduction-computer-science",
+      "source_sha256": "fd56aaf80c851e9f3b417745785ea5c832fc2911acfd2094a86f4c517fdf435a",
+      "page": 217,
+      "bbox": [
+        235.62,
+        510.048,
+        376.38,
+        636.768
+      ],
+      "space": "pdf-points-topleft",
+      "category": "table",
+      "visible_expectation": "The printed last row is Op1=1,Op2=1,Carry=1,Sum=1. Preserve the source value1 even though it is an arithmetic error.",
+      "expected_behavior": "preserve_table_relation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Op1 \nOp2 \nCarry \nSum \n0 \n0 \n0 \n0 \n0 \n1 \n0 \n1 \n1 \n0 \n0 \n1 \n1 \n1 \n1 \n1"
+    }
+  ],
+  "frozen_at": "2026-09-19T18:20:52.374224+00:00",
+  "source_manifest_sha256": "6a8bb30ed4e1d1a15736329f7c63f8c99a17173b51a9b3ce77d973ab467f4eda",
+  "freeze_note": "Source render and native PDF layer only were inspected before this freeze. No detector results, repaired output or native-alt decisions were inspected.",
+  "tranche": "initial-104"
+}

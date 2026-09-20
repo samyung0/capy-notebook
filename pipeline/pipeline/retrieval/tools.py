@@ -301,9 +301,11 @@ class ToolContext:
     # citations. The ledger is loaded from the chat request at turn start.
     curate: bool = False
     ledger: Ledger = field(default_factory=Ledger)
-    # The library's topic catalog, fetched once per turn for the knowledge
-    # tool descriptions.
+    # The library's subjects that hold excerpts, fetched once per turn for the
+    # browse_knowledge description, and the topics of each subject browsed
+    # this turn, which is where search_knowledge topic ids come from.
     library_catalog: list[dict[str, Any]] | None = None
+    subject_topics: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     # Resource operations the gateway granted this actor for the turn
     # (contract.OPERATIONS names). Tools whose required operations are not all
     # present are neither offered nor dispatched.
@@ -793,7 +795,7 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
 
 
 async def load_library_catalog(ctx: ToolContext) -> None:
-    """Read the library's topic catalog once, for the tool descriptions."""
+    """Read the library's subject list once, for the tool descriptions."""
     if not ctx.curate or ctx.library_catalog is not None or not library.enabled():
         return
     db = await library.pool()
@@ -803,20 +805,29 @@ async def load_library_catalog(ctx: ToolContext) -> None:
 
 def _catalog_lines(catalog: list[dict[str, Any]]) -> str:
     lines = []
-    for topic in catalog:
-        aliases = ", ".join(str(a) for a in (topic.get("aliases") or []))
-        scope = str(topic.get("scope") or "")
+    for subject in catalog:
+        aliases = ", ".join(str(a) for a in (subject.get("aliases") or []))
         lines.append(
-            f"- {topic['id']}: {topic['label']}"
+            f"- {subject['id']}: {subject['label']}"
             + (f" (also: {aliases})" if aliases else "")
-            + (f" — {scope}" if scope else "")
+            + f" — {int(subject.get('excerpts') or 0)} excerpts"
         )
     return "\n".join(lines)
 
 
-def _unknown_topics(ctx: ToolContext, topics: list[str]) -> list[str]:
-    known = {str(topic["id"]) for topic in ctx.library_catalog or []}
-    return [topic for topic in topics if topic not in known]
+async def _unknown_topics(ctx: ToolContext, topics: list[str]) -> list[str]:
+    """Topic ids the library does not hold.
+
+    Ids seen in a subject browse this turn are known; the rest are checked
+    against the library in one query, so a model that skips browsing still
+    gets a refusal naming the ids rather than an empty search.
+    """
+    known = {str(t["id"]) for ts in ctx.subject_topics.values() for t in ts}
+    unchecked = [topic for topic in topics if topic not in known]
+    if not unchecked:
+        return []
+    held = await library.known_topics(unchecked)
+    return [topic for topic in unchecked if topic not in held]
 
 
 def _facets(args: dict[str, Any]) -> tuple[list[str], list[str]]:
@@ -857,9 +868,9 @@ def _no_excerpts(
     )
     if not topics:
         return (
-            f"{head} This search had no topic filter. Pass topics from the "
-            "catalog in the browse_knowledge description to see what the "
-            "library holds for them by role."
+            f"{head} This search had no topic filter. Browse a subject from the "
+            "browse_knowledge description to get its topic ids, then pass "
+            "topics to see what the library holds for them by role."
         )
     held = ", ".join(f"{role} {count}" for role, count in (available or {}).items())
     if held:
@@ -872,11 +883,11 @@ async def _search_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResul
     if not query:
         return _refused("search_knowledge needs a query.")
     topics, roles = _facets(args)
-    unknown = _unknown_topics(ctx, topics)
+    unknown = await _unknown_topics(ctx, topics)
     if unknown:
         return _refused(
-            f"Unknown topic ids {unknown}. Use the topic ids from the catalog in "
-            "the browse_knowledge description."
+            f"Unknown topic ids {unknown}. Topic ids come from browsing a subject "
+            "listed in the browse_knowledge description."
         )
     if ctx.budget is not None:
         ctx.budget.embedding_calls += 1
@@ -904,14 +915,43 @@ async def _search_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResul
     )
 
 
+def _subject_browse(result: dict[str, Any]) -> str:
+    """One line per topic with its count; the topic ids are what search takes."""
+    subject = result["subject"]
+    topics = result["topics"]
+    head = f"{subject['id']}: {subject['label']} — {len(topics)} topics"
+    if not topics:
+        return f"{head}. The library holds no topic for this subject yet."
+    lines = [
+        f"- {t['id']}: {t['label']}"
+        + (f" — {t['scope']}" if t.get("scope") else "")
+        + f" ({int(t.get('excerpts') or 0)} excerpts)"
+        for t in topics
+    ]
+    return (
+        head
+        + "\n"
+        + "\n".join(lines)
+        + "\n\nBrowse a topic id next to see its excerpts by role and book, or "
+        "pass topic ids to search_knowledge."
+    )
+
+
 async def _browse_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    subject = str(args.get("subject") or "").strip()
     topic = str(args.get("topic") or "").strip()
-    if _unknown_topics(ctx, [topic]):
+    if bool(subject) == bool(topic):
         return _refused(
-            f"Unknown topic id {topic!r}. Use the topic ids from the catalog in this "
-            "tool's description."
+            "browse_knowledge takes exactly one of subject (a subject id from "
+            "this tool's description) or topic (a topic id from a subject browse)."
         )
+    # Dispatch on the argument given, never on which catalog holds the id: a
+    # topic id may coincide with a subject id.
     try:
+        if subject:
+            listing = await library.browse_subject(subject)
+            ctx.subject_topics[subject] = listing["topics"]
+            return _result(_subject_browse(listing))
         result = await library.browse(topic, page=int(args.get("page") or 1))
     except ValueError as exc:
         return _refused(f"browse_knowledge: {exc}")
@@ -1812,10 +1852,11 @@ def schemas_for(ctx: ToolContext) -> list[dict[str, Any]]:
             schema["function"]["description"] = override
     if not ctx.library_catalog:
         return schemas
-    # The model maps the learner's words onto topic ids. The catalog is long,
-    # so it rides on browse_knowledge only and search_knowledge points there.
-    catalog = "\n\nTopic catalog of this library:\n" + _catalog_lines(
-        ctx.library_catalog
+    # The model maps the learner's words onto a subject, browses it for topic
+    # ids, and searches with those. The list rides on browse_knowledge only.
+    catalog = (
+        "\n\nSubjects this library holds (browse one for its topic ids):\n"
+        + _catalog_lines(ctx.library_catalog)
     )
     for schema in schemas:
         if schema["function"]["name"] == "browse_knowledge":

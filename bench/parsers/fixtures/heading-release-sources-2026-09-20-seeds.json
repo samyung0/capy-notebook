@@ -1,0 +1,10 @@
+{
+  "sources": [
+    {"id":"heading-r-intro","title":"An Introduction to R","url":"https://cran.r-project.org/doc/manuals/r-release/R-intro.pdf","landing_page":"https://cran.r-project.org/manuals.html","family":"R Project Texinfo manual","language":"en","licence":"To verify from source"},
+    {"id":"heading-forallx","title":"forall x Calgary","url":"https://forallx.openlogicproject.org/forallxyyc.pdf","landing_page":"https://forallx.openlogicproject.org/","family":"Open Logic Project textbook","language":"en","licence":"To verify from source"},
+    {"id":"heading-oecd","title":"Education at a Glance 2024","url":"https://www.oecd.org/content/dam/oecd/en/publications/reports/2024/09/education-at-a-glance-2024_5ea68448/c00cad36-en.pdf","landing_page":"https://www.oecd.org/en/publications/education-at-a-glance-2024_c00cad36-en.html","family":"OECD report","language":"en","licence":"To verify from source"},
+    {"id":"heading-libreoffice","title":"Getting Started 7.5","url":"https://books.libreoffice.org/en/GS75/GS75-GettingStarted.pdf","landing_page":"https://documentation.libreoffice.org/en/english-documentation/getting-started-guide/","family":"LibreOffice manual","language":"en","licence":"To verify from source"},
+    {"id":"heading-weasyprint","title":"WeasyPrint sample report","url":"https://github.com/CourtBouillon/weasyprint-samples/raw/main/report/report.pdf","landing_page":"https://weasyprint.org/","family":"WeasyPrint HTML report","language":"en","licence":"To verify from source"},
+    {"id":"heading-boe","title":"Monetary Policy Report February 2025","url":"https://www.bankofengland.co.uk/-/media/boe/files/monetary-policy-report/2025/february/monetary-policy-report-february-2025.pdf","landing_page":"https://www.bankofengland.co.uk/monetary-policy-report/2025/february-2025","family":"Bank of England report","language":"en","licence":"Unknown; private benchmark only"}
+  ]
+}

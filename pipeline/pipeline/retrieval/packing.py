@@ -32,6 +32,7 @@ from .chunking import (
     _as_list,
     _Block,
     _build,
+    _heading_boundary_level,
     _is_furniture,
     _push_heading,
     chunk_content_list,
@@ -422,6 +423,17 @@ def pack_blocks(blocks: list[dict], furniture: frozenset[str]) -> list[Chunk]:
         ]
 
     for block in prepared:
+        boundary = _heading_boundary_level(block)
+        if boundary is not None:
+            if stack and stack[-1][0] >= boundary:
+                flush()
+                while stack and stack[-1][0] >= boundary:
+                    stack.pop()
+                seed[:] = [
+                    {"type": "text", "text_level": level, "text": text}
+                    for level, text in stack
+                ]
+            continue
         if block.get("type") == "text" and block.get("text_level", 0) > 0:
             _push_heading(stack, block["text_level"], block["text"])
         if not block.get("_native_table_supported"):

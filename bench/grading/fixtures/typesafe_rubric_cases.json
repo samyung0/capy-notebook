@@ -1,0 +1,1157 @@
+{
+ "_note": "Multi-rubric grading probe for typesafe.ai jev. Each answer carries per-rubric truth (met: 1/0). Answer kinds: full, terse_full, partial_*, keyword_stuffed (rubric vocabulary without the point), contradiction (meets the others, states the opposite of one), offtopic (fluent, wrong question).",
+ "cases": [
+  {
+   "domain": "history",
+   "question": "Explain why the Roman Republic gave way to rule by an emperor.",
+   "rubrics": [
+    "Soldiers' loyalty shifted from the state to individual generals who paid and rewarded them (after Marius's reforms).",
+    "Constitutional norms broke down, for example Sulla marching on Rome, irregular dictatorships and proscriptions.",
+    "A series of civil wars ended with Octavian's victory over Antony at Actium.",
+    "Augustus kept republican offices and forms while holding real power himself (the settlement of 27 BC, princeps)."
+   ],
+   "answers": [
+    {
+     "label": "full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "After Marius let landless men enlist, legionaries depended on their commander for pay and land, so armies became loyal to men like Sulla, Pompey and Caesar rather than to the Senate. Sulla then marched on Rome itself and ruled as dictator with proscription lists, showing the old rules no longer held. Decades of civil war followed until Octavian defeated Antony at Actium in 31 BC. Rather than abolish the Republic, Augustus in 27 BC handed powers back in name, took the title princeps, and held the consulship and provinces that gave him control of the army, so the forms survived while one man ruled."
+    },
+    {
+     "label": "terse_full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "Client armies loyal to generals, not Rome (Marius). Norms collapsed: Sulla's march on Rome, dictatorship, proscriptions. Civil wars, ending at Actium with Octavian beating Antony. Augustus kept the republican offices but held real power as princeps from 27 BC."
+    },
+    {
+     "label": "partial_first_two",
+     "met": [
+      1,
+      1,
+      0,
+      0
+     ],
+     "text": "The key change was that after Marius the legions were recruited from the poor and looked to their general for land and loot, so they would follow him anywhere. Sulla proved this by marching his army on Rome and then making himself dictator and publishing proscription lists. Once that precedent existed, ambitious men kept using it."
+    },
+    {
+     "label": "keyword_stuffed",
+     "met": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "text": "The Republic ended because of Marius, Sulla, Actium and Augustus. There were many generals and soldiers, and the Senate had norms and dictators. Eventually there were civil wars and then an emperor took over in 27 BC and everything changed for Rome and its provinces."
+    },
+    {
+     "label": "contradiction",
+     "met": [
+      1,
+      1,
+      1,
+      0
+     ],
+     "text": "Marius's reforms tied soldiers to their generals, Sulla marched on Rome and ruled by proscription, and the civil wars ended at Actium when Octavian beat Antony. Octavian then openly abolished the Senate and the consulship and declared himself king, replacing every republican institution with a royal court."
+    },
+    {
+     "label": "offtopic",
+     "met": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "text": "Rome fell in 476 AD when the Germanic leader Odoacer deposed Romulus Augustulus. The Western Empire had been weakened by barbarian invasions, economic troubles, plague and the split with the richer Eastern Empire at Constantinople, which survived for another thousand years."
+    }
+   ]
+  },
+  {
+   "domain": "literature",
+   "question": "Discuss how the green light works as a symbol in The Great Gatsby.",
+   "rubrics": [
+    "It represents Gatsby's hope or longing for Daisy and the future he imagines with her.",
+    "It extends to the wider American Dream and its promise.",
+    "It sits at the end of Daisy's dock across the bay, so it is visible but out of reach, showing distance or unattainability.",
+    "The closing passage links it to a future that keeps receding as people reach for it."
+   ],
+   "answers": [
+    {
+     "label": "full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "The green light is first seen when Gatsby stretches his arms toward it across the water; it stands for Daisy and the life he believes he can win back. Because it burns at the end of her dock on the far shore, it is always visible and always separated from him by the bay, which is the point: it is desire kept at a distance. Fitzgerald widens it into the American Dream itself, the belief that effort can recover a lost or imagined future. In the final lines Nick calls it the 'orgastic future that year by year recedes before us', so the light becomes a promise that moves away as fast as anyone rows toward it."
+    },
+    {
+     "label": "terse_full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "Green light = Gatsby's hope for Daisy. Also the American Dream more broadly. It's on Daisy's dock across the bay, so it's visible but unreachable. The ending ties it to a future that recedes as we reach for it."
+    },
+    {
+     "label": "partial_daisy_dream",
+     "met": [
+      1,
+      1,
+      0,
+      0
+     ],
+     "text": "For Gatsby the green light is Daisy: everything he has done, the money and the parties, aims at getting her back, and the light is the image of that hope. The novel then makes it stand for the American Dream as a whole, the idea that anyone can remake themselves and reach the life they want."
+    },
+    {
+     "label": "keyword_stuffed",
+     "met": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "text": "The green light is a very important symbol. Gatsby, Daisy, the dock, the bay and the American Dream are all in the book, and the green light appears at the beginning and the end. Symbols like the light show that Fitzgerald used colours, and green is the colour of money and envy, which relates to the characters."
+    },
+    {
+     "label": "contradiction",
+     "met": [
+      1,
+      0,
+      1,
+      1
+     ],
+     "text": "The light at the end of Daisy's dock is Gatsby's longing for her, kept at arm's length by the water between them. Nick's final words about the future receding before us make the light a promise that never arrives. But it is a purely private symbol; Fitzgerald is careful to keep it about one man's love and it says nothing about America or any wider dream."
+    },
+    {
+     "label": "offtopic",
+     "met": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "text": "The valley of ashes between West Egg and New York, watched over by the faded billboard eyes of Doctor T. J. Eckleburg, symbolises the moral decay hidden beneath the wealth of the 1920s and the absence of any real God watching over the characters."
+    }
+   ]
+  },
+  {
+   "domain": "economics",
+   "question": "Explain what happens when a government imposes a binding price ceiling in a competitive market.",
+   "rubrics": [
+    "The ceiling is set below the equilibrium price.",
+    "Quantity demanded exceeds quantity supplied, so there is a shortage.",
+    "Total surplus falls (deadweight loss) because some mutually beneficial trades no longer happen.",
+    "Non-price rationing appears, such as queues, waiting lists, black markets or lower quality."
+   ],
+   "answers": [
+    {
+     "label": "full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "A price ceiling only bites if it is set below the market-clearing price. At the lower price consumers want more units while producers offer fewer, so quantity demanded exceeds quantity supplied and a persistent shortage develops. Trades that both sides valued above the cost of production no longer happen, so the sum of consumer and producer surplus falls; that lost area is the deadweight loss. Since price can no longer allocate the good, other mechanisms take over: queues, waiting lists, favouritism, informal black-market sales above the legal price, or landlords letting quality slide."
+    },
+    {
+     "label": "terse_full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "Binding means below equilibrium. Qd > Qs so shortage. Some beneficial trades lost, so deadweight loss. Goods get rationed by queues, waiting lists or black markets instead of price."
+    },
+    {
+     "label": "partial_shortage_only",
+     "met": [
+      1,
+      1,
+      0,
+      0
+     ],
+     "text": "A binding ceiling is a legal maximum price fixed below where supply and demand would meet. Because the price is held down, buyers demand more than sellers are willing to supply, and the gap is a shortage that does not go away on its own."
+    },
+    {
+     "label": "keyword_stuffed",
+     "met": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "text": "A price ceiling affects supply, demand, equilibrium and surplus. There can be a shortage or a surplus depending on the market, and deadweight loss and black markets are concepts in economics. Governments use price ceilings to control prices and this changes quantity."
+    },
+    {
+     "label": "contradiction",
+     "met": [
+      1,
+      0,
+      1,
+      1
+     ],
+     "text": "The ceiling is set below the equilibrium price. Because sellers cannot charge more, they flood the market and a surplus of unsold goods piles up. Some efficient trades are still lost, creating deadweight loss, and the excess gets rationed through queues and side-payments."
+    },
+    {
+     "label": "offtopic",
+     "met": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "text": "A minimum wage is a price floor in the labour market. If it is set above the equilibrium wage, employers hire fewer workers while more people want jobs, so unemployment rises among low-skilled workers, although the effect size is debated empirically."
+    }
+   ]
+  },
+  {
+   "domain": "biology",
+   "question": "Explain how natural selection produces antibiotic resistance in a bacterial population.",
+   "rubrics": [
+    "Resistance arises by random mutation and already exists in some cells before the antibiotic is used; the antibiotic does not cause the mutation.",
+    "The antibiotic acts as a selective pressure that kills susceptible cells.",
+    "Resistant survivors reproduce and pass the resistance allele to their offspring, so its frequency rises.",
+    "Resistance genes can also spread between bacteria by horizontal gene transfer, for example on plasmids."
+   ],
+   "answers": [
+    {
+     "label": "full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "In any large bacterial population random copying errors mean a few cells already carry a mutation that happens to confer resistance; the drug does not create it. When the antibiotic is applied it kills the susceptible majority, acting as a selective pressure. The few resistant cells survive, divide, and hand the resistance allele to every daughter cell, so within a few generations most of the population is resistant. Resistance also spreads sideways: plasmids carrying resistance genes pass between cells by conjugation, even between different species."
+    },
+    {
+     "label": "terse_full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "Random mutation gives some cells resistance beforehand. Antibiotic kills the susceptible ones (selection). Survivors reproduce and pass on the allele. Plasmids also transfer resistance genes between bacteria."
+    },
+    {
+     "label": "partial_selection_only",
+     "met": [
+      0,
+      1,
+      1,
+      0
+     ],
+     "text": "When a patient takes an antibiotic, the drug kills most of the bacteria but any cells that can tolerate it survive. Those survivors then multiply and their descendants inherit the same tolerance, so the next infection is made up mostly of bacteria the drug cannot kill."
+    },
+    {
+     "label": "keyword_stuffed",
+     "met": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "text": "Antibiotic resistance is caused by natural selection, mutation, selective pressure, alleles and plasmids. Bacteria reproduce very fast and evolve, and horizontal gene transfer is a type of transfer. Doctors should prescribe antibiotics carefully because of resistance."
+    },
+    {
+     "label": "contradiction",
+     "met": [
+      0,
+      1,
+      1,
+      1
+     ],
+     "text": "The antibiotic kills the susceptible cells, and any survivors multiply and pass their resistance on, so the population becomes resistant; plasmids let the gene jump between cells as well. The resistance itself is induced by exposure: contact with the drug causes the bacteria to mutate in the direction they need."
+    },
+    {
+     "label": "offtopic",
+     "met": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "text": "Antibiotics work by attacking structures bacteria have but human cells lack. Penicillin blocks the enzymes that cross-link the peptidoglycan cell wall, so growing cells burst, while tetracyclines bind the bacterial ribosome and stop protein synthesis."
+    }
+   ]
+  },
+  {
+   "domain": "physics",
+   "question": "A satellite in a circular orbit is acted on by Earth's gravity the whole time. Explain why it does not fall to the ground.",
+   "rubrics": [
+    "Gravity supplies the centripetal force needed for circular motion.",
+    "The satellite has a large velocity tangential to the orbit.",
+    "It is in free fall, continuously falling toward Earth, but the surface curves away at the same rate so its height stays constant.",
+    "The required speed depends on the orbital radius (v = sqrt(GM/r), or lower orbits need higher speed)."
+   ],
+   "answers": [
+    {
+     "label": "full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "The satellite is falling the whole time; what keeps it up is its sideways speed. Gravity pulls it toward Earth's centre and that pull is exactly the centripetal force a circular path needs, so it bends the path instead of shortening the distance. Because the satellite moves tangentially at several kilometres per second, in the time it drops a little the ground has curved away by the same amount, so it never gets closer. Setting GMm/r² equal to mv²/r gives v = √(GM/r), which is why lower orbits are faster."
+    },
+    {
+     "label": "terse_full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "Gravity = centripetal force. Big tangential velocity. It's in free fall but Earth curves away as fast as it falls. v = √(GM/r), so the speed is fixed by the radius."
+    },
+    {
+     "label": "partial_centripetal_tangent",
+     "met": [
+      1,
+      1,
+      0,
+      0
+     ],
+     "text": "For an object to move in a circle something must pull it toward the centre, and for a satellite that something is gravity. The satellite also has a very high speed at right angles to that pull, so instead of falling straight down the pull just keeps turning its velocity round the circle."
+    },
+    {
+     "label": "keyword_stuffed",
+     "met": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "text": "The satellite stays up because of centripetal force, tangential velocity, free fall and orbital radius. Gravity acts on it and Newton's laws apply, and the formula v = √(GM/r) is used for orbits. Satellites are launched by rockets to the right height so they stay in orbit."
+    },
+    {
+     "label": "contradiction",
+     "met": [
+      0,
+      1,
+      1,
+      1
+     ],
+     "text": "The satellite moves tangentially at high speed and is really in free fall, always dropping toward Earth while the surface curves away beneath it, and the speed needed follows v = √(GM/r). Gravity is not what turns it, though: at orbital height gravity is essentially zero, which is why astronauts float, so the satellite simply coasts in a straight line that happens to wrap around Earth."
+    },
+    {
+     "label": "offtopic",
+     "met": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "text": "Geostationary satellites orbit at about 35,786 km above the equator with a period of one sidereal day, so they stay above the same point on the ground. This makes them ideal for television broadcasting and weather monitoring because ground antennas do not need to track them."
+    }
+   ]
+  },
+  {
+   "domain": "chemistry",
+   "question": "Explain why ice floats on liquid water.",
+   "rubrics": [
+    "Water molecules form hydrogen bonds with each other.",
+    "In ice the hydrogen bonds hold molecules in an open, hexagonal lattice with more space between them than in the liquid.",
+    "So solid water is less dense than liquid water, and a less dense substance floats.",
+    "This is unusual (most substances are denser as solids) or has a consequence such as lakes freezing from the top and insulating life below."
+   ],
+   "answers": [
+    {
+     "label": "full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "Each water molecule can hydrogen-bond to four neighbours through its polar O–H bonds and lone pairs. In the liquid those bonds constantly break and reform so molecules pack fairly closely, but when water freezes the hydrogen bonds lock every molecule into a rigid hexagonal lattice with large empty channels. That open structure means a given mass of ice takes up about 9% more volume than the same mass of liquid, so ice is less dense and floats. Almost every other substance is denser as a solid; water's exception is why lakes freeze from the top and the ice layer insulates the water beneath, letting fish survive winter."
+    },
+    {
+     "label": "terse_full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "Hydrogen bonding. In ice the H-bonds fix molecules in an open hexagonal lattice, more spread out than in liquid. So ice is less dense, and less dense floats. Unusual: most solids are denser than their liquids; it's why lakes freeze top-down."
+    },
+    {
+     "label": "partial_density_only",
+     "met": [
+      0,
+      0,
+      1,
+      1
+     ],
+     "text": "Ice floats because it is less dense than liquid water: the same mass of ice occupies more volume, so buoyancy pushes it up. This is the opposite of what most materials do, since normally the solid is denser than the liquid, and it matters for life because ponds freeze from the surface downward."
+    },
+    {
+     "label": "keyword_stuffed",
+     "met": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "text": "Ice floats because of hydrogen bonds, density, the hexagonal lattice and buoyancy. Water is H2O and it has special properties, and density is mass divided by volume. Lakes and fish are affected by ice in winter, which shows how unusual water is."
+    },
+    {
+     "label": "contradiction",
+     "met": [
+      1,
+      0,
+      1,
+      1
+     ],
+     "text": "Water molecules hydrogen-bond strongly to each other. When water freezes, these bonds pull the molecules much closer together than in the liquid, yet the resulting solid is still less dense than the liquid, so it floats. This is the reverse of most substances and is why lakes freeze at the surface first."
+    },
+    {
+     "label": "offtopic",
+     "met": [
+      1,
+      0,
+      0,
+      0
+     ],
+     "text": "Water has an unusually high boiling point for a molecule of its size because the hydrogen bonds between molecules must be broken before it can vaporise; hydrogen sulfide, which has a similar shape but no hydrogen bonding, boils at −60 °C."
+    }
+   ]
+  },
+  {
+   "domain": "computing",
+   "question": "Explain why a hash table gives O(1) average lookup time and describe when that guarantee breaks down.",
+   "rubrics": [
+    "A hash function maps a key to an index (bucket) in an array.",
+    "Reading that array slot is a constant-time operation independent of the number of stored items.",
+    "Collisions (two keys hashing to the same slot) are handled by chaining or open addressing.",
+    "Lookup degrades toward O(n) when the hash function clusters keys or the load factor gets high; resizing keeps the load factor bounded."
+   ],
+   "answers": [
+    {
+     "label": "full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "A hash table stores entries in an array. To look up a key it runs the key through a hash function that produces an integer, takes it modulo the array length to get a bucket index, and reads that slot directly; array indexing costs the same whether there are ten entries or ten million, so the average lookup is O(1). Two keys can land in the same bucket, so each bucket either holds a linked list of entries (chaining) or the table probes neighbouring slots (open addressing). If the hash function sends many keys to a few buckets, or the table is allowed to fill up so the load factor approaches 1, those chains or probe sequences grow and lookup slides toward O(n); implementations avoid that by doubling the array and rehashing once the load factor passes a threshold."
+    },
+    {
+     "label": "terse_full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "hash(key) mod size gives an array index. Array access is O(1) regardless of n. Collisions: chaining or open addressing. Bad hash or high load factor makes chains long, worst case O(n); resize to keep load factor low."
+    },
+    {
+     "label": "partial_no_degradation",
+     "met": [
+      1,
+      1,
+      1,
+      0
+     ],
+     "text": "The hash function turns the key into a number that selects a bucket in the underlying array, and indexing an array takes the same time no matter how many items are stored, which is where the constant time comes from. When two keys pick the same bucket the table keeps both, either in a small list attached to the bucket or by moving one of them to the next free slot."
+    },
+    {
+     "label": "keyword_stuffed",
+     "met": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "text": "Hash tables are O(1) because of hashing, buckets, collisions, chaining, open addressing and load factor. They are used in dictionaries and caches and are faster than arrays. O(n) is worse than O(1), and resizing is when you make the table bigger."
+    },
+    {
+     "label": "contradiction",
+     "met": [
+      1,
+      0,
+      1,
+      1
+     ],
+     "text": "The hash function converts the key into a bucket index. Collisions are resolved by chaining or open addressing, and performance falls to O(n) when the load factor gets high or the hash clusters keys, so tables resize. The constant time itself comes from the buckets being kept sorted, so the table can binary-search for the key within the array."
+    },
+    {
+     "label": "offtopic",
+     "met": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "text": "A balanced binary search tree such as a red-black tree keeps keys in sorted order and guarantees O(log n) for insert, delete and lookup by rebalancing after each modification, which makes it a good choice when you also need range queries or ordered iteration."
+    }
+   ]
+  },
+  {
+   "domain": "psychology",
+   "question": "Describe the main finding of Milgram's obedience experiment and one major criticism of it.",
+   "rubrics": [
+    "About two thirds (65%) of participants continued to the maximum 450-volt shock.",
+    "Participants obeyed because an authority figure (the experimenter) instructed them to continue.",
+    "Ethical criticism: participants were deceived and exposed to severe stress, and felt unable to withdraw.",
+    "Validity criticism: the laboratory setup was artificial, or participants may have guessed the shocks were fake, so the result may not generalise."
+   ],
+   "answers": [
+    {
+     "label": "full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "Milgram found that 26 of 40 ordinary men, 65%, went all the way to the 450-volt switch when a calm experimenter in a lab coat told them the experiment required it, despite the learner's screams. The lesson he drew was that obedience to a legitimate-seeming authority overrides personal conscience. Critics such as Baumrind attacked the ethics: participants were lied to about the purpose, visibly distressed, and the prods ('you have no other choice') undermined their right to leave. Others question validity, arguing a Yale lab is an artificial setting and that some participants suspected the shocks were not real, which would inflate apparent obedience."
+    },
+    {
+     "label": "terse_full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "65% gave the full 450 V. They obeyed because the experimenter, an authority figure, told them to. Ethics: deception, stress, couldn't really withdraw. Validity: artificial lab, some guessed the shocks were fake."
+    },
+    {
+     "label": "partial_finding_only",
+     "met": [
+      1,
+      1,
+      0,
+      0
+     ],
+     "text": "Two thirds of the participants delivered what they believed was the maximum 450-volt shock to a stranger. What drove them was not aggression but the presence of an authority: as long as the experimenter kept saying the experiment must continue, most people continued."
+    },
+    {
+     "label": "keyword_stuffed",
+     "met": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "text": "Milgram's experiment was about obedience, authority, ethics, deception, validity and shocks. Participants were in a lab at Yale and there was a learner and a teacher. Many psychologists have discussed the percentage and the criticism, and it is a famous study in psychology textbooks."
+    },
+    {
+     "label": "contradiction",
+     "met": [
+      0,
+      1,
+      1,
+      1
+     ],
+     "text": "Participants kept shocking because the experimenter, as an authority, told them to. The study is criticised for deceiving and distressing people who felt they could not leave, and for the artificial lab setting where some may have guessed the shocks were fake. Notably, obedience was rare: only about 5% of participants went to the highest shock level, which surprised Milgram."
+    },
+    {
+     "label": "offtopic",
+     "met": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "text": "Zimbardo's Stanford prison experiment assigned students to guard and prisoner roles; the guards became abusive so quickly that the two-week study was stopped after six days. It is cited for the power of situational roles and criticised for Zimbardo's own involvement as prison superintendent."
+    }
+   ]
+  },
+  {
+   "domain": "civics",
+   "question": "Explain the principle of separation of powers and why constitutions adopt it.",
+   "rubrics": [
+    "Government power is divided among three branches: legislative, executive and judicial.",
+    "Each branch has a distinct function: making laws, carrying them out, and interpreting them.",
+    "Checks and balances let each branch limit the others (for example vetoes, judicial review, impeachment).",
+    "The purpose is to prevent the concentration of power and protect against tyranny or abuse."
+   ],
+   "answers": [
+    {
+     "label": "full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "Separation of powers splits the state into a legislature that writes the laws, an executive that administers and enforces them, and a judiciary that interprets them and settles disputes. Each is staffed and chosen differently so no single body does all three jobs. The branches are also given tools to restrain each other: the executive can veto legislation, the legislature can override vetoes, control budgets and impeach officials, and courts can strike down laws that violate the constitution. Montesquieu's argument, adopted by the American framers, was that when the same hands make, execute and judge the law, liberty is at their mercy; dividing the work makes abuse harder."
+    },
+    {
+     "label": "terse_full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "Three branches: legislative, executive, judicial. Make laws / enforce laws / interpret laws. Checks and balances: veto, judicial review, impeachment. Point: stop power concentrating in one person or body, prevent tyranny."
+    },
+    {
+     "label": "partial_structure_only",
+     "met": [
+      1,
+      1,
+      0,
+      0
+     ],
+     "text": "Under separation of powers the government is organised into three branches. The legislature is responsible for passing laws, the executive for putting them into effect and running the administration, and the judiciary for applying and interpreting the law in individual cases."
+    },
+    {
+     "label": "keyword_stuffed",
+     "met": [
+      1,
+      0,
+      0,
+      0
+     ],
+     "text": "Separation of powers involves the legislative, executive and judicial branches, checks and balances, and the constitution. Montesquieu and the founding fathers wrote about it. It is important for democracy and is found in many countries, and there are also state and federal levels of government."
+    },
+    {
+     "label": "contradiction",
+     "met": [
+      1,
+      1,
+      0,
+      1
+     ],
+     "text": "Power is divided among a legislature that makes law, an executive that enforces it and a judiciary that interprets it, so that no one group can accumulate the authority to rule arbitrarily. To keep the separation pure, the branches are sealed off from each other: none may interfere with, review or block the actions of another."
+    },
+    {
+     "label": "offtopic",
+     "met": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "text": "Federalism divides authority between a national government and regional governments such as states or provinces. Each level has powers the other cannot remove, which lets regions tailor policy to local needs while the centre handles defence, currency and foreign affairs."
+    }
+   ]
+  },
+  {
+   "domain": "geography",
+   "question": "Explain how the greenhouse effect works and why human activity is enhancing it.",
+   "rubrics": [
+    "Short-wave solar radiation passes through the atmosphere and warms the Earth's surface.",
+    "The warmed surface emits long-wave infrared radiation.",
+    "Greenhouse gases (CO2, methane, water vapour) absorb that infrared and re-emit it, warming the lower atmosphere.",
+    "Burning fossil fuels and deforestation raise greenhouse gas concentrations, trapping more heat than the natural effect."
+   ],
+   "answers": [
+    {
+     "label": "full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "Sunlight arrives mostly as visible and near-infrared light that the atmosphere is largely transparent to, so it reaches the ground and heats it. Being much cooler than the Sun, the surface radiates that energy back as long-wave infrared. Molecules such as carbon dioxide, methane and water vapour absorb infrared at those wavelengths and re-emit it in all directions, including back downward, which keeps the lower atmosphere about 33 °C warmer than it would otherwise be. Since industrialisation, burning coal, oil and gas and clearing forests have pushed CO2 from about 280 to over 420 ppm, so more outgoing infrared is intercepted and the planet warms further."
+    },
+    {
+     "label": "terse_full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "Shortwave sunlight gets through and heats the surface. Surface re-radiates as longwave IR. CO2, CH4, water vapour absorb and re-emit the IR, warming the air. Fossil fuels and deforestation add more GHGs, so more heat is trapped."
+    },
+    {
+     "label": "partial_mechanism_only",
+     "met": [
+      1,
+      1,
+      1,
+      0
+     ],
+     "text": "Solar energy comes in at short wavelengths that the air does not absorb much, so it reaches and warms the ground. The ground then gives that energy back as infrared, which has longer wavelengths. Gases like carbon dioxide and water vapour are good at absorbing infrared and radiate some of it back down, so the air near the surface stays warmer."
+    },
+    {
+     "label": "keyword_stuffed",
+     "met": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "text": "The greenhouse effect involves solar radiation, infrared, carbon dioxide, methane, fossil fuels and deforestation. The atmosphere is like a greenhouse made of glass that keeps plants warm. Climate change is a serious problem and countries signed the Paris Agreement to reduce emissions."
+    },
+    {
+     "label": "contradiction",
+     "met": [
+      1,
+      0,
+      1,
+      1
+     ],
+     "text": "Incoming sunlight is short-wave and passes through to heat the surface. Carbon dioxide, methane and water vapour then absorb radiation and re-emit it downward, warming the lower atmosphere, and fossil fuel burning plus deforestation have raised their concentrations so more heat is retained. The radiation the gases trap is the reflected sunlight itself, which bounces off the surface unchanged at the same short wavelengths it arrived at."
+    },
+    {
+     "label": "offtopic",
+     "met": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "text": "The ozone layer in the stratosphere absorbs most of the Sun's ultraviolet-B radiation. Chlorofluorocarbons released from refrigerants and aerosols broke down ozone and opened the Antarctic ozone hole, which the 1987 Montreal Protocol has been gradually reversing."
+    }
+   ]
+  },
+  {
+   "domain": "philosophy",
+   "question": "Describe the trolley problem and explain what it is used to show about utilitarian and deontological ethics.",
+   "rubrics": [
+    "Describes the scenario: a runaway trolley will kill five people unless it is diverted onto a track where it kills one.",
+    "Utilitarian view: diverting is right because it produces the better outcome (one death instead of five).",
+    "Deontological view: some acts are wrong regardless of consequences, such as actively killing, so there is a duty not to divert or at least a moral difference between killing and letting die.",
+    "The footbridge variant (pushing a large man off a bridge to stop the trolley) shows that people's intuitions change even though the numbers are the same."
+   ],
+   "answers": [
+    {
+     "label": "full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "In Foot's and Thomson's thought experiment a trolley is heading toward five workers who will die; you can pull a lever to send it onto a side track where it will kill one. A utilitarian counts outcomes and says pull: one death is better than five. A deontologist replies that morality is about what you do, not just what results, and that deliberately steering a vehicle into a person is killing, whereas leaving the lever alone is letting die; there is a duty not to use someone as a means. The footbridge version makes the contrast vivid: to save the five you must push a heavy man into the trolley's path. The arithmetic is identical, yet most people who would pull the lever refuse to push, which suggests our intuitions track something other than the body count."
+    },
+    {
+     "label": "terse_full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "Trolley will kill 5; divert it and it kills 1. Utilitarian: divert, fewer deaths. Deontologist: actively killing is wrong regardless of outcome, killing vs letting die. Footbridge: push a big man to stop it. Same numbers but most people won't, so intuitions aren't purely consequentialist."
+    },
+    {
+     "label": "partial_no_footbridge",
+     "met": [
+      1,
+      1,
+      1,
+      0
+     ],
+     "text": "A runaway trolley will run over five people tied to the track; you can flip a switch so it goes down a branch line where one person is tied. The utilitarian answer is to flip it, because five lives outweigh one. A Kantian would object that by flipping the switch you make yourself the killer of the one, treating him merely as a means, and that this is different in kind from failing to prevent the five deaths."
+    },
+    {
+     "label": "keyword_stuffed",
+     "met": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "text": "The trolley problem is a famous thought experiment about utilitarianism, deontology, Kant, Bentham, the footbridge, the lever and consequences. Philosophers use it in ethics classes to discuss moral dilemmas, and it has been the subject of psychology surveys and internet memes."
+    },
+    {
+     "label": "contradiction",
+     "met": [
+      1,
+      0,
+      1,
+      1
+     ],
+     "text": "A trolley will kill five unless diverted to a track holding one. The deontologist holds that actively diverting is killing and that duties do not bend to outcomes. In the footbridge variant, where you must push a man to his death to stop the trolley, intuitions shift even though the numbers match. The utilitarian, for their part, also refuses to divert, since utilitarianism forbids any action that harms an innocent person."
+    },
+    {
+     "label": "offtopic",
+     "met": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "text": "The prisoner's dilemma shows two rational agents each choosing to defect even though mutual cooperation would leave both better off. It is used in game theory to explain why arms races and overfishing persist, and the iterated version shows how tit-for-tat can sustain cooperation."
+    }
+   ]
+  },
+  {
+   "domain": "business",
+   "question": "Explain what a SWOT analysis is and how a firm uses it in planning.",
+   "rubrics": [
+    "Strengths and weaknesses are internal factors about the firm itself.",
+    "Opportunities and threats are external factors in the market or environment.",
+    "The firm uses it to match its internal capabilities to the external environment when choosing a strategy.",
+    "A limitation, such as subjectivity, a static snapshot, or no way to prioritise the items."
+   ],
+   "answers": [
+    {
+     "label": "full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "SWOT lays out four lists. Strengths and weaknesses look inward: the firm's brand, cash, skills, cost base or outdated systems. Opportunities and threats look outward: a growing segment, a new regulation, a competitor's price cut. The point is to line the two up, so a strategy plays a real strength into a real opportunity or shores up a weakness a threat would exploit; that is the input to choosing where to compete. It is only a starting point, though: the lists are whatever the managers in the room think, it freezes a moving situation on one page, and nothing in the grid says which of twenty items matters most."
+    },
+    {
+     "label": "terse_full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "S and W are internal to the firm. O and T are external (market, environment). Use: match internal capabilities to external conditions to pick a strategy. Limits: subjective, static, doesn't prioritise."
+    },
+    {
+     "label": "partial_definition_only",
+     "met": [
+      1,
+      1,
+      0,
+      0
+     ],
+     "text": "SWOT stands for strengths, weaknesses, opportunities and threats. The first two describe the company from the inside, such as its people, products, finances and processes. The last two describe what is going on outside the company, in its industry, among customers and competitors, and in the wider economy."
+    },
+    {
+     "label": "keyword_stuffed",
+     "met": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "text": "SWOT is strengths, weaknesses, opportunities and threats, and it is about internal and external factors, strategy and planning. It is a matrix with four boxes used by businesses and consultants, similar to PESTLE and Porter's five forces, which are also frameworks."
+    },
+    {
+     "label": "contradiction",
+     "met": [
+      0,
+      1,
+      1,
+      1
+     ],
+     "text": "Opportunities and threats come from the market and wider environment, and the exercise is meant to fit the firm's capabilities to that environment when it sets strategy; it is criticised as subjective and static. Strengths and weaknesses are likewise external, describing how strong or weak the competitors and suppliers around the firm are."
+    },
+    {
+     "label": "offtopic",
+     "met": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "text": "Porter's five forces assess industry attractiveness through the threat of new entrants, bargaining power of suppliers, bargaining power of buyers, threat of substitutes and rivalry among existing firms. A strong position on most forces implies the industry can sustain above-average profits."
+    }
+   ]
+  },
+  {
+   "domain": "medicine",
+   "question": "Explain how a vaccine produces immunity to a disease.",
+   "rubrics": [
+    "The vaccine introduces an antigen (a weakened or inactivated pathogen, a piece of it, or instructions such as mRNA to make one) without causing the disease.",
+    "The immune system responds by producing antibodies and activating B and T cells against that antigen.",
+    "Memory cells remain after the response.",
+    "On later exposure to the real pathogen, memory cells trigger a faster and stronger secondary response that clears it before illness develops."
+   ],
+   "answers": [
+    {
+     "label": "full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "A vaccine presents the immune system with something that looks like the pathogen but cannot cause the disease: a killed or attenuated microbe, a purified protein, or mRNA that makes cells produce that protein for a few days. The body treats the antigen as an invader, so B cells make antibodies that bind it and helper and killer T cells are activated. Once the antigen is cleared, most of those cells die off but a population of long-lived memory B and T cells stays behind. If the real pathogen ever arrives, the memory cells recognise it immediately and mount a response within a day or two that is far larger than the first, usually eliminating the infection before symptoms appear."
+    },
+    {
+     "label": "terse_full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "Vaccine gives an antigen (weakened/inactivated pathogen, protein, or mRNA) without the disease. Immune system makes antibodies, activates B and T cells. Memory cells persist. Real infection later triggers a faster, stronger secondary response."
+    },
+    {
+     "label": "partial_antigen_response",
+     "met": [
+      1,
+      1,
+      0,
+      0
+     ],
+     "text": "Vaccines contain a harmless form of the germ, for example a killed virus or just one of its surface proteins, so the person is exposed to its antigens without getting sick. The immune system reacts as it would to an infection, producing antibodies that fit those antigens and switching on the B and T lymphocytes that target them."
+    },
+    {
+     "label": "keyword_stuffed",
+     "met": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "text": "Vaccines produce immunity through antigens, antibodies, B cells, T cells, memory cells and the secondary response. Immunity is when you do not get a disease. There are different types of vaccine including mRNA vaccines, and vaccination programmes have eradicated smallpox."
+    },
+    {
+     "label": "contradiction",
+     "met": [
+      0,
+      1,
+      1,
+      1
+     ],
+     "text": "The immune system responds by producing antibodies and activating B and T cells; memory cells remain afterward, so a later encounter with the pathogen produces a faster, stronger response. To achieve this the vaccine gives the recipient a full case of the actual disease, since only a real infection can train the immune system."
+    },
+    {
+     "label": "offtopic",
+     "met": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "text": "Herd immunity occurs when enough of a population is immune that each infected person passes the disease to fewer than one other on average, so outbreaks die out. The threshold depends on how contagious the disease is; measles needs around 95% coverage while influenza needs far less."
+    }
+   ]
+  },
+  {
+   "domain": "music",
+   "question": "Explain the main differences between Baroque music and music of the Classical period.",
+   "rubrics": [
+    "Baroque music is built on basso continuo (figured bass); Classical music drops the continuo.",
+    "Baroque texture is typically polyphonic or contrapuntal; Classical texture favours homophony (a melody with accompaniment).",
+    "The Classical period developed sonata form and clearer, balanced periodic phrasing.",
+    "Representative composers: Bach, Handel or Vivaldi for Baroque; Haydn, Mozart or early Beethoven for Classical."
+   ],
+   "answers": [
+    {
+     "label": "full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "Baroque music, the world of Bach, Handel and Vivaldi, rests on a basso continuo: a bass line with figures that a harpsichord or organ realises into chords throughout the piece. Its textures are dense and contrapuntal, with several independent lines woven together as in a fugue. The Classical composers, Haydn, Mozart and the young Beethoven, abandoned the continuo and thinned the texture to a single melody over a clear accompaniment, often an Alberti bass. They also organised movements in sonata form, with contrasting themes in an exposition, a development and a recapitulation, and wrote in balanced four- and eight-bar phrases that give the music its question-and-answer feel."
+    },
+    {
+     "label": "terse_full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "Baroque: basso continuo; Classical: no continuo. Baroque: polyphonic/counterpoint; Classical: homophonic melody + accompaniment. Classical adds sonata form and balanced periodic phrases. Bach/Handel/Vivaldi vs Haydn/Mozart/early Beethoven."
+    },
+    {
+     "label": "partial_texture_composers",
+     "met": [
+      0,
+      1,
+      0,
+      1
+     ],
+     "text": "Baroque pieces by composers like Bach and Handel tend to be polyphonic, with two, three or four melodic lines running at once and imitating each other. Classical composers such as Mozart and Haydn preferred one clear tune on top with simple chords underneath, so the music is lighter and easier to follow."
+    },
+    {
+     "label": "keyword_stuffed",
+     "met": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "text": "Baroque and Classical music differ in continuo, counterpoint, sonata form, phrasing and composers such as Bach, Handel, Vivaldi, Haydn, Mozart and Beethoven. Baroque means ornate and the Classical period came after it, around 1750 to 1820, followed by the Romantic period."
+    },
+    {
+     "label": "contradiction",
+     "met": [
+      1,
+      1,
+      0,
+      1
+     ],
+     "text": "Baroque composers such as Vivaldi and Bach wrote over a basso continuo and favoured interweaving contrapuntal lines, while Haydn and Mozart dropped the continuo and wrote a single melody over accompaniment. Sonata form, though, is a Baroque invention that Classical composers abandoned in favour of the fugue and the dance suite."
+    },
+    {
+     "label": "offtopic",
+     "met": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "text": "Romantic composers such as Chopin, Wagner and Tchaikovsky expanded the orchestra, used chromatic harmony and rubato for emotional intensity, and often wrote programme music depicting stories, landscapes or nationalist themes rather than abstract forms."
+    }
+   ]
+  },
+  {
+   "domain": "language",
+   "question": "Explain the difference between the active and passive voice and when the passive is the better choice.",
+   "rubrics": [
+    "In the active voice the subject performs the action; in the passive the subject receives the action.",
+    "The passive is formed with a form of 'be' plus the past participle (and optionally 'by' + agent).",
+    "The passive is appropriate when the agent is unknown or unimportant, or to put emphasis on the receiver of the action.",
+    "Gives an example sentence in each voice."
+   ],
+   "answers": [
+    {
+     "label": "full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "In an active sentence the grammatical subject does the action: 'The committee rejected the proposal.' In the passive the thing acted on becomes the subject and the doer is demoted or dropped: 'The proposal was rejected (by the committee).' English builds the passive from a form of 'be' followed by the past participle, here 'was rejected'. Writers usually prefer the active because it is shorter and names who did what, but the passive earns its place when the agent is unknown ('My bike was stolen'), irrelevant ('The samples were heated to 90 °C'), or when the receiver is the topic and should come first."
+    },
+    {
+     "label": "terse_full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "Active: subject does the action. Passive: subject receives it. Passive = be + past participle (+ by agent). Use passive when the agent is unknown/unimportant or to emphasise the object. E.g. 'The dog bit the man' vs 'The man was bitten by the dog'."
+    },
+    {
+     "label": "partial_no_examples",
+     "met": [
+      1,
+      1,
+      1,
+      0
+     ],
+     "text": "Active voice means the subject of the sentence is the one carrying out the verb's action, whereas in passive voice the subject is the one the action happens to. The passive uses the auxiliary 'be' in the right tense plus the past participle of the main verb. It is the right choice when nobody knows or cares who did the action, or when the writer wants the thing affected to be the focus."
+    },
+    {
+     "label": "keyword_stuffed",
+     "met": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "text": "Active and passive voice are about the subject, the object, the verb, the past participle and the agent. Teachers say to avoid the passive voice because it is weak, and grammar checkers underline it. Both voices exist in English and other languages, and it is a common exam topic."
+    },
+    {
+     "label": "contradiction",
+     "met": [
+      0,
+      1,
+      1,
+      1
+     ],
+     "text": "The passive is built from 'be' plus a past participle, as in 'The window was broken by the ball' versus the active 'The ball broke the window'. It suits cases where the agent is unknown or the receiver deserves the emphasis. Grammatically, the passive is the voice in which the subject performs the action and the active is the one in which the subject receives it."
+    },
+    {
+     "label": "offtopic",
+     "met": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "text": "The subjunctive mood expresses wishes, hypotheticals and demands: 'If I were you', 'I suggest that he leave now'. It is fading in everyday English but survives in formal writing and in fixed phrases such as 'so be it' and 'God save the King'."
+    }
+   ]
+  },
+  {
+   "domain": "mathematics",
+   "question": "Explain what it means for a function to be continuous at a point and give an example of a function that is not continuous somewhere.",
+   "rubrics": [
+    "The function is defined at the point (f(a) exists).",
+    "The limit of f(x) as x approaches a exists (left and right limits agree).",
+    "The limit equals the function value, lim f(x) = f(a).",
+    "Gives a correct example of a discontinuity, such as 1/x at 0, a step function, or a removable hole."
+   ],
+   "answers": [
+    {
+     "label": "full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "f is continuous at a when three things hold: f(a) is actually defined, the limit of f(x) as x tends to a exists, meaning the values approaching from the left and from the right agree, and that limit is equal to f(a). Informally you can draw the graph through the point without lifting the pen. The floor function fails at every integer: as x approaches 2 from below floor(x) is 1 but from above it is 2, so the two-sided limit does not exist even though floor(2) = 2 is defined."
+    },
+    {
+     "label": "terse_full",
+     "met": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "text": "f(a) defined; lim_{x→a} f(x) exists (left = right); and the limit equals f(a). Example: f(x) = 1/x has no value at 0 and the limit blows up, so it's discontinuous at 0."
+    },
+    {
+     "label": "partial_limit_only",
+     "met": [
+      0,
+      1,
+      1,
+      0
+     ],
+     "text": "A function is continuous at a point if the limit as you approach the point exists, with the same value coming from either side, and that limiting value matches what the function gives you at the point itself, so there is no jump or gap in the graph there."
+    },
+    {
+     "label": "keyword_stuffed",
+     "met": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "text": "Continuity is about limits, the function value, left and right limits, and discontinuities like jumps, holes and asymptotes. Continuous functions are important in calculus, and polynomials, sine and cosine are continuous everywhere. Discontinuous functions are not continuous."
+    },
+    {
+     "label": "contradiction",
+     "met": [
+      1,
+      1,
+      0,
+      1
+     ],
+     "text": "For continuity at a the function must have a value there, and the limit as x approaches a must exist with the one-sided limits agreeing. The limit need not equal f(a); it is enough that both exist separately. An example of a discontinuous function is the sign function, which jumps from −1 to 1 at 0."
+    },
+    {
+     "label": "offtopic",
+     "met": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "text": "A function is differentiable at a point if the limit of the difference quotient (f(a+h) − f(a))/h exists as h tends to 0. Differentiability implies continuity but not the reverse: |x| is continuous at 0 but has no derivative there because the slopes from the two sides are −1 and 1."
+    }
+   ]
+  }
+ ]
+}

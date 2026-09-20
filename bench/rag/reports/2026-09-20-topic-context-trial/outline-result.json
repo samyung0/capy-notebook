@@ -1,0 +1,230 @@
+{
+  "answer": {
+    "reused": [],
+    "proposed": [
+      {
+        "id": "world-class-manufacturing-oee",
+        "label": "World Class Manufacturing and OEE",
+        "aliases": [
+          "overall equipment effectiveness",
+          "OEE",
+          "WCM",
+          "six big losses",
+          "TEEP",
+          "factory performance metrics"
+        ],
+        "scope": "Covers World Class Manufacturing tools and overall equipment effectiveness (OEE) fundamentals, losses analysis, data collection, and use of OEE in manufacturing system design; excludes scheduling and reliability modeling.",
+        "source_sections": "Chapter 1 Improving Operations Performance with World Class Manufacturing Technique: A Case in Automotive Industry; Chapter 2 Managing OEE to Optimize Factory Performance; Chapter 3 Using Overall Equipment Effectiveness for Manufacturing System Design"
+      },
+      {
+        "id": "reliability-maintainability-operations",
+        "label": "Reliability and Maintainability in Operations",
+        "aliases": [
+          "reliability engineering",
+          "maintainability",
+          "availability",
+          "hazard function",
+          "minimal repair",
+          "repairable systems"
+        ],
+        "scope": "Covers reliability basics, time-dependent reliability models, hazard functions, series and parallel systems, availability, and repair and substitution models; excludes human reliability analysis.",
+        "source_sections": "Chapter 4 Reliability and Maintainability in Operations Management"
+      },
+      {
+        "id": "production-scheduling-jit",
+        "label": "Production Scheduling and Just-In-Time",
+        "aliases": [
+          "job shop scheduling",
+          "JSSP",
+          "JIT",
+          "kanban",
+          "production leveling",
+          "heijunka",
+          "mixed-model scheduling"
+        ],
+        "scope": "Covers job shop scheduling problems and meta-heuristic solution methods plus just-in-time production systems, kanban, and production leveling; excludes enterprise risk and packaging topics.",
+        "source_sections": "Chapter 5 Production Scheduling Approaches for Operations Management; Chapter 6 On Just-In-Time Production Leveling"
+      },
+      {
+        "id": "operations-risk-packaging",
+        "label": "Operations Risk Management and Packaging",
+        "aliases": [
+          "enterprise risk management",
+          "ERM",
+          "business continuity",
+          "packaging operations",
+          "e-commerce logistics"
+        ],
+        "scope": "Covers enterprise risk management processes, risk classification, control systems, business continuity, and the role of packaging in operations and e-commerce logistics; excludes human reliability analysis.",
+        "source_sections": "Chapter 7 Enterprise Risk Management to Drive Operations Performances; Chapter 8 The Important Role of Packaging in Operations Management"
+      },
+      {
+        "id": "human-reliability-analysis",
+        "label": "Human Reliability Analysis",
+        "aliases": [
+          "HRA",
+          "human error analysis",
+          "rest breaks",
+          "human factors reliability"
+        ],
+        "scope": "Covers human reliability analysis techniques in manufacturing operations, HRA method reviews, and rest break research; excludes equipment reliability modeling.",
+        "source_sections": "Chapter 9 An Overview of Human Reliability Analysis Techniques in Manufacturing Operations"
+      }
+    ]
+  },
+  "merged": {
+    "subject_id": "management",
+    "topics": [
+      {
+        "id": "world-class-manufacturing-oee",
+        "label": "World Class Manufacturing and OEE",
+        "aliases": [
+          "overall equipment effectiveness",
+          "OEE",
+          "WCM",
+          "six big losses",
+          "TEEP",
+          "factory performance metrics"
+        ],
+        "scope": "Covers World Class Manufacturing tools and overall equipment effectiveness (OEE) fundamentals, losses analysis, data collection, and use of OEE in manufacturing system design; excludes scheduling and reliability modeling.",
+        "source_sections": "Chapter 1 Improving Operations Performance with World Class Manufacturing Technique: A Case in Automotive Industry; Chapter 2 Managing OEE to Optimize Factory Performance; Chapter 3 Using Overall Equipment Effectiveness for Manufacturing System Design"
+      },
+      {
+        "id": "reliability-maintainability-operations",
+        "label": "Reliability and Maintainability in Operations",
+        "aliases": [
+          "reliability engineering",
+          "maintainability",
+          "availability",
+          "hazard function",
+          "minimal repair",
+          "repairable systems"
+        ],
+        "scope": "Covers reliability basics, time-dependent reliability models, hazard functions, series and parallel systems, availability, and repair and substitution models; excludes human reliability analysis.",
+        "source_sections": "Chapter 4 Reliability and Maintainability in Operations Management"
+      },
+      {
+        "id": "production-scheduling-jit",
+        "label": "Production Scheduling and Just-In-Time",
+        "aliases": [
+          "job shop scheduling",
+          "JSSP",
+          "JIT",
+          "kanban",
+          "production leveling",
+          "heijunka",
+          "mixed-model scheduling"
+        ],
+        "scope": "Covers job shop scheduling problems and meta-heuristic solution methods plus just-in-time production systems, kanban, and production leveling; excludes enterprise risk and packaging topics.",
+        "source_sections": "Chapter 5 Production Scheduling Approaches for Operations Management; Chapter 6 On Just-In-Time Production Leveling"
+      },
+      {
+        "id": "operations-risk-packaging",
+        "label": "Operations Risk Management and Packaging",
+        "aliases": [
+          "enterprise risk management",
+          "ERM",
+          "business continuity",
+          "packaging operations",
+          "e-commerce logistics"
+        ],
+        "scope": "Covers enterprise risk management processes, risk classification, control systems, business continuity, and the role of packaging in operations and e-commerce logistics; excludes human reliability analysis.",
+        "source_sections": "Chapter 7 Enterprise Risk Management to Drive Operations Performances; Chapter 8 The Important Role of Packaging in Operations Management"
+      },
+      {
+        "id": "human-reliability-analysis",
+        "label": "Human Reliability Analysis",
+        "aliases": [
+          "HRA",
+          "human error analysis",
+          "rest breaks",
+          "human factors reliability"
+        ],
+        "scope": "Covers human reliability analysis techniques in manufacturing operations, HRA method reviews, and rest break research; excludes equipment reliability modeling.",
+        "source_sections": "Chapter 9 An Overview of Human Reliability Analysis Techniques in Manufacturing Operations"
+      }
+    ],
+    "reused": [],
+    "proposed": [
+      {
+        "id": "world-class-manufacturing-oee",
+        "label": "World Class Manufacturing and OEE",
+        "aliases": [
+          "overall equipment effectiveness",
+          "OEE",
+          "WCM",
+          "six big losses",
+          "TEEP",
+          "factory performance metrics"
+        ],
+        "scope": "Covers World Class Manufacturing tools and overall equipment effectiveness (OEE) fundamentals, losses analysis, data collection, and use of OEE in manufacturing system design; excludes scheduling and reliability modeling.",
+        "source_sections": "Chapter 1 Improving Operations Performance with World Class Manufacturing Technique: A Case in Automotive Industry; Chapter 2 Managing OEE to Optimize Factory Performance; Chapter 3 Using Overall Equipment Effectiveness for Manufacturing System Design"
+      },
+      {
+        "id": "reliability-maintainability-operations",
+        "label": "Reliability and Maintainability in Operations",
+        "aliases": [
+          "reliability engineering",
+          "maintainability",
+          "availability",
+          "hazard function",
+          "minimal repair",
+          "repairable systems"
+        ],
+        "scope": "Covers reliability basics, time-dependent reliability models, hazard functions, series and parallel systems, availability, and repair and substitution models; excludes human reliability analysis.",
+        "source_sections": "Chapter 4 Reliability and Maintainability in Operations Management"
+      },
+      {
+        "id": "production-scheduling-jit",
+        "label": "Production Scheduling and Just-In-Time",
+        "aliases": [
+          "job shop scheduling",
+          "JSSP",
+          "JIT",
+          "kanban",
+          "production leveling",
+          "heijunka",
+          "mixed-model scheduling"
+        ],
+        "scope": "Covers job shop scheduling problems and meta-heuristic solution methods plus just-in-time production systems, kanban, and production leveling; excludes enterprise risk and packaging topics.",
+        "source_sections": "Chapter 5 Production Scheduling Approaches for Operations Management; Chapter 6 On Just-In-Time Production Leveling"
+      },
+      {
+        "id": "operations-risk-packaging",
+        "label": "Operations Risk Management and Packaging",
+        "aliases": [
+          "enterprise risk management",
+          "ERM",
+          "business continuity",
+          "packaging operations",
+          "e-commerce logistics"
+        ],
+        "scope": "Covers enterprise risk management processes, risk classification, control systems, business continuity, and the role of packaging in operations and e-commerce logistics; excludes human reliability analysis.",
+        "source_sections": "Chapter 7 Enterprise Risk Management to Drive Operations Performances; Chapter 8 The Important Role of Packaging in Operations Management"
+      },
+      {
+        "id": "human-reliability-analysis",
+        "label": "Human Reliability Analysis",
+        "aliases": [
+          "HRA",
+          "human error analysis",
+          "rest breaks",
+          "human factors reliability"
+        ],
+        "scope": "Covers human reliability analysis techniques in manufacturing operations, HRA method reviews, and rest break research; excludes equipment reliability modeling.",
+        "source_sections": "Chapter 9 An Overview of Human Reliability Analysis Techniques in Manufacturing Operations"
+      }
+    ],
+    "mapped": [],
+    "renamed": [],
+    "subject_total": 5
+  },
+  "model": "glm-5.3-flash:cloud",
+  "usage": {
+    "prompt_tokens": 3009,
+    "completion_tokens": 649,
+    "reasoning_tokens": null
+  },
+  "elapsed_s": 5.26600000000326,
+  "input_chars": 11821
+}

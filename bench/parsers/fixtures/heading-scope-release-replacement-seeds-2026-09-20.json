@@ -1,0 +1,13 @@
+{
+  "sources": [
+    {
+      "id": "scope-latex-author",
+      "title": "LaTeX for authors current version",
+      "url": "https://www.latex-project.org/help/documentation/usrguide.pdf",
+      "landing_page": "https://www.latex-project.org/help/documentation/",
+      "family": "LaTeX Project author guide",
+      "language": "en",
+      "licence": "LPPL1.3c; CTAN package metadata"
+    }
+  ]
+}

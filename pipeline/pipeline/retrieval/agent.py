@@ -738,7 +738,7 @@ async def _run_turn(
 async def _curate_unavailable(ctx: ToolContext, spec: models.ModelConfig) -> str:
     """Why this turn cannot run in curate mode, or empty when it can.
 
-    The topic catalog read is the check: a library that is configured but down
+    The subject list read is the check: a library that is configured but down
     has to become a typed ``model_unavailable`` here rather than a generic
     ``agent_failed`` from the first tool call.
     """
@@ -755,10 +755,10 @@ async def _curate_unavailable(ctx: ToolContext, spec: models.ModelConfig) -> str
     except Exception as exc:  # noqa: BLE001 - any failure to reach the library
         return f"the knowledge library did not answer: {exc}"
     if not ctx.library_catalog:
-        # No topics means nothing is published: every knowledge call would be
-        # refused for an unknown topic, which is not a workload the turn should
-        # spend its stall budget discovering.
-        return "the knowledge library has no published topics"
+        # No subject holds an excerpt, so nothing is published: every knowledge
+        # call would come back empty or refused, which is not a workload the
+        # turn should spend its stall budget discovering.
+        return "the knowledge library has no published subjects"
     return ""
 
 

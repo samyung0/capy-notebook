@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "frozen_at": "2026-09-19T20:01:24.025846+00:00",
+  "source_manifest": "bench/parsers/fixtures/heading-scope-release-sources-2026-09-20.json",
+  "source_manifest_sha256": "a359204a411525de6d12494d0f923b54e183a2006ee43892563b11165131d0e4",
+  "provenance": "Source rendering and embedded outline only; no parser output inspected for these two PDFs",
+  "coordinate_system": "Points, top-left, 1-based physical pages",
+  "cases": [
+    {
+      "id": "heading-scope-01",
+      "source_id": "scope-lua50",
+      "page": 7,
+      "bbox": [
+        70,
+        69,
+        190,
+        89
+      ],
+      "source_text": "1 Introduction",
+      "expected_role": "root",
+      "expected_behavior": "Preserve heading and following prose scope; allow shared book title parent but no preceding independent section ancestor",
+      "following_text_anchor": "Lua is an extension programming language",
+      "required_section_ancestor": "Introduction",
+      "forbidden_section_ancestors": [],
+      "source_render": "bench/parsers/reports/local/2026-09-20-heading-scope-release/source-renders/scope-lua50-p7.png"
+    },
+    {
+      "id": "heading-scope-02",
+      "source_id": "scope-lua50",
+      "page": 7,
+      "bbox": [
+        70,
+        517,
+        200,
+        537
+      ],
+      "source_text": "2 The Language",
+      "expected_role": "root",
+      "expected_behavior": "Preserve heading and following prose scope; allow shared book title parent but no preceding independent section ancestor",
+      "following_text_anchor": "This section describes the lexis, the syntax, and the semantics of Lua",
+      "required_section_ancestor": "The Language",
+      "forbidden_section_ancestors": [
+        "Introduction"
+      ],
+      "source_render": "bench/parsers/reports/local/2026-09-20-heading-scope-release/source-renders/scope-lua50-p7.png"
+    },
+    {
+      "id": "heading-scope-03",
+      "source_id": "scope-lua50",
+      "page": 28,
+      "bbox": [
+        70.00000762939453,
+        372.53314208984375,
+        347.5638732910156,
+        390.879150390625
+      ],
+      "source_text": "3 The Application Program Interface",
+      "expected_role": "root",
+      "expected_behavior": "Preserve heading and following prose scope; allow shared book title parent but no preceding independent section ancestor",
+      "following_text_anchor": "This section describes the C API for Lua",
+      "required_section_ancestor": "The Application Program Interface",
+      "forbidden_section_ancestors": [
+        "Introduction",
+        "The Language"
+      ],
+      "source_render": "bench/parsers/reports/local/2026-09-20-heading-scope-release/source-renders/scope-lua50-p28.png"
+    },
+    {
+      "id": "heading-scope-04",
+      "source_id": "scope-latex-author",
+      "page": 1,
+      "bbox": [
+        122,
+        327,
+        190,
+        347
+      ],
+      "source_text": "Contents",
+      "expected_role": "root",
+      "expected_behavior": "Preserve heading and following prose scope; allow shared book title parent but no preceding independent section ancestor",
+      "following_text_anchor": "Introduction",
+      "required_section_ancestor": "Contents",
+      "forbidden_section_ancestors": [],
+      "source_render": "bench/parsers/reports/local/2026-09-20-heading-scope-release/source-renders/scope-latex-author-p1.png"
+    },
+    {
+      "id": "heading-scope-05",
+      "source_id": "scope-latex-author",
+      "page": 2,
+      "bbox": [
+        122,
+        247,
+        240,
+        267
+      ],
+      "source_text": "1 Introduction",
+      "expected_role": "root",
+      "expected_behavior": "Preserve heading and following prose scope; allow shared book title parent but no preceding independent section ancestor",
+      "following_text_anchor": "was released in 1994",
+      "required_section_ancestor": "Introduction",
+      "forbidden_section_ancestors": [
+        "Contents"
+      ],
+      "source_render": "bench/parsers/reports/local/2026-09-20-heading-scope-release/source-renders/scope-latex-author-p2.png"
+    },
+    {
+      "id": "heading-scope-06",
+      "source_id": "scope-latex-author",
+      "page": 2,
+      "bbox": [
+        122,
+        418,
+        472,
+        456
+      ],
+      "source_text": "2 Creating document commands and environments",
+      "expected_role": "root",
+      "expected_behavior": "Preserve heading and following prose scope; allow shared book title parent but no preceding independent section ancestor",
+      "following_text_anchor": "Creating document commands and environments using",
+      "required_section_ancestor": "Creating document commands and environments",
+      "forbidden_section_ancestors": [
+        "Contents",
+        "Introduction"
+      ],
+      "source_render": "bench/parsers/reports/local/2026-09-20-heading-scope-release/source-renders/scope-latex-author-p2.png"
+    }
+  ],
+  "limitations": [
+    "Two English TeX-produced technical manuals; this is a small scope check, not exporter or language generalization.",
+    "All selected heading entries appear in embedded outlines; this does not replace the explicit omitted-Contents LibreOffice regression control.",
+    "Following anchor can appear in contents too: require page/region plus surrounding source prose, not string match alone.",
+    "Passes may be unchanged baseline behavior; no repair-success claim before paired evaluation."
+  ]
+}

@@ -1,0 +1,722 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Capy agentic playground</title>
+<style>
+body {
+  margin: 0;
+  font:
+    13px / 1.4 system-ui,
+    sans-serif;
+  color: #222;
+  background: #f6f6f4;
+}
+.wrap {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 420px 1fr 260px;
+  gap: 12px;
+  height: 100vh;
+  padding: 12px;
+}
+.col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow: auto;
+}
+textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 420px;
+  font:
+    12px / 1.35 ui-monospace,
+    Menlo,
+    monospace;
+}
+select,
+input,
+button {
+  font: inherit;
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.card {
+  padding: 8px 10px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+}
+.muted {
+  color: #777;
+}
+.tool {
+  border-left: 3px solid #8ab;
+}
+.tool.refused,
+.tool.failed {
+  border-left-color: #d66;
+}
+.narration {
+  color: #555;
+  white-space: pre-wrap;
+}
+.answer {
+  white-space: pre-wrap;
+  border-left: 3px solid #4a4;
+}
+details > summary {
+  cursor: pointer;
+}
+pre {
+  max-height: 320px;
+  padding: 6px;
+  margin: 4px 0;
+  overflow: auto;
+  font-size: 12px;
+  white-space: pre-wrap;
+  background: #fafafa;
+}
+img.capture {
+  max-width: 100%;
+  border: 1px solid #ccc;
+}
+.runs a {
+  display: block;
+  padding: 3px 0;
+  color: #246;
+  text-decoration: none;
+  border-bottom: 1px solid #eee;
+}
+.cite {
+  margin: 2px 0;
+  font-size: 12px;
+}
+#question {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 60px;
+}
+.stat {
+  font-size: 12px;
+  color: #555;
+}
+</style>
+<div class="wrap">
+  <div class="col">
+    <div class="row">
+      <b>Config</b> <select id="configs"></select>
+      <button id="reload" type="button">Reload</button>
+      <input id="saveas" placeholder="save as name" size="14">
+      <button id="save" type="button">Save</button>
+      <button
+        id="fill"
+        title="write every default field into the JSON so all knobs are visible"
+      >
+        Fill in defaults
+      </button>
+      <span class="muted" id="target"></span>
+    </div>
+    <div class="row">
+      <label>Model <select id="models"></select></label>
+    </div>
+    <div class="row">
+      <label>Workspace <select id="workspaces"></select></label>
+    </div>
+    <div class="row">
+      <label>Quality file <span class="muted" id="quality">none</span></label>
+    </div>
+    <div class="row">
+      <label><input id="curate" type="checkbox"> Curate mode</label>
+      <span class="muted"
+        >library tools, curate prompt, progress ledger; materials are written as
+        JSON files under the run</span
+      >
+    </div>
+    <textarea id="json" spellcheck="false"></textarea>
+    <div class="muted">
+      Fields absent from the JSON use the defaults shown in the browser console
+      (<code>defaults</code>). Tools: search_workspace, list_sources,
+      describe_documents, read_document, capture_page, create_material,
+      inspect_document, edit_document; curate adds search_knowledge,
+      browse_knowledge, read_knowledge, capture_knowledge_page, create_ledger,
+      create_material, edit_document. capture.mode: pixels | ocr | caption.
+    </div>
+    <details open>
+      <summary>Effective system prompt (what the turn sends)</summary>
+      <textarea
+        id="prompt"
+        spellcheck="false"
+        style="min-height:220px"
+      ></textarea>
+      <div class="row">
+        <button id="applyPrompt" type="button">Apply as system_prompt</button>
+        <button id="resetPrompt" type="button">
+          Back to production prompt
+        </button>
+        <span class="muted"
+          >Apply writes the text above into <code>system_prompt</code> and
+          clears <code>prompt_addon</code> and <code>capture.addon</code>; reset
+          sets <code>system_prompt</code> to null.</span
+        >
+      </div>
+    </details>
+    <details>
+      <summary>
+        Tools array sent with the request (name, description, argument schema)
+      </summary>
+      <pre id="toolsJson"></pre>
+    </details>
+    <details>
+      <summary>Files in workspace</summary>
+      <pre id="files"></pre>
+    </details>
+  </div>
+  <div class="col">
+    <textarea id="question" placeholder="Ask the agent…"></textarea>
+    <div class="row">
+      <button id="run" type="button">Run</button>
+      <button id="clear" type="button">Clear conversation</button>
+      <span class="muted" id="status"></span>
+    </div>
+    <div id="log"></div>
+  </div>
+  <div class="col">
+    <b>Progress ledger</b>
+    <div class="card" id="ledger">
+      <span class="muted">curate turns only</span>
+    </div>
+    <b>Materials</b>
+    <div class="card" id="materials"><span class="muted">none yet</span></div>
+    <b>Runs</b>
+    <div class="runs" id="runs"></div>
+  </div>
+</div>
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+let state = null,
+  history = [],
+  checkpoint = null,
+  nextId = 1,
+  log = $('log'),
+  active = null;
+const k = (n) => (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n));
+
+async function loadState() {
+  state = await (await fetch('/api/state')).json();
+  console.log('defaults', state.defaults);
+  const lib = state.library;
+  $('target').textContent =
+    'target: ' +
+    state.target +
+    ' · library: ' +
+    (lib
+      ? `${lib.books} books · ${lib.excerpts} excerpts · ${lib.topics} topics`
+      : 'not configured');
+  $('configs').innerHTML = state.configs
+    .map((c) => `<option>${c}</option>`)
+    .join('');
+  $('models').innerHTML = state.models
+    .map(
+      (m) =>
+        `<option value='${JSON.stringify([m.provider_slug, m.model_slug, m.version, m.default_thinking])}'>${m.provider_slug}/${m.model_slug} v${m.version}${(m.capabilities || []).includes('vision') ? ' 👁' : ''}</option>`
+    )
+    .join('');
+  $('workspaces').innerHTML = state.workspaces
+    .map(
+      (w) =>
+        `<option value="${w.id}">${w.id} · ${w.name} · ${w.chunks} chunks</option>`
+    )
+    .join('');
+  $('runs').innerHTML = state.runs
+    .map((r) => `<a href="#" data-run="${r}">${r}</a>`)
+    .join('');
+  await loadConfig($('configs').value);
+}
+async function loadRuns() {
+  const fresh = await (await fetch('/api/state')).json();
+  state.runs = fresh.runs;
+  state.quality_files = fresh.quality_files;
+  $('runs').innerHTML = state.runs
+    .map((r) => `<a href="#" data-run="${r}">${r}</a>`)
+    .join('');
+}
+function currentConfig() {
+  return JSON.parse($('json').value);
+}
+function mergedConfig(c) {
+  const out = JSON.parse(JSON.stringify(state.defaults));
+  for (const [k, v] of Object.entries(c))
+    out[k] =
+      v &&
+      typeof v === 'object' &&
+      !Array.isArray(v) &&
+      out[k] &&
+      typeof out[k] === 'object'
+        ? { ...out[k], ...v }
+        : v;
+  return out;
+}
+$('fill').onclick = () => setConfig(mergedConfig(currentConfig()));
+function setConfig(c) {
+  $('json').value = JSON.stringify(c, null, 2);
+  const m = c.model || state.defaults.model;
+  for (const o of $('models').options) {
+    const [p, s, v] = JSON.parse(o.value);
+    o.selected =
+      p === m.provider_slug && s === m.model_slug && v === (m.version || 1);
+  }
+  $('workspaces').value = c.workspace_id || state.defaults.workspace_id;
+  $('curate').checked = !!c.curate;
+  // A config may carry the frozen request it was written for.
+  if (c.question && !$('question').value) $('question').value = c.question;
+  $('quality').textContent = state.quality_files.includes(
+    `${state.target}-${c.workspace_id}.json`
+  )
+    ? `${state.target}-${c.workspace_id}.json`
+    : 'none (run chunk_quality.py)';
+  fetch('/api/prompt', {
+    body: JSON.stringify(c),
+    headers: { 'content-type': 'application/json' },
+    method: 'POST',
+  })
+    .then((r) => r.json())
+    .then((p) => {
+      $('prompt').value = p.prompt;
+      $('toolsJson').textContent = JSON.stringify(p.tools, null, 2);
+    });
+  fetch(`/api/workspaces/${c.workspace_id}/files`)
+    .then((r) => r.json())
+    .then((files) => {
+      $('files').textContent = files
+        .map((f) => `${f.id}  ${f.name}  ${f.chunks} chunks  ${f.status}`)
+        .join('\n');
+    });
+}
+async function loadConfig(name) {
+  const c = await (await fetch(`/api/configs/${name}`)).json();
+  setConfig(c.raw);
+  $('saveas').value = name;
+}
+$('configs').onchange = () => loadConfig($('configs').value);
+$('reload').onclick = loadState;
+$('save').onclick = async () => {
+  const name = $('saveas').value.trim();
+  const r = await fetch(`/api/configs/${name}`, {
+    body: $('json').value,
+    headers: { 'content-type': 'application/json' },
+    method: 'PUT',
+  });
+  $('status').textContent = r.ok ? `saved ${name}` : await r.text();
+  if (r.ok) {
+    await loadState();
+    $('configs').value = name;
+    await loadConfig(name);
+  }
+};
+$('models').onchange = () => {
+  const [provider_slug, model_slug, version, thinking] = JSON.parse(
+    $('models').value
+  );
+  const c = currentConfig();
+  c.model = {
+    model_slug,
+    provider_slug,
+    thinking: (c.model && c.model.thinking) || thinking || 'instant',
+    version,
+  };
+  setConfig(c);
+};
+$('workspaces').onchange = () => {
+  const c = currentConfig();
+  c.workspace_id = $('workspaces').value;
+  setConfig(c);
+};
+$('curate').onchange = () => {
+  const c = currentConfig();
+  c.curate = $('curate').checked;
+  // The switch alone changes nothing unless the curate tools are offered.
+  if (c.curate)
+    c.tools = [
+      ...new Set([
+        ...(c.tools || []),
+        'search_knowledge',
+        'browse_knowledge',
+        'read_knowledge',
+        'capture_knowledge_page',
+        'create_ledger',
+        'create_material',
+        'edit_document',
+      ]),
+    ];
+  setConfig(c);
+};
+$('clear').onclick = () => {
+  if (active) active.abort();
+  active = null;
+  history = [];
+  checkpoint = null;
+  log.innerHTML = '';
+  resetPanels();
+  $('status').textContent = 'idle';
+};
+function resetPanels() {
+  for (const id of Object.keys(materials)) delete materials[id];
+  renderMaterials();
+  $('ledger').innerHTML = `<span class="muted">curate turns only</span>`;
+}
+$('json').onchange = () => {
+  try {
+    setConfig(currentConfig());
+  } catch (e) {
+    $('status').textContent = 'JSON: ' + e.message;
+  }
+};
+$('applyPrompt').onclick = () => {
+  const c = currentConfig();
+  c.system_prompt = $('prompt').value;
+  c.prompt_addon = '';
+  c.capture = { ...(c.capture || {}), addon: false };
+  setConfig(c);
+};
+$('resetPrompt').onclick = () => {
+  const c = currentConfig();
+  c.system_prompt = null;
+  setConfig(c);
+};
+
+function card(cls, html) {
+  const d = document.createElement('div');
+  d.className = 'card ' + cls;
+  d.innerHTML = html;
+  log.appendChild(d);
+  log.scrollTop = 1e9;
+  return d;
+}
+const esc = (s) =>
+  String(s ?? '').replace(
+    /[&<>]/g,
+    (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[ch]
+  );
+const tools = {};
+const materials = {};
+function renderLedger(l) {
+  const requests = l.requests || [];
+  if (!requests.length) {
+    $('ledger').innerHTML = `<span class="muted">no ledger yet</span>`;
+    return;
+  }
+  const asked = requests
+    .map((r) => `<div class="cite"><b>${esc(r)}</b></div>`)
+    .join('');
+  const todos = (l.todos || [])
+    .map(
+      (t) =>
+        `<div class="cite">${t.done ? '☑' : '☐'} ${t.id}. ${esc(t.text)}${t.materialId ? ` <span class="muted">→ ${esc(t.materialId)}</span>` : ''}</div>`
+    )
+    .join('');
+  const mats = (l.materials || [])
+    .map(
+      (m) =>
+        `<div class="cite muted">${m.kind === 'edit' ? `appended to ${esc(m.id)}` : `${esc(m.kind)} '${esc(m.title)}' (${esc(m.id)})`} · ${esc(m.size)}${m.todo == null ? '' : ` · todo ${m.todo}`}</div>`
+    )
+    .join('');
+  const reads = (l.reads || []).length
+    ? `<details><summary class="muted">${l.reads.length} reads this turn</summary>${l.reads.map((r) => `<div class="cite muted">${esc(r.excerpt_id)} from ${r.start} · ${esc(r.section)}</div>`).join('')}</details>`
+    : '';
+  $('ledger').innerHTML =
+    asked +
+    todos +
+    (mats ? `<div class="muted">materials on the ledger</div>${mats}` : '') +
+    reads;
+}
+function renderMaterials() {
+  $('materials').innerHTML =
+    Object.values(materials)
+      .map(
+        (m) =>
+          `<div class="cite"><b>${esc(m.title)}</b> · ${esc(m.kind)} · ${esc(m.size)}<br><span class="muted">${esc(m.id)} · ${m.provenance ? esc(m.provenance.books.map((b) => b.title).join('; ')) : 'no provenance'}${m.edits && m.edits.length ? ` · ${m.edits.length} edits` : ''}</span></div>`
+      )
+      .join('') || `<span class="muted">none yet</span>`;
+}
+function configCard(label, c, prompt) {
+  const cap = (c.tools || []).includes('capture_page')
+    ? (c.capture && c.capture.mode) || 'pixels'
+    : 'off';
+  const q =
+    c.quality && c.quality.show
+      ? `notes below ${c.quality.only_below ?? 1.01}`
+      : 'no notes';
+  const m = c.model || {};
+  const via =
+    m.transport && m.transport.url
+      ? ` via ${esc(new URL(m.transport.url).host)}`
+      : '';
+  const cit = c.curate
+    ? 'none (curate)'
+    : (c.answer && c.answer.citations) || 'as_is';
+  card(
+    'stat',
+    `<b>${esc(label)}</b> · ${esc(m.provider_slug)}/${esc(m.model_slug)} (${esc(m.thinking || '')})${via} · ${esc(c.workspace_id)}${c.curate ? ' · curate' : ''} · tools: ${esc((c.tools || []).join(', '))} · capture ${esc(cap)} · ${esc(q)} · citations ${esc(cit)}` +
+      `<details><summary>config JSON</summary><pre>${esc(JSON.stringify(c, null, 2))}</pre></details>` +
+      (prompt
+        ? `<details><summary>system prompt sent</summary><pre>${esc(prompt)}</pre></details>`
+        : '')
+  );
+}
+
+function render(ev, runId) {
+  if (ev.type === 'phase') {
+    $('status').textContent = ev.phase || ev.name || ev.type;
+    return;
+  }
+  if (ev.type === 'block_start') {
+    const d = card('narration', '');
+    d.dataset.block = ev.blockId || ev.id;
+    return;
+  }
+  if (ev.type === 'block_delta') {
+    const d = [...log.children]
+      .reverse()
+      .find((x) => x.dataset.block === (ev.blockId || ev.id));
+    if (d) d.textContent += ev.text || ev.delta || '';
+    return;
+  }
+  if (ev.type === 'block_end') {
+    const d = [...log.children]
+      .reverse()
+      .find((x) => x.dataset.block === (ev.blockId || ev.id));
+    if (d)
+      d.className = 'card ' + (ev.kind === 'answer' ? 'answer' : 'narration');
+    return;
+  }
+  if (ev.type === 'tool_start') {
+    tools[ev.callId] = card(
+      'tool',
+      `<b>${esc(ev.name)}</b> <span class="muted">${esc(ev.detail)}</span> <span class="out muted">…</span>`
+    );
+    return;
+  }
+  if (ev.type === 'tool_end') {
+    const d = tools[ev.callId];
+    if (!d) return;
+    d.classList.add(ev.outcome);
+    d.querySelector('.out').textContent =
+      ev.outcome + (ev.error ? ` · ${ev.error.code}: ${ev.error.message}` : '');
+    return;
+  }
+  if (ev.type === 'tool_text') {
+    const d = tools[ev.callId];
+    if (!d) return;
+    d.insertAdjacentHTML(
+      'beforeend',
+      `<details><summary>text sent to the model (${ev.text.length} chars)</summary><pre>${esc(ev.text)}</pre></details>`
+    );
+    return;
+  }
+  if (ev.type === 'capture') {
+    const d = tools[ev.call_id] || card('tool', '<b>capture_page</b>');
+    d.insertAdjacentHTML(
+      'beforeend',
+      `<div class="muted">${esc(ev.file_id)} p.${ev.page} ${JSON.stringify(ev.bbox)} · ${ev.mode} · ${(ev.image_bytes / 1024) | 0} KB · ${ev.image_px ? ev.image_px.join('×') + ' px ≈ ' + k(ev.est_image_tokens) + ' image tokens' : ''}${ev.cited_as ? ' · supports ' + ev.cited_as.map((n) => `[${n}]`).join('') : ' · new citation'}</div><img class="capture" src="${ev.url}">`
+    );
+    return;
+  }
+  if (ev.type === 'ledger') {
+    renderLedger(ev);
+    return;
+  }
+  if (ev.type === 'material') {
+    materials[ev.id] = ev;
+    renderMaterials();
+    return;
+  }
+  if (ev.type === 'stall') {
+    card(
+      'stat',
+      `<b>stall guard</b> call ${ev.call} runs with tools off · ${ev.todos_done}/${ev.todos} todos done`
+    );
+    return;
+  }
+  if (ev.type === 'answer_rendered') {
+    const d = [...log.children]
+      .reverse()
+      .find((x) => x.dataset.block === ev.blockId);
+    if (!d) return;
+    d.className = 'card answer';
+    d.textContent = ev.text;
+    if (ev.parse_failed)
+      d.insertAdjacentHTML(
+        'afterbegin',
+        `<div class="muted">structured answer did not parse${ev.repaired ? ' (after one repair call)' : ''}; showing raw text</div>`
+      );
+    else if (ev.repaired)
+      d.insertAdjacentHTML(
+        'afterbegin',
+        `<div class="muted">rendered after one JSON repair call</div>`
+      );
+    return;
+  }
+  if (ev.type === 'citations') {
+    const d = card(
+      '',
+      `<b>Citations${ev.final ? ' (used by the answer, renumbered)' : ''}</b>` +
+        ev.citations
+          .map((c, i) => {
+            const box =
+              (c.regions && c.regions[0] && c.regions[0].bbox) || null;
+            const href = `/api/page?file_id=${encodeURIComponent(c.fileId)}&page=${c.pageStart || 1}${box ? '&bbox=' + box.join(',') : ''}`;
+            return `<div class="cite">[${i + 1}] ${esc(c.fileName)} p.${c.pageStart ?? '?'} <a target="_blank" href="${href}">view</a> <span class="muted">${esc((c.snippet || '').slice(0, 120))}</span></div>`;
+          })
+          .join('') +
+        (ev.unused && ev.unused.length
+          ? `<details><summary class="muted">${ev.unused.length} retrieved but not cited</summary>${ev.unused.map((c) => `<div class="cite muted">${esc(c.fileName)} p.${c.pageStart ?? '?'} ${esc((c.snippet || '').slice(0, 100))}</div>`).join('')}</details>`
+          : '')
+    );
+    d.dataset.citations = '1';
+    const old = [...log.children].filter((x) => x.dataset.citations && x !== d);
+    old.forEach((x) => x.remove());
+    return;
+  }
+  if (ev.type === 'context') {
+    const p = ev.parts;
+    card(
+      'stat',
+      `<b>call ${ev.call} context</b> reported ${k(ev.reported_input)} in${ev.cached_read ? ` (${k(ev.cached_read)} cached)` : ''} · estimated ${k(ev.estimated_total)} of limit ${k(ev.limit)} · system ${k(p.system)} · schemas ${k(p.schemas)} · memory ${k(p.memory)} · history ${k(p.history)} · query ${k(p.query)} · assistant ${k(p.assistant)} · tool results ${k(p.tool_results)} in ${ev.counts.tool_results} · images ${ev.counts.images} ≈ ${k(p.images_est)}`
+    );
+    return;
+  }
+  if (ev.type === 'compaction') {
+    card(
+      'stat',
+      `<b>${esc(ev.purpose)} summary</b> folded ${ev.turns_folded} messages${ev.prior_summary_tokens ? ` + prior memory ${k(ev.prior_summary_tokens)}` : ''} into ${k(ev.summary_tokens)} tokens · ${ev.elapsed_seconds}s<details><summary>summary text</summary><pre>${esc(ev.summary)}</pre></details>`
+    );
+    return;
+  }
+  if (ev.type === 'checkpoint') {
+    checkpoint = {
+      estimatedTokens: ev.estimatedTokens,
+      modelSlug: ev.modelSlug,
+      modelVersion: ev.modelVersion,
+      providerSlug: ev.providerSlug,
+      summary: ev.summary,
+      throughMessageId: ev.throughMessageId,
+    };
+    const cut = history.findIndex((m) => m.id === ev.throughMessageId);
+    if (cut >= 0) history = history.slice(cut + 1);
+    card(
+      'stat',
+      `<b>checkpoint</b> through ${esc(ev.throughMessageId)} · ${k(ev.estimatedTokens)} tokens of memory${cut >= 0 ? ` replace ${cut + 1} history messages on later turns` : ' carried on later turns'}`
+    );
+    return;
+  }
+  if (ev.type === 'done') {
+    card(
+      'stat',
+      `<b>done</b> stop=${esc(ev.telemetry && ev.telemetry.stopReason)} planning=${ev.telemetry && ev.telemetry.planningRounds} tools=${ev.telemetry && ev.telemetry.toolCallsTurn} tokens=${ev.tokenCount ?? '?'}`
+    );
+    if (ev.answer)
+      history.push({
+        content: ev.answer,
+        id: 'm' + nextId++,
+        role: 'assistant',
+      });
+    return;
+  }
+  if (ev.type === 'run_saved') {
+    card(
+      'stat',
+      `run <a href="/api/runs/${ev.id}" target="_blank">${ev.id}</a> · ${ev.elapsed_seconds}s · ${esc(JSON.stringify(ev.usage))}`
+    );
+    loadRuns();
+    return;
+  }
+  if (ev.type === 'error') {
+    card(
+      'tool failed',
+      `<b>error</b> ${esc(ev.code)}: ${esc(ev.message)}${ev.detail ? `<pre>${esc(ev.detail)}</pre>` : ''}`
+    );
+    return;
+  }
+  card('muted', esc(JSON.stringify(ev)));
+}
+
+$('run').onclick = async () => {
+  const question = $('question').value.trim();
+  if (!question) return;
+  // A previous stream still being read would keep painting into this log; drop it first.
+  if (active) active.abort();
+  const mine = (active = new AbortController());
+  configCard(
+    'config ' + $('saveas').value,
+    mergedConfig(currentConfig()),
+    $('prompt').value
+  );
+  card('', `<b>You</b><br>${esc(question)}`);
+  let res;
+  try {
+    res = await fetch('/api/turn', {
+      body: JSON.stringify({
+        checkpoint,
+        config: currentConfig(),
+        history,
+        question,
+      }),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+      signal: mine.signal,
+    });
+  } catch (e) {
+    if (e.name !== 'AbortError') card('tool failed', esc(e.message));
+    return;
+  }
+  if (!res.ok) {
+    card('tool failed', esc(await res.text()));
+    return;
+  }
+  history.push({ content: question, id: 'm' + nextId++, role: 'user' });
+  $('question').value = '';
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '';
+  try {
+    while (active === mine) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const line = buf.slice(0, i);
+        buf = buf.slice(i + 2);
+        if (line.startsWith('data: ') && active === mine)
+          render(JSON.parse(line.slice(6)));
+      }
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') card('tool failed', esc(e.message));
+  }
+  if (active === mine) {
+    active = null;
+    $('status').textContent = 'idle';
+  }
+};
+$('runs').onclick = async (e) => {
+  const id = e.target.dataset.run;
+  if (!id) return;
+  e.preventDefault();
+  const run = await (await fetch(`/api/runs/${id}`)).json();
+  log.innerHTML = '';
+  history = [];
+  resetPanels();
+  configCard('run ' + id, run.config, run.system_prompt);
+  card('', `<b>You</b><br>${esc(run.question)}`);
+  for (const ev of run.events) render(ev, id);
+  if (run.answer) card('answer', esc(run.answer));
+};
+loadState();
+</script>

@@ -48,7 +48,7 @@ class ParseOutput:
     # Frozen before table recovery (furniture.py); the chunker must not infer
     # recurrence again on the replaced list.
     furniture: list[str] = field(default_factory=list)
-    # The bytes every repair measured. Only set when font repair changed them,
+    # The bytes every repair measured. Only set when a repair changed them,
     # so the ingest worker's heading retention and confidence read the same
     # text layer the parser did instead of the CJK-decoded original.
     parsed_pdf: bytes | None = None
@@ -102,10 +102,36 @@ def parse_pdf(data: bytes, work_dir: Path, *, java_timeout_s: float) -> ParseOut
     phases["fonts"] = time.perf_counter() - started
 
     started = time.perf_counter()
+    java_deadline = started + java_timeout_s
     native_dir = work_dir / "native"
     native_dir.mkdir()
-    native = java.run(pdf, native_dir, timeout_s=java_timeout_s)
-    phases["java"] = time.perf_counter() - started
+    try:
+        native = java.run(pdf, native_dir, timeout_s=java_timeout_s)
+    except java.JavaPageTreeError:
+        phases["java"] = time.perf_counter() - started
+        started = time.perf_counter()
+        # Flatten the reader-incompatible xref history in this attempt's copy.
+        # The source remains unchanged; both Java calls share one time budget.
+        with pymupdf.open(pdf) as document:
+            repaired = document.tobytes(
+                garbage=0,
+                deflate=False,
+                no_new_id=True,
+                encryption=pymupdf.PDF_ENCRYPT_KEEP,
+            )
+        pdf.write_bytes(repaired)
+        phases["pdf_structure_rewrite"] = time.perf_counter() - started
+        # Partial files from the first attempt must never reach refinement.
+        native_dir = work_dir / "native-retry"
+        native_dir.mkdir()
+        remaining = java_deadline - time.perf_counter()
+        if remaining <= 0:
+            raise java.JavaTimeout("OpenDataLoader exhausted its PDF repair budget")
+        started = time.perf_counter()
+        native = java.run(pdf, native_dir, timeout_s=remaining)
+        phases["java_structure_retry"] = time.perf_counter() - started
+    else:
+        phases["java"] = time.perf_counter() - started
 
     started = time.perf_counter()
     with pymupdf.open(pdf) as document:
@@ -159,7 +185,7 @@ def parse_pdf(data: bytes, work_dir: Path, *, java_timeout_s: float) -> ParseOut
         phases=phases,
         repaired_fonts=repaired_fonts,
         furniture=furniture_texts,
-        parsed_pdf=repaired if repaired_fonts else None,
+        parsed_pdf=repaired if repaired != data else None,
     )
 
 

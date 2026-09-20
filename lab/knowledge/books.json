@@ -1,0 +1,442 @@
+{
+  "schema_version": 1,
+  "books": [
+    {
+      "id": "ahss4",
+      "subject_id": "statistics",
+      "title": "Advanced High School Statistics",
+      "authors": [
+        "Leah Dorazio",
+        "David Diez",
+        "Mine Cetinkaya-Rundel",
+        "Christopher D. Barr"
+      ],
+      "edition": "4th edition, screen-reader PDF updated 2026-04-10",
+      "source_url": "https://www.openintro.org/book/ahss/",
+      "download_url": "https://www.openintro.org/go?id=ahss4_for_screen_reader",
+      "license": "CC BY-SA 3.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/3.0/",
+      "license_evidence_url": "https://www.openintro.org/license/",
+      "license_evidence_pdf_page": 2,
+      "attribution": "Advanced High School Statistics, Leah Dorazio, David Diez, Mine Cetinkaya-Rundel, Christopher D. Barr, 4th edition, screen-reader PDF updated 2026-04-10. CC BY-SA 3.0. https://www.openintro.org/book/ahss/",
+      "pdf_path": "bench/rag/fixtures/local/2026-09-16-knowledge-base/ahss4.pdf",
+      "sha256": "f3a19c74d914422ed5838478936abab11b87dafee0781b72cc7bf7cd2c46fda5",
+      "bytes": 13412441,
+      "pages": 514,
+      "first_content_page": 9,
+      "figure_exclusions": [
+        {
+          "page": 1,
+          "reason": "Cover/front matter excluded from reusable instructional figures.",
+          "evidence_url": "https://www.openintro.org/license/"
+        }
+      ],
+      "rights_notes": [
+        "Cover design and illustration by Meenal Patel have separate copyright and are excluded from generated material use. Front matter excluded from searchable instructional content.",
+        "PDF page 18 iris photo credits Ryan Claussen, http://flic.kr/p/6QTcuX, CC BY-SA 2.0.",
+        "Shares source lineage with OpenIntro Statistics; these are deliberately overlapping books, not independent corroboration.",
+        "Screen-reader PDF pagination differs from print; no AP exam alignment is targeted."
+      ]
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "authors": [
+        "Derek M. Jones"
+      ],
+      "edition": "",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/evidence-based-software-engineering",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/2773",
+      "license": "CC BY-SA",
+      "license_url": "http://creativecommons.org/licenses/",
+      "license_evidence_url": "https://open.umn.edu/opentextbooks/textbooks/evidence-based-software-engineering",
+      "license_evidence_quote": "Conditions of Use Attribution-ShareAlike CC BY-SA",
+      "attribution_reviewed": false,
+      "attribution": "Evidence-based Software Engineering, Derek M. Jones. CC BY-SA. https://open.umn.edu/opentextbooks/textbooks/evidence-based-software-engineering",
+      "pdf_path": "data/knowledge-base/sources/9d4f16caab24d72c1c086565b77f09670c83b4d568c820195ea8d5962c456e5b.pdf",
+      "sha256": "9d4f16caab24d72c1c086565b77f09670c83b4d568c820195ea8d5962c456e5b",
+      "bytes": 22781647,
+      "pages": 454,
+      "first_content_page": 12,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "computer-science-foundations"
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "authors": [
+        "Kathleen A. Hansen",
+        "Nora Paul"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/39697",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/35/35854/pdf/Information_Strategies_for_Communicators_35854.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/39697",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution-ShareAlike 4.0 license (http://creativecommons.org/licenses/by-sa/4.0/).",
+      "attribution": "Information Strategies for Communicators, Kathleen A. Hansen, Nora Paul. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/39697",
+      "pdf_path": "data/knowledge-base/sources/3757eebb6a7bdf831d6a3bcc5452eb14e24914005fafe57db6d38dea9806c772.pdf",
+      "sha256": "3757eebb6a7bdf831d6a3bcc5452eb14e24914005fafe57db6d38dea9806c772",
+      "bytes": 19268628,
+      "pages": 289,
+      "first_content_page": 10,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "communication-media",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "authors": [
+        "David T. Bourgeois, Ph.D."
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/26924",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/18/18321/pdf/Information_Systems_for_Business_and_Beyond_18321.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/26924",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Information Systems for Business and Beyond, David T. Bourgeois, Ph.D.. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/26924",
+      "pdf_path": "data/knowledge-base/sources/f3354996584c6f59644fde671c70e6a8b410f4de31f47d18b99c8c0e1a118ba7.pdf",
+      "sha256": "f3354996584c6f59644fde671c70e6a8b410f4de31f47d18b99c8c0e1a118ba7",
+      "bytes": 6837639,
+      "pages": 215,
+      "first_content_page": 14,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "information-systems",
+      "version": 1
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "authors": [
+        "Hans de Boer",
+        "Mark Voorendt",
+        "Maurice Harteveld",
+        "John Baggen"
+      ],
+      "edition": "",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/integrated-infrastructure-design-guide-methods-techniques-strategies-perspectives-featured-designs",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/5505",
+      "license": "CC BY",
+      "license_url": "http://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "https://open.umn.edu/opentextbooks/textbooks/integrated-infrastructure-design-guide-methods-techniques-strategies-perspectives-featured-designs",
+      "license_evidence_quote": "Conditions of Use Attribution CC BY",
+      "attribution_reviewed": false,
+      "attribution": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs, Hans de Boer, Mark Voorendt, Maurice Harteveld, John Baggen. CC BY. https://open.umn.edu/opentextbooks/textbooks/integrated-infrastructure-design-guide-methods-techniques-strategies-perspectives-featured-designs",
+      "pdf_path": "data/knowledge-base/sources/ac3a355f872a2dd5bf2601e368732e486a0ca3da5098e2a7ea3fee6f8002614c.pdf",
+      "sha256": "ac3a355f872a2dd5bf2601e368732e486a0ca3da5098e2a7ea3fee6f8002614c",
+      "bytes": 43307906,
+      "pages": 163,
+      "first_content_page": 1,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "civil-engineering"
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "authors": [
+        "Glenn Arnold",
+        "Suzanne Kyle"
+      ],
+      "edition": "2021-A",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/intermediate-financial-accounting-volume-1",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/685",
+      "license": "CC BY",
+      "license_url": "http://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "https://open.umn.edu/opentextbooks/textbooks/intermediate-financial-accounting-volume-1",
+      "license_evidence_quote": "Conditions of Use Attribution CC BY",
+      "attribution_reviewed": false,
+      "attribution": "Intermediate Financial Accounting - 2021-A Volume 1, Glenn Arnold, Suzanne Kyle, 2021-A. CC BY. https://open.umn.edu/opentextbooks/textbooks/intermediate-financial-accounting-volume-1",
+      "pdf_path": "data/knowledge-base/sources/4b4e7b38e80066153edff31293125cd62167efddc240bd9742b6e5b9acf6c645.pdf",
+      "sha256": "4b4e7b38e80066153edff31293125cd62167efddc240bd9742b6e5b9acf6c645",
+      "bytes": 5840691,
+      "pages": 573,
+      "first_content_page": 23,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "accounting"
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "authors": [
+        "John Burnett"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/39740",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/33/33789/pdf/Introducing_Marketing_33789.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/39740",
+      "license_evidence_quote": "This book is licensed under a Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Introducing Marketing, John Burnett. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/39740",
+      "pdf_path": "data/knowledge-base/sources/c3fae6d0b002d1ae4f19a427c8f5dfc9407950c44fc38e2441a45b11864eaa58.pdf",
+      "sha256": "c3fae6d0b002d1ae4f19a427c8f5dfc9407950c44fc38e2441a45b11864eaa58",
+      "bytes": 14134678,
+      "pages": 374,
+      "first_content_page": 18,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "marketing",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "authors": [
+        "Thomas K. Tiemann"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/33086",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/31/31475/pdf/Introductory_Business_Statistics_31475.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/33086",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Introductory Business Statistics, Thomas K. Tiemann. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/33086",
+      "pdf_path": "data/knowledge-base/sources/89bdcced3a0b3303ecaaf4e8b1a75cd9c4358ca59e3fbb607f49f5b33b281a3c.pdf",
+      "sha256": "89bdcced3a0b3303ecaaf4e8b1a75cd9c4358ca59e3fbb607f49f5b33b281a3c",
+      "bytes": 3971174,
+      "pages": 95,
+      "first_content_page": 13,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "statistics",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "subject_id": "statistics",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "authors": [
+        "Danielle J. Navarro",
+        "David R. Foxcroft"
+      ],
+      "edition": "2025, author-hosted PDF snapshot downloaded 2026-09-16",
+      "source_url": "https://davidfoxcroft.github.io/lsj-book/",
+      "download_url": "https://davidfoxcroft.github.io/lsj-book/lsj-free.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://davidfoxcroft.github.io/lsj-book/",
+      "license_evidence_pdf_page": 5,
+      "attribution": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis, Danielle J. Navarro, David R. Foxcroft, 2025, author-hosted PDF snapshot downloaded 2026-09-16. CC BY-SA 4.0. https://davidfoxcroft.github.io/lsj-book/",
+      "pdf_path": "bench/rag/fixtures/local/2026-09-16-knowledge-base/lsj.pdf",
+      "sha256": "90d44719e232e643b1cb7d5b1fbf7884f495a9ec7488084c12459bf005d695aa",
+      "bytes": 93792057,
+      "pages": 495,
+      "first_content_page": 20,
+      "figure_exclusions": [
+        {
+          "page": 1,
+          "reason": "Cover/front matter excluded from reusable instructional figures.",
+          "evidence_url": "https://davidfoxcroft.github.io/lsj-book/"
+        }
+      ],
+      "rights_notes": [
+        "Author-hosted latest build is pinned by SHA256; may differ from 2025 publisher PDF.",
+        "Preserve original figure credits; no generated image captions."
+      ]
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "authors": [
+        "Robert Christie Mill"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/39703",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/36/36175/pdf/Managing_for_Productivity_in_the_Hospitality_Industry_36175.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/39703",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Managing for Productivity in the Hospitality Industry, Robert Christie Mill. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/39703",
+      "pdf_path": "data/knowledge-base/sources/035a4842bcecf824bc17cd00c781476ca4db8638976e905efa3e4c793ce35021.pdf",
+      "sha256": "035a4842bcecf824bc17cd00c781476ca4db8638976e905efa3e4c793ce35021",
+      "bytes": 4303302,
+      "pages": 236,
+      "first_content_page": 18,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "management"
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "authors": [
+        "Prof. Fabio De Felice",
+        "Dr. Stanislao Monfreda",
+        "Dr. Antonella Petrillo",
+        "Dr.Ing. Maria Elena Nenni",
+        "Prof. Raffaele Iannone",
+        "Prof. Vito Introna",
+        "Dr. Alessio Giuiusa",
+        "Dr. Filippo De Carlo"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/27115",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/18/18769/pdf/Operations_Management_18769.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/27115",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Operations Management, Prof. Fabio De Felice, Dr. Stanislao Monfreda, Dr. Antonella Petrillo, Dr.Ing. Maria Elena Nenni, Prof. Raffaele Iannone, Prof. Vito Introna, Dr. Alessio Giuiusa, Dr. Filippo De Carlo. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/27115",
+      "pdf_path": "data/knowledge-base/sources/8443fee8bd08d2bc9ed780a603f622b1aea43f1caee5fdfe64440476ee06b49c.pdf",
+      "sha256": "8443fee8bd08d2bc9ed780a603f622b1aea43f1caee5fdfe64440476ee06b49c",
+      "bytes": 17588584,
+      "pages": 278,
+      "first_content_page": 7,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "management",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "subject_id": "statistics",
+      "title": "OpenIntro Statistics",
+      "authors": [
+        "David Diez",
+        "Mine Cetinkaya-Rundel",
+        "Christopher D. Barr"
+      ],
+      "edition": "4th edition, screen-reader PDF updated 2022-10-21",
+      "source_url": "https://www.openintro.org/book/os/",
+      "download_url": "https://www.openintro.org/go?id=os4_for_screen_reader",
+      "license": "CC BY-SA 3.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/3.0/",
+      "license_evidence_url": "https://www.openintro.org/license/",
+      "license_evidence_pdf_page": 2,
+      "attribution": "OpenIntro Statistics, David Diez, Mine Cetinkaya-Rundel, Christopher D. Barr, 4th edition, screen-reader PDF updated 2022-10-21. CC BY-SA 3.0. https://www.openintro.org/book/os/",
+      "pdf_path": "bench/rag/fixtures/local/2026-09-16-knowledge-base/os4.pdf",
+      "sha256": "e261e4aea0eb4f0fd2b9d340604918ee7145e1a98e00313575c88977b671cb40",
+      "bytes": 20947445,
+      "pages": 465,
+      "first_content_page": 9,
+      "figure_exclusions": [
+        {
+          "page": 1,
+          "reason": "Cover/front matter excluded from reusable instructional figures.",
+          "evidence_url": "https://www.openintro.org/license/"
+        }
+      ],
+      "rights_notes": [
+        "Author captions and source credits remain attached. PDF page 22 iris photo credits Ryan Claussen, http://flic.kr/p/6QTcuX, CC BY-SA 2.0.",
+        "Screen-reader PDF pagination differs from print; use this PDF page coordinate and section title.",
+        "OpenIntro title/logo must not brand derivative study materials as endorsed products."
+      ]
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "authors": [
+        "Paul Peter Urone",
+        "Roger Hinrichs",
+        "Fatih Gozuacik",
+        "Denise Pattison",
+        "Catherine Tabor"
+      ],
+      "edition": "1st edition, Texas Education Agency, 2020 WEB PDF",
+      "source_url": "https://openstax.org/details/books/physics",
+      "download_url": "https://assets.openstax.org/oscms-prodcms/media/documents/Physics_-_WEB.pdf",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "https://openstax.org/apps/cms/api/v2/pages/?type=books.Book&slug=physics&fields=title,high_resolution_pdf_url,license_name,license_url,license_text,authors,publish_date,book_state",
+      "license_evidence_quote": "by Texas Education Agency (TEA) is licensed under Creative Commons Attribution License v4.0",
+      "attribution": "Physics, Paul Peter Urone, Roger Hinrichs, Fatih Gozuacik, Denise Pattison, Catherine Tabor, 1st edition, Texas Education Agency, 2020 WEB PDF. CC BY 4.0. https://openstax.org/details/books/physics",
+      "pdf_path": "data/knowledge-base/sources/a3f75487411ef13d0270c65fc801ceff2b28e6b339afed9b407fe477f7e8453e.pdf",
+      "sha256": "a3f75487411ef13d0270c65fc801ceff2b28e6b339afed9b407fe477f7e8453e",
+      "bytes": 57463331,
+      "pages": 875,
+      "first_content_page": 17,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "physics",
+      "version": 2
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "authors": [
+        "Adrienne Watt"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/17914",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/15/15694/pdf/Project_Management_15694.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/17914",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Project Management, Adrienne Watt. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/17914",
+      "pdf_path": "data/knowledge-base/sources/e80d7bde910b41fdce29c7a2b424039599c2ed1d4a6cef3665b5722c48b5f55b.pdf",
+      "sha256": "e80d7bde910b41fdce29c7a2b424039599c2ed1d4a6cef3665b5722c48b5f55b",
+      "bytes": 17678296,
+      "pages": 265,
+      "first_content_page": 15,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "management"
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "authors": [
+        "Ken Udas"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/27319",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/18/18667/pdf/The_impact_of_open_source_software_on_education_18667_r.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/27319",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "The impact of open source software on education, Ken Udas. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/27319",
+      "pdf_path": "data/knowledge-base/sources/4f4e55533ca6d20b260918c20db4913b96037761e38b3c8ada4d3e0fa6ca450d.pdf",
+      "sha256": "4f4e55533ca6d20b260918c20db4913b96037761e38b3c8ada4d3e0fa6ca450d",
+      "bytes": 9251619,
+      "pages": 504,
+      "first_content_page": 21,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "educational-technology"
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "authors": [
+        "Robert Christie Mill"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/39704",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/36/36924/pdf/Tourism_the_International_Business_36924.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/39704",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Tourism the International Business, Robert Christie Mill. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/39704",
+      "pdf_path": "data/knowledge-base/sources/8bc932eb9c36e60e80c345a7a5b0355f06acbb161f99678c258cfe28a8eb2368.pdf",
+      "sha256": "8bc932eb9c36e60e80c345a7a5b0355f06acbb161f99678c258cfe28a8eb2368",
+      "bytes": 9049254,
+      "pages": 326,
+      "first_content_page": 1,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "business-fundamentals"
+    }
+  ]
+}

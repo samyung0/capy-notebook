@@ -29,6 +29,10 @@ class JavaTimeout(RuntimeError):
     pass
 
 
+class JavaPageTreeError(RuntimeError):
+    """The reader could not resolve the PDF's page tree."""
+
+
 def jar_path() -> Path:
     return Path(
         str(
@@ -69,7 +73,12 @@ def run(pdf: Path, out_dir: Path, *, timeout_s: float) -> dict:
     except subprocess.TimeoutExpired as exc:
         raise JavaTimeout(f"OpenDataLoader exceeded {timeout_s:.0f} seconds") from exc
     if completed.returncode != 0:
-        raise RuntimeError(
+        error = (
+            JavaPageTreeError
+            if "unknown type of page tree node" in completed.stdout.lower()
+            else RuntimeError
+        )
+        raise error(
             f"OpenDataLoader exited {completed.returncode}: {completed.stdout[-2000:]}"
         )
     native_path = out_dir / f"{pdf.stem}.json"

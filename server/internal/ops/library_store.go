@@ -102,8 +102,19 @@ type LibraryBook struct {
 	Versions     []LibraryBookVersion `json:"versions"`
 }
 
+// LibrarySubject is one entry of the committed subjects fixture, with what the
+// live library holds under it.
+type LibrarySubject struct {
+	ID       string `json:"id"`
+	Area     string `json:"area"`
+	Label    string `json:"label"`
+	Topics   int    `json:"topics"`
+	Excerpts int    `json:"excerpts"`
+}
+
 type LibraryTopic struct {
 	ID             string          `json:"id"`
+	SubjectID      string          `json:"subjectId"`
 	Label          string          `json:"label"`
 	Aliases        json.RawMessage `json:"aliases"`
 	Scope          string          `json:"scope"`
@@ -437,10 +448,41 @@ func scanLibraryBook(rows scanner) (LibraryBook, error) {
 	return book, err
 }
 
+// LibrarySubjects lists every fixture subject with its topic count and the
+// tagged excerpts of current book versions carrying one of its topics.
+func (s *ReadStore) LibrarySubjects(ctx context.Context) ([]LibrarySubject, error) {
+	out := []LibrarySubject{}
+	rows, err := s.library.Query(ctx, `
+		SELECT s.id, s.area, s.label,
+		       (SELECT count(*) FROM library_topics t WHERE t.subject_id = s.id),
+		       (SELECT count(*) FROM library_excerpts e
+		          JOIN rag_file_contents fc ON fc.content_id = e.content_id
+		         WHERE fc.workspace_id = $1 AND e.tag_status = 'tagged'
+		           AND e.topic_ids && ARRAY(
+		             SELECT t.id FROM library_topics t WHERE t.subject_id = s.id))
+		  FROM library_subjects s
+		 ORDER BY s.area, s.label
+		 LIMIT $2`, libraryWorkspace, libraryTopicLimit)
+	if err != nil {
+		return out, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var subject LibrarySubject
+		if err := rows.Scan(
+			&subject.ID, &subject.Area, &subject.Label, &subject.Topics, &subject.Excerpts,
+		); err != nil {
+			return out, err
+		}
+		out = append(out, subject)
+	}
+	return out, rows.Err()
+}
+
 func (s *ReadStore) LibraryTopics(ctx context.Context) ([]LibraryTopic, error) {
 	out := []LibraryTopic{}
 	rows, err := s.library.Query(ctx, `
-		SELECT id, label, aliases, scope, source_sections
+		SELECT id, subject_id, label, aliases, scope, source_sections
 		  FROM library_topics ORDER BY id LIMIT $1`, libraryTopicLimit)
 	if err != nil {
 		return out, err
@@ -450,7 +492,8 @@ func (s *ReadStore) LibraryTopics(ctx context.Context) ([]LibraryTopic, error) {
 	for rows.Next() {
 		var topic LibraryTopic
 		if err := rows.Scan(
-			&topic.ID, &topic.Label, &topic.Aliases, &topic.Scope, &topic.SourceSections,
+			&topic.ID, &topic.SubjectID, &topic.Label, &topic.Aliases, &topic.Scope,
+			&topic.SourceSections,
 		); err != nil {
 			return out, err
 		}

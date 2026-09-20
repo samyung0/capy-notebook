@@ -1,0 +1,533 @@
+{
+  "schema_version": 1,
+  "frozen_at": "2026-09-19T19:28:10.434454+00:00",
+  "purpose": "Independent new source-only heading release validation; frozen before candidate outputs",
+  "sources": [
+    {
+      "id": "heading-r-intro",
+      "title": "An Introduction to R",
+      "url": "https://cran.r-project.org/doc/manuals/r-release/R-intro.pdf",
+      "landing_page": "https://cran.r-project.org/manuals.html",
+      "family": "R Project Texinfo manual",
+      "language": "en",
+      "licence": "Custom verbatim/modified/translation permission notice; preserve notices; modified works retain identical permission",
+      "sha256": "d6e7cea1ef4460eedcf88fe9ce1e9e05c5dea6decf118f257a39a18ed6d0ec6f",
+      "bytes": 597923,
+      "pages": 103,
+      "producer": "pdfTeX-1.40.29",
+      "creator": "TeX",
+      "outline_entries": 207,
+      "tagged": false,
+      "sample_native_chars": {
+        "1": 164,
+        "26": 2619,
+        "52": 2183,
+        "78": 3126,
+        "103": 1169
+      },
+      "rotated_pages": [],
+      "path": "bench/parsers/fixtures/local/2026-09-20-heading-release/heading-r-intro.pdf",
+      "resolved_url": "https://cran.r-project.org/doc/manuals/r-release/R-intro.pdf",
+      "download_seconds": 3.017,
+      "licence_evidence": "PDF page 2",
+      "novelty_matches": [],
+      "outline_roots": [
+        {
+          "level": 1,
+          "title": "Table of Contents",
+          "page": 3
+        },
+        {
+          "level": 1,
+          "title": "Preface",
+          "page": 7
+        },
+        {
+          "level": 1,
+          "title": "1 Introduction and preliminaries",
+          "page": 8
+        },
+        {
+          "level": 1,
+          "title": "2 Simple manipulations; numbers and vectors",
+          "page": 13
+        },
+        {
+          "level": 1,
+          "title": "3 Objects, their modes and attributes",
+          "page": 19
+        },
+        {
+          "level": 1,
+          "title": "4 Ordered and unordered factors",
+          "page": 22
+        },
+        {
+          "level": 1,
+          "title": "5 Arrays and matrices",
+          "page": 24
+        },
+        {
+          "level": 1,
+          "title": "6 Lists and data frames",
+          "page": 32
+        },
+        {
+          "level": 1,
+          "title": "7 Reading data from files",
+          "page": 36
+        },
+        {
+          "level": 1,
+          "title": "8 Probability distributions",
+          "page": 39
+        },
+        {
+          "level": 1,
+          "title": "9 Grouping, loops and conditional execution",
+          "page": 45
+        },
+        {
+          "level": 1,
+          "title": "10 Writing your own functions",
+          "page": 47
+        },
+        {
+          "level": 1,
+          "title": "11 Statistical models in R",
+          "page": 56
+        },
+        {
+          "level": 1,
+          "title": "12 Graphical procedures",
+          "page": 68
+        },
+        {
+          "level": 1,
+          "title": "13 Packages",
+          "page": 81
+        },
+        {
+          "level": 1,
+          "title": "14 OS facilities",
+          "page": 83
+        },
+        {
+          "level": 1,
+          "title": "A A sample session",
+          "page": 86
+        },
+        {
+          "level": 1,
+          "title": "B Invoking R",
+          "page": 89
+        },
+        {
+          "level": 1,
+          "title": "C The command-line editor",
+          "page": 96
+        },
+        {
+          "level": 1,
+          "title": "References",
+          "page": 98
+        },
+        {
+          "level": 1,
+          "title": "Function and variable index",
+          "page": 99
+        },
+        {
+          "level": 1,
+          "title": "Concept index",
+          "page": 102
+        }
+      ],
+      "page_sizes_points": [
+        [
+          595.276,
+          841.89
+        ]
+      ]
+    },
+    {
+      "id": "heading-forallx",
+      "title": "forall x Calgary",
+      "url": "https://forallx.openlogicproject.org/forallxyyc.pdf",
+      "landing_page": "https://forallx.openlogicproject.org/",
+      "family": "Open Logic Project textbook",
+      "language": "en",
+      "licence": "CC BY 4.0",
+      "sha256": "6981d8a7e005d41c04b85788e6605d484777883ac602202eac8418cdf3fe8fb1",
+      "bytes": 1561561,
+      "pages": 437,
+      "producer": "pdfTeX",
+      "creator": "LaTeX with hyperref",
+      "outline_entries": 64,
+      "tagged": false,
+      "sample_native_chars": {
+        "1": 168,
+        "110": 743,
+        "219": 1314,
+        "328": 1090,
+        "437": 578
+      },
+      "rotated_pages": [],
+      "path": "bench/parsers/fixtures/local/2026-09-20-heading-release/heading-forallx.pdf",
+      "resolved_url": "https://forallx.openlogicproject.org/forallxyyc.pdf",
+      "download_seconds": 2.017,
+      "licence_evidence": "PDF page 3",
+      "novelty_matches": [],
+      "outline_roots": [
+        {
+          "level": 1,
+          "title": "Table of Contents",
+          "page": 4
+        },
+        {
+          "level": 1,
+          "title": "Preface",
+          "page": 7
+        },
+        {
+          "level": 1,
+          "title": "I Key notions of logic",
+          "page": 11
+        },
+        {
+          "level": 1,
+          "title": "II Truth-functional logic",
+          "page": 36
+        },
+        {
+          "level": 1,
+          "title": "III Truth tables",
+          "page": 78
+        },
+        {
+          "level": 1,
+          "title": "IV Natural deduction for TFL",
+          "page": 119
+        },
+        {
+          "level": 1,
+          "title": "V First-order logic",
+          "page": 199
+        },
+        {
+          "level": 1,
+          "title": "VI Interpretations",
+          "page": 267
+        },
+        {
+          "level": 1,
+          "title": "VII Natural deduction for FOL",
+          "page": 306
+        },
+        {
+          "level": 1,
+          "title": "VIII Modal logic",
+          "page": 346
+        },
+        {
+          "level": 1,
+          "title": "IX Metatheory",
+          "page": 378
+        },
+        {
+          "level": 1,
+          "title": "Appendices",
+          "page": 408
+        }
+      ],
+      "page_sizes_points": [
+        [
+          360.0,
+          576.0
+        ]
+      ]
+    },
+    {
+      "id": "heading-oecd",
+      "title": "Education at a Glance 2024",
+      "url": "https://www.oecd.org/content/dam/oecd/en/publications/reports/2024/09/education-at-a-glance-2024_5ea68448/c00cad36-en.pdf",
+      "landing_page": "https://www.oecd.org/en/publications/education-at-a-glance-2024_c00cad36-en.html",
+      "family": "OECD report",
+      "language": "en",
+      "licence": "CC BY 4.0; third-party content exceptions apply",
+      "sha256": "9ad4a48c2a3219438c4d866c96467f789d28f4e51491130b134d68b46f5514a6",
+      "bytes": 23028712,
+      "pages": 498,
+      "producer": "PDFsharp 1.50.5147 (www.pdfsharp.com) (Original: Microsoft® Word 2021)",
+      "creator": "OECD Publishing Systems",
+      "outline_entries": 372,
+      "tagged": true,
+      "sample_native_chars": {
+        "1": 42,
+        "125": 3879,
+        "250": 104,
+        "374": 3395,
+        "498": 1228
+      },
+      "rotated_pages": [],
+      "path": "bench/parsers/fixtures/local/2026-09-20-heading-release/heading-oecd.pdf",
+      "resolved_url": "https://www.oecd.org/content/dam/oecd/en/publications/reports/2024/09/education-at-a-glance-2024_5ea68448/c00cad36-en.pdf",
+      "download_seconds": 2.9,
+      "licence_evidence": "PDF page 4",
+      "novelty_matches": [],
+      "outline_roots": [
+        {
+          "level": 1,
+          "title": "Foreword",
+          "page": 5
+        },
+        {
+          "level": 1,
+          "title": "Editorial",
+          "page": 8
+        },
+        {
+          "level": 1,
+          "title": "Reader’s guide",
+          "page": 10
+        },
+        {
+          "level": 1,
+          "title": "Executive summary",
+          "page": 21
+        },
+        {
+          "level": 1,
+          "title": "SDG. Equity in the Education Sustainable Development Goal",
+          "page": 24
+        },
+        {
+          "level": 1,
+          "title": "Part A. The output of\r\neducational institutions and\r\nthe impact of learning",
+          "page": 44
+        },
+        {
+          "level": 1,
+          "title": "Part B. Access toeducation, participationand progression",
+          "page": 155
+        },
+        {
+          "level": 1,
+          "title": "Part C. Financial resourcesinvested in education",
+          "page": 250
+        },
+        {
+          "level": 1,
+          "title": "Part D. Teachers, thelearning environment andthe organisation of school",
+          "page": 351
+        },
+        {
+          "level": 1,
+          "title": "Annexes",
+          "page": 463
+        },
+        {
+          "level": 1,
+          "title": "Contributors to this publication",
+          "page": 489
+        }
+      ],
+      "page_sizes_points": [
+        [
+          595.275,
+          793.7
+        ],
+        [
+          595.276,
+          793.7
+        ],
+        [
+          595.276,
+          793.701
+        ]
+      ]
+    },
+    {
+      "id": "heading-libreoffice",
+      "title": "Getting Started 7.5",
+      "url": "https://books.libreoffice.org/en/GS75/GS75-GettingStarted.pdf",
+      "landing_page": "https://documentation.libreoffice.org/en/english-documentation/getting-started-guide/",
+      "family": "LibreOffice manual",
+      "language": "en",
+      "licence": "GPL 3 or later OR CC BY 4.0 or later",
+      "sha256": "99d9e4504e9131575365ea2d34f5c26faa64e0a34ede9aba6d73dd78343ae48c",
+      "bytes": 23089208,
+      "pages": 531,
+      "producer": "LibreOffice 7.5",
+      "creator": "",
+      "outline_entries": 703,
+      "tagged": false,
+      "sample_native_chars": {
+        "1": 0,
+        "133": 2937,
+        "266": 661,
+        "399": 2714,
+        "531": 1716
+      },
+      "rotated_pages": [],
+      "path": "bench/parsers/fixtures/local/2026-09-20-heading-release/heading-libreoffice.pdf",
+      "resolved_url": "https://books.libreoffice.org/en/GS75/GS75-GettingStarted.pdf",
+      "download_seconds": 5.028,
+      "licence_evidence": "PDF page 2",
+      "novelty_matches": [],
+      "outline_roots": [
+        {
+          "level": 1,
+          "title": "Copyright",
+          "page": 2
+        },
+        {
+          "level": 1,
+          "title": "Preface",
+          "page": 9
+        },
+        {
+          "level": 1,
+          "title": "Chapter 1, LibreOffice Basics",
+          "page": 23
+        },
+        {
+          "level": 1,
+          "title": "Chapter 2, Getting Started with Writer",
+          "page": 53
+        },
+        {
+          "level": 1,
+          "title": "Chapter 3, Getting Started with Calc",
+          "page": 95
+        },
+        {
+          "level": 1,
+          "title": "Chapter 4, Working with Styles, Templates, and Hyperlinks",
+          "page": 145
+        },
+        {
+          "level": 1,
+          "title": "Chapter 5, Working with Images and Graphics",
+          "page": 169
+        },
+        {
+          "level": 1,
+          "title": "Chapter 6, Getting Started with Impress",
+          "page": 197
+        },
+        {
+          "level": 1,
+          "title": "Chapter 7, Getting Started with Draw",
+          "page": 251
+        },
+        {
+          "level": 1,
+          "title": "Chapter 8, Getting Started with Base",
+          "page": 289
+        },
+        {
+          "level": 1,
+          "title": "Chapter 9, Getting Started with Math",
+          "page": 345
+        },
+        {
+          "level": 1,
+          "title": "Chapter 10 Working with File Formats, Security, and Exporting",
+          "page": 381
+        },
+        {
+          "level": 1,
+          "title": "Chapter 11, Getting Started with Macros",
+          "page": 429
+        },
+        {
+          "level": 1,
+          "title": "Chapter 12, Configuring LibreOffice",
+          "page": 463
+        },
+        {
+          "level": 1,
+          "title": "Chapter 13, Customizing LibreOffice",
+          "page": 497
+        },
+        {
+          "level": 1,
+          "title": "Appendix A, Keyboard Shortcuts",
+          "page": 515
+        },
+        {
+          "level": 1,
+          "title": "Appendix B, Open Source, Open Standards, Open Document",
+          "page": 527
+        }
+      ],
+      "page_sizes_points": [
+        [
+          595.304,
+          841.89
+        ]
+      ]
+    },
+    {
+      "id": "heading-weasyprint",
+      "title": "WeasyPrint sample report",
+      "url": "https://github.com/CourtBouillon/weasyprint-samples/raw/main/report/report.pdf",
+      "landing_page": "https://weasyprint.org/",
+      "family": "WeasyPrint HTML report",
+      "language": "en",
+      "licence": "Unknown; local private benchmark only, no binary republication",
+      "sha256": "2c9359dfd8402ee9b78b4f08a6c9d2ce4bb309d8dc41b2c8b4c040433929dfe2",
+      "bytes": 596341,
+      "pages": 8,
+      "producer": "WeasyPrint 68.1",
+      "creator": "",
+      "outline_entries": 26,
+      "tagged": false,
+      "sample_native_chars": {
+        "1": 164,
+        "3": 268,
+        "5": 1003,
+        "7": 34,
+        "8": 712
+      },
+      "rotated_pages": [],
+      "path": "bench/parsers/fixtures/local/2026-09-20-heading-release/heading-weasyprint.pdf",
+      "resolved_url": "https://raw.githubusercontent.com/CourtBouillon/weasyprint-samples/main/report/report.pdf",
+      "download_seconds": 2.054,
+      "licence_evidence": "Publisher sample; no verified licence",
+      "novelty_matches": [],
+      "outline_roots": [
+        {
+          "level": 1,
+          "title": "Report example",
+          "page": 1
+        }
+      ],
+      "page_sizes_points": [
+        [
+          595.276,
+          841.89
+        ]
+      ]
+    }
+  ],
+  "failures": [
+    {
+      "id": "heading-boe",
+      "title": "Monetary Policy Report February 2025",
+      "url": "https://www.bankofengland.co.uk/-/media/boe/files/monetary-policy-report/2025/february/monetary-policy-report-february-2025.pdf",
+      "landing_page": "https://www.bankofengland.co.uk/monetary-policy-report/2025/february-2025",
+      "family": "Bank of England report",
+      "language": "en",
+      "licence": "Unknown; private benchmark only",
+      "error": "HTTPError: 403 Client Error: Forbidden for url: https://www.bankofengland.co.uk/-/media/boe/files/monetary-policy-report/2025/february/monetary-policy-report-february-2025.pdf"
+    }
+  ],
+  "novelty_audit": {
+    "files_checked": 80,
+    "method": "Exact URL, SHA256, or URL basename match in non-local parser/rag fixture JSON/JSONL/MD/TXT; heading-release artifacts excluded",
+    "limitation": "Cannot prove never seen outside recorded fixtures or aliases without content hashes"
+  },
+  "restrictions": "Private benchmark only; no KB ingestion; preserve source attribution"
+}

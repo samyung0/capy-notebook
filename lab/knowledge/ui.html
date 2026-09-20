@@ -1,0 +1,636 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Capy knowledge-base builder</title>
+<style>
+body {
+  margin: 0;
+  font:
+    13px / 1.4 system-ui,
+    sans-serif;
+  color: #222;
+  background: #f6f6f4;
+}
+.strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  padding: 8px 12px;
+  background: #fff;
+  border-bottom: 1px solid #ddd;
+}
+.wrap {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.3fr;
+  gap: 12px;
+  height: calc(100vh - 92px);
+  padding: 12px;
+}
+.col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow: auto;
+}
+.card {
+  padding: 8px 10px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.muted {
+  color: #777;
+}
+.ok {
+  color: #2a7;
+}
+.bad {
+  color: #c33;
+}
+.warn {
+  color: #b80;
+}
+.dot::before {
+  margin-right: 4px;
+  content: "●";
+}
+select,
+input,
+button,
+textarea {
+  font: inherit;
+}
+input[type="text"],
+input[type="url"] {
+  box-sizing: border-box;
+  width: 100%;
+}
+pre {
+  max-height: 360px;
+  padding: 6px;
+  margin: 4px 0;
+  overflow: auto;
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  background: #fafafa;
+}
+.book {
+  border-left: 3px solid #8ab;
+}
+.book.running {
+  border-left-color: #4a4;
+}
+.book.failed {
+  border-left-color: #d66;
+}
+.book.published {
+  border-left-color: #48c;
+}
+.book.waiting {
+  border-left-color: #b80;
+}
+.held {
+  padding: 6px 8px;
+  margin: 6px 0;
+  border: 1px solid #e0c080;
+  border-radius: 4px;
+  background: #fffaf0;
+}
+.held img {
+  max-width: 100%;
+  border: 1px solid #ddd;
+}
+.held pre {
+  max-height: 160px;
+}
+.dl {
+  padding-left: 8px;
+  margin: 4px 0;
+  border-left: 3px solid #ccc;
+}
+.dl.queued,
+.dl.downloading {
+  border-left-color: #b80;
+}
+.dl.downloaded {
+  border-left-color: #2a7;
+}
+.dl.rejected,
+.dl.failed {
+  border-left-color: #d66;
+}
+code {
+  font-size: 11.5px;
+}
+details > summary {
+  cursor: pointer;
+}
+dialog {
+  width: 520px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+}
+dialog label {
+  display: block;
+  margin: 6px 0 2px;
+  font-size: 12px;
+  color: #555;
+}
+.q {
+  font-size: 12px;
+}
+.stat {
+  font-size: 12px;
+  color: #555;
+}
+h3 {
+  margin: 4px 0;
+  font-size: 14px;
+}
+</style>
+<div class="strip" id="deps"></div>
+<div class="strip" id="model"></div>
+<div class="wrap">
+  <div class="col">
+    <h3>Sources <span class="muted" id="sourcesPath"></span></h3>
+    <div id="sources"></div>
+  </div>
+  <div class="col">
+    <h3>Scraping <span class="muted" id="scrapeState"></span></h3>
+    <div class="card">
+      <div class="row">
+        <button id="scrapeStart" type="button">Start</button
+        ><button id="scrapePause" type="button">Pause</button>
+        <label>host delay <input id="delay" size="3"> s</label>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <input
+          id="seed"
+          placeholder="https://openstax.org/subjects/science"
+          style="flex:1"
+          type="url"
+        ><button id="addUrl" type="button">Add URL</button>
+      </div>
+      <div class="stat" id="urlCounts"></div>
+      <details>
+        <summary>Pending URLs (first 50)</summary>
+        <div id="pending"></div>
+      </details>
+      <details>
+        <summary>Pending by host</summary>
+        <div class="q" id="hosts"></div>
+      </details>
+    </div>
+    <div class="card">
+      <b>Downloads</b>
+      <div class="row">
+        <label for="downloadErrorFilter">Error</label>
+        <select id="downloadErrorFilter"><option value="all">All downloads</option></select>
+        <span id="downloadFilterCount" class="muted" aria-live="polite"></span>
+      </div>
+      <div id="downloads"></div>
+    </div>
+  </div>
+  <div class="col">
+    <h3>Ingestion <span class="muted" id="ingestState"></span></h3>
+    <div class="card">
+      <div class="row">
+        <button id="ingestStart" type="button">Start</button
+        ><button id="ingestPause" type="button">Pause</button>
+        <label
+          ><input id="liveEndpoint" type="checkbox"> live endpoint (small
+          books; batch otherwise)</label
+        >
+        <span class="muted"
+          >pause finishes the current stage; a running book is removable once
+          paused</span
+        >
+      </div>
+      <div class="q bad" id="ingestNotice"></div>
+    </div>
+    <div id="books"></div>
+  </div>
+</div>
+<dialog id="addDialog">
+  <form id="addForm" method="dialog">
+    <b>Add to the ingestion queue</b> <span class="muted" id="addSha"></span>
+    <label>Title</label><input name="title" required type="text">
+    <label>Authors (one per line; leave empty if none supplied)</label
+    ><textarea
+      name="authors"
+      rows="3"
+      style="width:100%;box-sizing:border-box"
+    ></textarea>
+    <label>Attribution, including supplied credits and notices (required when authors are empty)</label>
+    <textarea name="attribution" rows="3" style="width:100%;box-sizing:border-box"></textarea>
+    <label><input name="attribution_reviewed" type="checkbox"> I checked the source and PDF and preserved the supplied credits and notices.</label>
+    <label>Edition (optional)</label>
+    <input name="edition" placeholder="2nd edition, 2024 PDF" type="text">
+    <label>Subject</label><select id="subjectSelect" name="subject_id"></select>
+    <label>Book page (source_url)</label>
+    <input name="source_url" required type="url">
+    <label>PDF URL (download_url)</label><input name="download_url" type="url">
+    <label>Licence (short form, e.g. CC BY 4.0)</label>
+    <input name="license" required type="text">
+    <label>Licence deed URL</label>
+    <input name="license_url" required type="url">
+    <label>Licence evidence URL (the page stating it)</label>
+    <input name="license_evidence_url" type="url">
+    <label>or the PDF page stating the licence</label>
+    <input name="license_evidence_pdf_page" min="1" type="number">
+    <label>Licence evidence quote</label>
+    <input name="license_evidence_quote" type="text">
+    <div class="row" style="margin-top:10px">
+      <button type="submit" value="ok">Add to queue</button
+      ><button onclick="$('addDialog').close()" type="button">Cancel</button>
+      <span class="bad" id="addError"></span>
+    </div>
+  </form>
+</dialog>
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+const esc = (s) =>
+  String(s ?? '').replace(
+    /[&<>"]/g,
+    (c) => ({ '"': '&quot;', '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]
+  );
+const k = (n) => (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n ?? 0));
+const mb = (b) => (b / 1_048_576).toFixed(1) + ' MB';
+const when = (t) => (t ? new Date(t * 1000).toLocaleTimeString() : '');
+let state = null,
+  logSource = null,
+  logKey = null,
+  booksKey = null,
+  heldBook = null,
+  openPanels = {};
+
+async function post(url, body) {
+  const r = await fetch(url, {
+    body: body ? JSON.stringify(body) : undefined,
+    headers: { 'content-type': 'application/json' },
+    method: 'POST',
+  });
+  if (!r.ok) alert(await r.text());
+  return r;
+}
+
+function renderDeps(d, containers) {
+  const dot = (ok, label, extra = '') =>
+    `<span class="dot ${ok ? 'ok' : 'bad'}">${label}</span>${ok ? '' : extra}`;
+  $('deps').innerHTML =
+    '<b>Dependencies</b> ' +
+    dot(
+      d.postgres,
+      'pilot Postgres',
+      ` <button type="button" onclick="post('/api/docker/start/${containers.postgres}').then(refresh)">start</button>`
+    ) +
+    dot(
+      d.parser,
+      'parser',
+      ` <button type="button" onclick="post('/api/docker/start/${containers.parser}').then(refresh)">start</button>`
+    ) +
+    dot(d.ollama, 'Ollama') +
+    dot(d.tunnel, 'library tunnel') +
+    dot(d.bucket, 'bucket credentials') +
+    dot(d.alibaba, 'Alibaba key');
+}
+
+function renderModel(m) {
+  const rows = Object.entries(m.today).map(
+    ([e, u]) =>
+      `${e.includes('11434') ? 'ollama' : e.endsWith('/batches') ? 'alibaba batch' : e.includes('aliyuncs') ? 'alibaba' : new URL(e).hostname}: ${u.calls} calls (${u.ok} ok), ${k(u.input_tokens)} in / ${k(u.output_tokens)} out`
+  );
+  const batches = m.batches.map(
+    (t) =>
+      `${esc(t.book_id)} ${esc(t.stage)} <code>${esc(t.batch_id)}</code> ${esc(t.status)}${t.done != null ? ` ${t.done}/${t.requests} done, ${t.failed || 0} failed` : ''} · checked ${when(t.checked_at)}`
+  );
+  $('model').innerHTML =
+    `<b>Models</b> topics, scrape <code>${esc(m.ollama.model)}</code> @ ${esc(m.ollama.endpoint)} · transcribe, tag <code>${esc(m.alibaba.model)}</code> @ ${esc(m.alibaba.endpoint)} ${m.alibaba.configured ? '' : '<span class="bad">(ALIBABA_* missing)</span>'}` +
+    ` · today: ${rows.length ? rows.join('; ') : 'no calls'}` +
+    (batches.length ? ` · open batch: ${batches.join('; ')}` : '');
+}
+
+function renderSources(list) {
+  $('sourcesPath').textContent = state.paths.data + '/sources';
+  $('sources').innerHTML = list.length
+    ? list
+        .map((s) => {
+          const b = s.book;
+          const status = b
+            ? `<span class="${b.status === 'failed' ? 'bad' : b.status === 'published' ? 'ok' : 'warn'}">${b.status}${b.stage ? ' · ' + b.stage : ''}${b.version ? ' · v' + b.version : ''}</span>`
+            : '<span class="muted">not queued</span>';
+          const processed = s.processed_before
+            ? '<span class="ok">processed before</span>'
+            : s.library_checked
+              ? '<span class="muted">new to the library</span>'
+              : '<span class="warn">library unreachable</span>';
+          return `<div class="card"><div><b>${esc(s.title || '(no metadata)')}</b> <span class="muted">${s.pages ?? '?'} pages · ${mb(s.bytes)} · ${esc(s.licence || 'licence unknown')}</span></div>
+      <div class="row"><code title="${s.sha256}">${s.sha256.slice(0, 16)}…</code> ${status} ${processed}
+      ${b ? '' : `<button type="button" onclick='openAdd(${JSON.stringify(s.sha256)})'>add to queue</button>`}</div></div>`;
+        })
+        .join('')
+    : '<div class="muted">No PDFs yet. Seed the scraper or drop a PDF named &lt;sha256&gt;.pdf into the folder.</div>';
+}
+
+function downloadErrorGroup(download) {
+  const error = (download.last_error || '').trim();
+  if (!error) return '';
+  const http = error.match(/(?:Client|Server) error '([45]\d{2})\b/i);
+  if (http) return `HTTP ${http[1]}`;
+  return error.split('\n')[0].split(':')[0];
+}
+
+function renderDownloads(downloads) {
+  const filter = $('downloadErrorFilter');
+  const selected = filter.value;
+  const groups = new Map();
+  for (const download of downloads) {
+    const group = downloadErrorGroup(download);
+    if (group) groups.set(group, (groups.get(group) || 0) + 1);
+  }
+  // Keep a selected category available if polling removes its last matching row.
+  if (selected.startsWith('error:') && !groups.has(selected.slice(6)))
+    groups.set(selected.slice(6), 0);
+  const errors = downloads.filter((d) => downloadErrorGroup(d)).length;
+  filter.innerHTML = `<option value="all">All downloads (${downloads.length})</option>
+    <option value="errors">With errors (${errors})</option>
+    <option value="none">No error (${downloads.length - errors})</option>` +
+    [...groups].sort(([a], [b]) => a.localeCompare(b)).map(([group, count]) =>
+      `<option value="error:${esc(group)}">${esc(group)} (${count})</option>`).join('');
+  filter.value = selected;
+  const visible = downloads.filter((d) => {
+    const group = downloadErrorGroup(d);
+    return selected === 'all' || (selected === 'errors' && group) ||
+      (selected === 'none' && !group) || selected === `error:${group}`;
+  });
+  $('downloadFilterCount').textContent = `${visible.length} of ${downloads.length} loaded downloads`;
+  $('downloads').innerHTML = visible
+      .map(
+        (d) => `<div class="dl ${d.status}">
+      <div><b>${esc(d.title || d.pdf_url)}</b> <span class="muted">${d.status}${d.attempts ? ' · ' + d.attempts + ' attempt(s)' : ''}${d.pages ? ' · ' + d.pages + ' pages' : ''}${d.bytes ? ' · ' + mb(d.bytes) : ''}</span></div>
+      <div class="q muted">${esc((d.authors || []).join(', '))}${d.edition ? ' · ' + esc(d.edition) : ''} · ${esc(d.subject_id || '?')} · ${esc(d.level || '?')} · ${esc(d.language || '?')} · ${esc(d.licence || 'no licence')}</div>
+      ${d.evidence_quote ? `<div class="q">“${esc(d.evidence_quote)}” <a href="${esc(d.licence_evidence_url)}" target="_blank">evidence</a></div>` : ''}
+      ${d.last_error ? `<div class="q bad">${esc(d.last_error)}</div>` : ''}
+      ${d.duplicate_urls.length ? `<div class="q muted">also at: ${d.duplicate_urls.map(esc).join(', ')}</div>` : ''}
+      <div class="q"><a href="${esc(d.pdf_url)}" target="_blank">${esc(d.pdf_url)}</a>${d.landing_url ? ` · <a href="${esc(d.landing_url)}" target="_blank">landing page</a>` : ''}</div>
+    </div>`
+      )
+      .join('') || '<div class="muted">No downloads match this filter.</div>';
+}
+
+$('downloadErrorFilter').onchange = () => renderDownloads(state.scrape.downloads);
+
+function renderScrape(sc, settings) {
+  $('scrapeState').textContent = settings.scrape;
+  if (document.activeElement !== $('delay'))
+    $('delay').value = settings.host_delay_seconds;
+  const c = sc.urls.by_status;
+  $('urlCounts').textContent =
+    `pending ${c.pending || 0} · visited ${c.visited || 0} · skipped ${c.skipped || 0} · failed ${c.failed || 0}`;
+  $('pending').innerHTML =
+    sc.urls.pending_head
+      .map(
+        (u) =>
+          `<div class="q"><button type="button" onclick='removeUrl(${JSON.stringify(u.url)})'>×</button> d${u.depth} ${esc(u.url)}</div>`
+      )
+      .join('') || '<div class="muted">empty</div>';
+  $('hosts').innerHTML =
+    sc.urls.pending_by_host.map((h) => `${esc(h.host)}: ${h.n}`).join('<br>') ||
+    '<span class="muted">none</span>';
+  renderDownloads(sc.downloads);
+}
+
+function renderBooks(list, settings) {
+  $('ingestState').textContent = settings.ingest;
+  $('ingestNotice').textContent = settings.ingest_notice;
+  $('liveEndpoint').checked = settings.live_endpoint === '1';
+  $('books').innerHTML =
+    list
+      .map((b) => {
+        const runs = b.stage_runs
+          .map(
+            (r) =>
+              `<div class="q"><a href="#" onclick="showLog('${b.sha256}','${r.stage}', ${r.ended_at ? 'false' : 'true'}); return false">${r.stage}</a> ${when(r.started_at)}${r.ended_at ? ` → ${when(r.ended_at)} <span class="${r.exit_code ? 'bad' : 'ok'}">exit ${r.exit_code}</span>` : ' <span class="warn">running</span>'}${r.usage && r.usage.usage ? ` · ${k(r.usage.usage.prompt_tokens)} in / ${k(r.usage.usage.completion_tokens)} out` : ''}${
+                r.usage && !r.usage.usage
+                  ? ' · ' +
+                    Object.values(r.usage)
+                      .map(
+                        (u) =>
+                          `${u.calls} calls, ${k(u.input_tokens)}/${k(u.output_tokens)}`
+                      )
+                      .join('; ')
+                  : ''
+              }</div>`
+          )
+          .join('');
+        const t = b.topics,
+          tr = b.transcribe,
+          tg = b.tag;
+        const count = (id) =>
+          t.excerpts && t.excerpts[id] != null
+            ? ` <span class="${t.excerpts[id] > 60 ? 'warn' : 'muted'}">${t.excerpts[id]} excerpts</span>`
+            : '';
+        const topics = t
+          ? `<details ${openPanels['t' + b.sha256] ? 'open' : ''} ontoggle="openPanels['t${b.sha256}']=this.open"><summary>Topics: ${t.reused.length} reused, ${t.proposed.length} proposed (subject total ${t.subject_total})${t.over.length ? ` · <span class="warn">${t.over.length} over 60 excerpts</span>` : ''}</summary>
+        <div class="q">reused: ${t.reused.map((id) => esc(id) + count(id)).join(', ') || 'none'}</div>
+        ${t.proposed.map((p) => `<div class="q"><b>${esc(p.id)}</b>${count(p.id)} ${esc(p.label)} <span class="muted">${esc(p.aliases.join(', '))} — ${esc(p.scope)}</span></div>`).join('')}
+        ${t.mapped.length ? `<div class="q muted">mapped to existing: ${t.mapped.map((m) => `${esc(m.proposed)}→${esc(m.existing)}`).join(', ')}</div>` : ''}</details>`
+          : '';
+        const tasks = b.tasks
+          .map(
+            (task) =>
+              `<div class="q ${b.status === 'waiting' && task.stage === b.stage ? 'warn' : 'muted'}">${esc(task.stage)} batch <code>${esc(task.batch_id)}</code> ${esc(task.status)}${task.done != null ? ` · ${task.done}/${task.requests} done, ${task.failed || 0} failed` : ` · ${task.requests} requests`} · submitted ${when(task.submitted_at)} · last check ${when(task.checked_at)}${task.error ? ` · <span class="bad">${esc(task.error)}</span>` : ''}</div>`
+          )
+          .join('');
+        const usage = (u) =>
+          `${k(u.prompt_tokens)} in / ${k(u.completion_tokens)} out${u.reasoning_tokens ? ` (${k(u.reasoning_tokens)} reasoning)` : ''}`;
+        const transcribe = tr
+          ? `<div class="q">Transcribe (${esc(tr.transport)}): ${tr.pages_transcribed}/${tr.pages} pages${tr.pages_sent_live ? `, ${tr.pages_sent_live} sent live` : ''}${tr.pages_failed.length ? `, <span class="bad">${tr.pages_failed.length} failed</span>` : ''} · ${tr.aligned}/${tr.chunks} chunks aligned (${tr.changed} changed), ${tr.held_total} held (${tr.undecided} undecided), ${tr.unaligned_short} short unaligned${tr.untranscribed ? `, <span class="bad">${tr.untranscribed} untranscribed</span>` : ''} · ${tr.figures_described}/${tr.figures} figures described · ${usage(tr.usage)} · ${tr.seconds}s</div>` +
+            (tr.held_total
+              ? `<details ${openPanels['h' + b.sha256] ? 'open' : ''} ontoggle="openPanels['h${b.sha256}']=this.open; selectHeld('${b.sha256}', this.open)"><summary>Held chunks: ${tr.undecided} undecided of ${tr.held_total}</summary>${(
+                  tr.held_items || []
+                )
+                  .map(
+                    (h) => `<div class="held"><div class="q"><b>${esc(h.chunk_id)}</b> page${h.pages.length > 1 ? 's ' + h.pages.join(', ') : ' ' + h.page} · ${esc(h.reason)} · coverage ${h.coverage} · ratio ${h.ratio}${h.decision ? ` · <b>${esc(h.decision)}</b> ${when(h.decided_at)}` : ''}</div>
+              <details><summary>page image</summary>${h.pages.map((p) => `<img alt="page ${p}" loading="lazy" src="/api/books/${b.sha256}/pages/${p}">`).join('')}</details>
+              <div class="q muted">original</div><pre>${esc(h.original_text)}</pre>
+              <div class="q muted">aligned span</div><pre>${esc(h.aligned_text)}</pre>
+              <details><summary>page transcription</summary><pre>${esc(h.transcription)}</pre></details>
+              ${h.decision ? '' : `<button type="button" onclick="post('/api/books/${b.sha256}/held/${h.chunk_id}/accept').then(refresh)">accept</button> <button type="button" onclick="post('/api/books/${b.sha256}/held/${h.chunk_id}/reject').then(refresh)">reject</button>`}</div>`
+                  )
+                  .join('') || '<div class="q muted">loading…</div>'}</details>`
+              : '')
+          : '';
+        const tag = tg
+          ? `<div class="q">Tag (${esc(tg.transport)}): ${tg.tagged}/${tg.excerpts} excerpts tagged${tg.sent_live ? `, ${tg.sent_live} sent live` : ''}, evidence verified ${Math.round(tg.verified_rate * 100)}%${tg.failed ? `, <span class="bad">${tg.failed} failed</span>` : ''}, ${tg.review_items} for review · ${usage(tg.usage)} · ${tg.seconds}s</div>`
+          : '';
+        const live =
+          b.status === 'running' && b.stage
+            ? `<div class="q">running <b>${b.stage}</b> — <a href="#" onclick="showLog('${b.sha256}','${b.stage}', true); return false">live log</a></div>`
+            : '';
+        return `<div class="card book ${b.status}">
+      <div><b>${esc(b.title)}</b> <span class="muted">${esc(b.book_id)} · ${esc(b.subject_id)} · ${b.pages} pages${b.first_content_page ? ' · content from p.' + b.first_content_page : ''}</span></div>
+      <div class="row"><span class="${b.status === 'failed' ? 'bad' : b.status === 'published' ? 'ok' : b.status === 'waiting' ? 'warn' : ''}">${b.status}${b.stage && b.status !== 'running' ? ' · next ' + b.stage : ''}${b.version ? ' · library v' + b.version : ''}</span>
+        <button type="button" onclick="post('/api/books/${b.sha256}/up').then(refresh)">↑</button><button type="button" onclick="post('/api/books/${b.sha256}/down').then(refresh)">↓</button>
+        ${b.status === 'failed' ? `<button type="button" onclick="post('/api/books/${b.sha256}/retry').then(refresh)">retry from ${b.stage}</button>` : ''}
+        ${b.status === 'waiting' ? `<button type="button" onclick="post('/api/books/${b.sha256}/retry').then(refresh)">check now</button>` : ''}
+        ${b.status === 'running' ? '' : `<button type="button" onclick="if(confirm('Remove ${esc(b.book_id)} from the queue?')) post('/api/books/${b.sha256}/remove').then(refresh)">remove</button>`}</div>
+      ${b.error ? `<div class="q bad">${esc(b.error)}</div>` : ''}
+      ${live}${tasks}${topics}${transcribe}${tag}
+      <details ${openPanels['r' + b.sha256] ? 'open' : ''} ontoggle="openPanels['r${b.sha256}']=this.open"><summary>Stage runs (${b.stage_runs.length})</summary>${runs}</details>
+      ${logKey && logKey.startsWith(b.sha256) ? `<pre id="log-${b.sha256}"></pre>` : ''}
+    </div>`;
+      })
+      .join('') ||
+    '<div class="muted">The queue is empty; add a downloaded source.</div>';
+  if (logKey) {
+    const pre = $('log-' + logKey.split(':')[0]);
+    if (pre) pre.textContent = logText;
+  }
+}
+
+let logText = '';
+function showLog(sha, stage, live) {
+  if (logSource) {
+    logSource.close();
+    logSource = null;
+  }
+  logKey = sha + ':' + stage;
+  logText = '';
+  if (live) {
+    logSource = new EventSource(`/api/books/${sha}/log/${stage}`);
+    logSource.onmessage = (e) => {
+      logText += JSON.parse(e.data);
+      const pre = $('log-' + sha);
+      if (pre) {
+        pre.textContent = logText;
+        pre.scrollTop = pre.scrollHeight;
+      }
+    };
+    logSource.addEventListener('end', () => {
+      logSource.close();
+      logSource = null;
+    });
+  } else {
+    fetch(`/api/books/${sha}/log/${stage}/text`)
+      .then((r) => r.json())
+      .then((j) => {
+        logText = j.text;
+        const pre = $('log-' + sha);
+        if (pre) pre.textContent = logText;
+      });
+  }
+  renderBooks(state.ingest.books, state.settings);
+}
+
+function openAdd(sha) {
+  const s = state.sources.find((x) => x.sha256 === sha),
+    d = s.download || {},
+    f = $('addForm');
+  $('addSha').textContent = sha.slice(0, 16) + '…';
+  f.title.value = d.title || '';
+  f.authors.value = (d.authors || []).join('\n');
+  f.attribution.value = '';
+  f.attribution_reviewed.checked = false;
+  f.edition.value = d.edition || '';
+  f.source_url.value = d.landing_url || '';
+  f.download_url.value = d.pdf_url || '';
+  f.license.value = d.licence || '';
+  f.license_url.value = d.licence_url || '';
+  f.license_evidence_url.value = d.licence_evidence_url || '';
+  f.license_evidence_pdf_page.value = '';
+  f.license_evidence_quote.value = d.evidence_quote || '';
+  $('subjectSelect').innerHTML = state.subjects
+    .map(
+      (x) =>
+        `<option value="${x.id}" ${x.id === d.subject_id ? 'selected' : ''}>${esc(x.area)} · ${esc(x.label)}</option>`
+    )
+    .join('');
+  $('addError').textContent = '';
+  f.dataset.sha = sha;
+  $('addDialog').showModal();
+}
+$('addForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const f = $('addForm'),
+    body = { sha256: f.dataset.sha };
+  for (const el of f.elements)
+    if (el.name)
+      body[el.name] = el.name === 'authors' ? el.value.split('\n') : el.type === 'checkbox' ? el.checked : el.value;
+  const r = await fetch('/api/books', {
+    body: JSON.stringify(body),
+    headers: { 'content-type': 'application/json' },
+    method: 'POST',
+  });
+  if (!r.ok) {
+    $('addError').textContent = await r.text();
+    return;
+  }
+  $('addDialog').close();
+  refresh();
+};
+
+async function removeUrl(url) {
+  await fetch('/api/urls?url=' + encodeURIComponent(url), { method: 'DELETE' });
+  refresh();
+}
+$('addUrl').onclick = async () => {
+  const r = await post('/api/urls', { url: $('seed').value });
+  if (r.ok) {
+    $('seed').value = '';
+    refresh();
+  }
+};
+$('scrapeStart').onclick = () =>
+  post('/api/workflows/scrape/start').then(refresh);
+$('scrapePause').onclick = () =>
+  post('/api/workflows/scrape/pause').then(refresh);
+$('ingestStart').onclick = () =>
+  post('/api/workflows/ingest/start').then(refresh);
+$('ingestPause').onclick = () =>
+  post('/api/workflows/ingest/pause').then(refresh);
+$('delay').onchange = () =>
+  post('/api/settings', { host_delay_seconds: $('delay').value }).then(refresh);
+$('liveEndpoint').onchange = () =>
+  post('/api/settings', { live_endpoint: $('liveEndpoint').checked }).then(
+    refresh
+  );
+
+// Held items carry a page transcription each, so /api/state sends them for
+// the one book whose held panel is open.
+function selectHeld(sha, open) {
+  const next = open ? sha : heldBook === sha ? null : heldBook;
+  if (next !== heldBook) {
+    heldBook = next;
+    refresh();
+  }
+}
+
+async function refresh() {
+  state = await (
+    await fetch('/api/state' + (heldBook ? '?held=' + heldBook : ''))
+  ).json();
+  renderDeps(state.deps, state.containers);
+  renderModel(state.model);
+  renderSources(state.sources);
+  renderScrape(state.scrape, state.settings);
+  // Re-render the books only on a change, so an open held item (page image,
+  // texts) stays put between polls.
+  const key = JSON.stringify([state.ingest.books, state.settings]);
+  if (key !== booksKey) {
+    booksKey = key;
+    renderBooks(state.ingest.books, state.settings);
+  }
+}
+refresh();
+setInterval(refresh, 3000);
+</script>

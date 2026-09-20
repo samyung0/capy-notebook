@@ -6,6 +6,11 @@ CREATE TABLE IF NOT EXISTS workspaces (id text PRIMARY KEY, embedding_provider_s
 CREATE TABLE IF NOT EXISTS files (id text PRIMARY KEY, name text NOT NULL, added_at timestamptz NOT NULL DEFAULT now(), trashed_at timestamptz);
 CREATE TABLE IF NOT EXISTS rag_contents (id text PRIMARY KEY, status text NOT NULL);
 CREATE TABLE IF NOT EXISTS rag_file_contents (file_id text PRIMARY KEY REFERENCES files, workspace_id text NOT NULL REFERENCES workspaces, content_id text NOT NULL REFERENCES rag_contents);
+-- Notes never enter the library. These stay empty so the production search
+-- statement, which ranks note chunks in the same pool as file chunks, runs
+-- unchanged here.
+CREATE TABLE IF NOT EXISTS materials (id text PRIMARY KEY, title text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), trashed_at timestamptz);
+CREATE TABLE IF NOT EXISTS rag_material_contents (material_id text PRIMARY KEY REFERENCES materials, workspace_id text NOT NULL REFERENCES workspaces, content_id text NOT NULL REFERENCES rag_contents);
 CREATE TABLE IF NOT EXISTS library_chunks (
   id text PRIMARY KEY, workspace_id text NOT NULL REFERENCES workspaces, content_id text NOT NULL REFERENCES rag_contents,
   chunk_idx int NOT NULL, section_path text NOT NULL, text text NOT NULL, indexed_text text NOT NULL,
@@ -40,9 +45,12 @@ CREATE TABLE IF NOT EXISTS library_book_versions (
   object_key text, note text NOT NULL DEFAULT '',
   PRIMARY KEY (book_id, version)
 );
--- The catalog is library-wide; a publish upserts the topics it uses.
+-- Taxonomy: subjects are the committed fixture (lab/knowledge/subjects.json),
+-- loaded by the loader; topics are library-wide, derived per book and upserted
+-- by each publish under the book's subject.
+CREATE TABLE IF NOT EXISTS library_subjects (id text PRIMARY KEY, area text NOT NULL, label text NOT NULL, aliases jsonb NOT NULL);
 CREATE TABLE IF NOT EXISTS library_topics (
-  id text PRIMARY KEY, label text NOT NULL, aliases jsonb NOT NULL,
+  id text PRIMARY KEY, subject_id text NOT NULL REFERENCES library_subjects, label text NOT NULL, aliases jsonb NOT NULL,
   scope text NOT NULL, source_sections text NOT NULL
 );
 CREATE TABLE IF NOT EXISTS library_excerpts (
@@ -58,7 +66,9 @@ CREATE TABLE IF NOT EXISTS library_figures (
   content_id text NOT NULL REFERENCES rag_contents, id text NOT NULL, book_id text NOT NULL, page int NOT NULL,
   bbox int[] NOT NULL, caption_bbox int[], space text NOT NULL, geometry_kind text NOT NULL, block_index int NOT NULL,
   original_caption jsonb NOT NULL, original_footnote jsonb NOT NULL, section_path text NOT NULL, excluded boolean NOT NULL,
-  exclusion_evidence jsonb NOT NULL, capture_path text, capture_pixel_size int[], PRIMARY KEY (content_id, id)
+  exclusion_evidence jsonb NOT NULL, capture_path text, capture_pixel_size int[],
+  -- What the figure visibly shows, from the builder's transcribe stage; empty for the pilot books.
+  description text NOT NULL DEFAULT '', PRIMARY KEY (content_id, id)
 );
 CREATE TABLE IF NOT EXISTS library_model_runs (
   book_id text NOT NULL, content_id text NOT NULL REFERENCES rag_contents, stage text NOT NULL,

@@ -77,8 +77,11 @@ func seedLibrary(t *testing.T, pool *pgxpool.Pool) {
 			 'odl-fp-1', 'v10', 'older stats', 'older summary', 'books/book-sha.pdf', 'pilot'),
 			('ahss', 2, 'ahss_v2', 'current', 'run-2', 'corpus-2', 'odl-2026-09-17',
 			 'odl-fp', 'v10', 'stats', 'summary', 'books/book-sha.pdf', 'reparse')`,
+		`INSERT INTO library_subjects VALUES
+			('statistics', 'mathematics', 'Statistics', '["stats"]'),
+			('algebra', 'mathematics', 'Algebra', '[]')`,
 		`INSERT INTO library_topics VALUES
-			('linear-regression', 'Linear regression', '["least squares"]',
+			('linear-regression', 'statistics', 'Linear regression', '["least squares"]',
 			 'Fitting lines', 'AHSS 8')`,
 		`INSERT INTO library_excerpts VALUES
 			('ahss_v2', 'e_intro_v2', 'ahss', 'Ch 8 > Intro', '{c_intro_v2}', '{340}', '[]',
@@ -169,13 +172,27 @@ func TestLibraryReadsFollowTheCurrentBookVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("library topics: %v", err)
 	}
-	if len(topics) != 1 ||
+	if len(topics) != 1 || topics[0].SubjectID != "statistics" ||
 		topics[0].ByRole["introduction"] != 1 || topics[0].ByRole["exercise"] != 1 ||
 		topics[0].VerifiedByRole["introduction"] != 1 ||
 		topics[0].VerifiedByRole["exercise"] != 0 ||
 		topics[0].RetrievableByRole["introduction"] != 1 ||
 		topics[0].RetrievableByRole["exercise"] != 0 {
 		t.Fatalf("topic role counts = %+v", topics)
+	}
+
+	subjects, err := read.LibrarySubjects(ctx)
+	if err != nil {
+		t.Fatalf("library subjects: %v", err)
+	}
+	// Both tagged excerpts of the current version carry the statistics topic;
+	// the retained version's does not count, and algebra holds nothing.
+	if len(subjects) != 2 ||
+		subjects[0] != (LibrarySubject{ID: "algebra", Area: "mathematics", Label: "Algebra"}) ||
+		subjects[1] != (LibrarySubject{
+			ID: "statistics", Area: "mathematics", Label: "Statistics", Topics: 1, Excerpts: 2,
+		}) {
+		t.Fatalf("subjects = %+v", subjects)
 	}
 
 	all, err := read.LibraryExcerpts(ctx, LibraryExcerptFilter{})
@@ -364,6 +381,14 @@ func TestLibraryExportCarriesItsDigest(t *testing.T) {
 	if overview.Code != http.StatusOK ||
 		!strings.Contains(overview.Body.String(), `"books":1`) {
 		t.Fatalf("overview status = %d body = %s", overview.Code, overview.Body.String())
+	}
+	subjects := httptest.NewRecorder()
+	handler.ServeHTTP(subjects, operator("/api/ops/library/subjects"))
+	if subjects.Code != http.StatusOK || !strings.Contains(
+		subjects.Body.String(),
+		`{"id":"statistics","area":"mathematics","label":"Statistics","topics":1,"excerpts":2}`,
+	) {
+		t.Fatalf("subjects status = %d body = %s", subjects.Code, subjects.Body.String())
 	}
 
 	response := httptest.NewRecorder()

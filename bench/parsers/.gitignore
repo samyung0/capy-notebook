@@ -10,3 +10,6 @@ fixtures/local/odl-broad-spectrum/source-review/
 .tar.gz
 .DS_Store
 *.failure.log
+fixtures/local/2026-09-20-unseen-pdfs/
+fixtures/local/2026-09-20-heading-release/
+fixtures/local/2026-09-20-heading-scope-release/

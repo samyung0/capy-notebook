@@ -1,0 +1,2105 @@
+{
+  "schema_version": 1,
+  "built_on": "2026-09-19",
+  "purpose": "Areas and subjects of the shared knowledge library. Areas group subjects on the builder dashboard only. Subjects are course-sized fields with learner-language aliases; the scraper assigns one subject per book, the topics stage keeps at most 64 topics per subject, and the curate tool description lists only subjects that hold tagged excerpts. Topics are derived per book from its table of contents and are not in this file.",
+  "sources": [
+    {
+      "catalog": "otl",
+      "name": "Open Textbook Library subjects and subcategories",
+      "url": "https://open.umn.edu/opentextbooks/subjects",
+      "fetched": "2026-09-19"
+    },
+    {
+      "catalog": "openstax",
+      "name": "OpenStax books API (title, subjects, categories), English titles",
+      "url": "https://openstax.org/apps/cms/api/v2/pages/?type=books.Book&fields=title,book_subjects,book_categories",
+      "fetched": "2026-09-19"
+    },
+    {
+      "catalog": "libretexts",
+      "name": "LibreTexts library list and Bookshelves pages for Mathematics, Statistics, Biology, Chemistry, Physics, Engineering, Business, Medicine, Geosciences, Social Sciences",
+      "url": "https://libretexts.org/",
+      "fetched": "2026-09-19",
+      "note": "The Humanities Bookshelves page did not load; humanities subjects follow the Open Textbook Library subcategories."
+    }
+  ],
+  "level_scope": "English textbooks at undergraduate level and below (library decision 2026-09-16). Graduate-only fields are not subjects here.",
+  "areas": [
+    { "id": "mathematics", "label": "Mathematics" },
+    { "id": "sciences", "label": "Natural sciences" },
+    { "id": "engineering", "label": "Engineering" },
+    { "id": "computing", "label": "Computing" },
+    { "id": "medicine-health", "label": "Medicine and health" },
+    { "id": "business", "label": "Business" },
+    { "id": "law", "label": "Law" },
+    { "id": "social-sciences", "label": "Social sciences" },
+    { "id": "humanities", "label": "Humanities" },
+    { "id": "arts", "label": "Arts" },
+    { "id": "languages", "label": "Languages" },
+    { "id": "education", "label": "Education and study skills" }
+  ],
+  "subjects": [
+    {
+      "id": "arithmetic-prealgebra",
+      "area": "mathematics",
+      "label": "Arithmetic and pre-algebra",
+      "aliases": [
+        "basic math",
+        "developmental math",
+        "fractions",
+        "decimals",
+        "percentages",
+        "number sense",
+        "prealgebra"
+      ],
+      "level": "secondary",
+      "catalogs": {
+        "openstax": ["Prealgebra 2e", "Developmental Math"],
+        "libretexts": [
+          "Mathematics: Arithmetic and Basic Math",
+          "Mathematics: Pre-Algebra"
+        ]
+      }
+    },
+    {
+      "id": "algebra",
+      "area": "mathematics",
+      "label": "Algebra",
+      "aliases": [
+        "algebra 1",
+        "algebra 2",
+        "elementary algebra",
+        "intermediate algebra",
+        "college algebra",
+        "equations",
+        "polynomials",
+        "functions",
+        "factoring"
+      ],
+      "level": "secondary",
+      "catalogs": {
+        "otl": ["Mathematics > Algebra"],
+        "openstax": [
+          "Algebra 1",
+          "Elementary Algebra 2e",
+          "Intermediate Algebra 2e",
+          "College Algebra 2e",
+          "College Algebra 2e with Corequisite Support"
+        ],
+        "libretexts": ["Mathematics: Algebra"]
+      }
+    },
+    {
+      "id": "geometry",
+      "area": "mathematics",
+      "label": "Geometry",
+      "aliases": [
+        "euclidean geometry",
+        "shapes",
+        "angles",
+        "geometric proofs",
+        "coordinate geometry",
+        "area and volume"
+      ],
+      "level": "secondary",
+      "catalogs": {
+        "otl": ["Mathematics > Geometry and Trigonometry"],
+        "libretexts": ["Mathematics: Geometry"]
+      }
+    },
+    {
+      "id": "trigonometry-precalculus",
+      "area": "mathematics",
+      "label": "Trigonometry and precalculus",
+      "aliases": [
+        "trig",
+        "precalc",
+        "trigonometric functions",
+        "unit circle",
+        "exponential functions",
+        "logarithms",
+        "conic sections",
+        "sequences"
+      ],
+      "level": "secondary",
+      "catalogs": {
+        "otl": ["Mathematics > Geometry and Trigonometry"],
+        "openstax": ["Algebra and Trigonometry 2e", "Precalculus 2e"],
+        "libretexts": ["Mathematics: Precalculus & Trigonometry"]
+      }
+    },
+    {
+      "id": "calculus",
+      "area": "mathematics",
+      "label": "Calculus",
+      "aliases": [
+        "calc",
+        "limits",
+        "derivatives",
+        "integrals",
+        "calculus 1",
+        "calculus 2",
+        "calculus 3",
+        "multivariable calculus",
+        "vector calculus",
+        "series"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Mathematics > Calculus"],
+        "openstax": [
+          "Calculus Volume 1",
+          "Calculus Volume 2",
+          "Calculus Volume 3"
+        ],
+        "libretexts": ["Mathematics: Calculus"]
+      }
+    },
+    {
+      "id": "linear-algebra",
+      "area": "mathematics",
+      "label": "Linear algebra",
+      "aliases": [
+        "matrices",
+        "vectors",
+        "vector spaces",
+        "eigenvalues",
+        "eigenvectors",
+        "determinants",
+        "linear transformations",
+        "systems of linear equations"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Mathematics > Pure"],
+        "libretexts": ["Mathematics: Linear Algebra"]
+      }
+    },
+    {
+      "id": "differential-equations",
+      "area": "mathematics",
+      "label": "Differential equations",
+      "aliases": [
+        "ODE",
+        "ordinary differential equations",
+        "PDE",
+        "partial differential equations",
+        "dynamical systems",
+        "Laplace transform"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Mathematics > Applied"],
+        "libretexts": ["Mathematics: Differential Equations"]
+      }
+    },
+    {
+      "id": "discrete-mathematics",
+      "area": "mathematics",
+      "label": "Discrete mathematics",
+      "aliases": [
+        "combinatorics",
+        "graph theory",
+        "logic",
+        "proofs",
+        "sets",
+        "relations",
+        "counting",
+        "number theory",
+        "mathematical induction"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Mathematics > Pure"],
+        "libretexts": [
+          "Mathematics: Combinatorics and Discrete Mathematics",
+          "Mathematics: Mathematical Logic and Proofs"
+        ]
+      }
+    },
+    {
+      "id": "real-analysis",
+      "area": "mathematics",
+      "label": "Real analysis",
+      "aliases": [
+        "analysis",
+        "advanced calculus",
+        "sequences and series",
+        "continuity",
+        "metric spaces",
+        "measure"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Mathematics > Analysis"],
+        "libretexts": ["Mathematics: Analysis"]
+      }
+    },
+    {
+      "id": "abstract-algebra",
+      "area": "mathematics",
+      "label": "Abstract algebra",
+      "aliases": [
+        "modern algebra",
+        "groups",
+        "rings",
+        "fields",
+        "group theory",
+        "Galois theory"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Mathematics > Pure"],
+        "libretexts": ["Mathematics: Abstract and Geometric Algebra"]
+      }
+    },
+    {
+      "id": "probability",
+      "area": "mathematics",
+      "label": "Probability",
+      "aliases": [
+        "probability theory",
+        "random variables",
+        "distributions",
+        "expected value",
+        "combinatorial probability",
+        "stochastic processes"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "libretexts": ["Statistics: Probability Theory"] }
+    },
+    {
+      "id": "statistics",
+      "area": "mathematics",
+      "label": "Statistics",
+      "aliases": [
+        "stats",
+        "introductory statistics",
+        "business statistics",
+        "AP statistics",
+        "statistical inference",
+        "hypothesis testing",
+        "regression",
+        "data analysis",
+        "confidence intervals"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Mathematics > Statistics"],
+        "openstax": [
+          "Introductory Statistics 2e",
+          "Introductory Business Statistics 2e",
+          "Statistics"
+        ],
+        "libretexts": [
+          "Statistics: Introductory Statistics",
+          "Statistics: Applied Statistics",
+          "Statistics: Advanced Statistics",
+          "Statistics: Computing and Modeling"
+        ]
+      },
+      "pilot_topics_manifest": "bench/rag/fixtures/knowledge-base-pilot-books.json"
+    },
+    {
+      "id": "applied-mathematics",
+      "area": "mathematics",
+      "label": "Applied mathematics",
+      "aliases": [
+        "mathematical modeling",
+        "numerical methods",
+        "numerical analysis",
+        "scientific computing",
+        "optimization",
+        "operations research",
+        "simulation"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Mathematics > Applied"],
+        "libretexts": [
+          "Mathematics: Applied Mathematics",
+          "Mathematics: Scientific Computing, Simulations, and Modeling"
+        ]
+      }
+    },
+    {
+      "id": "quantitative-reasoning",
+      "area": "mathematics",
+      "label": "Quantitative reasoning",
+      "aliases": [
+        "contemporary math",
+        "liberal arts math",
+        "math for everyday life",
+        "financial math",
+        "math literacy",
+        "consumer math"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "openstax": ["Contemporary Mathematics"] }
+    },
+
+    {
+      "id": "general-biology",
+      "area": "sciences",
+      "label": "Biology",
+      "aliases": [
+        "intro biology",
+        "general biology",
+        "concepts of biology",
+        "life science",
+        "AP biology",
+        "human biology"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Natural Sciences > Biology"],
+        "openstax": [
+          "Biology 2e",
+          "Concepts of Biology",
+          "Biology for AP® Courses"
+        ],
+        "libretexts": [
+          "Biology: Introductory and General Biology",
+          "Biology: Human Biology"
+        ]
+      }
+    },
+    {
+      "id": "cell-molecular-biology",
+      "area": "sciences",
+      "label": "Cell and molecular biology",
+      "aliases": [
+        "cell biology",
+        "molecular biology",
+        "cells",
+        "cell division",
+        "mitosis",
+        "DNA replication",
+        "gene expression",
+        "proteins"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "libretexts": ["Biology: Cell and Molecular Biology"] }
+    },
+    {
+      "id": "genetics",
+      "area": "sciences",
+      "label": "Genetics",
+      "aliases": [
+        "heredity",
+        "genes",
+        "inheritance",
+        "Mendelian genetics",
+        "genomics",
+        "chromosomes"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "libretexts": ["Biology: Genetics"] }
+    },
+    {
+      "id": "microbiology",
+      "area": "sciences",
+      "label": "Microbiology",
+      "aliases": [
+        "bacteria",
+        "viruses",
+        "microbes",
+        "immunology",
+        "infectious disease",
+        "pathogens"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "openstax": ["Microbiology"],
+        "libretexts": ["Biology: Microbiology"]
+      }
+    },
+    {
+      "id": "ecology-evolution",
+      "area": "sciences",
+      "label": "Ecology and evolution",
+      "aliases": [
+        "ecology",
+        "evolution",
+        "evolutionary biology",
+        "natural selection",
+        "ecosystems",
+        "biodiversity",
+        "population biology"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "libretexts": [
+          "Biology: Ecology",
+          "Biology: Evolutionary Developmental Biology"
+        ]
+      }
+    },
+    {
+      "id": "botany",
+      "area": "sciences",
+      "label": "Botany",
+      "aliases": [
+        "plant biology",
+        "plants",
+        "plant science",
+        "horticulture",
+        "agriculture",
+        "photosynthesis"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "libretexts": [
+          "Biology: Botany and Horticulture",
+          "Biology: Agriculture and Horticulture"
+        ]
+      }
+    },
+    {
+      "id": "biochemistry",
+      "area": "sciences",
+      "label": "Biochemistry",
+      "aliases": [
+        "biological chemistry",
+        "metabolism",
+        "enzymes",
+        "biomolecules",
+        "molecular metabolism"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "libretexts": [
+          "Biology: Biochemistry",
+          "Chemistry: Biological Chemistry"
+        ]
+      }
+    },
+    {
+      "id": "general-chemistry",
+      "area": "sciences",
+      "label": "Chemistry",
+      "aliases": [
+        "intro chemistry",
+        "general chemistry",
+        "chem",
+        "atoms first",
+        "GOB chemistry",
+        "AP chemistry",
+        "stoichiometry",
+        "chemical bonding",
+        "acids and bases"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Natural Sciences > Chemistry"],
+        "openstax": ["Chemistry 2e", "Chemistry: Atoms First 2e"],
+        "libretexts": [
+          "Chemistry: General Chemistry",
+          "Chemistry: Introductory, Conceptual, and GOB Chemistry"
+        ]
+      }
+    },
+    {
+      "id": "organic-chemistry",
+      "area": "sciences",
+      "label": "Organic chemistry",
+      "aliases": [
+        "orgo",
+        "organic reactions",
+        "functional groups",
+        "reaction mechanisms",
+        "stereochemistry",
+        "spectroscopy"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "openstax": ["Organic Chemistry: A Tenth Edition"],
+        "libretexts": ["Chemistry: Organic Chemistry"]
+      }
+    },
+    {
+      "id": "inorganic-chemistry",
+      "area": "sciences",
+      "label": "Inorganic chemistry",
+      "aliases": [
+        "coordination chemistry",
+        "transition metals",
+        "solid state chemistry",
+        "main group chemistry"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "libretexts": ["Chemistry: Inorganic Chemistry"] }
+    },
+    {
+      "id": "analytical-chemistry",
+      "area": "sciences",
+      "label": "Analytical chemistry",
+      "aliases": [
+        "quantitative analysis",
+        "instrumental analysis",
+        "titration",
+        "chromatography",
+        "electrochemistry"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "libretexts": ["Chemistry: Analytical Chemistry"] }
+    },
+    {
+      "id": "physical-chemistry",
+      "area": "sciences",
+      "label": "Physical chemistry",
+      "aliases": [
+        "pchem",
+        "chemical thermodynamics",
+        "chemical kinetics",
+        "quantum chemistry",
+        "spectroscopy theory"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "libretexts": ["Chemistry: Physical & Theoretical Chemistry"]
+      }
+    },
+    {
+      "id": "environmental-science",
+      "area": "sciences",
+      "label": "Environmental science",
+      "aliases": [
+        "environmental studies",
+        "sustainability",
+        "climate change",
+        "pollution",
+        "environmental chemistry",
+        "conservation"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "libretexts": [
+          "Chemistry: Environmental Chemistry",
+          "Engineering: Environmental Engineering (Sustainability and Conservation)"
+        ]
+      }
+    },
+    {
+      "id": "physics",
+      "area": "sciences",
+      "label": "Physics",
+      "aliases": [
+        "college physics",
+        "university physics",
+        "intro physics",
+        "AP physics",
+        "conceptual physics",
+        "physics 1",
+        "physics 2"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Natural Sciences > Physics"],
+        "openstax": [
+          "College Physics 2e",
+          "University Physics Volume 1",
+          "University Physics Volume 2",
+          "University Physics Volume 3",
+          "Physics",
+          "The AP Physics Collection",
+          "College Physics For AP® Courses 2e"
+        ],
+        "libretexts": [
+          "Physics: Conceptual Physics",
+          "Physics: College Physics",
+          "Physics: University Physics"
+        ]
+      }
+    },
+    {
+      "id": "classical-mechanics",
+      "area": "sciences",
+      "label": "Classical mechanics",
+      "aliases": [
+        "mechanics",
+        "kinematics",
+        "Newton's laws",
+        "dynamics",
+        "energy and momentum",
+        "rotational motion",
+        "Lagrangian mechanics"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "libretexts": ["Physics: Classical Mechanics"] }
+    },
+    {
+      "id": "electricity-magnetism",
+      "area": "sciences",
+      "label": "Electricity and magnetism",
+      "aliases": [
+        "E&M",
+        "electromagnetism",
+        "electrostatics",
+        "electric circuits",
+        "magnetic fields",
+        "Maxwell's equations"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "libretexts": ["Physics: Electricity and Magnetism"] }
+    },
+    {
+      "id": "thermodynamics-statistical-mechanics",
+      "area": "sciences",
+      "label": "Thermodynamics and statistical mechanics",
+      "aliases": [
+        "thermo",
+        "heat",
+        "entropy",
+        "laws of thermodynamics",
+        "statistical physics",
+        "kinetic theory"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "libretexts": ["Physics: Thermodynamics and Statistical Mechanics"]
+      }
+    },
+    {
+      "id": "waves-optics",
+      "area": "sciences",
+      "label": "Waves and optics",
+      "aliases": [
+        "optics",
+        "light",
+        "lenses",
+        "interference",
+        "diffraction",
+        "acoustics",
+        "sound",
+        "wave motion"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "libretexts": ["Physics: Optics", "Physics: Waves and Acoustics"]
+      }
+    },
+    {
+      "id": "quantum-mechanics",
+      "area": "sciences",
+      "label": "Quantum mechanics",
+      "aliases": [
+        "quantum physics",
+        "QM",
+        "wave functions",
+        "Schrödinger equation",
+        "quantum theory"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "libretexts": ["Physics: Quantum Mechanics"] }
+    },
+    {
+      "id": "modern-physics",
+      "area": "sciences",
+      "label": "Modern physics",
+      "aliases": [
+        "relativity",
+        "special relativity",
+        "nuclear physics",
+        "particle physics",
+        "atomic physics",
+        "radioactivity"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "libretexts": [
+          "Physics: Modern Physics",
+          "Physics: Relativity",
+          "Physics: Nuclear and Particle Physics"
+        ]
+      }
+    },
+    {
+      "id": "astronomy",
+      "area": "sciences",
+      "label": "Astronomy",
+      "aliases": [
+        "astrophysics",
+        "cosmology",
+        "solar system",
+        "stars",
+        "galaxies",
+        "planets",
+        "space science"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "openstax": ["Astronomy 2e"],
+        "libretexts": ["Physics: Astronomy and Cosmology"]
+      }
+    },
+    {
+      "id": "geology",
+      "area": "sciences",
+      "label": "Geology and earth science",
+      "aliases": [
+        "earth science",
+        "physical geology",
+        "rocks",
+        "minerals",
+        "plate tectonics",
+        "earthquakes",
+        "volcanoes",
+        "soil science"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Natural Sciences > Earth Sciences"],
+        "libretexts": [
+          "Geosciences: Geology",
+          "Geosciences: Sedimentology",
+          "Geosciences: Seismology",
+          "Geosciences: Soil Science"
+        ]
+      }
+    },
+    {
+      "id": "meteorology-climate",
+      "area": "sciences",
+      "label": "Meteorology and climate",
+      "aliases": [
+        "weather",
+        "climate science",
+        "atmospheric science",
+        "atmosphere",
+        "climatology"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "libretexts": ["Geosciences: Meteorology & Climate Science"]
+      }
+    },
+    {
+      "id": "oceanography",
+      "area": "sciences",
+      "label": "Oceanography and marine science",
+      "aliases": [
+        "oceans",
+        "marine science",
+        "marine biology",
+        "marine ecology",
+        "tides",
+        "ocean currents"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "libretexts": [
+          "Geosciences: Oceanography",
+          "Biology: Marine Biology and Marine Ecology"
+        ]
+      }
+    },
+    {
+      "id": "physical-geography",
+      "area": "sciences",
+      "label": "Physical geography",
+      "aliases": [
+        "geography (physical)",
+        "landforms",
+        "earth systems",
+        "biomes",
+        "maps and GIS"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "libretexts": ["Geosciences: Geography (Physical)"] }
+    },
+
+    {
+      "id": "introductory-engineering",
+      "area": "engineering",
+      "label": "Introduction to engineering",
+      "aliases": [
+        "engineering fundamentals",
+        "engineering design",
+        "engineering ethics",
+        "engineering problem solving"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Engineering & Technology"],
+        "libretexts": ["Engineering: Introductory Engineering"]
+      }
+    },
+    {
+      "id": "civil-engineering",
+      "area": "engineering",
+      "label": "Civil engineering",
+      "aliases": [
+        "structures",
+        "structural analysis",
+        "statics",
+        "surveying",
+        "transportation engineering",
+        "geotechnical",
+        "construction"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Engineering & Technology > Civil Engineering"],
+        "libretexts": ["Engineering: Civil Engineering"]
+      }
+    },
+    {
+      "id": "mechanical-engineering",
+      "area": "engineering",
+      "label": "Mechanical engineering",
+      "aliases": [
+        "statics and dynamics",
+        "mechanics of materials",
+        "strength of materials",
+        "fluid mechanics",
+        "heat transfer",
+        "machine design",
+        "manufacturing processes"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Engineering & Technology > Mechanical Engineering"],
+        "libretexts": ["Engineering: Mechanical Engineering"]
+      }
+    },
+    {
+      "id": "electrical-engineering",
+      "area": "engineering",
+      "label": "Electrical engineering",
+      "aliases": [
+        "circuits",
+        "electronics",
+        "signals and systems",
+        "digital logic",
+        "power systems",
+        "control systems",
+        "communications"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Engineering & Technology > Electrical Engineering"],
+        "libretexts": ["Engineering: Electrical Engineering"]
+      }
+    },
+    {
+      "id": "chemical-engineering",
+      "area": "engineering",
+      "label": "Chemical engineering",
+      "aliases": [
+        "process engineering",
+        "transport phenomena",
+        "reaction engineering",
+        "mass balances",
+        "separations"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "libretexts": ["Engineering: Chemical Engineering"] }
+    },
+    {
+      "id": "materials-science",
+      "area": "engineering",
+      "label": "Materials science",
+      "aliases": [
+        "materials engineering",
+        "metallurgy",
+        "polymers",
+        "ceramics",
+        "crystal structure",
+        "material properties"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "libretexts": ["Engineering: Materials Science"] }
+    },
+    {
+      "id": "environmental-engineering",
+      "area": "engineering",
+      "label": "Environmental engineering",
+      "aliases": [
+        "water treatment",
+        "wastewater",
+        "air quality engineering",
+        "waste management",
+        "sustainable engineering"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "libretexts": [
+          "Engineering: Environmental Engineering (Sustainability and Conservation)"
+        ]
+      }
+    },
+    {
+      "id": "industrial-systems-engineering",
+      "area": "engineering",
+      "label": "Industrial and systems engineering",
+      "aliases": [
+        "operations",
+        "systems engineering",
+        "quality engineering",
+        "manufacturing systems",
+        "additive manufacturing",
+        "3D printing",
+        "lean"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "openstax": ["Additive Manufacturing Essentials"],
+        "libretexts": ["Engineering: Industrial and Systems Engineering"]
+      }
+    },
+    {
+      "id": "aerospace-engineering",
+      "area": "engineering",
+      "label": "Aerospace engineering",
+      "aliases": [
+        "aeronautics",
+        "flight mechanics",
+        "aerodynamics",
+        "propulsion",
+        "astronautics"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "libretexts": ["Engineering: Aerospace Engineering"] }
+    },
+    {
+      "id": "biomedical-engineering",
+      "area": "engineering",
+      "label": "Biomedical engineering",
+      "aliases": [
+        "bioengineering",
+        "biological engineering",
+        "medical devices",
+        "biomaterials",
+        "biomechanics engineering"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "libretexts": ["Engineering: Biological Engineering"] }
+    },
+
+    {
+      "id": "programming",
+      "area": "computing",
+      "label": "Programming",
+      "aliases": [
+        "coding",
+        "Python",
+        "Java",
+        "C",
+        "C++",
+        "JavaScript",
+        "intro programming",
+        "programming languages",
+        "software development"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Computer Science > Programming Languages"],
+        "openstax": ["Introduction to Python Programming"]
+      }
+    },
+    {
+      "id": "computer-science-foundations",
+      "area": "computing",
+      "label": "Computer science foundations",
+      "aliases": [
+        "intro computer science",
+        "algorithms",
+        "data structures",
+        "theory of computation",
+        "computer architecture",
+        "operating systems",
+        "discrete structures",
+        "software engineering"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Computer Science"],
+        "openstax": ["Introduction to Computer Science"],
+        "libretexts": ["Engineering: Computer Science"]
+      }
+    },
+    {
+      "id": "databases",
+      "area": "computing",
+      "label": "Databases",
+      "aliases": [
+        "SQL",
+        "relational databases",
+        "data modeling",
+        "database design",
+        "normalization",
+        "NoSQL"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "otl": ["Computer Science > Databases"] }
+    },
+    {
+      "id": "information-systems",
+      "area": "computing",
+      "label": "Information systems",
+      "aliases": [
+        "MIS",
+        "management information systems",
+        "IT",
+        "business information systems",
+        "workplace software",
+        "spreadsheets"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Computer Science > Information Systems"],
+        "openstax": [
+          "Foundations of Information Systems",
+          "Workplace Software and Skills"
+        ]
+      }
+    },
+    {
+      "id": "data-science",
+      "area": "computing",
+      "label": "Data science",
+      "aliases": [
+        "data analytics",
+        "data mining",
+        "R",
+        "pandas",
+        "machine learning basics",
+        "data visualization",
+        "big data"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "openstax": ["Principles of Data Science"],
+        "libretexts": ["Engineering: Data Science"]
+      }
+    },
+    {
+      "id": "artificial-intelligence",
+      "area": "computing",
+      "label": "Artificial intelligence and machine learning",
+      "aliases": [
+        "AI",
+        "machine learning",
+        "neural networks",
+        "deep learning",
+        "natural language processing",
+        "computer vision"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "libretexts": ["Engineering: Artificial Intelligence"] }
+    },
+
+    {
+      "id": "anatomy-physiology",
+      "area": "medicine-health",
+      "label": "Anatomy and physiology",
+      "aliases": [
+        "A&P",
+        "human anatomy",
+        "human physiology",
+        "body systems",
+        "organ systems",
+        "histology"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "openstax": ["Anatomy and Physiology 2e"],
+        "libretexts": ["Medicine: Anatomy and Physiology"]
+      }
+    },
+    {
+      "id": "nursing",
+      "area": "medicine-health",
+      "label": "Nursing",
+      "aliases": [
+        "nursing fundamentals",
+        "clinical skills",
+        "patient care",
+        "medical-surgical nursing",
+        "maternal-newborn nursing",
+        "psychiatric nursing",
+        "nursing pharmacology"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Medicine > Nursing"],
+        "openstax": [
+          "Clinical Nursing Skills",
+          "Fundamentals of Nursing",
+          "Medical-Surgical Nursing",
+          "Maternal-Newborn Nursing",
+          "Psychiatric-Mental Health Nursing",
+          "Nutrition for Nurses",
+          "Pharmacology for Nurses",
+          "Population Health for Nurses"
+        ],
+        "libretexts": ["Medicine: Nursing"]
+      }
+    },
+    {
+      "id": "nutrition",
+      "area": "medicine-health",
+      "label": "Nutrition",
+      "aliases": [
+        "diet",
+        "dietetics",
+        "human nutrition",
+        "food science",
+        "macronutrients",
+        "vitamins"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Medicine > Nutrition"],
+        "libretexts": ["Medicine: Nutrition"]
+      }
+    },
+    {
+      "id": "pharmacology",
+      "area": "medicine-health",
+      "label": "Pharmacology",
+      "aliases": [
+        "drugs",
+        "medications",
+        "pharmacokinetics",
+        "pharmacodynamics",
+        "drug classes"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "libretexts": ["Medicine: Pharmacology"] }
+    },
+    {
+      "id": "public-health",
+      "area": "medicine-health",
+      "label": "Public health",
+      "aliases": [
+        "epidemiology",
+        "population health",
+        "community health",
+        "global health",
+        "health policy",
+        "biostatistics"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "libretexts": ["Medicine: Public Health"] }
+    },
+    {
+      "id": "neuroscience",
+      "area": "medicine-health",
+      "label": "Neuroscience",
+      "aliases": [
+        "brain",
+        "behavioral neuroscience",
+        "neurobiology",
+        "nervous system",
+        "neurons",
+        "cognitive neuroscience"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "openstax": ["Introduction to Behavioral Neuroscience"],
+        "libretexts": ["Medicine: Neuroscience"]
+      }
+    },
+    {
+      "id": "kinesiology-exercise-science",
+      "area": "medicine-health",
+      "label": "Kinesiology and exercise science",
+      "aliases": [
+        "exercise physiology",
+        "sports science",
+        "fitness",
+        "biomechanics",
+        "physical education",
+        "health and wellness"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "libretexts": [
+          "Medicine: Sports, Exercise, and Kinesiology",
+          "Medicine: Health and Fitness"
+        ]
+      }
+    },
+    {
+      "id": "health-sciences",
+      "area": "medicine-health",
+      "label": "Health sciences",
+      "aliases": [
+        "medical terminology",
+        "pathophysiology",
+        "allied health",
+        "healthcare",
+        "first aid",
+        "medical basics"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Medicine"],
+        "libretexts": [
+          "Medicine: Medicine",
+          "Medicine: Allied Health",
+          "Medicine: Basic Science"
+        ]
+      }
+    },
+
+    {
+      "id": "business-fundamentals",
+      "area": "business",
+      "label": "Introduction to business",
+      "aliases": [
+        "business basics",
+        "intro to business",
+        "business organization",
+        "business environment",
+        "business communication"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Business"],
+        "openstax": ["Introduction to Business 2e"],
+        "libretexts": ["Business: Business"]
+      }
+    },
+    {
+      "id": "accounting",
+      "area": "business",
+      "label": "Accounting",
+      "aliases": [
+        "financial accounting",
+        "managerial accounting",
+        "bookkeeping",
+        "balance sheet",
+        "income statement",
+        "cost accounting"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Business > Accounting"],
+        "openstax": [
+          "Principles of Accounting, Volume 1: Financial Accounting",
+          "Principles of Accounting, Volume 2: Managerial Accounting"
+        ],
+        "libretexts": ["Business: Accounting"]
+      }
+    },
+    {
+      "id": "finance",
+      "area": "business",
+      "label": "Finance",
+      "aliases": [
+        "corporate finance",
+        "personal finance",
+        "investments",
+        "financial management",
+        "time value of money",
+        "capital budgeting"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Business > Finance"],
+        "openstax": ["Principles of Finance 2e"],
+        "libretexts": ["Business: Finance"]
+      }
+    },
+    {
+      "id": "management",
+      "area": "business",
+      "label": "Management",
+      "aliases": [
+        "organizational behavior",
+        "leadership",
+        "operations management",
+        "strategy",
+        "project management",
+        "teams",
+        "decision making"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Business > Management"],
+        "openstax": ["Principles of Management", "Organizational Behavior"],
+        "libretexts": ["Business: Management"]
+      }
+    },
+    {
+      "id": "marketing",
+      "area": "business",
+      "label": "Marketing",
+      "aliases": [
+        "consumer behavior",
+        "advertising",
+        "digital marketing",
+        "branding",
+        "market research",
+        "pricing"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Business > Marketing"],
+        "openstax": ["Principles of Marketing"],
+        "libretexts": ["Business: Marketing"]
+      }
+    },
+    {
+      "id": "human-resources",
+      "area": "business",
+      "label": "Human resources",
+      "aliases": [
+        "HR management",
+        "personnel",
+        "talent management",
+        "recruiting",
+        "compensation",
+        "training and development"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "otl": ["Business > Human Resources"] }
+    },
+    {
+      "id": "entrepreneurship",
+      "area": "business",
+      "label": "Entrepreneurship",
+      "aliases": [
+        "startups",
+        "small business",
+        "business plans",
+        "innovation",
+        "venture funding"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "openstax": ["Entrepreneurship"] }
+    },
+    {
+      "id": "business-law-ethics",
+      "area": "business",
+      "label": "Business law and ethics",
+      "aliases": [
+        "business law",
+        "business ethics",
+        "commercial law",
+        "intellectual property",
+        "corporate governance"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "openstax": [
+          "Business Ethics",
+          "Business Law I Essentials 2e",
+          "Introduction to Intellectual Property"
+        ]
+      }
+    },
+
+    {
+      "id": "constitutional-law",
+      "area": "law",
+      "label": "Constitutional law",
+      "aliases": [
+        "constitution",
+        "civil rights",
+        "civil liberties",
+        "judicial review",
+        "separation of powers"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Law > Constitutional Law"],
+        "libretexts": ["Business: Constitutional Law"]
+      }
+    },
+    {
+      "id": "contract-law",
+      "area": "law",
+      "label": "Contract law",
+      "aliases": [
+        "contracts",
+        "agreements",
+        "sales law",
+        "offer and acceptance",
+        "breach of contract"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "otl": ["Law > Contract Law"] }
+    },
+    {
+      "id": "criminal-law",
+      "area": "law",
+      "label": "Criminal law",
+      "aliases": [
+        "crimes",
+        "criminal procedure",
+        "penal law",
+        "criminal defenses",
+        "evidence"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Law > Criminal Law"],
+        "libretexts": ["Business: Criminal Law"]
+      }
+    },
+    {
+      "id": "property-law",
+      "area": "law",
+      "label": "Property law",
+      "aliases": [
+        "real property",
+        "land law",
+        "estates",
+        "landlord and tenant",
+        "easements"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "otl": ["Law > Property Law"] }
+    },
+    {
+      "id": "civil-law-procedure",
+      "area": "law",
+      "label": "Civil law and procedure",
+      "aliases": [
+        "torts",
+        "civil procedure",
+        "litigation",
+        "negligence",
+        "remedies"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Law > Civil Law", "Law > Procedural Law"],
+        "libretexts": ["Business: Civil Law"]
+      }
+    },
+    {
+      "id": "administrative-law",
+      "area": "law",
+      "label": "Administrative law",
+      "aliases": [
+        "regulatory law",
+        "government agencies",
+        "rulemaking",
+        "administrative procedure"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "otl": ["Law > Administrative Law"] }
+    },
+
+    {
+      "id": "microeconomics",
+      "area": "social-sciences",
+      "label": "Microeconomics",
+      "aliases": [
+        "micro",
+        "supply and demand",
+        "markets",
+        "elasticity",
+        "consumer theory",
+        "market structures",
+        "game theory basics"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Social Sciences > Economics"],
+        "openstax": [
+          "Principles of Microeconomics 3e",
+          "Principles of Microeconomics for AP® Courses 2e",
+          "Principles of Economics 3e"
+        ],
+        "libretexts": ["Social Sciences: Economics"]
+      }
+    },
+    {
+      "id": "macroeconomics",
+      "area": "social-sciences",
+      "label": "Macroeconomics",
+      "aliases": [
+        "macro",
+        "GDP",
+        "inflation",
+        "unemployment",
+        "monetary policy",
+        "fiscal policy",
+        "economic growth",
+        "international trade"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Social Sciences > Economics"],
+        "openstax": [
+          "Principles of Macroeconomics 3e",
+          "Principles of Macroeconomics for AP® Courses 2e",
+          "Principles of Economics 3e"
+        ],
+        "libretexts": ["Social Sciences: Economics"]
+      }
+    },
+    {
+      "id": "psychology",
+      "area": "social-sciences",
+      "label": "Psychology",
+      "aliases": [
+        "intro psychology",
+        "general psychology",
+        "cognitive psychology",
+        "abnormal psychology",
+        "social psychology",
+        "personality",
+        "learning and memory"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Social Sciences > Psychology"],
+        "openstax": ["Psychology 2e"],
+        "libretexts": ["Social Sciences: Psychology"]
+      }
+    },
+    {
+      "id": "human-development",
+      "area": "social-sciences",
+      "label": "Human development",
+      "aliases": [
+        "lifespan development",
+        "child development",
+        "developmental psychology",
+        "adolescence",
+        "aging"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "openstax": ["Lifespan Development"],
+        "libretexts": ["Social Sciences: Human Development"]
+      }
+    },
+    {
+      "id": "sociology",
+      "area": "social-sciences",
+      "label": "Sociology",
+      "aliases": [
+        "intro sociology",
+        "social theory",
+        "society",
+        "social institutions",
+        "social stratification",
+        "culture"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Social Sciences > Sociology"],
+        "openstax": ["Introduction to Sociology 3e"],
+        "libretexts": ["Social Sciences: Sociology"]
+      }
+    },
+    {
+      "id": "anthropology",
+      "area": "social-sciences",
+      "label": "Anthropology",
+      "aliases": [
+        "cultural anthropology",
+        "physical anthropology",
+        "archaeology",
+        "ethnography",
+        "human origins"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Social Sciences > Anthropology"],
+        "openstax": ["Introduction to Anthropology"],
+        "libretexts": ["Social Sciences: Anthropology"]
+      }
+    },
+    {
+      "id": "political-science",
+      "area": "social-sciences",
+      "label": "Political science",
+      "aliases": [
+        "politics",
+        "government",
+        "American government",
+        "civics",
+        "comparative politics",
+        "international relations",
+        "public policy"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Social Sciences > Political Science"],
+        "openstax": [
+          "American Government 4e",
+          "Introduction to Political Science"
+        ],
+        "libretexts": ["Social Sciences: Political Science and Civics"]
+      }
+    },
+    {
+      "id": "human-geography",
+      "area": "social-sciences",
+      "label": "Human geography",
+      "aliases": [
+        "geography",
+        "cultural geography",
+        "world regional geography",
+        "urban geography",
+        "population geography"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Social Sciences > Geography"],
+        "libretexts": ["Social Sciences: Geography (Human)"]
+      }
+    },
+    {
+      "id": "criminology-criminal-justice",
+      "area": "social-sciences",
+      "label": "Criminology and criminal justice",
+      "aliases": [
+        "criminal justice",
+        "policing",
+        "corrections",
+        "courts",
+        "crime theory"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "libretexts": ["Social Sciences: Criminology and Criminal Justice"]
+      }
+    },
+    {
+      "id": "communication-media",
+      "area": "social-sciences",
+      "label": "Communication and media",
+      "aliases": [
+        "communication studies",
+        "public speaking",
+        "journalism",
+        "media studies",
+        "mass communication",
+        "interpersonal communication"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Journalism, Media Studies & Communications"],
+        "libretexts": ["Social Sciences: Communication Studies"]
+      }
+    },
+    {
+      "id": "linguistics",
+      "area": "social-sciences",
+      "label": "Linguistics",
+      "aliases": [
+        "language science",
+        "phonetics",
+        "phonology",
+        "syntax",
+        "semantics",
+        "sociolinguistics"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Humanities > Linguistics"],
+        "libretexts": ["Social Sciences: Linguistics"]
+      }
+    },
+    {
+      "id": "social-work",
+      "area": "social-sciences",
+      "label": "Social work and counseling",
+      "aliases": [
+        "human services",
+        "counseling",
+        "social welfare",
+        "case management",
+        "guidance"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "libretexts": [
+          "Social Sciences: Social Work and Human Services",
+          "Social Sciences: Counseling & Guidance"
+        ]
+      }
+    },
+    {
+      "id": "gender-ethnic-studies",
+      "area": "social-sciences",
+      "label": "Gender and ethnic studies",
+      "aliases": [
+        "gender studies",
+        "women's studies",
+        "ethnic studies",
+        "cultural studies",
+        "social justice",
+        "disability studies"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": [
+          "Social Sciences > Gender & Sexuality Studies",
+          "Social Sciences > Cultural & Ethnic Studies"
+        ],
+        "libretexts": [
+          "Social Sciences: Gender Studies",
+          "Social Sciences: Ethnic Studies",
+          "Social Sciences: Social Justice Studies",
+          "Social Sciences: Disability Studies"
+        ]
+      }
+    },
+    {
+      "id": "library-information-science",
+      "area": "social-sciences",
+      "label": "Library and information science",
+      "aliases": [
+        "library science",
+        "information literacy",
+        "museum studies",
+        "research skills",
+        "archives"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Social Sciences > Library Science and Museum Studies"],
+        "libretexts": ["Social Sciences: Library and Information Science"]
+      }
+    },
+
+    {
+      "id": "history",
+      "area": "humanities",
+      "label": "History",
+      "aliases": [
+        "world history",
+        "US history",
+        "American history",
+        "European history",
+        "ancient history",
+        "modern history"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Humanities > History"],
+        "openstax": [
+          "U.S. History",
+          "World History, Volume 1: to 1500",
+          "World History, Volume 2: from 1400",
+          "Life, Liberty, and the Pursuit of Happiness"
+        ]
+      }
+    },
+    {
+      "id": "philosophy",
+      "area": "humanities",
+      "label": "Philosophy",
+      "aliases": [
+        "intro philosophy",
+        "ethics",
+        "moral philosophy",
+        "symbolic logic",
+        "critical thinking",
+        "epistemology",
+        "metaphysics",
+        "philosophy of mind"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Humanities > Philosophy"],
+        "openstax": ["Introduction to Philosophy"]
+      }
+    },
+    {
+      "id": "religious-studies",
+      "area": "humanities",
+      "label": "Religious studies",
+      "aliases": [
+        "religion",
+        "world religions",
+        "theology",
+        "biblical studies",
+        "comparative religion"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "otl": ["Humanities > Religion"] }
+    },
+    {
+      "id": "literature",
+      "area": "humanities",
+      "label": "Literature",
+      "aliases": [
+        "English literature",
+        "poetry",
+        "fiction",
+        "drama",
+        "literary analysis",
+        "world literature"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "otl": ["Humanities > Literature, Rhetoric, and Poetry"] }
+    },
+    {
+      "id": "writing-composition",
+      "area": "humanities",
+      "label": "Writing and composition",
+      "aliases": [
+        "rhetoric",
+        "composition",
+        "academic writing",
+        "essay writing",
+        "technical writing",
+        "English composition",
+        "grammar"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Humanities > Literature, Rhetoric, and Poetry"],
+        "openstax": ["Writing Guide with Handbook"]
+      }
+    },
+
+    {
+      "id": "visual-arts",
+      "area": "arts",
+      "label": "Visual arts",
+      "aliases": [
+        "art",
+        "art history",
+        "drawing",
+        "design",
+        "photography",
+        "art appreciation",
+        "graphic design"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "otl": ["Humanities > Arts"] }
+    },
+    {
+      "id": "music",
+      "area": "arts",
+      "label": "Music",
+      "aliases": [
+        "music theory",
+        "music history",
+        "music appreciation",
+        "ear training",
+        "harmony"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "otl": ["Humanities > Music"] }
+    },
+    {
+      "id": "theatre-film",
+      "area": "arts",
+      "label": "Theatre and film",
+      "aliases": [
+        "theatre",
+        "drama studies",
+        "film studies",
+        "acting",
+        "screenwriting",
+        "media production"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "otl": ["Humanities > Arts"] }
+    },
+
+    {
+      "id": "english-language-learning",
+      "area": "languages",
+      "label": "English as a second language",
+      "aliases": [
+        "ESL",
+        "ESOL",
+        "EFL",
+        "English grammar",
+        "English for academic purposes",
+        "English vocabulary"
+      ],
+      "level": "secondary",
+      "catalogs": { "otl": ["Humanities > Languages"] }
+    },
+    {
+      "id": "spanish",
+      "area": "languages",
+      "label": "Spanish",
+      "aliases": [
+        "español",
+        "Spanish grammar",
+        "Spanish vocabulary",
+        "learn Spanish"
+      ],
+      "level": "undergraduate",
+      "catalogs": { "otl": ["Humanities > Languages"] }
+    },
+    {
+      "id": "french",
+      "area": "languages",
+      "label": "French",
+      "aliases": ["français", "French grammar", "learn French"],
+      "level": "undergraduate",
+      "catalogs": { "otl": ["Humanities > Languages"] }
+    },
+    {
+      "id": "german",
+      "area": "languages",
+      "label": "German",
+      "aliases": ["Deutsch", "German grammar", "learn German"],
+      "level": "undergraduate",
+      "catalogs": { "otl": ["Humanities > Languages"] }
+    },
+    {
+      "id": "italian",
+      "area": "languages",
+      "label": "Italian",
+      "aliases": ["italiano", "learn Italian"],
+      "level": "undergraduate",
+      "catalogs": { "otl": ["Humanities > Languages"] }
+    },
+    {
+      "id": "portuguese",
+      "area": "languages",
+      "label": "Portuguese",
+      "aliases": ["português", "learn Portuguese"],
+      "level": "undergraduate",
+      "catalogs": { "otl": ["Humanities > Languages"] }
+    },
+    {
+      "id": "chinese",
+      "area": "languages",
+      "label": "Chinese",
+      "aliases": ["Mandarin", "中文", "learn Chinese", "hanzi", "pinyin"],
+      "level": "undergraduate",
+      "catalogs": { "otl": ["Humanities > Languages"] }
+    },
+    {
+      "id": "japanese",
+      "area": "languages",
+      "label": "Japanese",
+      "aliases": ["日本語", "learn Japanese", "kanji", "hiragana"],
+      "level": "undergraduate",
+      "catalogs": { "otl": ["Humanities > Languages"] }
+    },
+    {
+      "id": "korean",
+      "area": "languages",
+      "label": "Korean",
+      "aliases": ["한국어", "learn Korean", "hangul"],
+      "level": "undergraduate",
+      "catalogs": { "otl": ["Humanities > Languages"] }
+    },
+    {
+      "id": "arabic",
+      "area": "languages",
+      "label": "Arabic",
+      "aliases": ["العربية", "learn Arabic", "Modern Standard Arabic"],
+      "level": "undergraduate",
+      "catalogs": { "otl": ["Humanities > Languages"] }
+    },
+    {
+      "id": "russian",
+      "area": "languages",
+      "label": "Russian",
+      "aliases": ["русский", "learn Russian", "Cyrillic"],
+      "level": "undergraduate",
+      "catalogs": { "otl": ["Humanities > Languages"] }
+    },
+    {
+      "id": "classical-languages",
+      "area": "languages",
+      "label": "Latin and ancient Greek",
+      "aliases": ["Latin", "ancient Greek", "classics", "classical languages"],
+      "level": "undergraduate",
+      "catalogs": { "otl": ["Humanities > Languages"] }
+    },
+    {
+      "id": "sign-language",
+      "area": "languages",
+      "label": "Sign language",
+      "aliases": ["ASL", "American Sign Language", "deaf studies"],
+      "level": "undergraduate",
+      "catalogs": { "otl": ["Humanities > Languages"] }
+    },
+
+    {
+      "id": "college-success",
+      "area": "education",
+      "label": "College success and study skills",
+      "aliases": [
+        "study skills",
+        "student success",
+        "first-year experience",
+        "learning strategies",
+        "time management",
+        "note taking",
+        "test taking"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Student Success"],
+        "openstax": [
+          "College Success",
+          "College Success Concise",
+          "Preparing for College Success"
+        ]
+      }
+    },
+    {
+      "id": "curriculum-instruction",
+      "area": "education",
+      "label": "Teaching and curriculum",
+      "aliases": [
+        "pedagogy",
+        "teaching methods",
+        "instructional design",
+        "classroom management",
+        "lesson planning",
+        "elementary education",
+        "secondary education",
+        "higher education teaching"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": [
+          "Education > Curriculum & Instruction",
+          "Education > Elementary Education",
+          "Education > Secondary Education",
+          "Education > Higher Education"
+        ],
+        "libretexts": ["Social Sciences: Education & Professional Development"]
+      }
+    },
+    {
+      "id": "early-childhood-education",
+      "area": "education",
+      "label": "Early childhood education",
+      "aliases": [
+        "ECE",
+        "preschool",
+        "child care",
+        "early learning",
+        "kindergarten"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Education > Early Childhood"],
+        "libretexts": ["Social Sciences: Early Childhood Education"]
+      }
+    },
+    {
+      "id": "educational-technology",
+      "area": "education",
+      "label": "Educational technology and online learning",
+      "aliases": [
+        "distance education",
+        "e-learning",
+        "online teaching",
+        "open education",
+        "learning technology"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": ["Education > Distance Education"],
+        "libretexts": ["Social Sciences: Open Education"]
+      }
+    }
+  ]
+}

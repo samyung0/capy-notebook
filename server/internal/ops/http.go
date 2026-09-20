@@ -230,6 +230,10 @@ func NewHandler(
 				value, err := read.LibraryBooks(r.Context())
 				respond(w, value, err)
 			})
+			library.Get("/subjects", func(w http.ResponseWriter, r *http.Request) {
+				value, err := read.LibrarySubjects(r.Context())
+				respond(w, value, err)
+			})
 			library.Get("/topics", func(w http.ResponseWriter, r *http.Request) {
 				value, err := read.LibraryTopics(r.Context())
 				respond(w, value, err)

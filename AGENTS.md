@@ -102,6 +102,16 @@ Every family separates `scripts/` (runnable) from `fixtures/` (input data) and
 `YYYY-MM-DD-<topic>.md`. Keep new benchmarks inside this layout rather than
 adding a fifth location.
 
+## Developer-local tools (`lab/`)
+
+Tools that run on the developer PC and are not measurements: the agentic-loop
+playground (`lab/playground`, tests chat and curate turns against a real index)
+and the knowledge-base builder (`lab/knowledge`, scraping and per-book ingestion
+into the shared library). Each has a README; both read secrets from the ignored
+`.env.local`. The playground writes only under its own ignored `local/`; the
+builder writes under the ignored `data/` and keeps the committed
+`lab/knowledge/books.json` (the manifest of every book it added or published).
+
 ## I18n
 
 paraglide is used for internationalization. use paraglide functions to support i18n when appropriate.

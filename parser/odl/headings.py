@@ -26,21 +26,12 @@ def _outline_title(text: str) -> str:
     )
 
 
-def correct_roles(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
-    """Keep literal source text while correcting supported non-section roles.
-
-    Running banners require repeated geometry/style and a stable folio offset.
-    Captions and widely separated diagram labels remain body text. Ambiguous
-    source boxes and headings present in the PDF outline retain their old role.
-    """
-    outline = {
-        (page - 1, _outline_title(text))
-        for _, text, page in document.get_toc()
-        if page > 0
-    }
+def _source_spans(
+    blocks: list[dict], document: pymupdf.Document
+) -> dict[int, list[dict]]:
+    """Literal native spans for unrotated, source-matched heading boxes."""
     pages: dict[int, list[dict]] = {}
-    banners: dict[tuple, list[tuple[int, int]]] = defaultdict(list)
-    roles: dict[int, str] = {}
+    evidence: dict[int, list[dict]] = {}
     for index, block in enumerate(blocks):
         box, page_index = block.get("bbox", []), block.get("page_idx")
         if (
@@ -49,7 +40,6 @@ def correct_roles(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
             or len(box) != 4
             or type(page_index) is not int
             or not 0 <= page_index < len(document)
-            or (page_index, _outline_title(block.get("text", ""))) in outline
         ):
             continue
         page = document[page_index]
@@ -83,7 +73,194 @@ def correct_roles(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
             )
         ]
         text = block.get("text", "")
-        if not spans or _literal(text) != _literal(" ".join(s["text"] for s in spans)):
+        if spans and _literal(text) == _literal(" ".join(s["text"] for s in spans)):
+            evidence[index] = spans
+    return evidence
+
+
+def _outline_match(
+    blocks: list[dict], document: pymupdf.Document, evidence: dict[int, list[dict]], row
+) -> int | None:
+    _, title, page, destination = row
+    if not 1 <= page <= len(document):
+        return None
+    choices = []
+    for index in evidence:
+        block = blocks[index]
+        if block.get("type") != "text" or block["page_idx"] != page - 1:
+            continue
+        texts = [block["text"]]
+        # A literal appendix title may occupy two adjacent heading blocks.
+        if (
+            index + 1 in evidence
+            and blocks[index + 1].get("type") == "text"
+            and blocks[index + 1]["page_idx"] == page - 1
+        ):
+            texts.append(block["text"] + " " + blocks[index + 1]["text"])
+        if any(_outline_title(text) == _outline_title(title) for text in texts):
+            choices.append(
+                (index, any(_literal(text) == _literal(title) for text in texts))
+            )
+    if any(exact for _, exact in choices):
+        choices = [(index, exact) for index, exact in choices if exact]
+    if (
+        len(choices) > 1
+        and destination.get("kind") == pymupdf.LINK_GOTO
+        and "to" in destination
+        and "nameddest" not in destination
+    ):
+        y = destination["to"].y / document[page - 1].rect.height * 1000
+        choices = [
+            item for item in choices if abs(blocks[item[0]]["bbox"][1] - y) <= 65
+        ]
+    return choices[0][0] if len(choices) == 1 else None
+
+
+def correct_outline_roots(
+    blocks: list[dict], document: pymupdf.Document, evidence: dict[int, list[dict]]
+) -> list[dict]:
+    """Require complete literal roots and proof across existing scope boundaries."""
+    toc = document.get_toc(simple=False)
+    matches = [_outline_match(blocks, document, evidence, row) for row in toc]
+    counts = Counter(matches)
+    roots: list[int] = []
+    children: dict[int, set[int]] = {}
+    for row, match in zip(toc, matches, strict=True):
+        if row[0] == 1:
+            if match is None or match in roots:
+                return blocks
+            roots.append(match)
+            children[match] = set()
+            if (
+                match + 1 in evidence
+                and blocks[match + 1].get("type") == "text"
+                and blocks[match + 1]["page_idx"] == row[2] - 1
+                and _outline_title(blocks[match]["text"]) != _outline_title(row[1])
+                and _outline_title(
+                    blocks[match]["text"] + " " + blocks[match + 1]["text"]
+                )
+                == _outline_title(row[1])
+            ):
+                children[match].add(match + 1)
+        elif roots and match is not None and counts[match] == 1:
+            children[roots[-1]].add(match)
+    if not roots or roots != sorted(roots):
+        return blocks
+    for position, root in enumerate(roots):
+        scope_level = blocks[root]["text_level"]
+        if scope_level <= 1:
+            continue
+        end = roots[position + 1] if position + 1 < len(roots) else len(blocks)
+        for index in range(root + 1, end):
+            block = blocks[index]
+            boundary = block.get("_heading_boundary_level")
+            neutral = (
+                block.get("type") == "discarded"
+                and block.get("_source_role") == "running-banner"
+                and type(boundary) is int
+                and boundary > 0
+            )
+            level = (
+                boundary
+                if neutral
+                else (block.get("text_level") if block.get("type") == "text" else None)
+            )
+            if type(level) is not int or level <= 0:
+                continue
+            if level == 1:
+                break
+            if level <= scope_level:
+                # Promotion must not outlive a former peer boundary unless the
+                # source outline proves this heading belongs under that root.
+                if neutral or index not in children[root]:
+                    return blocks
+                scope_level = level
+    matched = set(roots)
+    return [
+        {**block, "text_level": 1} if index in matched else block
+        for index, block in enumerate(blocks)
+    ]
+
+
+def _span_lines(spans: list[dict]) -> list[list[dict]]:
+    lines: list[list[dict]] = []
+    for span in spans:
+        if (
+            not lines
+            or abs(lines[-1][0]["origin"][1] - span["origin"][1]) > 0.3 * span["size"]
+        ):
+            lines.append([])
+        lines[-1].append(span)
+    return lines
+
+
+def _additional_banners(
+    blocks: list[dict], evidence: dict[int, list[dict]], outline: set[tuple[int, str]]
+) -> set[int]:
+    """Prove a recurring narrow band before accepting its alternating titles."""
+    bands: dict[tuple, list[int]] = defaultdict(list)
+    seeds: dict[tuple, list[int]] = defaultdict(list)
+    body_titles: dict[str, list[tuple[int, float]]] = defaultdict(list)
+    for index, spans in evidence.items():
+        block = blocks[index]
+        text, box, page = block["text"], block["bbox"], block["page_idx"]
+        size = max(s["size"] for s in spans)
+        if box[1] >= 75 and box[3] <= 925:
+            body_titles[_literal(text)].append((page, size))
+        if (page, _outline_title(text)) in outline or not any(
+            c.isalpha() for c in text
+        ):
+            continue
+        top = 0 <= box[1] < 65
+        bottom = 935 <= box[1] < box[3] <= 1000
+        if not (bottom or top and box[3] <= 100 and len(_span_lines(spans)) <= 2):
+            continue
+        style = max(spans, key=lambda s: len(s["text"]))
+        band = (top, round(box[1] / 10), style["font"], round(style["size"], 1))
+        bands[band].append(index)
+        # A taller or changing title cannot establish its own running band.
+        if bottom or box[3] <= 65:
+            seeds[band, _literal(text)].append(index)
+    confirmed: set[tuple] = set()
+    banners: set[int] = set()
+    for (band, _), group in seeds.items():
+        if len({blocks[index]["page_idx"] for index in group}) >= 3:
+            confirmed.add(band)
+            banners.update(group)
+    for band in confirmed:
+        for index in bands[band]:
+            if index in banners:
+                continue
+            size = max(s["size"] for s in evidence[index])
+            lines = [
+                _literal(" ".join(s["text"] for s in line))
+                for line in _span_lines(evidence[index])
+            ]
+            if all(
+                any(
+                    page <= blocks[index]["page_idx"] and body_size > size + 0.5
+                    for page, body_size in body_titles.get(line, [])
+                )
+                for line in lines
+            ):
+                banners.add(index)
+    return banners
+
+
+def correct_roles(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
+    """Correct source-backed heading roles before any section context is built."""
+    outline = {
+        (page - 1, _outline_title(text))
+        for _, text, page in document.get_toc()
+        if page > 0
+    }
+    evidence = _source_spans(blocks, document)
+    banners: dict[tuple, list[tuple[int, int]]] = defaultdict(list)
+    roles: dict[int, str] = {}
+    for index, spans in evidence.items():
+        block = blocks[index]
+        text, box, page_index = block["text"], block["bbox"], block["page_idx"]
+        if (page_index, _outline_title(text)) in outline:
             continue
         margin = 0 <= box[1] < box[3] <= 65 or 935 <= box[1] < box[3] <= 1000
         if margin:
@@ -134,13 +311,18 @@ def correct_roles(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
     for group in banners.values():
         if len({page for _, page in group}) >= 3:
             roles.update((index, "running-banner") for index, _ in group)
+    additional = _additional_banners(blocks, evidence, outline) - roles.keys()
+    roles.update((index, "running-banner") for index in additional)
     result = list(blocks)
     for index, role in roles.items():
         result[index] = {**blocks[index], "_source_role": role}
         result[index].pop("text_level", None)
         if role == "running-banner":
             result[index]["type"] = "discarded"
-    return result
+            if index in additional:
+                # Keep its former scope reset without making its text an ancestor.
+                result[index]["_heading_boundary_level"] = blocks[index]["text_level"]
+    return correct_outline_roots(result, document, evidence)
 
 
 def source_headings(blocks: list[dict], pdf: Path) -> dict[int, dict]:

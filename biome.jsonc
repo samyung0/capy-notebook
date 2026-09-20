@@ -23,6 +23,7 @@
       "!!**/src/styles/tailwind.css",
       "!!**/litellm_catalog.json",
       "!!bench",
+      "!!lab",
       "!!artifacts"
     ]
   },

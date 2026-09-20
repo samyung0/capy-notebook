@@ -17,13 +17,8 @@ low priority:
 15. add suspend/unsuspend account controls to the Ops dashboard (separate feature; current suspension is database/operator-only)
 
 high PRIORITIES:
-extend msw file with different states of files
-pdf failed should use the same fileerror state component, what about annotation failed
-resend email code cooldown, use a text transition instead of the notice text
-workspace invitation shouldnt be inside of appshell?
-workspace statistics number transition, remove average score? remove dialog and make a new tab in the settings
-msw user scenario transfer worksapce ownership spawns the mock workspace member dialog underneath?
-what contributes to a change in editing office files? (so it passes the gate for reparsing)
+openui
+offline idea -> duckdb-wasm with opfs (but what data can we store? cannot really edit because of collab server? or show warning that local data can fail to write if collab server state is newer, but still permit)
 check upload session timeout (shouldnt have 15 minutes, ttl is 5 minutes for the link alr)
 1. diagrams.net (generate have a 1 turn generate->QA->fix loop on server)
 2. allow llm to embed interactive html files (deterministic santizing after generate (no jailbreak) and rendered in sandbox iframe), no editing allowed
@@ -32,21 +27,21 @@ check upload session timeout (shouldnt have 15 minutes, ttl is 5 minutes for the
 5. cloudflare zero trust,on uat ops dashboard
 6. feature flags should allow for A/B testing, current way of env variables do not allow that
 check how search files/chunks work
-2. check pg pool connections setup, esp for llm search
-3. what happens when server restarts? dlq, job queue, pending credit settling, etc basically what lives in the ram vs what lives in db (extreme case: what happens when server shuts down mid transaction)
+1. check pg pool connections setup, esp for llm search
+2. what happens when server restarts? dlq, job queue, pending credit settling, etc basically what lives in the ram vs what lives in db (extreme case: what happens when server shuts down mid transaction)
 3. how to make a summary/description page for workspaces that is seo friendly? use ISR if tanstack router supports it? Only expose endpoint that shows chapters and file names for link shared and public workspaces (for the summary page of workspaces). To retrieve file content/any other info, user must log in first (i.e. viewing/commenting/editing workspace which is on a different page than the summary must require user login to prevent abuse)
 4. make a less crowded UI for workspaces
 5. persist quiz attemp in localstorage or some kind of cache, so closing tab or refreshing doesnt lose the progress
-5. track material generations and display progress bar like how filelistitem does it?
-6. remove time limit for quiz
+6. track material generations and display progress bar like how filelistitem does it?
+7. remove time limit for quiz
 some live updates are reconnecting -> layout thrashing + blinking issue
-7. if copy and pasting markdown, render it directly rather than inside a code block (? what determines if a code block gets inserted or not?)
-8. enable ordering of doucments within chapters with drag and drop (right now it just drops in the chapter)
-9.  add icons for common file format
-10. enrich the global searches (in the topinsetbar)
+1. if copy and pasting markdown, render it directly rather than inside a code block (? what determines if a code block gets inserted or not?)
+2. enable ordering of doucments within chapters with drag and drop (right now it just drops in the chapter)
+3.  add icons for common file format
+4.  enrich the global searches (in the topinsetbar)
     - workspace names & chapters
     - files and materials names
     - calendar event names
     - tasks title
     - Remove: thinking space (not worked on yet)
-11. drag and drop on workspace files tree shows dropping line for both bottom of a file item and top of the next file item but its the same gap between
+5.  drag and drop on workspace files tree shows dropping line for both bottom of a file item and top of the next file item but its the same gap between

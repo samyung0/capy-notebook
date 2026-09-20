@@ -94,3 +94,6 @@ strix_runs/
 
 plate-playground-template
 .cursor-export/
+
+# Windows reserved device name that stray redirects create
+/CON

@@ -24,7 +24,9 @@ import (
 // (including capture_knowledge_page), the conversation progress ledger
 // (create_ledger plus a todo id on create_material and edit_document) and
 // excerpt_ids on both writes.
-const ContractVersion = 6
+// v7: the library taxonomy gains subjects over topics; browse_knowledge takes
+// exactly one of subject (its topics with counts) or topic (its excerpts).
+const ContractVersion = 7
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -454,12 +456,12 @@ func Definitions() []Definition {
 			Description: "Search the shared knowledge library of verified textbook excerpts. " +
 				"One excerpt is one section of one book. `roles` filters what the excerpt " +
 				"teaches: introduction, formal, worked_example, exercise, summary, reference. " +
-				"`topics` takes topic ids from the catalog listed below. An empty result " +
-				"under a role filter reports what those topics do hold by role, so relax " +
-				"the filter on purpose instead of rewording.",
+				"`topics` takes topic ids from browsing a subject with browse_knowledge. An " +
+				"empty result under a role filter reports what those topics do hold by role, " +
+				"so relax the filter on purpose instead of rewording.",
 			InputSchema: obj(map[string]any{
 				"query":  str(""),
-				"topics": idList("Catalog topic ids to restrict to.", 0, 8),
+				"topics": idList("Topic ids to restrict to, from a subject browse.", 0, 8),
 				"roles":  idList("Excerpt roles to restrict to.", 0, 6),
 			}, "query"),
 			UsesEmbedding:      true,
@@ -469,14 +471,16 @@ func Definitions() []Definition {
 		chatTool(Definition{
 			Name:      "browse_knowledge",
 			Retention: RetainNone,
-			Description: "List what the library holds for one catalog topic: verified excerpt " +
-				"counts by role and by book, then a page of excerpts with their section " +
-				"paths and synopses. Use it before searching to see whether the library " +
-				"covers the request at all.",
+			Description: "List what the library holds. Pass exactly one of subject or topic. " +
+				"A subject id returns its topics with excerpt counts, which is where topic " +
+				"ids come from; a topic id returns verified excerpt counts by role and by " +
+				"book, then a page of excerpts with their section paths and synopses. " +
+				"Browse the subject before the topic, and the topic before searching.",
 			InputSchema: obj(map[string]any{
-				"topic": str("Catalog topic id."),
-				"page":  map[string]any{"type": "integer", "minimum": 1, "default": 1},
-			}, "topic"),
+				"subject": str("Subject id from the subject list."),
+				"topic":   str("Topic id from a subject browse."),
+				"page":    map[string]any{"type": "integer", "minimum": 1, "default": 1},
+			}),
 			Concurrency:        "read",
 			RequiredOperations: []Operation{OpLibraryRead},
 		}),

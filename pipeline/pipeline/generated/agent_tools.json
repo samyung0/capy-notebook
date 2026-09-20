@@ -1,5 +1,5 @@
 {
-  "version": 6,
+  "version": 7,
   "operations": [
     "source.read",
     "material.read",
@@ -213,7 +213,7 @@
     {
       "name": "search_knowledge",
       "version": 1,
-      "description": "Search the shared knowledge library of verified textbook excerpts. One excerpt is one section of one book. `roles` filters what the excerpt teaches: introduction, formal, worked_example, exercise, summary, reference. `topics` takes topic ids from the catalog listed below. An empty result under a role filter reports what those topics do hold by role, so relax the filter on purpose instead of rewording.",
+      "description": "Search the shared knowledge library of verified textbook excerpts. One excerpt is one section of one book. `roles` filters what the excerpt teaches: introduction, formal, worked_example, exercise, summary, reference. `topics` takes topic ids from browsing a subject with browse_knowledge. An empty result under a role filter reports what those topics do hold by role, so relax the filter on purpose instead of rewording.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -231,7 +231,7 @@
             "type": "array"
           },
           "topics": {
-            "description": "Catalog topic ids to restrict to.",
+            "description": "Topic ids to restrict to, from a subject browse.",
             "items": {
               "minLength": 1,
               "type": "string"
@@ -259,7 +259,7 @@
     {
       "name": "browse_knowledge",
       "version": 1,
-      "description": "List what the library holds for one catalog topic: verified excerpt counts by role and by book, then a page of excerpts with their section paths and synopses. Use it before searching to see whether the library covers the request at all.",
+      "description": "List what the library holds. Pass exactly one of subject or topic. A subject id returns its topics with excerpt counts, which is where topic ids come from; a topic id returns verified excerpt counts by role and by book, then a page of excerpts with their section paths and synopses. Browse the subject before the topic, and the topic before searching.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -268,15 +268,17 @@
             "minimum": 1,
             "type": "integer"
           },
+          "subject": {
+            "description": "Subject id from the subject list.",
+            "minLength": 1,
+            "type": "string"
+          },
           "topic": {
-            "description": "Catalog topic id.",
+            "description": "Topic id from a subject browse.",
             "minLength": 1,
             "type": "string"
           }
         },
-        "required": [
-          "topic"
-        ],
         "type": "object"
       },
       "mutates": false,

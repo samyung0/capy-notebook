@@ -3,8 +3,6 @@
 import json
 import sys
 from pathlib import Path
-from types import SimpleNamespace
-
 import httpx
 import pytest
 
@@ -29,20 +27,44 @@ from knowledge_base_pilot import (
 )
 
 
-def test_explicit_deepseek_selection_uses_its_key_and_rejects_unknown(
-    tmp_path, monkeypatch
-):
+def test_provider_dispatch_uses_the_endpoint_and_its_key(tmp_path, monkeypatch):
     calls = []
-    monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-test")
-    monkeypatch.setitem(
-        sys.modules,
-        "knowledge_base_deepseek",
-        SimpleNamespace(run=lambda *args, **kwargs: calls.append((args, kwargs))),
+    monkeypatch.setenv("TOKENHUB", "tokenhub-test")
+    monkeypatch.setattr(
+        pilot, "run_normal", lambda *args, **kwargs: calls.append((args, kwargs))
     )
-    pilot.run_model_stage({"model_provider": "deepseek"}, tmp_path, workers=4)
-    assert calls == [((tmp_path, "deepseek-test"), {"workers": 4})]
+    pilot.run_model_stage({"model_provider": "ollama"}, tmp_path, workers=4)
+    pilot.run_model_stage({"model_provider": "ollama"}, tmp_path, "tokenhub", workers=2)
+    assert calls == [
+        (
+            (tmp_path, ""),
+            {
+                "workers": 4,
+                "base_url": "http://127.0.0.1:11434/v1",
+                "model": "glm-5.3-flash:cloud",
+            },
+        ),
+        (
+            (tmp_path, "tokenhub-test"),
+            {
+                "workers": 2,
+                "base_url": "https://tokenhub.tencentcloudmaas.com/v1",
+                "model": "glm-5.3-flash",
+            },
+        ),
+    ]
     with pytest.raises(PilotError, match="Unknown pilot model"):
         pilot.run_model_stage({"model_provider": "unknown"}, tmp_path, workers=4)
+
+
+def test_run_topics_prefers_the_topics_stage_output(tmp_path):
+    manifest = {"topics": [{"id": "frozen"}]}
+    assert pilot.run_topics(manifest, tmp_path) == [{"id": "frozen"}]
+    save_json(tmp_path / "topics.json", {"topics": [{"id": "derived"}]})
+    assert pilot.run_topics(manifest, tmp_path) == [{"id": "derived"}]
+
+
+ENDPOINT = {"base_url": "http://model.test/v1", "model": "glm-test"}
 
 
 def response(key="a", content=None, finish="stop", status=200):
@@ -76,12 +98,19 @@ def test_normal_api_reuses_success_and_disables_thinking(tmp_path):
     def handle(req):
         body = json.loads(req.content)
         assert req.url.path.endswith("/chat/completions")
-        assert body["enable_thinking"] is False and body["stream"] is False
+        assert "enable_thinking" not in body and body["stream"] is False
+        assert body["model"] == "glm-test" and body["reasoning_effort"] == "low"
         calls.append(body)
         return httpx.Response(200, json=response("b")["response"]["body"])
 
     for _ in range(2):
-        state = run(tmp_path, "test", workers=1, transport=httpx.MockTransport(handle))
+        state = run(
+            tmp_path,
+            "test",
+            workers=1,
+            transport=httpx.MockTransport(handle),
+            **ENDPOINT,
+        )
     assert len(calls) == 1 and state["inherited_successes"] == 1
     assert state["usage"]["completion_tokens"] == 3
     assert state["usage"]["reasoning_tokens"] is None
@@ -90,13 +119,19 @@ def test_normal_api_reuses_success_and_disables_thinking(tmp_path):
         tmp_path / "results.json",
         validate_records(["a", "b"], [response("a"), response("b")]),
     )
-    run(tmp_path, "test", workers=1, transport=httpx.MockTransport(handle))
+    run(tmp_path, "test", workers=1, transport=httpx.MockTransport(handle), **ENDPOINT)
     assert len(calls) == 1  # Later Batch collection cannot invalidate a normal run.
     # A changed frozen input must not inherit old results.
     with (tmp_path / "input.jsonl").open("ab") as stream:
         stream.write(b"\n")
     with pytest.raises(PilotError, match="input changed"):
-        run(tmp_path, "test", workers=1, transport=httpx.MockTransport(handle))
+        run(
+            tmp_path,
+            "test",
+            workers=1,
+            transport=httpx.MockTransport(handle),
+            **ENDPOINT,
+        )
 
 
 def test_normal_api_keeps_uncertain_attempt_without_resending(tmp_path):
@@ -110,9 +145,21 @@ def test_normal_api_keeps_uncertain_attempt_without_resending(tmp_path):
         raise httpx.ReadTimeout("uncertain", request=req)
 
     with pytest.raises(PilotError, match="failed or uncertain"):
-        run(tmp_path, "test", workers=1, transport=httpx.MockTransport(handle))
+        run(
+            tmp_path,
+            "test",
+            workers=1,
+            transport=httpx.MockTransport(handle),
+            **ENDPOINT,
+        )
     with pytest.raises(PilotError, match="Uncertain normal request"):
-        run(tmp_path, "test", workers=1, transport=httpx.MockTransport(handle))
+        run(
+            tmp_path,
+            "test",
+            workers=1,
+            transport=httpx.MockTransport(handle),
+            **ENDPOINT,
+        )
     assert len(calls) == 1
 
     def succeed(req):
@@ -126,10 +173,62 @@ def test_normal_api_keeps_uncertain_attempt_without_resending(tmp_path):
         retry_failed=True,
         timeout_seconds=300,
         transport=httpx.MockTransport(succeed),
+        base_url="http://other.test/v1",
+        model="glm-other",
     )
     assert len(calls) == 2 and state["complete"]
     assert state["normal_requests"] == 2 and state["usage_missing_attempts"] == 1
     assert len(list((tmp_path / "realtime/attempts").glob("*.json"))) == 1
+    # The retry went to another endpoint; the record names it.
+    record = read_json(next((tmp_path / "realtime/records").glob("*.json")))
+    assert record["model"] == "glm-other" and state["model"] == "glm-other"
+
+
+def test_normal_api_waits_out_a_429_before_recording_it(tmp_path, monkeypatch):
+    import knowledge_base_realtime as realtime
+
+    prepare(tmp_path, [request("a", [], 100)])
+    waits, calls = [], []
+    monkeypatch.setattr(realtime.time, "sleep", waits.append)
+    monkeypatch.setattr(realtime, "RATE_LIMIT_BACKOFF", (1, 2))
+
+    def throttle(req):
+        calls.append(req)
+        if len(calls) < 3:
+            return httpx.Response(429, headers={"retry-after": "7"})
+        return httpx.Response(200, json=response()["response"]["body"])
+
+    state = realtime.run(
+        tmp_path, "k", workers=1, transport=httpx.MockTransport(throttle), **ENDPOINT
+    )
+    assert state["complete"] and len(calls) == 3 and waits == [7.0, 7.0]
+
+    def always(req):
+        return httpx.Response(429)
+
+    prepare(tmp_path / "b", [request("a", [], 100)])
+    with pytest.raises(PilotError, match="failed or uncertain"):
+        realtime.run(
+            tmp_path / "b",
+            "k",
+            workers=1,
+            transport=httpx.MockTransport(always),
+            **ENDPOINT,
+        )
+    record = read_json(next((tmp_path / "b/realtime/records").glob("*.json")))
+    assert record["response"]["status_code"] == 429
+
+
+def test_prepare_tags_leaves_proposed_topic_optional(tmp_path, monkeypatch):
+    corpus = {"excerpts": [{"id": "e1", "section_path": "1 › 1.1", "text": "body"}]}
+    monkeypatch.setattr(pilot, "corpora", lambda *_: [corpus])
+    save_json(tmp_path / "topics.json", {"topics": [{"id": "t1", "label": "T"}]})
+    pilot.prepare_tags({}, tmp_path)
+    row = json.loads((tmp_path / "models/tags/input.jsonl").read_text(encoding="utf-8"))
+    schema = row["body"]["response_format"]["json_schema"]["schema"]
+    assert "proposed_topic" in schema["properties"]
+    assert "proposed_topic" not in schema["required"] and "roles" in schema["required"]
+    assert schema["properties"]["topic_ids"]["items"]["enum"] == ["t1"]
 
 
 def test_normal_api_preserves_non_json_http_receipt(tmp_path):
@@ -143,7 +242,13 @@ def test_normal_api_preserves_non_json_http_receipt(tmp_path):
         )
 
     with pytest.raises(PilotError, match="failed or uncertain"):
-        run(tmp_path, "test", workers=1, transport=httpx.MockTransport(handle))
+        run(
+            tmp_path,
+            "test",
+            workers=1,
+            transport=httpx.MockTransport(handle),
+            **ENDPOINT,
+        )
     record = read_json(next((tmp_path / "realtime/records").glob("*.json")))
     assert record["status"] == "received"
     assert record["response"]["status_code"] == 502
@@ -508,7 +613,6 @@ def test_shards_resume_and_collect_without_duplicate_calls(tmp_path, monkeypatch
 
 
 def test_normal_driver_stops_before_downstream_on_model_failure(tmp_path, monkeypatch):
-    monkeypatch.setenv("ALIBABA_API_KEY", "test")
     monkeypatch.setattr(pilot, "prepare_tags", lambda *args: None)
 
     def fail(*args, **kwargs):
@@ -516,7 +620,13 @@ def test_normal_driver_stops_before_downstream_on_model_failure(tmp_path, monkey
 
     monkeypatch.setattr(pilot, "run_normal", fail)
     with pytest.raises(PilotError, match="model failed"):
-        pilot.finish_normal({}, {}, tmp_path, tmp_path / "questions.json", workers=1)
+        pilot.finish_normal(
+            {},
+            {"model_provider": "ollama"},
+            tmp_path,
+            tmp_path / "questions.json",
+            workers=1,
+        )
     state = read_json(tmp_path / "realtime-driver.json")
     assert state["status"] == "failed" and state["steps"] == ["prepare-tags"]
 
@@ -539,10 +649,13 @@ def test_accepted_schema_failures_stay_failed_and_never_become_tags(
     exported = pilot.apply_tags({"topics": []}, tmp_path)
     assert exported["tags"] == {} and exported["failed_tags"] == results["failed"]
     assert state == {"complete": False, "status": "failed"}
-    results["failed"]["toc"]["error"]["kind"] = "incomplete_response"
+    # Any failure kind is accepted once listed; an unlisted or missing id is not.
+    results["failed"]["toc"] = {"kind": "provider_error"}
+    pilot.tag_stage_results(tmp_path)
+    results["failed"]["other"] = {"kind": "invalid_schema"}
     with pytest.raises(PilotError, match="incomplete"):
         pilot.tag_stage_results(tmp_path)
-    results["failed"]["toc"]["error"]["kind"] = "invalid_schema"
+    del results["failed"]["other"]
     results["missing"] = ["another"]
     with pytest.raises(PilotError, match="incomplete"):
         pilot.tag_stage_results(tmp_path)
@@ -569,15 +682,17 @@ def test_normal_api_validates_schema_and_preserves_failed_attempt(tmp_path):
 
     transport = httpx.MockTransport(handle)
     with pytest.raises(PilotError, match="failed or uncertain"):
-        run(tmp_path, "test", workers=1, transport=transport)
+        run(tmp_path, "test", workers=1, transport=transport, **ENDPOINT)
     assert (
         read_json(tmp_path / "realtime/results.json")["failed"]["a"]["kind"]
         == "invalid_schema"
     )
     with pytest.raises(PilotError, match="failed or uncertain"):
-        run(tmp_path, "test", workers=1, transport=transport)
+        run(tmp_path, "test", workers=1, transport=transport, **ENDPOINT)
     assert len(calls) == 1
-    state = run(tmp_path, "test", workers=1, transport=transport, retry_failed=True)
+    state = run(
+        tmp_path, "test", workers=1, transport=transport, retry_failed=True, **ENDPOINT
+    )
     assert state["complete"] and state["normal_requests"] == 2
 
 

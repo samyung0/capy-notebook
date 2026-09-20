@@ -1,0 +1,1089 @@
+{
+  "schema": "unseen-pdf-visual-witnesses-v1",
+  "status": "frozen",
+  "tranche": "extension",
+  "source_manifest_sha256": "6a8bb30ed4e1d1a15736329f7c63f8c99a17173b51a9b3ce77d973ab467f4eda",
+  "selection": "Three or four purposive source-only witnesses for each of13 documents absent from the initial104.",
+  "documents": [
+    {
+      "id": "openstax-psychology-2e",
+      "source_sha256": "2f08113c78127bc684922ad6a819db22bd4705ce9fcf28a07f36a2041b1474e2",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/openstax-psychology-2e.pdf",
+      "exporter_family": "Prince",
+      "producer": "Prince 16.2 (www.princexml.com)",
+      "creator": "",
+      "language": "en",
+      "pages": 755,
+      "source_outline_present": true
+    },
+    {
+      "id": "nist-ai-rmf",
+      "source_sha256": "7576edb531d9848825814ee88e28b1795d3a84b435b4b797d3670eafdc4a89f1",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/nist-ai-rmf.pdf",
+      "exporter_family": "pdfTeX and pdfeTeX",
+      "producer": "pdfTeX-1.40.24",
+      "creator": "LaTeX with hyperref",
+      "language": "en",
+      "pages": 48,
+      "source_outline_present": true
+    },
+    {
+      "id": "nist-fips203",
+      "source_sha256": "fe1f12f32a7e44ec9fdebbf400cda843a40b506dee676725234dc6f7923b6cac",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/nist-fips203.pdf",
+      "exporter_family": "LuaTeX",
+      "producer": "LuaHBTeX, Version 1.18.0 (TeX Live 2024)",
+      "creator": "LaTeX with hyperref",
+      "language": "en",
+      "pages": 56,
+      "source_outline_present": true
+    },
+    {
+      "id": "census-income2024",
+      "source_sha256": "54cf1adc1f92e0f471803e67637569ecdebf93eec21928a5f9e2b97185eed3d3",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/census-income2024.pdf",
+      "exporter_family": "Adobe PDF Library",
+      "producer": "Adobe PDF Library 17.0",
+      "creator": "Adobe InDesign 20.2 (Windows)",
+      "language": "en",
+      "pages": 58,
+      "source_outline_present": true
+    },
+    {
+      "id": "mhlw-population2024",
+      "source_sha256": "a2b37625baf4884d98f4d7b775445047b26293adfdb84c948c90e3fa57df442b",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/mhlw-population2024.pdf",
+      "exporter_family": "JUST PDF",
+      "producer": "JUST PDF 4",
+      "creator": "",
+      "language": "ja",
+      "pages": 26,
+      "source_outline_present": false
+    },
+    {
+      "id": "boj-financial2025",
+      "source_sha256": "d0034f482d91b8bbfb6ce9ed52fe4496cd69445770ddd13f785bbee0afca4482",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/boj-financial2025.pdf",
+      "exporter_family": "Acrobat reprocessed composite",
+      "producer": "Adobe Acrobat Pro 2020 20.1.30002",
+      "creator": "Adobe Acrobat Pro 2020 20.1.30002",
+      "language": "ja",
+      "pages": 100,
+      "source_outline_present": true
+    },
+    {
+      "id": "insee-digital2025",
+      "source_sha256": "7bf9c569072f1958645074bc7897bdd0c4060cfe9ffad4bd6a030b7cc143d087",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/insee-digital2025.pdf",
+      "exporter_family": "Adobe PDF Library",
+      "producer": "Adobe PDF Library 15.0",
+      "creator": "Adobe InDesign CC 2015 (Windows)",
+      "language": "fr",
+      "pages": 128,
+      "source_outline_present": true
+    },
+    {
+      "id": "openstax-chemistry-2e",
+      "source_sha256": "fd89db1b8a1fee06b8ad3e8982f4f4b34bde4e93654a4ce28b724f8c0efe98d6",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/openstax-chemistry-2e.pdf",
+      "exporter_family": "Prince",
+      "producer": "Prince 16.2 (www.princexml.com)",
+      "creator": "",
+      "language": "en",
+      "pages": 1203,
+      "source_outline_present": true
+    },
+    {
+      "id": "openstax-biology-2e",
+      "source_sha256": "4d1f413fd779f114838cdaeab7859dcb2922ca7529230d3bfd7d36a77b4e27b6",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/openstax-biology-2e.pdf",
+      "exporter_family": "Prince",
+      "producer": "Prince 16.2 (www.princexml.com)",
+      "creator": "",
+      "language": "en",
+      "pages": 1475,
+      "source_outline_present": true
+    },
+    {
+      "id": "openstax-precalculus-2e",
+      "source_sha256": "4b7018778433d2c125229a35315cf70e0813cbaacb04118b7265baae625372b5",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/openstax-precalculus-2e.pdf",
+      "exporter_family": "Prince",
+      "producer": "Prince 16.2 (www.princexml.com)",
+      "creator": "",
+      "language": "en",
+      "pages": 1411,
+      "source_outline_present": true
+    },
+    {
+      "id": "openstax-principles-microeconomics-3e",
+      "source_sha256": "65a1856faa91d5fdef9c630928029c6e4e188a9580d9128fcbc9138c4f4a583f",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/openstax-principles-microeconomics-3e.pdf",
+      "exporter_family": "Prince",
+      "producer": "Prince 16.2 (www.princexml.com)",
+      "creator": "",
+      "language": "en",
+      "pages": 595,
+      "source_outline_present": true
+    },
+    {
+      "id": "ecb-annual2024",
+      "source_sha256": "9b1fa8402e6a50c318dba51c8158a14a54319dab92b3f25e0dfbc4a0e4ab43cc",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/ecb-annual2024.pdf",
+      "exporter_family": "Microsoft Word",
+      "producer": "Microsoft® Word for Microsoft 365",
+      "creator": "Microsoft® Word for Microsoft 365",
+      "language": "en",
+      "pages": 200,
+      "source_outline_present": true
+    },
+    {
+      "id": "openstax-astronomy-2e",
+      "source_sha256": "9c3c49fc2d0b35a122509d27714780a5991b8e97cb6bd8db954e2b37542797a5",
+      "source_path": "bench/parsers/fixtures/local/2026-09-20-unseen-pdfs/openstax-astronomy-2e.pdf",
+      "exporter_family": "Prince",
+      "producer": "Prince 16.2 (www.princexml.com)",
+      "creator": "",
+      "language": "en",
+      "pages": 1151,
+      "source_outline_present": true
+    }
+  ],
+  "cases": [
+    {
+      "id": "openstax-psychology-2e-ext-01",
+      "document_id": "openstax-psychology-2e",
+      "source_sha256": "2f08113c78127bc684922ad6a819db22bd4705ce9fcf28a07f36a2041b1474e2",
+      "page": 60,
+      "bbox": [
+        70.776,
+        385.02,
+        208.306,
+        402.288
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "2.3 Analyzing Findings",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "2.3 Analyzing Findings",
+        "level": 2,
+        "parent": "Chapter 2 Psychological Research"
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "2.3 Analyzing Findings"
+    },
+    {
+      "id": "openstax-psychology-2e-ext-02",
+      "document_id": "openstax-psychology-2e",
+      "source_sha256": "2f08113c78127bc684922ad6a819db22bd4705ce9fcf28a07f36a2041b1474e2",
+      "page": 61,
+      "bbox": [
+        69.156,
+        505.296,
+        540.396,
+        655.776
+      ],
+      "space": "pdf-points-topleft",
+      "category": "diagram",
+      "visible_expectation": "The three scatterplots distinguish positive height/weight, negative tiredness/hours-of-sleep, and no-correlation shoe-size/hours-of-sleep.",
+      "expected_behavior": "preserve_figure_separation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": ""
+    },
+    {
+      "id": "openstax-psychology-2e-ext-03",
+      "document_id": "openstax-psychology-2e",
+      "source_sha256": "2f08113c78127bc684922ad6a819db22bd4705ce9fcf28a07f36a2041b1474e2",
+      "page": 61,
+      "bbox": [
+        451.656,
+        20.592,
+        555.084,
+        34.848
+      ],
+      "space": "pdf-points-topleft",
+      "category": "margin-furniture",
+      "visible_expectation": "2.3 Analyzing Findings repeats the section name in the top margin after its body opening on page60.",
+      "expected_behavior": "exclude_margin_furniture",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "2.3 • Analyzing Findings     49"
+    },
+    {
+      "id": "nist-ai-rmf-ext-01",
+      "document_id": "nist-ai-rmf",
+      "source_sha256": "7576edb531d9848825814ee88e28b1795d3a84b435b4b797d3670eafdc4a89f1",
+      "page": 13,
+      "bbox": [
+        124.642,
+        408.304,
+        396.297,
+        423.427
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Organizational Integration and Management of Risk",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Organizational Integration and Management of Risk",
+        "level": 3,
+        "parent": "Challenges for AI Risk Management"
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Organizational Integration and Management of Risk"
+    },
+    {
+      "id": "nist-ai-rmf-ext-02",
+      "document_id": "nist-ai-rmf",
+      "source_sha256": "7576edb531d9848825814ee88e28b1795d3a84b435b4b797d3670eafdc4a89f1",
+      "page": 20,
+      "bbox": [
+        115.675,
+        211.209,
+        222.181,
+        226.332
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Secure and Resilient",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Secure and Resilient",
+        "level": 2,
+        "parent": "AI Risks and Trustworthiness"
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Secure and Resilient"
+    },
+    {
+      "id": "nist-ai-rmf-ext-03",
+      "document_id": "nist-ai-rmf",
+      "source_sha256": "7576edb531d9848825814ee88e28b1795d3a84b435b4b797d3670eafdc4a89f1",
+      "page": 20,
+      "bbox": [
+        88.74,
+        33.264,
+        524.484,
+        53.064
+      ],
+      "space": "pdf-points-topleft",
+      "category": "margin-furniture",
+      "visible_expectation": "NIST AI100-1 and AI RMF1.0 are recurring top-margin furniture, not body headings.",
+      "expected_behavior": "exclude_margin_furniture",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "NIST AI 100-1\nAI RMF 1.0"
+    },
+    {
+      "id": "nist-fips203-ext-01",
+      "document_id": "nist-fips203",
+      "source_sha256": "fe1f12f32a7e44ec9fdebbf400cda843a40b506dee676725234dc6f7923b6cac",
+      "page": 14,
+      "bbox": [
+        110.693,
+        160.802,
+        263.288,
+        184.5
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Mathematical Symbols",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Mathematical Symbols",
+        "level": 3,
+        "parent": "2 Terms, Acronyms, and Notation"
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Mathematical Symbols"
+    },
+    {
+      "id": "nist-fips203-ext-02",
+      "document_id": "nist-fips203",
+      "source_sha256": "fe1f12f32a7e44ec9fdebbf400cda843a40b506dee676725234dc6f7923b6cac",
+      "page": 14,
+      "bbox": [
+        93.024,
+        205.92,
+        532.44,
+        227.304
+      ],
+      "space": "pdf-points-topleft",
+      "category": "inline-math",
+      "visible_expectation": "q denotes prime3329=2^8*13+1; the8 is an exponent.",
+      "expected_behavior": "retain_math_relation",
+      "layer_status": "present",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "𝑞 \nDenotes the prime integer 3329 = 28 ⋅13+1 throughout this document."
+    },
+    {
+      "id": "nist-fips203-ext-03",
+      "document_id": "nist-fips203",
+      "source_sha256": "fe1f12f32a7e44ec9fdebbf400cda843a40b506dee676725234dc6f7923b6cac",
+      "page": 29,
+      "bbox": [
+        74.052,
+        352.44,
+        538.56,
+        503.712
+      ],
+      "space": "pdf-points-topleft",
+      "category": "code",
+      "visible_expectation": "BitsToBytes updates byte B[floor(i/8)] using b[i]*2^(i mod8), then returns B; preserve code step order and exponent.",
+      "expected_behavior": "preserve_figure_separation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Algorithm 3 BitsToBytes(𝑏) \nConverts a bit array (of a length that is a multiple of eight) into an array of bytes. \nInput: bit array 𝑏 ∈ {0,1}8⋅ℓ . \nOutput: byte array 𝐵 ∈ 𝔹ℓ . \n1: 𝐵 ← (0,…,0) \n2: for (𝑖 ← 0; 𝑖 < 8ℓ; 𝑖++) \n3: \n𝐵[⌊𝑖/8⌋] ← 𝐵[⌊𝑖/8⌋]+𝑏[𝑖]⋅2𝑖 mod 8 \n4: end for \n5: return 𝐵"
+    },
+    {
+      "id": "census-income2024-ext-01",
+      "document_id": "census-income2024",
+      "source_sha256": "54cf1adc1f92e0f471803e67637569ecdebf93eec21928a5f9e2b97185eed3d3",
+      "page": 9,
+      "bbox": [
+        52.631,
+        49.463,
+        123.677,
+        64.457
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "All Households",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "All Households",
+        "level": null,
+        "parent": null
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "All Households"
+    },
+    {
+      "id": "census-income2024-ext-02",
+      "document_id": "census-income2024",
+      "source_sha256": "54cf1adc1f92e0f471803e67637569ecdebf93eec21928a5f9e2b97185eed3d3",
+      "page": 9,
+      "bbox": [
+        55.692,
+        376.2,
+        561.816,
+        725.472
+      ],
+      "space": "pdf-points-topleft",
+      "category": "diagram",
+      "visible_expectation": "Figure2 associates Asian income with121700 and Black income with56200 in2024; curve identities cannot be interchanged.",
+      "expected_behavior": "preserve_figure_separation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "0\n10,000\n20,000\n30,000\n40,000\n50,000\n60,000\n70,000\n80,000\n90,000\n100,000\n110,000\n120,000\n130,000\n2024\n2020\n2015\n2010\n2005\n2000\n1995\n1990\n1985\n1980\n1975\n1967\nFigure 2.\nReal Median Household Income by Race and Hispanic Origin: 1967 to 2024\nWhite, not Hispanic \nAll races\nHispanic (any race)\nBlack\nAsian\n$121,700\n$92,530\n2024 inﬂation-adjusted dollars\n$70,950\n$56,020\n$83,730\nRecession\nNote: Households as of March of the following year. Refer to Table A-2 for historical race footnotes. The data points are placed at the midpoints of \nthe respective years. Income is in 2024 dollars. More information on the inflation adjustment and recessions is available in Appendix A. Information \non confidentiality protection, sampling error, nonsampling error, and definitions is available at \n<https://www2.census.gov/programs-surveys/cps/techdocs/cpsmar25.pdf>.\nSource: U.S. Census Bureau, Current Population Survey, 1968 to 2025 Annual Social and Economic Supplements (CPS ASEC; DMS number \nP-7534374, DRB approval number CBDRB-FY25-0384)."
+    },
+    {
+      "id": "census-income2024-ext-03",
+      "document_id": "census-income2024",
+      "source_sha256": "54cf1adc1f92e0f471803e67637569ecdebf93eec21928a5f9e2b97185eed3d3",
+      "page": 10,
+      "bbox": [
+        225.828,
+        339.768,
+        335.376,
+        355.608
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "INCOME INEQUALITY",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "INCOME INEQUALITY",
+        "level": null,
+        "parent": null
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "INCOME INEQUALITY"
+    },
+    {
+      "id": "mhlw-population2024-ext-01",
+      "document_id": "mhlw-population2024",
+      "source_sha256": "a2b37625baf4884d98f4d7b775445047b26293adfdb84c948c90e3fa57df442b",
+      "page": 4,
+      "bbox": [
+        63.695,
+        92.608,
+        177.392,
+        112.813
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "1 出生数は減少 is a body section in the Japanese results summary.",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "missing",
+      "detector_expected": null,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "１ 出生数は減少"
+    },
+    {
+      "id": "mhlw-population2024-ext-02",
+      "document_id": "mhlw-population2024",
+      "source_sha256": "a2b37625baf4884d98f4d7b775445047b26293adfdb84c948c90e3fa57df442b",
+      "page": 6,
+      "bbox": [
+        53.575,
+        58.09,
+        571.465,
+        156.592
+      ],
+      "space": "pdf-points-topleft",
+      "category": "table",
+      "visible_expectation": "The1899 row aligns births1386981 with deaths932087 and natural increase454894; preserve these columns.",
+      "expected_behavior": "preserve_table_relation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "1899\n 明治32年\n1 386 981\n         \n 932 087\n          \n 213 359\n          \n 108 077\n          \n 454 894\n          \n1900\n     33\n1 420 534\n         \n 910 744\n          \n 220 211\n          \n 112 259\n          \n 509 790\n          \n  01\n     34\n1 501 591\n         \n 925 810\n          \n 225 107\n          \n 115 794\n          \n 575 781\n          \n  02\n     35\n1 510 835\n         \n 959 126\n          \n 232 652\n          \n 116 654\n          \n 551 709\n          \n年　　次1)\n（再　　　　掲）\n自然増減数\n（人）\n出　生　数\n（人）\n死　亡　数\n（人）\n乳児死亡数\n（人）\n新生児死亡数2）\n（人）"
+    },
+    {
+      "id": "mhlw-population2024-ext-03",
+      "document_id": "mhlw-population2024",
+      "source_sha256": "a2b37625baf4884d98f4d7b775445047b26293adfdb84c948c90e3fa57df442b",
+      "page": 6,
+      "bbox": [
+        283.351,
+        816.633,
+        320.854,
+        834.313
+      ],
+      "space": "pdf-points-topleft",
+      "category": "margin-furniture",
+      "visible_expectation": "-5- is the page-number footer.",
+      "expected_behavior": "exclude_margin_furniture",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "- 5 -"
+    },
+    {
+      "id": "boj-financial2025-ext-01",
+      "document_id": "boj-financial2025",
+      "source_sha256": "d0034f482d91b8bbfb6ce9ed52fe4496cd69445770ddd13f785bbee0afca4482",
+      "page": 12,
+      "bbox": [
+        74.998,
+        84.2,
+        327.371,
+        106.092
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Ⅱ．金融資本市場から観察されるリスク",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Ⅱ．金融資本市場から観察されるリスク",
+        "level": 1,
+        "parent": null
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Ⅱ．⾦融資本市場から観察されるリスク"
+    },
+    {
+      "id": "boj-financial2025-ext-02",
+      "document_id": "boj-financial2025",
+      "source_sha256": "d0034f482d91b8bbfb6ce9ed52fe4496cd69445770ddd13f785bbee0afca4482",
+      "page": 21,
+      "bbox": [
+        74.998,
+        84.2,
+        249.992,
+        106.092
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Ⅲ．金融仲介活動",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Ⅲ．金融仲介活動",
+        "level": 1,
+        "parent": null
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Ⅲ．⾦融仲介活動"
+    },
+    {
+      "id": "boj-financial2025-ext-03",
+      "document_id": "boj-financial2025",
+      "source_sha256": "d0034f482d91b8bbfb6ce9ed52fe4496cd69445770ddd13f785bbee0afca4482",
+      "page": 21,
+      "bbox": [
+        75.593,
+        527.092,
+        305.348,
+        723.278
+      ],
+      "space": "pdf-points-topleft",
+      "category": "diagram",
+      "visible_expectation": "Left chart is lending by financial-institution type; do not merge its legends with the adjacent chart by borrower firm type.",
+      "expected_behavior": "preserve_figure_separation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "図表\n金融機関の国内貸出\n（注）平残前年比。直近2025/1Q は1～2 月。 \n（出所）日本銀行 \n-3\n-2\n-1\n0\n1\n2\n3\n4\n5\n6\n7\n10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25\n大手行\n地域銀行\n信用金庫\n合計\n前年比、％\n年"
+    },
+    {
+      "id": "insee-digital2025-ext-01",
+      "document_id": "insee-digital2025",
+      "source_sha256": "7bf9c569072f1958645074bc7897bdd0c4060cfe9ffad4bd6a030b7cc143d087",
+      "page": 55,
+      "bbox": [
+        61.223,
+        26.862,
+        283.827,
+        43.754
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Compétences numériques de la population",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Compétences numériques de la population",
+        "level": 3,
+        "parent": "Enjeux"
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Compétences numériques de la population"
+    },
+    {
+      "id": "insee-digital2025-ext-02",
+      "document_id": "insee-digital2025",
+      "source_sha256": "7bf9c569072f1958645074bc7897bdd0c4060cfe9ffad4bd6a030b7cc143d087",
+      "page": 56,
+      "bbox": [
+        41.272,
+        397.984,
+        411.817,
+        463.295
+      ],
+      "space": "pdf-points-topleft",
+      "category": "table",
+      "visible_expectation": "Retired farmers/artisans/traders row has47.4 percent illectronisme and29.8 percent weak digital skills; Ensemble has36.4 and34.0 respectively.",
+      "expected_behavior": "preserve_table_relation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "en %\nCatégorie socioprofessionnelle\nIllectronisme\nCompétences numériques faibles\nAgriculteurs, artisans et commerçants\n47,4\n29,8\nCadres et professions libérales\n8,3\n26,0\nProfessions intermédiaires\n18,7\n37,1\nEmployés\n38,7\n39,7\nOuvriers\n56,4\n30,6\nEnsemble\n36,4\n34,0"
+    },
+    {
+      "id": "insee-digital2025-ext-03",
+      "document_id": "insee-digital2025",
+      "source_sha256": "7bf9c569072f1958645074bc7897bdd0c4060cfe9ffad4bd6a030b7cc143d087",
+      "page": 56,
+      "bbox": [
+        41.272,
+        95.244,
+        411.817,
+        200.693
+      ],
+      "space": "pdf-points-topleft",
+      "category": "diagram",
+      "visible_expectation": "The75-and-over bar has the largest illectronisme component; keep age labels associated with bars.",
+      "expected_behavior": "preserve_figure_separation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "0\n10\n20\n30\n40\n50\n60\n70\n80\n90\nDe 15 à 29 ans\nDe 30 à 39 ans\nDe 40 à 59 ans\nDe 60 à 74 ans\n75 ans ou plus\nEnsemble\nen %"
+    },
+    {
+      "id": "openstax-chemistry-2e-ext-01",
+      "document_id": "openstax-chemistry-2e",
+      "source_sha256": "fd89db1b8a1fee06b8ad3e8982f4f4b34bde4e93654a4ce28b724f8c0efe98d6",
+      "page": 44,
+      "bbox": [
+        257.04,
+        357.984,
+        361.08,
+        394.416
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "density=mass/volume with mass in the numerator and volume in the denominator.",
+      "expected_behavior": "flag_or_recover_math_loss",
+      "layer_status": "missing",
+      "detector_expected": true,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": ""
+    },
+    {
+      "id": "openstax-chemistry-2e-ext-02",
+      "document_id": "openstax-chemistry-2e",
+      "source_sha256": "fd89db1b8a1fee06b8ad3e8982f4f4b34bde4e93654a4ce28b724f8c0efe98d6",
+      "page": 44,
+      "bbox": [
+        203.796,
+        567.864,
+        409.428,
+        597.96
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "density=90.7g/(8.00cm^3)=11.3g/cm^3; preserve both fraction and cubic units.",
+      "expected_behavior": "flag_or_recover_math_loss",
+      "layer_status": "missing",
+      "detector_expected": true,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": ""
+    },
+    {
+      "id": "openstax-chemistry-2e-ext-03",
+      "document_id": "openstax-chemistry-2e",
+      "source_sha256": "fd89db1b8a1fee06b8ad3e8982f4f4b34bde4e93654a4ce28b724f8c0efe98d6",
+      "page": 44,
+      "bbox": [
+        116.28,
+        134.64,
+        494.496,
+        281.16
+      ],
+      "space": "pdf-points-topleft",
+      "category": "table",
+      "visible_expectation": "The gold row gives19.3g/cm^3, mercury13.6g/cm^3, and radon9.1g/L in distinct substance columns.",
+      "expected_behavior": "preserve_table_relation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "oak (wood) 0.60–0.90 g/cm3 \nethanol 0.79 g/cm3 \noxygen 1.31 g/L \niron 7.9 g/cm3 \nacetone 0.79 g/cm3 \nnitrogen 1.14 g/L \ncopper 9.0 g/cm3 \nglycerin 1.26 g/cm3 \ncarbon dioxide 1.80 g/L \nlead 11.3 g/cm3 \nolive oil 0.92 g/cm3 \nhelium 0.16 g/L \nsilver 10.5 g/cm3 \ngasoline 0.70–0.77 g/cm3 \nneon 0.83 g/L \ngold 19.3 g/cm3 \nmercury 13.6 g/cm3 \nradon 9.1 g/L"
+    },
+    {
+      "id": "openstax-biology-2e-ext-01",
+      "document_id": "openstax-biology-2e",
+      "source_sha256": "4d1f413fd779f114838cdaeab7859dcb2922ca7529230d3bfd7d36a77b4e27b6",
+      "page": 1355,
+      "bbox": [
+        70.776,
+        391.788,
+        364.046,
+        411.221
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "45.3 Environmental Limits to Population Growth",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "45.3 Environmental Limits to Population Growth",
+        "level": 2,
+        "parent": "Chapter 45 Population and Community Ecology"
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "45.3 Environmental Limits to Population Growth"
+    },
+    {
+      "id": "openstax-biology-2e-ext-02",
+      "document_id": "openstax-biology-2e",
+      "source_sha256": "4d1f413fd779f114838cdaeab7859dcb2922ca7529230d3bfd7d36a77b4e27b6",
+      "page": 1356,
+      "bbox": [
+        238.068,
+        304.92,
+        374.544,
+        335.016
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "dN/dT=bN-dN=(b-d)N; the derivative denominator is T as printed.",
+      "expected_behavior": "flag_or_recover_math_loss",
+      "layer_status": "missing",
+      "detector_expected": true,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": ""
+    },
+    {
+      "id": "openstax-biology-2e-ext-03",
+      "document_id": "openstax-biology-2e",
+      "source_sha256": "4d1f413fd779f114838cdaeab7859dcb2922ca7529230d3bfd7d36a77b4e27b6",
+      "page": 1356,
+      "bbox": [
+        280.296,
+        392.832,
+        334.152,
+        419.76
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "dN/dT=rN gives the net population growth equation.",
+      "expected_behavior": "flag_or_recover_math_loss",
+      "layer_status": "missing",
+      "detector_expected": true,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": ""
+    },
+    {
+      "id": "openstax-biology-2e-ext-04",
+      "document_id": "openstax-biology-2e",
+      "source_sha256": "4d1f413fd779f114838cdaeab7859dcb2922ca7529230d3bfd7d36a77b4e27b6",
+      "page": 1356,
+      "bbox": [
+        124.236,
+        533.808,
+        490.212,
+        696.168
+      ],
+      "space": "pdf-points-topleft",
+      "category": "diagram",
+      "visible_expectation": "Exponential growth is J-shaped; logistic growth is S-shaped and approaches carrying capacity.",
+      "expected_behavior": "preserve_figure_separation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": ""
+    },
+    {
+      "id": "openstax-precalculus-2e-ext-01",
+      "document_id": "openstax-precalculus-2e",
+      "source_sha256": "4b7018778433d2c125229a35315cf70e0813cbaacb04118b7265baae625372b5",
+      "page": 20,
+      "bbox": [
+        113.22,
+        55.44,
+        498.78,
+        111.672
+      ],
+      "space": "pdf-points-topleft",
+      "category": "table",
+      "visible_expectation": "Percent grade78-86 maps to grade point average3.0;87-91 maps to3.5.",
+      "expected_behavior": "preserve_table_relation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Percent grade \n0–56 \n57–61 \n62–66 \n67–71 \n72–77 \n78–86 \n87–91 \n92–100 \nGrade point average \n0.0 \n1.0 \n1.5 \n2.0 \n2.5 \n3.0 \n3.5 \n4.0"
+    },
+    {
+      "id": "openstax-precalculus-2e-ext-02",
+      "document_id": "openstax-precalculus-2e",
+      "source_sha256": "4b7018778433d2c125229a35315cf70e0813cbaacb04118b7265baae625372b5",
+      "page": 21,
+      "bbox": [
+        72.216,
+        324.72,
+        270.504,
+        342.936
+      ],
+      "space": "pdf-points-topleft",
+      "category": "inline-math",
+      "visible_expectation": "f(March)=31 identifies March as input and31 as output.",
+      "expected_behavior": "flag_or_recover_math_loss",
+      "layer_status": "missing",
+      "detector_expected": true,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "For example, \n because March has 3\n(th\nt\nt) i d\nd\nt\nth\nf th\nt"
+    },
+    {
+      "id": "openstax-precalculus-2e-ext-03",
+      "document_id": "openstax-precalculus-2e",
+      "source_sha256": "4b7018778433d2c125229a35315cf70e0813cbaacb04118b7265baae625372b5",
+      "page": 21,
+      "bbox": [
+        257.04,
+        261.36,
+        348.84,
+        311.256
+      ],
+      "space": "pdf-points-topleft",
+      "category": "diagram",
+      "visible_expectation": "The31=f(January) diagram labels31 output, f rule, andJanuary input; preserve the arrows and these relations.",
+      "expected_behavior": "preserve_figure_separation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": ""
+    },
+    {
+      "id": "openstax-principles-microeconomics-3e-ext-01",
+      "document_id": "openstax-principles-microeconomics-3e",
+      "source_sha256": "65a1856faa91d5fdef9c630928029c6e4e188a9580d9128fcbc9138c4f4a583f",
+      "page": 40,
+      "bbox": [
+        70.776,
+        511.903,
+        478.963,
+        529.172
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "2.1 How Individuals Make Choices Based on Their Budget Constraint",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "2.1 How Individuals Make Choices Based on Their Budget Constraint",
+        "level": 2,
+        "parent": "Chapter 2 Choice in a World of Scarcity"
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "2.1 How Individuals Make Choices Based on Their Budget Constraint"
+    },
+    {
+      "id": "openstax-principles-microeconomics-3e-ext-02",
+      "document_id": "openstax-principles-microeconomics-3e",
+      "source_sha256": "65a1856faa91d5fdef9c630928029c6e4e188a9580d9128fcbc9138c4f4a583f",
+      "page": 41,
+      "bbox": [
+        215.424,
+        57.024,
+        398.412,
+        162.36
+      ],
+      "space": "pdf-points-topleft",
+      "category": "diagram",
+      "visible_expectation": "The budget-line intercepts are5 burgers at0tickets and20tickets at0burgers; budget10dollars, burger2dollars and bus ticket50cents.",
+      "expected_behavior": "preserve_figure_separation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": ""
+    },
+    {
+      "id": "openstax-principles-microeconomics-3e-ext-03",
+      "document_id": "openstax-principles-microeconomics-3e",
+      "source_sha256": "65a1856faa91d5fdef9c630928029c6e4e188a9580d9128fcbc9138c4f4a583f",
+      "page": 41,
+      "bbox": [
+        70.776,
+        533.675,
+        235.894,
+        548.593
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "The Concept of Opportunity Cost",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "The Concept of Opportunity Cost",
+        "level": null,
+        "parent": null
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "The Concept of Opportunity Cost"
+    },
+    {
+      "id": "ecb-annual2024-ext-01",
+      "document_id": "ecb-annual2024",
+      "source_sha256": "9b1fa8402e6a50c318dba51c8158a14a54319dab92b3f25e0dfbc4a0e4ab43cc",
+      "page": 9,
+      "bbox": [
+        180.299,
+        101.28,
+        521.878,
+        178.952
+      ],
+      "space": "pdf-points-topleft",
+      "category": "body-heading",
+      "visible_expectation": "Further declines in underlying inflationary pressures underpinned by the ECB’s restrictive monetary policy",
+      "expected_behavior": "retain_body_heading",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": {
+        "heading": "Further declines in underlying inflationary pressures underpinned by the ECB’s restrictive monetary policy",
+        "level": 2,
+        "parent": "Annual Report 2024"
+      },
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "Further declines in underlying \ninflationary pressures underpinned by \nthe ECB’s restrictive monetary policy"
+    },
+    {
+      "id": "ecb-annual2024-ext-02",
+      "document_id": "ecb-annual2024",
+      "source_sha256": "9b1fa8402e6a50c318dba51c8158a14a54319dab92b3f25e0dfbc4a0e4ab43cc",
+      "page": 10,
+      "bbox": [
+        177.405,
+        319.975,
+        539.955,
+        573.429
+      ],
+      "space": "pdf-points-topleft",
+      "category": "diagram",
+      "visible_expectation": "Chart1.1 has separate panels for global real GDP growth and global trade growth; keep panel and legend associations.",
+      "expected_behavior": "preserve_figure_separation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "(annual percentage changes) \n \nSources: Haver Analytics, national sources and ECB calculations. \nNotes: Panel a): “global GDP” excludes the euro area. The aggregates are computed using GDP adjusted with purchasing power \nparity weights. Panel b): global trade growth is defined as growth in global imports including imports to the euro area. In both panels \nthe dashed lines indicate the long-term averages between 1999 and 2023, and the latest observations are for 2024 as updated on 28 \nMarch 2025."
+    },
+    {
+      "id": "ecb-annual2024-ext-03",
+      "document_id": "ecb-annual2024",
+      "source_sha256": "9b1fa8402e6a50c318dba51c8158a14a54319dab92b3f25e0dfbc4a0e4ab43cc",
+      "page": 10,
+      "bbox": [
+        178.596,
+        805.832,
+        270.275,
+        820.989
+      ],
+      "space": "pdf-points-topleft",
+      "category": "margin-furniture",
+      "visible_expectation": "ECB Annual Report2024 is a recurring footer, not a chapter heading.",
+      "expected_behavior": "exclude_margin_furniture",
+      "layer_status": "not-applicable",
+      "detector_expected": null,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": "ECB Annual Report 2024"
+    },
+    {
+      "id": "openstax-astronomy-2e-ext-01",
+      "document_id": "openstax-astronomy-2e",
+      "source_sha256": "9c3c49fc2d0b35a122509d27714780a5991b8e97cb6bd8db954e2b37542797a5",
+      "page": 90,
+      "bbox": [
+        285.192,
+        53.064,
+        325.584,
+        74.448
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "P^2=a^3 is Keplers third law in years andAU; exponents2 and3 must remain attached.",
+      "expected_behavior": "flag_or_recover_math_loss",
+      "layer_status": "missing",
+      "detector_expected": true,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": ""
+    },
+    {
+      "id": "openstax-astronomy-2e-ext-02",
+      "document_id": "openstax-astronomy-2e",
+      "source_sha256": "9c3c49fc2d0b35a122509d27714780a5991b8e97cb6bd8db954e2b37542797a5",
+      "page": 90,
+      "bbox": [
+        195.228,
+        411.84,
+        415.548,
+        445.896
+      ],
+      "space": "pdf-points-topleft",
+      "category": "display-math",
+      "visible_expectation": "P=sqrt(50*50*50)=sqrt(125000)=353.6years.",
+      "expected_behavior": "flag_or_recover_math_loss",
+      "layer_status": "missing",
+      "detector_expected": true,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": ""
+    },
+    {
+      "id": "openstax-astronomy-2e-ext-03",
+      "document_id": "openstax-astronomy-2e",
+      "source_sha256": "9c3c49fc2d0b35a122509d27714780a5991b8e97cb6bd8db954e2b37542797a5",
+      "page": 89,
+      "bbox": [
+        159.732,
+        160.776,
+        457.776,
+        352.44
+      ],
+      "space": "pdf-points-topleft",
+      "category": "diagram",
+      "visible_expectation": "The equal-area orbit diagram places Sun at onefocus and pairs time intervals1-to2 and3-to4 with equal shaded areasA andB.",
+      "expected_behavior": "preserve_figure_separation",
+      "layer_status": "not-applicable",
+      "detector_expected": false,
+      "outline_expected": null,
+      "related_locations": [],
+      "review_basis": "source image + native layer only",
+      "native_clip": ""
+    }
+  ],
+  "frozen_at": "2026-09-19T18:25:33.518786+00:00",
+  "freeze_note": "Source render and native PDF layer only inspected before freeze; no detector or repaired-output or native-alt decision inspected.",
+  "detector_sha256": "136de0218bda281e34a50454b5aff6d969c93d7ae5a074f6be7b9ac2cd897e35"
+}

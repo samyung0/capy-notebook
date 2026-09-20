@@ -50,7 +50,8 @@ log = logging.getLogger("capy.retrieval.chunking")
 # v8: bounded oversized table context, short visible orphan headings, and
 #     extraction confidence in canonical content identity.
 # v10: repeated keys preserve interior occurrences; source roles correct heading ancestry.
-CHUNKER_VERSION = "v10"
+# v11: newly discarded source-backed banners retain a neutral heading boundary.
+CHUNKER_VERSION = "v11"
 
 # Picture blocks arrive under two labels: ``image`` for photos and diagrams,
 # ``chart`` for plots the layout model recognises as data graphics. Same shape,
@@ -503,6 +504,18 @@ def _build(blocks: list[_Block], section_path: str) -> Chunk:
 # ------------------------------------------------------------------ entrypoints
 
 
+def _heading_boundary_level(block: dict) -> int | None:
+    level = block.get("_heading_boundary_level")
+    if (
+        block.get("type") == "discarded"
+        and block.get("_source_role") == "running-banner"
+        and type(level) is int
+        and level > 0
+    ):
+        return level
+    return None
+
+
 def chunk_content_list(
     content_list: list[dict[str, Any]], *, furniture: frozenset[str] | None = None
 ) -> list[Chunk]:
@@ -536,6 +549,13 @@ def chunk_content_list(
 
     for item in content_list:
         if not isinstance(item, dict):
+            continue
+        boundary = _heading_boundary_level(item)
+        if boundary is not None:
+            if stack and stack[-1][0] >= boundary:
+                flush_section()
+                while stack and stack[-1][0] >= boundary:
+                    stack.pop()
             continue
         page = item.get("page_idx")
         page_no = int(page) + 1 if isinstance(page, int) else None

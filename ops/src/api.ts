@@ -704,6 +704,17 @@ export const libraryBooksSchema = z.array(
   })
 );
 
+// The committed subjects fixture with what the live library holds under each.
+export const librarySubjectsSchema = z.array(
+  z.object({
+    area: z.string(),
+    excerpts: countSchema,
+    id: z.string().min(1),
+    label: z.string(),
+    topics: countSchema,
+  })
+);
+
 export const libraryTopicsSchema = z.array(
   z.object({
     aliases: z.unknown(),
@@ -713,6 +724,7 @@ export const libraryTopicsSchema = z.array(
     retrievableByRole: z.record(z.string(), countSchema),
     scope: z.string(),
     sourceSections: z.string(),
+    subjectId: z.string().min(1),
     verifiedByRole: z.record(z.string(), countSchema),
   })
 );
@@ -847,6 +859,7 @@ export type RegistrySaveRequest = z.infer<typeof registrySaveRequestSchema>;
 export type LibraryOverview = z.infer<typeof libraryOverviewSchema>;
 export type LibraryBook = z.infer<typeof libraryBooksSchema>[number];
 export type LibraryBookVersion = z.infer<typeof libraryBookVersionSchema>;
+export type LibrarySubject = z.infer<typeof librarySubjectsSchema>[number];
 export type LibraryTopic = z.infer<typeof libraryTopicsSchema>[number];
 export type LibraryExcerpt = z.infer<typeof libraryExcerptSchema>;
 export type LibraryExcerptPage = z.infer<typeof libraryExcerptPageSchema>;
@@ -1005,6 +1018,7 @@ export function createOpsApi({ getToken, fetcher = fetch }: ApiOptions) {
     libraryModelRuns: () =>
       request('/library/model-runs', libraryModelRunsSchema),
     libraryOverview: () => request('/library', libraryOverviewSchema),
+    librarySubjects: () => request('/library/subjects', librarySubjectsSchema),
     libraryTopics: () => request('/library/topics', libraryTopicsSchema),
     overview: () => request('/overview', overviewSchema),
     providers: () => request('/providers', eliteLLMProviderPageSchema),

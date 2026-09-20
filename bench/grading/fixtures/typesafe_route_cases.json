@@ -1,0 +1,1114 @@
+{
+ "_note": "Routing probe for typesafe.ai jev: does grading this question require checking calculation or derivation? compute = kind in (numeric, symbolic). deceptive marks questions whose surface form points the wrong way. arguable pairs are excluded from counts.",
+ "questions": [
+  {
+   "domain": "mathematics",
+   "kind": "explain",
+   "compute": false,
+   "question": "Explain what the derivative of a function measures.",
+   "answer": "The instantaneous rate of change of the function, or the slope of the tangent line at a point.",
+   "rubrics": [
+    "Rate of change / slope of tangent",
+    "At a point / instantaneous"
+   ]
+  },
+  {
+   "domain": "mathematics",
+   "kind": "recall",
+   "compute": false,
+   "question": "State the Pythagorean theorem.",
+   "answer": "In a right triangle, a² + b² = c² where c is the hypotenuse.",
+   "rubrics": [
+    "a² + b² = c²",
+    "Applies to right triangles, c the hypotenuse"
+   ]
+  },
+  {
+   "domain": "mathematics",
+   "kind": "explain",
+   "compute": false,
+   "question": "Why is division by zero undefined?",
+   "answer": "Because no number multiplied by 0 gives a nonzero result, and for 0/0 every number would work, so there is no unique value.",
+   "rubrics": [
+    "No number times 0 gives a nonzero value",
+    "0/0 would not be unique"
+   ]
+  },
+  {
+   "domain": "mathematics",
+   "kind": "recall",
+   "compute": false,
+   "question": "What is a prime number?",
+   "answer": "A natural number greater than 1 whose only positive divisors are 1 and itself.",
+   "rubrics": [
+    "Greater than 1",
+    "Only divisors 1 and itself"
+   ]
+  },
+  {
+   "domain": "mathematics",
+   "kind": "explain",
+   "compute": false,
+   "question": "When is integration by parts the right technique?",
+   "answer": "When the integrand is a product where one factor gets simpler on differentiation and the other is easy to integrate, e.g. x·eˣ or x·ln x.",
+   "rubrics": [
+    "Product of two functions",
+    "One factor simplifies when differentiated"
+   ]
+  },
+  {
+   "domain": "mathematics",
+   "kind": "numeric",
+   "compute": true,
+   "question": "Solve 3x + 7 = 22.",
+   "answer": "3x = 15, so x = 5.",
+   "rubrics": [
+    "x = 5"
+   ]
+  },
+  {
+   "domain": "mathematics",
+   "kind": "numeric",
+   "compute": true,
+   "question": "Evaluate ∫₀¹ x eˣ dx.",
+   "answer": "By parts: [x eˣ − eˣ]₀¹ = (e − e) − (0 − 1) = 1.",
+   "rubrics": [
+    "Uses integration by parts",
+    "Result 1"
+   ]
+  },
+  {
+   "domain": "mathematics",
+   "kind": "symbolic",
+   "compute": true,
+   "question": "Prove that the sum of the first n positive integers is n(n+1)/2.",
+   "answer": "Induction: base n=1 gives 1. If true for k, then sum to k+1 is k(k+1)/2 + (k+1) = (k+1)(k+2)/2.",
+   "rubrics": [
+    "Valid base case",
+    "Valid inductive step or pairing argument"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "mathematics",
+   "kind": "symbolic",
+   "compute": true,
+   "question": "Show that √2 is irrational.",
+   "answer": "Suppose √2 = p/q in lowest terms. Then p² = 2q², so p is even, p = 2m, so 4m² = 2q², q² = 2m², q is even, contradicting lowest terms.",
+   "rubrics": [
+    "Assumes rational p/q in lowest terms",
+    "Derives both even, contradiction"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "mathematics",
+   "kind": "numeric",
+   "compute": true,
+   "question": "Sam has three times as many marbles as Jo. Together they have 24. How many does Sam have?",
+   "answer": "Jo has 6, so Sam has 18.",
+   "rubrics": [
+    "Sam = 18"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "mathematics",
+   "kind": "numeric",
+   "compute": true,
+   "question": "A recipe for four people needs 300 g of flour. How much flour is needed for ten people?",
+   "answer": "300 × 10/4 = 750 g.",
+   "rubrics": [
+    "750 g"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "mathematics",
+   "kind": "numeric",
+   "compute": true,
+   "question": "A train leaves at 09:40 and arrives at 13:15. How long is the journey?",
+   "answer": "3 hours 35 minutes.",
+   "rubrics": [
+    "3 h 35 min"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "mathematics",
+   "kind": "numeric",
+   "compute": true,
+   "question": "Is 91 a prime number? Explain.",
+   "answer": "No: 91 = 7 × 13.",
+   "rubrics": [
+    "States not prime",
+    "Gives factorisation 7 × 13"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "mathematics",
+   "kind": "numeric",
+   "compute": true,
+   "question": "Which is larger, 2¹⁰ or 10³?",
+   "answer": "2¹⁰ = 1024 > 1000 = 10³, so 2¹⁰ is larger.",
+   "rubrics": [
+    "2¹⁰ larger",
+    "Compares 1024 with 1000"
+   ]
+  },
+  {
+   "domain": "mathematics",
+   "kind": "recall",
+   "compute": false,
+   "question": "What is the value of π to two decimal places?",
+   "answer": "3.14",
+   "rubrics": [
+    "3.14"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "mathematics",
+   "kind": "recall",
+   "compute": false,
+   "question": "How many degrees are in the interior angles of a triangle?",
+   "answer": "180°",
+   "rubrics": [
+    "180"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "mathematics",
+   "kind": "symbolic",
+   "compute": true,
+   "question": "Explain why the interior angles of a triangle sum to 180°.",
+   "answer": "Draw a line through one vertex parallel to the opposite side; alternate angles show the three angles form a straight line, 180°.",
+   "rubrics": [
+    "Parallel line through a vertex",
+    "Alternate angles make a straight angle"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "mathematics",
+   "kind": "explain",
+   "compute": false,
+   "question": "What is the difference between a permutation and a combination?",
+   "answer": "A permutation counts ordered arrangements; a combination counts selections where order does not matter.",
+   "rubrics": [
+    "Permutation ordered",
+    "Combination unordered"
+   ]
+  },
+  {
+   "domain": "mathematics",
+   "kind": "numeric",
+   "compute": true,
+   "question": "How many ways can a committee of 3 be chosen from 8 people?",
+   "answer": "C(8,3) = 56.",
+   "rubrics": [
+    "56"
+   ]
+  },
+  {
+   "domain": "mathematics",
+   "kind": "explain",
+   "compute": false,
+   "question": "Explain the difference between the mean and the median and when the median is preferable.",
+   "answer": "Mean is the arithmetic average; median is the middle value. Median is preferable when the data has outliers or is skewed.",
+   "rubrics": [
+    "Defines both",
+    "Median robust to outliers/skew"
+   ]
+  },
+  {
+   "domain": "mathematics",
+   "kind": "numeric",
+   "compute": true,
+   "question": "Find the mean of 3, 7, 8 and 12.",
+   "answer": "(3+7+8+12)/4 = 30/4 = 7.5.",
+   "rubrics": [
+    "7.5"
+   ]
+  },
+  {
+   "domain": "mathematics",
+   "kind": "symbolic",
+   "compute": true,
+   "question": "Simplify (x² − 9)/(x − 3) for x ≠ 3.",
+   "answer": "(x−3)(x+3)/(x−3) = x + 3.",
+   "rubrics": [
+    "x + 3"
+   ]
+  },
+  {
+   "domain": "mathematics",
+   "kind": "explain",
+   "compute": false,
+   "question": "Does the harmonic series 1 + 1/2 + 1/3 + ... converge? Explain briefly.",
+   "answer": "No, it diverges; grouping terms shows the partial sums exceed 1 + k/2 for any k (or by the integral test).",
+   "rubrics": [
+    "States it diverges",
+    "Gives a valid reason (grouping or integral test)"
+   ],
+   "arguable": true
+  },
+  {
+   "domain": "physics",
+   "kind": "explain",
+   "compute": false,
+   "question": "Explain why a satellite in orbit does not fall to Earth.",
+   "answer": "Gravity provides the centripetal force; the satellite's tangential velocity means it keeps falling around the Earth rather than into it.",
+   "rubrics": [
+    "Gravity acts as centripetal force",
+    "Tangential velocity / free fall"
+   ]
+  },
+  {
+   "domain": "physics",
+   "kind": "recall",
+   "compute": false,
+   "question": "State Newton's second law.",
+   "answer": "The net force on an object equals its mass times its acceleration, F = ma.",
+   "rubrics": [
+    "F = ma",
+    "Net force"
+   ]
+  },
+  {
+   "domain": "physics",
+   "kind": "numeric",
+   "compute": true,
+   "question": "A 2 kg mass accelerates at 3 m/s². What net force acts on it?",
+   "answer": "F = ma = 2 × 3 = 6 N.",
+   "rubrics": [
+    "6 N"
+   ]
+  },
+  {
+   "domain": "physics",
+   "kind": "numeric",
+   "compute": true,
+   "question": "A ball is dropped from rest. How far does it fall in 3 seconds? Take g = 10 m/s².",
+   "answer": "s = ½gt² = ½ × 10 × 9 = 45 m.",
+   "rubrics": [
+    "45 m"
+   ]
+  },
+  {
+   "domain": "physics",
+   "kind": "numeric",
+   "compute": true,
+   "question": "A car travels 150 km in 2.5 hours. What is its average speed?",
+   "answer": "150/2.5 = 60 km/h.",
+   "rubrics": [
+    "60 km/h"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "physics",
+   "kind": "explain",
+   "compute": false,
+   "question": "Why does a metal spoon feel colder than a wooden one at the same room temperature?",
+   "answer": "Metal conducts heat away from your hand much faster than wood, so more heat leaves your skin per second.",
+   "rubrics": [
+    "Metal higher thermal conductivity",
+    "Heat flows from hand faster"
+   ]
+  },
+  {
+   "domain": "physics",
+   "kind": "recall",
+   "compute": false,
+   "question": "What is the speed of light in a vacuum, approximately?",
+   "answer": "About 3 × 10⁸ m/s.",
+   "rubrics": [
+    "3 × 10⁸ m/s"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "physics",
+   "kind": "numeric",
+   "compute": true,
+   "question": "How long does light take to travel from the Sun to Earth, given the distance is 1.5 × 10¹¹ m?",
+   "answer": "t = d/c = 1.5 × 10¹¹ / 3 × 10⁸ = 500 s, about 8.3 minutes.",
+   "rubrics": [
+    "About 500 s / 8.3 min"
+   ]
+  },
+  {
+   "domain": "physics",
+   "kind": "explain",
+   "compute": false,
+   "question": "Explain the difference between mass and weight.",
+   "answer": "Mass is the amount of matter (kg), the same everywhere; weight is the gravitational force on it (N), which depends on g.",
+   "rubrics": [
+    "Mass amount of matter, invariant",
+    "Weight is a force depending on gravity"
+   ]
+  },
+  {
+   "domain": "physics",
+   "kind": "numeric",
+   "compute": true,
+   "question": "An electric heater draws 10 A from a 230 V supply. What power does it use?",
+   "answer": "P = VI = 230 × 10 = 2300 W.",
+   "rubrics": [
+    "2300 W / 2.3 kW"
+   ]
+  },
+  {
+   "domain": "physics",
+   "kind": "explain",
+   "compute": false,
+   "question": "Why does the sky appear blue?",
+   "answer": "Air molecules scatter shorter wavelengths more strongly (Rayleigh scattering), so blue light reaches us from all directions.",
+   "rubrics": [
+    "Rayleigh scattering",
+    "Shorter wavelengths scattered more"
+   ]
+  },
+  {
+   "domain": "physics",
+   "kind": "symbolic",
+   "compute": true,
+   "question": "Derive the expression for the period of a simple pendulum for small angles.",
+   "answer": "Restoring torque ≈ −mgLθ gives θ'' = −(g/L)θ, simple harmonic with ω = √(g/L), so T = 2π√(L/g).",
+   "rubrics": [
+    "Small-angle approximation",
+    "T = 2π√(L/g)"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "physics",
+   "kind": "numeric",
+   "compute": true,
+   "question": "Two resistors of 4 Ω and 6 Ω are connected in parallel. What is the combined resistance?",
+   "answer": "1/R = 1/4 + 1/6 = 5/12, so R = 2.4 Ω.",
+   "rubrics": [
+    "2.4 Ω"
+   ]
+  },
+  {
+   "domain": "chemistry",
+   "kind": "explain",
+   "compute": false,
+   "question": "Explain what a catalyst does and why it is not used up.",
+   "answer": "It lowers the activation energy by providing an alternative pathway, and is regenerated at the end of the reaction.",
+   "rubrics": [
+    "Lowers activation energy",
+    "Regenerated / not consumed"
+   ]
+  },
+  {
+   "domain": "chemistry",
+   "kind": "numeric",
+   "compute": true,
+   "question": "Calculate the molar mass of H₂SO₄.",
+   "answer": "2(1) + 32 + 4(16) = 98 g/mol.",
+   "rubrics": [
+    "98 g/mol"
+   ]
+  },
+  {
+   "domain": "chemistry",
+   "kind": "symbolic",
+   "compute": true,
+   "question": "Balance the equation Fe + O₂ → Fe₂O₃.",
+   "answer": "4Fe + 3O₂ → 2Fe₂O₃.",
+   "rubrics": [
+    "4, 3, 2 coefficients"
+   ]
+  },
+  {
+   "domain": "chemistry",
+   "kind": "recall",
+   "compute": false,
+   "question": "What is the atomic number of carbon?",
+   "answer": "6",
+   "rubrics": [
+    "6"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "chemistry",
+   "kind": "numeric",
+   "compute": true,
+   "question": "What is the pH of a 0.01 M solution of HCl?",
+   "answer": "pH = −log(0.01) = 2.",
+   "rubrics": [
+    "pH 2"
+   ]
+  },
+  {
+   "domain": "chemistry",
+   "kind": "explain",
+   "compute": false,
+   "question": "Why is the pH scale logarithmic?",
+   "answer": "Hydrogen ion concentrations span many orders of magnitude, so a log scale compresses them into a convenient range; each pH unit is a tenfold change.",
+   "rubrics": [
+    "Concentrations span orders of magnitude",
+    "Each unit = factor of 10"
+   ]
+  },
+  {
+   "domain": "chemistry",
+   "kind": "numeric",
+   "compute": true,
+   "question": "How many moles are in 44 g of CO₂?",
+   "answer": "Molar mass 44 g/mol, so 44/44 = 1 mol.",
+   "rubrics": [
+    "1 mol"
+   ]
+  },
+  {
+   "domain": "chemistry",
+   "kind": "explain",
+   "compute": false,
+   "question": "Explain why ice floats on water.",
+   "answer": "Hydrogen bonding holds ice in an open lattice, making it less dense than liquid water.",
+   "rubrics": [
+    "Hydrogen bonds / open lattice",
+    "Lower density"
+   ]
+  },
+  {
+   "domain": "chemistry",
+   "kind": "numeric",
+   "compute": true,
+   "question": "If 10 g of a substance has a volume of 4 cm³, what is its density?",
+   "answer": "10/4 = 2.5 g/cm³.",
+   "rubrics": [
+    "2.5 g/cm³"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "chemistry",
+   "kind": "recall",
+   "compute": false,
+   "question": "What is the chemical formula of table salt?",
+   "answer": "NaCl",
+   "rubrics": [
+    "NaCl"
+   ]
+  },
+  {
+   "domain": "biology",
+   "kind": "explain",
+   "compute": false,
+   "question": "Explain how natural selection leads to antibiotic resistance.",
+   "answer": "Random mutations give some bacteria resistance; antibiotics kill the rest; survivors reproduce and pass the resistance on.",
+   "rubrics": [
+    "Pre-existing variation",
+    "Selection and reproduction of survivors"
+   ]
+  },
+  {
+   "domain": "biology",
+   "kind": "recall",
+   "compute": false,
+   "question": "How many chromosomes are in a normal human body cell?",
+   "answer": "46 (23 pairs).",
+   "rubrics": [
+    "46"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "biology",
+   "kind": "numeric",
+   "compute": true,
+   "question": "A bacterial colony doubles every 20 minutes. Starting from 100 cells, how many are there after 2 hours?",
+   "answer": "2 hours = 6 doublings: 100 × 2⁶ = 6400.",
+   "rubrics": [
+    "6400"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "biology",
+   "kind": "numeric",
+   "compute": true,
+   "question": "In a cross between two heterozygous parents (Aa × Aa), what fraction of offspring is expected to be homozygous recessive?",
+   "answer": "1/4.",
+   "rubrics": [
+    "1/4 or 25%"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "biology",
+   "kind": "explain",
+   "compute": false,
+   "question": "Why do plants appear green?",
+   "answer": "Chlorophyll absorbs red and blue light and reflects green, which is what we see.",
+   "rubrics": [
+    "Chlorophyll absorbs red/blue",
+    "Reflects green"
+   ]
+  },
+  {
+   "domain": "biology",
+   "kind": "explain",
+   "compute": false,
+   "question": "Describe the role of the mitochondria.",
+   "answer": "They carry out aerobic respiration, producing ATP that powers the cell.",
+   "rubrics": [
+    "Aerobic respiration",
+    "Produces ATP"
+   ]
+  },
+  {
+   "domain": "biology",
+   "kind": "numeric",
+   "compute": true,
+   "question": "A heart beats 72 times per minute. How many beats in a day?",
+   "answer": "72 × 60 × 24 = 103,680.",
+   "rubrics": [
+    "103,680"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "biology",
+   "kind": "explain",
+   "compute": false,
+   "question": "Explain the difference between mitosis and meiosis.",
+   "answer": "Mitosis produces two identical diploid cells for growth; meiosis produces four genetically different haploid gametes.",
+   "rubrics": [
+    "Mitosis: 2 identical diploid",
+    "Meiosis: 4 varied haploid"
+   ]
+  },
+  {
+   "domain": "computing",
+   "kind": "explain",
+   "compute": false,
+   "question": "Explain what recursion is.",
+   "answer": "A function that calls itself on a smaller input until a base case is reached.",
+   "rubrics": [
+    "Calls itself",
+    "Base case"
+   ]
+  },
+  {
+   "domain": "computing",
+   "kind": "numeric",
+   "compute": true,
+   "question": "What does the function f(n) = n × f(n−1), f(0) = 1, return for n = 5?",
+   "answer": "5 × 4 × 3 × 2 × 1 = 120.",
+   "rubrics": [
+    "120"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "computing",
+   "kind": "explain",
+   "compute": false,
+   "question": "Why is the average-case time complexity of quicksort O(n log n)?",
+   "answer": "Each partition step is O(n) and on average the pivot splits the array into balanced parts, giving log n levels of recursion.",
+   "rubrics": [
+    "Partition is linear",
+    "Balanced splits give log n depth"
+   ],
+   "arguable": true
+  },
+  {
+   "domain": "computing",
+   "kind": "numeric",
+   "compute": true,
+   "question": "How many bits are needed to represent 1000 distinct values?",
+   "answer": "2⁹ = 512 < 1000 ≤ 1024 = 2¹⁰, so 10 bits.",
+   "rubrics": [
+    "10 bits"
+   ]
+  },
+  {
+   "domain": "computing",
+   "kind": "numeric",
+   "compute": true,
+   "question": "Convert the binary number 101101 to decimal.",
+   "answer": "32 + 8 + 4 + 1 = 45.",
+   "rubrics": [
+    "45"
+   ]
+  },
+  {
+   "domain": "computing",
+   "kind": "explain",
+   "compute": false,
+   "question": "Explain the difference between a stack and a queue.",
+   "answer": "A stack is last-in first-out; a queue is first-in first-out.",
+   "rubrics": [
+    "Stack LIFO",
+    "Queue FIFO"
+   ]
+  },
+  {
+   "domain": "computing",
+   "kind": "recall",
+   "compute": false,
+   "question": "What does HTTP status code 404 mean?",
+   "answer": "Not Found: the server cannot find the requested resource.",
+   "rubrics": [
+    "Not found"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "computing",
+   "kind": "numeric",
+   "compute": true,
+   "question": "A file is 3.2 GB. How long does it take to download at 80 Mbps?",
+   "answer": "3.2 GB = 25,600 Mb; 25,600/80 = 320 s, about 5.3 minutes.",
+   "rubrics": [
+    "About 320 s"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "computing",
+   "kind": "explain",
+   "compute": false,
+   "question": "What is the purpose of a hash function in a hash table?",
+   "answer": "It maps a key to an array index so the entry can be found in constant time on average.",
+   "rubrics": [
+    "Maps key to index",
+    "Enables O(1) average lookup"
+   ]
+  },
+  {
+   "domain": "computing",
+   "kind": "numeric",
+   "compute": true,
+   "question": "After executing x = 3; y = x * 2; x = y + 1; what is the value of x?",
+   "answer": "y = 6, x = 7.",
+   "rubrics": [
+    "7"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "economics",
+   "kind": "explain",
+   "compute": false,
+   "question": "Explain what happens when a binding price ceiling is imposed.",
+   "answer": "Price is held below equilibrium, quantity demanded exceeds supplied, a shortage results with non-price rationing.",
+   "rubrics": [
+    "Below equilibrium",
+    "Shortage"
+   ]
+  },
+  {
+   "domain": "economics",
+   "kind": "numeric",
+   "compute": true,
+   "question": "The price of a good rises from $10 to $12 and quantity demanded falls from 100 to 80. Calculate the price elasticity of demand.",
+   "answer": "%ΔQ = −20%, %ΔP = 20%, elasticity = −1 (unit elastic).",
+   "rubrics": [
+    "−1 / unit elastic"
+   ]
+  },
+  {
+   "domain": "economics",
+   "kind": "explain",
+   "compute": false,
+   "question": "What is opportunity cost?",
+   "answer": "The value of the next best alternative forgone when a choice is made.",
+   "rubrics": [
+    "Next best alternative",
+    "Forgone"
+   ]
+  },
+  {
+   "domain": "economics",
+   "kind": "numeric",
+   "compute": true,
+   "question": "You invest $500 at 4% simple interest for 3 years. How much interest do you earn?",
+   "answer": "500 × 0.04 × 3 = $60.",
+   "rubrics": [
+    "$60"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "economics",
+   "kind": "explain",
+   "compute": false,
+   "question": "Explain the difference between simple and compound interest.",
+   "answer": "Simple interest is paid only on the principal; compound interest is paid on principal plus accumulated interest.",
+   "rubrics": [
+    "Simple on principal only",
+    "Compound on accumulated interest"
+   ]
+  },
+  {
+   "domain": "economics",
+   "kind": "numeric",
+   "compute": true,
+   "question": "A shop marks up a $40 item by 35%. What is the selling price?",
+   "answer": "40 × 1.35 = $54.",
+   "rubrics": [
+    "$54"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "economics",
+   "kind": "recall",
+   "compute": false,
+   "question": "What does GDP stand for?",
+   "answer": "Gross Domestic Product.",
+   "rubrics": [
+    "Gross Domestic Product"
+   ]
+  },
+  {
+   "domain": "economics",
+   "kind": "numeric",
+   "compute": true,
+   "question": "If GDP grows from $2.0 trillion to $2.1 trillion in a year, what is the growth rate?",
+   "answer": "0.1/2.0 = 5%.",
+   "rubrics": [
+    "5%"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "economics",
+   "kind": "explain",
+   "compute": false,
+   "question": "Why might a government impose a minimum wage despite the risk of unemployment?",
+   "answer": "To raise incomes of low-paid workers and counter employer monopsony power; the employment effect is empirically small in many settings.",
+   "rubrics": [
+    "Raise low incomes / fairness",
+    "Counter employer power or small employment effect"
+   ]
+  },
+  {
+   "domain": "history",
+   "kind": "explain",
+   "compute": false,
+   "question": "Explain why the Roman Republic gave way to rule by an emperor.",
+   "answer": "Client armies loyal to generals, breakdown of norms, civil wars ending at Actium, Augustus keeping republican forms while holding power.",
+   "rubrics": [
+    "Armies loyal to generals",
+    "Augustus kept republican forms"
+   ]
+  },
+  {
+   "domain": "history",
+   "kind": "recall",
+   "compute": false,
+   "question": "In what year did the Second World War end?",
+   "answer": "1945",
+   "rubrics": [
+    "1945"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "history",
+   "kind": "recall",
+   "compute": false,
+   "question": "Who was the first President of the United States?",
+   "answer": "George Washington.",
+   "rubrics": [
+    "George Washington"
+   ]
+  },
+  {
+   "domain": "history",
+   "kind": "numeric",
+   "compute": true,
+   "question": "The Roman Republic was founded in 509 BC and Augustus became princeps in 27 BC. How many years did the Republic last?",
+   "answer": "509 − 27 = 482 years.",
+   "rubrics": [
+    "482 years"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "history",
+   "kind": "explain",
+   "compute": false,
+   "question": "Why is the Magna Carta considered significant?",
+   "answer": "It established that the king was subject to the law and protected certain rights of subjects, a foundation for constitutional government.",
+   "rubrics": [
+    "King subject to law",
+    "Basis for later rights / constitutionalism"
+   ]
+  },
+  {
+   "domain": "civics",
+   "kind": "explain",
+   "compute": false,
+   "question": "Explain the principle of separation of powers.",
+   "answer": "Government split into legislative, executive and judicial branches, each checking the others, to prevent concentration of power.",
+   "rubrics": [
+    "Three branches",
+    "Checks / prevents concentration"
+   ]
+  },
+  {
+   "domain": "civics",
+   "kind": "numeric",
+   "compute": true,
+   "question": "A bill needs a two-thirds majority in a 435-member chamber. What is the minimum number of votes required?",
+   "answer": "435 × 2/3 = 290.",
+   "rubrics": [
+    "290"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "geography",
+   "kind": "explain",
+   "compute": false,
+   "question": "Explain how the greenhouse effect works.",
+   "answer": "Surface absorbs sunlight and emits infrared; greenhouse gases absorb and re-emit it, warming the lower atmosphere.",
+   "rubrics": [
+    "Surface emits IR",
+    "GHGs absorb and re-emit"
+   ]
+  },
+  {
+   "domain": "geography",
+   "kind": "numeric",
+   "compute": true,
+   "question": "On a map with scale 1:50,000, two towns are 6 cm apart. What is the real distance?",
+   "answer": "6 × 50,000 = 300,000 cm = 3 km.",
+   "rubrics": [
+    "3 km"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "geography",
+   "kind": "numeric",
+   "compute": true,
+   "question": "Local time in London is 14:00 GMT. What time is it in Tokyo (GMT+9)?",
+   "answer": "23:00.",
+   "rubrics": [
+    "23:00"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "geography",
+   "kind": "recall",
+   "compute": false,
+   "question": "What is the capital of Australia?",
+   "answer": "Canberra.",
+   "rubrics": [
+    "Canberra"
+   ]
+  },
+  {
+   "domain": "geography",
+   "kind": "numeric",
+   "compute": true,
+   "question": "A country's population grows 2% per year. Roughly how many years to double?",
+   "answer": "Rule of 70: 70/2 ≈ 35 years.",
+   "rubrics": [
+    "About 35 years"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "literature",
+   "kind": "explain",
+   "compute": false,
+   "question": "Discuss how the green light functions as a symbol in The Great Gatsby.",
+   "answer": "Gatsby's hope for Daisy, the American Dream, visible but unreachable across the bay, a receding future.",
+   "rubrics": [
+    "Hope for Daisy / American Dream",
+    "Unreachable / receding"
+   ]
+  },
+  {
+   "domain": "literature",
+   "kind": "recall",
+   "compute": false,
+   "question": "Who wrote Pride and Prejudice?",
+   "answer": "Jane Austen.",
+   "rubrics": [
+    "Jane Austen"
+   ]
+  },
+  {
+   "domain": "literature",
+   "kind": "explain",
+   "compute": false,
+   "question": "What is dramatic irony? Give an example.",
+   "answer": "When the audience knows something a character does not, e.g. the audience knows Juliet is alive when Romeo drinks the poison.",
+   "rubrics": [
+    "Audience knows more than character",
+    "Valid example"
+   ]
+  },
+  {
+   "domain": "language",
+   "kind": "explain",
+   "compute": false,
+   "question": "Explain the difference between active and passive voice.",
+   "answer": "Active: the subject performs the action; passive: the subject receives it, formed with be + past participle.",
+   "rubrics": [
+    "Subject performs vs receives",
+    "be + past participle"
+   ]
+  },
+  {
+   "domain": "language",
+   "kind": "recall",
+   "compute": false,
+   "question": "How many syllables are in the word 'university'?",
+   "answer": "Five: u-ni-ver-si-ty.",
+   "rubrics": [
+    "5"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "language",
+   "kind": "numeric",
+   "compute": true,
+   "question": "A haiku has 5, 7 and 5 syllables per line. How many syllables in total?",
+   "answer": "17.",
+   "rubrics": [
+    "17"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "music",
+   "kind": "explain",
+   "compute": false,
+   "question": "Explain the main differences between Baroque and Classical period music.",
+   "answer": "Baroque: basso continuo and counterpoint; Classical: homophony, sonata form, balanced phrasing.",
+   "rubrics": [
+    "Continuo/counterpoint vs homophony",
+    "Sonata form"
+   ]
+  },
+  {
+   "domain": "music",
+   "kind": "numeric",
+   "compute": true,
+   "question": "A piece in 3/4 time at 120 beats per minute lasts 2 minutes. How many bars is that?",
+   "answer": "240 beats / 3 = 80 bars.",
+   "rubrics": [
+    "80 bars"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "philosophy",
+   "kind": "explain",
+   "compute": false,
+   "question": "Describe the trolley problem and what it shows about utilitarian and deontological ethics.",
+   "answer": "Divert to kill one instead of five; utilitarians divert, deontologists object to actively killing; the footbridge variant shifts intuitions.",
+   "rubrics": [
+    "Describes dilemma",
+    "Contrasts the two views"
+   ]
+  },
+  {
+   "domain": "philosophy",
+   "kind": "explain",
+   "compute": false,
+   "question": "What is the difference between deductive and inductive reasoning?",
+   "answer": "Deduction moves from general premises to a guaranteed conclusion; induction generalises from specific observations to a probable conclusion.",
+   "rubrics": [
+    "Deduction certain from premises",
+    "Induction probable from observations"
+   ]
+  },
+  {
+   "domain": "philosophy",
+   "kind": "explain",
+   "compute": false,
+   "question": "If all cats are mammals and all mammals are animals, what can be concluded about cats, and why?",
+   "answer": "All cats are animals, by transitivity of the 'all ... are' relation (a valid syllogism).",
+   "rubrics": [
+    "All cats are animals",
+    "Transitivity / valid syllogism"
+   ],
+   "arguable": true
+  },
+  {
+   "domain": "psychology",
+   "kind": "explain",
+   "compute": false,
+   "question": "Describe Milgram's main finding and one criticism.",
+   "answer": "65% went to maximum shock under authority; criticised for deception/stress and artificial setting.",
+   "rubrics": [
+    "65% obeyed",
+    "Ethical or validity criticism"
+   ]
+  },
+  {
+   "domain": "psychology",
+   "kind": "recall",
+   "compute": false,
+   "question": "What percentage of Milgram's participants delivered the maximum shock?",
+   "answer": "About 65%.",
+   "rubrics": [
+    "65%"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "medicine",
+   "kind": "explain",
+   "compute": false,
+   "question": "Explain how a vaccine produces immunity.",
+   "answer": "Antigen exposure triggers antibodies and B/T cells; memory cells give a faster, stronger secondary response.",
+   "rubrics": [
+    "Antigen triggers response",
+    "Memory cells"
+   ]
+  },
+  {
+   "domain": "medicine",
+   "kind": "numeric",
+   "compute": true,
+   "question": "A patient weighs 70 kg and a drug is dosed at 5 mg per kg every 8 hours. What is the daily dose?",
+   "answer": "5 × 70 = 350 mg per dose, three doses a day = 1050 mg.",
+   "rubrics": [
+    "1050 mg"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "medicine",
+   "kind": "recall",
+   "compute": false,
+   "question": "What is the normal resting adult heart rate range?",
+   "answer": "About 60 to 100 beats per minute.",
+   "rubrics": [
+    "60-100 bpm"
+   ],
+   "deceptive": true
+  },
+  {
+   "domain": "medicine",
+   "kind": "numeric",
+   "compute": true,
+   "question": "A person's BMI is weight in kg divided by height in metres squared. What is the BMI of someone 1.75 m tall weighing 70 kg?",
+   "answer": "70 / 1.75² = 70 / 3.0625 ≈ 22.9.",
+   "rubrics": [
+    "About 22.9"
+   ],
+   "deceptive": true
+  }
+ ]
+}

@@ -137,7 +137,13 @@ def _seed(dsn: str) -> None:
             (CURRENT,),
         )
         conn.execute(
-            "INSERT INTO library_topics VALUES('linear-regression','Linear regression','[\"least squares\"]','Fitting lines','AHSS 8')"
+            "INSERT INTO library_subjects VALUES('statistics','mathematics','Statistics','[\"stats\"]'),"
+            "('algebra','mathematics','Algebra','[]')"
+        )
+        # An algebra topic no excerpt carries: the loader's drop rule removes it.
+        conn.execute(
+            "INSERT INTO library_topics VALUES('linear-regression','statistics','Linear regression','[\"least squares\"]','Fitting lines','AHSS 8'),"
+            "('factoring','algebra','Factoring','[]','Factoring polynomials','')"
         )
         for i, (content_id, chunk_id, excerpt_id, text, axis) in enumerate(chunks):
             conn.execute(
@@ -265,21 +271,62 @@ async def test_a_role_filter_without_topics_counts_nothing(library_db):
     assert result.excerpts == [] and result.available_roles is None
 
 
-async def test_catalog_lists_the_library_wide_topics(library_db):
+async def test_catalog_lists_subjects_that_hold_tagged_excerpts(library_db):
+    """Algebra is in the fixture with a topic but no excerpt, so it is absent;
+    the statistics count is tagged excerpts of the current version only."""
     db = await library.pool()
     async with db.connection() as conn:
-        topics = await library.catalog(conn)
-    assert [t["id"] for t in topics] == ["linear-regression"]
-    assert topics[0]["label"] == "Linear regression"
-    assert topics[0]["aliases"] == ["least squares"]
+        subjects = await library.catalog(conn)
+    assert subjects == [
+        {
+            "id": "statistics",
+            "label": "Statistics",
+            "aliases": ["stats"],
+            "area": "mathematics",
+            "excerpts": 3,
+        }
+    ]
+
+
+async def test_browse_subject_lists_its_topics_with_tagged_excerpt_counts(library_db):
+    listing = await library.browse_subject("statistics")
+    assert listing["subject"]["label"] == "Statistics"
+    topics = listing["topics"]
+    assert [(t["id"], t["excerpts"]) for t in topics] == [("linear-regression", 3)]
     assert topics[0]["scope"] == "Fitting lines"
+    assert (await library.browse_subject("algebra"))["topics"] == [
+        {
+            "id": "factoring",
+            "label": "Factoring",
+            "aliases": [],
+            "scope": "Factoring polynomials",
+            "excerpts": 0,
+        }
+    ]
+    assert await library.known_topics(["factoring", "calculus"]) == {"factoring"}
 
 
-async def test_unknown_role_and_topic_are_refused(library_db):
+async def test_browse_reads_the_catalog_its_argument_names(library_db):
+    """A topic and a subject may share an id; each function reads its own
+    catalog, so the caller's intent decides, never lookup order."""
+    with psycopg.connect(library_db, autocommit=True) as conn:
+        conn.execute(
+            "INSERT INTO library_subjects VALUES('linear-regression','mathematics','Linear Regression (course)','[]')"
+        )
+    topic = await library.browse("linear-regression")
+    assert isinstance(topic, library.BrowseResult) and topic.total == 2
+    subject = await library.browse_subject("linear-regression")
+    assert subject["subject"]["label"] == "Linear Regression (course)"
+    assert subject["topics"] == []
+
+
+async def test_unknown_role_and_ids_are_refused_naming_the_catalog(library_db):
     with pytest.raises(ValueError):
         await library.search("x", roles=["lecture"], vector=_unit_vector(0))
-    with pytest.raises(ValueError):
-        await library.browse("no-such-topic")
+    with pytest.raises(ValueError, match="unknown topic id 'statistics'"):
+        await library.browse("statistics")
+    with pytest.raises(ValueError, match="unknown subject id 'linear-regression'"):
+        await library.browse_subject("linear-regression")
 
 
 async def test_browse_counts_verified_excerpts_by_role_and_book(library_db):
@@ -432,6 +479,70 @@ async def test_loader_retire_drops_content_rows_and_keeps_the_receipts(
     }
     assert vectors == 0
     assert out["books"][0]["searchable_chunks"] == 4, "the live version is untouched"
+
+
+async def test_loader_drops_a_topic_only_when_no_kept_version_carries_it(
+    loader, library_db
+):
+    """A retained version's excerpts keep their topics, so a rollback never
+    points at excerpts whose topics are gone; retiring the version drops them."""
+    with psycopg.connect(library_db, autocommit=True) as conn:
+        conn.execute(
+            "UPDATE library_excerpts SET topic_ids='{factoring}' WHERE content_id=%s",
+            (RETAINED,),
+        )
+        assert loader.drop_unreferenced_topics(conn) == 0
+    loader.rollback("ahss", 1)
+    assert (await library.browse("factoring")).total == 1
+
+    loader.rollback("ahss", 2)
+    out = loader.retire("ahss", 1)
+    assert out["topics_dropped"] == 1
+    with psycopg.connect(library_db, autocommit=True) as conn:
+        left = [r[0] for r in conn.execute("SELECT id FROM library_topics")]
+    assert left == ["linear-regression"]
+
+
+def test_loader_refuses_to_drop_a_subject_that_still_holds_topics(loader, library_db):
+    fixture = {
+        "statistics": {
+            "id": "statistics",
+            "area": "mathematics",
+            "label": "Stats",
+            "aliases": [],
+        }
+    }
+    with psycopg.connect(library_db, autocommit=True) as conn:
+        conn.execute("INSERT INTO library_subjects VALUES('idle','arts','Idle','[]')")
+        with pytest.raises(loader.PilotError, match=r"\['algebra'\]"):
+            loader.sync_subjects(conn, fixture)
+        rows = conn.execute(
+            "SELECT id, label FROM library_subjects ORDER BY id"
+        ).fetchall()
+    # The fixture's entries were refreshed and the topic-less one dropped
+    # before the refusal; the referenced one stays.
+    assert rows == [("algebra", "Algebra"), ("statistics", "Stats")]
+
+
+def test_loader_status_counts_topics_and_excerpts_per_subject(loader, library_db):
+    assert loader.status()["subjects"] == [
+        {"id": "algebra", "label": "Algebra", "topics": 1, "excerpts": 0},
+        {"id": "statistics", "label": "Statistics", "topics": 1, "excerpts": 3},
+    ]
+
+
+def test_loader_summary_is_the_top_level_section_titles(loader):
+    sep = loader.SECTION_SEP
+    corpus = {
+        "excerpts": [
+            {"section_path": f"Preface{sep}Overview"},
+            {"section_path": f"Chapter 1{sep}1.1 Data"},
+            {"section_path": ""},
+            {"section_path": f"Chapter 1{sep}1.2 Cases"},
+            {"section_path": "Chapter 2"},
+        ]
+    }
+    assert loader.section_summary(corpus) == "Preface · Chapter 1 · Chapter 2"
 
 
 def test_knowledge_bucket_settings_are_all_or_none():

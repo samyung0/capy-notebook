@@ -1,4 +1,9 @@
-"""Resumable normal Qwen API calls over frozen pilot request files."""
+"""Resumable normal chat-completions calls over frozen pilot request files.
+
+`run` takes the endpoint (`base_url`, `model`, `key`); the frozen request rows
+carry the messages and the response schema, which is checked locally. A retry
+with `retry_failed` may use another endpoint: records are keyed by the frozen
+request, and each record names the endpoint that answered it."""
 
 from __future__ import annotations
 
@@ -11,8 +16,6 @@ from pathlib import Path
 import httpx
 from jsonschema import Draft202012Validator
 from knowledge_base_batch import (
-    BASE_URL,
-    MODEL,
     PilotError,
     digest,
     lock,
@@ -21,6 +24,10 @@ from knowledge_base_batch import (
     save_json,
     validate_records,
 )
+
+
+# Waits between the four attempts a request gets when the endpoint answers 429.
+RATE_LIMIT_BACKOFF = (5, 20, 60)
 
 
 def object_schema(properties):
@@ -68,14 +75,14 @@ def run(
     key: str,
     *,
     workers: int,
+    base_url: str,
+    model: str,
     transport=None,
     retry_failed=False,
     timeout_seconds=120,
 ):
-    if not key or not 1 <= workers <= 8:
-        raise PilotError(
-            "Normal API needs a key and an explicit worker count from 1 to 8"
-        )
+    if not 1 <= workers <= 8:
+        raise PilotError("Normal API needs an explicit worker count from 1 to 8")
     if not 1 <= timeout_seconds <= 600:
         raise PilotError("Normal API timeout must be between 1 and 600 seconds")
     payload = (directory / "input.jsonl").read_bytes()
@@ -104,15 +111,7 @@ def run(
             "failed"
         ]:
             raise PilotError("Inherited output violates the request schema")
-        identity = digest(
-            {
-                "input": source["input_sha256"],
-                "inherited": success,
-                "base_url": BASE_URL,
-                "model": MODEL,
-                "enable_thinking": False,
-            }
-        )
+        identity = digest({"input": source["input_sha256"], "inherited": success})
         state_path = normal / "state.json"
         if state_path.exists():
             previous = read_json(state_path)
@@ -128,8 +127,9 @@ def run(
         state = {
             "identity": identity,
             "transport": "normal-api",
-            "enable_thinking": False,
-            "model": MODEL,
+            "reasoning_effort": "low",
+            "model": model,
+            "base_url": base_url,
             "batch_id": source.get("batch_id"),
             "inherited_successes": len(success),
             "started_at": started,
@@ -138,8 +138,8 @@ def run(
         }
         save_json(state_path, state)
         with httpx.Client(
-            base_url=BASE_URL,
-            headers={"Authorization": f"Bearer {key}"},
+            base_url=base_url,
+            headers={"Authorization": f"Bearer {key}"} if key else {},
             timeout=timeout_seconds,
             transport=transport,
         ) as client:
@@ -147,14 +147,14 @@ def run(
             def execute(row):
                 request_id = row["custom_id"]
                 path = normal / "records" / f"{digest(request_id)}.json"
-                body = {**row["body"], "enable_thinking": False, "stream": False}
-                if (
-                    body.get("model") != MODEL
-                    or row["method"] != "POST"
-                    or row["url"] != "/v1/chat/completions"
-                ):
+                # The frozen row decides the request identity; the endpoint may
+                # differ between attempts (Ollama first, TokenHub on retry).
+                body = {**row["body"], "model": model, "stream": False}
+                body.pop("enable_thinking", None)
+                body["reasoning_effort"] = "low"
+                if row["method"] != "POST" or row["url"] != "/v1/chat/completions":
                     raise PilotError("Unexpected frozen model request")
-                request_hash = digest(body)
+                request_hash = digest(row["body"])
                 if path.exists():
                     record = read_json(path)
                     if record["request_sha256"] != request_hash:
@@ -184,11 +184,19 @@ def run(
                     "request_sha256": request_hash,
                     "status": "sending",
                     "started_at": time.time(),
-                    "enable_thinking": False,
+                    "model": model,
+                    "base_url": base_url,
+                    "reasoning_effort": "low",
                 }
                 save_json(path, record)
                 try:
-                    response = client.post("/chat/completions", json=body)
+                    for pause in (*RATE_LIMIT_BACKOFF, None):
+                        response = client.post("/chat/completions", json=body)
+                        if response.status_code != 429 or pause is None:
+                            break
+                        # Throttled: wait for the endpoint before the receipt
+                        # becomes a provider_error.
+                        time.sleep(float(response.headers.get("retry-after") or pause))
                     record.update(
                         status="received",
                         response={

@@ -85,7 +85,7 @@
       "query": "I'm a high-school beginner. Help me distinguish mutually exclusive events from independent events, with a counterexample.",
       "split": "dev",
       "expected_topics": [
-        "probability"
+        "probability-basics"
       ],
       "expected_roles": [
         "worked_example"

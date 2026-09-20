@@ -307,11 +307,34 @@ captions and units expand citation bounds without consuming adjacent prose.
 Existing supported numeric/native tables are protected. Ambiguous headers,
 partial emphasis and unsupported background scope leave the original text.
 Font repair abstains for an encoding containing an unsupported glyph name. The parser identity is
-`odl-2.5.7-refined-rapidocr-v4` plus the release SHA.
+`odl-2.5.7-refined-rapidocr-v5` plus the release SHA.
 Before table recovery, source-matched folio banners recurring on three pages
-become discarded blocks. Numbered captions and widely separated, unbold diagram
+become discarded blocks. A repeated literal title in a narrow margin band also
+establishes a running-banner family; alternating titles in that band require
+each rendered line to match an earlier or same-page body heading in larger type.
+Newly discarded banners retain their former heading-level boundary without
+adding their text to ancestry. Both chunking paths clear that level and deeper
+levels, so removing a banner does not extend a chart label into later pages.
+This boundary behavior is part of chunker v11.
+Numbered captions and widely separated, unbold diagram
 labels lose heading status while retaining literal text and geometry. PDF outline
 matches are protected; rotated pages and ambiguous source matches abstain.
+Source-confirmed outline roots become level 1 only when every root has a unique
+literal match. This ends stale front-matter ancestry while preserving real
+Contents and Preface headings. Duplicate titles require a unique direct outline
+destination match; incomplete roots leave all root levels unchanged.
+Promotion also requires proof across existing heading boundaries. A uniquely
+matched outline child or split-title continuation can remain inside the root;
+an unmatched peer, a shallower heading or a neutral banner boundary otherwise
+causes all root promotions to abstain. An existing level-1 heading already ends
+the root's scope. Banner-role correction remains independent of this guard.
+The Java reader's `unknown type of page tree node` error permits one rewrite
+of the attempt-local PDF with `PDF_ENCRYPT_KEEP`, then one retry in a fresh
+output directory. Both calls and the rewrite share the original Java budget;
+timeouts and other Java failures are not retried here. The original upload
+remains the capture source. Changed PDF bytes travel as `parsed.pdf` so later
+heading/confidence checks use the parser's measured copy. Phase receipts expose
+`pdf_structure_rewrite` and `java_structure_retry` when used.
 The lab corpus (`/opt/capy-odl-third-pass-20260909/refined-final-r1`) checks
 port compatibility, with reviewed bug fixes checked separately. It does not
 establish accuracy on unseen layouts or fresh selective OCR. Each successful
@@ -611,7 +634,10 @@ no caption stage in the document plan, no upload toggle, no `caption_images`
 column, no `figure_caption_call` rate. Image and chart blocks index their
 parser caption and footnote text only. The chat agent reaches figures through
 `capture_page` (below), which renders the cited page for the model when the
-passage text is not enough.
+passage text is not enough. Library books are the exception: the builder's transcribe
+stage describes each figure (what it visibly shows) into
+`library_figures.description` and the search text of the first chunk of the
+excerpt that lists it (decision 2026-09-20).
 
 Standalone image uploads (`captionMode: standalone`, route `image_caption`) are
 still described once with the pinned vision model so the file is searchable.
@@ -961,8 +987,24 @@ exactly that schema. The index tables mirror the workspace ones (`workspaces`,
 `files`, `rag_contents`, `rag_file_contents`, `library_chunks` behind the
 `rag_chunks` view, `rag_chunk_vectors_2560`), so `store.hybrid_search` runs its
 one statement unchanged against the library connection with a `chunk_filter`
-predicate; the library-owned tables carry books, topics, excerpts with tag
+predicate. That statement ranks note chunks in the same pool as file chunks,
+so the mirror also carries empty `materials` and `rag_material_contents`
+tables: notes never enter the library, and the statement still runs unchanged.
+The library-owned tables carry books, subjects, topics, excerpts with tag
 outcomes, figures and model-run receipts.
+
+The taxonomy has three levels (decision 2026-09-19). Areas and subjects are
+one committed fixture, `lab/knowledge/subjects.json` (12 areas, 116 subjects
+with learner aliases, assembled from the Open Textbook Library, OpenStax and
+LibreTexts subject menus); areas only group subjects on the builder dashboard
+and are a column on `library_subjects`, never a filter. Topics are derived per
+book from its table of contents by the builder's topics stage (at most 64 per
+subject), carry `subject_id`, and live library-wide: a publish upserts the
+topics its book uses under the book's subject, then drops every topic no
+tagged excerpt on a current or retained book version references, so a
+rollback never lands on excerpts whose topics are gone; `retire` runs the same
+drop after deleting the version's rows, which is when a retained version's
+topics may go. The pilot's 32 topics all sit under `statistics`.
 
 Versions are per book, not per dataset. There is one workspace row, the
 constant `library`, and one file per book. Publishing a book loads its content
@@ -970,11 +1012,13 @@ under a new content id, records version n+1 in `library_book_versions` with the
 receipts of that publish (source run, corpus identity, parser release and
 fingerprint, chunker, `object_key`, note), marks the previous version
 `retained` and swaps `rag_file_contents` in one transaction. The book's
-`descriptor` and `summary` are written from that content, so they sit on the
-version row too and a rollback restores the prose with the content it
-describes. Excerpts, figures,
-chunks, vectors and model runs are keyed by content id; the topic catalog is
-library-wide. Every read here follows `rag_file_contents` to the current
+`descriptor` (the manifest attribution line) and `summary` (its top-level
+section titles joined with " · ", clipped to 1,000 characters; no model writes
+prose here since the summary stage was dropped on 2026-09-19) are written with
+that content, so they sit on the version row too and a rollback restores them
+with the content they describe. Excerpts, figures, chunks, vectors and model
+runs are keyed by content id; subjects and topics are library-wide. Every
+read here follows `rag_file_contents` to the current
 content, exactly as workspace search does, so a retained version is invisible
 to retrieval while staying exportable in ops. UAT and production read the same
 live library; nothing is pinned. A rollback points a book back at a retained
@@ -990,16 +1034,28 @@ version, and `retire` drops a retained version's content rows.
   for the same topics, so the model relaxes on purpose — only when topics were
   given, because without them those counts are the whole library's and say
   nothing about the query.
-- `browse(topic, page)`: verified excerpt counts by role and by book, then a
-  page of excerpts ordered by book and first page. The by-role numbers are
-  role assignments: an excerpt tagged both `formal` and `reference` counts in
-  both, so they do not sum to the total.
-- `catalog(conn)`: the library-wide topic catalog for the `browse_knowledge`
-  description. It is read once at curate admission, which is also how a
-  configured but unreachable library becomes a typed `model_unavailable`
-  instead of a generic failure on the first tool call. `pool()` takes a lock
-  so two turns starting together cannot each build a pool, and waits at most
-  ten seconds for a connection.
+- `browse_subject(subject_id)` returns `{"subject", "topics"}`, the subject's
+  topics with their tagged-excerpt counts; `browse(topic_id, page)` returns
+  verified excerpt counts by role and by book, then a page of excerpts ordered
+  by book and first page; the by-role numbers are role assignments: an excerpt
+  tagged both `formal` and `reference` counts in both, so they do not sum to
+  the total. They are two functions because subjects and topics are separate
+  catalogs whose ids can coincide (the pilot topic `probability` did, against
+  the `probability` subject, and was renamed `probability-basics` on
+  2026-09-19): `browse_knowledge` calls the one matching the argument it was
+  given, never a lookup order, and a miss raises a `ValueError` naming that
+  catalog (`unknown topic id`, `unknown subject id`). The loader keeps new
+  collisions out: a topic whose id is a subject id refuses the publish naming
+  both.
+- `catalog(conn)`: the subjects that hold at least one tagged excerpt on a
+  current book version, `[{id, label, aliases, area, excerpts}]` sorted by
+  label, for the `browse_knowledge` description. It is read once at curate
+  admission, which is also how a configured but unreachable library becomes a
+  typed `model_unavailable` instead of a generic failure on the first tool
+  call. `known_topics(ids)` answers which topic ids exist in one query, for a
+  search whose topics were never browsed. `pool()` takes a lock so two turns
+  starting together cannot each build a pool, and waits at most ten seconds
+  for a connection.
 - `read_excerpt(excerpt_id, start)`: the excerpt's own chunks from chunk index
   `start`, at most 12 per call, with `next_start` (the last chunk shown plus
   one) when more remain — chunk indexes of the book, exactly the unit
@@ -1020,6 +1076,113 @@ version, and `retire` drops a retained version's content rows.
   an expected role 58 of 110 times; role wording in the query does not move
   that; tag predicates do, and expose gaps. Curate mode (below) is what
   offers these as `search_knowledge`, `browse_knowledge` and `read_knowledge`.
+
+The loader (`bench/rag/scripts/knowledge_base_library.py`) publishes a
+completed run. `schema` creates `LIBRARY_SCHEMA` and loads the subjects
+fixture; every `publish` refreshes it first (upsert by id; a subject gone from
+the fixture is deleted only when no topic references it, otherwise the publish
+refuses naming the subjects). The default manifest is `lab/knowledge/books.json`
+(the builder's export; its first three entries are the pilot books under
+`statistics`) and every book entry names a `subject_id` that must be in the
+fixture. `--book` names the books to publish; without it the loader publishes
+every manifest book whose `books/<id>/corpus.json` the run holds. Topics come
+from `<run>/topics.json` (`{"subject_id", "topics"}`, the builder's topics
+stage, refused when its subject differs from the book's) or, when the run has
+none, from the manifest's `topics` under the book's subject, which is how the
+pilot run publishes with `--manifest bench/rag/fixtures/knowledge-base-pilot-books.json`;
+a topic whose id is a subject id is refused before any database work, naming
+the topic and the subject. The corpus identity a publish is refused on covers
+the parse, the embedding pin and each excerpt's tag outcome, so a retag or a
+topic rename over an unchanged parse publishes as the next version (the
+statistics books went to version 2 this way on 2026-09-19).
+Each book's publish upserts its topics, writes chunks, vectors, excerpts and
+figures, swaps the pointer, then drops unreferenced topics and reports
+`topics_dropped` in its receipt. A run without `captures.json` publishes its
+figures without captures; a run without the pilot's priced `usage-summary.json`
+gets its model-run receipts from each `models/<stage>/state.json` (the
+`realtime/` one when present) and its embedding receipt from
+`embedding-usage.jsonl`. `status` lists books with their history plus the
+subjects that hold topics, with topic and excerpt counts. The schema has no
+migration path: a change means dropping the database (`DROP SCHEMA public
+CASCADE`, recreate it, re-grant `USAGE` to `capy_library_reader`, recreate the
+`vector` extension, re-apply the reader's default privileges from
+`deploy/library-db-init.sh`) and publishing every book again.
+
+The local knowledge-base builder (`lab/knowledge/`, plan
+`artifacts/2026-09-19-knowledge-builder-plan.md`, agent instructions and
+licence policy in `lab/knowledge/README.md`) is the developer-PC dashboard
+that scrapes and downloads open textbooks, runs the pilot stages per book
+and calls this loader to publish; the loader, the reader and the curate tools
+are what it feeds. Its scraper judges pages with GLM-5.3-Flash on the local
+Ollama cloud model. Catalogs discover individual book landing pages; downloads
+require book-specific licence evidence, English secondary/undergraduate content,
+title and a known subject. Missing authors are allowed at download; authorless
+books require source/PDF attribution review and a supplied attribution statement
+at admission, enforced again before publication. Titles and filenames containing
+`Free Courseware` are rejected. Page fetches request HTML explicitly and
+same-catalog `rel=next` pagination preserves crawl depth; its ingestion
+worker runs one-book manifests through parse, figures, topics (TOC-derived,
+two to three per chapter, merged with the subject's library topics, at most 64,
+never an id that equals a subject id), transcribe, tag, index and publish
+(source PDF uploaded to the knowledge-base bucket first). The transcribe stage
+sends one request per page image (the developer's page-description prompt,
+thinking off, temperature 0, a strict schema returning `text` and `figures`) to
+Qwen3.8-Flash on Alibaba Model Studio, Batch by default (one task per book and
+stage, 24-hour window polled every ten minutes, page images presigned in the
+knowledge-base bucket for 7 days, custom ids `<book>:p<page>`, answers saved as
+`<run>/pages/<page>.json`) with the live endpoint for the pages a batch missed
+and for small books. Recovery is alignment: a chunk's original words are
+matched against the transcription of its pages (concatenated for a
+page-spanning chunk) in blocks of three or more words, extended over shorter
+blocks within a tight gap, and the span replaces the chunk text under a
+`recovery` receipt (method `align`, coverage, ratio, model, request id) when
+word coverage is at least 0.9 and the span's length is within 0.7x-2.5x of the
+original; otherwise the chunk is held with the reason, coverage, ratio and the
+transcription for the dashboard (page image, original, aligned span, full
+transcription, accept or reject), publish refuses while one is undecided, and
+fragments under 12 words with nothing matched are skipped as
+`unaligned_short`. Every run re-aligns from the saved transcriptions, so
+decided items stay decided and a rule change needs no new batch. Each returned
+figure is matched to the corpus figures on its page by printed label, else by
+order; the description lands on `library_figures.description` at publish and,
+as `[Figure <label>] <description>`, on the `indexed_text` of the first chunk
+of the excerpt that lists the figure, never on `text`. The tag stage then sends
+the corrected excerpts text-only, eight per request with the candidate topics
+as id, label and aliases in the system prefix, thinking capped at 4,096 tokens
+in Batch; excerpts missing from a reply are re-sent singly live; evidence must
+be a contiguous 5-30 word span copied from the excerpt text, and the pilot's
+`evidence_verified` (case, whitespace and ellipsis tolerant, every piece
+verbatim, on the corrected text) decides the flag; more than 2% untagged
+excerpts fails the book. GLM on Ollama serves topics and scraping only;
+TokenHub is gone from the builder. Receipts live in the builder's SQLite
+(`llm_calls`, `stage_runs`, `review_tasks` keyed by book and stage) and the
+run directory (`topics.json`, one `transcribe-<timestamp>.json` and
+`tag-<timestamp>.json` per run, `transcribe.json` for the held ledger); model
+directories of replaced stages move to `<run>/archive/` so a version records
+this run's stages only. First live book through the whole path, 2026-09-19:
+OpenStax *Physics* (CC BY 4.0), 3,053 searchable chunks, 2,416 excerpts, 23
+topics under the `physics` subject. Its 2026-09-20 rerun under the transcribe
+and tag stages: 858 pages transcribed (1.03M prompt, 0.60M output tokens),
+2,715 of 3,106 chunks aligned, 283 held for the dashboard, 587 of 609 figures
+described, 2,416 excerpts tagged with 97.8% verified evidence (1.21M prompt,
+0.58M output); version 2 waits on the held decisions.
+
+The 2026-09-20 held-chunk repair also tests delegated recovery and tagging.
+The developer selected Sol medium after an initial Terra high trial, with
+agents completing bounded scopes autonomously and delivering saved artifacts
+for one final consistency/import pass. The Codex heartbeat
+`knowledge-builder-intake` checks every five minutes and can automatically
+admit eligible downloads after Physics v2 is published and verified. It
+preserves the licence/metadata gates and pauses the ordinary ingest worker
+before delegated processing to avoid racing the Alibaba stages. This is a
+review-first workflow: parse and figures, Sol source correction and excerpt
+roles/synopses/evidence, GLM topics using all reviewed notes, then final topic-ID
+assignment. Summaries are not compacted. Completed books progress through
+publication automatically; revised versions are verified before old versions
+are retired. The heartbeat is a
+Codex task automation, not a replacement of the dashboard's default runner.
+Details and trial limitations are in `lab/knowledge/README.md` and
+`bench/rag/reports/2026-09-20-delegated-knowledge-repair.md`.
 
 ## Chat agent workflow
 
@@ -1228,21 +1391,28 @@ Python, which puts it on the `ToolContext`.
 A curate turn builds materials instead of answering:
 
 - **Admission.** The turn fails as `model_unavailable` when the library is
-  unconfigured, unreachable, holds no published topic, or the selected model's
-  window is under 200,000 tokens; the reason is logged. Reading the library's
-  topic catalog is part of that check, so a library that is down fails here
-  rather than 30 seconds into the first tool call, and an empty catalog is a
-  library that is not published rather than a turn that spends its whole stall
-  budget on unknown-topic refusals. The catalog is appended to the
-  `browse_knowledge` description only — it is long, and `search_knowledge`
-  points at it.
+  unconfigured, unreachable, holds no subject with a tagged excerpt, or the
+  selected model's window is under 200,000 tokens; the reason is logged.
+  Reading the library's subject list is part of that check, so a library that
+  is down fails here rather than 30 seconds into the first tool call, and an
+  empty list is a library that is not published rather than a turn that spends
+  its whole stall budget on empty results. The subject list (id, label,
+  aliases, tagged-excerpt count; about 600 tokens once a dozen subjects hold
+  books) is appended to the `browse_knowledge` description only, and
+  `search_knowledge` points at it. Topic ids are never in a description: the
+  model browses a subject to get them, and `browse_knowledge` remembers each
+  subject's topics on the `ToolContext` for the turn, so a `search_knowledge`
+  whose topic ids were browsed is validated from that cache and one whose ids
+  were not is validated against the library in one query; unknown ids are
+  refused naming them.
 - **Prompt** (`prompts/curate.py`): the working sequence, stated as a temporary
-  shape until a more rigorous generation path exists — browse or search the
-  library to see what it holds, create the ledger, read and search as needed,
-  write one material or section with `create_material` or `edit_document` and
-  mark its todo, repeat until every todo is done, then reply with the materials
-  list. Browse to see what a topic covers; search when you need a specific role
-  or a specific idea. Excerpts are inputs, not output: write in your own words
+  shape until a more rigorous generation path exists — browse a subject to see
+  its topics and what they hold, then browse or search a topic, create the
+  ledger, read and search as needed, write one material or section with
+  `create_material` or `edit_document` and mark its todo, repeat until every
+  todo is done, then reply with the materials list. Browse a topic to see what
+  it covers and in which roles; search when you need a specific role or a
+  specific idea. Excerpts are inputs, not output: write in your own words
   and correct errors visible in the source. One primary excerpt per section and
   one book for notation are guidance, not enforced. Capture a printed page when
   a passage header carries a low extraction-confidence note or the material
@@ -1410,7 +1580,7 @@ A curate turn builds materials instead of answering:
   no structured claims, no `citations` event and no persisted citation list
   (`PlainRenderer` streams the deltas as they arrive). The attribution the user
   sees is the provenance footer on each material, not a citation.
-- **Playground.** `bench/rag/playground` runs this loop in process with
+- **Playground.** `lab/playground` runs this loop in process with
   `curate: true` (`configs/curate.json`; `configs/chat.json` is ordinary chat
   with the production prompt and caps): the real prompt, tools,
   ledger and stall guard against the live library through the ingest tunnel,
@@ -1440,8 +1610,8 @@ A curate turn builds materials instead of answering:
 | `list_sources` | none | Scoped source files grouped by chapter, plus workspace study materials; source `file_id` / material `id`, resource kind and editability; sources retain passage counts, status and short descriptors. Editability and materials come from Go `/api/internal/documents/list`; no name filter. |
 | `describe_documents` | none | Detailed summaries for one to eight required file ids; atomic scope validation |
 | `read_document` | none | Sequential chunks by required file id; workspace and chat scope checked before reading |
-| `search_knowledge` | none | Curate mode only. Excerpt-level hybrid search of the knowledge library with verified `topics` / `roles` predicates; an empty result reports what those topics hold by role, or, with no topics, says the search had no topic filter. Retains nothing |
-| `browse_knowledge` | none | Curate mode only. One catalog topic: verified excerpt counts by role and by book, then a page of excerpts with section paths and synopses. The library's topic catalog is appended to this description at runtime. Retains nothing |
+| `search_knowledge` | none | Curate mode only. Excerpt-level hybrid search of the knowledge library with verified `topics` / `roles` predicates; topic ids come from a subject browse and unknown ones are refused by name; an empty result reports what those topics hold by role, or, with no topics, says the search had no topic filter. Retains nothing |
+| `browse_knowledge` | none | Curate mode only. Exactly one of `subject` or `topic` (enforced in Python). A subject id: its topics with tagged-excerpt counts, one line each. A topic id: verified excerpt counts by role and by book, then a page of excerpts with section paths and synopses. The library's subject list is appended to this description at runtime. Retains nothing |
 | `read_knowledge` | none | Curate mode only. One excerpt's chunks from chunk index `start`, with the excerpt's chunk range in the header and a next-start marker. Retains nothing |
 | `create_ledger` | none | Curate mode only. Writes the turn's plan: `body` plus one to twelve `todos`. Required before any write; one call per user message, appended to the conversation's ledger, and a second call in the same turn is refused. Retains nothing |
 | `capture_knowledge_page` | none | Curate mode only, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. Curate mode has no per-turn capture cap. Adds no citation. Retains nothing |
@@ -1471,9 +1641,13 @@ compacted history, so their estimate is passed to compaction as extra weight.
 A capture is attached after its own tool result, so it lives exactly as long as
 that exchange stays verbatim: once live compaction folds the exchange into the
 turn note (decision 2026-09-16), the image leaves the request and
-`capture.image_tokens` stops counting it. The model is told to capture when a
-passage header carries a low extraction-confidence note or the answer depends
-on a figure, table layout or formula, and to read the image directly. The
+`capture.image_tokens` stops counting it. Both agent modes require capture before
+using source-specific numerical results, formulas, table cells/relationships or
+figures, regardless of extraction confidence. Low-confidence text also requires
+capture when the uncertain passage matters. The model reads the image directly
+and reports unavailable or illegible evidence instead of guessing. Text-only
+sources and user-supplied values need no capture. This prompt rule does not add
+capture to the standalone `/generate` workflow. The
 render lives server-side because the pixels must be inside the provider request
 the Python agent builds mid-turn.
 
@@ -1492,12 +1666,14 @@ rides in the same user message after the step's tool results. An unset bucket
 leaves the tool unoffered; the five settings are validated all-or-none.
 
 **One contract.** `server/internal/agenttools` owns tool names, argument
-schemas, the operations table and the error codes. Contract version 6 adds the
+schemas, the operations table and the error codes. Contract version 6 added the
 knowledge tools (`search_knowledge`, `browse_knowledge`, `read_knowledge`,
 `capture_knowledge_page`), the `library.read` operation, `create_ledger`, a
 `todo` id on `create_material` and `edit_document` (schema-optional, required by
 curate mode for a material target) and `excerpt_ids` on both writes; version 5
-was never released. `cmd/openapi -agent-tools`
+was never released. Version 7 (2026-09-19) reshapes `browse_knowledge` to
+`{subject?, topic?, page?}` with exactly one of subject or topic, and points
+`search_knowledge` topic ids at a subject browse. `cmd/openapi -agent-tools`
 exports it to `pipeline/pipeline/generated/agent_tools.json`; Python validates
 every call against that JSON (`retrieval/contract.py`) and refuses unknown
 tools, while the same Go types reach TypeScript through the OpenAPI schema. Go
@@ -1781,7 +1957,7 @@ reduction path.
 | Knowledge library | `LIBRARY_DATABASE_URL`, `CAPY_LIBRARY_TAG_MIN_CONFIDENCE` | Unset URL leaves library tools unavailable. Every environment reads the same live library; books carry their own versions, so there is nothing to pin. Tags below 0.8 confidence, or with an unverified evidence quote, never act as filters. |
 | Library source PDFs | `KNOWLEDGE_BASE_B2_ENDPOINT`, `KNOWLEDGE_BASE_B2_REGION`, `KNOWLEDGE_BASE_B2_BUCKET`, `KNOWLEDGE_BASE_B2_KEY_ID`, `KNOWLEDGE_BASE_B2_APP_KEY` | A dedicated private bucket with its own restricted key, not a prefix of the app bucket. All five or none; unset leaves `capture_knowledge_page` unoffered. |
 | Agent | `CAPY_AGENT_MAX_STEPS` | Default 8 planning responses, 2 tool calls per response, 16 per turn (`retrieval/limits.py`). Cap is the design, not a safety valve. Curate mode instead allows `KNOWLEDGE_TOOLS_PER_RESPONSE` (6) calls per response with no per-turn or planning cap, ends on the `CURATE_STALL_RESPONSES` (4, plus 2 per errored write for at most 2 errors) stall guard, and requires a 200,000-token window |
-| Extraction confidence | `CAPY_CONFIDENCE_NOTE_BELOW` | Default 0.9. A passage whose chunk confidence is below this carries `[extraction confidence 0.72: reasons]` in its header, which the capture rule keys on |
+| Extraction confidence | `CAPY_CONFIDENCE_NOTE_BELOW` | Default 0.9. A passage whose chunk confidence is below this carries `[extraction confidence 0.72: reasons]` in its header. Visual facts require capture even above this threshold |
 | capture_page | `CAPY_CAPTURE_CACHE_DIR`, `CAPY_CAPTURE_CACHE_MAX_BYTES`, `CAPY_CAPTURE_MAX_EDGE`, `CAPY_CAPTURES_PER_TURN` | Retrieval-host PDF cache (LRU by size, 2 GiB), 1568 px long edge JPEG q80, 8 captures per turn in ordinary chat, no cap in curate mode |
 | LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `CAPY_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 250k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |
 | Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`). The ZAI GLM-5.3-Flash catalog row is served from Tencent TokenHub. Captions always use `reasoning_effort: low`, which is also the catalog default for chat. |

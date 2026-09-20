@@ -47,7 +47,7 @@
 >
 > </details>
 >
-> - Ran `rg -n '^#|concept|figure|caption|embedding|OpenDataLoader|canonical|duplicate|hybrid' openwiki/agentic-retrieval.md; rg --files -g '*AGENTS*' -g '*compose*' -g '*requirements*' -g '*pyproject*' -g '*lock*' bench pipeline; Get-Content bench/grading/reports/2026-09-15-local-models.md -ErrorAction SilentlyContinue; Get-Content bench/rag/playground/README.md -TotalCount 170; Get-Content pipeline/pyproject.toml -ErrorAction SilentlyContinue`
+> - Ran `rg -n '^#|concept|figure|caption|embedding|OpenDataLoader|canonical|duplicate|hybrid' openwiki/agentic-retrieval.md; rg --files -g '*AGENTS*' -g '*compose*' -g '*requirements*' -g '*pyproject*' -g '*lock*' bench pipeline; Get-Content bench/grading/reports/2026-09-15-local-models.md -ErrorAction SilentlyContinue; Get-Content lab/playground/README.md -TotalCount 170; Get-Content pipeline/pyproject.toml -ErrorAction SilentlyContinue`
 >
 > </details>
 >
@@ -69,7 +69,7 @@
 >
 > <details><summary>Ran a command, searched the web</summary>
 >
-> - Ran `Get-Command docker,java,python,uv,psql -ErrorAction SilentlyContinue | Select-Object Name,Source | ConvertTo-Json -Compress; docker version --format '{{.Server.Version}}'; docker ps --format '{{.Names}} {{.Image}} {{.Status}}'; docker image ls --format '{{.Repository}}:{{.Tag}} {{.Size}}'; python -c "import importlib.util; print({n:bool(importlib.util.find_spec(n)) for n in ['psycopg','pymupdf','opendataloader_pdf','numpy','torch']})"; rg --files bench/parsers/reports bench/grading/reports parser | rg '2026-09-1[3456]|requirements|Dockerfile|README'; rg -n 'memory|RSS|GiB|610|local|Windows' bench/parsers/reports/2026-09-13* bench/parsers/reports/2026-09-14*; rg -n 'def |connect|target|ssh' bench/rag/playground/scripts/playground.py | Select-Object -First 45`
+> - Ran `Get-Command docker,java,python,uv,psql -ErrorAction SilentlyContinue | Select-Object Name,Source | ConvertTo-Json -Compress; docker version --format '{{.Server.Version}}'; docker ps --format '{{.Names}} {{.Image}} {{.Status}}'; docker image ls --format '{{.Repository}}:{{.Tag}} {{.Size}}'; python -c "import importlib.util; print({n:bool(importlib.util.find_spec(n)) for n in ['psycopg','pymupdf','opendataloader_pdf','numpy','torch']})"; rg --files bench/parsers/reports bench/grading/reports parser | rg '2026-09-1[3456]|requirements|Dockerfile|README'; rg -n 'memory|RSS|GiB|610|local|Windows' bench/parsers/reports/2026-09-13* bench/parsers/reports/2026-09-14*; rg -n 'def |connect|target|ssh' lab/playground/scripts/playground.py | Select-Object -First 45`
 >
 > Searched the web for `https://www.openintro.org/book/os/`
 >

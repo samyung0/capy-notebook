@@ -1,0 +1,181 @@
+{
+  "schema_version": 1,
+  "frozen_at": "2026-09-19T20:01:24.025846+00:00",
+  "purpose": "Two untouched source-only heading scope release controls; no parser output inspected",
+  "sources": [
+    {
+      "id": "scope-lua50",
+      "title": "Lua5.0 Reference Manual",
+      "url": "https://www.lua.org/ftp/refman-5.0.pdf",
+      "landing_page": "https://www.lua.org/manual/",
+      "family": "Lua reference manual",
+      "language": "en",
+      "licence": "Lua licence; official manual landing page",
+      "sha256": "07cc73d3e9a818067eac1f3cf904ac26834c36f46bd2125d2325358c5a380ad5",
+      "bytes": 474818,
+      "pages": 71,
+      "producer": "pdfTeX14.h",
+      "creator": "TeX",
+      "outline_entries": 68,
+      "tagged": false,
+      "sample_native_chars": {
+        "1": 62,
+        "18": 1721,
+        "36": 2590,
+        "54": 3184,
+        "71": 3615
+      },
+      "rotated_pages": [],
+      "path": "bench/parsers/fixtures/local/2026-09-20-heading-scope-release/scope-lua50.pdf",
+      "resolved_url": "https://www.lua.org/ftp/refman-5.0.pdf",
+      "download_seconds": 2.603,
+      "novelty_matches": [],
+      "outline_roots": [
+        {
+          "level": 1,
+          "title": "Introduction",
+          "page": 7
+        },
+        {
+          "level": 1,
+          "title": "The Language",
+          "page": 7
+        },
+        {
+          "level": 1,
+          "title": "The Application Program Interface",
+          "page": 28
+        },
+        {
+          "level": 1,
+          "title": "The Debug Interface",
+          "page": 41
+        },
+        {
+          "level": 1,
+          "title": "Standard Libraries",
+          "page": 44
+        },
+        {
+          "level": 1,
+          "title": "Lua Stand-alone",
+          "page": 63
+        },
+        {
+          "level": 1,
+          "title": "Incompatibilities with Previous Versions",
+          "page": 64
+        },
+        {
+          "level": 1,
+          "title": "The Complete Syntax of Lua",
+          "page": 66
+        },
+        {
+          "level": 1,
+          "title": "Index",
+          "page": 66
+        }
+      ],
+      "licence_evidence": "https://www.lua.org/manual/"
+    },
+    {
+      "id": "scope-latex-author",
+      "title": "LaTeX for authors current version",
+      "url": "https://www.latex-project.org/help/documentation/usrguide.pdf",
+      "landing_page": "https://www.latex-project.org/help/documentation/",
+      "family": "LaTeX Project author guide",
+      "language": "en",
+      "licence": "LPPL1.3c; CTAN package metadata",
+      "sha256": "79ce884d013bea5c13479385a7bd7a819fdbc138c49cbc0d7805e36f401e19f2",
+      "bytes": 534664,
+      "pages": 27,
+      "producer": "pdfTeX-1.40.29",
+      "creator": "LaTeX with hyperref",
+      "outline_entries": 29,
+      "tagged": false,
+      "sample_native_chars": {
+        "1": 1977,
+        "7": 1630,
+        "14": 2397,
+        "21": 2040,
+        "27": 1854
+      },
+      "rotated_pages": [],
+      "path": "bench/parsers/fixtures/local/2026-09-20-heading-scope-release/scope-latex-author.pdf",
+      "resolved_url": "https://www.latex-project.org/help/documentation/usrguide.pdf",
+      "download_seconds": 3.34,
+      "novelty_matches": [],
+      "outline_roots": [
+        {
+          "level": 1,
+          "title": "Contents",
+          "page": 1
+        },
+        {
+          "level": 1,
+          "title": "1 Introduction",
+          "page": 2
+        },
+        {
+          "level": 1,
+          "title": "2 Creating document commands and environments",
+          "page": 2
+        },
+        {
+          "level": 1,
+          "title": "3 Copying and showing (robust) commands and environments",
+          "page": 19
+        },
+        {
+          "level": 1,
+          "title": "4 Preconstructing command names  (or otherwise expanding arguments)",
+          "page": 20
+        },
+        {
+          "level": 1,
+          "title": "5 Expandable floating point (and other) calculations",
+          "page": 21
+        },
+        {
+          "level": 1,
+          "title": "6 Expandable input equivalent",
+          "page": 24
+        },
+        {
+          "level": 1,
+          "title": "7 Case changing",
+          "page": 24
+        },
+        {
+          "level": 1,
+          "title": "8 Text sub- and superscripts",
+          "page": 26
+        },
+        {
+          "level": 1,
+          "title": "9 Support for problem solving",
+          "page": 27
+        }
+      ],
+      "licence_evidence": "https://www.ctan.org/pkg/usrguide; PDF page1 identifies LaTeX Project distribution and source modification conditions"
+    }
+  ],
+  "failures": [
+    {
+      "id": "scope-gnu-grep",
+      "title": "GNU Grep manual",
+      "url": "https://www.gnu.org/software/grep/manual/grep.pdf",
+      "landing_page": "https://www.gnu.org/software/grep/manual/",
+      "family": "GNU Texinfo",
+      "language": "en",
+      "licence": "GFDL1.3 or later; no invariant sections or cover texts",
+      "error": "HTTPError: 403 Client Error: Forbidden for url: https://www.gnu.org/software/grep/manual/grep.pdf"
+    }
+  ],
+  "novelty_audit": {
+    "files_checked": 83,
+    "method": "Exact URL, basename and SHA against all nonlocal parser/rag fixture JSON/JSONL/MD/TXT, including prior39 sources",
+    "limitation": "Recorded fixture identity novelty; unrecorded aliases cannot be excluded"
+  }
+}
